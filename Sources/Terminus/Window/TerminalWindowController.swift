@@ -150,6 +150,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let tab = Tab(terminal: terminal, agent: agent)
         terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
         terminal.onWorkingDirectoryChange = { [weak tab] in tab?.workingDirectory = $0 }
+        terminal.onEvent = { [weak self, weak tab] event in
+            guard let self, let tab else { return }
+            if tab.activity.handle(event, visible: self.isVisible(tab)) {
+                AttentionNotifier.notify(tab: tab)
+            }
+            if event == .bell, self.isVisible(tab) { NSSound.beep() }
+            self.updateAttentionBadge()
+        }
         terminal.onClose = { [weak self, weak tab, weak terminal] processAlive in
             guard let self, let tab else { return }
             // A pinned tab ignores close requests (Ghostty's cmd+w is
@@ -175,6 +183,37 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: agent.map { $0.command + "\n" }, fontSize: fontSize)
         addTab(terminal, agent: agent, after: store.selected)
+    }
+
+    // MARK: Attention
+
+    /// Actually in front of you: selected, in the key window, app active.
+    private func isVisible(_ tab: Tab) -> Bool {
+        NSApp.isActive && window?.isKeyWindow == true && store.selectedID == tab.id
+    }
+
+    /// The selected tab has been seen once the window is in front.
+    private func markSelectedSeen() {
+        guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
+        tab.activity.seen()
+        AttentionNotifier.withdraw(tab: tab)
+        updateAttentionBadge()
+    }
+
+    private func updateAttentionBadge() {
+        AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
+    }
+
+    /// Brings up a tab a notification was about.
+    func reveal(tabID: UUID) {
+        guard let tab = store.tabs.first(where: { $0.id == tabID }) else { return }
+        store.select(tab)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        markSelectedSeen()
     }
 
     // MARK: Session
@@ -386,9 +425,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func removeTab(_ tab: Tab) {
+        AttentionNotifier.withdraw(tab: tab)
         tab.terminal.close()
         tab.terminal.removeFromSuperview()
         store.remove(tab)
+        updateAttentionBadge()
         if store.tabs.isEmpty { window?.close() }
     }
 
@@ -435,6 +476,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         selected.terminal.setVisible(true)
         window?.makeFirstResponder(selected.terminal)
         window?.title = selected.title
+        markSelectedSeen()
         cwdSubscription = selected.$workingDirectory
             .compactMap { $0 }
             .removeDuplicates()

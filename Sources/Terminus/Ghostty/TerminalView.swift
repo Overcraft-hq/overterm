@@ -22,6 +22,8 @@ final class TerminalView: NSView {
 
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
+    /// Bell, desktop notification, progress, long command finished.
+    var onEvent: ((TerminalEvent) -> Void)?
     /// Called when the surface asks to close — the process exited, or the user
     /// pressed a close binding. The argument is whether the process is alive.
     var onClose: ((Bool) -> Void)?

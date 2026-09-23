@@ -22,6 +22,8 @@ final class Tab: ObservableObject, Identifiable {
     /// Set through TabStore.setPinned, which keeps pinned tabs first.
     @Published var isPinned = false
 
+    @Published var activity = TabActivity()
+
     /// The agent this tab was opened for, if any.
     let agent: Agent?
 

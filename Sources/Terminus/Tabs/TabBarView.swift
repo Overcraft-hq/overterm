@@ -82,6 +82,15 @@ private struct TabItemView: View {
             if let color = tab.color {
                 Circle().fill(color.color).frame(width: 8, height: 8)
             }
+            if tab.activity.needsAttention {
+                // Signal yellow: the brand's "look here".
+                Circle()
+                    .fill(Color(red: 1.0, green: 0.882, blue: 0.29))
+                    .frame(width: 7, height: 7)
+                    .help(tab.activity.note ?? "Needs your attention")
+            } else if tab.activity.isWorking {
+                ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
+            }
             if let agent = tab.agent {
                 Image(systemName: agent.symbol)
                     .font(.system(size: 10))

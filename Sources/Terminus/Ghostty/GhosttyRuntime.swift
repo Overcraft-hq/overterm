@@ -189,8 +189,29 @@ final class GhosttyRuntime {
             NSWorkspace.shared.open(url)
             return true
 
+        // Signals that a tab may want you; the window decides whether that
+        // is news (see TabActivity).
         case GHOSTTY_ACTION_RING_BELL:
-            NSSound.beep()
+            guard let view else { return false }
+            view.onEvent?(.bell)
+            return true
+
+        case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
+            guard let view else { return false }
+            let n = action.action.desktop_notification
+            view.onEvent?(.notification(title: n.title.map { String(cString: $0) } ?? "", body: n.body.map { String(cString: $0) } ?? ""))
+            return true
+
+        case GHOSTTY_ACTION_PROGRESS_REPORT:
+            guard let view else { return false }
+            let state = action.action.progress_report.state
+            view.onEvent?(.progress(active: state != GHOSTTY_PROGRESS_STATE_REMOVE && state != GHOSTTY_PROGRESS_STATE_ERROR, failed: state == GHOSTTY_PROGRESS_STATE_ERROR))
+            return true
+
+        case GHOSTTY_ACTION_COMMAND_FINISHED:
+            guard let view else { return false }
+            let finished = action.action.command_finished
+            view.onEvent?(.commandFinished(exitCode: finished.exit_code < 0 ? nil : Int(finished.exit_code), seconds: Double(finished.duration) / 1e9))
             return true
 
         default:
