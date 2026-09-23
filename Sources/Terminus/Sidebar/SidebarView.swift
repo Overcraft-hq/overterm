@@ -12,14 +12,29 @@ struct FileTreeActions {
     var relativePath: (URL) -> String
 }
 
-/// The left panel: for now, the file tree of the selected tab's checkout.
+/// What the worktree list asks the window to do.
+struct WorktreeActions {
+    /// Go to a tab in this worktree, or open one.
+    var open: (Worktree) -> Void
+    var newTab: (Worktree) -> Void
+    var remove: (Worktree) -> Void
+}
+
+/// The left panel: the repository's worktrees, then the file tree of the
+/// selected tab's checkout.
 struct SidebarView: View {
     @ObservedObject var tree: FileTreeModel
+    @ObservedObject var worktrees: WorktreeModel
     let theme: ChromeTheme
     let actions: FileTreeActions
+    let worktreeActions: WorktreeActions
 
     var body: some View {
         VStack(spacing: 0) {
+            if !worktrees.worktrees.isEmpty {
+                WorktreeListView(model: worktrees, currentRoot: tree.root, theme: theme, actions: worktreeActions)
+                Divider().opacity(0.4)
+            }
             header
             if tree.root == nil {
                 Spacer()
@@ -134,5 +149,94 @@ private struct FileRowView: View {
     private func copy(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
+    }
+}
+
+private struct WorktreeListView: View {
+    @ObservedObject var model: WorktreeModel
+    /// The selected tab's checkout, i.e. the worktree it is in.
+    let currentRoot: URL?
+    let theme: ChromeTheme
+    let actions: WorktreeActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Worktrees")
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(theme.dimText)
+                Spacer()
+                Button(action: { Task { await model.refresh() } }) {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .help("Reload")
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(model.worktrees) { worktree in
+                        WorktreeRowView(
+                            worktree: worktree,
+                            isCurrent: currentRoot?.standardizedFileURL == worktree.path.standardizedFileURL,
+                            theme: theme, actions: actions)
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+            // Many worktrees scroll here rather than squeezing the file tree.
+            .frame(maxHeight: CGFloat(min(model.worktrees.count, 6)) * 24 + 4)
+        }
+    }
+}
+
+private struct WorktreeRowView: View {
+    let worktree: Worktree
+    let isCurrent: Bool
+    let theme: ChromeTheme
+    let actions: WorktreeActions
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: worktree.isMain ? "house" : "arrow.triangle.branch")
+                .font(.system(size: 10))
+                .frame(width: 14)
+            Text(worktree.displayName)
+                .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            if worktree.isLocked {
+                Image(systemName: "lock.fill").font(.system(size: 9)).help("Locked")
+            }
+        }
+        .foregroundStyle(isCurrent ? theme.text : theme.dimText)
+        .padding(.horizontal, 12)
+        .frame(height: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isCurrent ? theme.selected : (hovering ? theme.hover : .clear))
+                .padding(.horizontal, 4)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { actions.open(worktree) }
+        .contextMenu {
+            Button("New Tab Here") { actions.newTab(worktree) }
+            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([worktree.path]) }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(worktree.path.path, forType: .string)
+            }
+            if !worktree.isMain {
+                Divider()
+                Button("Remove Worktree…") { actions.remove(worktree) }
+            }
+        }
+        .help(worktree.path.path)
     }
 }

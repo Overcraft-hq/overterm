@@ -12,6 +12,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let store = TabStore()
     private let container = NSView()
     private let tree = FileTreeModel()
+    private let worktrees = WorktreeModel()
     private let split = NSSplitViewController()
     private var sidebarItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
@@ -80,11 +81,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let sidebar = NSHostingController(
             rootView: SidebarView(
                 tree: tree,
+                worktrees: worktrees,
                 theme: theme,
                 actions: FileTreeActions(
                     insertPath: { [weak self] in self?.insertPath($0) },
                     newTab: { [weak self] in self?.newTab(in: $0) },
                     relativePath: { [weak self] in self?.relativePath($0) ?? $0.path }
+                ),
+                worktreeActions: WorktreeActions(
+                    open: { [weak self] in self?.openWorktree($0) },
+                    newTab: { [weak self] in self?.newTab(in: $0.path) },
+                    remove: { [weak self] in self?.removeWorktree($0) }
                 )
             ))
         sidebar.sizingOptions = []
@@ -163,6 +170,71 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(workingDirectory: directory.path, fontSize: fontSize)
         addTab(terminal, after: store.selected)
+    }
+
+    // MARK: Worktrees
+
+    private func tabs(in worktree: Worktree) -> [Tab] {
+        store.tabs.filter { tab in
+            tab.workingDirectory.flatMap { Worktree.containing($0, in: worktrees.worktrees) } == worktree
+        }
+    }
+
+    /// Selects the (first) tab already in `worktree`, else opens one there.
+    func openWorktree(_ worktree: Worktree) {
+        if let tab = tabs(in: worktree).first {
+            store.select(tab)
+        } else {
+            newTab(in: worktree.path)
+        }
+    }
+
+    /// `git worktree remove`, after confirming. Refused while a tab is in it:
+    /// its shell would be left in a deleted directory. A dirty worktree gets
+    /// a second, explicit Force.
+    func removeWorktree(_ worktree: Worktree, force: Bool = false) {
+        guard let window, let repo = worktrees.main?.path else { return }
+        let open = tabs(in: worktree)
+        guard open.isEmpty else {
+            showAlert(
+                "Close its tabs first",
+                "“\(worktree.displayName)” has \(open.count) open tab\(open.count == 1 ? "" : "s"). Close \(open.count == 1 ? "it" : "them") before removing the worktree.")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = force ? "Force-remove “\(worktree.displayName)”?" : "Remove worktree “\(worktree.displayName)”?"
+        alert.informativeText =
+            force
+            ? "It has uncommitted or untracked changes. Force-removing deletes them. The branch is kept."
+            : "Deletes \(worktree.path.path). The branch is kept."
+        alert.addButton(withTitle: force ? "Force Remove" : "Remove")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = force ? .critical : .warning
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    _ = try await Git.run(["worktree", "remove"] + (force ? ["--force"] : []) + [worktree.path.path], in: repo)
+                    await self.worktrees.refresh()
+                } catch {
+                    // git refuses a dirty worktree without --force; offer it.
+                    if !force, (error as? GitError)?.stderr.contains("--force") == true {
+                        self.removeWorktree(worktree, force: true)
+                    } else {
+                        self.showAlert("Couldn’t remove the worktree", error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+
+    private func showAlert(_ title: String, _ message: String) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.beginSheetModal(for: window)
     }
 
     // MARK: Paths
@@ -271,7 +343,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         cwdSubscription = selected.$workingDirectory
             .compactMap { $0 }
             .removeDuplicates()
-            .sink { [weak self] cwd in self?.tree.setRoot(FileTreeModel.treeRoot(for: cwd)) }
+            .sink { [weak self] cwd in
+                let root = FileTreeModel.treeRoot(for: cwd)
+                self?.tree.setRoot(root)
+                self?.worktrees.setAnchor(root)
+            }
     }
 
     // MARK: Menu actions

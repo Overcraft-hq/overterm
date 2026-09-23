@@ -82,3 +82,33 @@ final class GitTests: XCTestCase {
         }
     }
 }
+
+final class WorktreeModelTests: XCTestCase {
+    @MainActor
+    func testListsARealRepositorysWorktrees() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-wt-\(UUID().uuidString)")
+        let repo = base.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        _ = try await Git.run(["init", "-q", "-b", "main"], in: repo)
+        _ = try await Git.run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], in: repo)
+        _ = try await Git.run(["worktree", "add", "-q", "-b", "feat/x", base.appendingPathComponent("repo-wt-feat-x").path], in: repo)
+
+        let model = WorktreeModel()
+        model.setAnchor(base.appendingPathComponent("repo-wt-feat-x"))
+        await model.refresh()
+        XCTAssertEqual(model.worktrees.map(\.branch), ["main", "feat/x"])
+        XCTAssertEqual(model.main?.path.resolvingSymlinksInPath(), repo.resolvingSymlinksInPath())
+    }
+
+    @MainActor
+    func testOutsideARepositoryIsEmpty() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-norepo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let model = WorktreeModel()
+        model.setAnchor(dir)
+        await model.refresh()
+        XCTAssertTrue(model.worktrees.isEmpty)
+    }
+}
