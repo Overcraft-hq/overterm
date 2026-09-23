@@ -246,16 +246,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             self.updateAttentionBadge()
         }
         terminal.onClose = { [weak self, weak tab, weak terminal] _ in
-            guard let self, let tab else { return }
-            // The shell exited (you typed exit): that was the close, no question.
-            if terminal?.processExited != false {
-                self.removeTab(tab)
-                return
+            // The shell exiting (you typed exit) closes silently; Ghostty's ⌘W
+            // (close_surface) asks, and a pinned tab ignores it. libghostty
+            // can call this a moment before it marks the process exited, so
+            // look again shortly before deciding it was ⌘W.
+            Task { @MainActor [weak self, weak tab, weak terminal] in
+                for attempt in 0...4 {
+                    if attempt > 0 { try? await Task.sleep(nanoseconds: 50_000_000) }
+                    guard let self, let tab else { return }
+                    if terminal?.processExited != false {
+                        self.removeTab(tab)
+                        return
+                    }
+                }
+                guard let self, let tab, !tab.isPinned else { return }
+                self.closeTab(tab)
             }
-            // Otherwise it is Ghostty's ⌘W (close_surface): a pinned tab
-            // ignores it, any other asks.
-            if tab.isPinned { return }
-            self.closeTab(tab)
         }
 
         terminal.translatesAutoresizingMaskIntoConstraints = false
