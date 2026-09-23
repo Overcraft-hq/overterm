@@ -62,6 +62,14 @@ final class TabStore: ObservableObject {
         select(index: ((i + offset) % n + n) % n)
     }
 
+    /// Where each tab is drawn in the strip (top-left origin), so the window
+    /// can tell which tab a right-click landed on.
+    var tabFrames: [Tab.ID: CGRect] = [:]
+
+    func tab(at point: CGPoint) -> Tab? {
+        tabs.first { tabFrames[$0.id]?.contains(point) == true }
+    }
+
     /// The tab being dragged in the strip, if any. Not published: only the
     /// drop delegate reads it.
     var draggingID: Tab.ID?

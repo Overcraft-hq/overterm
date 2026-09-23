@@ -16,6 +16,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let snippets = SnippetStore()
     private let palette = PaletteModel()
     private var paletteView: NSView?
+    private var tabBarView: NSView?
+    private var rightClickMonitor: Any?
     private let split = NSSplitViewController()
     private var sidebarItem: NSSplitViewItem?
     private let diff = DiffModel()
@@ -147,6 +149,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.splitView.dividerStyle = .thin
         split.splitView.autosaveName = "TerminusSidebar"
         self.sidebarItem = sidebarItem
+
+        tabBarView = tabBar
+        installTabRightClick()
 
         let content = NSView()
         let body = split.view
@@ -414,6 +419,65 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 onCancel: close
             )
         }
+    }
+
+    // MARK: Tab context menu
+
+    /// Right-clicks on the strip never reach SwiftUI: the strip lives in the
+    /// title bar, which takes them first. So the window catches them before
+    /// dispatch, finds the tab under the pointer and shows the menu itself.
+    private func installTabRightClick() {
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            guard let self, event.window === self.window, let strip = self.tabBarView else { return event }
+            var point = strip.convert(event.locationInWindow, from: nil)
+            guard strip.bounds.contains(point) else { return event }
+            if !strip.isFlipped { point.y = strip.bounds.height - point.y }
+            guard let tab = self.store.tab(at: point) else { return event }
+            NSMenu.popUpContextMenu(self.menu(for: tab), with: event, for: strip)
+            return nil
+        }
+    }
+
+    private func menu(for tab: Tab) -> NSMenu {
+        let menu = NSMenu()
+        if !tab.isPinned {
+            menu.addItem(
+                ClosureMenuItem("Rename Tab…") { [weak self] in
+                    self?.store.select(tab)
+                    self?.store.renamingID = tab.id
+                })
+        }
+        if tab.customTitle != nil {
+            menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
+        }
+        menu.addItem(
+            ClosureMenuItem(tab.isPinned ? "Unpin Tab" : "Pin Tab") { [weak self] in
+                self?.store.setPinned(tab, !tab.isPinned)
+            })
+
+        let colors = NSMenu()
+        for color in TabColor.allCases {
+            let item = ClosureMenuItem(color.name, state: tab.color == color ? .on : .off) {
+                tab.color = tab.color == color ? nil : color
+            }
+            item.image = color.swatch
+            colors.addItem(item)
+        }
+        colors.addItem(.separator())
+        colors.addItem(ClosureMenuItem("None", enabled: tab.color != nil) { tab.color = nil })
+        let colorItem = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
+        colorItem.submenu = colors
+        menu.addItem(colorItem)
+
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("New Tab to the Right") { [weak self] in self?.newTab(from: tab.terminal) })
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem("Close Tab", enabled: !tab.isPinned) { [weak self] in self?.closeTab(tab) })
+        let others = store.tabs.filter { $0.id != tab.id && !$0.isPinned }
+        menu.addItem(ClosureMenuItem("Close Other Tabs", enabled: !others.isEmpty) { [weak self] in others.forEach { self?.closeTab($0) } })
+        let right = store.index(of: tab).map { Array(store.tabs[($0 + 1)...]).filter { !$0.isPinned } } ?? []
+        menu.addItem(ClosureMenuItem("Close Tabs to the Right", enabled: !right.isEmpty) { [weak self] in right.forEach { self?.closeTab($0) } })
+        return menu
     }
 
     // MARK: Palette
@@ -738,6 +802,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         for tab in store.tabs { tab.terminal.close() }
     }
 }

@@ -64,6 +64,20 @@ struct TabBarView: View {
         .padding(.trailing, 8)
         .frame(maxHeight: .infinity)
         .background(WindowDragArea())
+        .coordinateSpace(name: TabFramesKey.space)
+        .onPreferenceChange(TabFramesKey.self) { frames in
+            MainActor.assumeIsolated { store.tabFrames = frames }
+        }
+    }
+}
+
+/// Each tab's frame in the strip, top-left origin.
+struct TabFramesKey: PreferenceKey {
+    static let space = "tabStrip"
+    static let defaultValue: [Tab.ID: CGRect] = [:]
+
+    static func reduce(value: inout [Tab.ID: CGRect], nextValue: () -> [Tab.ID: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
@@ -77,15 +91,36 @@ private struct TabItemView: View {
     private var isSelected: Bool { tab.id == store.selectedID }
     private var isRenaming: Bool { tab.id == store.renamingID }
 
-    var body: some View {
+    /// Signal yellow: the brand's "look here".
+    private static let attention = Color(red: 1.0, green: 0.882, blue: 0.29)
+
+    private var symbol: String { tab.agent?.symbol ?? "terminal" }
+
+    /// A pinned tab is just its icon — the agent's, or a terminal — in the
+    /// tab's colour; the name is in the tooltip. Attention and work show as
+    /// a corner mark.
+    private var pinnedContent: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.dimText))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) {
+                if tab.activity.needsAttention {
+                    Circle().fill(Self.attention).frame(width: 6, height: 6).padding(5)
+                } else if tab.activity.isWorking {
+                    ProgressView().controlSize(.mini).scaleEffect(0.5).frame(width: 8, height: 8).padding(3)
+                }
+            }
+    }
+
+    private var fullContent: some View {
         HStack(spacing: 6) {
             if let color = tab.color {
                 Circle().fill(color.color).frame(width: 8, height: 8)
             }
             if tab.activity.needsAttention {
-                // Signal yellow: the brand's "look here".
                 Circle()
-                    .fill(Color(red: 1.0, green: 0.882, blue: 0.29))
+                    .fill(Self.attention)
                     .frame(width: 7, height: 7)
                     .help(tab.activity.note ?? "Needs your attention")
             } else if tab.activity.isWorking {
@@ -107,32 +142,31 @@ private struct TabItemView: View {
                     .foregroundStyle(isSelected ? theme.text : theme.dimText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if tab.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(theme.dimText)
-                    .help("Pinned — unpin to close")
-            } else {
-                Button(action: { actions.close(tab) }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.dimText)
-                .opacity(isSelected || hovering ? 1 : 0)
-                .help("Close Tab (⌘W)")
+            Button(action: { actions.close(tab) }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .opacity(isSelected || hovering ? 1 : 0)
+            .help("Close Tab (⌘W)")
         }
         .padding(.horizontal, 10)
-        // Pinned tabs are compact and never shrink away; the rest share the
+    }
+
+    var body: some View {
+        Group {
+            if tab.isPinned { pinnedContent } else { fullContent }
+        }
+        // Pinned: a fixed icon-sized square, as in Chrome. The rest share the
         // remaining width.
         .frame(
-            minWidth: tab.isPinned ? 56 : 60, idealWidth: tab.isPinned ? 120 : 200, maxWidth: tab.isPinned ? 130 : 220,
+            minWidth: tab.isPinned ? 38 : 60, idealWidth: tab.isPinned ? 38 : 200, maxWidth: tab.isPinned ? 38 : 220,
             minHeight: 28, maxHeight: 28
         )
-        .layoutPriority(tab.isPinned ? 1 : 0)
+        .fixedSize(horizontal: tab.isPinned, vertical: false)
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(isSelected ? theme.selected : (hovering ? theme.hover : .clear))
@@ -152,32 +186,21 @@ private struct TabItemView: View {
         // Single and double tap together, not exclusively: an exclusive double
         // tap would delay every plain click by the double-click interval.
         .onTapGesture { actions.select(tab) }
-        .simultaneousGesture(TapGesture(count: 2).onEnded { store.renamingID = tab.id })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { if !tab.isPinned { store.renamingID = tab.id } })
         .onHover { hovering = $0 }
         .onDrag {
             store.draggingID = tab.id
             return NSItemProvider(object: tab.id.uuidString as NSString)
         }
         .onDrop(of: [.text], delegate: TabDropDelegate(target: tab, store: store))
-        .contextMenu {
-            Button("Rename Tab…") {
-                actions.select(tab)
-                store.renamingID = tab.id
+        // Where this tab is, for the window's right-click handling: a
+        // SwiftUI .contextMenu never fires here — the title bar swallows
+        // right-clicks before they reach the strip.
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: TabFramesKey.self, value: [tab.id: proxy.frame(in: .named(TabFramesKey.space))])
             }
-            if tab.customTitle != nil {
-                Button("Reset Name") { tab.customTitle = nil }
-            }
-            Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") { actions.setPinned(tab, !tab.isPinned) }
-            Menu("Color") {
-                ForEach(TabColor.allCases) { color in
-                    Toggle(color.name, isOn: Binding(get: { tab.color == color }, set: { tab.color = $0 ? color : nil }))
-                }
-                Divider()
-                Button("None") { tab.color = nil }.disabled(tab.color == nil)
-            }
-            Divider()
-            Button("Close Tab") { actions.close(tab) }.disabled(tab.isPinned)
-        }
+        )
         .help(tab.title)
         .padding(.horizontal, 2)
     }
