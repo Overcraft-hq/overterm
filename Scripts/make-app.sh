@@ -33,6 +33,7 @@ if [[ ! -d "$GHOSTTY_RES" ]]; then
   exit 1
 fi
 cp -R "$GHOSTTY_RES/." "$CONTENTS/Resources/"
+cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -55,6 +56,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>${BUILD}</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>

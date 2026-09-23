@@ -1,10 +1,14 @@
 APP := Terminus.app
 
-.PHONY: ghosttykit build app run clean
+.PHONY: ghosttykit icon build app run clean
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
 	./Scripts/build-ghosttykit.sh
+
+## icon: regenerate Resources/AppIcon.icns from Resources/AppIcon.svg
+icon:
+	./Scripts/make-icon.sh
 
 ## build: compile the release binary via SPM
 build:
