@@ -17,6 +17,7 @@ struct WorktreeActions {
     /// Go to a tab in this worktree, or open one.
     var open: (Worktree) -> Void
     var newTab: (Worktree) -> Void
+    var newAgentTab: (Worktree, Agent) -> Void
     var remove: (Worktree) -> Void
 }
 
@@ -227,6 +228,10 @@ private struct WorktreeRowView: View {
         .onTapGesture { actions.open(worktree) }
         .contextMenu {
             Button("New Tab Here") { actions.newTab(worktree) }
+            ForEach(Agent.allCases) { agent in
+                Button("New \(agent.name) Tab Here") { actions.newAgentTab(worktree, agent) }
+            }
+            Divider()
             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([worktree.path]) }
             Button("Copy Path") {
                 NSPasteboard.general.clearContents()

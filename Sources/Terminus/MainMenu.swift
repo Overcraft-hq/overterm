@@ -23,6 +23,10 @@ enum MainMenu {
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
         fileMenu.addItem(withTitle: "New Tab", action: #selector(TerminalWindowController.newTab(_:)), keyEquivalent: "t")
+        let claude = fileMenu.addItem(withTitle: "New Claude Tab", action: #selector(TerminalWindowController.newClaudeTab(_:)), keyEquivalent: "c")
+        claude.keyEquivalentModifierMask = [.command, .option]
+        let codex = fileMenu.addItem(withTitle: "New Codex Tab", action: #selector(TerminalWindowController.newCodexTab(_:)), keyEquivalent: "x")
+        codex.keyEquivalentModifierMask = [.command, .option]
         fileMenu.addItem(withTitle: "Pin / Unpin Tab", action: #selector(TerminalWindowController.togglePinTab(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close Tab", action: #selector(TerminalWindowController.closeTab(_:)), keyEquivalent: "w")

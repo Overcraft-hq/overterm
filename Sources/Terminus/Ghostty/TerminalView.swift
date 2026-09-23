@@ -38,10 +38,12 @@ final class TerminalView: NSView {
 
     /// - Parameters:
     ///   - workingDirectory: where the shell starts; home when nil.
-    ///   - command: run instead of the login shell (e.g. `claude`).
+    ///   - initialInput: typed into the shell once it starts (e.g.
+    ///     `claude\n`). The shell stays when that program exits, unlike
+    ///     running it as the surface's command.
     ///   - fontSize: carry a tab's zoom level over to its sibling; config
     ///     default when nil.
-    init(workingDirectory: String? = nil, command: String? = nil, fontSize: Float? = nil) {
+    init(workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil) {
         // A non-zero initial frame so the renderer's layer has real bounds
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -57,14 +59,17 @@ final class TerminalView: NSView {
 
         let cwd = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
         self.workingDirectory = cwd
-        surface = cwd.withCString { cwdPtr in
-            config.working_directory = cwdPtr
-            guard let command else { return ghostty_surface_new(app, &config) }
-            return command.withCString { cmdPtr in
-                config.command = cmdPtr
-                return ghostty_surface_new(app, &config)
-            }
+        // The C strings only need to outlive ghostty_surface_new, which
+        // copies them.
+        let cwdC = strdup(cwd)
+        let inputC = initialInput.map { strdup($0) }
+        defer {
+            free(cwdC)
+            inputC.map { free($0) }
         }
+        config.working_directory = UnsafePointer(cwdC)
+        config.initial_input = inputC.flatMap { UnsafePointer($0) }
+        surface = ghostty_surface_new(app, &config)
         if surface == nil {
             GhosttyRuntime.logger.error("ghostty_surface_new failed")
         }

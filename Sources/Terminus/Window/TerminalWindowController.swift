@@ -66,6 +66,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     select: { [weak self] in self?.store.select($0) },
                     close: { [weak self] in self?.closeTab($0) },
                     newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
+                    newAgentTab: { [weak self] in self?.newAgentTab($0) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
@@ -91,6 +92,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 worktreeActions: WorktreeActions(
                     open: { [weak self] in self?.openWorktree($0) },
                     newTab: { [weak self] in self?.newTab(in: $0.path) },
+                    newAgentTab: { [weak self] worktree, agent in self?.newTab(in: worktree.path, agent: agent) },
                     remove: { [weak self] in self?.removeWorktree($0) }
                 )
             ))
@@ -142,8 +144,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         addTab(terminal, after: store.tabs.first { $0.terminal === source })
     }
 
-    private func addTab(_ terminal: TerminalView, after anchor: Tab?) {
-        let tab = Tab(terminal: terminal)
+    private func addTab(_ terminal: TerminalView, agent: Agent? = nil, after anchor: Tab?) {
+        let tab = Tab(terminal: terminal, agent: agent)
         terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
         terminal.onWorkingDirectoryChange = { [weak tab] in tab?.workingDirectory = $0 }
         terminal.onClose = { [weak self, weak tab, weak terminal] processAlive in
@@ -165,11 +167,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         store.insert(tab, after: anchor)
     }
 
-    /// Opens a tab after the selected one, starting in `directory`.
-    func newTab(in directory: URL) {
+    /// Opens a tab after the selected one, starting in `directory` — and
+    /// starting `agent` in it, if given.
+    func newTab(in directory: URL, agent: Agent? = nil) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let terminal = TerminalView(workingDirectory: directory.path, fontSize: fontSize)
-        addTab(terminal, after: store.selected)
+        let terminal = TerminalView(workingDirectory: directory.path, initialInput: agent.map { $0.command + "\n" }, fontSize: fontSize)
+        addTab(terminal, agent: agent, after: store.selected)
+    }
+
+    /// An agent tab in the selected tab's directory.
+    func newAgentTab(_ agent: Agent) {
+        let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
+        newTab(in: URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path), agent: agent)
     }
 
     // MARK: Worktrees
@@ -353,6 +362,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Menu actions
 
     @objc func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
+    @objc func newClaudeTab(_ sender: Any?) { newAgentTab(.claude) }
+    @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
     @objc func closeTab(_ sender: Any?) {
         guard let tab = store.selected else { return }
         if tab.isPinned {

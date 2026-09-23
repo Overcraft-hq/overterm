@@ -7,6 +7,7 @@ struct TabBarActions {
     var select: (Tab) -> Void
     var close: (Tab) -> Void
     var newTab: () -> Void
+    var newAgentTab: (Agent) -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -32,16 +33,29 @@ struct TabBarView: View {
                     actions: actions
                 )
             }
-            Button(action: actions.newTab) {
+            // Click: a plain tab. The arrow: an agent tab.
+            Menu {
+                Button("New Tab") { actions.newTab() }
+                Divider()
+                ForEach(Agent.allCases) { agent in
+                    Button {
+                        actions.newAgentTab(agent)
+                    } label: {
+                        Label("New \(agent.name) Tab", systemImage: agent.symbol)
+                    }
+                }
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .medium))
-                    .frame(width: 28, height: 24)
-                    .contentShape(Rectangle())
+            } primaryAction: {
+                actions.newTab()
             }
-            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
+            .fixedSize()
             .foregroundStyle(theme.dimText)
-            .help("New Tab (⌘T)")
-            .padding(.leading, 4)
+            .help("New Tab (⌘T) — arrow for Claude / Codex")
+            .padding(.leading, 6)
             Spacer(minLength: 0)
         }
         .padding(.trailing, 8)
@@ -64,6 +78,12 @@ private struct TabItemView: View {
         HStack(spacing: 6) {
             if let color = tab.color {
                 Circle().fill(color.color).frame(width: 8, height: 8)
+            }
+            if let agent = tab.agent {
+                Image(systemName: agent.symbol)
+                    .font(.system(size: 10))
+                    .foregroundStyle(isSelected ? theme.text : theme.dimText)
+                    .help(agent.name)
             }
             if isRenaming {
                 TabRenameField(tab: tab, store: store, theme: theme, onEnd: actions.renameEnded)

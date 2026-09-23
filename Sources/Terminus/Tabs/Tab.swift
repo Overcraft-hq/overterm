@@ -22,8 +22,12 @@ final class Tab: ObservableObject, Identifiable {
     /// Set through TabStore.setPinned, which keeps pinned tabs first.
     @Published var isPinned = false
 
-    init(terminal: TerminalView) {
+    /// The agent this tab was opened for, if any.
+    let agent: Agent?
+
+    init(terminal: TerminalView, agent: Agent? = nil) {
         self.terminal = terminal
+        self.agent = agent
         self.workingDirectory = terminal.workingDirectory
         self.shellTitle = terminal.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? "Terminal"
     }
