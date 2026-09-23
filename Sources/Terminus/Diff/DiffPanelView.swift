@@ -6,6 +6,8 @@ struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
     let onClose: () -> Void
+    /// The file whose Discard is awaiting confirmation.
+    @State private var discarding: ChangedFile?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,13 +19,31 @@ struct DiffPanelView: View {
                 placeholder(model.root == nil ? "" : "No changes")
             } else {
                 HStack(spacing: 0) {
-                    fileList.frame(width: 260)
+                    VStack(spacing: 0) {
+                        fileList
+                        Divider().opacity(0.4)
+                        CommitBox(model: model, theme: theme)
+                    }
+                    .frame(width: 280)
                     Divider().opacity(0.4)
                     DiffTextView(lines: model.lines, truncated: model.truncated, theme: theme)
                 }
             }
         }
         .background(theme.strip)
+        .alert(
+            "Discard changes to \((discarding?.path as NSString?)?.lastPathComponent ?? "")?",
+            isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),
+            presenting: discarding
+        ) { file in
+            Button("Discard", role: .destructive) { Task { await model.discard(file) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { file in
+            Text(
+                file.kind == .untracked
+                    ? "The file is moved to the Trash."
+                    : "Staged and unstaged changes are lost; the file goes back to HEAD. This can’t be undone.")
+        }
     }
 
     private var header: some View {
@@ -51,8 +71,17 @@ struct DiffPanelView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(model.files) { file in
-                    ChangedFileRow(file: file, isSelected: file.path == model.selectedPath, theme: theme)
-                        .onTapGesture { model.select(file.path) }
+                    ChangedFileRow(
+                        file: file, isSelected: file.path == model.selectedPath, theme: theme,
+                        onToggleStaged: { Task { await model.toggleStaged(file) } }
+                    )
+                    .onTapGesture { model.select(file.path) }
+                    .contextMenu {
+                        Button("Stage") { Task { await model.stage(file) } }.disabled(file.stageState == .full)
+                        Button("Unstage") { Task { await model.unstage(file) } }.disabled(file.stageState == .none)
+                        Divider()
+                        Button("Discard Changes…") { discarding = file }
+                    }
                 }
             }
             .padding(.vertical, 4)
@@ -82,7 +111,16 @@ private struct ChangedFileRow: View {
     let file: ChangedFile
     let isSelected: Bool
     let theme: ChromeTheme
+    let onToggleStaged: () -> Void
     @State private var hovering = false
+
+    private var stageSymbol: String {
+        switch file.stageState {
+        case .full: "checkmark.square.fill"
+        case .partial: "minus.square.fill"
+        case .none: "square"
+        }
+    }
 
     private var letterColor: Color {
         switch file.kind {
@@ -94,6 +132,12 @@ private struct ChangedFileRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            Button(action: onToggleStaged) {
+                Image(systemName: stageSymbol).font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(file.stageState == .none ? theme.dimText : theme.text)
+            .help(file.stageState == .full ? "Unstage" : "Stage")
             Text(file.letter)
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(letterColor)
@@ -192,5 +236,45 @@ private struct DiffLineView: View {
             .foregroundStyle(theme.dimText.opacity(0.7))
             .frame(width: 44, alignment: .trailing)
             .padding(.trailing, 6)
+    }
+}
+
+/// Commit message and button under the file list; commits what is staged.
+private struct CommitBox: View {
+    @ObservedObject var model: DiffModel
+    let theme: ChromeTheme
+    @State private var message = ""
+    @State private var committing = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("Commit message", text: $message, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .lineLimit(1...4)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 5).fill(theme.selected))
+            if let error = model.actionError {
+                Text(error).font(.system(size: 11)).foregroundStyle(DiffColors.removed).lineLimit(3)
+            }
+            HStack {
+                Button("Stage All") { Task { await model.stageAll() } }
+                    .disabled(model.files.allSatisfy { $0.stageState == .full })
+                Spacer()
+                Button(committing ? "Committing…" : "Commit \(model.stagedCount)") { commit() }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(model.stagedCount == 0 || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || committing)
+            }
+            .controlSize(.small)
+        }
+        .padding(8)
+    }
+
+    private func commit() {
+        committing = true
+        Task { @MainActor in
+            if await model.commit(message: message.trimmingCharacters(in: .whitespacesAndNewlines)) { message = "" }
+            committing = false
+        }
     }
 }

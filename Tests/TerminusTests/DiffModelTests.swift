@@ -67,4 +67,48 @@ final class DiffModelTests: XCTestCase {
         XCTAssertEqual(model.error, "Not a git repository")
         XCTAssertTrue(model.files.isEmpty)
     }
+
+    @MainActor
+    func testStageCommitAndDiscard() async throws {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-stage-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        _ = try await Git.run(["init", "-q", "-b", "main"], in: repo)
+        _ = try await Git.run(["config", "user.email", "t@t"], in: repo)
+        _ = try await Git.run(["config", "user.name", "t"], in: repo)
+        for name in ["keep.txt", "throw.txt"] {
+            try "v1\n".write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        _ = try await Git.run(["add", "."], in: repo)
+        _ = try await Git.run(["commit", "-q", "-m", "init"], in: repo)
+        for name in ["keep.txt", "throw.txt"] {
+            try "v2\n".write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+
+        let model = DiffModel()
+        model.setRoot(repo)
+        model.isActive = true
+        defer { model.isActive = false }
+        await model.refresh()
+        try await eventually { model.files.count == 2 }
+
+        let keep = try XCTUnwrap(model.files.first { $0.path == "keep.txt" })
+        await model.toggleStaged(keep)
+        try await eventually { model.stagedCount == 1 }
+        XCTAssertEqual(model.files.first { $0.path == "keep.txt" }?.stageState, .full)
+
+        let throwAway = try XCTUnwrap(model.files.first { $0.path == "throw.txt" })
+        await model.discard(throwAway)
+        XCTAssertEqual(try String(contentsOf: repo.appendingPathComponent("throw.txt"), encoding: .utf8), "v1\n")
+
+        let committed = await model.commit(message: "keep v2")
+        XCTAssertTrue(committed)
+        try await eventually { model.files.isEmpty }
+        let log = try await Git.run(["log", "--format=%s", "-1"], in: repo)
+        XCTAssertEqual(log.trimmingCharacters(in: .newlines), "keep v2")
+
+        let nothing = await model.commit(message: "empty")
+        XCTAssertFalse(nothing, "nothing staged: git refuses")
+        XCTAssertNotNil(model.actionError)
+    }
 }

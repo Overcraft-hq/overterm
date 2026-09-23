@@ -105,6 +105,58 @@ final class DiffModel: ObservableObject {
         }
     }
 
+    // MARK: Staging and committing
+
+    /// Set when a stage/discard/commit fails; shown in the panel.
+    @Published var actionError: String?
+
+    var stagedCount: Int { files.filter(\.isStaged).count }
+
+    /// Stages the whole file, or unstages it if it is fully staged.
+    func toggleStaged(_ file: ChangedFile) async {
+        await perform(file.stageState == .full ? ["restore", "--staged", "--", file.path] : ["add", "--", file.path])
+    }
+
+    func stage(_ file: ChangedFile) async { await perform(["add", "--", file.path]) }
+    func unstage(_ file: ChangedFile) async { await perform(["restore", "--staged", "--", file.path]) }
+    func stageAll() async { await perform(["add", "--all"]) }
+
+    /// Throws the file's changes away: back to HEAD, staged and unstaged. An
+    /// untracked file goes to the Trash, not oblivion.
+    func discard(_ file: ChangedFile) async {
+        guard let root else { return }
+        if file.kind == .untracked {
+            do {
+                try FileManager.default.trashItem(at: root.appendingPathComponent(file.path), resultingItemURL: nil)
+            } catch {
+                actionError = error.localizedDescription
+            }
+            await refresh()
+        } else {
+            await perform(["restore", "--source=HEAD", "--staged", "--worktree", "--"] + [file.originalPath, file.path].compactMap { $0 })
+        }
+    }
+
+    /// Commits what is staged. Returns whether it worked (the panel clears
+    /// its message field then).
+    func commit(message: String) async -> Bool {
+        await perform(["commit", "-m", message])
+    }
+
+    @discardableResult
+    private func perform(_ arguments: [String]) async -> Bool {
+        guard let root else { return false }
+        defer { Task { await refresh() } }
+        do {
+            _ = try await Git.run(arguments, in: root)
+            actionError = nil
+            return true
+        } catch {
+            actionError = error.localizedDescription
+            return false
+        }
+    }
+
     private func loadDiff() async {
         guard let root, let path = selectedPath, let file = files.first(where: { $0.path == path }) else {
             lines = []

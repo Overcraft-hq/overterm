@@ -12,10 +12,20 @@ struct ChangedFile: Identifiable, Hashable {
     let kind: Kind
     /// X of XY: the change is (at least partly) staged.
     let isStaged: Bool
+    /// Y of XY: there are unstaged changes too (or it is untracked).
+    let hasUnstaged: Bool
     var added: Int?
     var removed: Int?
 
     var id: String { path }
+
+    enum StageState { case none, partial, full }
+
+    /// For the stage checkbox: nothing staged, some, or all of it.
+    var stageState: StageState {
+        guard isStaged else { return .none }
+        return hasUnstaged ? .partial : .full
+    }
 
     /// The single letter shown in the list.
     var letter: String {
@@ -56,7 +66,8 @@ enum GitStatus {
             default: kind = .modified
             }
             let staged = x != " " && x != "?"
-            files.append(ChangedFile(path: path, originalPath: original, kind: kind, isStaged: staged))
+            files.append(
+                ChangedFile(path: path, originalPath: original, kind: kind, isStaged: staged, hasUnstaged: y != " "))
         }
         return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }

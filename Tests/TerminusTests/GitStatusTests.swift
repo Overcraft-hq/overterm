@@ -17,6 +17,15 @@ final class GitStatusTests: XCTestCase {
         XCTAssertEqual(byPath["conflict.swift"]?.kind, .conflicted)
     }
 
+    func testStageState() {
+        let files = GitStatus.parse(porcelainZ: "M  full.swift\0MM partial.swift\0 M none.swift\0?? new.txt\0")
+        let byPath = Dictionary(uniqueKeysWithValues: files.map { ($0.path, $0.stageState) })
+        XCTAssertEqual(byPath["full.swift"], .full)
+        XCTAssertEqual(byPath["partial.swift"], .partial)
+        XCTAssertEqual(byPath["none.swift"], ChangedFile.StageState.none)
+        XCTAssertEqual(byPath["new.txt"], ChangedFile.StageState.none)
+    }
+
     func testRenameConsumesItsOriginalPath() {
         let files = GitStatus.parse(porcelainZ: "R  new name.swift\0old name.swift\0 M after.swift\0")
         XCTAssertEqual(files.map(\.path), ["after.swift", "new name.swift"])
