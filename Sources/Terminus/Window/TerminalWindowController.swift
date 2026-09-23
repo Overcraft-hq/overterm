@@ -15,11 +15,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private let worktrees = WorktreeModel()
     private let split = NSSplitViewController()
     private var sidebarItem: NSSplitViewItem?
+    private let diff = DiffModel()
+    /// Diff panel above the terminal, inside the terminal pane.
+    private let terminalSplit = NSSplitViewController()
+    private var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
     private static let sidebarVisibleKey = "sidebarVisible"
+    private static let diffVisibleKey = "diffVisible"
 
     init() {
         let window = NSWindow(
@@ -108,8 +113,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         sidebarItem.isCollapsed = !(UserDefaults.standard.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
         let terminalPane = NSViewController()
         terminalPane.view = container
+
+        // Diff over terminal. Hidden by default: it runs git while open.
+        let diffPanel = NSHostingController(
+            rootView: DiffPanelView(model: diff, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) }))
+        diffPanel.sizingOptions = []
+        let diffItem = NSSplitViewItem(viewController: diffPanel)
+        diffItem.canCollapse = true
+        diffItem.minimumThickness = 120
+        diffItem.holdingPriority = .defaultLow + 10
+        let showDiff = UserDefaults.standard.bool(forKey: Self.diffVisibleKey)
+        diffItem.isCollapsed = !showDiff
+        diff.isActive = showDiff
+        let terminalItem = NSSplitViewItem(viewController: terminalPane)
+        terminalItem.minimumThickness = 120
+        terminalSplit.splitView.isVertical = false
+        terminalSplit.addSplitViewItem(diffItem)
+        terminalSplit.addSplitViewItem(terminalItem)
+        terminalSplit.splitView.dividerStyle = .thin
+        terminalSplit.splitView.autosaveName = "TerminusDiff"
+        self.diffItem = diffItem
+
         split.addSplitViewItem(sidebarItem)
-        split.addSplitViewItem(NSSplitViewItem(viewController: terminalPane))
+        split.addSplitViewItem(NSSplitViewItem(viewController: terminalSplit))
         split.splitView.dividerStyle = .thin
         split.splitView.autosaveName = "TerminusSidebar"
         self.sidebarItem = sidebarItem
@@ -214,6 +240,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
+        // Catches what the file watcher can't see, e.g. staging from another
+        // app (a worktree's index lives in the main repository's .git).
+        Task { await diff.refresh() }
     }
 
     // MARK: Session
@@ -484,6 +513,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 let root = FileTreeModel.treeRoot(for: cwd)
                 self?.tree.setRoot(root)
                 self?.worktrees.setAnchor(root)
+                self?.diff.setRoot(root)
             }
     }
 
@@ -499,6 +529,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         } else {
             closeTab(tab)
         }
+    }
+
+    @objc func toggleDiff(_ sender: Any?) {
+        guard let diffItem else { return }
+        let show = diffItem.isCollapsed
+        diffItem.animator().isCollapsed = !show
+        diff.isActive = show
+        UserDefaults.standard.set(show, forKey: Self.diffVisibleKey)
+        if !show { focusSelectedTerminal() }
     }
 
     @objc func toggleFileTree(_ sender: Any?) {

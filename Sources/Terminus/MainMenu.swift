@@ -48,6 +48,8 @@ enum MainMenu {
         let viewItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
         viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(TerminalWindowController.toggleFileTree(_:)), keyEquivalent: "b")
+        let diff = viewMenu.addItem(withTitle: "Toggle Diff", action: #selector(TerminalWindowController.toggleDiff(_:)), keyEquivalent: "d")
+        diff.keyEquivalentModifierMask = [.command, .option]
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
 
