@@ -10,6 +10,9 @@ final class Tab: ObservableObject, Identifiable {
     /// running command or the cwd).
     @Published var shellTitle: String
 
+    /// The shell's current directory, as last reported.
+    @Published var workingDirectory: String?
+
     /// A name the user gave the tab; overrides the shell title while set.
     @Published var customTitle: String?
 
@@ -21,6 +24,7 @@ final class Tab: ObservableObject, Identifiable {
 
     init(terminal: TerminalView) {
         self.terminal = terminal
+        self.workingDirectory = terminal.workingDirectory
         self.shellTitle = terminal.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? "Terminal"
     }
 

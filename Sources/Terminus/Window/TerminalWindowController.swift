@@ -3,16 +3,22 @@ import Combine
 import GhosttyKit
 import SwiftUI
 
-/// One Terminus window: the tab strip in the title bar, and below it the
-/// selected tab's terminal. Every tab's TerminalView stays alive in the
-/// container (hidden and occluded when not selected) so its pty and
-/// scrollback survive tab switches.
+/// One Terminus window: the tab strip in the title bar; below it the
+/// collapsible sidebar and the selected tab's terminal. Every tab's
+/// TerminalView stays alive in the container (hidden and occluded when not
+/// selected) so its pty and scrollback survive tab switches.
 @MainActor
 final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let store = TabStore()
     private let container = NSView()
-    private var tabBarHeight: NSLayoutConstraint?
+    private let tree = FileTreeModel()
+    private let split = NSSplitViewController()
+    private var sidebarItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
+    /// Follows the selected tab's cwd into the file tree.
+    private var cwdSubscription: AnyCancellable?
+
+    private static let sidebarVisibleKey = "sidebarVisible"
 
     init() {
         let window = NSWindow(
@@ -49,7 +55,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     private func buildLayout(in window: NSWindow) {
         let runtime = GhosttyRuntime.shared
-        let theme = TabBarTheme(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
+        let theme = ChromeTheme(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
         let tabBar = NSHostingView(
             rootView: TabBarView(
                 store: store,
@@ -69,23 +75,41 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             .ignoresSafeArea()
         )
 
+        // Sidebar | terminal. A plain split item, not the sidebar kind: that
+        // one paints its own translucent material over our theme colour.
+        let sidebar = NSHostingController(rootView: SidebarView(tree: tree, theme: theme))
+        sidebar.sizingOptions = []
+        let sidebarItem = NSSplitViewItem(viewController: sidebar)
+        sidebarItem.canCollapse = true
+        sidebarItem.minimumThickness = 180
+        sidebarItem.maximumThickness = 520
+        sidebarItem.holdingPriority = .defaultLow + 10
+        // Shown on first launch; after that, as the user left it.
+        sidebarItem.isCollapsed = !(UserDefaults.standard.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
+        let terminalPane = NSViewController()
+        terminalPane.view = container
+        split.addSplitViewItem(sidebarItem)
+        split.addSplitViewItem(NSSplitViewItem(viewController: terminalPane))
+        split.splitView.dividerStyle = .thin
+        split.splitView.autosaveName = "TerminusSidebar"
+        self.sidebarItem = sidebarItem
+
         let content = NSView()
+        let body = split.view
         tabBar.translatesAutoresizingMaskIntoConstraints = false
-        container.translatesAutoresizingMaskIntoConstraints = false
+        body.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(tabBar)
-        content.addSubview(container)
-        let height = tabBar.heightAnchor.constraint(equalToConstant: titleBarHeight(of: window))
+        content.addSubview(body)
         NSLayoutConstraint.activate([
             tabBar.topAnchor.constraint(equalTo: content.topAnchor),
             tabBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            height,
-            container.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
-            container.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            container.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            container.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            tabBar.heightAnchor.constraint(equalToConstant: titleBarHeight(of: window)),
+            body.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            body.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
-        tabBarHeight = height
         window.contentView = content
     }
 
@@ -101,6 +125,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let terminal = TerminalView(workingDirectory: inherited?.workingDirectory, fontSize: inherited?.fontSize)
         let tab = Tab(terminal: terminal)
         terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
+        terminal.onWorkingDirectoryChange = { [weak tab] in tab?.workingDirectory = $0 }
         terminal.onClose = { [weak self, weak tab, weak terminal] processAlive in
             guard let self, let tab else { return }
             // A pinned tab ignores close requests (Ghostty's cmd+w is
@@ -192,6 +217,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         selected.terminal.setVisible(true)
         window?.makeFirstResponder(selected.terminal)
         window?.title = selected.title
+        cwdSubscription = selected.$workingDirectory
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] cwd in self?.tree.setRoot(FileTreeModel.treeRoot(for: cwd)) }
     }
 
     // MARK: Menu actions
@@ -204,6 +233,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         } else {
             closeTab(tab)
         }
+    }
+
+    @objc func toggleFileTree(_ sender: Any?) {
+        guard let sidebarItem else { return }
+        let show = sidebarItem.isCollapsed
+        sidebarItem.animator().isCollapsed = !show
+        UserDefaults.standard.set(show, forKey: Self.sidebarVisibleKey)
+        // Collapsing can strand keyboard focus in the hidden panel.
+        if !show { focusSelectedTerminal() }
     }
 
     @objc func togglePinTab(_ sender: Any?) {

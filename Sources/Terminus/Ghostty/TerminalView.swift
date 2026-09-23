@@ -14,9 +14,14 @@ final class TerminalView: NSView {
 
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.
-    var workingDirectory: String?
+    var workingDirectory: String? {
+        didSet {
+            if let workingDirectory, workingDirectory != oldValue { onWorkingDirectoryChange?(workingDirectory) }
+        }
+    }
 
     var onTitleChange: ((String) -> Void)?
+    var onWorkingDirectoryChange: ((String) -> Void)?
     /// Called when the surface asks to close — the process exited, or the user
     /// pressed a close binding. The argument is whether the process is alive.
     var onClose: ((Bool) -> Void)?

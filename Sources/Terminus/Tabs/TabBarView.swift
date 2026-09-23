@@ -16,7 +16,7 @@ struct TabBarActions {
 /// Chrome-style tab strip, living in the window's title bar.
 struct TabBarView: View {
     @ObservedObject var store: TabStore
-    let theme: TabBarTheme
+    let theme: ChromeTheme
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
     let actions: TabBarActions
@@ -50,33 +50,10 @@ struct TabBarView: View {
     }
 }
 
-/// Colours derived from the terminal theme so the strip reads as part of it:
-/// the selected tab *is* the terminal's background, the strip sits a step
-/// away from it.
-struct TabBarTheme {
-    let strip: Color
-    let selected: Color
-    let hover: Color
-    let text: Color
-    let dimText: Color
-
-    @MainActor
-    init(background: NSColor, foreground: NSColor) {
-        let bg = background.usingColorSpace(.sRGB) ?? background
-        let isDark = bg.brightnessComponent < 0.5
-        let stripColor = isDark ? bg.blended(withFraction: 0.35, of: .black) : bg.blended(withFraction: 0.08, of: .black)
-        strip = Color(nsColor: stripColor ?? bg)
-        selected = Color(nsColor: bg)
-        hover = Color(nsColor: bg.withAlphaComponent(0.5))
-        text = Color(nsColor: foreground)
-        dimText = Color(nsColor: foreground.withAlphaComponent(0.6))
-    }
-}
-
 private struct TabItemView: View {
     @ObservedObject var tab: Tab
     @ObservedObject var store: TabStore
-    let theme: TabBarTheme
+    let theme: ChromeTheme
     let actions: TabBarActions
     @State private var hovering = false
 
@@ -198,7 +175,7 @@ private struct TabDropDelegate: DropDelegate {
 private struct TabRenameField: View {
     @ObservedObject var tab: Tab
     @ObservedObject var store: TabStore
-    let theme: TabBarTheme
+    let theme: ChromeTheme
     let onEnd: () -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
