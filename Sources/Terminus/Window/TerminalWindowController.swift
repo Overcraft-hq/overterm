@@ -18,18 +18,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var paletteView: NSView?
     private var tabBarView: NSView?
     private var rightClickMonitor: Any?
-    private let split = NSSplitViewController()
+    private let split = WideDividerSplitViewController()
     private var sidebarItem: NSSplitViewItem?
     private let diff = DiffModel()
     private var editor: EditorViewController?
     private var editorItem: NSSplitViewItem?
     /// Diff panel above the terminal, inside the terminal pane.
-    private let terminalSplit = NSSplitViewController()
+    private let terminalSplit = WideDividerSplitViewController()
     private var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
+    static let isDiagnostic = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] != nil
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
 
@@ -145,7 +146,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         terminalSplit.addSplitViewItem(diffItem)
         terminalSplit.addSplitViewItem(terminalItem)
         terminalSplit.splitView.dividerStyle = .thin
-        terminalSplit.splitView.autosaveName = "TerminusDiff"
+        if !Self.isDiagnostic { terminalSplit.splitView.autosaveName = "TerminusDiff" }
         self.diffItem = diffItem
 
         // Editor to the right of the terminal, opened from the file tree.
@@ -159,11 +160,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         self.editor = editor
         self.editorItem = editorItem
 
+        // The terminal pane never gives up all its width to the panels
+        // beside it (it had no minimum and could be dragged to 0).
+        let terminalColumn = NSSplitViewItem(viewController: terminalSplit)
+        terminalColumn.minimumThickness = 240
         split.addSplitViewItem(sidebarItem)
-        split.addSplitViewItem(NSSplitViewItem(viewController: terminalSplit))
+        split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
         split.splitView.dividerStyle = .thin
-        split.splitView.autosaveName = "TerminusSidebar"
+        // A diagnostic run shares the real app's defaults: it must not save
+        // (or restore) divider positions.
+        if !Self.isDiagnostic { split.splitView.autosaveName = "TerminusColumns" }
         self.sidebarItem = sidebarItem
 
         tabBarView = tabBar
@@ -454,6 +461,73 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private func closeEditor() {
         editorItem?.animator().isCollapsed = true
         focusSelectedTerminal()
+    }
+
+    // MARK: Layout diagnostics
+
+    /// TERMINUS_DUMP_LAYOUT=<file>: open it in the editor, print the view
+    /// tree's frames to stderr, quit. For debugging layout without anyone
+    /// having to click around.
+    func dumpLayoutIfRequested() {
+        guard let path = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.openInEditor(URL(fileURLWithPath: path))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self, let content = self.window?.contentView else { return }
+                var out = "window \(self.window!.frame.size) split dividers=\(self.split.splitView.dividerThickness)\n"
+                @MainActor func walk(_ v: NSView, _ depth: Int) {
+                    guard depth < 11 else { return }
+                    let name = String(describing: Swift.type(of: v)).prefix(60)
+                    out += String(repeating: "  ", count: depth) + "\(name) \(v.frame.integral)\(v.isHidden ? " HIDDEN" : "")\n"
+                    for sub in v.subviews { walk(sub, depth + 1) }
+                }
+                walk(content, 0)
+                if let clip = (self.editor?.view.subviews.compactMap { $0 as? NSScrollView }.first)?.contentView {
+                    out += "editor clip bounds \(clip.bounds.integral)\n"
+                }
+                for (i, item) in self.split.splitViewItems.enumerated() {
+                    out += "outer item \(i) collapsed=\(item.isCollapsed) frame=\(item.viewController.view.frame.integral)\n"
+                }
+                // The composited window as it is on screen (terminal included).
+                // An app may capture its own windows without Screen Recording
+                // permission; cacheDisplay misses layer-backed content here.
+                if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"],
+                    let image = CGWindowListCreateImage(
+                        .null, .optionIncludingWindow, CGWindowID(self.window!.windowNumber), [.boundsIgnoreFraming, .bestResolution])
+                {
+                    try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: png))
+                }
+                // Drag both dividers 80 pt with in-process events (posted to
+                // this app's own queue only) and see whether the panes follow.
+                let splitView = self.split.splitView
+                for (i, divider) in [(0, "sidebar|terminal"), (1, "terminal|editor")] {
+                    let items = self.split.splitViewItems
+                    guard items.count > i + 1, !items[i].isCollapsed || i == 1 else { continue }
+                    let before = items.map { Int($0.viewController.view.frame.width) }
+                    // 3 pt off the drawn line: inside the widened grab area only.
+                    let x = items[i].viewController.view.superview!.frame.maxX + splitView.dividerThickness / 2 + 3
+                    let yLocal = splitView.bounds.midY
+                    let start = splitView.convert(NSPoint(x: x, y: yLocal), to: nil)
+                    let end = NSPoint(x: start.x + (i == 0 ? 80 : -80), y: start.y)
+                    let windowNumber = self.window!.windowNumber
+                    func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
+                        NSEvent.mouseEvent(
+                            with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+                    }
+                    let hit = self.window!.contentView!.hitTest(self.window!.contentView!.convert(start, from: nil))
+                    NSApp.postEvent(mouse(.leftMouseDragged, end), atStart: false)
+                    NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
+                    self.window!.sendEvent(mouse(.leftMouseDown, start))
+                    let after = self.split.splitViewItems.map { Int($0.viewController.view.frame.width) }
+                    out += "drag \(divider) at x=\(Int(start.x)) hit=\(hit.map { String(describing: Swift.type(of: $0)) } ?? "nil") widths \(before) -> \(after)\n"
+                }
+                FileHandle.standardError.write(Data(out.utf8))
+                // TERMINUS_DUMP_PNG=<file>: also a picture of the AppKit/SwiftUI
+                // layers (the terminal's Metal layer does not show).
+                exit(0)
+            }
+        }
     }
 
     // MARK: Tab context menu

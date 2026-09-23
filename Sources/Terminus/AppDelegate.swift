@@ -11,14 +11,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         UNUserNotificationCenter.current().delegate = self
 
         let controller = TerminalWindowController()
-        if let saved = SessionState.load(), !saved.tabs.isEmpty {
+        // A diagnostic run must not touch the real session: no restore (it
+        // would resume agents), no autosave.
+        let diagnostic = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] != nil
+        if !diagnostic, let saved = SessionState.load(), !saved.tabs.isEmpty {
             controller.restore(saved)
         } else {
             controller.newTab(from: nil)
         }
-        controller.autosaveSession()
+        if !diagnostic { controller.autosaveSession() }
         controller.showWindow(nil)
         windowController = controller
+        controller.dumpLayoutIfRequested()
 
         NSApp.activate(ignoringOtherApps: true)
     }
