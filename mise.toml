@@ -1,0 +1,4 @@
+[tools]
+# GhosttyKit's build.zig.zon pins its minimum Zig. Bump together with
+# GHOSTTY_REF in Scripts/build-ghosttykit.sh.
+zig = "0.15.2"

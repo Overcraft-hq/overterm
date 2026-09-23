@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "lineLength": 200,
+  "indentation": {
+    "spaces": 4
+  },
+  "maximumBlankLines": 2,
+  "respectsExistingLineBreaks": true,
+  "prioritizeKeepingFunctionOutputTogether": false,
+  "rules": {
+    "DoNotUseSemicolons": false,
+    "OrderedImports": false,
+    "OneVariableDeclarationPerLine": false,
+    "NoAccessLevelOnExtensionDeclaration": false,
+    "GroupNumericLiterals": false,
+    "UseLetInEveryBoundCaseVariable": false,
+    "ReturnVoidInsteadOfEmptyTuple": false
+  }
+}
