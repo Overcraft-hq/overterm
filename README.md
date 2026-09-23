@@ -53,6 +53,8 @@ make run                     # build Terminus.app and open it
 make install                 # …and copy it to /Applications (Launchpad, Spotlight)
 ```
 
+Details: `docs/` (architecture, Ghostty embedding, debugging).
+
 Ghostty is pinned to v1.3.1 in `Scripts/build-ghosttykit.sh`: main needs
 Xcode 26. State lives in `~/Library/Application Support/Terminus/`
 (`session.json`, `snippets.json`).
