@@ -14,6 +14,10 @@ final class Tab: ObservableObject, Identifiable {
     @Published var customTitle: String?
 
     @Published var color: TabColor?
+    /// Pinned tabs sit at the left of the strip and are not closed by ⌘W or
+    /// the close-others/right actions — only by their process exiting.
+    /// Set through TabStore.setPinned, which keeps pinned tabs first.
+    @Published var isPinned = false
 
     init(terminal: TerminalView) {
         self.terminal = terminal

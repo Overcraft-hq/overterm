@@ -93,6 +93,13 @@ final class TerminalView: NSView {
         if let surface { ghostty_surface_set_occlusion(surface, visible) }
     }
 
+    /// Whether the shell/command has exited (as opposed to a close being
+    /// requested while it runs).
+    var processExited: Bool {
+        guard let surface else { return true }
+        return ghostty_surface_process_exited(surface)
+    }
+
     /// Whether closing now would kill a running process (per the user's
     /// confirm-close-surface config).
     var needsConfirmClose: Bool {

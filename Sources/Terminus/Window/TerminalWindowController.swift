@@ -59,7 +59,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     select: { [weak self] in self?.store.select($0) },
                     close: { [weak self] in self?.closeTab($0) },
                     newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
-                    renameEnded: { [weak self] in self?.focusSelectedTerminal() }
+                    renameEnded: { [weak self] in self?.focusSelectedTerminal() },
+                    setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
             )
             .background(theme.strip)
@@ -100,8 +101,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let terminal = TerminalView(workingDirectory: inherited?.workingDirectory, fontSize: inherited?.fontSize)
         let tab = Tab(terminal: terminal)
         terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
-        terminal.onClose = { [weak self, weak tab] processAlive in
+        terminal.onClose = { [weak self, weak tab, weak terminal] processAlive in
             guard let self, let tab else { return }
+            // A pinned tab ignores close requests (Ghostty's cmd+w is
+            // close_surface) but still goes away when its process exits.
+            if tab.isPinned, terminal?.processExited == false { return }
             self.closeTab(tab, confirm: processAlive)
         }
 
@@ -149,11 +153,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard let tab = store.tabs.first(where: { $0.terminal === view }), let i = store.index(of: tab) else { return }
         switch mode {
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER:
-            store.tabs.filter { $0.id != tab.id }.forEach { closeTab($0) }
+            store.tabs.filter { $0.id != tab.id && !$0.isPinned }.forEach { closeTab($0) }
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_RIGHT:
-            store.tabs[(i + 1)...].forEach { closeTab($0) }
+            store.tabs[(i + 1)...].filter { !$0.isPinned }.forEach { closeTab($0) }
         default:
-            closeTab(tab)
+            if !tab.isPinned { closeTab(tab) }
         }
     }
 
@@ -193,7 +197,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Menu actions
 
     @objc func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
-    @objc func closeTab(_ sender: Any?) { if let tab = store.selected { closeTab(tab) } }
+    @objc func closeTab(_ sender: Any?) {
+        guard let tab = store.selected else { return }
+        if tab.isPinned {
+            NSSound.beep()
+        } else {
+            closeTab(tab)
+        }
+    }
+
+    @objc func togglePinTab(_ sender: Any?) {
+        guard let tab = store.selected else { return }
+        store.setPinned(tab, !tab.isPinned)
+    }
     @objc func selectNextTab(_ sender: Any?) { store.selectAdjacent(1) }
     @objc func selectPreviousTab(_ sender: Any?) { store.selectAdjacent(-1) }
 

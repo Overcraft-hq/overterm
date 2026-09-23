@@ -14,14 +14,26 @@ final class TabStore: ObservableObject {
 
     func index(of tab: Tab) -> Int? { tabs.firstIndex { $0.id == tab.id } }
 
-    /// Chrome's rule: a new tab goes right after the current one.
+    /// Invariant: pinned tabs come first. Index of the first unpinned tab.
+    private var pinnedCount: Int { tabs.prefix { $0.isPinned }.count }
+
+    /// Chrome's rule: a new tab goes right after the current one — or, from a
+    /// pinned tab, first among the unpinned ones.
     func insert(_ tab: Tab, after anchor: Tab?) {
         if let anchor, let i = index(of: anchor) {
-            tabs.insert(tab, at: i + 1)
+            tabs.insert(tab, at: max(i + 1, pinnedCount))
         } else {
             tabs.append(tab)
         }
         selectedID = tab.id
+    }
+
+    func setPinned(_ tab: Tab, _ pinned: Bool) {
+        guard tab.isPinned != pinned, let i = index(of: tab) else { return }
+        tabs.remove(at: i)
+        tab.isPinned = pinned
+        // Pinning appends to the pinned group; unpinning puts it first after.
+        tabs.insert(tab, at: pinnedCount)
     }
 
     /// Removes the tab. If it was selected, selection moves to its right
@@ -50,10 +62,11 @@ final class TabStore: ObservableObject {
         select(index: ((i + offset) % n + n) % n)
     }
 
-    /// Moves a tab by `offset` places, clamped to the ends.
+    /// Moves a tab by `offset` places, clamped to its group (pinned or not).
     func move(_ tab: Tab, by offset: Int) {
         guard let from = index(of: tab) else { return }
-        let to = max(0, min(tabs.count - 1, from + offset))
+        let group = tab.isPinned ? 0..<pinnedCount : pinnedCount..<tabs.count
+        let to = max(group.lowerBound, min(group.upperBound - 1, from + offset))
         guard to != from else { return }
         tabs.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
     }

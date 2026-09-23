@@ -10,6 +10,7 @@ struct TabBarActions {
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
+    var setPinned: (Tab, Bool) -> Void
 }
 
 /// Chrome-style tab strip, living in the window's title bar.
@@ -97,19 +98,32 @@ private struct TabItemView: View {
                     .foregroundStyle(isSelected ? theme.text : theme.dimText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button(action: { actions.close(tab) }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
+            if tab.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(theme.dimText)
+                    .help("Pinned — unpin to close")
+            } else {
+                Button(action: { actions.close(tab) }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .opacity(isSelected || hovering ? 1 : 0)
+                .help("Close Tab (⌘W)")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .opacity(isSelected || hovering ? 1 : 0)
-            .help("Close Tab (⌘W)")
         }
         .padding(.horizontal, 10)
-        .frame(minWidth: 60, idealWidth: 200, maxWidth: 220, minHeight: 28, maxHeight: 28)
+        // Pinned tabs are compact and never shrink away; the rest share the
+        // remaining width.
+        .frame(
+            minWidth: tab.isPinned ? 56 : 60, idealWidth: tab.isPinned ? 120 : 200, maxWidth: tab.isPinned ? 130 : 220,
+            minHeight: 28, maxHeight: 28
+        )
+        .layoutPriority(tab.isPinned ? 1 : 0)
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(isSelected ? theme.selected : (hovering ? theme.hover : .clear))
@@ -139,6 +153,7 @@ private struct TabItemView: View {
             if tab.customTitle != nil {
                 Button("Reset Name") { tab.customTitle = nil }
             }
+            Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") { actions.setPinned(tab, !tab.isPinned) }
             Menu("Color") {
                 ForEach(TabColor.allCases) { color in
                     Toggle(color.name, isOn: Binding(get: { tab.color == color }, set: { tab.color = $0 ? color : nil }))
@@ -147,7 +162,7 @@ private struct TabItemView: View {
                 Button("None") { tab.color = nil }.disabled(tab.color == nil)
             }
             Divider()
-            Button("Close Tab") { actions.close(tab) }
+            Button("Close Tab") { actions.close(tab) }.disabled(tab.isPinned)
         }
         .help(tab.title)
         .padding(.horizontal, 2)
