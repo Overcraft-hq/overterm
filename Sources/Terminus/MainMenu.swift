@@ -1,7 +1,8 @@
 import AppKit
 
 /// The menu bar. Built in code — there is no nib. Items target the first
-/// responder (nil action target) so the focused terminal handles copy/paste.
+/// responder (nil action target): the focused terminal handles copy/paste,
+/// and tab items fall through to the window controller.
 @MainActor
 enum MainMenu {
     static func build() -> NSMenu {
@@ -19,6 +20,16 @@ enum MainMenu {
         appItem.submenu = appMenu
         main.addItem(appItem)
 
+        let fileItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "New Tab", action: #selector(TerminalWindowController.newTab(_:)), keyEquivalent: "t")
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: "Close Tab", action: #selector(TerminalWindowController.closeTab(_:)), keyEquivalent: "w")
+        let closeWindow = fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        closeWindow.keyEquivalentModifierMask = [.command, .shift]
+        fileItem.submenu = fileMenu
+        main.addItem(fileItem)
+
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
@@ -30,7 +41,11 @@ enum MainMenu {
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(.separator())
+        let next = windowMenu.addItem(withTitle: "Show Next Tab", action: #selector(TerminalWindowController.selectNextTab(_:)), keyEquivalent: "]")
+        next.keyEquivalentModifierMask = [.command, .shift]
+        let previous = windowMenu.addItem(withTitle: "Show Previous Tab", action: #selector(TerminalWindowController.selectPreviousTab(_:)), keyEquivalent: "[")
+        previous.keyEquivalentModifierMask = [.command, .shift]
         windowItem.submenu = windowMenu
         main.addItem(windowItem)
         NSApp.windowsMenu = windowMenu

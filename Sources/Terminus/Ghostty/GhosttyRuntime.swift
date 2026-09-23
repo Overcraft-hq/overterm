@@ -109,6 +109,18 @@ final class GhosttyRuntime {
         )
     }
 
+    /// The terminal theme's background and foreground, so the chrome around
+    /// the terminal can match it.
+    var backgroundColor: NSColor { color("background") ?? .windowBackgroundColor }
+    var foregroundColor: NSColor { color("foreground") ?? .labelColor }
+
+    private func color(_ key: String) -> NSColor? {
+        guard let config else { return nil }
+        var c = ghostty_config_color_s()
+        guard ghostty_config_get(config, &c, key, UInt(key.utf8.count)) else { return nil }
+        return NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
+    }
+
     func tick() {
         guard let app else { return }
         ghostty_app_tick(app)
@@ -122,12 +134,34 @@ final class GhosttyRuntime {
     // MARK: Actions
 
     /// Actions libghostty asks the host to carry out. Returning false tells it
-    /// the action is unhandled; tabs/splits/windows are ours to build, so those
-    /// stay unhandled until Terminus has them.
+    /// the action is unhandled; splits and extra windows are ours to build, so
+    /// those stay unhandled until Terminus has them.
     private func perform(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
         let view: TerminalView? = target.tag == GHOSTTY_TARGET_SURFACE ? TerminalView.from(surface: target.target.surface) : nil
+        let window = view?.window?.windowController as? TerminalWindowController
 
         switch action.tag {
+        // Tabs are Terminus's, not Ghostty's — but the user's Ghostty keybinds
+        // for them (cmd+t, cmd+shift+], goto_tab:N, ...) still drive ours.
+        case GHOSTTY_ACTION_NEW_TAB:
+            guard let window else { return false }
+            window.newTab(from: view)
+            return true
+
+        case GHOSTTY_ACTION_CLOSE_TAB:
+            guard let window, let view else { return false }
+            window.closeTabs(of: view, mode: action.action.close_tab_mode)
+            return true
+
+        case GHOSTTY_ACTION_GOTO_TAB:
+            guard let window else { return false }
+            return window.gotoTab(action.action.goto_tab.rawValue)
+
+        case GHOSTTY_ACTION_MOVE_TAB:
+            guard let window, let view else { return false }
+            window.moveTab(of: view, by: action.action.move_tab.amount)
+            return true
+
         case GHOSTTY_ACTION_QUIT:
             NSApp.terminate(nil)
             return true

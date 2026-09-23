@@ -12,7 +12,8 @@ import GhosttyKit
 final class TerminalView: NSView {
     private(set) var surface: ghostty_surface_t?
 
-    /// Last directory the shell reported (OSC 7 via shell integration).
+    /// Last directory the shell reported (OSC 7 via shell integration);
+    /// the starting directory until it reports one.
     var workingDirectory: String?
 
     var onTitleChange: ((String) -> Void)?
@@ -30,7 +31,12 @@ final class TerminalView: NSView {
     private var lastPerformKeyEvent: TimeInterval?
     private var cursorShape: NSCursor = .iBeam
 
-    init(workingDirectory: String? = nil, command: String? = nil) {
+    /// - Parameters:
+    ///   - workingDirectory: where the shell starts; home when nil.
+    ///   - command: run instead of the login shell (e.g. `claude`).
+    ///   - fontSize: carry a tab's zoom level over to its sibling; config
+    ///     default when nil.
+    init(workingDirectory: String? = nil, command: String? = nil, fontSize: Float? = nil) {
         // A non-zero initial frame so the renderer's layer has real bounds
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -42,8 +48,10 @@ final class TerminalView: NSView {
         config.userdata = Unmanaged.passUnretained(self).toOpaque()
         config.scale_factor = Double(NSScreen.main?.backingScaleFactor ?? 2)
         config.context = GHOSTTY_SURFACE_CONTEXT_TAB
+        if let fontSize { config.font_size = fontSize }
 
         let cwd = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
+        self.workingDirectory = cwd
         surface = cwd.withCString { cwdPtr in
             config.working_directory = cwdPtr
             guard let command else { return ghostty_surface_new(app, &config) }
@@ -70,6 +78,28 @@ final class TerminalView: NSView {
         ghostty_surface_free(surface)
     }
 
+    /// What a new tab opened from this one should start with: the shell's
+    /// current directory and this tab's font size.
+    func inheritedSettings() -> (workingDirectory: String?, fontSize: Float?) {
+        guard let surface else { return (workingDirectory, nil) }
+        let config = ghostty_surface_inherited_config(surface, GHOSTTY_SURFACE_CONTEXT_TAB)
+        let cwd = config.working_directory.map { String(cString: $0) } ?? workingDirectory
+        return (cwd, config.font_size > 0 ? config.font_size : nil)
+    }
+
+    /// Hidden tabs stop rendering; libghostty keeps the pty running.
+    func setVisible(_ visible: Bool) {
+        isHidden = !visible
+        if let surface { ghostty_surface_set_occlusion(surface, visible) }
+    }
+
+    /// Whether closing now would kill a running process (per the user's
+    /// confirm-close-surface config).
+    var needsConfirmClose: Bool {
+        guard let surface else { return false }
+        return ghostty_surface_needs_confirm_quit(surface)
+    }
+
     static func from(userdata: UnsafeMutableRawPointer?) -> TerminalView? {
         guard let userdata else { return nil }
         return Unmanaged<TerminalView>.fromOpaque(userdata).takeUnretainedValue()
@@ -83,6 +113,10 @@ final class TerminalView: NSView {
     // MARK: Focus and size
 
     override var acceptsFirstResponder: Bool { true }
+
+    /// The window is full-size-content; a click in the terminal must never
+    /// start a window drag.
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
