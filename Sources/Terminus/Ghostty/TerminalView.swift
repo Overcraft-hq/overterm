@@ -92,6 +92,15 @@ final class TerminalView: NSView {
         return (cwd, config.font_size > 0 ? config.font_size : nil)
     }
 
+    /// Types `text` into the terminal as if pasted (bracketed-paste aware),
+    /// without pressing return.
+    func insertText(_ text: String) {
+        guard let surface else { return }
+        text.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
+        }
+    }
+
     /// Hidden tabs stop rendering; libghostty keeps the pty running.
     func setVisible(_ visible: Bool) {
         isHidden = !visible

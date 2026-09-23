@@ -77,7 +77,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
         // Sidebar | terminal. A plain split item, not the sidebar kind: that
         // one paints its own translucent material over our theme colour.
-        let sidebar = NSHostingController(rootView: SidebarView(tree: tree, theme: theme))
+        let sidebar = NSHostingController(
+            rootView: SidebarView(
+                tree: tree,
+                theme: theme,
+                actions: FileTreeActions(
+                    insertPath: { [weak self] in self?.insertPath($0) },
+                    newTab: { [weak self] in self?.newTab(in: $0) },
+                    relativePath: { [weak self] in self?.relativePath($0) ?? $0.path }
+                )
+            ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(viewController: sidebar)
         sidebarItem.canCollapse = true
@@ -123,6 +132,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func newTab(from source: TerminalView?) {
         let inherited = source?.inheritedSettings()
         let terminal = TerminalView(workingDirectory: inherited?.workingDirectory, fontSize: inherited?.fontSize)
+        addTab(terminal, after: store.tabs.first { $0.terminal === source })
+    }
+
+    private func addTab(_ terminal: TerminalView, after anchor: Tab?) {
         let tab = Tab(terminal: terminal)
         terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
         terminal.onWorkingDirectoryChange = { [weak tab] in tab?.workingDirectory = $0 }
@@ -142,7 +155,41 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             terminal.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             terminal.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
-        store.insert(tab, after: store.tabs.first { $0.terminal === source })
+        store.insert(tab, after: anchor)
+    }
+
+    /// Opens a tab after the selected one, starting in `directory`.
+    func newTab(in directory: URL) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let terminal = TerminalView(workingDirectory: directory.path, fontSize: fontSize)
+        addTab(terminal, after: store.selected)
+    }
+
+    // MARK: Paths
+
+    /// `url` as the selected tab's shell would write it: relative to its cwd
+    /// when inside it, else absolute.
+    func relativePath(_ url: URL) -> String {
+        let path = url.standardizedFileURL.path
+        guard let cwd = store.selected?.workingDirectory.map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) else { return path }
+        if path == cwd { return "." }
+        return path.hasPrefix(cwd + "/") ? String(path.dropFirst(cwd.count + 1)) : path
+    }
+
+    /// Types the path into the selected terminal, shell-quoted, with a
+    /// trailing space so the next word can follow.
+    private func insertPath(_ url: URL) {
+        guard let terminal = store.selected?.terminal else { return }
+        terminal.insertText(Self.shellQuoted(relativePath(url)) + " ")
+        focusSelectedTerminal()
+    }
+
+    /// Leaves plain paths bare; anything with shell metacharacters goes in
+    /// single quotes.
+    static func shellQuoted(_ path: String) -> String {
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,:@%"))
+        if path.unicodeScalars.allSatisfy(safe.contains) { return path }
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// Closes a tab, asking first when that would kill a running process.

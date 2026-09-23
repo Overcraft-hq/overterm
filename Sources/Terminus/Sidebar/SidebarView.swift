@@ -1,9 +1,22 @@
+import AppKit
 import SwiftUI
+
+/// What the file tree asks the window to do with an entry.
+struct FileTreeActions {
+    /// Type the entry's path into the selected terminal.
+    var insertPath: (URL) -> Void
+    /// Open a new tab whose shell starts in this folder.
+    var newTab: (URL) -> Void
+    /// The path as the selected tab's shell would write it (relative to its
+    /// cwd when inside it).
+    var relativePath: (URL) -> String
+}
 
 /// The left panel: for now, the file tree of the selected tab's checkout.
 struct SidebarView: View {
     @ObservedObject var tree: FileTreeModel
     let theme: ChromeTheme
+    let actions: FileTreeActions
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,7 +27,7 @@ struct SidebarView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(tree.rows) { row in
-                            FileRowView(row: row, tree: tree, theme: theme)
+                            FileRowView(row: row, tree: tree, theme: theme, actions: actions)
                         }
                     }
                     .padding(.vertical, 4)
@@ -58,6 +71,7 @@ private struct FileRowView: View {
     let row: FileRow
     @ObservedObject var tree: FileTreeModel
     let theme: ChromeTheme
+    let actions: FileTreeActions
     @State private var hovering = false
 
     private var isSelected: Bool { tree.selection == row.id }
@@ -92,6 +106,33 @@ private struct FileRowView: View {
             tree.selection = row.id
             tree.toggle(row)
         }
+        // Simultaneous, so a plain click isn't held back for the double-click
+        // interval. A folder already toggled on the single clicks.
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                if !row.entry.isDirectory { NSWorkspace.shared.open(row.entry.url) }
+            }
+        )
+        .contextMenu { menu }
         .help(row.entry.url.path)
+    }
+
+    @ViewBuilder private var menu: some View {
+        let url = row.entry.url
+        Button("Insert Path in Terminal") { actions.insertPath(url) }
+        if row.entry.isDirectory {
+            Button("New Tab Here") { actions.newTab(url) }
+        } else {
+            Button("Open") { NSWorkspace.shared.open(url) }
+        }
+        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        Divider()
+        Button("Copy Path") { copy(url.path) }
+        Button("Copy Relative Path") { copy(actions.relativePath(url)) }
+    }
+
+    private func copy(_ string: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
     }
 }
