@@ -9,7 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = MainMenu.build()
 
         let controller = TerminalWindowController()
-        controller.newTab(from: nil)
+        if let saved = SessionState.load(), !saved.tabs.isEmpty {
+            controller.restore(saved)
+        } else {
+            controller.newTab(from: nil)
+        }
+        controller.autosaveSession()
         controller.showWindow(nil)
         windowController = controller
 
@@ -29,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Save first: the autosave is debounced and would miss a quick quit.
+        windowController?.saveSession()
         windowController?.store.tabs.forEach { $0.terminal.close() }
     }
 

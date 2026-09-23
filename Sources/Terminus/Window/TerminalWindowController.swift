@@ -177,6 +177,53 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         addTab(terminal, agent: agent, after: store.selected)
     }
 
+    // MARK: Session
+
+    var sessionState: SessionState {
+        SessionState(
+            tabs: store.tabs.map {
+                .init(
+                    workingDirectory: $0.workingDirectory, customTitle: $0.customTitle, color: $0.color?.rawValue,
+                    isPinned: $0.isPinned, agent: $0.agent)
+            },
+            selectedIndex: store.selectedIndex)
+    }
+
+    /// Rebuilds saved tabs: a fresh shell in each old directory (home if it
+    /// is gone), agents resuming their last conversation there.
+    func restore(_ state: SessionState) {
+        for saved in state.tabs {
+            let cwd = saved.workingDirectory.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+            let terminal = TerminalView(workingDirectory: cwd, initialInput: saved.agent.map { $0.resumeCommand + "\n" })
+            addTab(terminal, agent: saved.agent, after: store.tabs.last)
+            guard let tab = store.tabs.last else { continue }
+            tab.customTitle = saved.customTitle
+            tab.color = saved.color.flatMap(TabColor.init(rawValue:))
+            if saved.isPinned { store.setPinned(tab, true) }
+        }
+        if let i = state.selectedIndex { store.select(index: i) }
+    }
+
+    /// Saves the session a second after anything about the tabs changes, so
+    /// a crash loses at most that second.
+    func autosaveSession(to url: URL = SessionState.defaultURL) {
+        let tabChanges = store.$tabs
+            .map { tabs in Publishers.MergeMany(tabs.map { $0.objectWillChange }).map { _ in () }.prepend(()) }
+            .switchToLatest()
+        tabChanges.merge(with: store.$selectedID.map { _ in () })
+            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+            .sink { [weak self] in self?.saveSession(to: url) }
+            .store(in: &cancellables)
+    }
+
+    func saveSession(to url: URL = SessionState.defaultURL) {
+        do {
+            try sessionState.save(to: url)
+        } catch {
+            GhosttyRuntime.logger.error("session save failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// An agent tab in the selected tab's directory.
     func newAgentTab(_ agent: Agent) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
