@@ -46,9 +46,7 @@ final class SnippetStore: ObservableObject {
     let url: URL
 
     static var defaultURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Terminus", isDirectory: true)
-            .appendingPathComponent("snippets.json")
+        AppEnvironment.supportDirectory.appendingPathComponent("snippets.json")
     }
 
     /// A first run starts with the everyday PromptRails commands.

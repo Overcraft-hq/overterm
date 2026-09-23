@@ -61,7 +61,7 @@ struct SidebarView: View {
     let worktreeActions: WorktreeActions
     let snippetActions: SnippetActions
     let onClose: () -> Void
-    @AppStorage("sidebarPanel") private var panel: SidebarPanel = .files
+    @AppStorage("sidebarPanel", store: AppEnvironment.defaults) private var panel: SidebarPanel = .files
 
     var body: some View {
         VStack(spacing: 0) {

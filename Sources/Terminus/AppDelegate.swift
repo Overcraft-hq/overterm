@@ -10,22 +10,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         UNUserNotificationCenter.current().delegate = self
 
         let controller = TerminalWindowController()
-        // A diagnostic run must not touch the real session: no restore (it
-        // would resume agents), no autosave.
-        let diagnostic = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] != nil
-        if !diagnostic, let saved = SessionState.load(), !saved.tabs.isEmpty {
+        // An isolated run (E2E, layout dump) reads and writes its own support
+        // directory — empty unless a test prepared a session there.
+        let env = ProcessInfo.processInfo.environment
+        if let saved = SessionState.load(), !saved.tabs.isEmpty {
             controller.restore(saved)
-        } else if diagnostic, let cwd = ProcessInfo.processInfo.environment["TERMINUS_DUMP_CWD"] {
+        } else if AppEnvironment.isIsolated, let cwd = env["TERMINUS_E2E_CWD"] ?? env["TERMINUS_DUMP_CWD"] {
             controller.newTab(in: URL(fileURLWithPath: cwd))
         } else {
             controller.newTab(from: nil)
         }
-        if !diagnostic { controller.autosaveSession() }
+        controller.autosaveSession()
         controller.showWindow(nil)
         windowController = controller
         controller.dumpLayoutIfRequested()
 
-        NSApp.activate(ignoringOtherApps: true)
+        // An isolated run stays in the background: it must not take the
+        // keyboard from whatever the user is doing.
+        if AppEnvironment.isIsolated {
+            controller.window?.orderFrontRegardless()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     /// Quitting closes every tab: always confirmed — unless the window's own

@@ -28,7 +28,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
-    static let isDiagnostic = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] != nil
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
 
@@ -125,7 +124,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         sidebarItem.maximumThickness = 520
         sidebarItem.holdingPriority = .defaultLow + 10
         // Shown on first launch; after that, as the user left it.
-        sidebarItem.isCollapsed = !(UserDefaults.standard.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
+        sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
         let terminalPane = NSViewController()
         terminalPane.view = container
 
@@ -152,7 +151,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         diffItem.canCollapse = true
         diffItem.minimumThickness = 320
         diffItem.holdingPriority = .defaultLow + 5
-        let showDiff = UserDefaults.standard.bool(forKey: Self.diffVisibleKey)
+        let showDiff = AppEnvironment.defaults.bool(forKey: Self.diffVisibleKey)
         diffItem.isCollapsed = !showDiff
         diff.panelVisible = showDiff
         self.diffItem = diffItem
@@ -169,7 +168,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // A diagnostic run shares the real app's defaults: it must not save
         // (or restore) divider positions. The key changes with the column
         // set (v2: diff moved here), so old positions aren't misapplied.
-        if !Self.isDiagnostic { split.splitView.autosaveName = "TerminusColumns.v2" }
+        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "TerminusColumns.v2" }
         self.sidebarItem = sidebarItem
 
         tabBarView = tabBar
@@ -918,7 +917,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let show = diffItem.isCollapsed
         diffItem.animator().isCollapsed = !show
         diff.panelVisible = show
-        UserDefaults.standard.set(show, forKey: Self.diffVisibleKey)
+        AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
         if !show { focusSelectedTerminal() }
     }
 
@@ -926,7 +925,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard let sidebarItem else { return }
         let show = sidebarItem.isCollapsed
         sidebarItem.animator().isCollapsed = !show
-        UserDefaults.standard.set(show, forKey: Self.sidebarVisibleKey)
+        AppEnvironment.defaults.set(show, forKey: Self.sidebarVisibleKey)
         // Collapsing can strand keyboard focus in the hidden panel.
         if !show { focusSelectedTerminal() }
     }

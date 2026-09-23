@@ -8,8 +8,15 @@ import UserNotifications
 enum AttentionNotifier {
     static let tabIDKey = "tabID"
 
+    /// Notifications an isolated run would have posted (it posts none).
+    static var suppressed = 0
+
     static func notify(tab: Tab) {
         guard !NSApp.isActive else { return }
+        if AppEnvironment.isIsolated {
+            suppressed += 1
+            return
+        }
         NSApp.requestUserAttention(.informationalRequest)
 
         let center = UNUserNotificationCenter.current()

@@ -19,9 +19,7 @@ struct SessionState: Codable, Equatable {
     static let empty = SessionState(tabs: [], selectedIndex: nil)
 
     static var defaultURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Terminus", isDirectory: true)
-            .appendingPathComponent("session.json")
+        AppEnvironment.supportDirectory.appendingPathComponent("session.json")
     }
 
     /// Nil when there is no file or it can't be read — a bad session file
