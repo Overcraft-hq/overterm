@@ -157,6 +157,20 @@ final class GhosttyRuntime {
             guard let window else { return false }
             return window.gotoTab(action.action.goto_tab.rawValue)
 
+        // Ghostty's default ⇧⌘W / ⌥⇧⌘W: bound, so they never reach our menu —
+        // unhandled they did nothing at all.
+        case GHOSTTY_ACTION_CLOSE_WINDOW, GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
+            guard let window = window?.window else { return false }
+            window.performClose(nil)
+            return true
+
+        // Ghostty's ⇧⌘P opens our palette rather than its own (which we
+        // don't have).
+        case GHOSTTY_ACTION_TOGGLE_COMMAND_PALETTE:
+            guard let window else { return false }
+            window.showPalette(nil)
+            return true
+
         case GHOSTTY_ACTION_MOVE_TAB:
             guard let window, let view else { return false }
             window.moveTab(of: view, by: action.action.move_tab.amount)
