@@ -29,6 +29,7 @@ final class E2ERunner {
         "palette": { await $0.paletteScenario() },
         "reorder": { await $0.reorder() },
         "info": { await $0.info() },
+        "claude": { await $0.claudeInfo() },
     ]
 
     private let app: TerminalWindowController
@@ -656,6 +657,44 @@ final class E2ERunner {
         for tab in app.store.tabs {
             tab.terminal.insertText("kill %1 2>/dev/null")
             tab.terminal.pressReturn()
+        }
+    }
+
+    /// Tab Info reads a Claude tab's session transcript (a prepared one, in
+    /// a scratch projects directory) and shows its token use, each reply
+    /// counted once.
+    private func claudeInfo() async {
+        let projects = scratch.appendingPathComponent("claude-projects")
+        ClaudeUsageReader.projectsDirectory = projects
+        let dir = scratch.appendingPathComponent("proj")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func reply(_ id: String, _ input: Int, _ output: Int, _ read: Int, _ time: String) -> String {
+            #"{"type":"assistant","timestamp":"\#(time)","message":{"id":"\#(id)","model":"claude-opus-4-8","usage":{"input_tokens":\#(input),"output_tokens":\#(output),"cache_read_input_tokens":\#(read),"cache_creation_input_tokens":0}}}"#
+                + "\n"
+        }
+        let transcript =
+            reply("msg_a", 1200, 300, 40_000, "2026-09-23T10:00:00.000Z") + reply("msg_a", 1200, 300, 40_000, "2026-09-23T10:00:01.000Z")
+            + reply("msg_b", 800, 700, 60_000, "2026-09-23T11:14:00.000Z")
+        // The tab may report its cwd resolved (/private/var/…) or not.
+        for path in Set([dir.path, dir.resolvingSymlinksInPath().path]) {
+            let folder = projects.appendingPathComponent(ClaudeUsageReader.projectFolder(for: path))
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? transcript.write(to: folder.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+        }
+
+        app.newTab(in: dir, agent: .claude, startAgent: false)
+        guard let tab = app.store.selected else { return check("a tab", false) }
+        await eventually(3) { self.app.store.tabFrames[tab.id] != nil }
+        app.showInfo(for: tab)
+        guard let model = app.infoModel else { return check("popover", false) }
+        check("the session is read", await eventually(6) { model.claude != nil }, model.claudeDirectory ?? "no directory")
+        let usage = model.claude
+        check("replies counted once", usage?.replies == 2, "\(usage?.replies ?? -1)")
+        check("tokens add up", usage.map { [$0.input, $0.output, $0.cacheRead] } == [2000, 1000, 100_000], "\(String(describing: usage))")
+        check("model and duration", usage?.model == "claude-opus-4-8" && usage?.lastActivity.map { $0.timeIntervalSince(usage!.started!) } == 74 * 60)
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
+            await pause(0.8)
+            app.captureWindow(to: png, window: popoverWindow)
         }
     }
 

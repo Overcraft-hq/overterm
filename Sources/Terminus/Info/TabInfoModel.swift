@@ -15,15 +15,22 @@ final class TabInfoModel: ObservableObject {
 
     @Published private(set) var processes: [ProcessNode] = []
     @Published private(set) var ports: [ListeningPort] = []
+    /// The Claude Code session in this tab, if there is one.
+    @Published private(set) var claude: ClaudeUsage?
+    /// True while a transcript is being read for the first time (a big one
+    /// takes a moment).
+    @Published private(set) var readingClaude = false
     @Published private(set) var location: Location?
 
     let tab: Tab
     private let inspector: ProcessInspector
+    private let claudeReader: ClaudeUsageReader
     private var loop: Task<Void, Never>?
 
-    init(tab: Tab, inspector: ProcessInspector) {
+    init(tab: Tab, inspector: ProcessInspector, claudeReader: ClaudeUsageReader) {
         self.tab = tab
         self.inspector = inspector
+        self.claudeReader = claudeReader
     }
 
     var totalCPU: Double { processes.reduce(0) { $0 + $1.totalCPU } }
@@ -38,7 +45,10 @@ final class TabInfoModel: ObservableObject {
             while !Task.isCancelled {
                 await self?.refreshProcesses()
                 // lsof is slower than a process scan; every third tick is plenty.
-                if tick % 3 == 0 { await self?.refreshPorts() }
+                if tick % 3 == 0 {
+                    await self?.refreshPorts()
+                    await self?.refreshClaude()
+                }
                 tick += 1
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
@@ -65,6 +75,30 @@ final class TabInfoModel: ObservableObject {
 
     func refreshPorts() async {
         ports = await ListeningPorts.of(processes.flatMap(\.flattened).map(\.pid))
+    }
+
+    /// Where Claude Code runs in this tab: a running `claude`'s directory,
+    /// else — for a Claude tab — the tab's.
+    var claudeDirectory: String? {
+        let running = processes.flatMap(\.flattened).first { node in
+            node.name == "claude" || (node.command.split(separator: " ").first.map { $0 == "claude" || $0.hasSuffix("/claude") } ?? false)
+        }
+        if let cwd = running?.workingDirectory { return cwd }
+        return tab.agent == .claude ? (tab.workingDirectory ?? tab.terminal.workingDirectory) : nil
+    }
+
+    func refreshClaude() async {
+        guard let directory = claudeDirectory else {
+            claude = nil
+            return
+        }
+        if claude == nil { readingClaude = true }
+        let reader = claudeReader
+        let usage = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async { continuation.resume(returning: reader.usage(for: directory)) }
+        }
+        claude = usage
+        readingClaude = false
     }
 
     func refreshLocation() async {

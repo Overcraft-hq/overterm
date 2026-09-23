@@ -21,6 +21,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var dragMonitor: Any?
     /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
     private let inspector = ProcessInspector()
+    /// Kept across popovers: transcripts are re-read only where they grew.
+    private let claudeReader = ClaudeUsageReader()
     private(set) var infoPopover: NSPopover?
     private(set) var infoModel: TabInfoModel?
     private var theme: ChromeTheme?
@@ -707,7 +709,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func showInfo(for tab: Tab) {
         infoPopover?.close()
         guard let strip = tabBarView, let theme, let frame = store.tabFrames[tab.id] else { return }
-        let model = TabInfoModel(tab: tab, inspector: inspector)
+        let model = TabInfoModel(tab: tab, inspector: inspector, claudeReader: claudeReader)
         let popover = NSPopover()
         popover.behavior = .transient
         // Its contents are painted in the terminal's colours; its controls

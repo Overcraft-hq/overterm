@@ -63,6 +63,7 @@ final class E2ETests: XCTestCase {
     func testPalette() throws { try run("palette") }
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }
+    func testClaudeInfo() throws { try run("claude") }
 
     /// A prepared session.json comes back (pin, colour, names, selection,
     /// directories) and changes are autosaved to it.

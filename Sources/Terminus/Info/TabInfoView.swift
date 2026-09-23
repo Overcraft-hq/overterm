@@ -12,6 +12,7 @@ struct TabInfoView: View {
             locationSection
             processSection
             portSection
+            claudeSection
         }
         .padding(16)
         .frame(width: 480)
@@ -114,6 +115,63 @@ struct TabInfoView: View {
         }
     }
 
+    @ViewBuilder private var claudeSection: some View {
+        if model.readingClaude {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Reading the Claude session…").foregroundStyle(theme.dimText)
+            }
+            .font(.system(size: 12))
+        } else if let usage = model.claude {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("Claude session").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                    Spacer()
+                    if let modelName = usage.model {
+                        Text(verbatim: modelName.replacingOccurrences(of: "claude-", with: "")).foregroundStyle(theme.dimText)
+                    }
+                    if let started = usage.started, let last = usage.lastActivity {
+                        Text(verbatim: "· " + Self.duration(last.timeIntervalSince(started))).foregroundStyle(theme.dimText)
+                    }
+                }
+                .font(.system(size: 11))
+                HStack(spacing: 14) {
+                    tokenStat("input", usage.input)
+                    tokenStat("output", usage.output)
+                    tokenStat("cache read", usage.cacheRead)
+                    tokenStat("cache write", usage.cacheWrite)
+                }
+                Text(verbatim: "\(usage.replies) replies · \(Self.tokens(usage.total)) tokens in all")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.dimText)
+            }
+        }
+    }
+
+    private func tokenStat(_ label: String, _ value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(verbatim: Self.tokens(value)).font(.system(size: 13, weight: .semibold, design: .monospaced))
+            Text(label).font(.system(size: 10)).foregroundStyle(theme.dimText)
+        }
+    }
+
+    /// 1234 → 1.2K, 38_400_000 → 38M.
+    nonisolated static func tokens(_ n: Int) -> String {
+        switch n {
+        case ..<1_000: return "\(n)"
+        case ..<1_000_000: return String(format: n < 10_000 ? "%.1fK" : "%.0fK", Double(n) / 1_000)
+        case ..<1_000_000_000: return String(format: n < 10_000_000 ? "%.1fM" : "%.0fM", Double(n) / 1_000_000)
+        default: return String(format: "%.1fB", Double(n) / 1_000_000_000)
+        }
+    }
+
+    nonisolated static func duration(_ seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute, .second]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: seconds) ?? ""
+    }
+
     /// The tree flattened with depths, for an indented list.
     private var rows: [(node: ProcessNode, depth: Int)] {
         func walk(_ nodes: [ProcessNode], _ depth: Int) -> [(ProcessNode, Int)] {
@@ -122,9 +180,9 @@ struct TabInfoView: View {
         return walk(model.processes, 0)
     }
 
-    static func cpu(_ percent: Double) -> String { String(format: "%.0f%%", percent) }
+    nonisolated static func cpu(_ percent: Double) -> String { String(format: "%.0f%%", percent) }
 
-    static func memory(_ bytes: UInt64) -> String {
+    nonisolated static func memory(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
     }
 }
