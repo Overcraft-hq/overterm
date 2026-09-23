@@ -5,6 +5,8 @@ import SwiftUI
 struct FileTreeActions {
     /// Type the entry's path into the selected terminal.
     var insertPath: (URL) -> Void
+    /// Show a file in the editor pane.
+    var openInEditor: (URL) -> Void
     /// Open a new tab whose shell starts in this folder.
     var newTab: (URL) -> Void
     /// The path as the selected tab's shell would write it (relative to its
@@ -184,10 +186,15 @@ private struct FileRowView: View {
         .onHover { hovering = $0 }
         .onTapGesture {
             tree.selection = row.id
-            tree.toggle(row)
+            if row.entry.isDirectory {
+                tree.toggle(row)
+            } else {
+                actions.openInEditor(row.entry.url)
+            }
         }
         // Simultaneous, so a plain click isn't held back for the double-click
-        // interval. A folder already toggled on the single clicks.
+        // interval. A folder already toggled on the single clicks; a file
+        // already opened in the editor, and double-click hands it to its app.
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
                 if !row.entry.isDirectory { NSWorkspace.shared.open(row.entry.url) }
@@ -203,7 +210,8 @@ private struct FileRowView: View {
         if row.entry.isDirectory {
             Button("New Tab Here") { actions.newTab(url) }
         } else {
-            Button("Open") { NSWorkspace.shared.open(url) }
+            Button("Open in Editor") { actions.openInEditor(url) }
+            Button("Open in Default App") { NSWorkspace.shared.open(url) }
         }
         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         Divider()

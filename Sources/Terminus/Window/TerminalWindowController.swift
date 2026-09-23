@@ -21,6 +21,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private let split = NSSplitViewController()
     private var sidebarItem: NSSplitViewItem?
     private let diff = DiffModel()
+    private var editor: EditorViewController?
+    private var editorItem: NSSplitViewItem?
     /// Diff panel above the terminal, inside the terminal pane.
     private let terminalSplit = NSSplitViewController()
     private var diffItem: NSSplitViewItem?
@@ -98,6 +100,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 theme: theme,
                 actions: FileTreeActions(
                     insertPath: { [weak self] in self?.insertPath($0) },
+                    openInEditor: { [weak self] in self?.openInEditor($0) },
                     newTab: { [weak self] in self?.newTab(in: $0) },
                     relativePath: { [weak self] in self?.relativePath($0) ?? $0.path }
                 ),
@@ -145,8 +148,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         terminalSplit.splitView.autosaveName = "TerminusDiff"
         self.diffItem = diffItem
 
+        // Editor to the right of the terminal, opened from the file tree.
+        let editor = EditorViewController(theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor)
+        let editorItem = NSSplitViewItem(viewController: editor)
+        editorItem.canCollapse = true
+        editorItem.isCollapsed = true
+        editorItem.minimumThickness = 280
+        editorItem.holdingPriority = .defaultLow + 5
+        editor.onClose = { [weak self] in self?.closeEditor() }
+        self.editor = editor
+        self.editorItem = editorItem
+
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(NSSplitViewItem(viewController: terminalSplit))
+        split.addSplitViewItem(editorItem)
         split.splitView.dividerStyle = .thin
         split.splitView.autosaveName = "TerminusSidebar"
         self.sidebarItem = sidebarItem
@@ -276,6 +291,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
+        editor?.reloadIfChangedOnDisk()
         // Catches what the file watcher can't see, e.g. staging from another
         // app (a worktree's index lives in the main repository's .git).
         Task { await diff.refresh() }
@@ -420,6 +436,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 onCancel: close
             )
         }
+    }
+
+    // MARK: Editor
+
+    /// Shows `url` in the editor pane beside the terminal (after any
+    /// unsaved-changes question about the file already open).
+    func openInEditor(_ url: URL) {
+        guard let editor, let editorItem else { return }
+        editor.open(url) { opened in
+            guard opened else { return }
+            if editorItem.isCollapsed { editorItem.animator().isCollapsed = false }
+            editor.focus()
+        }
+    }
+
+    private func closeEditor() {
+        editorItem?.animator().isCollapsed = true
+        focusSelectedTerminal()
     }
 
     // MARK: Tab context menu
@@ -786,6 +820,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// The window's close button closes every tab; confirm once if any has a
     /// running process.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if let editor, editor.document.isDirty {
+            let alert = NSAlert()
+            alert.messageText = "“\(editor.document.name)” has unsaved changes."
+            alert.informativeText = "Save it (⌘S) first, or close the window and lose them."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Close Anyway")
+            alert.beginSheetModal(for: sender) { response in
+                guard response == .alertSecondButtonReturn else { return }
+                sender.close()
+            }
+            return false
+        }
         let busy = store.tabs.filter { $0.terminal.needsConfirmClose }
         guard !busy.isEmpty else { return true }
         let alert = NSAlert()
