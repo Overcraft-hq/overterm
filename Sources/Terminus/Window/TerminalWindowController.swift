@@ -476,6 +476,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             if !path.isEmpty { self.openInEditor(URL(fileURLWithPath: path)) }
             if env["TERMINUS_DUMP_DIFF"] != nil, self.diffItem?.isCollapsed == true { self.toggleDiff(nil) }
             if env["TERMINUS_DUMP_RENAME"] != nil, let tab = self.store.selected {
+                // Exactly what the menu and a double-click do: select, then rename.
+                self.store.select(tab)
                 self.store.renamingID = tab.id
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     let responder = self?.window?.firstResponder.map { String(describing: Swift.type(of: $0)) } ?? "nil"
@@ -847,7 +849,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tab.terminal.setVisible(false)
         }
         selected.terminal.setVisible(true)
-        window?.makeFirstResponder(selected.terminal)
+        // Not while a tab name is being edited: that field has the keyboard.
+        if store.renamingID == nil { window?.makeFirstResponder(selected.terminal) }
         window?.title = selected.title
         markSelectedSeen()
         cwdSubscription = selected.$workingDirectory

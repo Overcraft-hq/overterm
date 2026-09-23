@@ -47,6 +47,10 @@ final class TabStore: ObservableObject {
     }
 
     func select(_ tab: Tab) {
+        // Re-selecting would still publish, and the window answers a
+        // selection by focusing the terminal — which ended an in-place
+        // rename the moment it began (menu and double-click select first).
+        guard selectedID != tab.id else { return }
         selectedID = tab.id
     }
 
