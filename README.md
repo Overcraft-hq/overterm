@@ -50,6 +50,7 @@ mise trust && mise install   # pinned Zig
 make ghosttykit              # GhosttyKit from the pinned Ghostty (once, ~2 min)
 make test                    # unit tests
 make run                     # build Terminus.app and open it
+make install                 # …and copy it to /Applications (Launchpad, Spotlight)
 ```
 
 Ghostty is pinned to v1.3.1 in `Scripts/build-ghosttykit.sh`: main needs

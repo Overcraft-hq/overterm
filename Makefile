@@ -1,6 +1,6 @@
 APP := Terminus.app
 
-.PHONY: ghosttykit icon build test app run clean
+.PHONY: ghosttykit icon build test app run install clean
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -25,6 +25,12 @@ app:
 ## run: build the .app and launch it
 run: app
 	open $(APP)
+
+## install: build and copy $(APP) into /Applications (Launchpad, Spotlight)
+install: app
+	rm -rf /Applications/$(APP)
+	cp -R $(APP) /Applications/
+	@echo "==> installed /Applications/$(APP)"
 
 ## clean: remove build products and the assembled app (keeps GhosttyKit)
 clean:
