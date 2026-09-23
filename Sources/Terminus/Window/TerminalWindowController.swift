@@ -14,6 +14,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private let tree = FileTreeModel()
     private let worktrees = WorktreeModel()
     let snippets = SnippetStore()
+    private let palette = PaletteModel()
+    private var paletteView: NSView?
     private let split = NSSplitViewController()
     private var sidebarItem: NSSplitViewItem?
     private let diff = DiffModel()
@@ -162,6 +164,28 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             body.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
+
+        // The palette floats over everything, hidden until ⌘P.
+        let paletteView = NSHostingView(
+            rootView: PaletteView(
+                model: palette,
+                theme: theme,
+                onChoose: { [weak self] item, run in
+                    self?.hidePalette()
+                    item.perform(run)
+                },
+                onDismiss: { [weak self] in self?.hidePalette() }
+            ))
+        paletteView.translatesAutoresizingMaskIntoConstraints = false
+        paletteView.isHidden = true
+        content.addSubview(paletteView)
+        NSLayoutConstraint.activate([
+            paletteView.topAnchor.constraint(equalTo: content.topAnchor),
+            paletteView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            paletteView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            paletteView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        self.paletteView = paletteView
         window.contentView = content
     }
 
@@ -390,6 +414,89 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 onCancel: close
             )
         }
+    }
+
+    // MARK: Palette
+
+    @objc func showPalette(_ sender: Any?) {
+        guard let paletteView else { return }
+        if !paletteView.isHidden {
+            hidePalette()
+            return
+        }
+        palette.reset(with: paletteItems())
+        paletteView.isHidden = false
+        // The hosting view is reused, so its field has to be focused on
+        // every show, after SwiftUI has laid it out.
+        DispatchQueue.main.async { [weak self] in
+            guard let field = Self.firstTextField(in: paletteView) else { return }
+            self?.window?.makeFirstResponder(field)
+        }
+    }
+
+    private static func firstTextField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        for sub in view.subviews {
+            if let found = firstTextField(in: sub) { return found }
+        }
+        return nil
+    }
+
+    private func hidePalette() {
+        paletteView?.isHidden = true
+        focusSelectedTerminal()
+    }
+
+    /// Actions first, then tabs, worktrees and snippets — the order shown
+    /// before typing.
+    private func paletteItems() -> [PaletteItem] {
+        var items: [PaletteItem] = [
+            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: "⌘T", symbol: "plus") { [weak self] _ in
+                self?.newTab(from: self?.store.selected?.terminal)
+            },
+            PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
+                [weak self] _ in self?.newTask(nil)
+            },
+        ]
+        items += Agent.allCases.map { agent in
+            PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol) {
+                [weak self] _ in self?.newAgentTab(agent)
+            }
+        }
+        items += [
+            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _ in
+                self?.toggleFileTree(nil)
+            },
+            PaletteItem(id: "a.diff", group: .action, title: "Toggle Diff", subtitle: "⌥⌘D", symbol: "plusminus") { [weak self] _ in
+                self?.toggleDiff(nil)
+            },
+            PaletteItem(id: "a.snippet", group: .action, title: "New Snippet…", subtitle: nil, symbol: "text.badge.plus") { [weak self] _ in
+                self?.editSnippet(nil)
+            },
+            PaletteItem(id: "a.snippetsFile", group: .action, title: "Open Snippets File", subtitle: snippets.url.path, symbol: "doc.text") {
+                [weak self] _ in
+                guard let self else { return }
+                NSWorkspace.shared.open(self.snippets.url)
+            },
+        ]
+        items += store.tabs.map { tab in
+            PaletteItem(
+                id: "t.\(tab.id)", group: .tab, title: tab.title, subtitle: tab.workingDirectory,
+                symbol: tab.agent?.symbol ?? (tab.isPinned ? "pin" : "terminal")
+            ) { [weak self] _ in self?.store.select(tab) }
+        }
+        items += worktrees.worktrees.map { worktree in
+            PaletteItem(
+                id: "w.\(worktree.path.path)", group: .worktree, title: worktree.displayName, subtitle: worktree.path.path,
+                symbol: worktree.isMain ? "house" : "arrow.triangle.branch"
+            ) { [weak self] _ in self?.openWorktree(worktree) }
+        }
+        items += snippets.snippets.map { snippet in
+            PaletteItem(id: "s.\(snippet.id)", group: .snippet, title: snippet.name, subtitle: snippet.command, symbol: "text.alignleft") {
+                [weak self] run in self?.useSnippet(snippet, run: run)
+            }
+        }
+        return items
     }
 
     // MARK: Snippets
