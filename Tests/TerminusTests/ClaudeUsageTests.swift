@@ -90,4 +90,8 @@ final class TokenFormatTests: XCTestCase {
         XCTAssertEqual(TabInfoView.tokens(38_400_000), "38M")
         XCTAssertEqual(TabInfoView.tokens(2_100_000_000), "2.1B")
     }
+
+    func testMemoryIsNeverSpelledOut() {
+        XCTAssertFalse(TabInfoView.memory(0).contains("Zero"), TabInfoView.memory(0))
+    }
 }

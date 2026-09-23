@@ -30,6 +30,7 @@ final class E2ERunner {
         "reorder": { await $0.reorder() },
         "info": { await $0.info() },
         "claude": { await $0.claudeInfo() },
+        "disk": { await $0.diskInfo() },
     ]
 
     private let app: TerminalWindowController
@@ -692,6 +693,38 @@ final class E2ERunner {
         check("replies counted once", usage?.replies == 2, "\(usage?.replies ?? -1)")
         check("tokens add up", usage.map { [$0.input, $0.output, $0.cacheRead] } == [2000, 1000, 100_000], "\(String(describing: usage))")
         check("model and duration", usage?.model == "claude-opus-4-8" && usage?.lastActivity.map { $0.timeIntervalSince(usage!.started!) } == 74 * 60)
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
+            await pause(0.8)
+            app.captureWindow(to: png, window: popoverWindow)
+        }
+    }
+
+    /// Tab Info measures a checkout's disk use, biggest entries first — and
+    /// doesn't walk a directory that isn't a checkout.
+    private func diskInfo() async {
+        await waitForPrompt()
+        guard let home = app.store.selected else { return check("a tab", false) }
+        await eventually(3) { self.app.store.tabFrames[home.id] != nil }
+        app.showInfo(for: home)
+        await pause(1.5)
+        check("a tab outside a checkout isn't measured", app.infoModel?.disk == nil && app.infoModel?.measuringDisk == false)
+        app.infoPopover?.close()
+
+        let repo = scratch.appendingPathComponent("sized")
+        for sub in ["node_modules/pkg", "src"] {
+            try? FileManager.default.createDirectory(at: repo.appendingPathComponent(sub), withIntermediateDirectories: true)
+        }
+        try? Data(count: 900_000).write(to: repo.appendingPathComponent("node_modules/pkg/index.js"))
+        try? Data(count: 30_000).write(to: repo.appendingPathComponent("src/app.ts"))
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        app.newTab(in: repo)
+        guard let tab = app.store.selected else { return }
+        await eventually(3) { self.app.store.tabFrames[tab.id] != nil }
+        app.showInfo(for: tab)
+        guard let model = app.infoModel else { return check("popover", false) }
+        check("the checkout is measured", await eventually(8) { model.disk != nil })
+        check("biggest first", model.disk?.largest.first?.name == "node_modules", model.disk?.largest.map(\.name).joined(separator: ",") ?? "nil")
+        check("the total covers it", (model.disk?.total ?? 0) >= 930_000)
         if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
             await pause(0.8)
             app.captureWindow(to: png, window: popoverWindow)

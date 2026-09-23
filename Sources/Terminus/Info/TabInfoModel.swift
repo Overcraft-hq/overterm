@@ -20,6 +20,14 @@ final class TabInfoModel: ObservableObject {
     /// True while a transcript is being read for the first time (a big one
     /// takes a moment).
     @Published private(set) var readingClaude = false
+    /// Disk use of the tab's checkout (never measured outside one: a home
+    /// directory is hundreds of GB of walking).
+    @Published private(set) var disk: DiskReport?
+    @Published private(set) var measuringDisk = false
+    private var diskCancellation: Cancellation?
+    /// Recent measurements, so reopening the popover doesn't walk again.
+    private static var diskCache: [URL: (at: Date, report: DiskReport)] = [:]
+    static let diskCacheLifetime: TimeInterval = 60
     @Published private(set) var location: Location?
 
     let tab: Tab
@@ -41,6 +49,7 @@ final class TabInfoModel: ObservableObject {
         loop?.cancel()
         loop = Task { [weak self] in
             await self?.refreshLocation()
+            self?.measureDisk()
             var tick = 0
             while !Task.isCancelled {
                 await self?.refreshProcesses()
@@ -58,6 +67,32 @@ final class TabInfoModel: ObservableObject {
     func stop() {
         loop?.cancel()
         loop = nil
+        diskCancellation?.cancel()
+    }
+
+    /// Walks the checkout in the background (cached for a minute).
+    func measureDisk() {
+        guard let root = location?.checkout else { return }
+        if let cached = Self.diskCache[root], Date().timeIntervalSince(cached.at) < Self.diskCacheLifetime {
+            disk = cached.report
+            return
+        }
+        let cancellation = Cancellation()
+        diskCancellation = cancellation
+        measuringDisk = true
+        Task { [weak self] in
+            let report = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(returning: DiskUsage.measure(root, cancellation: cancellation))
+                }
+            }
+            guard let self else { return }
+            self.measuringDisk = false
+            if let report {
+                Self.diskCache[root] = (Date(), report)
+                self.disk = report
+            }
+        }
     }
 
     func refreshProcesses() async {

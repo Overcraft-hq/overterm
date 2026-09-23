@@ -13,6 +13,7 @@ struct TabInfoView: View {
             processSection
             portSection
             claudeSection
+            diskSection
         }
         .padding(16)
         .frame(width: 480)
@@ -148,6 +149,39 @@ struct TabInfoView: View {
         }
     }
 
+    @ViewBuilder private var diskSection: some View {
+        if model.measuringDisk {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Measuring the checkout on disk…").foregroundStyle(theme.dimText)
+            }
+            .font(.system(size: 12))
+        } else if let disk = model.disk {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Disk").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                    Spacer()
+                    Text(verbatim: (disk.partial ? "≥ " : "") + Self.memory(disk.total) + " · \(disk.files.formatted()) files")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.dimText)
+                }
+                ForEach(disk.largest, id: \.name) { entry in
+                    HStack(spacing: 8) {
+                        Text(verbatim: entry.name).lineLimit(1).frame(width: 130, alignment: .leading)
+                        GeometryReader { proxy in
+                            Capsule()
+                                .fill(theme.dimText.opacity(0.5))
+                                .frame(width: max(2, proxy.size.width * CGFloat(entry.bytes) / CGFloat(max(disk.total, 1))))
+                        }
+                        .frame(height: 5)
+                        Text(verbatim: Self.memory(entry.bytes)).frame(width: 70, alignment: .trailing)
+                    }
+                    .font(.system(size: 12, design: .monospaced))
+                }
+            }
+        }
+    }
+
     private func tokenStat(_ label: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(verbatim: Self.tokens(value)).font(.system(size: 13, weight: .semibold, design: .monospaced))
@@ -182,8 +216,12 @@ struct TabInfoView: View {
 
     nonisolated static func cpu(_ percent: Double) -> String { String(format: "%.0f%%", percent) }
 
+    /// "0 KB", never "Zero KB" (the formatter's default for 0).
     nonisolated static func memory(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .memory
+        formatter.allowsNonnumericFormatting = false
+        return formatter.string(fromByteCount: Int64(bytes))
     }
 }
 
