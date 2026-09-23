@@ -55,9 +55,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 store: store,
                 theme: theme,
                 leadingInset: 78,
-                onSelect: { [weak self] in self?.store.select($0) },
-                onClose: { [weak self] in self?.closeTab($0) },
-                onNewTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) }
+                actions: TabBarActions(
+                    select: { [weak self] in self?.store.select($0) },
+                    close: { [weak self] in self?.closeTab($0) },
+                    newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
+                    renameEnded: { [weak self] in self?.focusSelectedTerminal() }
+                )
             )
             .background(theme.strip)
             // The strip sits in the title bar on purpose; without this SwiftUI
@@ -170,6 +173,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func moveTab(of view: TerminalView, by amount: Int) {
         guard let tab = store.tabs.first(where: { $0.terminal === view }) else { return }
         store.move(tab, by: amount)
+    }
+
+    private func focusSelectedTerminal() {
+        guard let terminal = store.selected?.terminal else { return }
+        window?.makeFirstResponder(terminal)
     }
 
     private func showSelectedTab() {

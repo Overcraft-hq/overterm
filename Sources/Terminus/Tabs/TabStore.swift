@@ -6,6 +6,8 @@ import Foundation
 final class TabStore: ObservableObject {
     @Published private(set) var tabs: [Tab] = []
     @Published private(set) var selectedID: Tab.ID?
+    /// The tab whose name is being edited in the strip, if any.
+    @Published var renamingID: Tab.ID?
 
     var selected: Tab? { tabs.first { $0.id == selectedID } }
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }
