@@ -1,15 +1,15 @@
 # Dependabot for Terminus.
 #
-# Today it has nothing to watch, on purpose documented here so nobody
-# "fixes" it by adding entries that only log "no dependency files":
+# What it watches, and what it can't — documented so nobody "fixes" it by
+# adding entries that only log "no dependency files":
 #
 # - SwiftPM: Package.swift declares no remote packages (GhosttyKit is a
 #   local binary target built by `make ghosttykit`).
-# - GitHub Actions: no workflows yet. The entry below starts working the
-#   day one is added.
+# - GitHub Actions: the weekly Ghostty release check's actions/checkout.
 # - The real pins — Ghostty (GHOSTTY_REF/SHA in Scripts/build-ghosttykit.sh)
-#   and Zig (mise.toml) — are formats Dependabot can't read. Bump them
-#   together by hand (see CLAUDE.md).
+#   and Zig (mise.toml) — are formats Dependabot can't read. The weekly
+#   ghostty-release-check workflow opens an issue when Ghostty tags a new
+#   release; bump them together by hand (see CLAUDE.md).
 #
 # Add a `package-ecosystem: swift` block (directory: /) the day the manifest
 # gains an external package — same weekly/grouped shape.

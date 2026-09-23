@@ -1,0 +1,32 @@
+# Weekly: has Ghostty tagged a release newer than GhosttyKit's pin? If so,
+# open an issue (once per release) — the bump itself is by hand (Xcode and
+# Zig requirements move with it). Logic: Scripts/check-ghostty-release.sh.
+#
+# Deliberately the only workflow: macOS CI is expensive, and this needs
+# nothing but git and gh on the cheapest runner, for a few seconds a week.
+name: Ghostty release check
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"  # Mondays 07:00 Istanbul
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ghostty-release-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the pin with Ghostty's latest release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: ./Scripts/check-ghostty-release.sh
