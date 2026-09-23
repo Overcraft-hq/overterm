@@ -170,8 +170,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// `url` as the selected tab's shell would write it: relative to its cwd
     /// when inside it, else absolute.
     func relativePath(_ url: URL) -> String {
+        Self.relativePath(url, cwd: store.selected?.workingDirectory)
+    }
+
+    nonisolated static func relativePath(_ url: URL, cwd: String?) -> String {
         let path = url.standardizedFileURL.path
-        guard let cwd = store.selected?.workingDirectory.map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) else { return path }
+        guard let cwd = cwd.map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) else { return path }
         if path == cwd { return "." }
         return path.hasPrefix(cwd + "/") ? String(path.dropFirst(cwd.count + 1)) : path
     }
@@ -186,7 +190,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Leaves plain paths bare; anything with shell metacharacters goes in
     /// single quotes.
-    static func shellQuoted(_ path: String) -> String {
+    nonisolated static func shellQuoted(_ path: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,:@%"))
         if path.unicodeScalars.allSatisfy(safe.contains) { return path }
         return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"

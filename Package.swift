@@ -29,5 +29,10 @@ let package = Package(
                 .linkedFramework("UniformTypeIdentifiers"),
             ]
         ),
+        .testTarget(
+            name: "TerminusTests",
+            dependencies: ["Terminus"],
+            path: "Tests/TerminusTests"
+        ),
     ]
 )

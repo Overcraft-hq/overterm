@@ -1,6 +1,6 @@
 APP := Terminus.app
 
-.PHONY: ghosttykit icon build app run clean
+.PHONY: ghosttykit icon build test app run clean
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -13,6 +13,10 @@ icon:
 ## build: compile the release binary via SPM
 build:
 	swift build -c release
+
+## test: run the unit tests
+test:
+	swift test
 
 ## app: assemble and ad-hoc sign $(APP)
 app:
