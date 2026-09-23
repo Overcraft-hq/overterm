@@ -47,8 +47,10 @@ What makes it end-to-end without being dangerous:
   a throwaway git identity.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
-`layout`, `session`, `task`, `snippets`, `attention`, `palette`. Run one by
-hand while working on it:
+`layout`, `session`, `task`, `snippets`, `attention`, `marks`, `palette`.
+`marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
+it captures the window, for judging the look. Run one by hand while working
+on it:
 
 ```sh
 make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null | grep ^E2E

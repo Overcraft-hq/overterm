@@ -51,7 +51,7 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 | `NEW_TAB`, `CLOSE_TAB`, `GOTO_TAB`, `MOVE_TAB` | the window's tab operations (the user's Ghostty keybinds drive Terminus tabs) |
 | `CLOSE_WINDOW`, `CLOSE_ALL_WINDOWS` | window close (with confirmation) |
 | `TOGGLE_COMMAND_PALETTE` | Terminus palette |
-| `RING_BELL`, `DESKTOP_NOTIFICATION`, `PROGRESS_REPORT`, `COMMAND_FINISHED` | `TabActivity` → dot / spinner / notification / Dock badge |
+| `RING_BELL`, `DESKTOP_NOTIFICATION`, `PROGRESS_REPORT`, `COMMAND_FINISHED` | `TabActivity`: `isWorking` + a ranked mark (waiting > failed > done) → tab strip (breathing glyph + sliding bar / ringing yellow dot / green check / red mark), notification, Dock badge |
 | `OPEN_URL`, `MOUSE_SHAPE`, `QUIT` | handled directly |
 | anything else (splits, new window, …) | returns false: unhandled |
 
