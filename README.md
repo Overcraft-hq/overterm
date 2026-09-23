@@ -48,7 +48,8 @@ Requirements: macOS 13+, Xcode 16, [mise](https://mise.jdx.dev).
 ```sh
 mise trust && mise install   # pinned Zig
 make ghosttykit              # GhosttyKit from the pinned Ghostty (once, ~2 min)
-make test                    # unit tests
+make test                    # unit + integration tests
+make e2e                     # end-to-end scenarios in the real app
 make run                     # build Terminus.app and open it
 make install                 # …and copy it to /Applications (Launchpad, Spotlight)
 ```

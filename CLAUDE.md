@@ -9,7 +9,9 @@ Private macOS terminal for PromptRails work — Swift/AppKit around libghostty
 ```
 mise trust && mise install   # pinned Zig (only needed to build GhosttyKit)
 make ghosttykit              # Frameworks/GhosttyKit.xcframework + GhosttyResources (once; ~2 min)
-make test                    # swift test — run OUTSIDE the Bash sandbox (see docs/debugging.md)
+make test                    # unit + integration tests (~3 s)
+make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
+                             # both: run OUTSIDE the Bash sandbox — docs/testing.md
 make app                     # Terminus.app in the repo
 make install                 # …and copy it to /Applications
 make icon                    # Resources/AppIcon.svg → AppIcon.icns
@@ -30,7 +32,7 @@ make icon                    # Resources/AppIcon.svg → AppIcon.icns
 | `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |
 | `Scripts/` | GhosttyKit build, app bundling, icon |
 
-More: `docs/architecture.md`, `docs/ghostty.md`, `docs/debugging.md`.
+More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugging.md`.
 
 ## Rules
 
@@ -45,8 +47,9 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/debugging.md`.
 - **Don't re-publish selection**: `TabStore.select` is a no-op for the selected tab; a selection change takes the keyboard for the terminal, which kills an in-place rename.
 - **Typing text then running it**: `insertText` is a bracketed paste, so a trailing newline is literal. Use `pressReturn()`.
 - Keep features built-in (Claude, Codex, the snippet starters); no plugin slots.
-- Tests: pure logic and real-git integration (temp repos) live in `Tests/TerminusTests`. `Tab`/`TabStore` aren't unit-tested: a `Tab` owns a real surface.
+- **Tests are part of the change**: unit/integration in `Tests/TerminusTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
+- **Isolated runs** (`TERMINUS_E2E`, `TERMINUS_DUMP_LAYOUT`) go through `AppEnvironment` for every piece of persistent state; new state must too, or tests will write into the user's real app.
 
 ## Commits
 
-`area: what changed` subject (areas: `terminal`, `tabs`, `sidebar`, `diff`, `editor`, `git`, `agents`, `session`, `palette`, `snippets`, `window`, `keys`, `build`, `docs`…), body says why. One fix per commit. Author `bahattincinic@gmail.com`; no `Co-Authored-By` trailer. Run `swift format --in-place --recursive Sources Tests` and `make test` before committing.
+`area: what changed` subject (areas: `terminal`, `tabs`, `sidebar`, `diff`, `editor`, `git`, `agents`, `session`, `palette`, `snippets`, `window`, `keys`, `build`, `docs`…), body says why. One fix per commit. Author `bahattincinic@gmail.com`; no `Co-Authored-By` trailer. Run `swift format --in-place --recursive Sources Tests`, `make test` and `make e2e` before committing.

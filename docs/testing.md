@@ -1,0 +1,76 @@
+# Testing
+
+Two layers. Run both before calling a change done.
+
+```sh
+make test   # unit + integration: pure logic, real git in temp repos (~3 s)
+make e2e    # end-to-end: every scenario in the real, built app (~15 s, opens windows)
+```
+
+Both must run **outside the Bash tool's sandbox** (they spawn git, FSEvents,
+and for E2E the app itself).
+
+## Unit / integration — `Tests/TerminusTests`
+
+Pure logic and anything that can run without a window: parsers (worktree,
+status, numstat, unified diff), `FileTreeModel`, `DirectoryWatcher` (real
+FSEvents), `WorktreeModel`, `TaskCreator`, `DiffModel` (real repos, incl. no
+HEAD yet), `EditorDocument`, `SyntaxHighlighter`, snippets, palette ranking,
+session file, `TabActivity`, `GhosttyInput`, and `TabStore`/`Tab`.
+
+Tabs are real: the unit-test process never calls `ghostty_init`, so
+`GhosttyRuntime` has no app and every `TerminalView` is surfaceless — no
+pty, same object. Don't initialize the runtime in unit tests.
+
+Async models supersede older refreshes by design; wait for them to settle
+(`eventually { … }`) rather than asserting right after one call.
+
+## End-to-end — `Sources/Terminus/E2E/E2ERunner.swift` + `Tests/TerminusE2ETests`
+
+`TERMINUS_E2E=<scenario> ./Terminus.app/Contents/MacOS/Terminus` runs one
+scenario inside the app and prints `E2E PASS|FAIL <check>` lines, then
+`E2E DONE <failures>`, exiting with the failure count. The XCTest target
+launches one process per scenario (skipped unless `TERMINUS_E2E_TESTS=1`,
+which `make e2e` sets) and turns FAIL lines into test failures.
+
+What makes it end-to-end without being dangerous:
+
+- **Input goes only to its own window**: key events are built with
+  `NSEvent.keyEvent` and delivered with `window.sendEvent` (→ `TerminalView.keyDown`
+  → `interpretKeyEvents` → libghostty → pty); drags are posted to the app's
+  own queue. Never CGEvent/osascript — those reach whatever has focus.
+- **Isolated state** (`AppEnvironment`): its own defaults suite (wiped at
+  launch), a temp support dir (or `TERMINUS_SUPPORT_DIR` for a prepared
+  session), notifications counted not posted, no split autosave, never
+  activated (it stays behind your windows).
+- **Scratch files** in a temp dir removed at the end; repos are created with
+  a throwaway git identity.
+
+Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
+`layout`, `session`, `task`, `snippets`, `attention`, `palette`. Run one by
+hand while working on it:
+
+```sh
+make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null | grep ^E2E
+```
+
+### Adding a scenario
+
+1. Add a method on `E2ERunner` and register it in `scenarios`.
+2. Drive it through the same entry points the UI uses (menu `@objc`
+   actions, `menu(for:)` items, `openInEditor`, `type`/`pressReturn`, sheet
+   buttons via `clickSheetButton`) — not by setting model state directly,
+   or the test skips the wiring it exists to cover.
+3. Check outcomes a person would see: files written by the shell, tab
+   order, first responder, sheet text, git log.
+4. Add `func testX() throws { try run("x") }` to `E2ETests`.
+
+Every user-visible feature gets a scenario; every bug found by hand gets a
+check that would have caught it (the rename focus loss, the 0-wide editor,
+closing without asking, the no-HEAD diff all have one).
+
+## Looking at the UI
+
+`TERMINUS_DUMP_LAYOUT` / `TERMINUS_DUMP_PNG` (docs/debugging.md) print the
+view tree and capture the real window — use them when a check isn't enough
+to see what's wrong.
