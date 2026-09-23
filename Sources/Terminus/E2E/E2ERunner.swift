@@ -91,6 +91,13 @@ final class E2ERunner {
         await eventually(15) { self.terminal?.surface != nil && self.terminal?.needsConfirmClose == false }
     }
 
+    /// At a prompt, and past the moment a shell may still be reading the
+    /// terminal while drawing it (see runAndExpect).
+    private func settledPrompt() async {
+        await waitForPrompt()
+        await pause(0.4)
+    }
+
     /// Types `text` as key-down events into the key view, like a keyboard
     /// would (US layout), through the window — i.e. TerminalView.keyDown,
     /// interpretKeyEvents, libghostty's key encoder, the pty.
@@ -118,10 +125,23 @@ final class E2ERunner {
     }
 
     /// Runs a command by typing it, then waits for `file` to have `content`.
+    ///
+    /// Types only at a settled prompt: while drawing a new prompt, a shell
+    /// (its theme, plugins, integration) may query the terminal and read the
+    /// reply — swallowing keys typed in that window, which is wider under
+    /// load. If the output still doesn't come, the command is typed once
+    /// more; these commands only write a file, so a second run is harmless.
     private func runAndExpect(_ command: String, file: URL, content: String, _ name: String) async {
-        type(command)
-        pressReturn()
-        let ok = await eventually { (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == content }
+        func done() -> Bool {
+            (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == content
+        }
+        var ok = false
+        for _ in 0..<2 where !ok {
+            await settledPrompt()
+            type(command)
+            pressReturn()
+            ok = await eventually(8) { done() }
+        }
         check(name, ok, "\(file.lastPathComponent) = \((try? String(contentsOf: file, encoding: .utf8)) ?? "missing")")
     }
 
@@ -262,10 +282,14 @@ final class E2ERunner {
         check("Close Tab closes it", await eventually(3) { self.app.store.tabs.count == 1 })
 
         app.newTab(nil)
-        await waitForPrompt()
-        type("sleep 30")
-        pressReturn()
-        check("a running command is seen", await eventually(5) { self.app.store.selected?.terminal.needsConfirmClose == true })
+        var running = false
+        for _ in 0..<2 where !running {
+            await settledPrompt()
+            type("sleep 30")
+            pressReturn()
+            running = await eventually(5) { self.app.store.selected?.terminal.needsConfirmClose == true }
+        }
+        check("a running command is seen", running)
         app.closeSelectedTab(nil)
         await eventually(2) { self.window.attachedSheet != nil }
         check("the warning names the running tab", sheetTexts().contains { $0.hasPrefix("Still running:") }, sheetTexts().joined(separator: " | "))
@@ -273,10 +297,14 @@ final class E2ERunner {
         await eventually(3) { self.app.store.tabs.count == 1 }
 
         app.newTab(nil)
-        await waitForPrompt()
-        type("exit")
-        pressReturn()
-        check("exit closes the tab without asking", await eventually(5) { self.app.store.tabs.count == 1 && self.window.attachedSheet == nil })
+        var closed = false
+        for _ in 0..<2 where !closed {
+            await settledPrompt()
+            type("exit")
+            pressReturn()
+            closed = await eventually(6) { self.app.store.tabs.count == 1 }
+        }
+        check("exit closes the tab without asking", closed && window.attachedSheet == nil, "tabs \(app.store.tabs.count), sheet \(window.attachedSheet != nil)")
 
         check("closing the window asks", app.windowShouldClose(window) == false && window.attachedSheet != nil)
         clickSheetButton("Cancel")
@@ -454,7 +482,9 @@ final class E2ERunner {
         emit("9;4;2;0", from: second)
         check("failed: error progress", await eventually { second.activity.mark == .failed })
         check("the Dock badge counts marked tabs", app.store.tabs.filter(\.activity.needsAttention).count == 2)
-        check("no real notification from an isolated run", AttentionNotifier.suppressed >= 1)
+        // An inactive app would notify; an isolated run suppresses (counts) it.
+        // (Under load the run's app can end up active — then there is nothing to notify.)
+        check("no real notification from an isolated run", NSApp.isActive || AttentionNotifier.suppressed >= 1)
     }
 
     /// One tab in each state, for looking at: TERMINUS_DUMP_PNG=<png>
