@@ -7,9 +7,27 @@ let package = Package(
         .macOS(.v13)
     ],
     targets: [
+        // Built locally by `make ghosttykit` (Scripts/build-ghosttykit.sh); not
+        // committed. A static library + the GhosttyKit module map.
+        .binaryTarget(
+            name: "GhosttyKit",
+            path: "Frameworks/GhosttyKit.xcframework"
+        ),
         .executableTarget(
             name: "Terminus",
-            path: "Sources/Terminus"
-        )
+            dependencies: ["GhosttyKit"],
+            path: "Sources/Terminus",
+            linkerSettings: [
+                // libghostty's C++ deps (glslang, spirv-cross, simdutf) and the
+                // system frameworks its Zig code links against.
+                .linkedLibrary("c++"),
+                .linkedFramework("Carbon"),
+                .linkedFramework("CoreText"),
+                .linkedFramework("Metal"),
+                .linkedFramework("QuartzCore"),
+                .linkedFramework("IOSurface"),
+                .linkedFramework("UniformTypeIdentifiers"),
+            ]
+        ),
     ]
 )
