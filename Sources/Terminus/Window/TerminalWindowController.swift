@@ -19,6 +19,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
     private var dragMonitor: Any?
+    /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
+    private let inspector = ProcessInspector()
+    private(set) var infoPopover: NSPopover?
+    private(set) var infoModel: TabInfoModel?
+    private var theme: ChromeTheme?
     /// A press on a tab that may become a drag: the tab and where it began.
     private var pressedTab: (tab: Tab, x: CGFloat)?
     // Readable (not writable) outside so the E2E scenarios can check them.
@@ -71,6 +76,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private func buildLayout(in window: NSWindow) {
         let runtime = GhosttyRuntime.shared
         let theme = ChromeTheme(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
+        self.theme = theme
         let tabBar = TabStripHostingView(
             rootView: TabBarView(
                 store: store,
@@ -569,8 +575,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Writes the composited window, as on screen, to a PNG. An app may
     /// capture its own window without Screen Recording permission;
     /// cacheDisplay misses layer-backed content here.
-    func captureWindow(to path: String) {
-        guard let window,
+    func captureWindow(to path: String, window: NSWindow? = nil) {
+        guard let window = window ?? self.window,
             let image = CGWindowListCreateImage(
                 .null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
         else { return }
@@ -662,6 +668,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if tab.customTitle != nil {
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
+        menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        menu.addItem(.separator())
         menu.addItem(
             ClosureMenuItem(tab.isPinned ? "Unpin Tab" : "Pin Tab") { [weak self] in
                 self?.store.setPinned(tab, !tab.isPinned)
@@ -690,6 +698,35 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let right = store.index(of: tab).map { Array(store.tabs[($0 + 1)...]).filter { !$0.isPinned } } ?? []
         menu.addItem(ClosureMenuItem("Close Tabs to the Right", enabled: !right.isEmpty) { [weak self] in self?.closeTabs(right) })
         return menu
+    }
+
+    // MARK: Tab Info
+
+    /// A popover under the tab: its location and what it is running, live
+    /// while open.
+    func showInfo(for tab: Tab) {
+        infoPopover?.close()
+        guard let strip = tabBarView, let theme, let frame = store.tabFrames[tab.id] else { return }
+        let model = TabInfoModel(tab: tab, inspector: inspector)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: TabInfoView(model: model, theme: theme))
+        popover.delegate = self
+        // Strip frames are top-left; the host is flipped, so that is its space.
+        var rect = frame
+        if !strip.isFlipped { rect.origin.y = strip.bounds.height - frame.maxY }
+        popover.show(relativeTo: rect, of: strip, preferredEdge: strip.isFlipped ? .maxY : .minY)
+        model.start()
+        infoPopover = popover
+        infoModel = model
+    }
+
+    @objc func showSelectedTabInfo(_ sender: Any?) {
+        if infoPopover?.isShown == true {
+            infoPopover?.close()
+        } else if let tab = store.selected {
+            showInfo(for: tab)
+        }
     }
 
     // MARK: Palette
@@ -1054,5 +1091,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         for tab in store.tabs { tab.terminal.close() }
+    }
+}
+
+extension TerminalWindowController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        infoModel?.stop()
+        infoModel = nil
+        infoPopover = nil
     }
 }

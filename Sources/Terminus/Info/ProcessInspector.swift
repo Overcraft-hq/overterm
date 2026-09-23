@@ -55,9 +55,13 @@ final class ProcessInspector: @unchecked Sendable {
         var infos: [pid_t: proc_bsdinfo] = [:]
         var children: [pid_t: [pid_t]] = [:]
         for pid in Self.allPIDs() where pid > 0 {
-            guard let bsd = Self.bsdInfo(pid) else { continue }
-            infos[pid] = bsd
-            children[pid_t(bsd.pbi_ppid), default: []].append(pid)
+            if let bsd = Self.bsdInfo(pid) {
+                infos[pid] = bsd
+                children[pid_t(bsd.pbi_ppid), default: []].append(pid)
+            } else if let link = Self.kinfo(pid) {
+                // Another user's process (root's login): only its link is needed.
+                children[link.parent, default: []].append(pid)
+            }
         }
 
         var members = Set<pid_t>()
@@ -108,10 +112,22 @@ final class ProcessInspector: @unchecked Sendable {
     /// first — libghostty's `login` per surface.
     static func children(of parent: pid_t) -> [(pid: pid_t, start: UInt64)] {
         allPIDs().compactMap { pid -> (pid_t, UInt64)? in
-            guard let bsd = bsdInfo(pid), pid_t(bsd.pbi_ppid) == parent else { return nil }
-            return (pid, UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec))
+            guard let info = kinfo(pid), info.parent == parent else { return nil }
+            return (pid, info.start)
         }
         .sorted { $0.1 < $1.1 }
+    }
+
+    /// Parent and start time (µs) of any process, root-owned ones included —
+    /// what `ps` uses. proc_pidinfo refuses those (libghostty's `login` is
+    /// root's), so the tree's links come from here.
+    static func kinfo(_ pid: pid_t) -> (parent: pid_t, start: UInt64)? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        let start = info.kp_proc.p_starttime
+        return (info.kp_eproc.e_ppid, UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec))
     }
 
     /// Children under their parents; roots are nodes whose parent isn't tagged

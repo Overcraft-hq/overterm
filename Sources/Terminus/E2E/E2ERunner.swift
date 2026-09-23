@@ -28,6 +28,7 @@ final class E2ERunner {
         "marks": { await $0.marks() },
         "palette": { await $0.paletteScenario() },
         "reorder": { await $0.reorder() },
+        "info": { await $0.info() },
     ]
 
     private let app: TerminalWindowController
@@ -555,6 +556,43 @@ final class E2ERunner {
         guard let b = app.store.tabs.first(where: { $0.title == "B" }), let pb = point(inTab: b) else { return }
         await drag(from: pb, to: pb)
         check("a click selects the tab", await eventually(2) { self.app.store.selected?.title == "B" }, app.store.selected?.title ?? "nil")
+    }
+
+    /// Tab Info shows the tab's own processes, measured — and not another tab's.
+    private func info() async {
+        await waitForPrompt()
+        let first = app.store.selected!
+        type("sleep 61 &")
+        pressReturn()
+        app.newTab(nil)
+        await waitForPrompt()
+        type("sleep 62 &")
+        pressReturn()
+        await pause(0.5)
+
+        app.showInfo(for: first)
+        check("the popover opens", await eventually(2) { self.app.infoPopover?.isShown == true })
+        guard let model = app.infoModel else { return check("a model", false) }
+        let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.command.hasPrefix("sleep 61") } }
+        let all = model.processes.flatMap(\.flattened)
+        check("its background job is listed", listed, all.map(\.command).joined(separator: " | "))
+        check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.command.hasPrefix("sleep 61") } })
+        check("the other tab's job is not", !all.contains { $0.command.hasPrefix("sleep 62") })
+        check("memory is measured", model.totalMemory > 0)
+        check("the location is the tab's directory", await eventually { model.location?.directory == first.workingDirectory })
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
+            await pause(1.2)
+            app.captureWindow(to: png, window: popoverWindow)
+        }
+        app.showSelectedTabInfo(nil)
+        await eventually(2) { self.app.infoPopover == nil }
+        check("closing it stops the refresh", app.infoModel == nil)
+        // Leave no sleeps behind.
+        all.filter { $0.name == "sleep" }.forEach { kill($0.pid, SIGTERM) }
+        for tab in app.store.tabs {
+            tab.terminal.insertText("kill %1 2>/dev/null")
+            tab.terminal.pressReturn()
+        }
     }
 
     /// ⌘P shows, searches across kinds, and hides.
