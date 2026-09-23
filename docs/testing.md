@@ -47,7 +47,8 @@ What makes it end-to-end without being dangerous:
   a throwaway git identity.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
-`layout`, `session`, `task`, `snippets`, `attention`, `marks`, `palette`.
+`layout`, `session`, `task`, `snippets`, `attention`, `marks`, `palette`,
+`reorder`, `info`, `claude`, `disk`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
@@ -55,6 +56,15 @@ on it:
 ```sh
 make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null | grep ^E2E
 ```
+
+### Typing into a shell
+
+Type at a *settled* prompt (`settledPrompt()`: at the prompt + 400 ms) and
+let `runAndExpect` retry once: while drawing a prompt a shell's theme or
+plugins may query the terminal and swallow typeahead, more so under load.
+Keep typed lines short and plain — put code in a file and run the file —
+a long line of quotes and parentheses typed key by key is at the mercy of
+the user's zsh plugins. Remember typing goes to the *selected* tab.
 
 ### Adding a scenario
 

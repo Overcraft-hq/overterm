@@ -58,6 +58,21 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 `close_surface_cb` (shell exited, or Ghostty's ⌘W) → `closeTab` (pinned tabs
 ignore it unless the process actually exited).
 
+## Tab Info (⌘I, or Show Info… on a tab)
+
+A popover per tab, live while open (`TabInfoModel`, `Sources/Terminus/Info/`):
+
+| Section | Source |
+|---|---|
+| Location | tab cwd → checkout, branch, worktree-of, changed files (git) |
+| Running | `ProcessInspector`: everything under the tab's `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), plus anything tagged `TERMINUS_TAB_ID` that left the tree. CPU% from task-time deltas (Mach ticks → ns), resident memory. Links via sysctl KERN_PROC — proc_pidinfo refuses root's `login`. |
+| Listening | `lsof` on the tab's pids, every 3 s; Open → localhost |
+| Claude session | `ClaudeUsageReader` on `~/.claude/projects/<cwd as ->/<session>.jsonl`: streamed, incremental, ends-of-line byte search, replies de-duplicated by id |
+| Disk | `DiskUsage` of the checkout only, cancellable, cached 60 s |
+
+macOS hides the environment of Apple-signed binaries (zsh, sleep, git) from
+other processes, so the env tag alone can't find a shell — hence the tree.
+
 ## Agents
 
 `Agent` is a closed enum (Claude, Codex). An agent starts by typing its command
