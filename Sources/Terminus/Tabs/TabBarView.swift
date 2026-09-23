@@ -84,6 +84,9 @@ private struct TabItemView: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            if let color = tab.color {
+                Circle().fill(color.color).frame(width: 8, height: 8)
+            }
             if isRenaming {
                 TabRenameField(tab: tab, store: store, theme: theme, onEnd: actions.renameEnded)
             } else {
@@ -111,6 +114,17 @@ private struct TabItemView: View {
             RoundedRectangle(cornerRadius: 7)
                 .fill(isSelected ? theme.selected : (hovering ? theme.hover : .clear))
         )
+        .background(
+            // A coloured tab carries a faint wash of its colour, so it is
+            // findable in a full strip even when not selected.
+            RoundedRectangle(cornerRadius: 7)
+                .fill(tab.color?.color.opacity(isSelected ? 0.0 : 0.14) ?? .clear)
+        )
+        .overlay(alignment: .bottom) {
+            if isSelected, let color = tab.color {
+                Capsule().fill(color.color).frame(height: 2).padding(.horizontal, 8)
+            }
+        }
         .contentShape(Rectangle())
         // Single and double tap together, not exclusively: an exclusive double
         // tap would delay every plain click by the double-click interval.
@@ -124,6 +138,13 @@ private struct TabItemView: View {
             }
             if tab.customTitle != nil {
                 Button("Reset Name") { tab.customTitle = nil }
+            }
+            Menu("Color") {
+                ForEach(TabColor.allCases) { color in
+                    Toggle(color.name, isOn: Binding(get: { tab.color == color }, set: { tab.color = $0 ? color : nil }))
+                }
+                Divider()
+                Button("None") { tab.color = nil }.disabled(tab.color == nil)
             }
             Divider()
             Button("Close Tab") { actions.close(tab) }

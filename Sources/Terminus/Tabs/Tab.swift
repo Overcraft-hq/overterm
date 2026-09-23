@@ -13,6 +13,8 @@ final class Tab: ObservableObject, Identifiable {
     /// A name the user gave the tab; overrides the shell title while set.
     @Published var customTitle: String?
 
+    @Published var color: TabColor?
+
     init(terminal: TerminalView) {
         self.terminal = terminal
         self.shellTitle = terminal.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? "Terminal"
