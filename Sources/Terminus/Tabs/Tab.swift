@@ -13,6 +13,32 @@ final class Tab: ObservableObject, Identifiable {
     /// The shell's current directory, as last reported.
     @Published var workingDirectory: String?
 
+    /// Where the tab's agent (claude, codex) is working, when that differs
+    /// from the shell — Claude Code chdirs into a worktree on EnterWorktree.
+    /// Polled by the window for the selected tab.
+    @Published var agentDirectory: String?
+
+    /// A checkout the user attached to this tab: tree, diff and worktree
+    /// highlight show it instead of following the shell or the agent.
+    @Published var attachedCheckout: URL?
+
+    /// What the sidebar and diff show for this tab: an attached checkout,
+    /// else where its agent works, else the shell's directory.
+    var checkoutSource: (root: URL, reason: CheckoutReason)? {
+        Self.checkoutSource(workingDirectory: workingDirectory, agentDirectory: agentDirectory, attached: attachedCheckout, agent: agent)
+    }
+
+    /// The same, from given values — for subscribers: @Published emits
+    /// before the property is set, so reading the tab back in a sink sees
+    /// the old value.
+    static func checkoutSource(
+        workingDirectory: String?, agentDirectory: String?, attached: URL?, agent: Agent?
+    ) -> (root: URL, reason: CheckoutReason)? {
+        if let attached { return (attached, .attached) }
+        if let agentDirectory { return (FileTreeModel.treeRoot(for: agentDirectory), .agent(agent ?? .claude)) }
+        return workingDirectory.map { (FileTreeModel.treeRoot(for: $0), .shell) }
+    }
+
     /// A name the user gave the tab; overrides the shell title while set.
     @Published var customTitle: String?
 
@@ -35,4 +61,11 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     var title: String { customTitle ?? shellTitle }
+}
+
+/// Why a tab shows the checkout it shows.
+enum CheckoutReason: Equatable {
+    case shell
+    case agent(Agent)
+    case attached
 }

@@ -8,6 +8,8 @@ struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
     let onClose: () -> Void
+    /// Undo an attachment: back to following the agent / shell.
+    let onDetach: () -> Void
     /// Opens a changed file in the editor pane.
     let onOpen: (URL) -> Void
     /// The file whose Discard is awaiting confirmation.
@@ -85,12 +87,34 @@ struct DiffPanelView: View {
                 Text(verbatim: "−\(model.totals.removed)").foregroundStyle(DiffColors.removed)
             }
             Spacer(minLength: 0)
+            sourceChip
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
             iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
         }
         .font(.system(size: 12))
         .padding(.horizontal, 12)
         .frame(height: 36)
+    }
+
+    /// Why this checkout: following the tab's agent into its worktree, or
+    /// attached by hand (with Detach).
+    @ViewBuilder private var sourceChip: some View {
+        switch model.showing {
+        case .agent(let agent):
+            Label("following \(agent.name)", systemImage: agent.symbol)
+                .font(.system(size: 11))
+                .foregroundStyle(TabStatusStyle.signal)
+                .help("\(agent.name) is working in this worktree")
+        case .attached:
+            Button(action: onDetach) {
+                Label("attached · Detach", systemImage: "pin.fill").font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Pinned to this tab — Detach to follow the shell and agent again")
+        case .shell:
+            EmptyView()
+        }
     }
 
     private var headerTitle: String {

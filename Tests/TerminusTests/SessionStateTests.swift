@@ -17,11 +17,18 @@ final class SessionStateTests: XCTestCase {
         let state = SessionState(
             tabs: [
                 .init(workingDirectory: "/repo", customTitle: "main", color: "blue", isPinned: true, agent: nil),
-                .init(workingDirectory: "/repo-wt-x", customTitle: nil, color: nil, isPinned: false, agent: .claude),
+                .init(workingDirectory: "/repo-wt-x", customTitle: nil, color: nil, isPinned: false, agent: .claude, attachedCheckout: "/repo-wt-y"),
             ],
             selectedIndex: 1)
         try state.save(to: url)
         XCTAssertEqual(SessionState.load(from: url), state)
+    }
+
+    func testASessionFromBeforeAttachingStillLoads() throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"selectedIndex":0,"tabs":[{"workingDirectory":"/repo","isPinned":false}]}"#.utf8).write(to: url)
+        XCTAssertEqual(SessionState.load(from: url)?.tabs.first?.attachedCheckout, nil)
+        XCTAssertEqual(SessionState.load(from: url)?.tabs.count, 1)
     }
 
     func testMissingOrCorruptFileIsNil() throws {

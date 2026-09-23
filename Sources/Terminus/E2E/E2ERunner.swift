@@ -31,6 +31,7 @@ final class E2ERunner {
         "info": { await $0.info() },
         "claude": { await $0.claudeInfo() },
         "disk": { await $0.diskInfo() },
+        "follow": { await $0.follow() },
     ]
 
     private let app: TerminalWindowController
@@ -759,6 +760,63 @@ final class E2ERunner {
             await pause(0.8)
             app.captureWindow(to: png, window: popoverWindow)
         }
+    }
+
+    /// The sidebar and diff follow the tab's agent into a worktree (as
+    /// Claude Code's EnterWorktree does: it chdirs its process), can be
+    /// attached to another checkout by hand, and detach back.
+    private func follow() async {
+        let repo = scratch.appendingPathComponent("mono")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "init"], in: repo)
+        let worktree = repo.appendingPathComponent(".worktrees/feat")
+        try? await git(["worktree", "add", "-q", "-b", "feat", worktree.path], in: repo)
+        try? "work in progress\n".write(to: worktree.appendingPathComponent("agent-change.txt"), atomically: true, encoding: .utf8)
+
+        // A stand-in "claude": sleep run with argv[0] = claude (as the real
+        // CLI appears), from a script that cds into the worktree first — the
+        // shell itself stays in main. (A copy of /bin/sleep won't do: macOS
+        // launch constraints kill relocated system binaries.)
+        let script = scratch.appendingPathComponent("agent.sh")
+        try? "cd '\(worktree.path)' && exec -a claude sleep 60\n".write(to: script, atomically: true, encoding: .utf8)
+
+        app.newTab(in: repo)
+        guard let tab = app.store.selected else { return check("a tab", false) }
+        let main = repo.resolvingSymlinksInPath()
+        let feat = worktree.resolvingSymlinksInPath()
+        check("starts on the shell's checkout", await eventually { self.app.diff.root?.resolvingSymlinksInPath() == main })
+        await settledPrompt()
+        type("bash \(script.path) &")
+        pressReturn()
+
+        let followed = await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == feat }
+        let seen = ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: tab.terminal), tag: tab.terminal.processTag)
+            .flatMap(\.flattened).map { "\($0.name)@\($0.workingDirectory ?? "?")" }.joined(separator: " ")
+        check("follows the agent into its worktree", followed, "diff \(app.diff.root?.path ?? "nil"); agentDirectory \(tab.agentDirectory ?? "nil"); tab \(seen)")
+        check("and says so", app.diff.showing == .agent(.claude))
+        check("the tree follows too", app.tree.root?.resolvingSymlinksInPath() == feat)
+        check("the agent's change is in the diff", await eventually { self.app.diff.files.contains { $0.path == "agent-change.txt" } })
+        check("the worktree list marks it", app.worktrees.showing?.reason == .agent(.claude))
+
+        guard let mainWorktree = app.worktrees.worktrees.first(where: \.isMain) else { return check("main worktree listed", false) }
+        app.attach(mainWorktree)
+        check("attaching pins it", await eventually(2) { self.app.diff.root?.resolvingSymlinksInPath() == main && self.app.diff.showing == .attached })
+        await pause(2.5)
+        check("and holds while the agent keeps working elsewhere", app.diff.showing == .attached)
+        app.detach()
+        check("detaching follows the agent again", await eventually(2) { self.app.diff.root?.resolvingSymlinksInPath() == feat })
+
+        // The agent leaves (EnterWorktree's exit chdirs back; here it just ends).
+        tab.terminal.insertText("kill %1")
+        tab.terminal.pressReturn()
+        check("when the agent is gone, back to the shell's checkout", await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == main })
+        check(
+            "session keeps an attachment",
+            {
+                self.app.attach(mainWorktree)
+                return self.app.sessionState.tabs.last?.attachedCheckout == mainWorktree.path.path
+            }())
     }
 
     /// ⌘P shows, searches across kinds, and hides.

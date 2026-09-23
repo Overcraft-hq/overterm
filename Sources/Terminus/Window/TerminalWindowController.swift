@@ -19,6 +19,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
     private var dragMonitor: Any?
+    /// Polls where the selected tab's agent works (see Tab.agentDirectory).
+    private var agentPoll: Timer?
     /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
     private let inspector = ProcessInspector()
     /// Kept across popovers: transcripts are re-read only where they grew.
@@ -121,6 +123,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTab: { [weak self] in self?.newTab(in: $0.path) },
                     newAgentTab: { [weak self] worktree, agent in self?.newTab(in: worktree.path, agent: agent) },
                     remove: { [weak self] in self?.removeWorktree($0) },
+                    attach: { [weak self] in self?.attach($0) },
+                    detach: { [weak self] in self?.detach() },
                     newTask: { [weak self] in self?.newTask(nil) }
                 ),
                 snippetActions: SnippetActions(
@@ -157,6 +161,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             rootView: DiffPanelView(
                 model: diff, theme: theme,
                 onClose: { [weak self] in self?.toggleDiff(nil) },
+                onDetach: { [weak self] in self?.detach() },
                 onOpen: { [weak self] in self?.openInEditor($0) }))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(viewController: diffPanel)
@@ -186,6 +191,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         tabBarView = tabBar
         installTabRightClick()
         installTabDragging()
+        startAgentPoll()
 
         let content = NSView()
         let body = split.view
@@ -336,7 +342,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tabs: store.tabs.map {
                 .init(
                     workingDirectory: $0.workingDirectory, customTitle: $0.customTitle, color: $0.color?.rawValue,
-                    isPinned: $0.isPinned, agent: $0.agent)
+                    isPinned: $0.isPinned, agent: $0.agent, attachedCheckout: $0.attachedCheckout?.path)
             },
             selectedIndex: store.selectedIndex)
     }
@@ -351,6 +357,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             guard let tab = store.tabs.last else { continue }
             tab.customTitle = saved.customTitle
             tab.color = saved.color.flatMap(TabColor.init(rawValue:))
+            tab.attachedCheckout = saved.attachedCheckout.flatMap {
+                FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil
+            }
             if saved.isPinned { store.setPinned(tab, true) }
         }
         if let i = state.selectedIndex { store.select(index: i) }
@@ -380,6 +389,56 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func newAgentTab(_ agent: Agent) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
         newTab(in: URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path), agent: agent)
+    }
+
+    // MARK: Following the agent
+
+    /// Every 2 s, where the selected tab's agent process (claude, codex)
+    /// works. Claude Code moves its process into a worktree on
+    /// EnterWorktree (and back on exit); the sidebar and diff follow.
+    private func startAgentPoll() {
+        agentPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pollAgentDirectory() }
+        }
+    }
+
+    private func pollAgentDirectory() {
+        guard let tab = store.selected else { return }
+        let root = SurfaceProcesses.shared.loginPID(of: tab.terminal)
+        let tag = tab.terminal.processTag
+        let inspector = self.inspector
+        DispatchQueue.global(qos: .utility).async {
+            let agent = inspector.tree(root: root, tag: tag).flatMap(\.flattened).first { Self.isAgent($0) }
+            let directory = agent?.workingDirectory
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    // Only when it differs from the shell's: an agent in the
+                    // tab's own directory changes nothing.
+                    let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
+                    let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
+                    if tab.agentDirectory != following { tab.agentDirectory = following }
+                }
+            }
+        }
+    }
+
+    /// Claude Code or Codex, by process name or argv[0].
+    nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
+        let names = ["claude", "codex"]
+        if names.contains(node.name) { return true }
+        guard let first = node.command.split(separator: " ").first else { return false }
+        let base = (String(first) as NSString).lastPathComponent
+        return names.contains(base)
+    }
+
+    /// Pins the selected tab's sidebar and diff to `worktree`.
+    func attach(_ worktree: Worktree) {
+        store.selected?.attachedCheckout = worktree.path
+    }
+
+    /// Back to following the agent / shell.
+    func detach() {
+        store.selected?.attachedCheckout = nil
     }
 
     // MARK: Worktrees
@@ -1008,14 +1067,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if store.renamingID == nil { window?.makeFirstResponder(selected.terminal) }
         window?.title = selected.title
         markSelectedSeen()
+        // Tree, worktrees and diff show the tab's checkout: attached, else
+        // where its agent works, else the shell's directory.
         cwdSubscription = selected.$workingDirectory
-            .compactMap { $0 }
-            .removeDuplicates()
-            .sink { [weak self] cwd in
-                let root = FileTreeModel.treeRoot(for: cwd)
-                self?.tree.setRoot(root)
-                self?.worktrees.setAnchor(root)
-                self?.diff.setRoot(root)
+            .combineLatest(selected.$agentDirectory, selected.$attachedCheckout)
+            .map { [agent = selected.agent] cwd, agentDirectory, attached in
+                Tab.checkoutSource(workingDirectory: cwd, agentDirectory: agentDirectory, attached: attached, agent: agent)
+            }
+            .removeDuplicates { $0?.root == $1?.root && $0?.reason == $1?.reason }
+            .sink { [weak self] source in
+                guard let self, let source else { return }
+                self.tree.setRoot(source.root)
+                self.worktrees.setAnchor(source.root)
+                self.worktrees.showing = source
+                self.diff.setRoot(source.root)
+                self.diff.showing = source.reason
             }
     }
 
@@ -1092,6 +1158,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
+        agentPoll?.invalidate()
         for tab in store.tabs { tab.terminal.close() }
     }
 }

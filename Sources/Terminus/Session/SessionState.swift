@@ -11,6 +11,8 @@ struct SessionState: Codable, Equatable {
         var color: String?
         var isPinned: Bool
         var agent: Agent?
+        /// An attached checkout's path (absent in older session files).
+        var attachedCheckout: String?
     }
 
     var tabs: [TabState]

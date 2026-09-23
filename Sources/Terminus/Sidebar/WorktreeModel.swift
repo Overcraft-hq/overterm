@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class WorktreeModel: ObservableObject {
     @Published private(set) var worktrees: [Worktree] = []
+    /// What the selected tab shows, and why (set by the window).
+    @Published var showing: (root: URL, reason: CheckoutReason)?
     /// A directory inside the repository (the file tree's root).
     private(set) var anchor: URL?
 

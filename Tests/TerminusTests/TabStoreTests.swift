@@ -166,3 +166,29 @@ final class TabStoreTests: XCTestCase {
         XCTAssertEqual(TerminalWindowController.closeWarning(for: [idle, tab("b")]), "Their shells are idle.")
     }
 }
+
+@MainActor
+final class CheckoutSourceTests: XCTestCase {
+    func testAttachedBeatsAgentBeatsShell() {
+        let tab = Tab(terminal: TerminalView(workingDirectory: "/tmp"), agent: .claude)
+        XCTAssertEqual(tab.checkoutSource?.reason, .shell)
+        tab.agentDirectory = "/var"
+        XCTAssertEqual(tab.checkoutSource?.reason, .agent(.claude))
+        XCTAssertEqual(tab.checkoutSource?.root.path, "/var")
+        tab.attachedCheckout = URL(fileURLWithPath: "/usr")
+        XCTAssertEqual(tab.checkoutSource?.reason, .attached)
+        XCTAssertEqual(tab.checkoutSource?.root.path, "/usr")
+        tab.attachedCheckout = nil
+        XCTAssertEqual(tab.checkoutSource?.reason, .agent(.claude), "detach goes back to following the agent")
+    }
+
+    func testAgentProcessesAreRecognized() {
+        func node(_ name: String, _ command: String) -> ProcessNode {
+            ProcessNode(pid: 1, parent: 0, name: name, command: command, cpuPercent: 0, memory: 0, workingDirectory: nil)
+        }
+        XCTAssertTrue(TerminalWindowController.isAgent(node("claude", "claude --continue")))
+        XCTAssertTrue(TerminalWindowController.isAgent(node("node", "/Users/b/.local/bin/codex resume --last")))
+        XCTAssertFalse(TerminalWindowController.isAgent(node("zsh", "-zsh")))
+        XCTAssertFalse(TerminalWindowController.isAgent(node("vim", "vim claude.md")))
+    }
+}

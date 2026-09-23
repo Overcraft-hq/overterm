@@ -14,6 +14,8 @@ final class DiffModel: ObservableObject {
     }
 
     @Published private(set) var root: URL?
+    /// Why this checkout is the one shown (set by the window).
+    @Published var showing: CheckoutReason = .shell
     @Published private(set) var files: [ChangedFile] = []
     @Published private(set) var branch: String?
     @Published private(set) var diffs: [String: FileDiff] = [:]

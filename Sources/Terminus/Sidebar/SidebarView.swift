@@ -21,6 +21,10 @@ struct WorktreeActions {
     var newTab: (Worktree) -> Void
     var newAgentTab: (Worktree, Agent) -> Void
     var remove: (Worktree) -> Void
+    /// Pin the selected tab's sidebar and diff to this worktree.
+    var attach: (Worktree) -> Void
+    /// Back to following the agent / shell.
+    var detach: () -> Void
     var newTask: () -> Void
 }
 
@@ -265,6 +269,9 @@ private struct WorktreeListView: View {
                             WorktreeRowView(
                                 worktree: worktree,
                                 isCurrent: currentRoot?.standardizedFileURL == worktree.path.standardizedFileURL,
+                                reason: model.showing.flatMap {
+                                    $0.root.standardizedFileURL == worktree.path.standardizedFileURL ? $0.reason : nil
+                                },
                                 theme: theme, actions: actions)
                         }
                     }
@@ -278,6 +285,8 @@ private struct WorktreeListView: View {
 private struct WorktreeRowView: View {
     let worktree: Worktree
     let isCurrent: Bool
+    /// Why the selected tab shows this worktree, when it does.
+    let reason: CheckoutReason?
     let theme: ChromeTheme
     let actions: WorktreeActions
     @State private var hovering = false
@@ -292,6 +301,15 @@ private struct WorktreeRowView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 4)
+            switch reason {
+            case .attached:
+                Image(systemName: "pin.fill").font(.system(size: 9)).help("Attached to this tab")
+            case .agent(let agent):
+                Image(systemName: agent.symbol).font(.system(size: 9)).foregroundStyle(TabStatusStyle.signal)
+                    .help("\(agent.name) is working here")
+            default:
+                EmptyView()
+            }
             if worktree.isLocked {
                 Image(systemName: "lock.fill").font(.system(size: 9)).help("Locked")
             }
@@ -308,6 +326,12 @@ private struct WorktreeRowView: View {
         .onHover { hovering = $0 }
         .onTapGesture { actions.open(worktree) }
         .contextMenu {
+            if reason == .attached {
+                Button("Detach from This Tab") { actions.detach() }
+            } else {
+                Button("Attach to This Tab") { actions.attach(worktree) }
+            }
+            Divider()
             Button("New Tab Here") { actions.newTab(worktree) }
             ForEach(Agent.allCases) { agent in
                 Button("New \(agent.name) Tab Here") { actions.newAgentTab(worktree, agent) }
