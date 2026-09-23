@@ -122,6 +122,7 @@ private struct FileRowView: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(isSelected ? theme.text : theme.dimText)
+        .opacity(row.isIgnored && !isSelected ? 0.45 : 1)
         .padding(.leading, 8 + CGFloat(row.depth) * 14)
         .padding(.trailing, 8)
         .frame(height: 22)

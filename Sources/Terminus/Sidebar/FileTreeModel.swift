@@ -12,6 +12,8 @@ struct FileRow: Identifiable, Hashable {
     let entry: FileEntry
     let depth: Int
     let isExpanded: Bool
+    /// Matched by .gitignore — shown dimmed, not hidden.
+    let isIgnored: Bool
     var id: URL { entry.url }
 }
 
@@ -30,6 +32,10 @@ final class FileTreeModel: ObservableObject {
     /// comes back to the tree as you left it.
     private var expandedByRoot: [URL: Set<URL>] = [:]
     private var watcher: DirectoryWatcher?
+    /// Entries git ignores, filled in per folder as it is listed.
+    private var ignored: Set<URL> = []
+    /// Folders whose entries have been (or are being) asked about.
+    private var ignoreChecked: Set<URL> = []
 
     /// Noise that is never what you are looking for in a tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
@@ -40,6 +46,8 @@ final class FileTreeModel: ObservableObject {
         root = url
         expanded = url.flatMap { expandedByRoot[$0] } ?? []
         listings = [:]
+        ignored = []
+        ignoreChecked = []
         selection = nil
         rebuild()
         watcher?.stop()
@@ -56,6 +64,7 @@ final class FileTreeModel: ObservableObject {
         guard !stale.isEmpty else { return }
         for dir in stale {
             listings = listings.filter { $0.key.standardizedFileURL != dir }
+            ignoreChecked = ignoreChecked.filter { $0.standardizedFileURL != dir }
         }
         // A deleted folder that was expanded would otherwise stay "open".
         expanded = expanded.filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -80,6 +89,7 @@ final class FileTreeModel: ObservableObject {
     /// Re-reads every listed folder (keeping what is expanded).
     func reload() {
         listings = [:]
+        ignoreChecked = []
         rebuild()
     }
 
@@ -92,7 +102,7 @@ final class FileTreeModel: ObservableObject {
         func walk(_ dir: URL, depth: Int) {
             for entry in listing(of: dir) {
                 let open = entry.isDirectory && expanded.contains(entry.url)
-                result.append(FileRow(entry: entry, depth: depth, isExpanded: open))
+                result.append(FileRow(entry: entry, depth: depth, isExpanded: open, isIgnored: ignored.contains(entry.url)))
                 if open { walk(entry.url, depth: depth + 1) }
             }
         }
@@ -114,7 +124,31 @@ final class FileTreeModel: ObservableObject {
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
         listings[dir] = entries
+        checkIgnored(entries, in: dir)
         return entries
+    }
+
+    /// Asks git which of a folder's entries are ignored — one
+    /// `check-ignore` per folder listing — then redraws. Outside a
+    /// repository git fails and nothing is dimmed.
+    private func checkIgnored(_ entries: [FileEntry], in dir: URL) {
+        guard let root, !entries.isEmpty, !ignoreChecked.contains(dir) else { return }
+        ignoreChecked.insert(dir)
+        let paths = entries.map(\.url.path)
+        Task { [weak self] in
+            // Exit 1 means "none of these are ignored". Paths come back as
+            // given, one per line (-z needs --stdin); quotePath off keeps
+            // non-ASCII names unescaped.
+            guard
+                let output = try? await Git.run(
+                    ["-c", "core.quotePath=false", "check-ignore", "--"] + paths, in: root, success: [0, 1])
+            else { return }
+            guard let self, self.root == root else { return }
+            let hits = output.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+            let before = self.ignored.count
+            self.ignored.formUnion(hits)
+            if self.ignored.count != before { self.rebuild() }
+        }
     }
 
     /// The directory a tree should show for a shell's cwd: the enclosing git

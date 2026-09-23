@@ -139,3 +139,28 @@ extension FileTreeTests {
         XCTAssertTrue(tree.rows.isEmpty)
     }
 }
+
+extension FileTreeTests {
+    @MainActor
+    func testGitignoredEntriesAreFlagged() async throws {
+        _ = try await Git.run(["init", "-q"], in: dir)
+        try "node_modules/\n*.log\n".write(to: dir.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        try mkdir("node_modules/pkg")
+        try mkdir("src")
+        touch("debug.log")
+        touch("README.md")
+
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        let deadline = Date().addingTimeInterval(5)
+        while !tree.rows.contains(where: \.isIgnored), Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let flags = Dictionary(uniqueKeysWithValues: tree.rows.map { ($0.entry.name, $0.isIgnored) })
+        XCTAssertEqual(flags["node_modules"], true)
+        XCTAssertEqual(flags["debug.log"], true)
+        XCTAssertEqual(flags["src"], false)
+        XCTAssertEqual(flags["README.md"], false)
+        XCTAssertEqual(flags[".gitignore"], false)
+    }
+}
