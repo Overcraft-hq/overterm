@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The ordered tabs of one window and which one is selected. Pure state; the
@@ -77,8 +78,27 @@ final class TabStore: ObservableObject {
     /// The tab being dragged in the strip, if any (drawn slightly faded).
     @Published var draggingID: Tab.ID?
 
-    /// Moves `tab` to where `target` is, if both are in the same group. Used
-    /// live while dragging, so the strip reorders under the pointer.
+    /// Where a dragged tab belongs for a pointer at `x`: after every other tab
+    /// of its group whose middle is left of the pointer.
+    ///
+    /// Idempotent under stale geometry, which is the point: the strip reports
+    /// frames a moment after a move, and a swap-with-the-tab-under-the-pointer
+    /// rule then saw the tab it had just swapped with still "under" the
+    /// pointer and swapped back — 30 flip-flops in one drag.
+    func dragMove(_ tab: Tab, toPointerX x: CGFloat) {
+        let others = tabs.filter { $0.isPinned == tab.isPinned && $0.id != tab.id }
+        let position = others.filter { (tabFrames[$0.id]?.midX ?? .infinity) < x }.count
+        let groupStart = tab.isPinned ? 0 : pinnedCount
+        guard let from = index(of: tab) else { return }
+        let to = groupStart + position
+        guard to != from else { return }
+        var reordered = tabs
+        reordered.remove(at: from)
+        reordered.insert(tab, at: to)
+        tabs = reordered
+    }
+
+    /// Moves `tab` to where `target` is, if both are in the same group.
     func move(_ tab: Tab, to target: Tab) {
         guard tab.id != target.id, tab.isPinned == target.isPinned,
             let from = index(of: tab), let to = index(of: target)

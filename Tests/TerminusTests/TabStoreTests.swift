@@ -89,6 +89,31 @@ final class TabStoreTests: XCTestCase {
         XCTAssertEqual(titles(store), ["p", "a", "b"])
     }
 
+    func testDragMoveSlotsAfterTheMiddlesPassed() {
+        let store = TabStore()
+        let a = tab("a"), b = tab("b"), c = tab("c")
+        [a, b, c].forEach { store.insert($0, after: store.tabs.last) }
+        store.tabFrames = [a.id: CGRect(x: 80, y: 0, width: 100, height: 28), b.id: CGRect(x: 180, y: 0, width: 100, height: 28), c.id: CGRect(x: 280, y: 0, width: 100, height: 28)]
+        store.dragMove(c, toPointerX: 100)
+        XCTAssertEqual(titles(store), ["c", "a", "b"], "left of a's middle: first")
+        // Frames not yet updated (the strip lags): the same pointer changes nothing.
+        store.dragMove(c, toPointerX: 100)
+        store.dragMove(c, toPointerX: 110)
+        XCTAssertEqual(titles(store), ["c", "a", "b"], "no flip-flop on stale frames")
+        store.dragMove(c, toPointerX: 250)
+        XCTAssertEqual(titles(store), ["a", "b", "c"], "past b's middle: last")
+    }
+
+    func testDragMoveStaysInItsGroup() {
+        let store = TabStore()
+        let p = tab("p"), a = tab("a")
+        [p, a].forEach { store.insert($0, after: store.tabs.last) }
+        store.setPinned(p, true)
+        store.tabFrames = [p.id: CGRect(x: 80, y: 0, width: 38, height: 28), a.id: CGRect(x: 120, y: 0, width: 100, height: 28)]
+        store.dragMove(a, toPointerX: 0)
+        XCTAssertEqual(titles(store), ["p", "a"], "an unpinned tab stops after the pinned group")
+    }
+
     func testAdjacentWrapsAndIndexSelectionClamps() {
         let store = TabStore()
         let a = tab("a"), b = tab("b")

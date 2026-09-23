@@ -613,8 +613,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Dragging a tab reorders the strip, live: past a few points of travel,
-    /// the tab swaps places with whichever tab of its group is under the
-    /// pointer. Handled here, before dispatch, for the same reason as the
+    /// the tab slots in after every tab of its group whose middle the pointer
+    /// has passed (TabStore.dragMove). Handled here, before dispatch, for the same reason as the
     /// context menu — the title bar keeps drags from SwiftUI. The press
     /// itself goes through untouched (it still selects); only the drag
     /// events are taken.
@@ -637,11 +637,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     self.store.draggingID = pressed.tab.id
                     self.store.select(pressed.tab)
                 }
-                // Only the x matters: the pointer may drift off the strip vertically.
-                let probe = CGPoint(x: point.x, y: (self.store.tabFrames[pressed.tab.id]?.midY) ?? 14)
-                if let target = self.store.tab(at: probe), target.id != pressed.tab.id {
-                    withAnimation(.easeOut(duration: 0.12)) { self.store.move(pressed.tab, to: target) }
-                }
+                // Only x matters (the pointer may drift off the strip vertically).
+                withAnimation(.easeOut(duration: 0.12)) { self.store.dragMove(pressed.tab, toPointerX: point.x) }
                 return nil
             case .leftMouseUp:
                 // A press released without dragging is a click: select here,

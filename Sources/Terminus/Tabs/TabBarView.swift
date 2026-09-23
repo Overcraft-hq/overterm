@@ -266,15 +266,7 @@ private struct TabRenameField: View {
 
 /// Empty strip space drags the window, as a title bar should.
 private struct WindowDragArea: NSViewRepresentable {
-    final class DragView: NSView {
-        override func mouseDown(with event: NSEvent) {
-            if event.clickCount == 2 {
-                window?.performZoom(nil)
-            } else {
-                window?.performDrag(with: event)
-            }
-        }
-    }
+    typealias DragView = WindowDragView
 
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
@@ -313,4 +305,16 @@ private struct DiffBadge: View {
 /// would move the window instead of the tab.
 final class TabStripHostingView<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
+}
+
+/// Behind the tab strip: pressing empty strip space drags (or, double-clicked,
+/// zooms) the window.
+final class WindowDragView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            window?.performZoom(nil)
+        } else {
+            window?.performDrag(with: event)
+        }
+    }
 }

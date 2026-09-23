@@ -540,17 +540,19 @@ final class E2ERunner {
 
     /// A mouse drag as the system would dispatch it (NSApp.sendEvent, so the
     /// app's event monitors see it), from one point to another.
-    private func drag(from start: NSPoint, to end: NSPoint) async {
+    /// `gap`: seconds between drag events. 0 sends them back to back, like
+    /// a real hand faster than the strip can redraw.
+    private func drag(from start: NSPoint, to end: NSPoint, steps: Int = 8, gap: Double = 0.02) async {
         func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
             NSEvent.mouseEvent(
                 with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
         }
         NSApp.sendEvent(mouse(.leftMouseDown, start))
-        for step in 1...8 {
-            let t = CGFloat(step) / 8
+        for step in 1...steps {
+            let t = CGFloat(step) / CGFloat(steps)
             NSApp.sendEvent(mouse(.leftMouseDragged, NSPoint(x: start.x + (end.x - start.x) * t, y: start.y)))
-            await pause(0.02)
+            if gap > 0 { await pause(gap) }
         }
         NSApp.sendEvent(mouse(.leftMouseUp, end))
         await pause(0.2)
@@ -566,12 +568,40 @@ final class E2ERunner {
         let c = app.store.selected!
         c.customTitle = "C"
         check("tab frames are reported", await eventually(3) { self.app.store.tabs.allSatisfy { self.app.store.tabFrames[$0.id] != nil } })
+        // A real press that lands on the strip's window-drag view starts a
+        // window move (an in-process event can't), and the tab never moves.
+        // So check what a press at each tab, and between them, would hit.
+        for tab in app.store.tabs {
+            for dx in [-60.0, -20.0, 0.0, 20.0, 60.0] {
+                guard let p = point(inTab: tab, dx: dx), let content = window.contentView,
+                    let frame = app.store.tabFrames[tab.id], abs(dx) < frame.width / 2 - 2
+                else { continue }
+                let hit = content.hitTest(content.convert(p, from: nil))
+                let name = hit.map { String(describing: Swift.type(of: $0)) } ?? "nil"
+                check("a press on tab \(tab.title) (dx \(Int(dx))) doesn't hit the window-drag area", !name.contains("WindowDrag") && !(hit is WindowDragView), name)
+            }
+        }
+
         let windowOrigin = window.frame.origin
-        guard let from = point(inTab: a), let to = point(inTab: c) else { return check("points", false) }
+        // Past C's middle: that is what "after C" means (as in Chrome).
+        guard let from = point(inTab: a), let to = point(inTab: c, dx: 30) else { return check("points", false) }
         await drag(from: from, to: to)
-        check("dragging A onto C moves it there", app.store.tabs.map(\.title) == ["B", "C", "A"], app.store.tabs.map(\.title).joined(separator: ","))
+        check("dragging A past C's middle moves it after C", app.store.tabs.map(\.title) == ["B", "C", "A"], app.store.tabs.map(\.title).joined(separator: ","))
         check("the window didn't move", window.frame.origin == windowOrigin)
         check("the dragged tab is selected", app.store.selected?.title == "A")
+
+        // Leftwards, to the very front — moving slowly, as a hand does, so the
+        // strip redraws between events. A swap-on-hover rule flip-flopped
+        // here: the strip's frames lag a move, the pointer still "hits" the
+        // tab just swapped with, and they swap back.
+        var orders: [[String]] = []
+        let watch = app.store.$tabs.sink { tabs in orders.append(tabs.map(\.title)) }
+        guard let fromA = point(inTab: a), let toB = point(inTab: app.store.tabs[0], dx: -30) else { return check("points", false) }
+        await drag(from: fromA, to: toB, steps: 40, gap: 0)
+        watch.cancel()
+        check("dragging to the front puts it first", app.store.tabs.map(\.title) == ["A", "B", "C"], app.store.tabs.map(\.title).joined(separator: ","))
+        let changes = zip(orders, orders.dropFirst()).filter { $0 != $1 }.count
+        check("without flip-flopping on the way", changes <= 2, "\(changes) reorders: \(orders.map { $0.joined() })")
 
         app.store.setPinned(c, true)
         await pause(0.3)
