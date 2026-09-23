@@ -14,8 +14,8 @@ TERMINUS_DUMP_PNG=/tmp/terminus.png \
 ```
 
 It starts a fresh window (no session restore, no autosave, divider positions
-neither restored nor saved), opens the file in the editor after 1 s, and after
-another 1.5 s:
+neither restored nor saved), opens the file in the editor after 1 s (an empty
+`TERMINUS_DUMP_LAYOUT=` opens none), and after another 1.5 s:
 
 1. prints the view tree with frames (and `HIDDEN`) plus each outer split
    item's width to stderr;
@@ -27,6 +27,15 @@ another 1.5 s:
 3. drags both split dividers 80 pt with in-process mouse events (posted to
    its own queue) 3 pt off the drawn line, and prints widths before/after;
 4. exits.
+
+More switches, combinable:
+
+| Variable | Does |
+|---|---|
+| `TERMINUS_DUMP_CWD=<dir>` | start the tab there (e.g. a scratch git repo) |
+| `TERMINUS_DUMP_DIFF=1` | open the changes pane |
+| `TERMINUS_DUMP_RENAME=1` | select the tab and start renaming it (as the UI does); 0.5 s later print whether it is still renaming and who has the keyboard |
+| `TERMINUS_DUMP_CLOSE=<s>` | after `<s>` seconds, run Close Tab; print whether the confirmation sheet came up, its text, and the tab count; dismiss it |
 
 Run it from the **bundle** (`Terminus.app/Contents/MacOS/Terminus`): a bare
 `.build/debug/Terminus` crashes in `UNUserNotificationCenter` ("bundleProxy
@@ -79,7 +88,7 @@ in `deinit`.
 |---|---|
 | Tabs | delete `~/Library/Application Support/Terminus/session.json` |
 | Snippets | delete `…/Terminus/snippets.json` (starters come back) |
-| Divider positions | `defaults delete ai.promptrails.terminus "NSSplitView Subview Frames TerminusColumns"` (or `…TerminusDiff`) |
+| Divider positions | `defaults delete ai.promptrails.terminus "NSSplitView Subview Frames TerminusColumns.v2"` |
 | Panels shown | `defaults delete ai.promptrails.terminus sidebarVisible` / `diffVisible` / `sidebarPanel` |
 
 ## Things that looked like bugs elsewhere
@@ -94,3 +103,6 @@ in `deinit`.
 | A key does nothing | A Ghostty default binding consumed it and the action is unhandled — see docs/ghostty.md. |
 | `git check-ignore -z` fails | `-z` only works with `--stdin`; parse lines. |
 | App not in Launchpad | `make install` (the build lands in the repo). |
+| Tab rename ends as soon as it starts | Something took first responder after it began — re-selecting the tab used to (focus → terminal). `TERMINUS_DUMP_RENAME` checks it. |
+| Diff empty in a fresh repo | No HEAD yet: diff against the empty tree (`DiffModel.emptyTree`); `restore --staged` needs HEAD, use `rm --cached --force`. |
+| Idle shell reported as running | Shell integration hasn't reported the prompt yet (first seconds after launch). |

@@ -6,20 +6,19 @@ libghostty's own threads and git calls.
 ## Window layout
 
 ```
-┌───────────── tab strip (SwiftUI, in the title bar) ─────────────┐
-├──────────┬──────────────────────────────────┬───────────────────┤
-│ sidebar  │ diff panel (collapsible, ⌥⌘D)    │ editor pane       │
-│ Files /  ├──────────────────────────────────┤ (collapsible,     │
-│ Worktrees│ terminal container               │  opens on a file  │
-│ Snippets │ (every tab's TerminalView;       │  click)           │
-│ (⌘B)     │  only the selected one visible)  │                   │
-└──────────┴──────────────────────────────────┴───────────────────┘
+┌──────────── tab strip (SwiftUI, in the title bar) ─────── ± +N −M ┐
+├──────────┬──────────────────────────┬──────────────┬──────────────┤
+│ sidebar  │ terminal container       │ editor pane  │ changes pane │
+│ Files /  │ (every tab's TerminalView;│ (opens on a  │ (± badge or  │
+│ Worktrees│  only the selected one   │  file click) │  ⌥⌘D; Warp-  │
+│ Snippets │  visible)                │              │  style cards)│
+│ (⌘B)     │                          │              │              │
+└──────────┴──────────────────────────┴──────────────┴──────────────┘
       + ⌘P palette: an overlay over the whole content view
 ```
 
-- Outer split (`split`, vertical, autosave `TerminusColumns`): sidebar | terminal column | editor.
-- Terminal column (`terminalSplit`, horizontal, autosave `TerminusDiff`): diff | terminal container.
-- Both are `WideDividerSplitViewController`s (grabbable 1 pt dividers).
+- One split (`split`, vertical, autosave `TerminusColumns.v2`): sidebar | terminal | editor | changes. Bump the key's version whenever the column set changes, or stale positions get applied to the new columns.
+- It is a `WideDividerSplitViewController` (grabbable 1 pt dividers). The terminal column keeps ≥ 240 pt.
 - Sidebar, diff panel, tab strip, palette: SwiftUI in `NSHostingView`/`NSHostingController`. Terminal, editor text, editor header: AppKit.
 
 ## Ownership
@@ -32,7 +31,7 @@ libghostty's own threads and git calls.
 | `Tab` | a `TerminalView` + title, custom name, colour, pin, agent, cwd, `TabActivity` |
 | `FileTreeModel` | tree of the selected tab's checkout; lazy listings, FSEvents invalidation, gitignore dimming |
 | `WorktreeModel` | `git worktree list` of that repository |
-| `DiffModel` | status/diff/stage/commit of that checkout, only while the panel is open |
+| `DiffModel` | status, counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit of that checkout; works before the first commit (empty-tree base) |
 | `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
 | `EditorViewController` + `EditorDocument` | the file open in the editor pane |
@@ -75,6 +74,6 @@ on by default (checked against 2.1.280).
 | Tabs (cwd, name, colour, pin, agent) + selection | `~/Library/Application Support/Terminus/session.json` (1 s debounced + on quit) |
 | Snippets | `…/Terminus/snippets.json` |
 | Sidebar/diff visible, sidebar panel | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`) |
-| Divider positions | `UserDefaults` split autosave (`TerminusColumns`, `TerminusDiff`) |
+| Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
 
 Bundle id `ai.promptrails.terminus`.
