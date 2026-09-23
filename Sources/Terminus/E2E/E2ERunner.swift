@@ -27,6 +27,7 @@ final class E2ERunner {
         "attention": { await $0.attention() },
         "marks": { await $0.marks() },
         "palette": { await $0.paletteScenario() },
+        "reorder": { await $0.reorder() },
     ]
 
     private let app: TerminalWindowController
@@ -489,6 +490,67 @@ final class E2ERunner {
             await pause(0.6)
             app.captureWindow(to: png)
         }
+    }
+
+    /// A point in window coordinates at a tab's centre (tab frames are
+    /// reported by the strip, top-left origin).
+    private func point(inTab tab: Tab, dx: CGFloat = 0) -> NSPoint? {
+        guard let frame = app.store.tabFrames[tab.id], let strip = app.tabBarView else { return nil }
+        var p = NSPoint(x: frame.midX + dx, y: frame.midY)
+        if !strip.isFlipped { p.y = strip.bounds.height - p.y }
+        return strip.convert(p, to: nil)
+    }
+
+    /// A mouse drag as the system would dispatch it (NSApp.sendEvent, so the
+    /// app's event monitors see it), from one point to another.
+    private func drag(from start: NSPoint, to end: NSPoint) async {
+        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        NSApp.sendEvent(mouse(.leftMouseDown, start))
+        for step in 1...8 {
+            let t = CGFloat(step) / 8
+            NSApp.sendEvent(mouse(.leftMouseDragged, NSPoint(x: start.x + (end.x - start.x) * t, y: start.y)))
+            await pause(0.02)
+        }
+        NSApp.sendEvent(mouse(.leftMouseUp, end))
+        await pause(0.2)
+    }
+
+    /// Dragging a tab reorders the strip (and doesn't move the window).
+    private func reorder() async {
+        guard let a = app.store.selected else { return check("a tab", false) }
+        a.customTitle = "A"
+        app.newTab(nil)
+        app.store.selected?.customTitle = "B"
+        app.newTab(nil)
+        let c = app.store.selected!
+        c.customTitle = "C"
+        check("tab frames are reported", await eventually(3) { self.app.store.tabs.allSatisfy { self.app.store.tabFrames[$0.id] != nil } })
+        let windowOrigin = window.frame.origin
+        guard let from = point(inTab: a), let to = point(inTab: c) else { return check("points", false) }
+        await drag(from: from, to: to)
+        check("dragging A onto C moves it there", app.store.tabs.map(\.title) == ["B", "C", "A"], app.store.tabs.map(\.title).joined(separator: ","))
+        check("the window didn't move", window.frame.origin == windowOrigin)
+        check("the dragged tab is selected", app.store.selected?.title == "A")
+
+        app.store.setPinned(c, true)
+        await pause(0.3)
+        guard let from2 = point(inTab: a), let to2 = point(inTab: c) else { return check("points", false) }
+        await drag(from: from2, to: to2)
+        check("an unpinned tab can't be dragged into the pinned group", app.store.tabs.first?.title == "C")
+
+        guard let tiny = point(inTab: a), let tiny2 = point(inTab: a, dx: 2) else { return }
+        let before = app.store.tabs.map(\.title)
+        await drag(from: tiny, to: tiny2)
+        check("a click with a wobble is not a drag", app.store.tabs.map(\.title) == before)
+
+        // A plain click still selects (the press goes through to the strip).
+        guard let b = app.store.tabs.first(where: { $0.title == "B" }), let pb = point(inTab: b) else { return }
+        await drag(from: pb, to: pb)
+        check("a click selects the tab", await eventually(2) { self.app.store.selected?.title == "B" }, app.store.selected?.title ?? "nil")
     }
 
     /// ⌘P shows, searches across kinds, and hides.

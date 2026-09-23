@@ -208,14 +208,11 @@ private struct TabItemView: View {
         .onTapGesture { actions.select(tab) }
         .simultaneousGesture(TapGesture(count: 2).onEnded { if !tab.isPinned { store.renamingID = tab.id } })
         .onHover { hovering = $0 }
-        .onDrag {
-            store.draggingID = tab.id
-            return NSItemProvider(object: tab.id.uuidString as NSString)
-        }
-        .onDrop(of: [.text], delegate: TabDropDelegate(target: tab, store: store))
-        // Where this tab is, for the window's right-click handling: a
-        // SwiftUI .contextMenu never fires here — the title bar swallows
-        // right-clicks before they reach the strip.
+        // Reordering is done by the window (installTabMouseHandling): drags
+        // in the title bar never reach SwiftUI's onDrag.
+        .opacity(store.draggingID == tab.id ? 0.75 : 1)
+        // Where this tab is, for the window's right-click and drag handling:
+        // the title bar swallows both before they reach SwiftUI.
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(key: TabFramesKey.self, value: [tab.id: proxy.frame(in: .named(TabFramesKey.space))])
@@ -223,25 +220,6 @@ private struct TabItemView: View {
         )
         .help(tab.title)
         .padding(.horizontal, 2)
-    }
-}
-
-/// Reorders live: as a dragged tab passes over another in its group, they
-/// swap places, like Chrome.
-private struct TabDropDelegate: DropDelegate {
-    let target: Tab
-    let store: TabStore
-
-    func dropEntered(info: DropInfo) {
-        guard let id = store.draggingID, let dragged = store.tabs.first(where: { $0.id == id }) else { return }
-        withAnimation(.easeOut(duration: 0.12)) { store.move(dragged, to: target) }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-
-    func performDrop(info: DropInfo) -> Bool {
-        store.draggingID = nil
-        return true
     }
 }
 
@@ -328,4 +306,11 @@ private struct DiffBadge: View {
         .onHover { hovering = $0 }
         .help("Uncommitted changes (⌥⌘D)")
     }
+}
+
+/// The strip's host. Its clicks must never start a window drag — the empty
+/// part of the strip does that itself (WindowDragArea) — or dragging a tab
+/// would move the window instead of the tab.
+final class TabStripHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
 }

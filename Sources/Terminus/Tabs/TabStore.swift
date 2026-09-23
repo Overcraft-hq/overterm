@@ -74,9 +74,8 @@ final class TabStore: ObservableObject {
         tabs.first { tabFrames[$0.id]?.contains(point) == true }
     }
 
-    /// The tab being dragged in the strip, if any. Not published: only the
-    /// drop delegate reads it.
-    var draggingID: Tab.ID?
+    /// The tab being dragged in the strip, if any (drawn slightly faded).
+    @Published var draggingID: Tab.ID?
 
     /// Moves `tab` to where `target` is, if both are in the same group. Used
     /// live while dragging, so the strip reorders under the pointer.

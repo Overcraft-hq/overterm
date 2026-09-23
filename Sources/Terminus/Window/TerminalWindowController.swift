@@ -16,8 +16,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let snippets = SnippetStore()
     private(set) var palette = PaletteModel()
     private(set) var paletteView: NSView?
-    private var tabBarView: NSView?
+    private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
+    private var dragMonitor: Any?
+    /// A press on a tab that may become a drag: the tab and where it began.
+    private var pressedTab: (tab: Tab, x: CGFloat)?
     // Readable (not writable) outside so the E2E scenarios can check them.
     private(set) var split = WideDividerSplitViewController()
     private(set) var sidebarItem: NSSplitViewItem?
@@ -68,7 +71,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private func buildLayout(in window: NSWindow) {
         let runtime = GhosttyRuntime.shared
         let theme = ChromeTheme(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
-        let tabBar = NSHostingView(
+        let tabBar = TabStripHostingView(
             rootView: TabBarView(
                 store: store,
                 diff: diff,
@@ -174,6 +177,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
         tabBarView = tabBar
         installTabRightClick()
+        installTabDragging()
 
         let content = NSView()
         let body = split.view
@@ -584,6 +588,62 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// The strip point (top-left origin) under a window event, if the event
+    /// is in the strip.
+    private func stripPoint(_ event: NSEvent) -> CGPoint? {
+        guard event.window === window, let strip = tabBarView else { return nil }
+        var point = strip.convert(event.locationInWindow, from: nil)
+        guard strip.bounds.contains(point) else { return nil }
+        if !strip.isFlipped { point.y = strip.bounds.height - point.y }
+        return point
+    }
+
+    /// Dragging a tab reorders the strip, live: past a few points of travel,
+    /// the tab swaps places with whichever tab of its group is under the
+    /// pointer. Handled here, before dispatch, for the same reason as the
+    /// context menu — the title bar keeps drags from SwiftUI. The press
+    /// itself goes through untouched (it still selects); only the drag
+    /// events are taken.
+    private func installTabDragging() {
+        dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            guard let self else { return event }
+            switch event.type {
+            case .leftMouseDown:
+                self.pressedTab = nil
+                if self.store.renamingID == nil, let point = self.stripPoint(event), let tab = self.store.tab(at: point) {
+                    self.pressedTab = (tab, point.x)
+                }
+                return event
+            case .leftMouseDragged:
+                guard let pressed = self.pressedTab, let strip = self.tabBarView, event.window === self.window else { return event }
+                var point = strip.convert(event.locationInWindow, from: nil)
+                if !strip.isFlipped { point.y = strip.bounds.height - point.y }
+                if self.store.draggingID == nil {
+                    guard abs(point.x - pressed.x) > 4 else { return nil }
+                    self.store.draggingID = pressed.tab.id
+                    self.store.select(pressed.tab)
+                }
+                // Only the x matters: the pointer may drift off the strip vertically.
+                let probe = CGPoint(x: point.x, y: (self.store.tabFrames[pressed.tab.id]?.midY) ?? 14)
+                if let target = self.store.tab(at: probe), target.id != pressed.tab.id {
+                    withAnimation(.easeOut(duration: 0.12)) { self.store.move(pressed.tab, to: target) }
+                }
+                return nil
+            case .leftMouseUp:
+                // A press released without dragging is a click: select here,
+                // not only in SwiftUI's tap gesture (which doesn't reliably
+                // see the press once drags are being taken). Always let the
+                // release through — SwiftUI saw the press and must see it end.
+                if let pressed = self.pressedTab, self.store.draggingID == nil { self.store.select(pressed.tab) }
+                self.pressedTab = nil
+                self.store.draggingID = nil
+                return event
+            default:
+                return event
+            }
+        }
+    }
+
     func menu(for tab: Tab) -> NSMenu {
         let menu = NSMenu()
         if !tab.isPinned {
@@ -986,6 +1046,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
+        if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         for tab in store.tabs { tab.terminal.close() }
     }
 }
