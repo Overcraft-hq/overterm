@@ -18,6 +18,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var messageLabel: NSTextField!
     private var scrollView: NSScrollView!
     private var language: SyntaxHighlighter.Language?
+    private var cancellables: Set<AnyCancellable> = []
     private var pendingHighlight: DispatchWorkItem?
 
     /// Past this, highlighting on every keystroke would lag; plain text it is.
@@ -36,18 +37,23 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     override func loadView() {
         let root = NSView()
-        let header = NSHostingView(
-            rootView: EditorHeader(
-                document: document, theme: theme,
-                onReveal: { [weak self] in self?.document.url.map { NSWorkspace.shared.open($0) } },
-                onClose: { [weak self] in self?.requestClose() }))
+        let header = EditorHeaderView(
+            background: theme.stripNS, text: foreground,
+            onReveal: { [weak self] in self?.document.url.map { NSWorkspace.shared.open($0) } },
+            onClose: { [weak self] in self?.requestClose() })
+        document.$url.combineLatest(document.$isDirty)
+            .receive(on: DispatchQueue.main)
+            .sink { url, dirty in header.update(name: url?.lastPathComponent ?? "", path: url?.path ?? "", dirty: dirty) }
+            .store(in: &cancellables)
 
         // TextKit 1 on purpose: the line-number ruler walks the layout
         // manager's line fragments.
         let storage = NSTextStorage()
         let layout = NSLayoutManager()
         storage.addLayoutManager(layout)
-        let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        // Unbounded width: no wrapping. (A 0-wide container lays out nothing —
+        // the gutter numbered empty lines.)
+        let container = NSTextContainer(size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = false
         layout.addTextContainer(container)
         let textView = NSTextView(frame: .zero, textContainer: container)
@@ -71,7 +77,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.isHorizontallyResizable = true
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.autoresizingMask = [.width]
+        // No .width autoresizing: a sideways-scrolling text view sizes itself
+        // to its text; tracking the clip view's width left it scrolled into
+        // the middle of the document.
+        textView.autoresizingMask = []
         textView.delegate = self
 
         let scrollView = NSScrollView()
@@ -146,7 +155,12 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         highlight()
         textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
-        textView.scrollToBeginningOfDocument(nil)
+        // At least as big as the visible area, so a click below the last line
+        // still lands in the text view; then show the top-left corner.
+        textView.minSize = scrollView.contentSize
+        textView.sizeToFit()
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
         ruler.textDidChange()
     }
 
@@ -246,40 +260,83 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 }
 
-private struct EditorHeader: View {
-    @ObservedObject var document: EditorDocument
-    let theme: ChromeTheme
-    let onReveal: () -> Void
-    let onClose: () -> Void
+/// Name (centred, with an unsaved dot), open-in-app and close. AppKit: a
+/// SwiftUI header in this pane, created while the pane was collapsed,
+/// never drew.
+private final class EditorHeaderView: NSView {
+    private let title = NSTextField(labelWithString: "")
+    private let dot = NSView()
+    private let onReveal: () -> Void
+    private let onClose: () -> Void
+    private let background: NSColor
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Spacer(minLength: 0)
-            if document.isDirty {
-                Circle().fill(theme.text).frame(width: 6, height: 6).help("Unsaved — ⌘S")
-            }
-            Text(document.name)
-                .font(.system(size: 12))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(document.url?.path ?? "")
-            Spacer(minLength: 0)
-            Button(action: onReveal) {
-                Image(systemName: "arrow.up.forward.app").font(.system(size: 11)).frame(width: 22, height: 22).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .help("Open in Default App")
-            Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).frame(width: 22, height: 22).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .help("Close Editor")
-        }
-        .padding(.horizontal, 10)
-        .frame(maxHeight: .infinity)
-        .background(theme.strip)
+    override func draw(_ dirtyRect: NSRect) {
+        background.setFill()
+        dirtyRect.fill()
     }
+
+    init(background: NSColor, text: NSColor, onReveal: @escaping () -> Void, onClose: @escaping () -> Void) {
+        self.onReveal = onReveal
+        self.onClose = onClose
+        self.background = background
+        super.init(frame: .zero)
+
+        title.font = .systemFont(ofSize: 12)
+        title.textColor = text
+        title.lineBreakMode = .byTruncatingMiddle
+        title.alignment = .center
+        dot.wantsLayer = true
+        dot.layer?.backgroundColor = text.cgColor
+        dot.layer?.cornerRadius = 3
+        dot.isHidden = true
+        dot.toolTip = "Unsaved — ⌘S"
+
+        let reveal = Self.button("arrow.up.forward.app", tip: "Open in Default App", color: text, target: self, action: #selector(reveal))
+        let close = Self.button("xmark", tip: "Close Editor", color: text, target: self, action: #selector(close))
+        for view in [title, dot, reveal, close] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            close.centerYAnchor.constraint(equalTo: centerYAnchor),
+            close.widthAnchor.constraint(equalToConstant: 22),
+            reveal.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
+            reveal.centerYAnchor.constraint(equalTo: centerYAnchor),
+            reveal.widthAnchor.constraint(equalToConstant: 22),
+            title.centerXAnchor.constraint(equalTo: centerXAnchor),
+            title.centerYAnchor.constraint(equalTo: centerYAnchor),
+            title.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
+            title.trailingAnchor.constraint(lessThanOrEqualTo: reveal.leadingAnchor, constant: -8),
+            dot.widthAnchor.constraint(equalToConstant: 6),
+            dot.heightAnchor.constraint(equalToConstant: 6),
+            dot.centerYAnchor.constraint(equalTo: centerYAnchor),
+            dot.trailingAnchor.constraint(equalTo: title.leadingAnchor, constant: -6),
+        ])
+        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    func update(name: String, path: String, dirty: Bool) {
+        title.stringValue = name
+        title.toolTip = path
+        dot.isHidden = !dirty
+    }
+
+    private static func button(_ symbol: String, tip: String, color: NSColor, target: AnyObject, action: Selector) -> NSButton {
+        let image =
+            NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium)) ?? NSImage()
+        let button = NSButton(image: image, target: target, action: action)
+        button.isBordered = false
+        button.contentTintColor = color.withAlphaComponent(0.7)
+        button.toolTip = tip
+        return button
+    }
+
+    @objc private func reveal() { onReveal() }
+    @objc private func close() { onClose() }
 }

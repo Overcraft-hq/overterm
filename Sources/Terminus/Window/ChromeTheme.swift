@@ -6,6 +6,8 @@ import SwiftUI
 /// tab *is* the terminal's background, the chrome sits a step away from it.
 struct ChromeTheme {
     let strip: Color
+    /// The strip colour for AppKit views.
+    let stripNS: NSColor
     let selected: Color
     let hover: Color
     let text: Color
@@ -16,7 +18,8 @@ struct ChromeTheme {
         let bg = background.usingColorSpace(.sRGB) ?? background
         let isDark = bg.brightnessComponent < 0.5
         let stripColor = isDark ? bg.blended(withFraction: 0.35, of: .black) : bg.blended(withFraction: 0.08, of: .black)
-        strip = Color(nsColor: stripColor ?? bg)
+        stripNS = stripColor ?? bg
+        strip = Color(nsColor: stripNS)
         selected = Color(nsColor: bg)
         hover = Color(nsColor: bg.withAlphaComponent(0.5))
         text = Color(nsColor: foreground)

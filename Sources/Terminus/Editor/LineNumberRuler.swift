@@ -13,6 +13,10 @@ final class LineNumberRuler: NSRulerView {
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
         ruleThickness = 44
+        // Since macOS 14 views don't clip by default, and the ruler's
+        // content is as tall as the document: unclipped, its fill painted
+        // over the editor header above it.
+        if #available(macOS 14, *) { clipsToBounds = true }
     }
 
     required init(coder: NSCoder) {
@@ -31,7 +35,7 @@ final class LineNumberRuler: NSRulerView {
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
         gutterColor.setFill()
-        rect.fill()
+        rect.intersection(bounds).fill()
         guard let textView, let layoutManager = textView.layoutManager, let container = textView.textContainer else { return }
         let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
