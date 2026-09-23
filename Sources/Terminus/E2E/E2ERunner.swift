@@ -446,6 +446,10 @@ final class E2ERunner {
         await pause(0.5)
         check("a lesser signal doesn't hide that it wants you", first.activity.mark == .waiting)
 
+        // From a tab in the background: the app can end up active during a
+        // run, and the selected tab of an active app is "seen".
+        app.newTab(nil)
+        await waitForPrompt()
         emit("9;4;2;0", from: second)
         check("failed: error progress", await eventually { second.activity.mark == .failed })
         check("the Dock badge counts marked tabs", app.store.tabs.filter(\.activity.needsAttention).count == 2)
