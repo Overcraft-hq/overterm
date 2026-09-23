@@ -12,6 +12,12 @@ enum TerminalEvent: Equatable {
 
 /// Whether a tab is busy and whether it wants you — the tab-strip dot and
 /// spinner, the notification and the Dock badge all come from this.
+///
+/// Claude Code needs no setup for it (checked against 2.1.280): it sees
+/// TERM_PROGRAM=ghostty, so its default notification channel ("auto")
+/// sends Ghostty's OSC 777 desktop notification when it wants input, and
+/// its default-on terminalProgressBarEnabled emits OSC 9;4 while working —
+/// spinner while it works, flagged when it finishes out of sight.
 struct TabActivity: Equatable {
     private(set) var isWorking = false
     private(set) var needsAttention = false
