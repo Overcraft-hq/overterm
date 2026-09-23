@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         let diagnostic = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] != nil
         if !diagnostic, let saved = SessionState.load(), !saved.tabs.isEmpty {
             controller.restore(saved)
+        } else if diagnostic, let cwd = ProcessInfo.processInfo.environment["TERMINUS_DUMP_CWD"] {
+            controller.newTab(in: URL(fileURLWithPath: cwd))
         } else {
             controller.newTab(from: nil)
         }

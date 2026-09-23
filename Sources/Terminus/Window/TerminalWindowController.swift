@@ -23,8 +23,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private let diff = DiffModel()
     private var editor: EditorViewController?
     private var editorItem: NSSplitViewItem?
-    /// Diff panel above the terminal, inside the terminal pane.
-    private let terminalSplit = WideDividerSplitViewController()
     private var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
@@ -73,6 +71,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let tabBar = NSHostingView(
             rootView: TabBarView(
                 store: store,
+                diff: diff,
                 theme: theme,
                 leadingInset: 78,
                 actions: TabBarActions(
@@ -81,6 +80,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
                     newAgentTab: { [weak self] in self?.newAgentTab($0) },
                     newTask: { [weak self] in self?.newTask(nil) },
+                    toggleDiff: { [weak self] in self?.toggleDiff(nil) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
@@ -129,26 +129,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let terminalPane = NSViewController()
         terminalPane.view = container
 
-        // Diff over terminal. Hidden by default: it runs git while open.
-        let diffPanel = NSHostingController(
-            rootView: DiffPanelView(model: diff, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) }))
-        diffPanel.sizingOptions = []
-        let diffItem = NSSplitViewItem(viewController: diffPanel)
-        diffItem.canCollapse = true
-        diffItem.minimumThickness = 120
-        diffItem.holdingPriority = .defaultLow + 10
-        let showDiff = UserDefaults.standard.bool(forKey: Self.diffVisibleKey)
-        diffItem.isCollapsed = !showDiff
-        diff.isActive = showDiff
-        let terminalItem = NSSplitViewItem(viewController: terminalPane)
-        terminalItem.minimumThickness = 120
-        terminalSplit.splitView.isVertical = false
-        terminalSplit.addSplitViewItem(diffItem)
-        terminalSplit.addSplitViewItem(terminalItem)
-        terminalSplit.splitView.dividerStyle = .thin
-        if !Self.isDiagnostic { terminalSplit.splitView.autosaveName = "TerminusDiff" }
-        self.diffItem = diffItem
-
         // Editor to the right of the terminal, opened from the file tree.
         let editor = EditorViewController(theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor)
         let editorItem = NSSplitViewItem(viewController: editor)
@@ -160,17 +140,36 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         self.editor = editor
         self.editorItem = editorItem
 
+        // Changes pane on the far right, as in Warp; opened from the ± badge
+        // in the title bar or ⌥⌘D.
+        let diffPanel = NSHostingController(
+            rootView: DiffPanelView(
+                model: diff, theme: theme,
+                onClose: { [weak self] in self?.toggleDiff(nil) },
+                onOpen: { [weak self] in self?.openInEditor($0) }))
+        diffPanel.sizingOptions = []
+        let diffItem = NSSplitViewItem(viewController: diffPanel)
+        diffItem.canCollapse = true
+        diffItem.minimumThickness = 320
+        diffItem.holdingPriority = .defaultLow + 5
+        let showDiff = UserDefaults.standard.bool(forKey: Self.diffVisibleKey)
+        diffItem.isCollapsed = !showDiff
+        diff.panelVisible = showDiff
+        self.diffItem = diffItem
+
         // The terminal pane never gives up all its width to the panels
         // beside it (it had no minimum and could be dragged to 0).
-        let terminalColumn = NSSplitViewItem(viewController: terminalSplit)
+        let terminalColumn = NSSplitViewItem(viewController: terminalPane)
         terminalColumn.minimumThickness = 240
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
+        split.addSplitViewItem(diffItem)
         split.splitView.dividerStyle = .thin
         // A diagnostic run shares the real app's defaults: it must not save
-        // (or restore) divider positions.
-        if !Self.isDiagnostic { split.splitView.autosaveName = "TerminusColumns" }
+        // (or restore) divider positions. The key changes with the column
+        // set (v2: diff moved here), so old positions aren't misapplied.
+        if !Self.isDiagnostic { split.splitView.autosaveName = "TerminusColumns.v2" }
         self.sidebarItem = sidebarItem
 
         tabBarView = tabBar
@@ -465,13 +464,25 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Layout diagnostics
 
-    /// TERMINUS_DUMP_LAYOUT=<file>: open it in the editor, print the view
-    /// tree's frames to stderr, quit. For debugging layout without anyone
-    /// having to click around.
+    /// TERMINUS_DUMP_LAYOUT=<file> (empty: no file): open it in the editor,
+    /// print the view tree's frames to stderr, quit. For debugging layout
+    /// without anyone having to click around. See docs/debugging.md for the
+    /// other TERMINUS_DUMP_* switches.
     func dumpLayoutIfRequested() {
         guard let path = ProcessInfo.processInfo.environment["TERMINUS_DUMP_LAYOUT"] else { return }
+        let env = ProcessInfo.processInfo.environment
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.openInEditor(URL(fileURLWithPath: path))
+            guard let self else { return }
+            if !path.isEmpty { self.openInEditor(URL(fileURLWithPath: path)) }
+            if env["TERMINUS_DUMP_DIFF"] != nil, self.diffItem?.isCollapsed == true { self.toggleDiff(nil) }
+            if env["TERMINUS_DUMP_RENAME"] != nil, let tab = self.store.selected {
+                self.store.renamingID = tab.id
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    let responder = self?.window?.firstResponder.map { String(describing: Swift.type(of: $0)) } ?? "nil"
+                    FileHandle.standardError.write(
+                        Data("rename: still renaming=\(self?.store.renamingID != nil) firstResponder=\(responder)\n".utf8))
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self, let content = self.window?.contentView else { return }
                 var out = "window \(self.window!.frame.size) split dividers=\(self.split.splitView.dividerThickness)\n"
@@ -868,7 +879,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard let diffItem else { return }
         let show = diffItem.isCollapsed
         diffItem.animator().isCollapsed = !show
-        diff.isActive = show
+        diff.panelVisible = show
         UserDefaults.standard.set(show, forKey: Self.diffVisibleKey)
         if !show { focusSelectedTerminal() }
     }

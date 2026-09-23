@@ -1,32 +1,55 @@
+import AppKit
 import SwiftUI
 
-/// The diff panel above the terminal: changed files on the left, the
-/// selected file's diff on the right.
+/// The changes pane beside the terminal, laid out like Warp's: a header
+/// (checkout, branch, file count, totals), an "Uncommitted changes" row with
+/// Commit, and one foldable card per changed file with its diff inline.
 struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
     let onClose: () -> Void
+    /// Opens a changed file in the editor pane.
+    let onOpen: (URL) -> Void
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
+    @State private var composing = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.4)
             if let error = model.error {
                 placeholder(error)
             } else if model.files.isEmpty {
-                placeholder(model.root == nil ? "" : "No changes")
+                placeholder(model.root == nil ? "" : "No uncommitted changes")
             } else {
-                HStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        fileList
-                        Divider().opacity(0.4)
-                        CommitBox(model: model, theme: theme)
+                changesBar
+                if composing {
+                    CommitComposer(model: model, theme: theme, onDone: { composing = false })
+                }
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(model.files) { file in
+                            FileCard(
+                                file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
+                                theme: theme,
+                                onToggle: {
+                                    if model.collapsed.contains(file.path) {
+                                        model.collapsed.remove(file.path)
+                                    } else {
+                                        model.collapsed.insert(file.path)
+                                    }
+                                },
+                                onStage: { Task { await model.toggleStaged(file) } },
+                                onDiscard: { discarding = file },
+                                onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
+                            )
+                        }
+                        if model.files.count > DiffModel.maxDiffedFiles {
+                            Text("Diffs shown for the first \(DiffModel.maxDiffedFiles) files.")
+                                .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                        }
                     }
-                    .frame(width: 280)
-                    Divider().opacity(0.4)
-                    DiffTextView(lines: model.lines, truncated: model.truncated, theme: theme)
+                    .padding(12)
                 }
             }
         }
@@ -40,52 +63,56 @@ struct DiffPanelView: View {
             Button("Cancel", role: .cancel) {}
         } message: { file in
             Text(
-                file.kind == .untracked
+                file.kind == .untracked || file.kind == .added
                     ? "The file is moved to the Trash."
-                    : "Staged and unstaged changes are lost; the file goes back to HEAD. This can’t be undone.")
+                    : "Staged and unstaged changes are lost; the file goes back to HEAD.")
         }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.branch").font(.system(size: 10))
-            Text(model.branch ?? model.root?.lastPathComponent ?? "")
-                .font(.system(size: 12, weight: .semibold))
+            Text(headerTitle)
+                .font(.system(size: 12))
+                .foregroundStyle(theme.text)
                 .lineLimit(1)
+                .truncationMode(.head)
+                .help(model.root?.path ?? "")
             if !model.files.isEmpty {
-                Text("\(model.files.count) file\(model.files.count == 1 ? "" : "s")").foregroundStyle(theme.dimText)
+                Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(theme.dimText)
+                Text("\(model.files.count)").foregroundStyle(theme.text)
+                Text("·").foregroundStyle(theme.dimText)
                 Text("+\(model.totals.added)").foregroundStyle(DiffColors.added)
                 Text("−\(model.totals.removed)").foregroundStyle(DiffColors.removed)
             }
-            Spacer()
+            Spacer(minLength: 0)
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
-            iconButton("xmark", help: "Hide Diff (⌥⌘D)", action: onClose)
+            iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
         }
         .font(.system(size: 12))
-        .foregroundStyle(theme.text)
         .padding(.horizontal, 12)
-        .frame(height: 30)
+        .frame(height: 36)
     }
 
-    private var fileList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(model.files) { file in
-                    ChangedFileRow(
-                        file: file, isSelected: file.path == model.selectedPath, theme: theme,
-                        onToggleStaged: { Task { await model.toggleStaged(file) } }
-                    )
-                    .onTapGesture { model.select(file.path) }
-                    .contextMenu {
-                        Button("Stage") { Task { await model.stage(file) } }.disabled(file.stageState == .full)
-                        Button("Unstage") { Task { await model.unstage(file) } }.disabled(file.stageState == .none)
-                        Divider()
-                        Button("Discard Changes…") { discarding = file }
-                    }
-                }
+    private var headerTitle: String {
+        let path = model.root?.path ?? ""
+        return model.branch.map { "\(path): \($0)" } ?? path
+    }
+
+    private var changesBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.left.arrow.right").font(.system(size: 11))
+            Text("Uncommitted changes").font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 0)
+            Button {
+                composing.toggle()
+            } label: {
+                Label("Commit", systemImage: "arrow.triangle.merge")
             }
-            .padding(.vertical, 4)
+            .controlSize(.small)
         }
+        .foregroundStyle(theme.text)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
     }
 
     private func placeholder(_ text: String) -> some View {
@@ -94,7 +121,7 @@ struct DiffPanelView: View {
 
     private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: 11)).frame(width: 22, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.dimText)
@@ -107,12 +134,16 @@ enum DiffColors {
     static let removed = Color(red: 0.94, green: 0.36, blue: 0.34)
 }
 
-private struct ChangedFileRow: View {
+/// One changed file: a header row and, unfolded, its diff.
+private struct FileCard: View {
     let file: ChangedFile
-    let isSelected: Bool
+    let diff: DiffModel.FileDiff?
+    let collapsed: Bool
     let theme: ChromeTheme
-    let onToggleStaged: () -> Void
-    @State private var hovering = false
+    let onToggle: () -> Void
+    let onStage: () -> Void
+    let onDiscard: () -> Void
+    let onOpen: () -> Void
 
     private var stageSymbol: String {
         switch file.stageState {
@@ -122,75 +153,100 @@ private struct ChangedFileRow: View {
         }
     }
 
-    private var letterColor: Color {
-        switch file.kind {
-        case .added, .untracked: DiffColors.added
-        case .deleted, .conflicted: DiffColors.removed
-        default: Color(red: 0.98, green: 0.72, blue: 0.3)
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            if !collapsed {
+                Divider().opacity(0.3)
+                if let diff, !diff.lines.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(diff.lines) { DiffLineView(line: $0, theme: theme) }
+                        if diff.truncated {
+                            Text("Diff truncated.").font(.system(size: 11)).foregroundStyle(theme.dimText).padding(8)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                } else {
+                    Text(diff == nil ? "Loading…" : "No textual diff (binary or empty).")
+                        .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                }
+            }
         }
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.55)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.dimText.opacity(0.2)))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Button(action: onToggleStaged) {
+    private var header: some View {
+        HStack(spacing: 8) {
+            Button(action: onToggle) {
+                Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 20).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            Button(action: onStage) {
                 Image(systemName: stageSymbol).font(.system(size: 12))
             }
             .buttonStyle(.plain)
             .foregroundStyle(file.stageState == .none ? theme.dimText : theme.text)
             .help(file.stageState == .full ? "Unstage" : "Stage")
-            Text(file.letter)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(letterColor)
-                .frame(width: 12)
-            VStack(alignment: .leading, spacing: 0) {
-                Text((file.path as NSString).lastPathComponent).lineLimit(1)
-                let dir = (file.path as NSString).deletingLastPathComponent
-                if !dir.isEmpty {
-                    Text(dir).font(.system(size: 10)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.head)
-                }
+            Text((file.path as NSString).lastPathComponent)
+                .font(.system(size: 13))
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+            let dir = (file.path as NSString).deletingLastPathComponent
+            if !dir.isEmpty {
+                Text(dir).font(.system(size: 11)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.head)
             }
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(file.path, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc").font(.system(size: 10))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Copy Path")
+            counts
             Spacer(minLength: 4)
-            if let added = file.added, let removed = file.removed {
-                Text("+\(added)").foregroundStyle(DiffColors.added)
-                Text("−\(removed)").foregroundStyle(DiffColors.removed)
+            Button(action: onDiscard) {
+                Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Discard Changes…")
+            Button(action: onOpen) {
+                Image(systemName: "arrow.up.forward.square").font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Open in Editor")
+            .disabled(file.kind == .deleted)
         }
-        .font(.system(size: 12))
-        .foregroundStyle(isSelected ? theme.text : theme.dimText)
         .padding(.horizontal, 10)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isSelected ? theme.selected : (hovering ? theme.hover : .clear))
-                .padding(.horizontal, 4)
-        )
+        .frame(height: 34)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .onTapGesture(perform: onToggle)
         .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
     }
-}
 
-private struct DiffTextView: View {
-    let lines: [DiffLine]
-    let truncated: Bool
-    let theme: ChromeTheme
-
-    var body: some View {
-        ScrollView([.vertical, .horizontal]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(lines) { line in
-                    DiffLineView(line: line, theme: theme)
-                }
-                if truncated {
-                    Text("Diff truncated — too large to show in full.")
-                        .foregroundStyle(theme.dimText)
-                        .padding(8)
-                }
+    @ViewBuilder private var counts: some View {
+        if let added = file.added, let removed = file.removed {
+            HStack(spacing: 3) {
+                Text("+\(added)").foregroundStyle(DiffColors.added)
+                Text("·").foregroundStyle(theme.dimText)
+                Text("−\(removed)").foregroundStyle(DiffColors.removed)
             }
-            .padding(.vertical, 4)
-            .textSelection(.enabled)
+            .font(.system(size: 11, design: .monospaced))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.dimText.opacity(0.3)))
         }
-        .font(.system(size: 12, design: .monospaced))
     }
 }
 
@@ -200,27 +256,26 @@ private struct DiffLineView: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            Rectangle().fill(edge).frame(width: 3)
             number(line.oldNumber)
             number(line.newNumber)
-            Text(marker).foregroundStyle(markerColor).frame(width: 14)
             Text(line.text.isEmpty ? " " : line.text)
-                .foregroundStyle(line.kind == .meta || line.kind == .hunk ? theme.dimText : theme.text)
+                .foregroundStyle(line.kind == .hunk || line.kind == .meta ? theme.dimText : theme.text)
+                .lineLimit(1)
                 .fixedSize()
             Spacer(minLength: 0)
         }
-        .padding(.trailing, 12)
+        .frame(height: 18)
         .background(background)
     }
 
-    private var marker: String {
+    private var edge: Color {
         switch line.kind {
-        case .added: "+"
-        case .removed: "-"
-        default: " "
+        case .added: DiffColors.added
+        case .removed: DiffColors.removed
+        default: .clear
         }
     }
-
-    private var markerColor: Color { line.kind == .added ? DiffColors.added : DiffColors.removed }
 
     private var background: Color {
         switch line.kind {
@@ -234,47 +289,58 @@ private struct DiffLineView: View {
     private func number(_ n: Int?) -> some View {
         Text(n.map(String.init) ?? "")
             .foregroundStyle(theme.dimText.opacity(0.7))
-            .frame(width: 44, alignment: .trailing)
+            .frame(width: 38, alignment: .trailing)
             .padding(.trailing, 6)
     }
 }
 
-/// Commit message and button under the file list; commits what is staged.
-private struct CommitBox: View {
+/// The commit message under "Uncommitted changes". Commits what is staged —
+/// or, with nothing staged, everything.
+private struct CommitComposer: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
+    let onDone: () -> Void
     @State private var message = ""
     @State private var committing = false
+
+    private var trimmed: String { message.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             TextField("Commit message", text: $message, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
-                .lineLimit(1...4)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 5).fill(theme.selected))
+                .lineLimit(1...5)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(theme.selected))
             if let error = model.actionError {
                 Text(error).font(.system(size: 11)).foregroundStyle(DiffColors.removed).lineLimit(3)
             }
             HStack {
-                Button("Stage All") { Task { await model.stageAll() } }
-                    .disabled(model.files.allSatisfy { $0.stageState == .full })
+                Text(model.stagedCount == 0 ? "Nothing staged — commits all changes." : "\(model.stagedCount) staged.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.dimText)
                 Spacer()
-                Button(committing ? "Committing…" : "Commit \(model.stagedCount)") { commit() }
+                Button("Cancel", action: onDone)
+                Button(committing ? "Committing…" : (model.stagedCount == 0 ? "Commit All" : "Commit")) { commit() }
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(model.stagedCount == 0 || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || committing)
+                    .disabled(trimmed.isEmpty || committing)
             }
             .controlSize(.small)
         }
-        .padding(8)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     private func commit() {
         committing = true
         Task { @MainActor in
-            if await model.commit(message: message.trimmingCharacters(in: .whitespacesAndNewlines)) { message = "" }
+            let ok = model.stagedCount == 0 ? await model.commitAll(message: trimmed) : await model.commit(message: trimmed)
             committing = false
+            if ok {
+                message = ""
+                onDone()
+            }
         }
     }
 }

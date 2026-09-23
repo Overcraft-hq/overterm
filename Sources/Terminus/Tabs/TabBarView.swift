@@ -9,6 +9,8 @@ struct TabBarActions {
     var newTab: () -> Void
     var newAgentTab: (Agent) -> Void
     var newTask: () -> Void
+    /// The ± badge: show or hide the changes pane.
+    var toggleDiff: () -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -18,6 +20,7 @@ struct TabBarActions {
 /// Chrome-style tab strip, living in the window's title bar.
 struct TabBarView: View {
     @ObservedObject var store: TabStore
+    @ObservedObject var diff: DiffModel
     let theme: ChromeTheme
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
@@ -60,6 +63,9 @@ struct TabBarView: View {
             .help("New Tab (⌘T) — arrow for Claude / Codex")
             .padding(.leading, 6)
             Spacer(minLength: 0)
+            if diff.error == nil, !diff.files.isEmpty {
+                DiffBadge(added: diff.totals.added, removed: diff.totals.removed, theme: theme, action: actions.toggleDiff)
+            }
         }
         .padding(.trailing, 8)
         .frame(maxHeight: .infinity)
@@ -280,4 +286,32 @@ private struct WindowDragArea: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// Warp's "± +N −M": the selected tab's uncommitted change totals; a click
+/// opens the changes pane.
+private struct DiffBadge: View {
+    let added: Int
+    let removed: Int
+    let theme: ChromeTheme
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "plusminus").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text)
+                Text("+\(added)").foregroundStyle(DiffColors.added)
+                Text("−\(removed)").foregroundStyle(DiffColors.removed)
+            }
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.selected : theme.hover))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Uncommitted changes (⌥⌘D)")
+    }
 }
