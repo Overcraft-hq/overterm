@@ -8,6 +8,7 @@ struct TabBarActions {
     var close: (Tab) -> Void
     var newTab: () -> Void
     var newAgentTab: (Agent) -> Void
+    var newTask: () -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -44,6 +45,8 @@ struct TabBarView: View {
                         Label("New \(agent.name) Tab", systemImage: agent.symbol)
                     }
                 }
+                Divider()
+                Button("New Task…") { actions.newTask() }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .medium))

@@ -67,6 +67,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     close: { [weak self] in self?.closeTab($0) },
                     newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
                     newAgentTab: { [weak self] in self?.newAgentTab($0) },
+                    newTask: { [weak self] in self?.newTask(nil) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
@@ -93,7 +94,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     open: { [weak self] in self?.openWorktree($0) },
                     newTab: { [weak self] in self?.newTab(in: $0.path) },
                     newAgentTab: { [weak self] worktree, agent in self?.newTab(in: worktree.path, agent: agent) },
-                    remove: { [weak self] in self?.removeWorktree($0) }
+                    remove: { [weak self] in self?.removeWorktree($0) },
+                    newTask: { [weak self] in self?.newTask(nil) }
                 )
             ))
         sidebar.sizingOptions = []
@@ -236,6 +238,43 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 }
             }
         }
+    }
+
+    // MARK: Tasks
+
+    /// New Task: a worktree on a new (or existing) branch next to the repo,
+    /// then a tab in it named after the branch, with the agent started.
+    @objc func newTask(_ sender: Any?) {
+        guard let window else { return }
+        guard let repo = worktrees.main?.path else {
+            showAlert("Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.")
+            return
+        }
+        let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let close = { [weak window, weak sheet] in
+            guard let window, let sheet else { return }
+            window.endSheet(sheet)
+        }
+        sheet.contentViewController = NSHostingController(
+            rootView: NewTaskView(
+                repo: repo,
+                defaultBase: worktrees.main?.branch ?? "HEAD",
+                onCreate: { [weak self] branch, base, agent in
+                    guard let self else { return nil }
+                    do {
+                        let path = try await TaskCreator.create(repo: repo, branch: branch, base: base)
+                        close()
+                        self.newTab(in: path, agent: agent)
+                        self.store.selected?.customTitle = branch
+                        await self.worktrees.refresh()
+                        return nil
+                    } catch {
+                        return error.localizedDescription
+                    }
+                },
+                onCancel: close
+            ))
+        window.beginSheet(sheet) { [weak self] _ in self?.focusSelectedTerminal() }
     }
 
     private func showAlert(_ title: String, _ message: String) {

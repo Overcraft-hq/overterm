@@ -19,6 +19,7 @@ struct WorktreeActions {
     var newTab: (Worktree) -> Void
     var newAgentTab: (Worktree, Agent) -> Void
     var remove: (Worktree) -> Void
+    var newTask: () -> Void
 }
 
 /// The left panel: the repository's worktrees, then the file tree of the
@@ -168,6 +169,12 @@ private struct WorktreeListView: View {
                     .textCase(.uppercase)
                     .foregroundStyle(theme.dimText)
                 Spacer()
+                Button(action: actions.newTask) {
+                    Image(systemName: "plus").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .help("New Task… (⇧⌘N)")
                 Button(action: { Task { await model.refresh() } }) {
                     Image(systemName: "arrow.clockwise").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
                 }

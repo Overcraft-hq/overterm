@@ -112,3 +112,52 @@ final class WorktreeModelTests: XCTestCase {
         XCTAssertTrue(model.worktrees.isEmpty)
     }
 }
+
+final class TaskCreatorTests: XCTestCase {
+    func testSlug() {
+        XCTAssertEqual(TaskCreator.slug("feat/cosign"), "feat-cosign")
+        XCTAssertEqual(TaskCreator.slug("Fix: Tab // Focus!"), "fix-tab-focus")
+        XCTAssertEqual(TaskCreator.slug("v1.2_x"), "v1.2_x")
+    }
+
+    func testWorktreePathIsASiblingOfTheRepo() {
+        let path = TaskCreator.worktreePath(repo: URL(fileURLWithPath: "/Users/b/promptrails/monorepo"), branch: "feat/app-switcher")
+        XCTAssertEqual(path.path, "/Users/b/promptrails/monorepo-wt-feat-app-switcher")
+    }
+
+    private func makeRepo() async throws -> (base: URL, repo: URL) {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-task-\(UUID().uuidString)")
+        let repo = base.appendingPathComponent("repo")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        _ = try await Git.run(["init", "-q", "-b", "main"], in: repo)
+        _ = try await Git.run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], in: repo)
+        return (base, repo)
+    }
+
+    func testCreatesANewBranchWorktree() async throws {
+        let (base, repo) = try await makeRepo()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let path = try await TaskCreator.create(repo: repo, branch: "feat/x", base: "main")
+        XCTAssertEqual(path.lastPathComponent, "repo-wt-feat-x")
+        let head = try await Git.run(["branch", "--show-current"], in: path)
+        XCTAssertEqual(head.trimmingCharacters(in: .newlines), "feat/x")
+    }
+
+    func testChecksOutAnExistingBranch() async throws {
+        let (base, repo) = try await makeRepo()
+        defer { try? FileManager.default.removeItem(at: base) }
+        _ = try await Git.run(["branch", "existing"], in: repo)
+        let path = try await TaskCreator.create(repo: repo, branch: "existing", base: "no-such-base")
+        let head = try await Git.run(["branch", "--show-current"], in: path)
+        XCTAssertEqual(head.trimmingCharacters(in: .newlines), "existing")
+    }
+
+    func testRejectsInvalidBranchNames() async throws {
+        let (base, repo) = try await makeRepo()
+        defer { try? FileManager.default.removeItem(at: base) }
+        do {
+            _ = try await TaskCreator.create(repo: repo, branch: "bad..name", base: "main")
+            XCTFail("expected invalidBranch")
+        } catch TaskCreator.Failure.invalidBranch {}
+    }
+}

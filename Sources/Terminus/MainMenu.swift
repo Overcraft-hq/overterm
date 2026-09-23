@@ -27,6 +27,8 @@ enum MainMenu {
         claude.keyEquivalentModifierMask = [.command, .option]
         let codex = fileMenu.addItem(withTitle: "New Codex Tab", action: #selector(TerminalWindowController.newCodexTab(_:)), keyEquivalent: "x")
         codex.keyEquivalentModifierMask = [.command, .option]
+        let task = fileMenu.addItem(withTitle: "New Task…", action: #selector(TerminalWindowController.newTask(_:)), keyEquivalent: "n")
+        task.keyEquivalentModifierMask = [.command, .shift]
         fileMenu.addItem(withTitle: "Pin / Unpin Tab", action: #selector(TerminalWindowController.togglePinTab(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close Tab", action: #selector(TerminalWindowController.closeTab(_:)), keyEquivalent: "w")
