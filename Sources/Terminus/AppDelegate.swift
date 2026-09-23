@@ -1,5 +1,4 @@
 import AppKit
-import GhosttyKit
 import UserNotifications
 
 @MainActor
@@ -29,12 +28,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Quitting kills every tab's process; ask once if any is still running.
+    /// Quitting closes every tab: always confirmed — unless the window's own
+    /// close was just confirmed, or nothing is open.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let app = GhosttyRuntime.shared.app, ghostty_app_needs_confirm_quit(app) else { return .terminateNow }
+        guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty else { return .terminateNow }
+        let tabs = controller.store.tabs
         let alert = NSAlert()
-        alert.messageText = "Quit Terminus?"
-        alert.informativeText = "Some tabs still have running processes. Quitting will kill them."
+        alert.messageText = tabs.count == 1 ? "Quit Terminus?" : "Quit Terminus and close \(tabs.count) tabs?"
+        alert.informativeText =
+            TerminalWindowController.closeWarning(for: tabs) + " Tabs come back on the next launch; agents resume their conversation."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning

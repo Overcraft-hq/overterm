@@ -241,12 +241,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             if event == .bell, self.isVisible(tab) { NSSound.beep() }
             self.updateAttentionBadge()
         }
-        terminal.onClose = { [weak self, weak tab, weak terminal] processAlive in
+        terminal.onClose = { [weak self, weak tab, weak terminal] _ in
             guard let self, let tab else { return }
-            // A pinned tab ignores close requests (Ghostty's cmd+w is
-            // close_surface) but still goes away when its process exits.
-            if tab.isPinned, terminal?.processExited == false { return }
-            self.closeTab(tab, confirm: processAlive)
+            // The shell exited (you typed exit): that was the close, no question.
+            if terminal?.processExited != false {
+                self.removeTab(tab)
+                return
+            }
+            // Otherwise it is Ghostty's ⌘W (close_surface): a pinned tab
+            // ignores it, any other asks.
+            if tab.isPinned { return }
+            self.closeTab(tab)
         }
 
         terminal.translatesAutoresizingMaskIntoConstraints = false
@@ -475,6 +480,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             guard let self else { return }
             if !path.isEmpty { self.openInEditor(URL(fileURLWithPath: path)) }
             if env["TERMINUS_DUMP_DIFF"] != nil, self.diffItem?.isCollapsed == true { self.toggleDiff(nil) }
+            if env["TERMINUS_DUMP_CLOSE"] != nil {
+                // ⌘W's menu action: a sheet must come up, the tab must stay.
+                // TERMINUS_DUMP_CLOSE=<seconds> waits first (let the shell reach its prompt).
+                let wait = Double(env["TERMINUS_DUMP_CLOSE"] ?? "") ?? 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.closeSelectedTab(nil) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + wait + 0.5) { [weak self] in
+                    let sheet = (self?.window?.attachedSheet?.contentView?.subviews.compactMap { $0 as? NSTextField }.map(\.stringValue)) ?? []
+                    FileHandle.standardError.write(
+                        Data("close: sheet=\(self?.window?.attachedSheet != nil) tabs=\(self?.store.tabs.count ?? -1) text=\(sheet)\n".utf8))
+                    self?.window?.attachedSheet.map { self?.window?.endSheet($0) }
+                }
+            }
             if env["TERMINUS_DUMP_RENAME"] != nil, let tab = self.store.selected {
                 // Exactly what the menu and a double-click do: select, then rename.
                 self.store.select(tab)
@@ -485,7 +502,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         Data("rename: still renaming=\(self?.store.renamingID != nil) firstResponder=\(responder)\n".utf8))
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            let settle = 1.5 + (Double(env["TERMINUS_DUMP_CLOSE"] ?? "") ?? 0)
+            DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
                 guard let self, let content = self.window?.contentView else { return }
                 var out = "window \(self.window!.frame.size) split dividers=\(self.split.splitView.dividerThickness)\n"
                 @MainActor func walk(_ v: NSView, _ depth: Int) {
@@ -596,9 +614,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem("Close Tab", enabled: !tab.isPinned) { [weak self] in self?.closeTab(tab) })
         let others = store.tabs.filter { $0.id != tab.id && !$0.isPinned }
-        menu.addItem(ClosureMenuItem("Close Other Tabs", enabled: !others.isEmpty) { [weak self] in others.forEach { self?.closeTab($0) } })
+        menu.addItem(ClosureMenuItem("Close Other Tabs", enabled: !others.isEmpty) { [weak self] in self?.closeTabs(others) })
         let right = store.index(of: tab).map { Array(store.tabs[($0 + 1)...]).filter { !$0.isPinned } } ?? []
-        menu.addItem(ClosureMenuItem("Close Tabs to the Right", enabled: !right.isEmpty) { [weak self] in right.forEach { self?.closeTab($0) } })
+        menu.addItem(ClosureMenuItem("Close Tabs to the Right", enabled: !right.isEmpty) { [weak self] in self?.closeTabs(right) })
         return menu
     }
 
@@ -777,26 +795,43 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// Closes a tab, asking first when that would kill a running process.
-    /// `confirm` is libghostty's verdict when it initiated the close; for a
-    /// close from our UI we ask the surface.
-    func closeTab(_ tab: Tab, confirm: Bool? = nil) {
-        let needsConfirm = confirm ?? tab.terminal.needsConfirmClose
-        guard needsConfirm, let window else {
-            removeTab(tab)
-            return
-        }
-        store.select(tab)
+    // MARK: Closing — always asks (only a shell's own exit closes silently)
+
+    /// Whether the window close has been confirmed, so quitting right after
+    /// doesn't ask a second time.
+    private(set) var closeConfirmed = false
+
+    /// Closes a tab after confirming.
+    func closeTab(_ tab: Tab) {
+        closeTabs([tab])
+    }
+
+    /// Closes several tabs behind one confirmation.
+    func closeTabs(_ tabs: [Tab]) {
+        guard !tabs.isEmpty, let window else { return }
+        if tabs.count == 1 { store.select(tabs[0]) }
         let alert = NSAlert()
-        alert.messageText = "Close Tab?"
-        alert.informativeText = "A process is still running in “\(tab.title)”. Closing the tab will kill it."
-        alert.addButton(withTitle: "Close")
+        alert.messageText = tabs.count == 1 ? "Close “\(tabs[0].title)”?" : "Close \(tabs.count) tabs?"
+        alert.informativeText = Self.closeWarning(for: tabs)
+        alert.addButton(withTitle: tabs.count == 1 ? "Close Tab" : "Close \(tabs.count) Tabs")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            self?.removeTab(tab)
+            tabs.forEach { self?.removeTab($0) }
         }
+    }
+
+    /// What closing these tabs would end — running processes by name, agents
+    /// first, since an agent's conversation is what you'd lose.
+    static func closeWarning(for tabs: [Tab]) -> String {
+        let busy = tabs.filter { $0.terminal.needsConfirmClose }
+        guard !busy.isEmpty else {
+            return tabs.count == 1 ? "Its shell is idle." : "Their shells are idle."
+        }
+        let names = busy.prefix(3).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
+        let more = busy.count > 3 ? " and \(busy.count - 3) more" : ""
+        return "Still running: \(names.joined(separator: ", "))\(more). Closing kills \(busy.count == 1 ? "it" : "them")."
     }
 
     private func removeTab(_ tab: Tab) {
@@ -812,9 +847,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard let tab = store.tabs.first(where: { $0.terminal === view }), let i = store.index(of: tab) else { return }
         switch mode {
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER:
-            store.tabs.filter { $0.id != tab.id && !$0.isPinned }.forEach { closeTab($0) }
+            closeTabs(store.tabs.filter { $0.id != tab.id && !$0.isPinned })
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_RIGHT:
-            store.tabs[(i + 1)...].filter { !$0.isPinned }.forEach { closeTab($0) }
+            closeTabs(store.tabs[(i + 1)...].filter { !$0.isPinned })
         default:
             if !tab.isPinned { closeTab(tab) }
         }
@@ -869,7 +904,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
     @objc func newClaudeTab(_ sender: Any?) { newAgentTab(.claude) }
     @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
-    @objc func closeTab(_ sender: Any?) {
+    @objc func closeSelectedTab(_ sender: Any?) {
         guard let tab = store.selected else { return }
         if tab.isPinned {
             NSSound.beep()
@@ -905,8 +940,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// The window's close button closes every tab; confirm once if any has a
-    /// running process.
+    /// Closing the window closes every tab: always confirmed.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if let editor, editor.document.isDirty {
             let alert = NSAlert()
@@ -920,17 +954,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             }
             return false
         }
-        let busy = store.tabs.filter { $0.terminal.needsConfirmClose }
-        guard !busy.isEmpty else { return true }
+        guard !store.tabs.isEmpty else { return true }
         let alert = NSAlert()
-        alert.messageText = "Close Window?"
-        alert.informativeText =
-            "\(busy.count) tab\(busy.count == 1 ? " has a" : "s have") running process\(busy.count == 1 ? "" : "es"). Closing the window will kill \(busy.count == 1 ? "it" : "them")."
-        alert.addButton(withTitle: "Close")
+        alert.messageText = store.tabs.count == 1 ? "Close the window?" : "Close the window and its \(store.tabs.count) tabs?"
+        alert.informativeText = Self.closeWarning(for: store.tabs)
+        alert.addButton(withTitle: "Close Window")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
-        alert.beginSheetModal(for: sender) { response in
+        alert.beginSheetModal(for: sender) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
+            self?.closeConfirmed = true
             sender.close()
         }
         return false
