@@ -16,7 +16,8 @@ struct FileRow: Identifiable, Hashable {
 }
 
 /// The file tree for one root directory. Folders are listed lazily, when
-/// first expanded, and cached until `reload()`.
+/// first expanded, and cached; a watcher on the root drops the cached
+/// listing of any folder that changes, so the tree stays live.
 @MainActor
 final class FileTreeModel: ObservableObject {
     @Published private(set) var root: URL?
@@ -28,6 +29,7 @@ final class FileTreeModel: ObservableObject {
     /// Expanded folders per root, so hopping between tabs in different repos
     /// comes back to the tree as you left it.
     private var expandedByRoot: [URL: Set<URL>] = [:]
+    private var watcher: DirectoryWatcher?
 
     /// Noise that is never what you are looking for in a tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
@@ -39,6 +41,24 @@ final class FileTreeModel: ObservableObject {
         expanded = url.flatMap { expandedByRoot[$0] } ?? []
         listings = [:]
         selection = nil
+        rebuild()
+        watcher?.stop()
+        watcher = url.flatMap { DirectoryWatcher(root: $0) { [weak self] in self?.invalidate($0) } }
+    }
+
+    /// Forgets the cached listings of `directories` and rebuilds, if any of
+    /// them was listed. Changes under .git (constant while git works) and in
+    /// folders never opened cost nothing.
+    func invalidate(_ directories: [URL]) {
+        let stale = directories.map(\.standardizedFileURL).filter { dir in
+            !dir.pathComponents.contains(".git") && listings.keys.contains { $0.standardizedFileURL == dir }
+        }
+        guard !stale.isEmpty else { return }
+        for dir in stale {
+            listings = listings.filter { $0.key.standardizedFileURL != dir }
+        }
+        // A deleted folder that was expanded would otherwise stay "open".
+        expanded = expanded.filter { FileManager.default.fileExists(atPath: $0.path) }
         rebuild()
     }
 

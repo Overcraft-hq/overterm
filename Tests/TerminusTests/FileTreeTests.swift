@@ -103,3 +103,39 @@ final class FileTreeTests: XCTestCase {
         XCTAssertEqual(tree.rows.map(\.entry.name), ["new.txt"])
     }
 }
+
+extension FileTreeTests {
+    @MainActor
+    func testInvalidateRefreshesOnlyThatFolder() throws {
+        try mkdir("src")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        tree.toggle(try XCTUnwrap(tree.rows.first))
+        touch("src/new.swift")
+        touch("top.txt")
+
+        tree.invalidate([dir.appendingPathComponent("src")])
+        XCTAssertEqual(tree.rows.map(\.entry.name), ["src", "new.swift"], "root listing is still cached")
+    }
+
+    @MainActor
+    func testInvalidateIgnoresGitAndUnlistedFolders() throws {
+        try mkdir("src")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        touch("late.txt")
+        tree.invalidate([dir.appendingPathComponent(".git/objects"), dir.appendingPathComponent("src")])
+        XCTAssertEqual(tree.rows.map(\.entry.name), ["src"], "src was never listed, .git is ignored")
+    }
+
+    @MainActor
+    func testDeletedExpandedFolderDisappears() throws {
+        try mkdir("gone/inner")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        tree.toggle(try XCTUnwrap(tree.rows.first))
+        try FileManager.default.removeItem(at: dir.appendingPathComponent("gone"))
+        tree.invalidate([dir])
+        XCTAssertTrue(tree.rows.isEmpty)
+    }
+}
