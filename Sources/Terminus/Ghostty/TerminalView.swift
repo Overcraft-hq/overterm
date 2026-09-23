@@ -12,6 +12,11 @@ import GhosttyKit
 final class TerminalView: NSView {
     private(set) var surface: ghostty_surface_t?
 
+    /// Put in the shell's environment as TERMINUS_TAB_ID; every process
+    /// started from this terminal inherits it, which is how Tab Info finds
+    /// them (ProcessInspector).
+    let processTag = UUID().uuidString
+
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.
     var workingDirectory: String? {
@@ -71,9 +76,22 @@ final class TerminalView: NSView {
         }
         config.working_directory = UnsafePointer(cwdC)
         config.initial_input = inputC.flatMap { UnsafePointer($0) }
-        surface = ghostty_surface_new(app, &config)
+        let tagKey = strdup(ProcessInspector.tagVariable)
+        let tagValue = strdup(processTag)
+        defer {
+            free(tagKey)
+            free(tagValue)
+        }
+        var env = [ghostty_env_var_s(key: tagKey, value: tagValue)]
+        surface = env.withUnsafeMutableBufferPointer { buffer in
+            config.env_vars = buffer.baseAddress
+            config.env_var_count = buffer.count
+            return ghostty_surface_new(app, &config)
+        }
         if surface == nil {
             GhosttyRuntime.logger.error("ghostty_surface_new failed")
+        } else {
+            SurfaceProcesses.shared.register(self)
         }
         updateTrackingAreas()
     }
