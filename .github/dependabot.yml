@@ -1,0 +1,37 @@
+# Dependabot for Terminus.
+#
+# Today it has nothing to watch, on purpose documented here so nobody
+# "fixes" it by adding entries that only log "no dependency files":
+#
+# - SwiftPM: Package.swift declares no remote packages (GhosttyKit is a
+#   local binary target built by `make ghosttykit`).
+# - GitHub Actions: no workflows yet. The entry below starts working the
+#   day one is added.
+# - The real pins — Ghostty (GHOSTTY_REF/SHA in Scripts/build-ghosttykit.sh)
+#   and Zig (mise.toml) — are formats Dependabot can't read. Bump them
+#   together by hand (see CLAUDE.md).
+#
+# Add a `package-ecosystem: swift` block (directory: /) the day the manifest
+# gains an external package — same weekly/grouped shape.
+#
+# Cadence matches the other promptrails repos: one batched PR per week,
+# minor + patch grouped so review stays cheap; a major gets its own PR.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 3
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - ci
