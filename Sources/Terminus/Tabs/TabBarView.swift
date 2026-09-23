@@ -293,8 +293,8 @@ private struct DiffBadge: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "plusminus").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text)
-                Text("+\(added)").foregroundStyle(DiffColors.added)
-                Text("−\(removed)").foregroundStyle(DiffColors.removed)
+                Text(verbatim: "+\(added)").foregroundStyle(DiffColors.added)
+                Text(verbatim: "−\(removed)").foregroundStyle(DiffColors.removed)
             }
             .font(.system(size: 12, weight: .medium, design: .monospaced))
             .padding(.horizontal, 8)

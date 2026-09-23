@@ -79,10 +79,10 @@ struct DiffPanelView: View {
                 .help(model.root?.path ?? "")
             if !model.files.isEmpty {
                 Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(theme.dimText)
-                Text("\(model.files.count)").foregroundStyle(theme.text)
+                Text(verbatim: "\(model.files.count)").foregroundStyle(theme.text)
                 Text("·").foregroundStyle(theme.dimText)
-                Text("+\(model.totals.added)").foregroundStyle(DiffColors.added)
-                Text("−\(model.totals.removed)").foregroundStyle(DiffColors.removed)
+                Text(verbatim: "+\(model.totals.added)").foregroundStyle(DiffColors.added)
+                Text(verbatim: "−\(model.totals.removed)").foregroundStyle(DiffColors.removed)
             }
             Spacer(minLength: 0)
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
@@ -238,9 +238,9 @@ private struct FileCard: View {
     @ViewBuilder private var counts: some View {
         if let added = file.added, let removed = file.removed {
             HStack(spacing: 3) {
-                Text("+\(added)").foregroundStyle(DiffColors.added)
+                Text(verbatim: "+\(added)").foregroundStyle(DiffColors.added)
                 Text("·").foregroundStyle(theme.dimText)
-                Text("−\(removed)").foregroundStyle(DiffColors.removed)
+                Text(verbatim: "−\(removed)").foregroundStyle(DiffColors.removed)
             }
             .font(.system(size: 11, design: .monospaced))
             .padding(.horizontal, 6)
