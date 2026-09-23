@@ -600,6 +600,36 @@ final class E2ERunner {
         pressReturn()
         await pause(0.5)
 
+        // Back to the first tab: typing goes to the selected one.
+        app.store.select(first)
+        await eventually(2) { self.window.firstResponder === first.terminal }
+        await runAndExpect(
+            "echo ${TERMINUS_TAB_ID:-unset} > \(out("tag").path)", file: out("tag"), content: first.terminal.processTag,
+            "the shell carries its own tab's tag")
+        // A server on a port the OS picks; it writes the port where we can read it.
+        let portFile = out("port")
+        // The server's code goes in a file, so what is typed stays short and
+        // plain — a long line of quotes and parentheses typed key by key is
+        // at the mercy of the user's zsh plugins.
+        let server = out("server.py")
+        try? """
+        import socket, time
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        s.listen()
+        open("\(portFile.path)", "w").write(str(s.getsockname()[1]))
+        time.sleep(60)
+        """.write(to: server, atomically: true, encoding: .utf8)
+        func readPort() -> Int? { (try? String(contentsOf: portFile, encoding: .utf8)).flatMap { Int($0) } }
+        for _ in 0..<2 where readPort() == nil {
+            await settledPrompt()
+            type("python3 \(server.path) &")
+            pressReturn()
+            await eventually(10) { readPort() != nil }
+        }
+        let port = readPort()
+        check("a dev server starts in the tab", port != nil)
+
         app.showInfo(for: first)
         check("the popover opens", await eventually(2) { self.app.infoPopover?.isShown == true })
         guard let model = app.infoModel else { return check("a model", false) }
@@ -610,6 +640,10 @@ final class E2ERunner {
         check("the other tab's job is not", !all.contains { $0.command.hasPrefix("sleep 62") })
         check("memory is measured", model.totalMemory > 0)
         check("the location is the tab's directory", await eventually { model.location?.directory == first.workingDirectory })
+        if let port {
+            let shown = await eventually(8) { model.ports.contains { $0.port == port } }
+            check("its listening port is shown", shown, "ports \(model.ports.map(\.port)) want \(port)")
+        }
         if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
             await pause(1.2)
             app.captureWindow(to: png, window: popoverWindow)
@@ -618,7 +652,7 @@ final class E2ERunner {
         await eventually(2) { self.app.infoPopover == nil }
         check("closing it stops the refresh", app.infoModel == nil)
         // Leave no sleeps behind.
-        all.filter { $0.name == "sleep" }.forEach { kill($0.pid, SIGTERM) }
+        all.filter { $0.name == "sleep" || $0.command.contains("socket.socket") }.forEach { kill($0.pid, SIGTERM) }
         for tab in app.store.tabs {
             tab.terminal.insertText("kill %1 2>/dev/null")
             tab.terminal.pressReturn()

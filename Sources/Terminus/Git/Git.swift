@@ -11,7 +11,7 @@ struct GitError: LocalizedError {
     }
 }
 
-/// Runs git. Each call blocks a libdispatch thread, never a Swift
+/// Runs git (and other command-line tools). Each call blocks a libdispatch thread, never a Swift
 /// concurrency one: blocking the cooperative pool with many waits starves
 /// the whole app (signalbox froze exactly that way).
 enum Git {
@@ -21,16 +21,21 @@ enum Git {
     /// - Parameter success: exit codes that are not failures. `git diff
     ///   --no-index` exits 1 when the files differ, which is the point.
     static func run(_ arguments: [String], in directory: URL, success: Set<Int32> = [0]) async throws -> String {
+        try await run(executable, arguments, in: directory, success: success)
+    }
+
+    /// Any tool, the same way: a GCD thread, stderr drained, no prompts.
+    static func run(_ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32> = [0]) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result { try runBlocking(arguments, in: directory, success: success) })
+                continuation.resume(with: Result { try runBlocking(tool, arguments, in: directory, success: success) })
             }
         }
     }
 
-    private static func runBlocking(_ arguments: [String], in directory: URL, success: Set<Int32>) throws -> String {
+    private static func runBlocking(_ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>) throws -> String {
         let process = Process()
-        process.executableURL = executable
+        process.executableURL = tool
         process.arguments = arguments
         process.currentDirectoryURL = directory
         var environment = ProcessInfo.processInfo.environment

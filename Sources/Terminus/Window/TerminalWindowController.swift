@@ -710,6 +710,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let model = TabInfoModel(tab: tab, inspector: inspector)
         let popover = NSPopover()
         popover.behavior = .transient
+        // Its contents are painted in the terminal's colours; its controls
+        // must match, or a light-mode button sits black on dark.
+        popover.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
         popover.contentViewController = NSHostingController(rootView: TabInfoView(model: model, theme: theme))
         popover.delegate = self
         // Strip frames are top-left; the host is flipped, so that is its space.

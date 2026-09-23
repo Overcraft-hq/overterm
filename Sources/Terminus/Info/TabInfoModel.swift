@@ -14,6 +14,7 @@ final class TabInfoModel: ObservableObject {
     }
 
     @Published private(set) var processes: [ProcessNode] = []
+    @Published private(set) var ports: [ListeningPort] = []
     @Published private(set) var location: Location?
 
     let tab: Tab
@@ -33,8 +34,12 @@ final class TabInfoModel: ObservableObject {
         loop?.cancel()
         loop = Task { [weak self] in
             await self?.refreshLocation()
+            var tick = 0
             while !Task.isCancelled {
                 await self?.refreshProcesses()
+                // lsof is slower than a process scan; every third tick is plenty.
+                if tick % 3 == 0 { await self?.refreshPorts() }
+                tick += 1
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
@@ -56,6 +61,10 @@ final class TabInfoModel: ObservableObject {
             }
         }
         processes = tree
+    }
+
+    func refreshPorts() async {
+        ports = await ListeningPorts.of(processes.flatMap(\.flattened).map(\.pid))
     }
 
     func refreshLocation() async {

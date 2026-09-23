@@ -11,6 +11,7 @@ struct TabInfoView: View {
             header
             locationSection
             processSection
+            portSection
         }
         .padding(16)
         .frame(width: 480)
@@ -82,6 +83,34 @@ struct TabInfoView: View {
                 Text(Self.memory(model.totalMemory)).frame(width: 80, alignment: .trailing)
             }
             .font(.system(size: 12, design: .monospaced))
+        }
+    }
+
+    @ViewBuilder private var portSection: some View {
+        if !model.ports.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Listening").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                ForEach(model.ports) { port in
+                    HStack(spacing: 8) {
+                        Text(verbatim: ":\(port.port)").font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        Text(port.process).foregroundStyle(theme.dimText)
+                        if port.address != "*" && port.address != "127.0.0.1" && port.address != "[::1]" {
+                            Text(port.address).font(.system(size: 10)).foregroundStyle(theme.dimText)
+                        }
+                        Spacer()
+                        if let url = port.url {
+                            Button {
+                                NSWorkspace.shared.open(url)
+                            } label: {
+                                Label("Open", systemImage: "arrow.up.forward.app")
+                            }
+                            .controlSize(.small)
+                            .help(url.absoluteString)
+                        }
+                    }
+                    .font(.system(size: 12))
+                }
+            }
         }
     }
 

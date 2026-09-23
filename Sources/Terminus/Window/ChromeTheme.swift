@@ -6,6 +6,9 @@ import SwiftUI
 /// tab *is* the terminal's background, the chrome sits a step away from it.
 struct ChromeTheme {
     let strip: Color
+    /// Whether the terminal theme is dark — AppKit chrome (popovers, their
+    /// buttons) takes the matching appearance.
+    let isDark: Bool
     /// The strip colour for AppKit views.
     let stripNS: NSColor
     let selected: Color
@@ -17,6 +20,7 @@ struct ChromeTheme {
     init(background: NSColor, foreground: NSColor) {
         let bg = background.usingColorSpace(.sRGB) ?? background
         let isDark = bg.brightnessComponent < 0.5
+        self.isDark = isDark
         let stripColor = isDark ? bg.blended(withFraction: 0.35, of: .black) : bg.blended(withFraction: 0.08, of: .black)
         stripNS = stripColor ?? bg
         strip = Color(nsColor: stripNS)
