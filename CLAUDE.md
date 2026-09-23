@@ -45,6 +45,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **The tab strip lives in the title bar**, which swallows right-clicks before SwiftUI sees them. Context menus there go through the window's local event monitor (`installTabRightClick`), not `.contextMenu`.
 - **Split dividers are 1 pt**; `WideDividerSplitViewController` widens the grab area. Autosave key `TerminusColumns.v2` — bump the version whenever the column set changes, or stale positions are applied to new columns.
 - **Closing always asks** (tab, window, app); only a shell's own `exit` closes silently. Keep it that way — it was asked for.
+- **`@Published` emits before the property changes.** In a Combine sink, use the emitted values; reading the object back gives the old value (bit twice: selection, and attach).
 - **Don't re-publish selection**: `TabStore.select` is a no-op for the selected tab; a selection change takes the keyboard for the terminal, which kills an in-place rename.
 - **SwiftUI `Text("…\(number)")` localizes the number** (Turkish locale: `:54.631`, `+1.234`). Use `Text(verbatim:)` for counts, ports, pids.
 - **Never `pkill -f <pattern>` in tests** — it once killed the shell running them. Kill the exact pids you found.

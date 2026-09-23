@@ -36,9 +36,13 @@ libghostty's own threads and git calls.
 | `PaletteModel` | ⌘P query and ranking |
 | `EditorViewController` + `EditorDocument` | the file open in the editor pane |
 
-"That checkout" = `FileTreeModel.treeRoot(for: cwd)`: the nearest ancestor with
-a `.git` (a file in a linked worktree), never promoted to `$HOME`. The selected
-tab's cwd comes from shell integration (OSC 7) via `Tab.workingDirectory`.
+"That checkout" is `Tab.checkoutSource`, in order: an **attached** checkout
+(Worktrees → Attach to This Tab), else where the tab's **agent** works
+(`Tab.agentDirectory`, polled every 2 s from the claude/codex process's cwd —
+Claude Code chdirs into a worktree on EnterWorktree), else the **shell's**
+directory (OSC 7 → `Tab.workingDirectory`). Each is turned into a root by
+`FileTreeModel.treeRoot(for:)`: the nearest ancestor with a `.git` (a file in a
+linked worktree), never promoted to `$HOME`.
 
 ## Terminal events → UI
 
