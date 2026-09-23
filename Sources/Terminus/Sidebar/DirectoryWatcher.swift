@@ -6,7 +6,11 @@ import Foundation
 /// on the main queue.
 @MainActor
 final class DirectoryWatcher {
-    private var stream: FSEventStreamRef?
+    /// nonisolated(unsafe) so deinit can reach it: the stream holds an
+    /// unretained pointer to self and must be torn down before self is freed.
+    /// Only ever touched on the main queue (init, stop, deinit of a
+    /// main-actor object).
+    private nonisolated(unsafe) var stream: FSEventStreamRef?
     private let onChange: ([URL]) -> Void
 
     init?(root: URL, latency: TimeInterval = 0.3, onChange: @escaping ([URL]) -> Void) {
@@ -34,11 +38,20 @@ final class DirectoryWatcher {
         self.stream = stream
     }
 
-    /// Stop before dropping the watcher: the stream holds an unretained
-    /// pointer to it.
+    /// Stops delivery. Also done on deinit — dropping a watcher without it
+    /// once let a queued event call into freed memory.
     func stop() {
+        tearDown()
+    }
+
+    deinit {
+        tearDown()
+    }
+
+    private nonisolated func tearDown() {
         guard let stream else { return }
         FSEventStreamStop(stream)
+        // After invalidation no further callbacks run, queued ones included.
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         self.stream = nil
