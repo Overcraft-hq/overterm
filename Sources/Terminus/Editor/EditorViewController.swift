@@ -17,6 +17,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var ruler: LineNumberRuler!
     private var messageLabel: NSTextField!
     private var scrollView: NSScrollView!
+    private var language: SyntaxHighlighter.Language?
+    private var pendingHighlight: DispatchWorkItem?
+
+    /// Past this, highlighting on every keystroke would lag; plain text it is.
+    private static let highlightLimit = 300_000
 
     init(theme: ChromeTheme, background: NSColor, foreground: NSColor) {
         self.theme = theme
@@ -137,6 +142,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         messageLabel.isHidden = document.unavailable == nil
         scrollView.isHidden = document.unavailable != nil
         textView.string = document.text
+        language = SyntaxHighlighter.language(for: url)
+        highlight()
         textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.scrollToBeginningOfDocument(nil)
@@ -160,6 +167,41 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         document.markEdited()
         ruler.textDidChange()
+        // Coalesce a burst of typing into one pass.
+        pendingHighlight?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.highlight() } }
+        pendingHighlight = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    // MARK: Highlighting
+
+    private func color(_ kind: SyntaxHighlighter.Kind) -> NSColor {
+        switch kind {
+        case .comment: foreground.withAlphaComponent(0.45)
+        case .string: NSColor(srgbRed: 0.60, green: 0.80, blue: 0.47, alpha: 1)
+        case .number: NSColor(srgbRed: 0.96, green: 0.66, blue: 0.40, alpha: 1)
+        case .keyword: NSColor(srgbRed: 0.78, green: 0.56, blue: 0.95, alpha: 1)
+        }
+    }
+
+    /// Re-colours the whole document. Attributes only — never the text —
+    /// so undo is untouched.
+    private func highlight() {
+        guard let storage = textView.textStorage else { return }
+        let full = NSRange(location: 0, length: storage.length)
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        storage.beginEditing()
+        storage.setAttributes([.foregroundColor: foreground, .font: font], range: full)
+        if let language, storage.length <= Self.highlightLimit {
+            for (range, kind) in SyntaxHighlighter.tokens(in: storage.string, language: language) where NSMaxRange(range) <= storage.length {
+                storage.addAttribute(.foregroundColor, value: color(kind), range: range)
+                if kind == .comment { storage.addAttribute(.font, value: italic, range: range) }
+            }
+        }
+        storage.endEditing()
+        textView.typingAttributes = [.foregroundColor: foreground, .font: font]
     }
 
     @objc func saveDocument(_ sender: Any?) {
