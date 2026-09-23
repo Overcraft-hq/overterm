@@ -19,7 +19,7 @@ Private, internal tool. Not a product, so no `*rails` name.
 Requirements: macOS 13+, Xcode 16 (the Metal toolchain it ships), [mise](https://mise.jdx.dev).
 
 ```sh
-mise install        # pinned Zig
+mise trust && mise install   # pinned Zig
 make ghosttykit     # build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 make run            # build Terminus.app and open it
 ```
