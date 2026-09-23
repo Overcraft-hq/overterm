@@ -267,9 +267,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Opens a tab after the selected one, starting in `directory` — and
     /// starting `agent` in it, if given.
-    func newTab(in directory: URL, agent: Agent? = nil) {
+    /// `startAgent: false` makes an agent tab without starting the agent
+    /// (the E2E scenarios use it; nothing else should).
+    func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let terminal = TerminalView(workingDirectory: directory.path, initialInput: agent.map { $0.command + "\n" }, fontSize: fontSize)
+        let input = startAgent ? agent.map { $0.command + "\n" } : nil
+        let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         addTab(terminal, agent: agent, after: store.selected)
     }
 
@@ -519,12 +522,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // The composited window as it is on screen (terminal included).
                 // An app may capture its own windows without Screen Recording
                 // permission; cacheDisplay misses layer-backed content here.
-                if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"],
-                    let image = CGWindowListCreateImage(
-                        .null, .optionIncludingWindow, CGWindowID(self.window!.windowNumber), [.boundsIgnoreFraming, .bestResolution])
-                {
-                    try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: png))
-                }
+                if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] { self.captureWindow(to: png) }
                 // Drag both dividers 80 pt with in-process events (posted to
                 // this app's own queue only) and see whether the panes follow.
                 let splitView = self.split.splitView
@@ -556,6 +554,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 exit(0)
             }
         }
+    }
+
+    /// Writes the composited window, as on screen, to a PNG. An app may
+    /// capture its own window without Screen Recording permission;
+    /// cacheDisplay misses layer-backed content here.
+    func captureWindow(to path: String) {
+        guard let window,
+            let image = CGWindowListCreateImage(
+                .null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
+        else { return }
+        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
     // MARK: Tab context menu

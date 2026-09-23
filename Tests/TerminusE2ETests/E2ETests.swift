@@ -59,6 +59,7 @@ final class E2ETests: XCTestCase {
     func testTask() throws { try run("task") }
     func testSnippets() throws { try run("snippets") }
     func testAttention() throws { try run("attention") }
+    func testMarks() throws { try run("marks") }
     func testPalette() throws { try run("palette") }
 
     /// A prepared session.json comes back (pin, colour, names, selection,

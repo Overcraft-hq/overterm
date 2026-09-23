@@ -97,26 +97,43 @@ private struct TabItemView: View {
     private var isSelected: Bool { tab.id == store.selectedID }
     private var isRenaming: Bool { tab.id == store.renamingID }
 
-    /// Signal yellow: the brand's "look here".
-    private static let attention = Color(red: 1.0, green: 0.882, blue: 0.29)
-
     private var symbol: String { tab.agent?.symbol ?? "terminal" }
 
+    /// Done / failed / waiting — the mark in front of the name.
+    @ViewBuilder private var mark: some View {
+        switch tab.activity.mark {
+        case .waiting: WaitingDot().help(tab.activity.note ?? "Waiting for you")
+        case .failed: ResultMark(failed: true).help(tab.activity.note ?? "Failed")
+        case .done: ResultMark(failed: false).help(tab.activity.note ?? "Finished")
+        case .none: EmptyView()
+        }
+    }
+
     /// A pinned tab is just its icon — the agent's, or a terminal — in the
-    /// tab's colour; the name is in the tooltip. Attention and work show as
-    /// a corner mark.
+    /// tab's colour (breathing yellow while it works); the name is in the
+    /// tooltip; a mark sits in the corner.
     private var pinnedContent: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.dimText))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .topTrailing) {
-                if tab.activity.needsAttention {
-                    Circle().fill(Self.attention).frame(width: 6, height: 6).padding(5)
-                } else if tab.activity.isWorking {
-                    ProgressView().controlSize(.mini).scaleEffect(0.5).frame(width: 8, height: 8).padding(3)
+        Group {
+            if tab.activity.isWorking {
+                WorkingGlyph(symbol: symbol, size: 12)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.dimText))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            Group {
+                switch tab.activity.mark {
+                case .waiting: WaitingDot(size: 5)
+                case .failed: ResultMark(failed: true, size: 7)
+                case .done: ResultMark(failed: false, size: 7)
+                case .none: EmptyView()
                 }
             }
+            .padding(2)
+        }
     }
 
     private var fullContent: some View {
@@ -124,15 +141,10 @@ private struct TabItemView: View {
             if let color = tab.color {
                 Circle().fill(color.color).frame(width: 8, height: 8)
             }
-            if tab.activity.needsAttention {
-                Circle()
-                    .fill(Self.attention)
-                    .frame(width: 7, height: 7)
-                    .help(tab.activity.note ?? "Needs your attention")
-            } else if tab.activity.isWorking {
-                ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
-            }
-            if let agent = tab.agent {
+            mark
+            if tab.activity.isWorking {
+                WorkingGlyph(symbol: tab.agent?.symbol ?? "circle.fill", size: tab.agent == nil ? 6 : 10)
+            } else if let agent = tab.agent {
                 Image(systemName: agent.symbol)
                     .font(.system(size: 10))
                     .foregroundStyle(isSelected ? theme.text : theme.dimText)
@@ -184,7 +196,9 @@ private struct TabItemView: View {
                 .fill(tab.color?.color.opacity(isSelected ? 0.0 : 0.14) ?? .clear)
         )
         .overlay(alignment: .bottom) {
-            if isSelected, let color = tab.color {
+            if tab.activity.isWorking {
+                WorkingBar().padding(.horizontal, 6).padding(.bottom, 1)
+            } else if isSelected, let color = tab.color {
                 Capsule().fill(color.color).frame(height: 2).padding(.horizontal, 8)
             }
         }

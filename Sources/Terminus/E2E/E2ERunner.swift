@@ -25,6 +25,7 @@ final class E2ERunner {
         "task": { await $0.task() },
         "snippets": { await $0.snippetsScenario() },
         "attention": { await $0.attention() },
+        "marks": { await $0.marks() },
         "palette": { await $0.paletteScenario() },
     ]
 
@@ -416,23 +417,78 @@ final class E2ERunner {
         clickSheetButton("Cancel")
     }
 
-    /// A background tab's agent notification flags that tab.
+    /// Sends a terminal escape sequence from a tab's own shell, as an agent
+    /// running there would.
+    private func emit(_ sequence: String, from tab: Tab) {
+        tab.terminal.insertText("printf '\\033]\(sequence)\\a'")
+        tab.terminal.pressReturn()
+    }
+
+    /// What Claude Code sends — progress while working (OSC 9;4), a
+    /// notification when it wants you (OSC 777) — marks a background tab.
     private func attention() async {
         await waitForPrompt()
         guard let first = app.store.selected else { return check("a tab", false) }
         app.newTab(nil)
         await waitForPrompt()
-        // Tab 1 is now in the background; have its shell send what Claude
-        // Code sends when it wants you (OSC 777 notify).
-        first.terminal.insertText("printf '\\033]777;notify;Claude Code;needs your permission\\a'")
-        first.terminal.pressReturn()
-        check("the background tab is flagged", await eventually { first.activity.needsAttention })
+        let second = app.store.selected!
+
+        emit("9;4;3;0", from: first)
+        check("working: progress starts", await eventually { first.activity.isWorking })
+        check("starting work is not a mark", first.activity.mark == .none)
+        emit("9;4;0;0", from: first)
+        check("done: work finished out of sight", await eventually { first.activity.mark == .done && !first.activity.isWorking })
+        emit("777;notify;Claude Code;needs your permission", from: first)
+        check("waiting: the agent's notification raises the mark", await eventually { first.activity.mark == .waiting })
         check("with the agent's text", first.activity.note == "Claude Code — needs your permission", first.activity.note ?? "nil")
-        check("the current tab is not", app.store.selected?.activity.needsAttention == false)
-        check("no real notification from an isolated run", AttentionNotifier.suppressed >= 0)
-        _ = app.gotoTab(1)
-        // Seen only when the app is active; an isolated run stays in the background.
-        check("the flag survives while the app is inactive", NSApp.isActive || first.activity.needsAttention)
+        emit("9;4;0;0", from: first)
+        await pause(0.5)
+        check("a lesser signal doesn't hide that it wants you", first.activity.mark == .waiting)
+
+        emit("9;4;2;0", from: second)
+        check("failed: error progress", await eventually { second.activity.mark == .failed })
+        check("the Dock badge counts marked tabs", app.store.tabs.filter(\.activity.needsAttention).count == 2)
+        check("no real notification from an isolated run", AttentionNotifier.suppressed >= 1)
+    }
+
+    /// One tab in each state, for looking at: TERMINUS_DUMP_PNG=<png>
+    /// captures the window once they are set.
+    private func marks() async {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        await waitForPrompt()
+        let shell = app.store.selected!
+        shell.customTitle = "shell — done"
+        app.newTab(in: home, agent: .claude, startAgent: false)
+        let working = app.store.selected!
+        working.customTitle = "feat/auth"
+        app.newTab(in: home, agent: .codex, startAgent: false)
+        let waiting = app.store.selected!
+        waiting.customTitle = "fix/billing"
+        app.newTab(in: home, agent: .claude, startAgent: false)
+        let failed = app.store.selected!
+        failed.customTitle = "chore/deps"
+        app.newTab(in: home, agent: .claude, startAgent: false)
+        let pinned = app.store.selected!
+        app.store.setPinned(pinned, true)
+        app.newTab(in: home)
+        app.store.selected!.customTitle = "current"
+        for tab in app.store.tabs { _ = await eventually(15) { tab.terminal.needsConfirmClose == false } }
+
+        emit("9;4;3;0", from: working)
+        emit("9;4;3;0", from: pinned)
+        emit("9;4;3;0", from: shell)
+        emit("777;notify;Codex;approve the migration?", from: waiting)
+        emit("9;4;2;0", from: failed)
+        check("working", await eventually { working.activity.isWorking && pinned.activity.isWorking })
+        check("waiting", await eventually { waiting.activity.mark == .waiting })
+        check("failed", await eventually { failed.activity.mark == .failed })
+        _ = await eventually { shell.activity.isWorking }
+        emit("9;4;0;0", from: shell)
+        check("done", await eventually { shell.activity.mark == .done })
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.6)
+            app.captureWindow(to: png)
+        }
     }
 
     /// ⌘P shows, searches across kinds, and hides.
