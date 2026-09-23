@@ -15,8 +15,15 @@ final class GhosttyRuntime {
     /// Process-wide libghostty init. Must run before anything else touches the
     /// library, so main.swift calls it first.
     nonisolated static func initialize() -> Bool {
-        ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS
+        let ok = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS
+        initialized.withLock { $0 = ok }
+        return ok
     }
+
+    /// Whether `initialize()` ran. Without it there is no app and every
+    /// TerminalView is surfaceless — which is what unit tests of tab logic
+    /// want: real Tabs, no ptys.
+    private nonisolated static let initialized = OSAllocatedUnfairLock(initialState: false)
 
     static let shared = GhosttyRuntime()
 
@@ -24,6 +31,7 @@ final class GhosttyRuntime {
     private var config: ghostty_config_t?
 
     private init() {
+        guard Self.initialized.withLock({ $0 }) else { return }
         // The user's regular Ghostty config (~/.config/ghostty/config) applies
         // as-is: font, theme, keybinds all carry over.
         guard let config = ghostty_config_new() else {

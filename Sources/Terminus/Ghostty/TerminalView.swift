@@ -50,6 +50,8 @@ final class TerminalView: NSView {
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
+        let cwd = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
+        self.workingDirectory = cwd
         guard let app = GhosttyRuntime.shared.app else { return }
         var config = ghostty_surface_config_new()
         config.platform_tag = GHOSTTY_PLATFORM_MACOS
@@ -59,8 +61,6 @@ final class TerminalView: NSView {
         config.context = GHOSTTY_SURFACE_CONTEXT_TAB
         if let fontSize { config.font_size = fontSize }
 
-        let cwd = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
-        self.workingDirectory = cwd
         // The C strings only need to outlive ghostty_surface_new, which
         // copies them.
         let cwdC = strdup(cwd)
