@@ -22,14 +22,25 @@ struct WorktreeActions {
     var newTask: () -> Void
 }
 
-/// The left panel: the repository's worktrees, then the file tree of the
-/// selected tab's checkout.
+/// What the snippet list asks the window to do.
+struct SnippetActions {
+    /// Use it: type it in (run: and press Return), asking for placeholder
+    /// values first if it has any.
+    var use: (Snippet, _ run: Bool) -> Void
+    /// Open the editor; nil for a new snippet.
+    var edit: (Snippet?) -> Void
+}
+
+/// The left panel: the repository's worktrees, the file tree of the
+/// selected tab's checkout, and snippets.
 struct SidebarView: View {
     @ObservedObject var tree: FileTreeModel
     @ObservedObject var worktrees: WorktreeModel
+    @ObservedObject var snippets: SnippetStore
     let theme: ChromeTheme
     let actions: FileTreeActions
     let worktreeActions: WorktreeActions
+    let snippetActions: SnippetActions
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,6 +61,8 @@ struct SidebarView: View {
                     .padding(.vertical, 4)
                 }
             }
+            Divider().opacity(0.4)
+            SnippetListView(store: snippets, theme: theme, actions: snippetActions)
         }
         .background(theme.strip)
     }
@@ -250,5 +263,85 @@ private struct WorktreeRowView: View {
             }
         }
         .help(worktree.path.path)
+    }
+}
+
+private struct SnippetListView: View {
+    @ObservedObject var store: SnippetStore
+    let theme: ChromeTheme
+    let actions: SnippetActions
+    @AppStorage("snippetsExpanded") private var expanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .frame(width: 10)
+                Text("Snippets")
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                Spacer()
+                Button(action: { actions.edit(nil) }) {
+                    Image(systemName: "plus").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("New Snippet")
+            }
+            .foregroundStyle(theme.dimText)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+            .onTapGesture { expanded.toggle() }
+
+            if expanded {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(store.snippets) { snippet in
+                            SnippetRowView(snippet: snippet, theme: theme, actions: actions, onDelete: { store.delete(snippet) })
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+                .frame(maxHeight: CGFloat(min(max(store.snippets.count, 1), 6)) * 34 + 4)
+            }
+        }
+    }
+}
+
+private struct SnippetRowView: View {
+    let snippet: Snippet
+    let theme: ChromeTheme
+    let actions: SnippetActions
+    let onDelete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(snippet.name).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+            Text(snippet.command)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(theme.dimText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(
+            RoundedRectangle(cornerRadius: 5).fill(hovering ? theme.hover : .clear).padding(.horizontal, 4)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        // A click types it in without running: Return stays your call.
+        .onTapGesture { actions.use(snippet, false) }
+        .contextMenu {
+            Button("Run") { actions.use(snippet, true) }
+            Button("Insert") { actions.use(snippet, false) }
+            Divider()
+            Button("Edit…") { actions.edit(snippet) }
+            Button("Delete") { onDelete() }
+        }
+        .help(snippet.command)
     }
 }

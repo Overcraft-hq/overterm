@@ -13,6 +13,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private let container = NSView()
     private let tree = FileTreeModel()
     private let worktrees = WorktreeModel()
+    let snippets = SnippetStore()
     private let split = NSSplitViewController()
     private var sidebarItem: NSSplitViewItem?
     private let diff = DiffModel()
@@ -89,6 +90,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             rootView: SidebarView(
                 tree: tree,
                 worktrees: worktrees,
+                snippets: snippets,
                 theme: theme,
                 actions: FileTreeActions(
                     insertPath: { [weak self] in self?.insertPath($0) },
@@ -101,6 +103,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newAgentTab: { [weak self] worktree, agent in self?.newTab(in: worktree.path, agent: agent) },
                     remove: { [weak self] in self?.removeWorktree($0) },
                     newTask: { [weak self] in self?.newTask(nil) }
+                ),
+                snippetActions: SnippetActions(
+                    use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
+                    edit: { [weak self] in self?.editSnippet($0) }
                 )
             ))
         sidebar.sizingOptions = []
@@ -360,18 +366,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// New Task: a worktree on a new (or existing) branch next to the repo,
     /// then a tab in it named after the branch, with the agent started.
     @objc func newTask(_ sender: Any?) {
-        guard let window else { return }
         guard let repo = worktrees.main?.path else {
             showAlert("Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.")
             return
         }
-        let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
-        let close = { [weak window, weak sheet] in
-            guard let window, let sheet else { return }
-            window.endSheet(sheet)
-        }
-        sheet.contentViewController = NSHostingController(
-            rootView: NewTaskView(
+        presentSheet { close in
+            NewTaskView(
                 repo: repo,
                 defaultBase: worktrees.main?.branch ?? "HEAD",
                 onCreate: { [weak self] branch, base, agent in
@@ -388,7 +388,60 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     }
                 },
                 onCancel: close
-            ))
+            )
+        }
+    }
+
+    // MARK: Snippets
+
+    /// Types a snippet into the selected terminal — Return too when `run` —
+    /// asking for its placeholder values first if it has any.
+    func useSnippet(_ snippet: Snippet, run: Bool) {
+        guard snippet.placeholders.isEmpty else {
+            presentSheet { close in
+                SnippetFillView(
+                    snippet: snippet,
+                    onUse: { [weak self] command, run in
+                        close()
+                        self?.type(command, run: run)
+                    },
+                    onCancel: close)
+            }
+            return
+        }
+        type(snippet.command, run: run)
+    }
+
+    private func type(_ command: String, run: Bool) {
+        guard let terminal = store.selected?.terminal else { return }
+        terminal.insertText(command)
+        if run { terminal.pressReturn() }
+        focusSelectedTerminal()
+    }
+
+    func editSnippet(_ snippet: Snippet?) {
+        presentSheet { close in
+            SnippetEditorView(
+                snippet: snippet ?? Snippet(name: "", command: ""),
+                isNew: snippet == nil,
+                onSave: { [weak self] edited in
+                    self?.snippets.upsert(edited)
+                    close()
+                },
+                onCancel: close)
+        }
+    }
+
+    /// Shows a SwiftUI view as a sheet; the builder gets the closure that
+    /// dismisses it.
+    private func presentSheet<Content: View>(_ build: (@escaping () -> Void) -> Content) {
+        guard let window else { return }
+        let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let close = { [weak window, weak sheet] in
+            guard let window, let sheet else { return }
+            window.endSheet(sheet)
+        }
+        sheet.contentViewController = NSHostingController(rootView: build(close))
         window.beginSheet(sheet) { [weak self] _ in self?.focusSelectedTerminal() }
     }
 

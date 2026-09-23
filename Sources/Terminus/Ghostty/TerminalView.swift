@@ -108,6 +108,21 @@ final class TerminalView: NSView {
         }
     }
 
+    /// Presses Return. Needed to run something typed with insertText: with
+    /// bracketed paste on, a newline inside the pasted text is literal.
+    func pressReturn() {
+        guard let surface else { return }
+        var ev = ghostty_input_key_s()
+        ev.keycode = 0x24  // kVK_Return
+        ev.mods = GHOSTTY_MODS_NONE
+        ev.consumed_mods = GHOSTTY_MODS_NONE
+        ev.unshifted_codepoint = 0x0D
+        ev.action = GHOSTTY_ACTION_PRESS
+        _ = ghostty_surface_key(surface, ev)
+        ev.action = GHOSTTY_ACTION_RELEASE
+        _ = ghostty_surface_key(surface, ev)
+    }
+
     /// Hidden tabs stop rendering; libghostty keeps the pty running.
     func setVisible(_ visible: Bool) {
         isHidden = !visible
