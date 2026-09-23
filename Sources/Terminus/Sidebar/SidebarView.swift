@@ -31,8 +31,25 @@ struct SnippetActions {
     var edit: (Snippet?) -> Void
 }
 
-/// The left panel: the repository's worktrees, the file tree of the
-/// selected tab's checkout, and snippets.
+/// What the sidebar can show, one at a time — Warp-style icon tabs.
+enum SidebarPanel: String, CaseIterable, Identifiable {
+    case files, worktrees, snippets
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .files: "doc.on.doc"
+        case .worktrees: "arrow.triangle.branch"
+        case .snippets: "text.alignleft"
+        }
+    }
+
+    var title: String { rawValue.capitalized }
+}
+
+/// The left panel: an icon bar choosing Files, Worktrees or Snippets, and
+/// the chosen one at full height.
 struct SidebarView: View {
     @ObservedObject var tree: FileTreeModel
     @ObservedObject var worktrees: WorktreeModel
@@ -41,30 +58,62 @@ struct SidebarView: View {
     let actions: FileTreeActions
     let worktreeActions: WorktreeActions
     let snippetActions: SnippetActions
+    let onClose: () -> Void
+    @AppStorage("sidebarPanel") private var panel: SidebarPanel = .files
 
     var body: some View {
         VStack(spacing: 0) {
-            if !worktrees.worktrees.isEmpty {
-                WorktreeListView(model: worktrees, currentRoot: tree.root, theme: theme, actions: worktreeActions)
-                Divider().opacity(0.4)
-            }
-            header
-            if tree.root == nil {
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(tree.rows) { row in
-                            FileRowView(row: row, tree: tree, theme: theme, actions: actions)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
+            panelBar
             Divider().opacity(0.4)
-            SnippetListView(store: snippets, theme: theme, actions: snippetActions)
+            switch panel {
+            case .files: files
+            case .worktrees: WorktreeListView(model: worktrees, currentRoot: tree.root, theme: theme, actions: worktreeActions)
+            case .snippets: SnippetListView(store: snippets, theme: theme, actions: snippetActions)
+            }
         }
         .background(theme.strip)
+    }
+
+    private var panelBar: some View {
+        HStack(spacing: 4) {
+            ForEach(SidebarPanel.allCases) { item in
+                Button(action: { panel = item }) {
+                    Image(systemName: item.symbol)
+                        .font(.system(size: 13))
+                        .frame(width: 30, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(panel == item ? theme.selected : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(panel == item ? theme.text : theme.dimText)
+                .help(item.title)
+            }
+            Spacer(minLength: 0)
+            Button(action: onClose) {
+                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).frame(width: 24, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Hide Sidebar (⌘B)")
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 38)
+    }
+
+    @ViewBuilder private var files: some View {
+        header
+        if tree.root == nil {
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(tree.rows) { row in
+                        FileRowView(row: row, tree: tree, theme: theme, actions: actions)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
     }
 
     private var header: some View {
@@ -198,19 +247,22 @@ private struct WorktreeListView: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 30)
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(model.worktrees) { worktree in
-                        WorktreeRowView(
-                            worktree: worktree,
-                            isCurrent: currentRoot?.standardizedFileURL == worktree.path.standardizedFileURL,
-                            theme: theme, actions: actions)
+            if model.worktrees.isEmpty {
+                Text("Not in a git repository").font(.system(size: 12)).foregroundStyle(theme.dimText).padding(12)
+                Spacer()
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(model.worktrees) { worktree in
+                            WorktreeRowView(
+                                worktree: worktree,
+                                isCurrent: currentRoot?.standardizedFileURL == worktree.path.standardizedFileURL,
+                                theme: theme, actions: actions)
+                        }
                     }
+                    .padding(.bottom, 4)
                 }
-                .padding(.bottom, 4)
             }
-            // Many worktrees scroll here rather than squeezing the file tree.
-            .frame(maxHeight: CGFloat(min(model.worktrees.count, 6)) * 24 + 4)
         }
     }
 }
@@ -271,14 +323,10 @@ private struct SnippetListView: View {
     @ObservedObject var store: SnippetStore
     let theme: ChromeTheme
     let actions: SnippetActions
-    @AppStorage("snippetsExpanded") private var expanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
-                Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .frame(width: 10)
                 Text("Snippets")
                     .font(.system(size: 11, weight: .semibold))
                     .textCase(.uppercase)
@@ -292,19 +340,14 @@ private struct SnippetListView: View {
             .foregroundStyle(theme.dimText)
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .contentShape(Rectangle())
-            .onTapGesture { expanded.toggle() }
 
-            if expanded {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(store.snippets) { snippet in
-                            SnippetRowView(snippet: snippet, theme: theme, actions: actions, onDelete: { store.delete(snippet) })
-                        }
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(store.snippets) { snippet in
+                        SnippetRowView(snippet: snippet, theme: theme, actions: actions, onDelete: { store.delete(snippet) })
                     }
-                    .padding(.bottom, 4)
                 }
-                .frame(maxHeight: CGFloat(min(max(store.snippets.count, 1), 6)) * 34 + 4)
+                .padding(.bottom, 4)
             }
         }
     }

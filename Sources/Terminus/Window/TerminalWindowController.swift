@@ -111,7 +111,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
                     edit: { [weak self] in self?.editSnippet($0) }
-                )
+                ),
+                onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(viewController: sidebar)
