@@ -34,5 +34,10 @@ let package = Package(
             dependencies: ["Terminus"],
             path: "Tests/TerminusTests"
         ),
+        // Launches the built app per scenario; opt-in (make e2e).
+        .testTarget(
+            name: "TerminusE2ETests",
+            path: "Tests/TerminusE2ETests"
+        ),
     ]
 )

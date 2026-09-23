@@ -1,6 +1,6 @@
 APP := Terminus.app
 
-.PHONY: ghosttykit icon build test app run install clean
+.PHONY: ghosttykit icon build test e2e app run install clean
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -14,9 +14,13 @@ icon:
 build:
 	swift build -c release
 
-## test: run the unit tests
+## test: run the unit tests (E2E scenarios are skipped)
 test:
-	swift test
+	swift test --skip TerminusE2ETests
+
+## e2e: build the app, then run every end-to-end scenario in it (opens windows briefly)
+e2e: app
+	TERMINUS_E2E_TESTS=1 swift test --filter TerminusE2ETests
 
 ## app: assemble and ad-hoc sign $(APP)
 app:

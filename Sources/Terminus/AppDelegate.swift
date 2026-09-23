@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         controller.showWindow(nil)
         windowController = controller
         controller.dumpLayoutIfRequested()
+        if let scenario = AppEnvironment.e2eScenario { E2ERunner.start(scenario, app: controller) }
 
         // An isolated run stays in the background: it must not take the
         // keyboard from whatever the user is doing.

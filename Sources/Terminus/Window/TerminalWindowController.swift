@@ -11,19 +11,20 @@ import SwiftUI
 final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let store = TabStore()
     private let container = NSView()
-    private let tree = FileTreeModel()
-    private let worktrees = WorktreeModel()
+    private(set) var tree = FileTreeModel()
+    private(set) var worktrees = WorktreeModel()
     let snippets = SnippetStore()
-    private let palette = PaletteModel()
-    private var paletteView: NSView?
+    private(set) var palette = PaletteModel()
+    private(set) var paletteView: NSView?
     private var tabBarView: NSView?
     private var rightClickMonitor: Any?
-    private let split = WideDividerSplitViewController()
-    private var sidebarItem: NSSplitViewItem?
-    private let diff = DiffModel()
-    private var editor: EditorViewController?
-    private var editorItem: NSSplitViewItem?
-    private var diffItem: NSSplitViewItem?
+    // Readable (not writable) outside so the E2E scenarios can check them.
+    private(set) var split = WideDividerSplitViewController()
+    private(set) var sidebarItem: NSSplitViewItem?
+    private(set) var diff = DiffModel()
+    private(set) var editor: EditorViewController?
+    private(set) var editorItem: NSSplitViewItem?
+    private(set) var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
@@ -433,11 +434,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 onCreate: { [weak self] branch, base, agent in
                     guard let self else { return nil }
                     do {
-                        let path = try await TaskCreator.create(repo: repo, branch: branch, base: base)
+                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent)
                         close()
-                        self.newTab(in: path, agent: agent)
-                        self.store.selected?.customTitle = branch
-                        await self.worktrees.refresh()
                         return nil
                     } catch {
                         return error.localizedDescription
@@ -577,7 +575,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func menu(for tab: Tab) -> NSMenu {
+    func menu(for tab: Tab) -> NSMenu {
         let menu = NSMenu()
         if !tab.isPinned {
             menu.addItem(
@@ -700,6 +698,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             }
         }
         return items
+    }
+
+    /// What New Task does once the sheet is filled in: the worktree, then a
+    /// tab in it named after the branch, with the agent started.
+    func createTask(repo: URL, branch: String, base: String, agent: Agent?) async throws {
+        let path = try await TaskCreator.create(repo: repo, branch: branch, base: base)
+        newTab(in: path, agent: agent)
+        store.selected?.customTitle = branch
+        await worktrees.refresh()
     }
 
     // MARK: Snippets
