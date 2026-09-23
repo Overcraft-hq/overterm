@@ -62,6 +62,19 @@ final class TabStore: ObservableObject {
         select(index: ((i + offset) % n + n) % n)
     }
 
+    /// The tab being dragged in the strip, if any. Not published: only the
+    /// drop delegate reads it.
+    var draggingID: Tab.ID?
+
+    /// Moves `tab` to where `target` is, if both are in the same group. Used
+    /// live while dragging, so the strip reorders under the pointer.
+    func move(_ tab: Tab, to target: Tab) {
+        guard tab.id != target.id, tab.isPinned == target.isPinned,
+            let from = index(of: tab), let to = index(of: target)
+        else { return }
+        tabs.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+    }
+
     /// Moves a tab by `offset` places, clamped to its group (pinned or not).
     func move(_ tab: Tab, by offset: Int) {
         guard let from = index(of: tab) else { return }

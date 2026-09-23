@@ -145,6 +145,11 @@ private struct TabItemView: View {
         .onTapGesture { actions.select(tab) }
         .simultaneousGesture(TapGesture(count: 2).onEnded { store.renamingID = tab.id })
         .onHover { hovering = $0 }
+        .onDrag {
+            store.draggingID = tab.id
+            return NSItemProvider(object: tab.id.uuidString as NSString)
+        }
+        .onDrop(of: [.text], delegate: TabDropDelegate(target: tab, store: store))
         .contextMenu {
             Button("Rename Tab…") {
                 actions.select(tab)
@@ -166,6 +171,25 @@ private struct TabItemView: View {
         }
         .help(tab.title)
         .padding(.horizontal, 2)
+    }
+}
+
+/// Reorders live: as a dragged tab passes over another in its group, they
+/// swap places, like Chrome.
+private struct TabDropDelegate: DropDelegate {
+    let target: Tab
+    let store: TabStore
+
+    func dropEntered(info: DropInfo) {
+        guard let id = store.draggingID, let dragged = store.tabs.first(where: { $0.id == id }) else { return }
+        withAnimation(.easeOut(duration: 0.12)) { store.move(dragged, to: target) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        store.draggingID = nil
+        return true
     }
 }
 
