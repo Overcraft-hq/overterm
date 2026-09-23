@@ -18,15 +18,17 @@ enum Git {
     /// /usr/bin/git is the Xcode shim; a GUI app's PATH has no Homebrew.
     static let executable = URL(fileURLWithPath: "/usr/bin/git")
 
-    static func run(_ arguments: [String], in directory: URL) async throws -> String {
+    /// - Parameter success: exit codes that are not failures. `git diff
+    ///   --no-index` exits 1 when the files differ, which is the point.
+    static func run(_ arguments: [String], in directory: URL, success: Set<Int32> = [0]) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result { try runBlocking(arguments, in: directory) })
+                continuation.resume(with: Result { try runBlocking(arguments, in: directory, success: success) })
             }
         }
     }
 
-    private static func runBlocking(_ arguments: [String], in directory: URL) throws -> String {
+    private static func runBlocking(_ arguments: [String], in directory: URL, success: Set<Int32>) throws -> String {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
@@ -55,7 +57,7 @@ enum Git {
         drained.wait()
         process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
+        guard success.contains(process.terminationStatus) else {
             throw GitError(arguments: arguments, status: process.terminationStatus, stderr: String(decoding: errData, as: UTF8.self))
         }
         return String(decoding: outData, as: UTF8.self)
