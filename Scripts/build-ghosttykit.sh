@@ -13,6 +13,7 @@ GHOSTTY_SHA="332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/vendor/ghostty"
 OUT="$ROOT/Frameworks/GhosttyKit.xcframework"
+RES="$ROOT/Frameworks/GhosttyResources"
 
 if [[ ! -d "$SRC/.git" ]]; then
   echo "==> cloning Ghostty $GHOSTTY_REF"
@@ -41,4 +42,12 @@ mise exec -- zig build \
 rm -rf "$OUT"
 mkdir -p "$(dirname "$OUT")"
 cp -R "$SRC/macos/GhosttyKit.xcframework" "$OUT"
-echo "==> done: $OUT"
+
+# Runtime resources libghostty looks for next to the executable, in
+# Contents/Resources: terminfo (its sentinel for finding the dir, and what makes
+# TERM=xterm-ghostty work) and ghostty/ (shell integration, themes). Without
+# them the shell gets xterm-256color and no shell integration.
+rm -rf "$RES"
+mkdir -p "$RES"
+cp -R "$SRC/zig-out/share/ghostty" "$SRC/zig-out/share/terminfo" "$RES/"
+echo "==> done: $OUT, $RES"

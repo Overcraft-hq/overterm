@@ -27,6 +27,13 @@ rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$BIN_PATH" "$CONTENTS/MacOS/${APP_NAME}"
 
+GHOSTTY_RES="$ROOT/Frameworks/GhosttyResources"
+if [[ ! -d "$GHOSTTY_RES" ]]; then
+  echo "error: $GHOSTTY_RES missing — run: make ghosttykit" >&2
+  exit 1
+fi
+cp -R "$GHOSTTY_RES/." "$CONTENTS/Resources/"
+
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
