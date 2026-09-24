@@ -164,7 +164,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// The selected line (1-based), for tests.
     var selectedLine: Int {
-        LineIndex.line(of: textView.selectedRange().location, in: LineIndex.starts(of: textView.string as NSString))
+        // The text view exists once the view is loaded; before any file was
+        // opened it isn't, and reading it trapped.
+        _ = view
+        return LineIndex.line(of: textView.selectedRange().location, in: LineIndex.starts(of: textView.string as NSString))
     }
 
     private func load(_ url: URL) {
