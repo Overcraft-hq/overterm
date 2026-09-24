@@ -19,7 +19,8 @@ struct PaletteView: View {
                     text: $model.query,
                     onMove: { model.move($0) },
                     onSubmit: { run in model.selected.map { onChoose($0, run) } },
-                    onCancel: onDismiss
+                    onCancel: onDismiss,
+                    textColor: NSColor(theme.text)
                 )
                 .frame(height: 40)
                 .padding(.horizontal, 14)
@@ -83,11 +84,16 @@ struct PaletteView: View {
 /// The search field. AppKit, because arrow keys, Return vs ⌥Return and
 /// Escape need the field editor's commands (SwiftUI's onKeyPress is
 /// macOS 14+; Terminus targets 13).
-private struct PaletteField: NSViewRepresentable {
+/// Shared by the palette and the ⌘F overlay.
+struct PaletteField: NSViewRepresentable {
     @Binding var text: String
     let onMove: (Int) -> Void
     let onSubmit: (_ run: Bool) -> Void
     let onCancel: () -> Void
+    var placeholder = "Search tabs, worktrees, snippets, actions…"
+    /// The chrome is dark whatever the system appearance; the field's default
+    /// label colour would follow the system and go dark-on-dark.
+    var textColor: NSColor = .white
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -95,7 +101,10 @@ private struct PaletteField: NSViewRepresentable {
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = .systemFont(ofSize: 16)
-        field.placeholderString = "Search tabs, worktrees, snippets, actions…"
+        field.textColor = textColor
+        field.placeholderAttributedString = NSAttributedString(
+            string: placeholder,
+            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: 16)])
         field.delegate = context.coordinator
         return field
     }

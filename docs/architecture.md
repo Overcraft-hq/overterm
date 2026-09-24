@@ -15,6 +15,8 @@ libghostty's own threads and git calls.
 │ (⌘B)     │                          │              │              │
 └──────────┴──────────────────────────┴──────────────┴──────────────┘
       + ⌘P palette: an overlay over the whole content view
+      + ⌘F search: an overlay over the terminal container; a compact find
+        bar in its top-right corner while a terminal search is kept
 ```
 
 - One split (`split`, vertical, autosave `TerminusColumns.v2`): sidebar | terminal | editor | changes. Bump the key's version whenever the column set changes, or stale positions get applied to the new columns.
@@ -34,6 +36,7 @@ libghostty's own threads and git calls.
 | `DiffModel` | status, counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit of that checkout; works before the first commit (empty-tree base) |
 | `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
+| `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |
 | `EditorViewController` + `EditorDocument` | the file open in the editor pane |
 
 "That checkout" is `Tab.checkoutSource`, in order: an **attached** checkout
@@ -55,12 +58,27 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 | `NEW_TAB`, `CLOSE_TAB`, `GOTO_TAB`, `MOVE_TAB` | the window's tab operations (the user's Ghostty keybinds drive Terminus tabs) |
 | `CLOSE_WINDOW`, `CLOSE_ALL_WINDOWS` | window close (with confirmation) |
 | `TOGGLE_COMMAND_PALETTE` | Terminus palette |
+| `START_SEARCH` | the ⌘F overlay (with Ghostty's needle, if any) |
+| `END_SEARCH`, `SEARCH_TOTAL`, `SEARCH_SELECTED` | `TerminalSearch` → the overlay's terminal row and the compact bar's `3/12` |
 | `RING_BELL`, `DESKTOP_NOTIFICATION`, `PROGRESS_REPORT`, `COMMAND_FINISHED` | `TabActivity`: `isWorking` + a ranked mark (waiting > failed > done) → tab strip (breathing glyph + sliding bar / ringing yellow dot / green check / red mark), notification, Dock badge |
 | `OPEN_URL`, `MOUSE_SHAPE`, `QUIT` | handled directly |
 | anything else (splits, new window, …) | returns false: unhandled |
 
 `close_surface_cb` (shell exited, or Ghostty's ⌘W) → `closeTab` (pinned tabs
 ignore it unless the process actually exited).
+
+## Search (⌘F)
+
+`SpotlightModel` (`Sources/Terminus/Search/`), rows in this order:
+
+| Row | Source | Return |
+|---|---|---|
+| Terminal | libghostty's own search (`search:<needle>` binding action; totals come back as `SEARCH_TOTAL`) — highlights live behind the overlay | keeps the search, shows `TerminalSearchBar` (Return / ⇧Return / Esc) |
+| File | `git ls-files --cached --others --exclude-standard` of the checkout (`diff.root ?? tree.root`), loaded once per open, fuzzy-ranked with the name weighted over the path | opens it in the editor |
+| In file | `git grep -F -i -I --untracked`, ≥ 2 characters, 150 ms debounce, capped per file and in total | opens it at that line (`EditorViewController.go(toLine:)`) |
+
+Without a checkout only the terminal row is shown. Esc (or a click outside)
+ends the terminal search too; only choosing the terminal row keeps it.
 
 ## Tab Info (⌘I, or Show Info… on a tab)
 

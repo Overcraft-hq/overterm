@@ -44,6 +44,12 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        // ⌘F in the terminal is Ghostty's start_search → the overlay; this is
+        // the editor's find bar (the terminal never lets the key reach here).
+        let find = editMenu.addItem(withTitle: "Find…", action: #selector(NSResponder.performTextFinderAction(_:)), keyEquivalent: "f")
+        find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        editMenu.addItem(withTitle: "Search Terminal & Files…", action: #selector(TerminalWindowController.findInTerminal(_:)), keyEquivalent: "")
         editItem.submenu = editMenu
         main.addItem(editItem)
 

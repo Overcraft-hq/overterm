@@ -19,6 +19,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
     private var dragMonitor: Any?
+    /// The find bar, over the terminal's top-right corner; shows the
+    /// selected terminal's search while it is active.
+    private(set) var searchBar: NSHostingView<AnyView>?
+    private var searchSubscription: AnyCancellable?
+    /// The ⌘F overlay over the terminal (terminal + files + contents).
+    let spotlight = SpotlightModel()
+    private(set) var spotlightView: NSView?
     /// Polls where the selected tab's agent works (see Tab.agentDirectory).
     private var agentPoll: Timer?
     /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
@@ -144,6 +151,32 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let terminalPane = NSViewController()
         terminalPane.view = container
 
+        let searchBar = NSHostingView(rootView: AnyView(EmptyView()))
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        searchBar.isHidden = true
+        container.addSubview(searchBar)
+        NSLayoutConstraint.activate([
+            searchBar.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            searchBar.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+        ])
+        self.searchBar = searchBar
+
+        let spotlightView = NSHostingView(
+            rootView: SpotlightView(
+                model: spotlight, theme: theme,
+                onChoose: { [weak self] in self?.chooseSpotlight($0) },
+                onDismiss: { [weak self] in self?.hideSpotlight(keepTerminalSearch: false) }))
+        spotlightView.translatesAutoresizingMaskIntoConstraints = false
+        spotlightView.isHidden = true
+        container.addSubview(spotlightView)
+        NSLayoutConstraint.activate([
+            spotlightView.topAnchor.constraint(equalTo: container.topAnchor),
+            spotlightView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            spotlightView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            spotlightView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        self.spotlightView = spotlightView
+
         // Editor to the right of the terminal, opened from the file tree.
         let editor = EditorViewController(theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor)
         let editorItem = NSSplitViewItem(viewController: editor)
@@ -254,6 +287,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let tab = Tab(terminal: terminal, agent: agent)
         terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
         terminal.onWorkingDirectoryChange = { [weak tab] in tab?.workingDirectory = $0 }
+        terminal.onSearchRequest = { [weak self, weak terminal] needle in
+            guard let self, let terminal else { return }
+            self.showSpotlight(for: terminal, needle: needle)
+        }
         terminal.onEvent = { [weak self, weak tab] event in
             guard let self, let tab else { return }
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
@@ -392,6 +429,70 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func newAgentTab(_ agent: Agent) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
         newTab(in: URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path), agent: agent)
+    }
+
+    // MARK: Find in terminal
+
+    /// Shows `terminal`'s find bar while its search is active; focuses the
+    /// field when a search starts.
+    private func bindSearchBar(to terminal: TerminalView) {
+        guard let searchBar, let theme else { return }
+        searchBar.rootView = AnyView(
+            TerminalSearchBar(search: terminal.search, theme: theme, onDismiss: { [weak self] in self?.focusSelectedTerminal() }))
+        searchSubscription = terminal.search.$barVisible
+            .removeDuplicates()
+            .sink { [weak self, weak searchBar] active in
+                guard let self, let searchBar else { return }
+                searchBar.isHidden = !active
+                // Keep it above the terminals (a new tab's view is added later).
+                if active, let container = searchBar.superview {
+                    container.addSubview(searchBar, positioned: .above, relativeTo: nil)
+                    DispatchQueue.main.async {
+                        if let field = Self.firstTextField(in: searchBar) { self.window?.makeFirstResponder(field) }
+                    }
+                }
+            }
+    }
+
+    /// ⌘F with the terminal focused comes through Ghostty's own binding;
+    /// this is the menu's way in.
+    @objc func findInTerminal(_ sender: Any?) {
+        guard let terminal = store.selected?.terminal else { return }
+        showSpotlight(for: terminal, needle: nil)
+    }
+
+    /// The ⌘F overlay for `terminal`, searching it and its tab's checkout.
+    func showSpotlight(for terminal: TerminalView, needle: String?) {
+        guard let spotlightView else { return }
+        spotlight.open(root: diff.root ?? tree.root, terminal: terminal, needle: needle)
+        spotlightView.isHidden = false
+        spotlightView.superview?.addSubview(spotlightView, positioned: .above, relativeTo: nil)
+        DispatchQueue.main.async { [weak self] in
+            if let field = Self.firstTextField(in: spotlightView) { self?.window?.makeFirstResponder(field) }
+        }
+    }
+
+    func hideSpotlight(keepTerminalSearch: Bool) {
+        spotlightView?.isHidden = true
+        spotlight.close(keepTerminalSearch: keepTerminalSearch)
+        focusSelectedTerminal()
+    }
+
+    private func chooseSpotlight(_ row: SpotlightModel.Row) {
+        switch row {
+        case .terminal:
+            // Keep the highlights; step through them with the compact bar.
+            hideSpotlight(keepTerminalSearch: true)
+            spotlight.terminal?.search.showBar()
+        case .file(let path):
+            guard let root = spotlight.root else { return }
+            hideSpotlight(keepTerminalSearch: false)
+            openInEditor(root.appendingPathComponent(path))
+        case .content(let match):
+            guard let root = spotlight.root else { return }
+            hideSpotlight(keepTerminalSearch: false)
+            openInEditor(root.appendingPathComponent(match.path), line: match.line)
+        }
     }
 
     // MARK: Following the agent
@@ -533,11 +634,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Shows `url` in the editor pane beside the terminal (after any
     /// unsaved-changes question about the file already open).
-    func openInEditor(_ url: URL) {
+    func openInEditor(_ url: URL, line: Int? = nil) {
         guard let editor, let editorItem else { return }
         editor.open(url) { opened in
             guard opened else { return }
             if editorItem.isCollapsed { editorItem.animator().isCollapsed = false }
+            if let line { editor.go(toLine: line) }
             editor.focus()
         }
     }
@@ -1072,6 +1174,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         markSelectedSeen()
         // Tree, worktrees and diff show the tab's checkout: attached, else
         // where its agent works, else the shell's directory.
+        bindSearchBar(to: selected.terminal)
         cwdSubscription = selected.$workingDirectory
             .combineLatest(selected.$agentDirectory, selected.$attachedCheckout)
             .map { [agent = selected.agent] cwd, agentDirectory, attached in

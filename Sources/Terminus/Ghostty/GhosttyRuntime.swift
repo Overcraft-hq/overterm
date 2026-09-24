@@ -179,6 +179,32 @@ final class GhosttyRuntime {
             window.showPalette(nil)
             return true
 
+        // Find in terminal: libghostty searches; we show the bar.
+        case GHOSTTY_ACTION_START_SEARCH:
+            guard let view else { return false }
+            let needle = action.action.start_search.needle.map { String(cString: $0) }
+            if let request = view.onSearchRequest {
+                request(needle)
+            } else {
+                view.search.begin(needle: needle)
+                view.search.showBar()
+            }
+            return true
+
+        case GHOSTTY_ACTION_END_SEARCH:
+            view?.search.end()
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            let total = action.action.search_total.total
+            view?.search.update(total: total >= 0 ? Int(total) : nil)
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            let selected = action.action.search_selected.selected
+            view?.search.update(selected: selected >= 0 ? Int(selected) : nil)
+            return true
+
         case GHOSTTY_ACTION_MOVE_TAB:
             guard let window, let view else { return false }
             window.moveTab(of: view, by: action.action.move_tab.amount)

@@ -12,6 +12,9 @@ import GhosttyKit
 final class TerminalView: NSView {
     private(set) var surface: ghostty_surface_t?
 
+    /// Find-in-terminal (⌘F) for this terminal.
+    private(set) lazy var search = TerminalSearch(terminal: self)
+
     /// Put in the shell's environment as TERMINUS_TAB_ID; every process
     /// started from this terminal inherits it, which is how Tab Info finds
     /// them (ProcessInspector).
@@ -27,6 +30,9 @@ final class TerminalView: NSView {
 
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
+    /// ⌘F (Ghostty's start_search), with any needle it carries. The window
+    /// answers with its search overlay; unset, the compact bar opens.
+    var onSearchRequest: ((String?) -> Void)?
     /// Bell, desktop notification, progress, long command finished.
     var onEvent: ((TerminalEvent) -> Void)?
     /// Called when the surface asks to close — the process exited, or the user
@@ -507,10 +513,14 @@ final class TerminalView: NSView {
     @objc func paste(_ sender: Any?) { performBinding("paste_from_clipboard") }
     @objc override func selectAll(_ sender: Any?) { performBinding("select_all") }
 
-    private func performBinding(_ action: String) {
+    /// Runs a Ghostty binding action by name (`copy_to_clipboard`,
+    /// `search:foo`, `navigate_search:next`, …).
+    func perform(binding action: String) {
         guard let surface else { return }
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
+
+    private func performBinding(_ action: String) { perform(binding: action) }
 
     // MARK: Clipboard
 

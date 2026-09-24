@@ -32,6 +32,7 @@ final class E2ERunner {
         "claude": { await $0.claudeInfo() },
         "disk": { await $0.diskInfo() },
         "follow": { await $0.follow() },
+        "spotlight": { await $0.spotlightScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -817,6 +818,92 @@ final class E2ERunner {
                 self.app.attach(mainWorktree)
                 return self.app.sessionState.tabs.last?.attachedCheckout == mainWorktree.path.path
             }())
+    }
+
+    private func key(_ code: Int, _ characters: String) {
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+            isARepeat: false, keyCode: UInt16(code))!
+        window.sendEvent(event)
+    }
+
+    /// The keyboard is in the overlay's own field — not just any text view
+    /// (the editor is one too).
+    private var spotlightHasKeyboard: Bool {
+        guard let editor = window.firstResponder as? NSTextView, let field = editor.delegate as? NSTextField,
+            let overlay = app.spotlightView
+        else { return false }
+        return field.isDescendant(of: overlay)
+    }
+
+    /// ⌘F: one search over the terminal, file names and file contents.
+    private func spotlightScenario() async {
+        let repo = scratch.appendingPathComponent("searchrepo")
+        try? FileManager.default.createDirectory(at: repo.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try? "let a = 1\n\nlet needleword = 3\n".write(to: repo.appendingPathComponent("src/main.swift"), atomically: true, encoding: .utf8)
+        try? "meeting notes\n".write(to: repo.appendingPathComponent("notes.md"), atomically: true, encoding: .utf8)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        app.newTab(in: repo)
+        guard let tab = app.store.selected else { return check("a tab", false) }
+        await runAndExpect("echo needleword-in-the-shell > \(out("shell").path); echo needleword-in-the-shell", file: out("shell"), content: "needleword-in-the-shell", "output in the terminal")
+        await eventually { self.app.diff.root != nil }
+
+        // ⌘F with the terminal focused arrives as Ghostty's start_search.
+        tab.terminal.perform(binding: "start_search")
+        check("⌘F opens the overlay", await eventually(2) { self.app.spotlightView?.isHidden == false })
+        check("with the keyboard in its field", await eventually(2) { self.spotlightHasKeyboard })
+        type("needleword")
+        let found = await eventually(5) {
+            self.app.spotlight.rows.contains {
+                if case .content(let m) = $0 { return m.path == "src/main.swift" }; return false
+            }
+                && (tab.terminal.search.total ?? 0) >= 1
+        }
+        check("finds it in the terminal and in a file", found, app.spotlight.rows.map(\.id).joined(separator: " | ") + " total \(tab.terminal.search.total ?? -1)")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.5)
+            app.captureWindow(to: png)
+        }
+        if let i = app.spotlight.rows.firstIndex(where: {
+            if case .content = $0 { return true }; return false
+        }) {
+            app.spotlight.selectedIndex = i
+        }
+        pressReturn()
+        check(
+            "Return on a line opens it in the editor, at that line",
+            await eventually(3) {
+                self.app.editor?.document.url?.lastPathComponent == "main.swift" && self.app.editor?.selectedLine == 3
+            }, "\(app.editor?.document.url?.lastPathComponent ?? "nil") line \(app.editor?.selectedLine ?? -1)")
+        check("and the overlay closes", app.spotlightView?.isHidden == true)
+        check("ending the terminal search", tab.terminal.search.isActive == false)
+
+        app.showSpotlight(for: tab.terminal, needle: nil)
+        check("reopened after the editor had focus, the field takes the keyboard", await eventually(2) { self.spotlightHasKeyboard })
+        type("notes")
+        check("file names match", await eventually(5) { self.app.spotlight.rows.contains(.file("notes.md")) })
+        if let i = app.spotlight.rows.firstIndex(of: .file("notes.md")) { app.spotlight.selectedIndex = i }
+        pressReturn()
+        check("Return on a file opens it", await eventually(3) { self.app.editor?.document.url?.lastPathComponent == "notes.md" })
+
+        app.showSpotlight(for: tab.terminal, needle: "needleword")
+        check("a needle can come in", app.spotlight.query == "needleword")
+        await eventually(3) { (tab.terminal.search.total ?? 0) >= 1 }
+        app.spotlight.selectedIndex = 0
+        pressReturn()
+        check(
+            "the terminal row keeps the search, with the compact bar",
+            await eventually(2) {
+                self.app.spotlightView?.isHidden == true && tab.terminal.search.barVisible && self.app.searchBar?.isHidden == false
+            })
+        tab.terminal.search.end()
+        check("closing the bar hides it", await eventually(2) { self.app.searchBar?.isHidden == true })
+
+        app.showSpotlight(for: tab.terminal, needle: nil)
+        await eventually(2) { self.spotlightHasKeyboard }
+        key(53, "\u{1b}")
+        check("Escape closes the overlay", await eventually(2) { self.app.spotlightView?.isHidden == true })
     }
 
     /// ⌘P shows, searches across kinds, and hides.

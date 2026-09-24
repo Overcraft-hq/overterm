@@ -141,6 +141,32 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
     }
 
+    /// Selects line `line` (1-based) and scrolls it to the middle.
+    func go(toLine line: Int) {
+        _ = view
+        let text = textView.string as NSString
+        let starts = LineIndex.starts(of: text)
+        guard line >= 1, line <= starts.count else { return }
+        let start = starts[line - 1]
+        let end = line < starts.count ? starts[line] - 1 : text.length
+        let range = NSRange(location: start, length: max(0, end - start))
+        textView.setSelectedRange(range)
+        textView.scrollRangeToVisible(range)
+        // Centre it rather than leave it on the bottom edge.
+        if let rect = textView.layoutManager.map({ $0.boundingRect(forGlyphRange: $0.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: textView.textContainer!) }) {
+            let visible = scrollView.contentView.bounds
+            let y = max(0, rect.midY - visible.height / 2)
+            scrollView.contentView.scroll(to: NSPoint(x: visible.minX, y: y))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        textView.showFindIndicator(for: range)
+    }
+
+    /// The selected line (1-based), for tests.
+    var selectedLine: Int {
+        LineIndex.line(of: textView.selectedRange().location, in: LineIndex.starts(of: textView.string as NSString))
+    }
+
     private func load(_ url: URL) {
         _ = view
         document.load(url)

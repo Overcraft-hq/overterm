@@ -30,6 +30,7 @@ make icon                    # Resources/AppIcon.svg → AppIcon.icns
 | `Sources/Terminus/Git/` | `Git.run` (libdispatch-backed), porcelain / numstat / unified-diff parsers, `Worktree` |
 | `Sources/Terminus/Tasks/` | New Task: worktree + branch + agent |
 | `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
+| `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
 | `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |
 | `Scripts/` | GhosttyKit build, app bundling, icon |
 
