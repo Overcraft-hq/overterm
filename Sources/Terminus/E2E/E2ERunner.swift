@@ -1306,6 +1306,17 @@ final class E2ERunner {
         key(53, "\u{1b}")
         check("Esc closes it", await eventually(2) { self.app.overviewView?.isHidden == true })
 
+        // Seen by hand: something else had the keyboard and Esc did nothing.
+        // Through the app's event path (its monitors), with the terminal focused.
+        app.showAgentOverview(nil)
+        window.makeFirstResponder(shell.terminal)
+        let escape = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53)!
+        NSApp.sendEvent(escape)
+        check("Esc closes it even when it lost the keyboard", await eventually(2) { self.app.overviewView?.isHidden == true })
+
         app.showAgentOverview(nil)
         app.chooseOverviewCard(agentTab.id)
         check("a card goes to its tab", app.overviewView?.isHidden == true && app.store.selectedID == agentTab.id)

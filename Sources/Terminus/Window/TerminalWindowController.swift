@@ -49,6 +49,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let overview = AgentOverviewModel()
     private(set) var overviewView: NSView?
     private var overviewPoll: Timer?
+    /// Esc while the overview shows, wherever the keyboard is: its host
+    /// having it was not enough (a click, or the terminal behind, took it).
+    private var overviewEscape: Any?
     let pullRequest = PullRequestModel()
     /// Asks GitHub again every minute: CI moves while nothing local changes.
     private var pullRequestPoll: Timer?
@@ -1267,6 +1270,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         Task { await overview.refresh(store.tabs, inspector: inspector) }
         overviewView.isHidden = false
         window?.makeFirstResponder(overviewView)
+        overviewEscape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53, let self, event.window === self.window, self.overviewView?.isHidden == false else { return event }
+            self.hideAgentOverview()
+            return nil
+        }
         overviewPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -1286,6 +1294,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func hideAgentOverview() {
         overviewPoll?.invalidate()
         overviewPoll = nil
+        if let overviewEscape { NSEvent.removeMonitor(overviewEscape) }
+        overviewEscape = nil
         guard overviewView?.isHidden == false else { return }
         overviewView?.isHidden = true
         focusSelectedTerminal()
