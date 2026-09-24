@@ -27,6 +27,10 @@ final class TerminalView: NSView {
             if let workingDirectory, workingDirectory != oldValue { onWorkingDirectoryChange?(workingDirectory) }
         }
     }
+    /// The shell has reported a directory at least once: its integration is
+    /// loaded and it drew a prompt. Keys typed before that can be lost.
+    private(set) var shellReported = false
+    func markShellReported() { shellReported = true }
 
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?

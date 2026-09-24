@@ -92,7 +92,9 @@ final class E2ERunner {
     /// integration reported it), so typed input isn't swallowed by startup.
     @discardableResult
     private func waitForPrompt() async -> Bool {
-        await eventually(15) { self.terminal?.surface != nil && self.terminal?.needsConfirmClose == false }
+        await eventually(15) {
+            self.terminal?.surface != nil && self.terminal?.shellReported == true && self.terminal?.needsConfirmClose == false
+        }
     }
 
     /// At a prompt, and past the moment a shell may still be reading the

@@ -222,6 +222,7 @@ final class GhosttyRuntime {
         case GHOSTTY_ACTION_PWD:
             guard let view, let pwd = action.action.pwd.pwd else { return false }
             view.workingDirectory = String(cString: pwd)
+            view.markShellReported()
             return true
 
         case GHOSTTY_ACTION_MOUSE_SHAPE:
