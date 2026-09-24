@@ -243,7 +243,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Opens a tab after `source`'s, starting in its directory at its font size.
     func newTab(from source: TerminalView?) {
         let inherited = source?.inheritedSettings()
-        let terminal = TerminalView(workingDirectory: inherited?.workingDirectory, fontSize: inherited?.fontSize)
+        // The tab's own OSC 7 directory first: libghostty's inherited pwd can
+        // lag it under load, and the new tab then opened in ~.
+        let known = store.tabs.first { $0.terminal === source }?.workingDirectory
+        let terminal = TerminalView(workingDirectory: known ?? inherited?.workingDirectory, fontSize: inherited?.fontSize)
         addTab(terminal, after: store.tabs.first { $0.terminal === source })
     }
 

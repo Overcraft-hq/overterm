@@ -215,7 +215,7 @@ final class E2ERunner {
         check("the new tab is selected", app.store.selectedIndex == 1)
         let inherited = app.store.selected?.workingDirectory.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
         check("the new tab starts in the same directory", inherited == resolved, inherited ?? "nil")
-        await waitForPrompt()
+        await settledPrompt()
         await runAndExpect("pwd > \(out("pwd").path)", file: out("pwd"), content: dir.path, "and its shell really is there")
 
         check("goto_tab 1", app.gotoTab(1) && app.store.selectedIndex == 0)
