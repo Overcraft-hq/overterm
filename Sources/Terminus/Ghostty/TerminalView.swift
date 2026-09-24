@@ -37,6 +37,9 @@ final class TerminalView: NSView {
     /// ⌘F (Ghostty's start_search), with any needle it carries. The window
     /// answers with its search overlay; unset, the compact bar opens.
     var onSearchRequest: ((String?) -> Void)?
+    /// A ⌘-clicked link, as libghostty matched it; true when handled (a
+    /// file opened in the editor), else it goes to the system opener.
+    var onOpenLink: ((String) -> Bool)?
     /// Bell, desktop notification, progress, long command finished.
     var onEvent: ((TerminalEvent) -> Void)?
     /// Called when the surface asks to close — the process exited, or the user

@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import GhosttyKit
 
 /// End-to-end scenarios, run inside the real app: `TERMINUS_E2E=<scenario>`.
 ///
@@ -33,6 +34,7 @@ final class E2ERunner {
         "disk": { await $0.diskInfo() },
         "follow": { await $0.follow() },
         "spotlight": { await $0.spotlightScenario() },
+        "link": { await $0.linkScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -906,6 +908,40 @@ final class E2ERunner {
         await eventually(2) { self.spotlightHasKeyboard }
         key(53, "\u{1b}")
         check("Escape closes the overlay", await eventually(2) { self.app.spotlightView?.isHidden == true })
+    }
+
+    /// ⌘-click on a `path:line` the shell printed opens it in the editor.
+    private func linkScenario() async {
+        let repo = scratch.appendingPathComponent("linkrepo")
+        try? FileManager.default.createDirectory(at: repo.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try? "one\ntwo\nthree\nfour\n".write(to: repo.appendingPathComponent("src/main.swift"), atomically: true, encoding: .utf8)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        app.newTab(in: repo)
+        guard let terminal = app.store.selected?.terminal else { return check("a tab", false) }
+        // Every row starts with the path, so a click a few cells in hits it
+        // whatever the padding and the row.
+        await runAndExpect(
+            "clear; for i in {1..60}; do echo src/main.swift:3; done; echo ok > \(out("printed").path)", file: out("printed"),
+            content: "ok", "the shell prints a path:line")
+        guard let surface = terminal.surface else { return check("a surface", false) }
+        let size = ghostty_surface_size(surface)
+        let scale = window.backingScaleFactor
+        let inView = NSPoint(x: CGFloat(size.cell_width_px) / scale * 5, y: terminal.bounds.midY)
+        let point = terminal.convert(inView, to: nil)
+        func mouse(_ type: NSEvent.EventType) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        terminal.mouseMoved(with: mouse(.mouseMoved))
+        await pause(0.2)
+        window.sendEvent(mouse(.leftMouseDown))
+        window.sendEvent(mouse(.leftMouseUp))
+        check(
+            "⌘-click opens the file in the editor, at that line",
+            await eventually(3) {
+                self.app.editor?.document.url?.lastPathComponent == "main.swift" && self.app.editor?.selectedLine == 3
+            }, "\(app.editor?.document.url?.path ?? "nil") line \(app.editor?.selectedLine ?? -1)")
     }
 
     /// ⌘P shows, searches across kinds, and hides.

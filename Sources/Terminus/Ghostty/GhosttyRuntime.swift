@@ -234,6 +234,7 @@ final class GhosttyRuntime {
             guard let raw = open.url else { return false }
             let data = Data(bytes: raw, count: Int(open.len))
             guard let string = String(data: data, encoding: .utf8) else { return false }
+            if view?.onOpenLink?(string) == true { return true }
             let url = URL(string: string) ?? URL(fileURLWithPath: string)
             NSWorkspace.shared.open(url)
             return true

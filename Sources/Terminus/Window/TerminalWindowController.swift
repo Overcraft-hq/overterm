@@ -291,6 +291,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             guard let self, let terminal else { return }
             self.showSpotlight(for: terminal, needle: needle)
         }
+        terminal.onOpenLink = { [weak self, weak tab] text in
+            guard let self, let tab else { return false }
+            let directories = [tab.workingDirectory, self.diff.root?.path].compactMap { $0 }
+            guard let link = FileLink.resolve(text, in: directories) else { return false }
+            self.openInEditor(link.url, line: link.line)
+            return true
+        }
         terminal.onEvent = { [weak self, weak tab] event in
             guard let self, let tab else { return }
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
