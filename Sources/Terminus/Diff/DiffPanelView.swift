@@ -278,19 +278,22 @@ private struct DiffLineView: View {
     let line: DiffLine
     let theme: ChromeTheme
 
+    /// A long line wraps within the pane, under its own text: kept on one
+    /// row it grew wider than the pane, was centred, and lost its start.
     var body: some View {
-        HStack(spacing: 0) {
-            Rectangle().fill(edge).frame(width: 3)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             number(line.oldNumber)
             number(line.newNumber)
-            Text(line.text.isEmpty ? " " : line.text)
+            Text(verbatim: line.text.isEmpty ? " " : line.text)
                 .foregroundStyle(line.kind == .hunk || line.kind == .meta ? theme.dimText : theme.text)
-                .lineLimit(1)
-                .fixedSize()
-            Spacer(minLength: 0)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: 18)
+        .padding(.leading, 3)
+        .padding(.vertical, 1)
+        .frame(minHeight: 18)
         .background(background)
+        .overlay(alignment: .leading) { Rectangle().fill(edge).frame(width: 3) }
     }
 
     private var edge: Color {
@@ -311,10 +314,10 @@ private struct DiffLineView: View {
     }
 
     private func number(_ n: Int?) -> some View {
-        Text(n.map(String.init) ?? "")
+        Text(verbatim: n.map(String.init) ?? "")
             .foregroundStyle(theme.dimText.opacity(0.7))
-            .frame(width: 38, alignment: .trailing)
-            .padding(.trailing, 6)
+            .frame(width: 32, alignment: .trailing)
+            .padding(.trailing, 5)
     }
 }
 
