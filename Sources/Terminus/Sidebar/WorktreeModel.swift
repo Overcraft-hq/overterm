@@ -6,6 +6,13 @@ final class WorktreeModel: ObservableObject {
     @Published private(set) var worktrees: [Worktree] = []
     /// Branches of linked worktrees that are merged (see MergedWorktrees).
     @Published private(set) var merged: [String: MergedWorktrees.Reason] = [:]
+    /// Each branch's pull request (gh), when there is one.
+    @Published private(set) var pullRequests: [String: PullRequestSummary] = [:]
+    /// Why pull requests aren't shown (no gh, not logged in, no remote).
+    @Published private(set) var pullRequestError: String?
+    /// gh is network: a tab switch reuses what a minute-old list said.
+    private var pullRequestCache: [URL: (at: Date, byBranch: [String: PullRequestSummary])] = [:]
+    static let pullRequestMaxAge: TimeInterval = 60
     /// What the selected tab shows, and why (set by the window).
     @Published var showing: (root: URL, reason: CheckoutReason)?
     /// A directory inside the repository (the file tree's root).
@@ -20,19 +27,61 @@ final class WorktreeModel: ObservableObject {
     /// Re-lists worktrees. Outside a repository the list is simply empty.
     /// `fetch` first runs `git fetch --prune` (network), so merges made on
     /// the remote show up.
+    /// `fetch` also asks GitHub again for pull requests.
     func refresh(fetch: Bool = false) async {
         guard let anchor else {
             worktrees = []
             merged = [:]
+            pullRequests = [:]
             return
         }
         if fetch { await MergedWorktrees.fetch(in: anchor) }
         let listed = (try? await Git.run(["worktree", "list", "--porcelain"], in: anchor)).map(Worktree.parse(porcelain:)) ?? []
-        let merged = await MergedWorktrees.find(in: anchor, worktrees: listed)
+        var merged = await MergedWorktrees.find(in: anchor, worktrees: listed)
+        let repo = listed.first { $0.isMain }?.path ?? anchor
+        let pullRequests = await pullRequests(in: repo, force: fetch)
+        let branches = listed.filter { !$0.isMain }.compactMap(\.branch)
+        let tips = await Self.branchTips(in: repo)
+        merged.merge(MergedWorktrees.mergedByPullRequest(pullRequests, branches: branches, tips: tips)) { git, _ in git }
         // A tab switch may have moved the anchor while git ran.
         guard anchor == self.anchor else { return }
         worktrees = listed
         self.merged = merged
+        self.pullRequests = pullRequests
+    }
+
+    /// Asks gh again for the current repository's pull requests (CI moves on
+    /// while nothing local changes).
+    func refreshPullRequests() async {
+        if let repo = main?.path { pullRequestCache[repo] = nil }
+        await refresh()
+    }
+
+    private func pullRequests(in repo: URL, force: Bool) async -> [String: PullRequestSummary] {
+        if !force, let cached = pullRequestCache[repo], Date().timeIntervalSince(cached.at) < Self.pullRequestMaxAge {
+            return cached.byBranch
+        }
+        do {
+            let data = try await GitHub.run(
+                ["pr", "list", "--state", "all", "--limit", "60", "--json", PullRequestSummary.listFields], in: repo)
+            let byBranch = PullRequestSummary.byBranch(try PullRequestSummary.parseList(data))
+            pullRequestCache[repo] = (Date(), byBranch)
+            pullRequestError = nil
+            return byBranch
+        } catch {
+            pullRequestError = error.localizedDescription
+            return pullRequestCache[repo]?.byBranch ?? [:]
+        }
+    }
+
+    private static func branchTips(in repo: URL) async -> [String: String] {
+        let output = (try? await Git.run(["for-each-ref", "--format=%(refname:short)%00%(objectname)", "refs/heads"], in: repo)) ?? ""
+        var tips: [String: String] = [:]
+        for line in output.split(separator: "\n") {
+            let fields = line.split(separator: "\0").map(String.init)
+            if fields.count == 2 { tips[fields[0]] = fields[1] }
+        }
+        return tips
     }
 
     /// Linked worktrees there is no reason to keep: merged, or their

@@ -11,6 +11,8 @@ struct TabBarActions {
     var newTask: () -> Void
     /// The ± badge: show or hide the changes pane.
     var toggleDiff: () -> Void
+    /// The PR chip: the right pane on the checkout's pull request.
+    var showPullRequest: () -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -21,6 +23,8 @@ struct TabBarActions {
 struct TabBarView: View {
     @ObservedObject var store: TabStore
     @ObservedObject var diff: DiffModel
+    /// For the checkout's pull request, next to the ± badge.
+    @ObservedObject var worktrees: WorktreeModel
     let theme: ChromeTheme
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
@@ -63,6 +67,10 @@ struct TabBarView: View {
             .help("New Tab (⌘T) — arrow for Claude / Codex")
             .padding(.leading, 6)
             Spacer(minLength: 0)
+            if let pr = diff.branch.flatMap({ worktrees.pullRequests[$0] }) {
+                PullRequestChip(pr: pr, theme: theme, action: actions.showPullRequest)
+                    .padding(.trailing, 6)
+            }
             if diff.error == nil, !diff.files.isEmpty {
                 DiffBadge(added: diff.totals.added, removed: diff.totals.removed, theme: theme, action: actions.toggleDiff)
             }
@@ -297,6 +305,33 @@ private struct DiffBadge: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Uncommitted changes (⌥⌘D)")
+    }
+}
+
+/// The checkout's pull request in the title bar: number in its state's
+/// colour, CI at a glance.
+private struct PullRequestChip: View {
+    let pr: PullRequestSummary
+    let theme: ChromeTheme
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .medium)).foregroundStyle(StatePill.color(pr.state))
+                Text(verbatim: "#\(pr.number)").foregroundStyle(theme.text)
+                CIGlyph(overall: pr.checks.overall).font(.system(size: 10, weight: .bold))
+            }
+            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.selected : theme.hover))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("#\(pr.number) \(pr.title)")
     }
 }
 

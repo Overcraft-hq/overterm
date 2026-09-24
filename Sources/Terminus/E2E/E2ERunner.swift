@@ -37,6 +37,7 @@ final class E2ERunner {
         "link": { await $0.linkScenario() },
         "cleanup": { await $0.cleanupScenario() },
         "splits": { await $0.splitsScenario() },
+        "pullRequest": { await $0.pullRequestScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1140,6 +1141,117 @@ final class E2ERunner {
         check("⌘W closes the focused pane", await eventually(2) { tab.terminals.count == 1 } && window.attachedSheet == nil)
         check("the last pane fills the tab again", await eventually(2) { first.frame.size == host.bounds.size })
         check("and has the keyboard", await eventually(2) { self.window.firstResponder === first })
+    }
+
+    /// A stand-in gh (fixtures in, posts logged) drives the real calls:
+    /// PR and CI on the worktrees, a merged PR counting as merged, the Pull
+    /// Request pane's conversation and threads, commenting and replying.
+    private func pullRequestScenario() async {
+        let repo = scratch.appendingPathComponent("prrepo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? "a\nb\n".write(to: repo.appendingPathComponent("app.swift"), atomically: true, encoding: .utf8)
+        try? await git(["add", "."], in: repo)
+        try? await git(["commit", "-q", "-m", "init"], in: repo)
+        let feature = scratch.appendingPathComponent("wt-feat")
+        let done = scratch.appendingPathComponent("wt-done")
+        try? await git(["worktree", "add", "-q", "-b", "feat/pr", feature.path], in: repo)
+        try? await git(["worktree", "add", "-q", "-b", "done", done.path], in: repo)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "done"], in: done)
+        let doneTip = ((try? await Git.run(["rev-parse", "done"], in: repo)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let log = scratch.appendingPathComponent("gh.log")
+        let gh = scratch.appendingPathComponent("gh")
+        try? Self.fakeGh(log: log.path, doneTip: doneTip).write(to: gh, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
+        GitHub.executableOverride = gh
+
+        app.newTab(in: feature)
+        await eventually { self.app.diff.branch == "feat/pr" && self.app.worktrees.main != nil }
+        await app.worktrees.refresh()
+        let pr = app.worktrees.pullRequests["feat/pr"]
+        check("the worktree's pull request, with CI", pr?.number == 7 && pr?.checks.overall == .failing, "\(String(describing: pr))")
+        check("a merged pull request counts as merged", app.worktrees.merged["done"] == .pullRequestMerged(5))
+
+        app.showPullRequest(nil)
+        check("the pane opens on it", app.rightPane.mode == .pullRequest && app.diffItem?.isCollapsed == false)
+        let loaded = await eventually(8) { self.app.pullRequest.phase == .loaded }
+        let detail = app.pullRequest.detail
+        check("and loads it", loaded && detail?.summary.number == 7, "\(app.pullRequest.phase)")
+        check("its conversation", detail?.conversation.map(\.body) == ["First look", "Needs a test"], "\(detail?.conversation.map(\.body) ?? [])")
+        check("its review thread", app.pullRequest.threads.first?.path == "app.swift" && app.pullRequest.threads.first?.comments.count == 1)
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+
+        let commented = await app.pullRequest.comment("Ship it")
+        let logged = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+        check("a comment is posted with gh pr comment", commented && logged.contains("comment 7 Ship it"), logged)
+        check("and shows after", app.pullRequest.detail?.conversation.last?.body == "Ship it")
+        if let thread = app.pullRequest.threads.first {
+            let replied = await app.pullRequest.reply(to: thread, "Added one")
+            let logged = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+            check("a reply goes to the thread's root", replied && logged.contains("reply 101 Added one"), logged)
+            check("and joins the thread", app.pullRequest.threads.first?.comments.last?.body == "Added one")
+        }
+
+        app.newTab(in: repo)
+        check("a branch without one says so", await eventually(8) { self.app.pullRequest.phase == .none })
+        GitHub.executableOverride = nil
+    }
+
+    /// gh answering from fixtures; comments and replies it is sent are
+    /// logged and come back in later answers.
+    private static func fakeGh(log: String, doneTip: String) -> String {
+        #"""
+        #!/usr/bin/python3
+        import json, sys
+        LOG = "\#(log)"
+        args = sys.argv[1:]
+        def posted():
+            try:
+                return [l.rstrip("\n").split(" ", 2) for l in open(LOG)]
+            except FileNotFoundError:
+                return []
+        def run(name, conclusion):
+            return {"__typename": "CheckRun", "name": name, "status": "COMPLETED", "conclusion": conclusion, "detailsUrl": "https://ci/" + name}
+        CHECKS = [run("Go", "SUCCESS"), run("Lint", "FAILURE")]
+        if args[:2] == ["pr", "list"]:
+            print(json.dumps([
+                {"number": 7, "title": "Add the thing", "headRefName": "feat/pr", "headRefOid": "x", "state": "OPEN", "isDraft": False,
+                 "url": "https://github.com/o/r/pull/7", "statusCheckRollup": CHECKS},
+                {"number": 5, "title": "Done", "headRefName": "done", "headRefOid": "\#(doneTip)", "state": "MERGED", "isDraft": False,
+                 "url": "https://github.com/o/r/pull/5", "statusCheckRollup": []}]))
+        elif args[:2] == ["pr", "view"]:
+            if args[2] != "feat/pr":
+                sys.stderr.write('no pull requests found for branch "%s"\n' % args[2])
+                sys.exit(1)
+            comments = [{"id": "IC_1", "author": {"login": "rev"}, "body": "First look", "createdAt": "2026-09-20T09:00:00Z", "url": "https://c/1"}]
+            comments += [{"id": "IC_p%d" % i, "author": {"login": "me"}, "body": p[2], "createdAt": "2026-09-21T09:00:%02dZ" % i, "url": None}
+                         for i, p in enumerate(posted()) if p[0] == "comment"]
+            print(json.dumps({"number": 7, "title": "Add the thing", "headRefName": "feat/pr", "baseRefName": "main", "state": "OPEN",
+                "isDraft": False, "url": "https://github.com/o/r/pull/7", "statusCheckRollup": CHECKS,
+                "body": "Adds **the thing**.", "author": {"login": "me"}, "additions": 3, "deletions": 1, "changedFiles": 1, "comments": comments,
+                "reviews": [{"id": "R_1", "author": {"login": "rev"}, "body": "Needs a test", "state": "CHANGES_REQUESTED",
+                             "submittedAt": "2026-09-20T10:00:00Z"}]}))
+        elif args[:2] == ["pr", "comment"]:
+            open(LOG, "a").write("comment %s %s\n" % (args[2], args[args.index("--body") + 1]))
+            print("https://github.com/o/r/pull/7#issuecomment-1")
+        elif args[0] == "api" and args[1].endswith("/replies"):
+            root = args[1].split("/")[-2]
+            open(LOG, "a").write("reply %s %s\n" % (root, args[args.index("-f") + 1][len("body="):]))
+            print("{}")
+        elif args[0] == "api" and args[1].endswith("/pulls/7/comments"):
+            thread = [{"id": 101, "path": "app.swift", "line": 2, "body": "Why b?", "user": {"login": "rev"},
+                       "created_at": "2026-09-20T10:01:00Z", "html_url": "https://r/101", "diff_hunk": "@@ -1,1 +1,2 @@\n a\n+b"}]
+            thread += [{"id": 200 + i, "in_reply_to_id": int(p[1]), "path": "app.swift", "line": 2, "body": p[2], "user": {"login": "me"},
+                        "created_at": "2026-09-21T10:00:%02dZ" % i} for i, p in enumerate(posted()) if p[0] == "reply"]
+            print(json.dumps(thread))
+        else:
+            sys.stderr.write("fake gh: unexpected %s\n" % args)
+            sys.exit(2)
+        """#
     }
 
     /// ⌘P shows, searches across kinds, and hides.

@@ -31,6 +31,9 @@ theme, keybinds) applies as-is. Private, internal tool.
 - **Merged worktree clean-up**: merged worktrees (merged into the default
   branch, or deleted on the remote after a squash) get a purple mark; one
   click removes them and their branches, keeping any with changes or a tab.
+- **Pull requests** (via your `gh`): PR number and CI on each worktree and in
+  the title bar; the right pane's Pull Request view shows checks, the
+  conversation and review threads, and lets you comment and reply.
 - **Splits** (⌘D, ⇧⌘D, or ⌘P): panes in a tab, draggable dividers, zoom,
   equalize; Ghostty's split keybinds work, and a split tab comes back split.
 - **Search** (⌘F): one overlay over the terminal's scrollback, the checkout's

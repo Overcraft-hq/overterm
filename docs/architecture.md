@@ -109,6 +109,32 @@ goes and what stays — kept: a tab in it, uncommitted changes, locked. It runs
 `git worktree remove` without `--force` and, if ticked, `git branch -D`
 (`-d` refuses a squash-merged branch). The Worktrees reload button fetches too.
 
+## Pull requests
+
+Everything GitHub goes through the user's own `gh` (`Sources/Terminus/GitHub/`;
+`GitHub.executable` looks in Homebrew's paths — a GUI app's PATH has none).
+
+- `WorktreeModel.pullRequests`: one `gh pr list --state all --json …` per
+  repository, cached a minute, asked again every minute while the app is
+  active and on the Worktrees reload. Per branch an open PR wins over an old
+  merged one. Shown on worktree rows (number in its state's colour, CI glyph)
+  and as a chip in the title bar for the current checkout's branch.
+- A merged PR makes its worktree cleanable (`.pullRequestMerged`) only if the
+  branch still points at the PR's merged head (`headRefOid`) — a reused branch
+  name with new work on it is not merged. This covers squash merges whose
+  remote branch was kept.
+- The right pane switches between Changes and **Pull Request**
+  (`PullRequestModel`, loaded only while shown, again each time it is shown):
+  `gh pr view <branch> --json …` (checks, description, comments, reviews) and
+  `gh api repos/{owner}/{repo}/pulls/N/comments --paginate` (inline comments,
+  grouped into threads by their root; `--paginate` prints one array per page,
+  back to back). A thread's `file:line` opens in the editor.
+- Writing: `gh pr comment N --body …`, and a reply in a thread with
+  `gh api …/pulls/N/comments/<root>/replies -f body=…` (`-f`, not `-F`: a
+  body starting with `@` must not be read as a file).
+- CI parsing: gh's rollup mixes CheckRuns (`status`/`conclusion`) and
+  StatusContexts (`state`); skipped/neutral count for nothing.
+
 ## Search (⌘F)
 
 `SpotlightModel` (`Sources/Terminus/Search/`), rows in this order:

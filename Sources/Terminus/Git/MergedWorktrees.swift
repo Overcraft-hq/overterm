@@ -20,6 +20,22 @@ enum MergedWorktrees {
     enum Reason: Equatable {
         case upstreamGone
         case mergedInto(String)
+        /// Its pull request is merged, and the branch has nothing since.
+        case pullRequestMerged(Int)
+    }
+
+    /// Merged pull requests of linked worktrees' branches, where the branch
+    /// still points at the merged head: a reused branch name with new work
+    /// on it is not merged. `tips`: branch → commit.
+    static func mergedByPullRequest(
+        _ pullRequests: [String: PullRequestSummary], branches: [String], tips: [String: String]
+    ) -> [String: Reason] {
+        var result: [String: Reason] = [:]
+        for branch in branches {
+            guard let pr = pullRequests[branch], pr.state == .merged, let head = pr.headOid, tips[branch] == head else { continue }
+            result[branch] = .pullRequestMerged(pr.number)
+        }
+        return result
     }
 
     /// `git for-each-ref --format=%(refname:short)%00%(upstream:short)%00%(upstream:track) refs/heads`

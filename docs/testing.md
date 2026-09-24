@@ -75,6 +75,14 @@ make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null
   `TerminalView.visibleText` before clicking at a screen position.
 - Typing goes to the *selected* tab.
 
+### GitHub without the network
+
+The `pullRequest` scenario writes a stand-in `gh` (a Python script answering
+`pr list`, `pr view` and the comments API from fixtures, logging what it is
+asked to post) and points `GitHub.executableOverride` at it: the app's real
+calls and parsing run, nothing reaches GitHub. New gh calls need a branch in
+that script, or the scenario fails with "fake gh: unexpected".
+
 ### Adding a scenario
 
 1. Add a method on `E2ERunner` and register it in `scenarios`.

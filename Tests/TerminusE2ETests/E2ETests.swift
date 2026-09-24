@@ -70,6 +70,7 @@ final class E2ETests: XCTestCase {
     func testLink() throws { try run("link") }
     func testCleanup() throws { try run("cleanup") }
     func testSplits() throws { try run("splits") }
+    func testPullRequest() throws { try run("pullRequest") }
 
     /// A prepared session.json comes back (pin, colour, names, selection,
     /// directories, a split tab's panes) and changes are autosaved to it.

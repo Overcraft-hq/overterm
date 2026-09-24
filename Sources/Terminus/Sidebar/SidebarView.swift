@@ -28,6 +28,8 @@ struct WorktreeActions {
     var newTask: () -> Void
     /// Remove the merged (and vanished) linked worktrees, after confirming.
     var cleanUp: () -> Void
+    /// The right pane on the current checkout's pull request.
+    var showPullRequest: () -> Void
 }
 
 /// What the snippet list asks the window to do.
@@ -293,6 +295,7 @@ private struct WorktreeListView: View {
                                     $0.root.standardizedFileURL == worktree.path.standardizedFileURL ? $0.reason : nil
                                 },
                                 merged: worktree.branch.flatMap { model.merged[$0] },
+                                pullRequest: worktree.branch.flatMap { model.pullRequests[$0] },
                                 theme: theme, actions: actions)
                         }
                     }
@@ -309,6 +312,7 @@ private struct WorktreeRowView: View {
     /// Why the selected tab shows this worktree, when it does.
     let reason: CheckoutReason?
     let merged: MergedWorktrees.Reason?
+    let pullRequest: PullRequestSummary?
     let theme: ChromeTheme
     let actions: WorktreeActions
     @State private var hovering = false
@@ -317,6 +321,7 @@ private struct WorktreeRowView: View {
         switch merged {
         case .upstreamGone: "Merged — its branch was deleted on the remote"
         case .mergedInto(let base): "Merged into \(base)"
+        case .pullRequestMerged(let number): "Pull request #\(number) merged"
         case nil: ""
         }
     }
@@ -339,6 +344,15 @@ private struct WorktreeRowView: View {
                     .help("\(agent.name) is working here")
             default:
                 EmptyView()
+            }
+            if let pullRequest, !worktree.isMain {
+                HStack(spacing: 2) {
+                    CIGlyph(overall: pullRequest.checks.overall).font(.system(size: 8, weight: .bold))
+                    Text(verbatim: "#\(pullRequest.number)").font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(StatePill.color(pullRequest.state))
+                }
+                .fixedSize()
+                .help("#\(pullRequest.number) \(pullRequest.title)")
             }
             if merged != nil {
                 Image(systemName: "arrow.triangle.merge").font(.system(size: 9)).foregroundStyle(TabStatusStyle.merged)
@@ -371,6 +385,11 @@ private struct WorktreeRowView: View {
             Button("New Tab Here") { actions.newTab(worktree) }
             ForEach(Agent.allCases) { agent in
                 Button("New \(agent.name) Tab Here") { actions.newAgentTab(worktree, agent) }
+            }
+            if let pullRequest {
+                Divider()
+                if isCurrent { Button("Show Pull Request #\(pullRequest.number)") { actions.showPullRequest() } }
+                if let url = pullRequest.url { Button("Open #\(pullRequest.number) on GitHub") { NSWorkspace.shared.open(url) } }
             }
             Divider()
             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([worktree.path]) }

@@ -43,6 +43,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var split = WideDividerSplitViewController()
     private(set) var sidebarItem: NSSplitViewItem?
     private(set) var diff = DiffModel()
+    /// The right pane's switch (Changes / Pull Request) and the PR it shows.
+    let rightPane = RightPane()
+    let pullRequest = PullRequestModel()
+    /// Asks GitHub again every minute: CI moves while nothing local changes.
+    private var pullRequestPoll: Timer?
     private(set) var editor: EditorViewController?
     private(set) var editorItem: NSSplitViewItem?
     private(set) var diffItem: NSSplitViewItem?
@@ -94,6 +99,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             rootView: TabBarView(
                 store: store,
                 diff: diff,
+                worktrees: worktrees,
                 theme: theme,
                 leadingInset: 78,
                 actions: TabBarActions(
@@ -103,6 +109,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newAgentTab: { [weak self] in self?.newAgentTab($0) },
                     newTask: { [weak self] in self?.newTask(nil) },
                     toggleDiff: { [weak self] in self?.toggleDiff(nil) },
+                    showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
@@ -135,7 +142,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     attach: { [weak self] in self?.attach($0) },
                     detach: { [weak self] in self?.detach() },
                     newTask: { [weak self] in self?.newTask(nil) },
-                    cleanUp: { [weak self] in self?.cleanUpMergedWorktrees(nil) }
+                    cleanUp: { [weak self] in self?.cleanUpMergedWorktrees(nil) },
+                    showPullRequest: { [weak self] in self?.showPullRequest(nil) }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
@@ -194,11 +202,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Changes pane on the far right, as in Warp; opened from the ± badge
         // in the title bar or ⌥⌘D.
         let diffPanel = NSHostingController(
-            rootView: DiffPanelView(
-                model: diff, theme: theme,
-                onClose: { [weak self] in self?.toggleDiff(nil) },
-                onDetach: { [weak self] in self?.detach() },
-                onOpen: { [weak self] in self?.openInEditor($0) }))
+            rootView: RightPaneView(
+                pane: rightPane, diff: diff, worktrees: worktrees, theme: theme,
+                changes: DiffPanelView(
+                    model: diff, theme: theme,
+                    onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onDetach: { [weak self] in self?.detach() },
+                    onOpen: { [weak self] in self?.openInEditor($0) }),
+                pullRequest: PullRequestView(
+                    model: pullRequest, theme: theme,
+                    onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onOpenFile: { [weak self] path, line in
+                        guard let self, let root = self.diff.root else { return }
+                        self.openInEditor(root.appendingPathComponent(path), line: line)
+                    })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(viewController: diffPanel)
         diffItem.canCollapse = true
@@ -208,6 +225,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         diffItem.isCollapsed = !showDiff
         diff.panelVisible = showDiff
         self.diffItem = diffItem
+        watchPullRequests()
 
         // The terminal pane never gives up all its width to the panels
         // beside it (it had no minimum and could be dragged to 0).
@@ -815,6 +833,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     switch worktree.branch.flatMap({ worktrees.merged[$0] }) {
                     case .upstreamGone: "deleted on the remote"
                     case .mergedInto(let base): "merged into \(base)"
+                    case .pullRequestMerged(let number): "pull request #\(number) merged"
                     case nil: "merged"
                     }
             }
@@ -1210,6 +1229,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
                 [weak self] _ in self?.newTask(nil)
             },
+            PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
+                [weak self] _ in self?.showPullRequest(nil)
+            },
             PaletteItem(
                 id: "a.cleanUp", group: .action, title: "Clean Up Merged Worktrees…", subtitle: "Fetch, then remove merged worktrees",
                 symbol: "sparkles"
@@ -1521,7 +1543,39 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         diffItem.animator().isCollapsed = !show
         diff.panelVisible = show
         AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
+        updatePullRequestVisibility()
         if !show { focusSelectedTerminal() }
+    }
+
+    /// The right pane, on the checkout's pull request.
+    @objc func showPullRequest(_ sender: Any?) {
+        rightPane.mode = .pullRequest
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updatePullRequestVisibility()
+    }
+
+    // MARK: Pull requests
+
+    /// The PR pane follows the checkout's branch and loads only while shown;
+    /// the worktree list's pull requests are asked for again every minute.
+    private func watchPullRequests() {
+        diff.$root.combineLatest(diff.$branch)
+            .removeDuplicates { $0 == $1 }
+            .sink { [weak self] root, branch in self?.pullRequest.show(root: root, branch: branch) }
+            .store(in: &cancellables)
+        rightPane.$mode
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updatePullRequestVisibility() } }
+            .store(in: &cancellables)
+        pullRequestPoll = Timer.scheduledTimer(withTimeInterval: WorktreeModel.pullRequestMaxAge, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, NSApp.isActive || AppEnvironment.isIsolated else { return }
+                Task { await self.worktrees.refreshPullRequests() }
+            }
+        }
+    }
+
+    private func updatePullRequestVisibility() {
+        pullRequest.visible = diffItem?.isCollapsed == false && rightPane.mode == .pullRequest
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -1575,6 +1629,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         agentPoll?.invalidate()
+        pullRequestPoll?.invalidate()
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }
 }
