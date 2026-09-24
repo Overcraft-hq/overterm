@@ -85,6 +85,9 @@ tracking loop, `acceptsFirstMouse`), unfocused panes under a dim.
 - ⌘W closes the focused pane of a split tab (asking only if something runs in
   it), else the tab (always asking). `exit` closes just its pane.
 - Zoom shows one pane alone; the others are occluded, not closed.
+- The session saves a split tab's layout (`PaneLayout`: each pane's
+  directory, each split's axis and ratio) and which pane had the keyboard.
+  On restore the first pane resumes the tab's agent.
 
 ## Merged worktrees
 

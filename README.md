@@ -32,7 +32,7 @@ theme, keybinds) applies as-is. Private, internal tool.
   branch, or deleted on the remote after a squash) get a purple mark; one
   click removes them and their branches, keeping any with changes or a tab.
 - **Splits** (⌘D, ⇧⌘D, or ⌘P): panes in a tab, draggable dividers, zoom,
-  equalize; Ghostty's split keybinds work.
+  equalize; Ghostty's split keybinds work, and a split tab comes back split.
 - **Search** (⌘F): one overlay over the terminal's scrollback, the checkout's
   file names and their contents; ⌘-click a `path:line` in the terminal to open
   it in the editor at that line.

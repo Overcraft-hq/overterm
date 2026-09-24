@@ -433,10 +433,21 @@ final class E2ERunner {
         guard tabs.count == 2 else { return }
         check("pinned first, with its colour and name", tabs[0].isPinned && tabs[0].color == .green && tabs[0].title == "pinned one")
         check("the selection is restored", app.store.selectedIndex == 1)
-        check("each in its directory", tabs[1].workingDirectory == ProcessInfo.processInfo.environment["TERMINUS_E2E_CWD"])
+        let cwd = ProcessInfo.processInfo.environment["TERMINUS_E2E_CWD"]
+        check("each in its directory", tabs[1].workingDirectory == cwd)
+        let panes = tabs[1].terminals
+        check("the split tab's two panes come back", panes.count == 2, "\(panes.count)")
+        if panes.count == 2 {
+            check("each pane in its own directory", panes[1].workingDirectory == cwd && panes[0].workingDirectory != cwd)
+            check("the saved pane has the keyboard", tabs[1].terminal === panes[1] && window.firstResponder === panes[1])
+            await eventually(2) { panes[0].frame.width > 0 }
+            let share = panes[0].frame.width / (panes[0].frame.width + panes[1].frame.width)
+            check("at the saved size", abs(share - 0.3) < 0.02, "\(share)")
+        }
         tabs[1].customTitle = "renamed"
         let saved = await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed" }
         check("a change is autosaved", saved)
+        check("with the panes", SessionState.load()?.tabs.last?.panes != nil && SessionState.load()?.tabs.last?.focusedPane == 1)
     }
 
     /// New Task: a worktree on a new branch next to the repo, a tab in it.

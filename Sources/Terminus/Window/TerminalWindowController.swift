@@ -516,7 +516,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tabs: store.tabs.map {
                 .init(
                     workingDirectory: $0.workingDirectory, customTitle: $0.customTitle, color: $0.color?.rawValue,
-                    isPinned: $0.isPinned, agent: $0.agent, attachedCheckout: $0.attachedCheckout?.path)
+                    isPinned: $0.isPinned, agent: $0.agent, attachedCheckout: $0.attachedCheckout?.path,
+                    panes: $0.isSplit ? SessionState.PaneLayout($0.splits, directory: \.workingDirectory) : nil,
+                    focusedPane: $0.isSplit ? $0.terminals.firstIndex { [tab = $0] in $0 === tab.terminal } : nil)
             },
             selectedIndex: store.selectedIndex)
     }
@@ -524,11 +526,33 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Rebuilds saved tabs: a fresh shell in each old directory (home if it
     /// is gone), agents resuming their last conversation there.
     func restore(_ state: SessionState) {
+        func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
         for saved in state.tabs {
-            let cwd = saved.workingDirectory.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
-            let terminal = TerminalView(workingDirectory: cwd, initialInput: saved.agent.map { $0.resumeCommand + "\n" })
+            // A split tab's panes, the first resuming the agent; else one terminal.
+            var made: [TerminalView] = []
+            let layout = saved.panes?.tree { directory -> TerminalView in
+                let pane = TerminalView(
+                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand + "\n" } : nil)
+                made.append(pane)
+                return pane
+            }
+            let terminal =
+                made.first
+                ?? TerminalView(workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand + "\n" })
             addTab(terminal, agent: saved.agent, after: store.tabs.last)
             guard let tab = store.tabs.last else { continue }
+            if let layout, made.count > 1 {
+                made.dropFirst().forEach { wire($0, in: tab) }
+                tab.setSplits(layout)
+                refreshHost(tab)
+                if let i = saved.focusedPane, made.indices.contains(i) {
+                    tab.focus(made[i])
+                    refreshHost(tab)
+                    // The keyboard too (the pane is in the window now): the
+                    // first pane took it as the tab was added.
+                    if store.selectedID == tab.id { window?.makeFirstResponder(made[i]) }
+                }
+            }
             tab.customTitle = saved.customTitle
             tab.color = saved.color.flatMap(TabColor.init(rawValue:))
             tab.attachedCheckout = saved.attachedCheckout.flatMap {

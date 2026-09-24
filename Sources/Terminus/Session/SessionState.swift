@@ -1,9 +1,9 @@
 import Foundation
 
 /// What a window's tabs looked like, enough to rebuild them on the next
-/// launch. Terminal contents are not saved — each tab gets a fresh shell in
-/// its old directory, and an agent tab resumes its agent's last
-/// conversation there.
+/// launch. Terminal contents are not saved — each tab (each pane of a split
+/// one) gets a fresh shell in its old directory, and an agent tab resumes
+/// its agent's last conversation there.
 struct SessionState: Codable, Equatable {
     struct TabState: Codable, Equatable {
         var workingDirectory: String?
@@ -13,6 +13,40 @@ struct SessionState: Codable, Equatable {
         var agent: Agent?
         /// An attached checkout's path (absent in older session files).
         var attachedCheckout: String?
+        /// A split tab's panes; absent for a tab with one terminal.
+        var panes: PaneLayout?
+        /// Which of `panes`, in reading order, had the keyboard.
+        var focusedPane: Int?
+    }
+
+    /// A split tab's layout: each pane's directory, each split's shape.
+    indirect enum PaneLayout: Codable, Equatable {
+        case pane(directory: String?)
+        case split(axis: String, ratio: Double, first: PaneLayout, second: PaneLayout)
+
+        init<Leaf>(_ tree: SplitTree<Leaf>, directory: (Leaf) -> String?) {
+            switch tree {
+            case .leaf(let leaf):
+                self = .pane(directory: directory(leaf))
+            case .split(let axis, let ratio, let first, let second):
+                self = .split(
+                    axis: axis.rawValue, ratio: ratio, first: PaneLayout(first, directory: directory),
+                    second: PaneLayout(second, directory: directory))
+            }
+        }
+
+        /// The tree again, `make` building each pane from its directory
+        /// (in reading order). An unknown axis falls back to side by side.
+        func tree<Leaf>(_ make: (String?) -> Leaf) -> SplitTree<Leaf> {
+            switch self {
+            case .pane(let directory):
+                return .leaf(make(directory))
+            case .split(let axis, let ratio, let first, let second):
+                return .split(
+                    axis: SplitTree<Leaf>.Axis(rawValue: axis) ?? .horizontal, ratio: min(max(ratio, 0.05), 0.95),
+                    first: first.tree(make), second: second.tree(make))
+            }
+        }
     }
 
     var tabs: [TabState]

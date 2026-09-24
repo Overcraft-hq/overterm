@@ -72,7 +72,7 @@ final class E2ETests: XCTestCase {
     func testSplits() throws { try run("splits") }
 
     /// A prepared session.json comes back (pin, colour, names, selection,
-    /// directories) and changes are autosaved to it.
+    /// directories, a split tab's panes) and changes are autosaved to it.
     func testSession() throws {
         let support = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-e2e-session-\(UUID().uuidString)")
         let dir = support.appendingPathComponent("work")
@@ -81,7 +81,8 @@ final class E2ETests: XCTestCase {
         let session = """
             {"selectedIndex":1,"tabs":[
               {"workingDirectory":"\(support.path)","customTitle":"pinned one","color":"green","isPinned":true},
-              {"workingDirectory":"\(dir.path)","isPinned":false}
+              {"workingDirectory":"\(dir.path)","isPinned":false,"focusedPane":1,"panes":{"split":{"axis":"horizontal","ratio":0.3,
+                "first":{"pane":{"directory":"\(support.path)"}},"second":{"pane":{"directory":"\(dir.path)"}}}}}
             ]}
             """
         try Data(session.utf8).write(to: support.appendingPathComponent("session.json"))
