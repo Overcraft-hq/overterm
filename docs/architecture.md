@@ -109,6 +109,20 @@ goes and what stays — kept: a tab in it, uncommitted changes, locked. It runs
 `git worktree remove` without `--force` and, if ticked, `git branch -D`
 (`-d` refuses a squash-merged branch). The Worktrees reload button fetches too.
 
+## Agent overview (⇧⌘A)
+
+Every tab as a card over the window (`Sources/Terminus/Agents/`), refreshed
+every 2 s while shown, waiting-for-you first, then failed, working, done,
+idle agents, plain shells. Per card: the tab's `TabActivity` (and the
+notification text), the agent — the tab's own, or one found running in any
+pane (process tree, as Tab Info) — where it works and the branch (read from
+`.git/HEAD`, following a linked worktree's `.git` file: no git process per
+card every 2 s), the branch's PR from `WorktreeModel.pullRequests`, and for
+Claude `ClaudeActivity` from the last 512 KB of the session transcript:
+`ai-title` (Claude Code's title for the session), the last prompt, the last
+reply, and the tool call after it if there is one — what it is doing now.
+A card selects its tab; Esc (the host takes the keyboard) closes.
+
 ## Pull requests
 
 Everything GitHub goes through the user's own `gh` (`Sources/Terminus/GitHub/`;

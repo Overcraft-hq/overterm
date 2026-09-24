@@ -60,6 +60,9 @@ enum MainMenu {
         let viewMenu = NSMenu(title: "View")
         viewMenu.addItem(withTitle: "Command Palette", action: #selector(TerminalWindowController.showPalette(_:)), keyEquivalent: "p")
         viewMenu.addItem(withTitle: "Tab Info", action: #selector(TerminalWindowController.showSelectedTabInfo(_:)), keyEquivalent: "i")
+        let overview = viewMenu.addItem(
+            withTitle: "Agent Overview", action: #selector(TerminalWindowController.showAgentOverview(_:)), keyEquivalent: "a")
+        overview.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(TerminalWindowController.toggleFileTree(_:)), keyEquivalent: "b")
         let diff = viewMenu.addItem(withTitle: "Toggle Diff", action: #selector(TerminalWindowController.toggleDiff(_:)), keyEquivalent: "d")

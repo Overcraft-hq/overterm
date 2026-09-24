@@ -38,6 +38,7 @@ final class E2ERunner {
         "cleanup": { await $0.cleanupScenario() },
         "splits": { await $0.splitsScenario() },
         "pullRequest": { await $0.pullRequestScenario() },
+        "overview": { await $0.overviewScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1252,6 +1253,62 @@ final class E2ERunner {
             sys.stderr.write("fake gh: unexpected %s\n" % args)
             sys.exit(2)
         """#
+    }
+
+    /// ⇧⌘A: a Claude tab waiting for you comes first, with what its
+    /// session is about and what it is doing (from a prepared transcript);
+    /// Esc closes; a card goes to its tab.
+    private func overviewScenario() async {
+        let projects = scratch.appendingPathComponent("claude-projects")
+        ClaudeUsageReader.projectsDirectory = projects
+        let dir = scratch.appendingPathComponent("agentproj")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "feat/overview"], in: dir)
+        let transcript =
+            [
+                #"{"type":"ai-title","aiTitle":"Fix the flaky login"}"#,
+                #"{"type":"user","message":{"role":"user","content":"make the login test pass"}}"#,
+                #"{"type":"assistant","message":{"content":[{"type":"text","text":"I found the race."}]}}"#,
+                #"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"make test"}}]}}"#,
+            ].joined(separator: "\n") + "\n"
+        for path in Set([dir.path, dir.resolvingSymlinksInPath().path]) {
+            let folder = projects.appendingPathComponent(ClaudeUsageReader.projectFolder(for: path))
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? transcript.write(to: folder.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+        }
+        guard let shell = app.store.selected else { return check("a tab", false) }
+        app.newTab(in: dir, agent: .claude, startAgent: false)
+        guard let agentTab = app.store.selected, agentTab.id != shell.id else { return check("an agent tab", false) }
+        await settledPrompt()
+        // Claude Code's "needs you" notification, while another tab is selected.
+        app.store.select(shell)
+        await eventually(2) { self.app.store.selectedID == shell.id }
+        emit("777;notify;Claude Code;Claude needs your permission", from: agentTab)
+        await eventually(4) { agentTab.activity.mark == .waiting }
+
+        app.showAgentOverview(nil)
+        check("⇧⌘A opens the overview", app.overviewView?.isHidden == false)
+        let first = await eventually(6) { self.app.overview.cards.first?.id == agentTab.id }
+        check("the tab waiting for you comes first", first, app.overview.cards.map(\.title).joined(separator: ", "))
+        let card = app.overview.cards.first { $0.id == agentTab.id }
+        check("with its notification", card?.activity.note?.contains("needs your permission") == true, card?.activity.note ?? "nil")
+        check("what the session is about", card?.claude?.title == "Fix the flaky login")
+        check("what you asked, and what it is doing", card?.claude?.lastPrompt == "make the login test pass" && card?.claude?.currentTool == "Bash: make test")
+        check("and where", card?.branch == "feat/overview" && card?.directory.map { ($0 as NSString).lastPathComponent } == "agentproj")
+        check("the plain tab is there too", app.overview.cards.contains { $0.id == shell.id && $0.agent == nil })
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+
+        check("it has the keyboard", window.firstResponder === app.overviewView)
+        key(53, "\u{1b}")
+        check("Esc closes it", await eventually(2) { self.app.overviewView?.isHidden == true })
+
+        app.showAgentOverview(nil)
+        app.chooseOverviewCard(agentTab.id)
+        check("a card goes to its tab", app.overviewView?.isHidden == true && app.store.selectedID == agentTab.id)
+        check("with the keyboard", await eventually(3) { self.app.store.selected?.terminal === self.window.firstResponder })
     }
 
     /// ⌘P shows, searches across kinds, and hides.

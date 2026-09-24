@@ -45,6 +45,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var diff = DiffModel()
     /// The right pane's switch (Changes / Pull Request) and the PR it shows.
     let rightPane = RightPane()
+    /// ⇧⌘A: every tab as a card.
+    let overview = AgentOverviewModel()
+    private(set) var overviewView: NSView?
+    private var overviewPoll: Timer?
     let pullRequest = PullRequestModel()
     /// Asks GitHub again every minute: CI moves while nothing local changes.
     private var pullRequestPoll: Timer?
@@ -110,6 +114,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTask: { [weak self] in self?.newTask(nil) },
                     toggleDiff: { [weak self] in self?.toggleDiff(nil) },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
+                    showOverview: { [weak self] in self?.showAgentOverview(nil) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
@@ -285,6 +290,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             paletteView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         self.paletteView = paletteView
+
+        let overviewView = AgentOverviewHostingView(
+            rootView: AgentOverviewView(
+                model: overview, worktrees: worktrees, theme: theme,
+                onChoose: { [weak self] in self?.chooseOverviewCard($0) },
+                onDismiss: { [weak self] in self?.hideAgentOverview() }))
+        overviewView.onEscape = { [weak self] in self?.hideAgentOverview() }
+        overviewView.translatesAutoresizingMaskIntoConstraints = false
+        overviewView.isHidden = true
+        content.addSubview(overviewView)
+        NSLayoutConstraint.activate([
+            overviewView.topAnchor.constraint(equalTo: content.topAnchor),
+            overviewView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            overviewView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            overviewView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        self.overviewView = overviewView
         window.contentView = content
     }
 
@@ -1208,6 +1230,37 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         return nil
     }
 
+    /// ⇧⌘A: every tab as a card; again (or Esc) hides it.
+    @objc func showAgentOverview(_ sender: Any?) {
+        guard let overviewView else { return }
+        if !overviewView.isHidden { return hideAgentOverview() }
+        Task { await overview.refresh(store.tabs, inspector: inspector) }
+        overviewView.isHidden = false
+        window?.makeFirstResponder(overviewView)
+        overviewPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.overview.refresh(self.store.tabs, inspector: self.inspector) }
+            }
+        }
+    }
+
+    /// A card clicked: its tab, with the keyboard.
+    func chooseOverviewCard(_ id: Tab.ID) {
+        guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
+        hideAgentOverview()
+        store.select(tab)
+        focusSelectedTerminal()
+    }
+
+    func hideAgentOverview() {
+        overviewPoll?.invalidate()
+        overviewPoll = nil
+        guard overviewView?.isHidden == false else { return }
+        overviewView?.isHidden = true
+        focusSelectedTerminal()
+    }
+
     private func hidePalette() {
         paletteView?.isHidden = true
         focusSelectedTerminal()
@@ -1228,6 +1281,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             },
             PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
                 [weak self] _ in self?.newTask(nil)
+            },
+            PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
+                [weak self] _ in self?.showAgentOverview(nil)
             },
             PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
                 [weak self] _ in self?.showPullRequest(nil)
@@ -1630,6 +1686,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         agentPoll?.invalidate()
         pullRequestPoll?.invalidate()
+        overviewPoll?.invalidate()
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }
 }

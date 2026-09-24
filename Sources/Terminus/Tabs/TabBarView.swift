@@ -13,6 +13,8 @@ struct TabBarActions {
     var toggleDiff: () -> Void
     /// The PR chip: the right pane on the checkout's pull request.
     var showPullRequest: () -> Void
+    /// Every tab as a card (⇧⌘A).
+    var showOverview: () -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -67,6 +69,13 @@ struct TabBarView: View {
             .help("New Tab (⌘T) — arrow for Claude / Codex")
             .padding(.leading, 6)
             Spacer(minLength: 0)
+            Button(action: actions.showOverview) {
+                Image(systemName: "square.grid.2x2").font(.system(size: 12)).frame(width: 26, height: 24).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Agent Overview (⇧⌘A)")
+            .padding(.trailing, 4)
             if let pr = diff.branch.flatMap({ worktrees.pullRequests[$0] }) {
                 PullRequestChip(pr: pr, theme: theme, action: actions.showPullRequest)
                     .padding(.trailing, 6)

@@ -31,6 +31,10 @@ theme, keybinds) applies as-is. Private, internal tool.
 - **Merged worktree clean-up**: merged worktrees (merged into the default
   branch, or deleted on the remote after a squash) get a purple mark; one
   click removes them and their branches, keeping any with changes or a tab.
+- **Agent overview** (⇧⌘A, or the grid button in the title bar): every tab
+  as a card — who is waiting for you, working, done or failed, where, the
+  branch's PR, and for Claude what the session is about, what you asked and
+  what it is doing now.
 - **Pull requests** (via your `gh`): PR number and CI on each worktree and in
   the title bar; the right pane's Pull Request view shows checks, the
   conversation and review threads, and lets you comment and reply.
@@ -52,6 +56,7 @@ theme, keybinds) applies as-is. Private, internal tool.
 | ⌥⌘D | Diff panel |
 | ⌘P | Command palette (↵ run, ⌥↵ insert snippet) |
 | ⌘D / ⇧⌘D | Split right / down (⌘[ ⌘] or ⌥⌘arrows move between panes, ⇧⌘↩ zooms one) |
+| ⇧⌘A | Agent overview |
 | ⌘F | Search terminal + files (↵ open; the terminal row keeps a find bar) |
 | ⌘-click | Open a printed `path:line` in the editor |
 
