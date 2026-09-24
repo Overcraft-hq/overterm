@@ -28,6 +28,9 @@ theme, keybinds) applies as-is. Private, internal tool.
   worktree, live diff, stage / discard / commit.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
+- **Search** (⌘F): one overlay over the terminal's scrollback, the checkout's
+  file names and their contents; ⌘-click a `path:line` in the terminal to open
+  it in the editor at that line.
 
 ## Keys
 
@@ -40,6 +43,8 @@ theme, keybinds) applies as-is. Private, internal tool.
 | ⌘B | Sidebar |
 | ⌥⌘D | Diff panel |
 | ⌘P | Command palette (↵ run, ⌥↵ insert snippet) |
+| ⌘F | Search terminal + files (↵ open; the terminal row keeps a find bar) |
+| ⌘-click | Open a printed `path:line` in the editor |
 
 ## Build
 

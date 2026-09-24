@@ -61,7 +61,8 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 | `START_SEARCH` | the ⌘F overlay (with Ghostty's needle, if any) |
 | `END_SEARCH`, `SEARCH_TOTAL`, `SEARCH_SELECTED` | `TerminalSearch` → the overlay's terminal row and the compact bar's `3/12` |
 | `RING_BELL`, `DESKTOP_NOTIFICATION`, `PROGRESS_REPORT`, `COMMAND_FINISHED` | `TabActivity`: `isWorking` + a ranked mark (waiting > failed > done) → tab strip (breathing glyph + sliding bar / ringing yellow dot / green check / red mark), notification, Dock badge |
-| `OPEN_URL`, `MOUSE_SHAPE`, `QUIT` | handled directly |
+| `OPEN_URL` | ⌘-click on a link libghostty matched: `FileLink` (shell dir, then checkout; `:line[:col]`, `(line,col)`) → the editor at that line; URLs, directories, binaries → system opener |
+| `MOUSE_SHAPE`, `QUIT` | handled directly |
 | anything else (splits, new window, …) | returns false: unhandled |
 
 `close_surface_cb` (shell exited, or Ghostty's ⌘W) → `closeTab` (pinned tabs
