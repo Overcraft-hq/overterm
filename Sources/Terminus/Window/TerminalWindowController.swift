@@ -132,7 +132,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     remove: { [weak self] in self?.removeWorktree($0) },
                     attach: { [weak self] in self?.attach($0) },
                     detach: { [weak self] in self?.detach() },
-                    newTask: { [weak self] in self?.newTask(nil) }
+                    newTask: { [weak self] in self?.newTask(nil) },
+                    cleanUp: { [weak self] in self?.cleanUpMergedWorktrees(nil) }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
@@ -609,6 +610,113 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// Removes the linked worktrees whose branch is merged (or whose folder
+    /// is already gone), after fetching and one confirmation listing what
+    /// goes and what stays. Kept: a worktree with a tab in it, uncommitted
+    /// changes, or a lock — the same things single removal refuses.
+    @objc func cleanUpMergedWorktrees(_ sender: Any?) {
+        guard let repo = worktrees.main?.path else { return NSSound.beep() }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.worktrees.refresh(fetch: true)
+            var removable: [Worktree] = []
+            var kept: [(Worktree, String)] = []
+            for worktree in self.worktrees.cleanable {
+                if worktree.isPrunable {
+                    removable.append(worktree)
+                } else if worktree.isLocked {
+                    kept.append((worktree, "locked"))
+                } else if !self.tabs(in: worktree).isEmpty {
+                    kept.append((worktree, "open in a tab"))
+                } else if await Self.hasChanges(worktree.path) {
+                    kept.append((worktree, "uncommitted changes"))
+                } else {
+                    removable.append(worktree)
+                }
+            }
+            self.confirmCleanUp(removable: removable, kept: kept, repo: repo)
+        }
+    }
+
+    private static func hasChanges(_ path: URL) async -> Bool {
+        let status = try? await Git.run(["status", "--porcelain"], in: path)
+        // Unreadable counts as changed: never delete what we couldn't check.
+        return status.map { !$0.isEmpty } ?? true
+    }
+
+    private func confirmCleanUp(removable: [Worktree], kept: [(Worktree, String)], repo: URL) {
+        guard let window else { return }
+        let keptLines = kept.map { "• \($0.0.displayName) — \($0.1)" }
+        guard !removable.isEmpty else {
+            showAlert(
+                "Nothing to clean up",
+                kept.isEmpty ? "No linked worktree is merged." : "Merged, but kept:\n" + keptLines.joined(separator: "\n"))
+            return
+        }
+        let goingLines = removable.map { worktree in
+            let why: String
+            if worktree.isPrunable {
+                why = "folder already gone"
+            } else {
+                why =
+                    switch worktree.branch.flatMap({ worktrees.merged[$0] }) {
+                    case .upstreamGone: "deleted on the remote"
+                    case .mergedInto(let base): "merged into \(base)"
+                    case nil: "merged"
+                    }
+            }
+            return "• \(worktree.displayName) — \(why)"
+        }
+        let alert = NSAlert()
+        alert.messageText =
+            removable.count == 1 ? "Remove 1 merged worktree?" : "Remove \(removable.count) merged worktrees?"
+        alert.informativeText =
+            goingLines.joined(separator: "\n") + (kept.isEmpty ? "" : "\n\nKept:\n" + keptLines.joined(separator: "\n"))
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Also delete their branches"
+        alert.suppressionButton?.state = .on
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let deleteBranches = alert.suppressionButton?.state == .on
+            Task { @MainActor [weak self] in
+                await self?.cleanUp(removable, deleteBranches: deleteBranches, repo: repo)
+            }
+        }
+    }
+
+    private func cleanUp(_ removable: [Worktree], deleteBranches: Bool, repo: URL) async {
+        var failures: [String] = []
+        for worktree in removable where !worktree.isPrunable {
+            do {
+                // No --force: anything dirty since the check makes git refuse.
+                _ = try await Git.run(["worktree", "remove", worktree.path.path], in: repo)
+            } catch {
+                failures.append("\(worktree.displayName): \(error.localizedDescription)")
+                continue
+            }
+            if deleteBranches, let branch = worktree.branch {
+                // -D: a squash-merged branch isn't an ancestor, so -d refuses it;
+                // merged-ness was decided above.
+                do { _ = try await Git.run(["branch", "-D", branch], in: repo) } catch {
+                    failures.append("branch \(branch): \(error.localizedDescription)")
+                }
+            }
+        }
+        if removable.contains(where: \.isPrunable) {
+            _ = try? await Git.run(["worktree", "prune"], in: repo)
+            if deleteBranches {
+                for branch in removable.filter(\.isPrunable).compactMap(\.branch) where worktrees.merged[branch] != nil {
+                    _ = try? await Git.run(["branch", "-D", branch], in: repo)
+                }
+            }
+        }
+        await worktrees.refresh()
+        if !failures.isEmpty { showAlert("Some worktrees weren’t removed", failures.joined(separator: "\n")) }
+    }
+
     // MARK: Tasks
 
     /// New Task: a worktree on a new (or existing) branch next to the repo,
@@ -943,6 +1051,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
                 [weak self] _ in self?.newTask(nil)
             },
+            PaletteItem(
+                id: "a.cleanUp", group: .action, title: "Clean Up Merged Worktrees…", subtitle: "Fetch, then remove merged worktrees",
+                symbol: "sparkles"
+            ) { [weak self] _ in self?.cleanUpMergedWorktrees(nil) },
         ]
         items += Agent.allCases.map { agent in
             PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol) {

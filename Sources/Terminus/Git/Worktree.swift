@@ -9,6 +9,8 @@ struct Worktree: Identifiable, Hashable {
     let isBare: Bool
     let isDetached: Bool
     let isLocked: Bool
+    /// Its directory is gone (deleted by hand); `git worktree prune` drops it.
+    var isPrunable = false
     /// The first entry: the repository's main working tree.
     let isMain: Bool
 
@@ -30,7 +32,7 @@ struct Worktree: Identifiable, Hashable {
             var path: String?
             var head: String?
             var branch: String?
-            var bare = false, detached = false, locked = false
+            var bare = false, detached = false, locked = false, prunable = false
             for line in record.split(separator: "\n") {
                 let parts = line.split(separator: " ", maxSplits: 1)
                 let key = parts.first.map(String.init) ?? ""
@@ -42,6 +44,7 @@ struct Worktree: Identifiable, Hashable {
                 case "bare": bare = true
                 case "detached": detached = true
                 case "locked": locked = true
+                case "prunable": prunable = true
                 default: break
                 }
             }
@@ -49,7 +52,7 @@ struct Worktree: Identifiable, Hashable {
             result.append(
                 Worktree(
                     path: URL(fileURLWithPath: path), head: head, branch: branch, isBare: bare,
-                    isDetached: detached, isLocked: locked, isMain: result.isEmpty))
+                    isDetached: detached, isLocked: locked, isPrunable: prunable, isMain: result.isEmpty))
         }
         return result
     }

@@ -28,6 +28,9 @@ theme, keybinds) applies as-is. Private, internal tool.
   worktree, live diff, stage / discard / commit.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
+- **Merged worktree clean-up**: merged worktrees (merged into the default
+  branch, or deleted on the remote after a squash) get a purple mark; one
+  click removes them and their branches, keeping any with changes or a tab.
 - **Search** (⌘F): one overlay over the terminal's scrollback, the checkout's
   file names and their contents; ⌘-click a `path:line` in the terminal to open
   it in the editor at that line.

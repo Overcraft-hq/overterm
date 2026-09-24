@@ -68,6 +68,26 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 `close_surface_cb` (shell exited, or Ghostty's ⌘W) → `closeTab` (pinned tabs
 ignore it unless the process actually exited).
 
+## Merged worktrees
+
+`MergedWorktrees` (`Sources/Terminus/Git/`) decides which linked worktrees
+are done with; `WorktreeModel.merged` holds it, refreshed with the list.
+A branch is merged when
+
+- its upstream is `[gone]` — pushed, then deleted on the remote: GitHub's
+  delete-on-merge, and the only trace a squash merge leaves; or
+- it has an upstream and its tip is reachable from the default branch
+  (`origin/HEAD`, else the main worktree's branch).
+
+Never pushed never counts: a New Task branch with no commits is reachable
+from main too. A worktree whose folder was deleted by hand (`prunable`) is
+cleanable as well. Rows get a purple merge mark; the Worktrees header gets a
+count that runs **Clean Up Merged Worktrees…** (also File menu, ⌘P, a row's
+menu): `git fetch --prune` (ssh in BatchMode), then one sheet listing what
+goes and what stays — kept: a tab in it, uncommitted changes, locked. It runs
+`git worktree remove` without `--force` and, if ticked, `git branch -D`
+(`-d` refuses a squash-merged branch). The Worktrees reload button fetches too.
+
 ## Search (⌘F)
 
 `SpotlightModel` (`Sources/Terminus/Search/`), rows in this order:

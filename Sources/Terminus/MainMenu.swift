@@ -29,6 +29,8 @@ enum MainMenu {
         codex.keyEquivalentModifierMask = [.command, .option]
         let task = fileMenu.addItem(withTitle: "New Task…", action: #selector(TerminalWindowController.newTask(_:)), keyEquivalent: "n")
         task.keyEquivalentModifierMask = [.command, .shift]
+        fileMenu.addItem(
+            withTitle: "Clean Up Merged Worktrees…", action: #selector(TerminalWindowController.cleanUpMergedWorktrees(_:)), keyEquivalent: "")
         fileMenu.addItem(withTitle: "Pin / Unpin Tab", action: #selector(TerminalWindowController.togglePinTab(_:)), keyEquivalent: "")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(EditorViewController.saveDocument(_:)), keyEquivalent: "s")

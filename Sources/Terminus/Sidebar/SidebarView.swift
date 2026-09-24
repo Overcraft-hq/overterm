@@ -26,6 +26,8 @@ struct WorktreeActions {
     /// Back to following the agent / shell.
     var detach: () -> Void
     var newTask: () -> Void
+    /// Remove the merged (and vanished) linked worktrees, after confirming.
+    var cleanUp: () -> Void
 }
 
 /// What the snippet list asks the window to do.
@@ -243,19 +245,37 @@ private struct WorktreeListView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .textCase(.uppercase)
                     .foregroundStyle(theme.dimText)
-                Spacer()
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 4)
+                if !model.cleanable.isEmpty {
+                    Button(action: actions.cleanUp) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.triangle.merge").font(.system(size: 9))
+                            Text(verbatim: "\(model.cleanable.count)").font(.system(size: 10, weight: .medium))
+                        }
+                        .fixedSize()
+                        .padding(.horizontal, 5)
+                        .frame(height: 18)
+                        .background(Capsule().fill(TabStatusStyle.merged.opacity(0.18)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(TabStatusStyle.merged)
+                    .help("Clean Up Merged Worktrees…")
+                }
                 Button(action: actions.newTask) {
                     Image(systemName: "plus").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.dimText)
                 .help("New Task… (⇧⌘N)")
-                Button(action: { Task { await model.refresh() } }) {
+                Button(action: { Task { await model.refresh(fetch: true) } }) {
                     Image(systemName: "arrow.clockwise").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.dimText)
-                .help("Reload")
+                .help("Fetch and reload")
             }
             .padding(.horizontal, 12)
             .frame(height: 30)
@@ -272,6 +292,7 @@ private struct WorktreeListView: View {
                                 reason: model.showing.flatMap {
                                     $0.root.standardizedFileURL == worktree.path.standardizedFileURL ? $0.reason : nil
                                 },
+                                merged: worktree.branch.flatMap { model.merged[$0] },
                                 theme: theme, actions: actions)
                         }
                     }
@@ -287,9 +308,18 @@ private struct WorktreeRowView: View {
     let isCurrent: Bool
     /// Why the selected tab shows this worktree, when it does.
     let reason: CheckoutReason?
+    let merged: MergedWorktrees.Reason?
     let theme: ChromeTheme
     let actions: WorktreeActions
     @State private var hovering = false
+
+    private var mergedHelp: String {
+        switch merged {
+        case .upstreamGone: "Merged — its branch was deleted on the remote"
+        case .mergedInto(let base): "Merged into \(base)"
+        case nil: ""
+        }
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -309,6 +339,12 @@ private struct WorktreeRowView: View {
                     .help("\(agent.name) is working here")
             default:
                 EmptyView()
+            }
+            if merged != nil {
+                Image(systemName: "arrow.triangle.merge").font(.system(size: 9)).foregroundStyle(TabStatusStyle.merged)
+                    .help(mergedHelp)
+            } else if worktree.isPrunable {
+                Image(systemName: "questionmark.folder").font(.system(size: 9)).help("Its folder is gone")
             }
             if worktree.isLocked {
                 Image(systemName: "lock.fill").font(.system(size: 9)).help("Locked")
@@ -345,6 +381,9 @@ private struct WorktreeRowView: View {
             if !worktree.isMain {
                 Divider()
                 Button("Remove Worktree…") { actions.remove(worktree) }
+                if merged != nil || worktree.isPrunable {
+                    Button("Clean Up Merged Worktrees…") { actions.cleanUp() }
+                }
             }
         }
         .help(worktree.path.path)

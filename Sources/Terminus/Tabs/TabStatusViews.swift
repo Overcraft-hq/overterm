@@ -9,6 +9,8 @@ enum TabStatusStyle {
     static let signal = Color(red: 1.0, green: 0.882, blue: 0.29)
     static let done = Color(red: 0.36, green: 0.78, blue: 0.44)
     static let failed = Color(red: 0.94, green: 0.36, blue: 0.34)
+    /// GitHub's "merged" purple, so a merged worktree reads like its PR.
+    static let merged = Color(red: 0.64, green: 0.47, blue: 0.96)
 }
 
 /// The agent's glyph while it works: signal yellow, slowly breathing.
