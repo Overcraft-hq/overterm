@@ -59,12 +59,21 @@ make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null
 
 ### Typing into a shell
 
-Type at a *settled* prompt (`settledPrompt()`: at the prompt + 400 ms) and
-let `runAndExpect` retry once: while drawing a prompt a shell's theme or
-plugins may query the terminal and swallow typeahead, more so under load.
-Keep typed lines short and plain — put code in a file and run the file —
-a long line of quotes and parentheses typed key by key is at the mercy of
-the user's zsh plugins. Remember typing goes to the *selected* tab.
+- **Wait for the shell.** `waitForPrompt()` waits for its first OSC 7 (shell
+  integration, from the first prompt) — "no running command" is also true
+  while it still reads its rc files. `settledPrompt()` adds 400 ms, and
+  1.2 s after that first report: the first prompt keeps working (the theme's
+  git status, deferred integration init) and keys typed then were lost.
+- **Run commands with `run(_:until:)`** (or `runAndExpect`): it types, presses
+  Return, and if the condition doesn't hold, sends Ctrl-C and types it once
+  more. A prompt redraw can flush keys *mid-command* — once, 40 characters
+  vanished from the middle and left zsh at `for>`; a plain retry then typed
+  into the continuation prompt. Only for commands that are fine to run twice.
+- **Keep typed lines short**: put code in a script and run the script.
+- **Output on disk isn't output on screen.** A file the command wrote can
+  exist before libghostty's IO thread has drawn the output; wait on
+  `TerminalView.visibleText` before clicking at a screen position.
+- Typing goes to the *selected* tab.
 
 ### Adding a scenario
 

@@ -30,7 +30,12 @@ final class TerminalView: NSView {
     /// The shell has reported a directory at least once: its integration is
     /// loaded and it drew a prompt. Keys typed before that can be lost.
     private(set) var shellReported = false
-    func markShellReported() { shellReported = true }
+    /// When it first did.
+    private(set) var shellReportedAt: Date?
+    func markShellReported() {
+        if !shellReported { shellReportedAt = Date() }
+        shellReported = true
+    }
 
     var onTitleChange: ((String) -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
@@ -528,6 +533,20 @@ final class TerminalView: NSView {
     }
 
     private func performBinding(_ action: String) { perform(binding: action) }
+
+    /// The text on screen now (the viewport), one line per row.
+    var visibleText: String? {
+        guard let surface else { return nil }
+        let selection = ghostty_selection_s(
+            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+            rectangle: false)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        guard let bytes = text.text else { return "" }
+        return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
+    }
 
     // MARK: Clipboard
 

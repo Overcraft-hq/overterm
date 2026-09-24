@@ -104,7 +104,11 @@ final class E2ERunner {
     /// terminal while drawing it (see runAndExpect).
     private func settledPrompt() async {
         await waitForPrompt()
-        await pause(0.4)
+        // A new shell's first prompt keeps working (git status for the
+        // theme, deferred integration init) after it first reports; keys
+        // typed in that second were seen lost, twice in a row under load.
+        let sinceFirst = terminal?.shellReportedAt.map { Date().timeIntervalSince($0) } ?? 0
+        await pause(max(0.4, 1.2 - sinceFirst))
     }
 
     /// Types `text` as key-down events into the key view, like a keyboard
@@ -141,17 +145,30 @@ final class E2ERunner {
     /// load. If the output still doesn't come, the command is typed once
     /// more; these commands only write a file, so a second run is harmless.
     private func runAndExpect(_ command: String, file: URL, content: String, _ name: String) async {
-        func done() -> Bool {
+        let ok = await run(command) {
             (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == content
         }
-        var ok = false
-        for _ in 0..<2 where !ok {
+        check(name, ok, "\(file.lastPathComponent) = \((try? String(contentsOf: file, encoding: .utf8)) ?? "missing")")
+    }
+
+    /// Types `command` at a settled prompt and presses Return, once more if
+    /// `condition` doesn't come to hold. A prompt redraw can flush keys
+    /// mid-typing (seen: 40 characters gone from the middle), leaving half a
+    /// command or a continuation prompt (for>, braceparam>) — Ctrl-C clears
+    /// either before the retry. Only for commands that are fine to run twice.
+    @discardableResult
+    private func run(_ command: String, timeout: TimeInterval = 8, until condition: () -> Bool) async -> Bool {
+        for attempt in 0..<2 {
+            if attempt > 0 {
+                key(kVK_ANSI_C, "\u{3}", modifiers: .control, ignoringModifiers: "c")
+                await pause(0.3)
+            }
             await settledPrompt()
             type(command)
             pressReturn()
-            ok = await eventually(8) { done() }
+            if await eventually(timeout, condition) { return true }
         }
-        check(name, ok, "\(file.lastPathComponent) = \((try? String(contentsOf: file, encoding: .utf8)) ?? "missing")")
+        return false
     }
 
     /// Clicks the button titled `title` in the window's attached sheet.
@@ -207,10 +224,8 @@ final class E2ERunner {
         await waitForPrompt()
         let dir = scratch.appendingPathComponent("here")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        type("cd \(dir.path)")
-        pressReturn()
         let resolved = dir.resolvingSymlinksInPath().path
-        let followed = await eventually {
+        let followed = await run("cd \(dir.path)") {
             app.store.selected?.workingDirectory.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == resolved
         }
         check("cd reaches the tab's working directory (OSC 7)", followed, app.store.selected?.workingDirectory ?? "nil")
@@ -660,12 +675,7 @@ final class E2ERunner {
         time.sleep(60)
         """.write(to: server, atomically: true, encoding: .utf8)
         func readPort() -> Int? { (try? String(contentsOf: portFile, encoding: .utf8)).flatMap { Int($0) } }
-        for _ in 0..<2 where readPort() == nil {
-            await settledPrompt()
-            type("python3 \(server.path) &")
-            pressReturn()
-            await eventually(10) { readPort() != nil }
-        }
+        await run("python3 \(server.path) &", timeout: 10) { readPort() != nil }
         let port = readPort()
         check("a dev server starts in the tab", port != nil)
 
@@ -743,7 +753,9 @@ final class E2ERunner {
         guard let home = app.store.selected else { return check("a tab", false) }
         await eventually(3) { self.app.store.tabFrames[home.id] != nil }
         app.showInfo(for: home)
-        await pause(1.5)
+        // Only once it knows where the tab is does "not measured" mean anything.
+        await eventually(8) { self.app.infoModel?.location != nil }
+        await pause(0.5)
         check("a tab outside a checkout isn't measured", app.infoModel?.disk == nil && app.infoModel?.measuringDisk == false)
         app.infoPopover?.close()
 
@@ -792,11 +804,7 @@ final class E2ERunner {
         let main = repo.resolvingSymlinksInPath()
         let feat = worktree.resolvingSymlinksInPath()
         check("starts on the shell's checkout", await eventually { self.app.diff.root?.resolvingSymlinksInPath() == main })
-        await settledPrompt()
-        type("bash \(script.path) &")
-        pressReturn()
-
-        let followed = await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == feat }
+        let followed = await run("bash \(script.path) &", timeout: 10) { self.app.diff.root?.resolvingSymlinksInPath() == feat }
         let seen = ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: tab.terminal), tag: tab.terminal.processTag)
             .flatMap(\.flattened).map { "\($0.name)@\($0.workingDirectory ?? "?")" }.joined(separator: " ")
         check("follows the agent into its worktree", followed, "diff \(app.diff.root?.path ?? "nil"); agentDirectory \(tab.agentDirectory ?? "nil"); tab \(seen)")
@@ -825,11 +833,11 @@ final class E2ERunner {
             }())
     }
 
-    private func key(_ code: Int, _ characters: String) {
+    private func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = [], ignoringModifiers: String? = nil) {
         let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
-            isARepeat: false, keyCode: UInt16(code))!
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: characters,
+            charactersIgnoringModifiers: ignoringModifiers ?? characters, isARepeat: false, keyCode: UInt16(code))!
         window.sendEvent(event)
     }
 
@@ -920,12 +928,21 @@ final class E2ERunner {
         app.newTab(in: repo)
         guard let terminal = app.store.selected?.terminal else { return check("a tab", false) }
         // Every row starts with the path, so a click a few cells in hits it
-        // whatever the padding and the row.
-        await runAndExpect(
-            "clear; for i in {1..60}; do echo src/main.swift:3; done; echo ok > \(out("printed").path)", file: out("printed"),
-            content: "ok", "the shell prints a path:line")
+        // whatever the padding and the row. A script keeps the typed command
+        // short.
+        let script = scratch.appendingPathComponent("paths.sh")
+        try? "clear\nfor i in $(seq 60); do echo src/main.swift:3; done\necho ok > \(out("printed").path)\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        await runAndExpect("sh \(script.path)", file: out("printed"), content: "ok", "the shell prints a path:line")
         guard let surface = terminal.surface else { return check("a surface", false) }
         let size = ghostty_surface_size(surface)
+        // The file is written before libghostty's IO thread has necessarily
+        // drawn the output: click only once the paths fill the screen.
+        let drawn = await eventually(5) {
+            (terminal.visibleText ?? "").split(separator: "\n").filter { $0.hasPrefix("src/main.swift:3") }.count
+                >= Int(size.rows) - 3
+        }
+        check("the paths are on screen", drawn, terminal.visibleText ?? "nil")
         let scale = window.backingScaleFactor
         let inView = NSPoint(x: CGFloat(size.cell_width_px) / scale * 5, y: terminal.bounds.midY)
         let point = terminal.convert(inView, to: nil)
