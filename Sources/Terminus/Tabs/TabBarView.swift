@@ -305,6 +305,10 @@ private struct DiffBadge: View {
 /// would move the window instead of the tab.
 final class TabStripHostingView<Content: View>: NSHostingView<Content> {
     override var mouseDownCanMoveWindow: Bool { false }
+    /// The strip IS the title bar. With the title bar's inset (which
+    /// `.ignoresSafeArea()` doesn't undo here) SwiftUI laid it out in the top
+    /// 28 pt of its 38, leaving an empty band under the tabs.
+    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
 }
 
 /// Behind the tab strip: pressing empty strip space drags (or, double-clicked,
