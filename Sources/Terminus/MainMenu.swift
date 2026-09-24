@@ -35,7 +35,8 @@ enum MainMenu {
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Save", action: #selector(EditorViewController.saveDocument(_:)), keyEquivalent: "s")
         fileMenu.addItem(.separator())
-        fileMenu.addItem(withTitle: "Close Tab", action: #selector(TerminalWindowController.closeSelectedTab(_:)), keyEquivalent: "w")
+        // ⌘W: the focused pane when the tab is split, else the tab.
+        fileMenu.addItem(withTitle: "Close", action: #selector(TerminalWindowController.closeSelectedTab(_:)), keyEquivalent: "w")
         let closeWindow = fileMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         closeWindow.keyEquivalentModifierMask = [.command, .shift]
         fileItem.submenu = fileMenu
@@ -63,6 +64,17 @@ enum MainMenu {
         viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(TerminalWindowController.toggleFileTree(_:)), keyEquivalent: "b")
         let diff = viewMenu.addItem(withTitle: "Toggle Diff", action: #selector(TerminalWindowController.toggleDiff(_:)), keyEquivalent: "d")
         diff.keyEquivalentModifierMask = [.command, .option]
+        // Ghostty's own defaults, so they also work while the editor has the keyboard.
+        viewMenu.addItem(.separator())
+        viewMenu.addItem(withTitle: "Split Right", action: #selector(TerminalWindowController.splitRight(_:)), keyEquivalent: "d")
+        let down = viewMenu.addItem(withTitle: "Split Down", action: #selector(TerminalWindowController.splitDown(_:)), keyEquivalent: "d")
+        down.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(withTitle: "Next Pane", action: #selector(TerminalWindowController.selectNextPane(_:)), keyEquivalent: "]")
+        viewMenu.addItem(withTitle: "Previous Pane", action: #selector(TerminalWindowController.selectPreviousPane(_:)), keyEquivalent: "[")
+        let zoom = viewMenu.addItem(withTitle: "Zoom Pane", action: #selector(TerminalWindowController.togglePaneZoom(_:)), keyEquivalent: "\r")
+        zoom.keyEquivalentModifierMask = [.command, .shift]
+        let equalize = viewMenu.addItem(withTitle: "Equalize Panes", action: #selector(TerminalWindowController.equalizePanes(_:)), keyEquivalent: "=")
+        equalize.keyEquivalentModifierMask = [.command, .control]
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
 

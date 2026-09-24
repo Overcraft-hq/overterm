@@ -1,10 +1,21 @@
 import AppKit
 
-/// One tab: a terminal and what the tab bar shows for it.
+/// One tab: its terminals (one, or several split panes) and what the tab
+/// bar shows for it.
 @MainActor
 final class Tab: ObservableObject, Identifiable {
     let id = UUID()
-    let terminal: TerminalView
+    /// The pane with the keyboard — the tab's only terminal until it is
+    /// split. Typing, search, the title and the directory follow it; what
+    /// concerns the whole tab (closing, its processes) goes over `terminals`.
+    @Published private(set) var terminal: TerminalView
+    /// The tab's panes.
+    @Published private(set) var splits: SplitTree<TerminalView>
+    /// A pane shown alone, filling the tab (toggle_split_zoom).
+    @Published var zoomed: TerminalView?
+
+    var terminals: [TerminalView] { splits.leaves }
+    var isSplit: Bool { terminals.count > 1 }
 
     /// What the shell last set via OSC 0/2 (shell integration sets it to the
     /// running command or the cwd).
@@ -55,12 +66,29 @@ final class Tab: ObservableObject, Identifiable {
 
     init(terminal: TerminalView, agent: Agent? = nil) {
         self.terminal = terminal
+        self.splits = .leaf(terminal)
         self.agent = agent
         self.workingDirectory = terminal.workingDirectory
         self.shellTitle = terminal.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? "Terminal"
     }
 
     var title: String { customTitle ?? shellTitle }
+
+    /// `pane` has the keyboard now; the tab shows its title and directory.
+    func focus(_ pane: TerminalView) {
+        guard pane !== terminal, splits.contains(pane) else { return }
+        terminal = pane
+        if let title = pane.title { shellTitle = title }
+        if let directory = pane.workingDirectory { workingDirectory = directory }
+    }
+
+    /// A new layout. The focused pane stays focused while it is still in
+    /// it, else the first pane is; a zoomed pane that left unzooms.
+    func setSplits(_ splits: SplitTree<TerminalView>) {
+        self.splits = splits
+        if let zoomed, !splits.contains(zoomed) { self.zoomed = nil }
+        if !splits.contains(terminal), let first = splits.leaves.first { focus(first) }
+    }
 }
 
 /// Why a tab shows the checkout it shows.

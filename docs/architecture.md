@@ -63,10 +63,28 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 | `RING_BELL`, `DESKTOP_NOTIFICATION`, `PROGRESS_REPORT`, `COMMAND_FINISHED` | `TabActivity`: `isWorking` + a ranked mark (waiting > failed > done) → tab strip (breathing glyph + sliding bar / ringing yellow dot / green check / red mark), notification, Dock badge |
 | `OPEN_URL` | ⌘-click on a link libghostty matched: `FileLink` (shell dir, then checkout; `:line[:col]`, `(line,col)`) → the editor at that line; URLs, directories, binaries → system opener |
 | `MOUSE_SHAPE`, `QUIT` | handled directly |
-| anything else (splits, new window, …) | returns false: unhandled |
+| `NEW_SPLIT`, `GOTO_SPLIT`, `RESIZE_SPLIT`, `EQUALIZE_SPLITS`, `TOGGLE_SPLIT_ZOOM` | the tab's splits (Ghostty's defaults: ⌘D, ⇧⌘D, ⌘[ ⌘], ⌥⌘arrows, ⌃⌘arrows, ⌃⌘=, ⇧⌘↩) |
+| anything else (new window, …) | returns false: unhandled |
 
 `close_surface_cb` (shell exited, or Ghostty's ⌘W) → `closeTab` (pinned tabs
 ignore it unless the process actually exited).
+
+## Splits
+
+A tab is a `SplitTree<TerminalView>` (`Sources/Terminus/Splits/`): a
+binary tree, panes at the leaves, each split an axis and a ratio. The tree is
+pure (insert, remove, spatial neighbours, resize, equalize — unit-tested with
+plain objects); `SplitHostView`, one per tab, lays it out: panes by frame,
+1 pt gaps where its background shows as the divider, grabbable ±4 pt (its own
+tracking loop, `acceptsFirstMouse`), unfocused panes under a dim.
+
+- `Tab.terminal` is the **focused pane** — typing, ⌘F, links, the tab's title
+  and directory follow it (`TerminalView.onFocus` → `Tab.focus`). What means
+  the whole tab goes over `Tab.terminals`: closing and its warning, Tab Info's
+  processes, finding the agent to follow, quitting.
+- ⌘W closes the focused pane of a split tab (asking only if something runs in
+  it), else the tab (always asking). `exit` closes just its pane.
+- Zoom shows one pane alone; the others are occluded, not closed.
 
 ## Merged worktrees
 

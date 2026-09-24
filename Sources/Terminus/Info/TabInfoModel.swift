@@ -96,13 +96,13 @@ final class TabInfoModel: ObservableObject {
     }
 
     func refreshProcesses() async {
-        let root = SurfaceProcesses.shared.loginPID(of: tab.terminal)
-        let tag = tab.terminal.processTag
+        // Every pane's shell, when the tab is split.
+        let roots = tab.terminals.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         let inspector = self.inspector
         // Scanning every process takes a few ms: off the main thread, on GCD.
         let tree = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: inspector.tree(root: root, tag: tag))
+                continuation.resume(returning: roots.flatMap { inspector.tree(root: $0.0, tag: $0.1) })
             }
         }
         processes = tree

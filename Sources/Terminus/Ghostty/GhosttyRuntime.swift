@@ -156,6 +156,53 @@ final class GhosttyRuntime {
             window.newTab(from: view)
             return true
 
+        // Splits are Terminus's too; Ghostty's keybinds (cmd+d, cmd+[, …) drive them.
+        case GHOSTTY_ACTION_NEW_SPLIT:
+            guard let window else { return false }
+            let direction: SplitTree<TerminalView>.Direction =
+                switch action.action.new_split {
+                case GHOSTTY_SPLIT_DIRECTION_DOWN: .down
+                case GHOSTTY_SPLIT_DIRECTION_LEFT: .left
+                case GHOSTTY_SPLIT_DIRECTION_UP: .up
+                default: .right
+                }
+            window.split(view, direction)
+            return true
+
+        case GHOSTTY_ACTION_GOTO_SPLIT:
+            guard let window else { return false }
+            let focus: SplitTree<TerminalView>.Focus =
+                switch action.action.goto_split {
+                case GHOSTTY_GOTO_SPLIT_PREVIOUS: .previous
+                case GHOSTTY_GOTO_SPLIT_UP: .up
+                case GHOSTTY_GOTO_SPLIT_LEFT: .left
+                case GHOSTTY_GOTO_SPLIT_DOWN: .down
+                case GHOSTTY_GOTO_SPLIT_RIGHT: .right
+                default: .next
+                }
+            return window.focusSplit(from: view, focus)
+
+        case GHOSTTY_ACTION_RESIZE_SPLIT:
+            guard let window else { return false }
+            let resize = action.action.resize_split
+            let direction: SplitTree<TerminalView>.Direction =
+                switch resize.direction {
+                case GHOSTTY_RESIZE_SPLIT_UP: .up
+                case GHOSTTY_RESIZE_SPLIT_DOWN: .down
+                case GHOSTTY_RESIZE_SPLIT_LEFT: .left
+                default: .right
+                }
+            window.resizeSplit(view, toward: direction, points: Double(resize.amount))
+            return true
+
+        case GHOSTTY_ACTION_EQUALIZE_SPLITS:
+            window?.equalizeSplits(view)
+            return window != nil
+
+        case GHOSTTY_ACTION_TOGGLE_SPLIT_ZOOM:
+            window?.toggleSplitZoom(view)
+            return window != nil
+
         case GHOSTTY_ACTION_CLOSE_TAB:
             guard let window, let view else { return false }
             window.closeTabs(of: view, mode: action.action.close_tab_mode)
@@ -216,6 +263,7 @@ final class GhosttyRuntime {
 
         case GHOSTTY_ACTION_SET_TITLE:
             guard let view, let title = action.action.set_title.title else { return false }
+            view.title = String(cString: title)
             view.onTitleChange?(String(cString: title))
             return true
 

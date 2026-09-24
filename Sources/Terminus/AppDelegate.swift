@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
     func applicationWillTerminate(_ notification: Notification) {
         // Save first: the autosave is debounced and would miss a quick quit.
         windowController?.saveSession()
-        windowController?.store.tabs.forEach { $0.terminal.close() }
+        windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
     }
 
     /// Returning to the app is "seeing" the selected tab.

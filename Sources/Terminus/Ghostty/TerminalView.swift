@@ -38,6 +38,10 @@ final class TerminalView: NSView {
     }
 
     var onTitleChange: ((String) -> Void)?
+    /// What the shell last set as the title (OSC 0/2).
+    var title: String?
+    /// It took the keyboard: in a split, it is now the focused pane.
+    var onFocus: (() -> Void)?
     var onWorkingDirectoryChange: ((String) -> Void)?
     /// ⌘F (Ghostty's start_search), with any needle it carries. The window
     /// answers with its search overlay; unset, the compact bar opens.
@@ -199,7 +203,10 @@ final class TerminalView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result { setFocused(true) }
+        if result {
+            setFocused(true)
+            onFocus?()
+        }
         return result
     }
 

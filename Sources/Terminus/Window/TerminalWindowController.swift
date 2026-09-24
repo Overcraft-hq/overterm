@@ -11,6 +11,8 @@ import SwiftUI
 final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let store = TabStore()
     private let container = NSView()
+    /// Each tab's panes, laid out; only the selected tab's is visible.
+    private var hosts: [Tab.ID: SplitHostView] = [:]
     private(set) var tree = FileTreeModel()
     private(set) var worktrees = WorktreeModel()
     let snippets = SnippetStore()
@@ -279,27 +281,65 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let inherited = source?.inheritedSettings()
         // The tab's own OSC 7 directory first: libghostty's inherited pwd can
         // lag it under load, and the new tab then opened in ~.
-        let known = store.tabs.first { $0.terminal === source }?.workingDirectory
+        let known = source?.workingDirectory
         let terminal = TerminalView(workingDirectory: known ?? inherited?.workingDirectory, fontSize: inherited?.fontSize)
-        addTab(terminal, after: store.tabs.first { $0.terminal === source })
+        addTab(terminal, after: tab(containing: source))
     }
 
     private func addTab(_ terminal: TerminalView, agent: Agent? = nil, after anchor: Tab?) {
         let tab = Tab(terminal: terminal, agent: agent)
-        terminal.onTitleChange = { [weak tab] in tab?.shellTitle = $0 }
-        terminal.onWorkingDirectoryChange = { [weak tab] in tab?.workingDirectory = $0 }
-        terminal.onSearchRequest = { [weak self, weak terminal] needle in
-            guard let self, let terminal else { return }
-            self.showSpotlight(for: terminal, needle: needle)
+        wire(terminal, in: tab)
+
+        let host = SplitHostView(
+            dividerColor: GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.18),
+            dimColor: GhosttyRuntime.shared.backgroundColor.withAlphaComponent(0.35))
+        host.onRatioChange = { [weak self, weak tab] path, ratio in
+            guard let self, let tab else { return }
+            tab.setSplits(tab.splits.settingRatio(ratio, at: path))
+            self.refreshHost(tab)
         }
-        terminal.onOpenLink = { [weak self, weak tab] text in
+        host.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(equalTo: container.topAnchor),
+            host.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            host.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        hosts[tab.id] = host
+        refreshHost(tab)
+        store.insert(tab, after: anchor)
+    }
+
+    /// Connects one pane to its tab and the window. The tab's title and
+    /// directory follow the focused pane; events and attention are the tab's.
+    private func wire(_ pane: TerminalView, in tab: Tab) {
+        pane.onTitleChange = { [weak tab, weak pane] title in
+            guard let tab, tab.terminal === pane else { return }
+            tab.shellTitle = title
+        }
+        pane.onWorkingDirectoryChange = { [weak tab, weak pane] directory in
+            guard let tab, tab.terminal === pane else { return }
+            tab.workingDirectory = directory
+        }
+        pane.onFocus = { [weak self, weak tab, weak pane] in
+            guard let self, let tab, let pane, tab.splits.contains(pane) else { return }
+            tab.focus(pane)
+            self.refreshHost(tab)
+            if self.store.selectedID == tab.id { self.bindSearchBar(to: pane) }
+        }
+        pane.onSearchRequest = { [weak self, weak pane] needle in
+            guard let self, let pane else { return }
+            self.showSpotlight(for: pane, needle: needle)
+        }
+        pane.onOpenLink = { [weak self, weak tab, weak pane] text in
             guard let self, let tab else { return false }
-            let directories = [tab.workingDirectory, self.diff.root?.path].compactMap { $0 }
+            let directories = [pane?.workingDirectory, tab.workingDirectory, self.diff.root?.path].compactMap { $0 }
             guard let link = FileLink.resolve(text, in: directories) else { return false }
             self.openInEditor(link.url, line: link.line)
             return true
         }
-        terminal.onEvent = { [weak self, weak tab] event in
+        pane.onEvent = { [weak self, weak tab] event in
             guard let self, let tab else { return }
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
                 AttentionNotifier.notify(tab: tab)
@@ -307,34 +347,120 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             if event == .bell, self.isVisible(tab) { NSSound.beep() }
             self.updateAttentionBadge()
         }
-        terminal.onClose = { [weak self, weak tab, weak terminal] _ in
+        pane.onClose = { [weak self, weak tab, weak pane] _ in
             // The shell exiting (you typed exit) closes silently; Ghostty's ⌘W
             // (close_surface) asks, and a pinned tab ignores it. libghostty
             // can call this a moment before it marks the process exited, so
             // look again shortly before deciding it was ⌘W.
-            Task { @MainActor [weak self, weak tab, weak terminal] in
+            Task { @MainActor [weak self, weak tab, weak pane] in
                 for attempt in 0...4 {
                     if attempt > 0 { try? await Task.sleep(nanoseconds: 50_000_000) }
-                    guard let self, let tab else { return }
-                    if terminal?.processExited != false {
-                        self.removeTab(tab)
+                    guard let self, let tab, let pane else { return }
+                    if pane.processExited {
+                        self.removePane(pane, from: tab)
                         return
                     }
                 }
-                guard let self, let tab, !tab.isPinned else { return }
-                self.closeTab(tab)
+                guard let self, let tab, let pane else { return }
+                if tab.isSplit {
+                    self.closePane(pane, in: tab)
+                } else if !tab.isPinned {
+                    self.closeTab(tab)
+                }
             }
         }
+    }
 
-        terminal.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(terminal)
-        NSLayoutConstraint.activate([
-            terminal.topAnchor.constraint(equalTo: container.topAnchor),
-            terminal.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            terminal.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            terminal.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        store.insert(tab, after: anchor)
+    /// The view laying out `tab`'s panes.
+    func host(of tab: Tab) -> SplitHostView? { hosts[tab.id] }
+
+    private func refreshHost(_ tab: Tab) {
+        hosts[tab.id]?.update(tree: tab.splits, focused: tab.terminal, zoomed: tab.zoomed)
+    }
+
+    /// The tab `pane` is in.
+    func tab(containing pane: TerminalView?) -> Tab? {
+        guard let pane else { return nil }
+        return store.tabs.first { $0.splits.contains(pane) }
+    }
+
+    // MARK: Splits
+
+    /// Splits `source` (else the selected tab's focused pane): a new pane
+    /// on `direction`'s side, in the same directory, with the keyboard.
+    func split(_ source: TerminalView?, _ direction: SplitTree<TerminalView>.Direction) {
+        guard let tab = tab(containing: source) ?? store.selected else { return }
+        let from = source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal
+        let inherited = from.inheritedSettings()
+        let pane = TerminalView(workingDirectory: from.workingDirectory ?? inherited.workingDirectory, fontSize: inherited.fontSize)
+        wire(pane, in: tab)
+        tab.zoomed = nil
+        tab.setSplits(tab.splits.inserting(pane, at: from, direction))
+        refreshHost(tab)
+        if store.selectedID == tab.id { window?.makeFirstResponder(pane) } else { tab.focus(pane) }
+    }
+
+    /// Moves the keyboard to the pane beside `source`'s. Unzooms.
+    @discardableResult
+    func focusSplit(from source: TerminalView?, _ focus: SplitTree<TerminalView>.Focus) -> Bool {
+        guard let tab = tab(containing: source) ?? store.selected,
+            let next = tab.splits.neighbor(of: source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal, focus)
+        else { return false }
+        tab.zoomed = nil
+        refreshHost(tab)
+        window?.makeFirstResponder(next)
+        return true
+    }
+
+    /// Ghostty's resize_split: `points` toward `direction`.
+    func resizeSplit(_ source: TerminalView?, toward direction: SplitTree<TerminalView>.Direction, points: Double) {
+        guard let tab = tab(containing: source) ?? store.selected, let host = hosts[tab.id] else { return }
+        let size = direction.axis == .horizontal ? host.bounds.width : host.bounds.height
+        guard size > 0 else { return }
+        tab.setSplits(tab.splits.resizing(source ?? tab.terminal, toward: direction, by: points / Double(size)))
+        refreshHost(tab)
+    }
+
+    func equalizeSplits(_ source: TerminalView?) {
+        guard let tab = tab(containing: source) ?? store.selected else { return }
+        tab.setSplits(tab.splits.equalized())
+        refreshHost(tab)
+    }
+
+    /// The focused pane alone, filling the tab — or back to all of them.
+    func toggleSplitZoom(_ source: TerminalView?) {
+        guard let tab = tab(containing: source) ?? store.selected, tab.isSplit else { return }
+        let pane = source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal
+        tab.zoomed = tab.zoomed == nil ? pane : nil
+        refreshHost(tab)
+        window?.makeFirstResponder(pane)
+    }
+
+    /// ⌘W on a pane of a split tab: closes it, asking first only if
+    /// something runs in it (closing the whole tab always asks).
+    func closePane(_ pane: TerminalView, in tab: Tab) {
+        guard tab.isSplit else { return closeTab(tab) }
+        guard pane.needsConfirmClose, let window else { return removePane(pane, from: tab) }
+        let alert = NSAlert()
+        alert.messageText = "Close this pane?"
+        alert.informativeText = "Something is still running in it. Closing kills it."
+        alert.addButton(withTitle: "Close Pane")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self, weak tab, weak pane] response in
+            guard response == .alertFirstButtonReturn, let self, let tab, let pane else { return }
+            self.removePane(pane, from: tab)
+        }
+    }
+
+    /// Takes `pane` out of `tab` — the tab itself when it was its last pane.
+    private func removePane(_ pane: TerminalView, from tab: Tab) {
+        guard tab.isSplit, let rest = tab.splits.removing(pane) else { return removeTab(tab) }
+        let wasFocused = tab.terminal === pane
+        pane.close()
+        pane.removeFromSuperview()
+        tab.setSplits(rest)
+        refreshHost(tab)
+        if wasFocused, store.selectedID == tab.id { window?.makeFirstResponder(tab.terminal) }
     }
 
     /// Opens a tab after the selected one, starting in `directory` — and
@@ -516,11 +642,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     private func pollAgentDirectory() {
         guard let tab = store.selected else { return }
-        let root = SurfaceProcesses.shared.loginPID(of: tab.terminal)
-        let tag = tab.terminal.processTag
+        // The focused pane's agent first, then any other pane's.
+        let panes = [tab.terminal] + tab.terminals.filter { $0 !== tab.terminal }
+        let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         let inspector = self.inspector
         DispatchQueue.global(qos: .utility).async {
-            let agent = inspector.tree(root: root, tag: tag).flatMap(\.flattened).first { Self.isAgent($0) }
+            let agent = roots.lazy.compactMap { root, tag in
+                inspector.tree(root: root, tag: tag).flatMap(\.flattened).first { Self.isAgent($0) }
+            }.first
             let directory = agent?.workingDirectory
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -1048,6 +1177,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: "⌘T", symbol: "plus") { [weak self] _ in
                 self?.newTab(from: self?.store.selected?.terminal)
             },
+            PaletteItem(id: "a.splitRight", group: .action, title: "Split Right", subtitle: "⌘D", symbol: "rectangle.split.2x1") {
+                [weak self] _ in self?.split(nil, .right)
+            },
+            PaletteItem(id: "a.splitDown", group: .action, title: "Split Down", subtitle: "⇧⌘D", symbol: "rectangle.split.1x2") {
+                [weak self] _ in self?.split(nil, .down)
+            },
             PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
                 [weak self] _ in self?.newTask(nil)
             },
@@ -1056,6 +1191,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 symbol: "sparkles"
             ) { [weak self] _ in self?.cleanUpMergedWorktrees(nil) },
         ]
+        if store.selected?.isSplit == true {
+            items += [
+                PaletteItem(id: "a.nextPane", group: .action, title: "Next Pane", subtitle: "⌘]", symbol: "arrow.right.square") {
+                    [weak self] _ in self?.focusSplit(from: nil, .next)
+                },
+                PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "⇧⌘↩ — alone, full size, and back", symbol: "arrow.up.left.and.arrow.down.right") {
+                    [weak self] _ in self?.toggleSplitZoom(nil)
+                },
+                PaletteItem(id: "a.equalizePanes", group: .action, title: "Equalize Panes", subtitle: "⌃⌘=", symbol: "equal.square") {
+                    [weak self] _ in self?.equalizeSplits(nil)
+                },
+                PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: "⌘W", symbol: "xmark.square") {
+                    [weak self] _ in
+                    guard let self, let tab = self.store.selected else { return }
+                    self.closePane(tab.terminal, in: tab)
+                },
+            ]
+        }
         items += Agent.allCases.map { agent in
             PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol) {
                 [weak self] _ in self?.newAgentTab(agent)
@@ -1228,7 +1381,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// What closing these tabs would end — running processes by name, agents
     /// first, since an agent's conversation is what you'd lose.
     static func closeWarning(for tabs: [Tab]) -> String {
-        let busy = tabs.filter { $0.terminal.needsConfirmClose }
+        let busy = tabs.filter { $0.terminals.contains { $0.needsConfirmClose } }
         guard !busy.isEmpty else {
             return tabs.count == 1 ? "Its shell is idle." : "Their shells are idle."
         }
@@ -1239,15 +1392,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     private func removeTab(_ tab: Tab) {
         AttentionNotifier.withdraw(tab: tab)
-        tab.terminal.close()
-        tab.terminal.removeFromSuperview()
+        for pane in tab.terminals {
+            pane.close()
+            pane.removeFromSuperview()
+        }
+        hosts[tab.id]?.removeFromSuperview()
+        hosts[tab.id] = nil
         store.remove(tab)
         updateAttentionBadge()
         if store.tabs.isEmpty { window?.close() }
     }
 
     func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
-        guard let tab = store.tabs.first(where: { $0.terminal === view }), let i = store.index(of: tab) else { return }
+        guard let tab = tab(containing: view), let i = store.index(of: tab) else { return }
         switch mode {
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER:
             closeTabs(store.tabs.filter { $0.id != tab.id && !$0.isPinned })
@@ -1272,7 +1429,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func moveTab(of view: TerminalView, by amount: Int) {
-        guard let tab = store.tabs.first(where: { $0.terminal === view }) else { return }
+        guard let tab = tab(containing: view) else { return }
         store.move(tab, by: amount)
     }
 
@@ -1284,9 +1441,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private func showSelectedTab() {
         guard let selected = store.selected else { return }
         for tab in store.tabs where tab.id != selected.id {
-            tab.terminal.setVisible(false)
+            hosts[tab.id]?.setVisible(false)
         }
-        selected.terminal.setVisible(true)
+        hosts[selected.id]?.setVisible(true)
         // Not while a tab name is being edited: that field has the keyboard.
         if store.renamingID == nil { window?.makeFirstResponder(selected.terminal) }
         window?.title = selected.title
@@ -1315,14 +1472,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
     @objc func newClaudeTab(_ sender: Any?) { newAgentTab(.claude) }
     @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
+    /// ⌘W: the focused pane of a split tab, else the tab.
     @objc func closeSelectedTab(_ sender: Any?) {
         guard let tab = store.selected else { return }
-        if tab.isPinned {
+        if tab.isSplit {
+            closePane(tab.terminal, in: tab)
+        } else if tab.isPinned {
             NSSound.beep()
         } else {
             closeTab(tab)
         }
     }
+
+    @objc func splitRight(_ sender: Any?) { split(nil, .right) }
+    @objc func splitDown(_ sender: Any?) { split(nil, .down) }
+    @objc func selectNextPane(_ sender: Any?) { focusSplit(from: nil, .next) }
+    @objc func selectPreviousPane(_ sender: Any?) { focusSplit(from: nil, .previous) }
+    @objc func equalizePanes(_ sender: Any?) { equalizeSplits(nil) }
+    @objc func togglePaneZoom(_ sender: Any?) { toggleSplitZoom(nil) }
 
     @objc func toggleDiff(_ sender: Any?) {
         guard let diffItem else { return }
@@ -1384,7 +1551,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         agentPoll?.invalidate()
-        for tab in store.tabs { tab.terminal.close() }
+        for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }
 }
 

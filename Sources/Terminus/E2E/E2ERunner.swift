@@ -36,6 +36,7 @@ final class E2ERunner {
         "spotlight": { await $0.spotlightScenario() },
         "link": { await $0.linkScenario() },
         "cleanup": { await $0.cleanupScenario() },
+        "splits": { await $0.splitsScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -462,7 +463,7 @@ final class E2ERunner {
     /// Snippets: starters seeded; Run types and executes; placeholders ask.
     private func snippetsScenario() async {
         check("first run seeds the starters", app.snippets.snippets.first?.command == "mise run validate")
-        await waitForPrompt()
+        await settledPrompt()
         app.useSnippet(Snippet(name: "e2e", command: "echo snippet-ran > \(out("snip").path)"), run: true)
         let ran = await eventually { (try? String(contentsOf: self.out("snip"), encoding: .utf8)) == "snippet-ran\n" }
         check("Run types it and presses Return (bracketed paste)", ran)
@@ -481,10 +482,10 @@ final class E2ERunner {
     /// What Claude Code sends — progress while working (OSC 9;4), a
     /// notification when it wants you (OSC 777) — marks a background tab.
     private func attention() async {
-        await waitForPrompt()
+        await settledPrompt()
         guard let first = app.store.selected else { return check("a tab", false) }
         app.newTab(nil)
-        await waitForPrompt()
+        await settledPrompt()
         let second = app.store.selected!
 
         emit("9;4;3;0", from: first)
@@ -1034,6 +1035,100 @@ final class E2ERunner {
         check(
             "the list updates", await eventually { self.app.worktrees.worktrees.count == 4 },
             app.worktrees.worktrees.map(\.displayName).joined(separator: ","))
+    }
+
+    /// Splits: made from the menu and from Ghostty's own bindings, the
+    /// keyboard moved and the layout resized by them, a divider dragged,
+    /// a pane zoomed, and panes closed by exit and by ⌘W.
+    private func splitsScenario() async {
+        await waitForPrompt()
+        guard let tab = app.store.selected, let host = app.host(of: tab) else { return check("a tab", false) }
+        let first = tab.terminal
+        await runAndExpect("sleep 71 & echo a > \(out("left").path)", file: out("left"), content: "a", "a job in the first pane")
+
+        app.splitRight(nil)
+        check("Split Right makes a second pane", tab.terminals.count == 2)
+        let right = tab.terminals[1]
+        check("the new pane has the keyboard", await eventually(2) { self.window.firstResponder === right && tab.terminal === right })
+        await eventually(2) { right.frame.width > 0 }
+        check(
+            "side by side, half each", abs(first.frame.width - right.frame.width) <= 1 && right.frame.minX > first.frame.maxX,
+            "\(first.frame) | \(right.frame)")
+        await runAndExpect(
+            "sleep 72 & echo right > \(out("right").path)", file: out("right"), content: "right", "typing goes to the focused pane")
+
+        // Tab Info is the whole tab's: both panes' jobs.
+        app.showInfo(for: tab)
+        if let model = app.infoModel {
+            let both = await eventually(8) {
+                let commands = model.processes.flatMap(\.flattened).map(\.command)
+                return commands.contains { $0.hasPrefix("sleep 71") } && commands.contains { $0.hasPrefix("sleep 72") }
+            }
+            check("Tab Info lists every pane's processes", both, model.processes.flatMap(\.flattened).map(\.command).joined(separator: " | "))
+        } else {
+            check("Tab Info opens", false)
+        }
+        app.infoPopover?.performClose(nil)
+        await eventually(2) { self.app.infoPopover?.isShown != true }
+        window.makeFirstResponder(right)
+
+        right.perform(binding: "new_split:down")
+        check("Ghostty's new_split makes a third", tab.terminals.count == 3)
+        let below = tab.terminals[2]
+        check("below the second", await eventually(2) { below.frame.minY > right.frame.maxY && abs(below.frame.minX - right.frame.minX) < 1 })
+
+        below.perform(binding: "goto_split:left")
+        check("goto_split moves the keyboard", await eventually(2) { self.window.firstResponder === first && tab.terminal === first })
+        check("unfocused panes are dimmed", host.subviews.filter { !($0 is TerminalView) && !$0.isHidden }.count == 2)
+
+        let before = first.frame.width
+        first.perform(binding: "resize_split:right,60")
+        check("resize_split moves the divider", await eventually(2) { first.frame.width > before + 40 }, "\(before) → \(first.frame.width)")
+        first.perform(binding: "equalize_splits")
+        check("equalize_splits evens it out", await eventually(2) { abs(first.frame.width - right.frame.width) <= 1 })
+
+        // A real drag on the divider, 3 pt off the 1 pt line — a quarter of
+        // the way down, clear of where the right column's divider meets it.
+        let start = host.convert(NSPoint(x: first.frame.maxX + 3, y: host.bounds.height / 4), to: nil)
+        let end = NSPoint(x: start.x - 80, y: start.y)
+        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        let widthBefore = first.frame.width
+        // The divider tracks the drag in its own loop: queue the rest first.
+        NSApp.postEvent(mouse(.leftMouseDragged, end), atStart: false)
+        NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
+        window.sendEvent(mouse(.leftMouseDown, start))
+        check("the divider drags", abs(first.frame.width - (widthBefore - 80)) <= 2, "\(widthBefore) → \(first.frame.width)")
+
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+
+        first.perform(binding: "toggle_split_zoom")
+        check(
+            "zoom shows the pane alone",
+            await eventually(2) { first.frame.size == host.bounds.size && right.isHidden && below.isHidden })
+        first.perform(binding: "toggle_split_zoom")
+        check("and back", await eventually(2) { !right.isHidden && !below.isHidden && first.frame.width < host.bounds.width })
+
+        // exit in a pane closes just that pane.
+        window.makeFirstResponder(below)
+        await eventually(2) { tab.terminal === below }
+        let exited = await run("exit") { tab.terminals.count == 2 }
+        check("exit closes only its pane", exited && !tab.terminals.contains { $0 === below }, "\(tab.terminals.count) panes")
+        check("and the tab stays", app.store.tabs.contains { $0.id == tab.id })
+
+        // ⌘W on an idle pane: closed without asking.
+        window.makeFirstResponder(right)
+        await eventually(2) { tab.terminal === right }
+        app.closeSelectedTab(nil)
+        check("⌘W closes the focused pane", await eventually(2) { tab.terminals.count == 1 } && window.attachedSheet == nil)
+        check("the last pane fills the tab again", await eventually(2) { first.frame.size == host.bounds.size })
+        check("and has the keyboard", await eventually(2) { self.window.firstResponder === first })
     }
 
     /// ⌘P shows, searches across kinds, and hides.
