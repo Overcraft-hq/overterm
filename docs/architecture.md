@@ -191,8 +191,25 @@ on by default (checked against 2.1.280).
 | What | Where |
 |---|---|
 | Tabs (cwd, name, colour, pin, agent) + selection | `~/Library/Application Support/Terminus/session.json` (1 s debounced + on quit) |
+| Shell panes' text (last 2000 lines, plain) | `…/Terminus/scrollback/<uuid>.txt`, named in session.json; written once, at quit or window close |
 | Snippets | `…/Terminus/snippets.json` |
 | Sidebar/diff visible, sidebar panel | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`) |
 | Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
 
 Bundle id `ai.promptrails.terminus`.
+
+### Scrollback restore
+
+libghostty can't feed output into a surface, so a restored pane runs a
+launcher (`Scrollback.launcher`, in the temporary directory — Ghostty runs
+the command through `bash -c`, and "Application Support" has a space) named
+after the shell: Ghostty picks its shell integration by that name. The
+launcher clears login(1)'s fresh "Last login", prints the saved file, deletes
+it, and `exec -a -zsh`s the real shell; the integration's environment (ZDOTDIR
+for zsh) passes through, so OSC 7 and prompt marks keep working. zsh and fish
+only — bash's integration goes through its arguments. Agent tabs aren't
+saved: their conversation resumes (`claude --continue`) instead.
+
+The final save runs once, at whichever comes first of the window closing and
+the app quitting: after the window closes its terminals are gone, and a later
+save would drop the text.

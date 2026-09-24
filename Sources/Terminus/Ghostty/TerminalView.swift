@@ -72,7 +72,9 @@ final class TerminalView: NSView {
     ///     running it as the surface's command.
     ///   - fontSize: carry a tab's zoom level over to its sibling; config
     ///     default when nil.
-    init(workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil) {
+    ///   - restoring: a pane's saved text (Scrollback) to print before the
+    ///     shell starts; ignored for a shell the launcher can't front.
+    init(workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil, restoring: URL? = nil) {
         // A non-zero initial frame so the renderer's layer has real bounds
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -105,6 +107,20 @@ final class TerminalView: NSView {
             free(tagValue)
         }
         var env = [ghostty_env_var_s(key: tagKey, value: tagValue)]
+        // A restored pane runs the launcher (named after the shell) instead.
+        let launcher = restoring.flatMap { _ in Scrollback.launcher() }
+        let commandC = launcher.map { strdup($0) }
+        let restoreKey = strdup(Scrollback.fileVariable)
+        let restoreValue = restoring.map { strdup($0.path) }
+        defer {
+            commandC.map { free($0) }
+            free(restoreKey)
+            restoreValue.map { free($0) }
+        }
+        if let commandC, let restoreValue {
+            config.command = UnsafePointer(commandC)
+            env.append(ghostty_env_var_s(key: restoreKey, value: restoreValue))
+        }
         surface = env.withUnsafeMutableBufferPointer { buffer in
             config.env_vars = buffer.baseAddress
             config.env_var_count = buffer.count
@@ -542,11 +558,16 @@ final class TerminalView: NSView {
     private func performBinding(_ action: String) { perform(binding: action) }
 
     /// The text on screen now (the viewport), one line per row.
-    var visibleText: String? {
+    var visibleText: String? { text(of: GHOSTTY_POINT_VIEWPORT) }
+
+    /// Everything the pane holds: scrollback and screen.
+    var scrollbackText: String? { text(of: GHOSTTY_POINT_SCREEN) }
+
+    private func text(of region: ghostty_point_tag_e) -> String? {
         guard let surface else { return nil }
         let selection = ghostty_selection_s(
-            top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
-            bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
+            top_left: ghostty_point_s(tag: region, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
+            bottom_right: ghostty_point_s(tag: region, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
             rectangle: false)
         var text = ghostty_text_s()
         guard ghostty_surface_read_text(surface, selection, &text) else { return nil }

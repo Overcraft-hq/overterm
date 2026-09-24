@@ -39,6 +39,7 @@ final class E2ERunner {
         "splits": { await $0.splitsScenario() },
         "pullRequest": { await $0.pullRequestScenario() },
         "overview": { await $0.overviewScenario() },
+        "scrollback": { await $0.scrollbackScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1309,6 +1310,43 @@ final class E2ERunner {
         app.chooseOverviewCard(agentTab.id)
         check("a card goes to its tab", app.overviewView?.isHidden == true && app.store.selectedID == agentTab.id)
         check("with the keyboard", await eventually(3) { self.app.store.selected?.terminal === self.window.firstResponder })
+    }
+
+    /// A shell pane's text is saved at quit and printed back into the pane
+    /// on the next launch — whose shell still has Ghostty's integration.
+    private func scrollbackScenario() async {
+        guard let tab = app.store.selected else { return check("a tab", false) }
+        await runAndExpect("echo marker-from-before > \(out("m").path); echo marker-from-before", file: out("m"), content: "marker-from-before", "output in the pane")
+        await eventually(3) { tab.terminal.scrollbackText?.contains("marker-from-before\n") == true }
+
+        let sessionFile = scratch.appendingPathComponent("session.json")
+        app.saveFinalSession(to: sessionFile)
+        let state = SessionState.load(from: sessionFile)
+        let saved = Scrollback.file(named: state?.tabs.first?.scrollback)
+        check("the final save keeps the pane's text", saved != nil, "\(String(describing: state?.tabs.first))")
+        let text = saved.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        check("in a file", text.contains("marker-from-before"), text.suffix(200).description)
+
+        // The next launch, in this window.
+        guard let state else { return }
+        app.restore(state)
+        guard let restored = app.store.tabs.last, restored.id != tab.id else { return check("a restored tab", false) }
+        app.store.select(restored)
+        let shown = await eventually(10) { restored.terminal.visibleText?.contains("restored from the last session") == true }
+        check("the new pane shows it", shown && restored.terminal.visibleText?.contains("marker-from-before") == true, restored.terminal.visibleText ?? "nil")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+        check("printed once: the file is gone", saved.map { !FileManager.default.fileExists(atPath: $0.path) } ?? false)
+        check("the shell still has its integration", await eventually(10) { restored.terminal.shellReported })
+        let dir = scratch.appendingPathComponent("after")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let followed = await run("cd \(dir.path)") {
+            restored.workingDirectory.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == dir.resolvingSymlinksInPath().path
+        }
+        check("and reports its directory", followed, restored.workingDirectory ?? "nil")
+        await runAndExpect("echo $0 > \(out("shell").path)", file: out("shell"), content: "-zsh", "as a login zsh")
     }
 
     /// ⌘P shows, searches across kinds, and hides.

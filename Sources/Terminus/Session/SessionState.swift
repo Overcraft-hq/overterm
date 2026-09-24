@@ -17,30 +17,42 @@ struct SessionState: Codable, Equatable {
         var panes: PaneLayout?
         /// Which of `panes`, in reading order, had the keyboard.
         var focusedPane: Int?
+        /// A one-pane tab's saved text (a file in Scrollback.directory).
+        var scrollback: String?
     }
 
     /// A split tab's layout: each pane's directory, each split's shape.
     indirect enum PaneLayout: Codable, Equatable {
-        case pane(directory: String?)
+        /// `scrollback`: the pane's saved text, a file in Scrollback.directory.
+        case pane(directory: String?, scrollback: String? = nil)
         case split(axis: String, ratio: Double, first: PaneLayout, second: PaneLayout)
 
-        init<Leaf>(_ tree: SplitTree<Leaf>, directory: (Leaf) -> String?) {
+        init<Leaf>(_ tree: SplitTree<Leaf>, directory: (Leaf) -> String?, scrollback: (Leaf) -> String? = { _ in nil }) {
             switch tree {
             case .leaf(let leaf):
-                self = .pane(directory: directory(leaf))
+                self = .pane(directory: directory(leaf), scrollback: scrollback(leaf))
             case .split(let axis, let ratio, let first, let second):
                 self = .split(
-                    axis: axis.rawValue, ratio: ratio, first: PaneLayout(first, directory: directory),
-                    second: PaneLayout(second, directory: directory))
+                    axis: axis.rawValue, ratio: ratio, first: PaneLayout(first, directory: directory, scrollback: scrollback),
+                    second: PaneLayout(second, directory: directory, scrollback: scrollback))
             }
         }
 
-        /// The tree again, `make` building each pane from its directory
-        /// (in reading order). An unknown axis falls back to side by side.
-        func tree<Leaf>(_ make: (String?) -> Leaf) -> SplitTree<Leaf> {
+        /// Every saved text it refers to.
+        var scrollbackFiles: [String] {
             switch self {
-            case .pane(let directory):
-                return .leaf(make(directory))
+            case .pane(_, let scrollback): scrollback.map { [$0] } ?? []
+            case .split(_, _, let first, let second): first.scrollbackFiles + second.scrollbackFiles
+            }
+        }
+
+        /// The tree again, `make` building each pane from its directory and
+        /// saved text (in reading order). An unknown axis falls back to side
+        /// by side.
+        func tree<Leaf>(_ make: (_ directory: String?, _ scrollback: String?) -> Leaf) -> SplitTree<Leaf> {
+            switch self {
+            case .pane(let directory, let scrollback):
+                return .leaf(make(directory, scrollback))
             case .split(let axis, let ratio, let first, let second):
                 return .split(
                     axis: SplitTree<Leaf>.Axis(rawValue: axis) ?? .horizontal, ratio: min(max(ratio, 0.05), 0.95),

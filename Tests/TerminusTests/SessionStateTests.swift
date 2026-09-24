@@ -42,13 +42,41 @@ final class SessionStateTests: XCTestCase {
         var state = SessionState(tabs: [.init(workingDirectory: "/b", isPinned: false, panes: layout, focusedPane: 1)], selectedIndex: 0)
         try state.save(to: url)
         state = try XCTUnwrap(SessionState.load(from: url))
-        let rebuilt = try XCTUnwrap(state.tabs.first?.panes).tree(Pane.init)
+        let rebuilt = try XCTUnwrap(state.tabs.first?.panes).tree { directory, _ in Pane(directory) }
         XCTAssertEqual(rebuilt.leaves.map(\.directory), ["/a", "/b", nil])
         guard case .split(let axis, let ratio, _, .split(let inner, _, _, _)) = rebuilt else { return XCTFail("shape lost") }
         XCTAssertEqual(axis, .horizontal)
         XCTAssertEqual(ratio, 0.3, accuracy: 0.001)
         XCTAssertEqual(inner, .vertical)
         XCTAssertEqual(state.tabs.first?.focusedPane, 1)
+    }
+
+    func testPanesCarryTheirSavedText() throws {
+        final class Pane {
+            let directory: String
+            init(_ directory: String) { self.directory = directory }
+        }
+        let a = Pane("/a"), b = Pane("/b")
+        let layout = SessionState.PaneLayout(
+            SplitTree.leaf(a).inserting(b, at: a, .down), directory: \.directory, scrollback: { $0 === b ? "b.txt" : nil })
+        XCTAssertEqual(layout.scrollbackFiles, ["b.txt"])
+        var files: [String?] = []
+        _ = layout.tree { directory, scrollback in
+            files.append(scrollback)
+            return Pane(directory ?? "")
+        }
+        XCTAssertEqual(files, [nil, "b.txt"])
+    }
+
+    func testASessionFromBeforeScrollbackStillLoads() throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(
+            #"{"tabs":[{"isPinned":false,"panes":{"split":{"axis":"horizontal","ratio":0.5,"first":{"pane":{"directory":"/a"}},"second":{"pane":{"directory":"/b"}}}}}]}"#
+                .utf8
+        ).write(to: url)
+        let tab = try XCTUnwrap(SessionState.load(from: url)?.tabs.first)
+        XCTAssertNil(tab.scrollback)
+        XCTAssertEqual(tab.panes?.scrollbackFiles, [])
     }
 
     func testMissingOrCorruptFileIsNil() throws {

@@ -52,6 +52,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let pullRequest = PullRequestModel()
     /// Asks GitHub again every minute: CI moves while nothing local changes.
     private var pullRequestPoll: Timer?
+    private var finalSaveDone = false
     private(set) var editor: EditorViewController?
     private(set) var editorItem: NSSplitViewItem?
     private(set) var diffItem: NSSplitViewItem?
@@ -551,16 +552,42 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Session
 
-    var sessionState: SessionState {
+    var sessionState: SessionState { sessionState(scrollback: [:]) }
+
+    /// `scrollback`: each pane's saved text, by pane (only at quit).
+    func sessionState(scrollback: [ObjectIdentifier: String]) -> SessionState {
         SessionState(
-            tabs: store.tabs.map {
+            tabs: store.tabs.map { tab in
                 .init(
-                    workingDirectory: $0.workingDirectory, customTitle: $0.customTitle, color: $0.color?.rawValue,
-                    isPinned: $0.isPinned, agent: $0.agent, attachedCheckout: $0.attachedCheckout?.path,
-                    panes: $0.isSplit ? SessionState.PaneLayout($0.splits, directory: \.workingDirectory) : nil,
-                    focusedPane: $0.isSplit ? $0.terminals.firstIndex { [tab = $0] in $0 === tab.terminal } : nil)
+                    workingDirectory: tab.workingDirectory, customTitle: tab.customTitle, color: tab.color?.rawValue,
+                    isPinned: tab.isPinned, agent: tab.agent, attachedCheckout: tab.attachedCheckout?.path,
+                    panes: tab.isSplit
+                        ? SessionState.PaneLayout(tab.splits, directory: \.workingDirectory, scrollback: { scrollback[ObjectIdentifier($0)] })
+                        : nil,
+                    focusedPane: tab.isSplit ? tab.terminals.firstIndex { $0 === tab.terminal } : nil,
+                    scrollback: tab.isSplit ? nil : scrollback[ObjectIdentifier(tab.terminal)])
             },
             selectedIndex: store.selectedIndex)
+    }
+
+    /// The last save, at quit or when the window closes (whichever comes
+    /// first — after it the terminals are gone): with each shell pane's
+    /// text. Agent tabs' aren't kept: their conversation resumes instead.
+    func saveFinalSession(to url: URL = SessionState.defaultURL) {
+        guard !finalSaveDone else { return }
+        finalSaveDone = true
+        var saved: [ObjectIdentifier: String] = [:]
+        for tab in store.tabs where tab.agent == nil {
+            for pane in tab.terminals {
+                if let text = pane.scrollbackText, let name = Scrollback.save(text) { saved[ObjectIdentifier(pane)] = name }
+            }
+        }
+        Scrollback.removeAll(except: Set(saved.values))
+        do {
+            try sessionState(scrollback: saved).save(to: url)
+        } catch {
+            GhosttyRuntime.logger.error("session save failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Rebuilds saved tabs: a fresh shell in each old directory (home if it
@@ -570,15 +597,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         for saved in state.tabs {
             // A split tab's panes, the first resuming the agent; else one terminal.
             var made: [TerminalView] = []
-            let layout = saved.panes?.tree { directory -> TerminalView in
+            let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
                 let pane = TerminalView(
-                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand + "\n" } : nil)
+                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand + "\n" } : nil,
+                    restoring: Scrollback.file(named: scrollback))
                 made.append(pane)
                 return pane
             }
             let terminal =
                 made.first
-                ?? TerminalView(workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand + "\n" })
+                ?? TerminalView(
+                    workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand + "\n" },
+                    restoring: Scrollback.file(named: saved.scrollback))
             addTab(terminal, agent: saved.agent, after: store.tabs.last)
             guard let tab = store.tabs.last else { continue }
             if let layout, made.count > 1 {
@@ -1684,6 +1714,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
+        saveFinalSession()
         agentPoll?.invalidate()
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()

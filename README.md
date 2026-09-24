@@ -13,8 +13,9 @@ theme, keybinds) applies as-is. Private, internal tool.
 
 - **Tabs** in the title bar, Chrome-style: rename (double-click), colour, pin
   (pinned = protected from ⌘W), drag to reorder. Tabs, their names, colours,
-  pins and directories come back on relaunch; agent tabs resume their last
-  conversation (`claude --continue`, `codex resume --last`).
+  pins and directories come back on relaunch, shell panes with their text
+  (the last 2000 lines); agent tabs resume their last conversation
+  (`claude --continue`, `codex resume --last`).
 - **Agents**: open a Claude or Codex tab; the agent runs inside a normal shell,
   so quitting it leaves the tab usable.
 - **New Task**: branch name in, `git worktree add` next to the repo
