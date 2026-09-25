@@ -864,9 +864,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         let inspector = self.inspector
         DispatchQueue.global(qos: .utility).async {
-            let agent = roots.lazy.compactMap { root, tag in
-                inspector.tree(root: root, tag: tag).flatMap(\.flattened).first { Self.isAgent($0) }
-            }.first
+            let agent = Self.firstAgent(in: roots) { inspector.tree(root: $0, tag: $1) }
             let directory = agent?.workingDirectory
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -878,6 +876,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 }
             }
         }
+    }
+
+    /// The first agent process under a tab's panes (`roots`: each pane's
+    /// login and tag, in order). `tree` is ProcessInspector.tree, read once
+    /// per pane: it answers from the live process table, differently from
+    /// one read to the next. (`lazy.compactMap(…).first` read the pane it
+    /// returned twice and force-unwrapped the second answer — an agent
+    /// exiting in between crashed the app.)
+    nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
+        for (root, tag) in roots {
+            if let agent = tree(root, tag).flatMap(\.flattened).first(where: isAgent) { return agent }
+        }
+        return nil
     }
 
     /// Claude Code or Codex, by process name or argv[0].

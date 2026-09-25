@@ -109,3 +109,4 @@ in `deinit`.
 | Tab rename ends as soon as it starts | Something took first responder after it began — re-selecting the tab used to (focus → terminal). `TERMINUS_DUMP_RENAME` checks it. |
 | Diff empty in a fresh repo | No HEAD yet: diff against the empty tree (`DiffModel.emptyTree`); `restore --staged` needs HEAD, use `rm --cached --force`. |
 | Idle shell reported as running | Shell integration hasn't reported the prompt yet (first seconds after launch). |
+| The app aborts with `Swift/FlatMap.swift: Unexpectedly found nil` while an agent starts or exits | `lazy.compactMap(…).first` read a pane's process tree twice and force-unwrapped the second read, by which time the agent was gone. Read live state once, in a loop (`TerminalWindowController.firstAgent`). |

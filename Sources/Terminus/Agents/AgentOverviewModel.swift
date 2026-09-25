@@ -52,9 +52,7 @@ final class AgentOverviewModel: ObservableObject {
     }
 
     nonisolated private static func card(for snapshot: Snapshot, inspector: ProcessInspector) -> Card {
-        let process = snapshot.roots.lazy.compactMap { root, tag in
-            inspector.tree(root: root, tag: tag).flatMap(\.flattened).first { TerminalWindowController.isAgent($0) }
-        }.first
+        let process = TerminalWindowController.firstAgent(in: snapshot.roots) { inspector.tree(root: $0, tag: $1) }
         let running = process.flatMap(Self.agent(of:))
         let agent = running ?? snapshot.agent
         let directory = process?.workingDirectory ?? snapshot.directory

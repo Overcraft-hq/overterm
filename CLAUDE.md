@@ -56,6 +56,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **`tab.terminal` is the focused pane**, not "the tab's terminal". Anything about the whole tab (closing, its processes, busy checks) must go over `tab.terminals`, or it silently ignores the other panes of a split. Find a pane's tab with `tab(containing:)`.
 - **Don't re-publish selection**: `TabStore.select` is a no-op for the selected tab; a selection change takes the keyboard for the terminal, which kills an in-place rename.
 - **SwiftUI `Text("…\(number)")` localizes the number** (Turkish locale: `:54.631`, `+1.234`). Use `Text(verbatim:)` for counts, ports, pids.
+- **No `lazy.compactMap(…).first` over live state** (process trees, files): on a collection it runs the transform twice for the element it returns and force-unwraps the second answer — an agent exiting in between crashed the app. Loop and read once (`firstAgent(in:tree:)`).
 - **Never `pkill -f <pattern>` in tests** — it once killed the shell running them. Kill the exact pids you found.
 - **Typing text then running it**: `insertText` is a bracketed paste, so a trailing newline is literal. Use `pressReturn()`.
 - Keep features built-in (Claude, Codex, the snippet starters); no plugin slots.
