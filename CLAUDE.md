@@ -23,7 +23,7 @@ make icon                    # Resources/AppIcon.svg → AppIcon.icns
 
 | Path | What |
 |---|---|
-| `Sources/Terminus/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse), `GhosttyInput` |
+| `Sources/Terminus/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
 | `Sources/Terminus/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabActivity` (needs-you flags), `Agent`, tab context menu |
 | `Sources/Terminus/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme`, `AttentionNotifier`, split controllers |
 | `Sources/Terminus/Sidebar/` | Files / Worktrees / Snippets panels, `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |

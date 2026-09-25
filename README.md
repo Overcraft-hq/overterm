@@ -35,6 +35,12 @@ theme, keybinds) applies as-is. Private, internal tool.
   work stays visible after it commits. The badge shows in any repository: the
   uncommitted totals, else the branch's, else a plain ±; a click on it opens
   the scope it counts.
+- **Drop files on a terminal** — from Finder, the Desktop, another app,
+  Photos or Safari (their images are saved first), or the sidebar's file
+  tree: a shell gets their quoted paths; where Claude Code runs, other files
+  and folders become `@`-mentions (relative to where it works) and images
+  their paths, which it attaches as `[Image #N]`. Hold ⌥ for plain paths.
+  Text and links go in as text. Nothing runs until you press Return.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
 - **Merged worktree clean-up**: merged worktrees (merged into the default
@@ -79,6 +85,7 @@ theme, keybinds) applies as-is. Private, internal tool.
 | ⇧⌘A | Agent overview |
 | ⌘F | Search terminal + files (↵ open; the terminal row keeps a find bar) |
 | ⌘-click | Open a printed `path:line` in the editor |
+| ⌥ while dropping files | Plain quoted paths, even where Claude Code runs |
 
 ## Build
 

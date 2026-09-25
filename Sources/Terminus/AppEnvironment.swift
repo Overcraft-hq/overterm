@@ -28,6 +28,18 @@ enum AppEnvironment {
             .appendingPathComponent("Terminus", isDirectory: true)
     }()
 
+    /// Files dropped onto a terminal as promises (Photos, Safari, the
+    /// screenshot thumbnail write theirs only when asked) land here, a
+    /// folder per drop. The caches, where macOS may clear them in time; an
+    /// isolated run keeps them in its own support directory.
+    static let dropsDirectory: URL = {
+        if isIsolated || env["TERMINUS_SUPPORT_DIR"] != nil {
+            return supportDirectory.appendingPathComponent("Drops", isDirectory: true)
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ai.promptrails.terminus/Drops", isDirectory: true)
+    }()
+
     private static let isolatedSuite = "ai.promptrails.terminus.isolated"
 
     /// UserDefaults.standard, or a throwaway suite for an isolated run.

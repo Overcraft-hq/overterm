@@ -261,6 +261,55 @@ not survive a reinstall; `make install` re-signs the installed copy with
 `SIGN_IDENTITY` (environment or the untracked `local.mk`) when it is set, and
 one identity keeps the grant (README, Build).
 
+## Dropping onto a terminal
+
+Every pane (`TerminalView`) is a drag destination for file URLs, file
+promises and text (`Sources/Terminus/Ghostty/TerminalDrop.swift`). A drop is
+a paste (`insertText`), never Return: the references separated by spaces,
+with a trailing space; the pane gets the keyboard.
+
+- **What a drag carries** (`TerminalDrop.payload`), in order: file URLs
+  (Finder, the Desktop, the sidebar — reference URLs resolved to paths);
+  else file promises (Photos, Safari, the screenshot thumbnail), received
+  into a folder of their own under `AppEnvironment.dropsDirectory`
+  (~/Library/Caches/ai.promptrails.terminus/Drops; an isolated run's own);
+  else web URLs, else text, both inserted as they are, less line breaks at
+  either end.
+- **What goes in** (`TerminalDrop.insertion`, pure) depends on what has the
+  pane's keyboard. Claude Code: an image (png, jpg, jpeg, gif, webp) as its
+  absolute path, whitespace and backslashes escaped with a backslash; any
+  other file or a folder (with a `/`) as `@path`, relative to where Claude
+  works when inside it, else absolute — `@"path"` where the plain form would
+  be cut (whitespace; an ending that isn't a letter, digit or `_`), the plain
+  quoted path where neither carries it (`#`, a quote with whitespace).
+  Anything else — a shell, vim, Codex — and any drop with ⌥ held: shell-quoted
+  absolute paths (`shellQuoted`), as Terminal does.
+- **Why those forms** (Claude Code 2.1.282, read from its bundle): a paste is
+  split before each ` /` and at line breaks; a part that, trimmed, stripped of
+  one pair of surrounding quotes and backslash-unescaped, ends in an image
+  extension is read and becomes `[Image #N]`, placed before what is left of
+  the paste. Only backslash escapes survive several images (a quoted path
+  isn't split off), so images go last and the rest starts with a space — an
+  `@` right after `]` is no mention. On submit it attaches
+  `(^|\s)@"([^"]+)"` and `(^|\s)@([^\s]+)\b`, cutting a `#L…` range off;
+  its own completion quotes a path with a space.
+- **What runs in a pane** (`TerminalDrop.program`): the pane's process tree
+  (`ProcessInspector.tree` under its login) holds a Claude process — by name
+  or argv[0], as the agent overview finds one — in the tty's foreground
+  process group (the login's `e_tpgid`); one left running in the background
+  doesn't count. Per pane, looked at afresh at each drop and on entering, on
+  a serial queue: pairing a new pane with its login lists the app's children
+  off the main thread too. Drops are typed in the order they came
+  (`pendingDrops`), whatever each waited for.
+- **While dragging**: `DropHighlightView`, over the pane's frame in its
+  superview, above a split's dims — an accent border and a label, "Drop to
+  insert path" / "Drop to insert @ reference" / "Drop to insert text", with a
+  count for several files. It clips to the pane, never takes a click, a drag
+  or the keyboard, and goes on exit or drop.
+- **The sidebar**: file tree rows (files and folders) drag their file URL
+  (`FileTreeDrag`, SwiftUI `onDrag`); click, double-click and the row's menu
+  are unchanged.
+
 ## Opening files in another app
 
 A file leaves Terminus — the file tree's double-click, its menu's **Open in
@@ -300,6 +349,7 @@ opener (the browser).
 | Snippets | `…/Terminus/snippets.json` |
 | Sidebar/changes visible, sidebar panel, changes scope | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`, `diffScope`) |
 | The app files open in | `UserDefaults` (`openWithApp`, a bundle id) |
+| Files dropped as promises (Photos, Safari) | `~/Library/Caches/ai.promptrails.terminus/Drops/<uuid>/` (`AppEnvironment.dropsDirectory`) |
 | Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
 
 Bundle id `ai.promptrails.terminus`.

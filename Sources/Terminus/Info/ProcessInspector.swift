@@ -122,12 +122,29 @@ final class ProcessInspector: @unchecked Sendable {
     /// what `ps` uses. proc_pidinfo refuses those (libghostty's `login` is
     /// root's), so the tree's links come from here.
     static func kinfo(_ pid: pid_t) -> (parent: pid_t, start: UInt64)? {
+        guard let info = kinfoProc(pid) else { return nil }
+        let start = info.kp_proc.p_starttime
+        return (info.kp_eproc.e_ppid, UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec))
+    }
+
+    /// The process group of `pid`'s controlling terminal that has the
+    /// terminal — for a pane's `login`, whatever has the pane's keyboard.
+    static func foregroundGroup(of pid: pid_t) -> pid_t? {
+        guard let group = kinfoProc(pid)?.kp_eproc.e_tpgid, group > 0 else { return nil }
+        return group
+    }
+
+    /// The process group `pid` is in.
+    static func processGroup(of pid: pid_t) -> pid_t? {
+        kinfoProc(pid)?.kp_eproc.e_pgid
+    }
+
+    private static func kinfoProc(_ pid: pid_t) -> kinfo_proc? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
-        let start = info.kp_proc.p_starttime
-        return (info.kp_eproc.e_ppid, UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec))
+        return info
     }
 
     /// Children under their parents; roots are nodes whose parent isn't tagged

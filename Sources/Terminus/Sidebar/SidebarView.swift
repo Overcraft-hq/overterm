@@ -173,6 +173,15 @@ struct SidebarView: View {
     }
 }
 
+/// A file tree row, dragged: its file URL.
+enum FileTreeDrag {
+    static func item(for url: URL) -> NSItemProvider {
+        let provider = NSItemProvider(object: url as NSURL)
+        provider.suggestedName = url.lastPathComponent
+        return provider
+    }
+}
+
 private struct FileRowView: View {
     let row: FileRow
     @ObservedObject var tree: FileTreeModel
@@ -228,6 +237,9 @@ private struct FileRowView: View {
                 if !row.entry.isDirectory { actions.openExternally(row.entry.url) }
             }
         )
+        // A drag carries the file, as Finder's does: onto a terminal (its
+        // path), Finder, another app.
+        .onDrag { FileTreeDrag.item(for: row.entry.url) }
         .contextMenu { menu }
         .help(row.entry.url.path)
     }

@@ -65,6 +65,27 @@ final class TerminalView: NSView {
     private var lastPerformKeyEvent: TimeInterval?
     private var cursorShape: NSCursor = .iBeam
 
+    /// Over the pane while something is dragged onto it.
+    private(set) var dropHighlight: DropHighlightView?
+    /// What the drag hovering over the pane carries.
+    private var dropPayload: TerminalDrop.Payload?
+    /// What runs in the pane, as last looked at: the highlight's label
+    /// follows it. A drop looks again.
+    private(set) var dropProgram: TerminalDrop.Program = .other
+    /// Drops not typed in yet, in the order they came. Each waits for a
+    /// look at the pane, or for its promised files: none may overtake one
+    /// before it.
+    private var pendingDrops: [(id: Int, text: String?)] = []
+    private var lastDropID = 0
+    /// A drop is still to be typed in.
+    var hasPendingDrops: Bool { !pendingDrops.isEmpty }
+    /// The modifier keys, read when a drag moves and at the drop (⌥: plain
+    /// paths). An E2E run stands in for the keyboard.
+    static var dropModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
+    /// Where panes look at what runs in them: one scan at a time, so the
+    /// answers come back in the order asked.
+    private static let programQueue = DispatchQueue(label: "ai.promptrails.terminus.pane-program", qos: .userInitiated)
+
     /// - Parameters:
     ///   - workingDirectory: where the shell starts; home when nil.
     ///   - initialInput: typed into the shell once it starts (e.g.
@@ -78,6 +99,7 @@ final class TerminalView: NSView {
         // A non-zero initial frame so the renderer's layer has real bounds
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        registerForDraggedTypes(TerminalDrop.draggedTypes)
 
         let cwd = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
         self.workingDirectory = cwd
@@ -241,6 +263,12 @@ final class TerminalView: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updateSurfaceSize()
+        dropHighlight?.frame = frame
+    }
+
+    override func setFrameOrigin(_ newOrigin: NSPoint) {
+        super.setFrameOrigin(newOrigin)
+        dropHighlight?.frame = frame
     }
 
     override func viewDidChangeBackingProperties() {
@@ -665,5 +693,148 @@ extension TerminalView: @preconcurrency NSTextInputClient {
         if let last = lastPerformKeyEvent, let current = NSApp.currentEvent, last == current.timestamp {
             NSApp.sendEvent(current)
         }
+    }
+}
+
+// MARK: - Dropping files and text (NSDraggingDestination)
+
+extension TerminalView {
+    /// A drag comes over the pane: highlight it, saying what a drop does —
+    /// and look at what runs here, which decides that.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard let payload = TerminalDrop.payload(from: sender.draggingPasteboard) else { return [] }
+        dropPayload = payload
+        showDropHighlight()
+        lookAtProgram { [weak self] program in
+            guard let self, self.dropPayload != nil else { return }
+            self.dropProgram = program
+            self.updateDropHighlight()
+        }
+        return Self.dropOperation(sender)
+    }
+
+    /// ⌥ may have been pressed or let go.
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard dropPayload != nil else { return [] }
+        updateDropHighlight()
+        return Self.dropOperation(sender)
+    }
+
+    /// A drop only reads the drag: a copy, where the source allows one.
+    private static func dropOperation(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let allowed = sender.draggingSourceOperationMask
+        return [NSDragOperation.copy, .generic, .link].first { allowed.contains($0) } ?? .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        endDropHover()
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        dropPayload != nil
+    }
+
+    /// Types the drop's references in, with the keyboard in this pane.
+    /// Promised files are written into a drops folder first.
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let plain = Self.dropModifierFlags().contains(.option)
+        endDropHover()
+        guard surface != nil, let payload = TerminalDrop.payload(from: sender.draggingPasteboard) else { return false }
+        window?.makeFirstResponder(self)
+        switch payload {
+        case .items(let items):
+            insertDrop(items, plainPaths: plain, at: reserveDrop())
+        case .promises(let promises):
+            guard let folder = try? TerminalDrop.newDropFolder() else { return false }
+            let place = reserveDrop()
+            TerminalDrop.receive(promises, into: folder) { [weak self] files in
+                self?.insertDrop(files.map { .file($0, isDirectory: false) }, plainPaths: plain, at: place)
+            }
+        }
+        return true
+    }
+
+    override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        endDropHover()
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        endDropHover()
+    }
+
+    /// What runs in the pane now: a scan of its processes off the main
+    /// thread, the answer back on it.
+    func lookAtProgram(_ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
+        if let login = SurfaceProcesses.shared.pairedLoginPID(of: self) { return Self.scanProgram(login: login, done) }
+        // Not paired with its login yet: that lists the app's children, a
+        // scan too — made here, off the main thread; the pairing is quick.
+        Self.programQueue.async { [weak self] in
+            let children = ProcessInspector.children(of: getpid())
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    Self.scanProgram(login: SurfaceProcesses.shared.loginPID(of: self, children: children), done)
+                }
+            }
+        }
+    }
+
+    private static func scanProgram(login: pid_t?, _ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
+        programQueue.async {
+            let program = TerminalDrop.program(login: login)
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(program) } }
+        }
+    }
+
+    /// Files are written for what runs here, looked at afresh; text and ⌥
+    /// need no look.
+    private func insertDrop(_ items: [TerminalDrop.Item], plainPaths: Bool, at place: Int) {
+        let files = items.contains { if case .file = $0 { true } else { false } }
+        guard files, !plainPaths else { return fillDrop(place, TerminalDrop.insertion(items, for: .other, plainPaths: plainPaths)) }
+        lookAtProgram { [weak self] program in
+            guard let self else { return }
+            // Where Claude works, else where the shell last said it is.
+            let seen = program == .claude(directory: nil) ? .claude(directory: self.workingDirectory) : program
+            self.fillDrop(place, TerminalDrop.insertion(items, for: seen))
+        }
+    }
+
+    /// Holds a drop's place in the order drops came.
+    private func reserveDrop() -> Int {
+        lastDropID += 1
+        pendingDrops.append((lastDropID, nil))
+        return lastDropID
+    }
+
+    /// A drop's text is ready: types in every ready one at the front.
+    private func fillDrop(_ place: Int, _ text: String) {
+        guard let index = pendingDrops.firstIndex(where: { $0.id == place }) else { return }
+        pendingDrops[index].text = text
+        while let first = pendingDrops.first, let text = first.text {
+            pendingDrops.removeFirst()
+            if !text.isEmpty { insertText(text) }
+        }
+    }
+
+    private func showDropHighlight() {
+        guard let superview else { return }
+        let highlight = dropHighlight ?? DropHighlightView()
+        highlight.frame = frame
+        // Above the dims of a split's other panes too.
+        superview.addSubview(highlight, positioned: .above, relativeTo: nil)
+        dropHighlight = highlight
+        updateDropHighlight()
+    }
+
+    private func updateDropHighlight() {
+        guard let dropPayload, let dropHighlight else { return }
+        dropHighlight.text = TerminalDrop.label(
+            TerminalDrop.labelItems(dropPayload), for: dropProgram, plainPaths: Self.dropModifierFlags().contains(.option))
+    }
+
+    private func endDropHover() {
+        dropPayload = nil
+        dropHighlight?.removeFromSuperview()
+        dropHighlight = nil
     }
 }

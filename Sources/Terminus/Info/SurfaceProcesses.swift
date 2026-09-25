@@ -28,11 +28,23 @@ final class SurfaceProcesses {
         entries.append(Entry(terminal, created: clock_gettime_nsec_np(CLOCK_UPTIME_RAW)))
     }
 
-    /// The terminal's `login` pid, pairing any unpaired ones first.
+    /// The terminal's `login` pid, pairing any unpaired ones first — which
+    /// lists the app's children, a process scan.
     func loginPID(of terminal: TerminalView) -> pid_t? {
+        if let pid = pairedLoginPID(of: terminal) { return pid }
+        return loginPID(of: terminal, children: ProcessInspector.children(of: getpid()))
+    }
+
+    /// The terminal's `login` pid if it is paired already: no scan.
+    func pairedLoginPID(of terminal: TerminalView) -> pid_t? {
         entries.removeAll { $0.terminal == nil }
-        if let pid = entries.first(where: { $0.terminal === terminal })?.pid { return pid }
-        let children = ProcessInspector.children(of: getpid())
+        return entries.first { $0.terminal === terminal }?.pid
+    }
+
+    /// The same, pairing with `children` — ProcessInspector.children(of:
+    /// getpid()), listed off the main thread.
+    func loginPID(of terminal: TerminalView, children: [(pid: pid_t, start: UInt64)]) -> pid_t? {
+        if let pid = pairedLoginPID(of: terminal) { return pid }
         let live = Set(children.map(\.pid))
         // A dead child's pairing is over (the tab's shell exited).
         for entry in entries where entry.pid.map({ !live.contains($0) }) == true { entry.pid = nil }

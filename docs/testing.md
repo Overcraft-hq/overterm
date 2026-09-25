@@ -51,7 +51,8 @@ What makes it end-to-end without being dangerous:
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `layout`, `session`, `task`, `snippets`, `attention`, `marks`,
-`palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`.
+`palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`,
+`dropFiles`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
@@ -94,6 +95,20 @@ stand-in apps (bundle ids and names only) and checks what it *would* have
 opened; `SystemApps.launched` stays 0. A new way of opening a file
 elsewhere goes through the opener too, or a scenario driving it would launch
 a real app.
+
+### Drags without the system's drag
+
+`dropFiles` calls a pane's own `NSDraggingDestination` methods (entered,
+updated, exited; prepare, perform, conclude, ended) with `E2EDraggingInfo`,
+whose pasteboard is a private, named one — never the drag pasteboard or the
+clipboard. What runs in a pane is found by its processes, so Claude Code is a
+stand-in: `exec -a claude cat > file`, argv[0] `claude` in the foreground,
+which also records what the drop typed (Ctrl-D hands cat the line, no
+newline). ⌥ comes from `TerminalView.dropModifierFlags`. A file promise is
+kept only at the end of a real drag, which a run can't start:
+`TerminalDrop.keepPromise` stands in for the source and writes the file
+where asked. The sidebar's rows get in-process clicks at their position, and
+their menu comes from `menu(for:)` without being shown.
 
 ### Adding a scenario
 

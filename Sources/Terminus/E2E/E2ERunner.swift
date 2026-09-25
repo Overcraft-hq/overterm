@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import GhosttyKit
+import UniformTypeIdentifiers
 
 /// End-to-end scenarios, run inside the real app: `TERMINUS_E2E=<scenario>`.
 ///
@@ -45,6 +46,7 @@ final class E2ERunner {
         "sessions": { await $0.sessionsScenario() },
         "clipboard": { await $0.clipboardScenario() },
         "openWith": { await $0.openWithScenario() },
+        "dropFiles": { await $0.dropFilesScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1865,6 +1867,237 @@ final class E2ERunner {
         check("no real app was launched", SystemApps.launched == 0)
     }
 
+    // MARK: Dropping onto a terminal
+
+    /// A 1×1 PNG: an image Claude Code would read.
+    private static let tinyPNG = Data(
+        base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")!
+
+    /// A drag of `objects` over a private pasteboard (never the system's
+    /// drag pasteboard or clipboard).
+    private func drag(_ objects: [NSPasteboardWriting]) -> E2EDraggingInfo {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("terminus-e2e-drag-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects(objects)
+        return E2EDraggingInfo(pasteboard: pasteboard, window: window)
+    }
+
+    /// Drops as AppKit calls a destination: entered, updated, prepare,
+    /// perform, conclude, ended.
+    @discardableResult
+    private func drop(_ info: E2EDraggingInfo, on pane: TerminalView) -> Bool {
+        guard pane.draggingEntered(info) != [], pane.draggingUpdated(info) != [], pane.prepareForDragOperation(info) else { return false }
+        let performed = pane.performDragOperation(info)
+        pane.concludeDragOperation(info)
+        pane.draggingEnded(info)
+        return performed
+    }
+
+    /// What the pane finds running in it, as a drop looks.
+    private func program(of pane: TerminalView) async -> TerminalDrop.Program {
+        await withCheckedContinuation { continuation in pane.lookAtProgram { continuation.resume(returning: $0) } }
+    }
+
+    private func controlD() {
+        key(kVK_ANSI_D, "\u{4}", modifiers: .control, ignoringModifiers: "d")
+    }
+
+    /// Dragging files onto a terminal types in references to them, with a
+    /// trailing space and no Return: shell-quoted paths in a shell;
+    /// @-mentions and image paths where Claude Code runs (a stand-in, found
+    /// as a real one is: by its process, per pane); plain paths with ⌥.
+    /// Each drop goes through the pane's own NSDraggingDestination methods
+    /// with a private pasteboard: nothing touches the system's drag.
+    private func dropFilesScenario() async {
+        let dir = scratch.appendingPathComponent("drops")
+        let folder = dir.appendingPathComponent("folder")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let plain = dir.appendingPathComponent("plain.txt")
+        let spaced = dir.appendingPathComponent("with space.md")
+        let image = dir.appendingPathComponent("shot.png")
+        try? "plain\n".write(to: plain, atomically: true, encoding: .utf8)
+        try? "# spaced\n".write(to: spaced, atomically: true, encoding: .utf8)
+        try? Self.tinyPNG.write(to: image)
+        func quoted(_ url: URL) -> String { TerminalWindowController.shellQuoted(url.path) }
+
+        app.newTab(in: dir)
+        guard let tab = app.store.selected, let host = app.host(of: tab) else { return check("a tab", false) }
+        let shell = tab.terminal
+        await settledPrompt()
+        let shellOut = out("shell-drop")
+        check(
+            "cat reads the shell pane",
+            await run("cat > \(shellOut.path)") { shell.needsConfirmClose == true && FileManager.default.fileExists(atPath: shellOut.path) })
+
+        // Over the pane: highlighted, saying what a drop does; gone when it leaves.
+        let files = drag([plain as NSURL, spaced as NSURL, folder as NSURL])
+        let firstResponder = window.firstResponder
+        check("a drag of files is taken", shell.draggingEntered(files) == .copy)
+        let highlight = shell.dropHighlight
+        check("the pane is highlighted", highlight?.superview === host && highlight?.isHidden == false)
+        check("saying what a drop does", await eventually(3) { highlight?.text == "Drop to insert 3 paths" }, highlight?.text ?? "nil")
+        let clips: Bool = {
+            guard let highlight else { return false }
+            if #available(macOS 14, *) { return highlight.clipsToBounds }
+            return highlight.layer?.masksToBounds == true
+        }()
+        check("drawn over the pane only", highlight?.frame == shell.frame && clips, "\(String(describing: highlight?.frame)) vs \(shell.frame)")
+        check("it doesn't take the keyboard", window.firstResponder === firstResponder && !(highlight?.acceptsFirstResponder ?? true))
+        shell.draggingExited(files)
+        check("it goes when the drag leaves", shell.dropHighlight == nil && highlight?.superview == nil)
+
+        // A shell: shell-quoted absolute paths, as Terminal writes them — typed
+        // in, not run: cat gets them only at a Ctrl-D, without a newline.
+        func contents(_ file: URL) -> String? { (try? Data(contentsOf: file)).map { String(decoding: $0, as: UTF8.self) } }
+        check("the files are dropped", drop(files, on: shell))
+        check("the highlight goes with the drop", shell.dropHighlight == nil && !host.subviews.contains { $0 is DropHighlightView })
+        let shellFiles = "\(quoted(plain)) \(quoted(spaced)) \(quoted(folder)) "
+        await eventually { !shell.hasPendingDrops }
+        await pause(0.3)
+        controlD()
+        check(
+            "the shell pane got exactly the quoted paths and a trailing space", await eventually { contents(shellOut) == shellFiles },
+            (contents(shellOut) ?? "missing").debugDescription + " want " + shellFiles.debugDescription)
+
+        // A promised file (Photos, Safari, the screenshot thumbnail): written
+        // into the drops folder first. A real source writes it at the end of
+        // its drag, which a run can't start: the stand-in does the same.
+        let promise = E2EPromise(data: Self.tinyPNG)
+        let provider = NSFilePromiseProvider(fileType: UTType.png.identifier, delegate: promise)
+        TerminalDrop.keepPromise = { _, folder, arrived in
+            let url = folder.appendingPathComponent(promise.filePromiseProvider(provider, fileNameForType: UTType.png.identifier))
+            promise.filePromiseProvider(provider, writePromiseTo: url) { _ in arrived(url) }
+        }
+        let promised = drag([provider])
+        _ = shell.draggingEntered(promised)
+        check("a promise is taken, and counted", shell.dropHighlight?.text == "Drop to insert path", shell.dropHighlight?.text ?? "nil")
+        shell.draggingExited(promised)
+        check("the promise is dropped", drop(promised, on: shell))
+        let received = await eventually(5) {
+            ((try? FileManager.default.subpathsOfDirectory(atPath: AppEnvironment.dropsDirectory.path)) ?? []).contains { $0.hasSuffix("/promised.png") }
+        }
+        let receivedFile = ((try? FileManager.default.subpathsOfDirectory(atPath: AppEnvironment.dropsDirectory.path)) ?? [])
+            .first { $0.hasSuffix("/promised.png") }.map { AppEnvironment.dropsDirectory.appendingPathComponent($0) }
+        check(
+            "the promised file is written into a folder of its own under the drops directory",
+            received && receivedFile.flatMap { try? Data(contentsOf: $0) } == Self.tinyPNG, AppEnvironment.dropsDirectory.path)
+        TerminalDrop.keepPromise = nil
+
+        // A web link goes in as text.
+        let link = drag([URL(string: "https://example.com/a?b=1")! as NSURL])
+        _ = shell.draggingEntered(link)
+        check("a link is taken as text", shell.dropHighlight?.text == "Drop to insert text", shell.dropHighlight?.text ?? "nil")
+        shell.draggingExited(link)
+        check("the link is dropped", drop(link, on: shell))
+
+        let expectedShell = shellFiles + (receivedFile.map { quoted($0) + " " } ?? "promised? ") + "https://example.com/a?b=1 "
+        await eventually { !shell.hasPendingDrops }
+        await pause(0.3)
+        controlD()
+        check(
+            "then the promised file's path and the link, in the order dropped", await eventually { contents(shellOut) == expectedShell },
+            (contents(shellOut) ?? "missing").debugDescription + " want " + expectedShell.debugDescription)
+        controlD()
+
+        // Claude Code in the other pane of the tab: found by its process, in
+        // that pane only.
+        let claudeOut = out("claude-drop")
+        let script = scratch.appendingPathComponent("claude.sh")
+        try? "exec -a claude cat > '\(claudeOut.path)'\n".write(to: script, atomically: true, encoding: .utf8)
+        app.splitRight(nil)
+        let right = tab.terminals[1]
+        check("a second pane", tab.terminals.count == 2 && tab.terminal === right)
+        check(
+            "the stand-in Claude Code runs there",
+            await run("bash \(script.path)") { right.needsConfirmClose == true && FileManager.default.fileExists(atPath: claudeOut.path) })
+        var seen: TerminalDrop.Program = .other
+        for _ in 0..<40 {
+            seen = await program(of: right)
+            if case .claude = seen { break }
+            await pause(0.25)
+        }
+        check("its pane finds Claude Code", { if case .claude = seen { return true } else { return false } }(), "\(seen)")
+        check("the shell's pane doesn't", await program(of: shell) == .other)
+
+        window.makeFirstResponder(shell)
+        let mixed = drag([spaced as NSURL, image as NSURL, plain as NSURL, folder as NSURL])
+        _ = right.draggingEntered(mixed)
+        check(
+            "over Claude Code, the label says @ references", await eventually(3) { right.dropHighlight?.text == "Drop to insert 4 @ references" },
+            right.dropHighlight?.text ?? "nil")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.6)
+            app.captureWindow(to: png)
+        }
+        right.draggingExited(mixed)
+        check("dropped on Claude Code", drop(mixed, on: right))
+        check("the drop gives that pane the keyboard", await eventually(2) { self.window.firstResponder === right && tab.terminal === right })
+        let expectedClaude = " @\"with space.md\" @plain.txt @folder/ \(image.path) "
+
+        // ⌥: plain quoted paths, Claude Code or not.
+        TerminalView.dropModifierFlags = { .option }
+        let optioned = drag([plain as NSURL, spaced as NSURL])
+        _ = right.draggingEntered(optioned)
+        check("with ⌥ the label says paths", await eventually(3) { right.dropHighlight?.text == "Drop to insert 2 paths" }, right.dropHighlight?.text ?? "nil")
+        right.draggingExited(optioned)
+        check("dropped with ⌥", drop(optioned, on: right))
+        TerminalView.dropModifierFlags = { NSEvent.modifierFlags }
+        let expectedOption = "\(quoted(plain)) \(quoted(spaced)) "
+
+        await eventually { !right.hasPendingDrops }
+        await pause(0.3)
+        controlD()
+        let expected = expectedClaude + expectedOption
+        check(
+            "Claude Code got the @-mentions, relative to where it works, the image's path, then ⌥'s plain paths",
+            await eventually { contents(claudeOut) == expected },
+            (contents(claudeOut) ?? "missing").debugDescription + " want " + expected.debugDescription)
+        controlD()
+
+        // The sidebar's rows are drag sources: a file URL, as Finder's.
+        let item = FileTreeDrag.item(for: plain)
+        check("a sidebar row drags a file URL", item.registeredTypeIdentifiers.contains(UTType.fileURL.identifier), "\(item.registeredTypeIdentifiers)")
+        let dragged: URL? = await withCheckedContinuation { continuation in
+            _ = item.loadObject(ofClass: NSURL.self) { object, _ in continuation.resume(returning: (object as? NSURL) as URL?) }
+        }
+        check("of that file", dragged?.standardizedFileURL == plain.standardizedFileURL, dragged?.path ?? "nil")
+
+        // And the rows still click, double-click and have their menu: in-process
+        // mouse events at the row, as the window dispatches them.
+        guard let sidebar = app.sidebarItem?.viewController.view, app.sidebarItem?.isCollapsed == false else { return check("the sidebar shows", false) }
+        let resolvedDir = dir.resolvingSymlinksInPath()
+        let listed = await eventually {
+            self.app.tree.root?.resolvingSymlinksInPath() == resolvedDir && self.app.tree.rows.map(\.entry.name) == ["folder", "plain.txt", "shot.png", "with space.md"]
+        }
+        check("the sidebar lists the folder", listed, app.tree.rows.map(\.entry.name).joined(separator: ", "))
+        // Panel bar 38, divider 1, header 30, list padding 4, then 22 a row:
+        // the middle of the second, plain.txt.
+        let top: CGFloat = 38 + 1 + 30 + 4
+        let rowCentre = sidebar.convert(NSPoint(x: 60, y: top + 22 + 11), to: nil)
+        func mouse(_ type: NSEvent.EventType, clicks: Int) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type, location: rowCentre, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1)!
+        }
+        window.sendEvent(mouse(.leftMouseDown, clicks: 1))
+        window.sendEvent(mouse(.leftMouseUp, clicks: 1))
+        check(
+            "a click on a row still opens it in the editor",
+            await eventually(3) { self.app.editor?.document.url?.lastPathComponent == "plain.txt" },
+            app.editor?.document.url?.path ?? "nothing open")
+        await pause(0.3)
+        window.sendEvent(mouse(.leftMouseDown, clicks: 1))
+        window.sendEvent(mouse(.leftMouseUp, clicks: 1))
+        window.sendEvent(mouse(.leftMouseDown, clicks: 2))
+        window.sendEvent(mouse(.leftMouseUp, clicks: 2))
+        check("a double-click still opens it outside (asking which app first)", await eventually(3) { self.window.attachedSheet != nil })
+        clickSheetButton("Cancel")
+        let menu = sidebar.menu(for: mouse(.rightMouseDown, clicks: 1))
+        check(
+            "and its menu is still there", menu?.items.map(\.title).contains("Insert Path in Terminal") == true,
+            menu.map { $0.items.map(\.title).joined(separator: ", ") } ?? "no menu")
+    }
+
     // MARK: Keyboard map (US)
 
     private static let unshifted: [Character: Int] = [
@@ -1888,5 +2121,55 @@ final class E2ERunner {
         if let base = shifted[char], let code = unshifted[base] { return (UInt16(code), true) }
         if char.isUppercase, let lower = char.lowercased().first, let code = unshifted[lower] { return (UInt16(code), true) }
         return nil
+    }
+}
+
+/// A drag as AppKit hands one to a destination, over a private pasteboard.
+/// The E2E drives a pane's NSDraggingDestination methods with it; nothing
+/// goes through the system's drag machinery.
+@MainActor
+final class E2EDraggingInfo: NSObject, NSDraggingInfo {
+    let draggingPasteboard: NSPasteboard
+    let draggingDestinationWindow: NSWindow?
+    let draggingSequenceNumber = Int.random(in: 1...1_000_000)
+    var draggingSourceOperationMask: NSDragOperation { [.copy, .link, .generic] }
+    var draggingLocation: NSPoint { .zero }
+    var draggedImageLocation: NSPoint { .zero }
+    nonisolated var draggedImage: NSImage? { nil }
+    var draggingSource: Any? { nil }
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 0
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+
+    init(pasteboard: NSPasteboard, window: NSWindow?) {
+        draggingPasteboard = pasteboard
+        draggingDestinationWindow = window
+    }
+
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    func enumerateDraggingItems(
+        options enumOpts: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes classArray: [AnyClass],
+        searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:], using block: @escaping (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void
+    ) {}
+    func resetSpringLoading() {}
+}
+
+/// The source side of a file promise: names the file and writes it when
+/// asked, as Photos or Safari do.
+final class E2EPromise: NSObject, NSFilePromiseProviderDelegate {
+    let data: Data
+
+    init(data: Data) { self.data = data }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String { "promised.png" }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, writePromiseTo url: URL, completionHandler: @escaping ((any Error)?) -> Void) {
+        do {
+            try data.write(to: url)
+            completionHandler(nil)
+        } catch {
+            completionHandler(error)
+        }
     }
 }
