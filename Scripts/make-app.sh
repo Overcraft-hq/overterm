@@ -64,6 +64,15 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Internal tool — PromptRails</string>
+    <!-- macOS charges what a program in the terminal asks for to Terminus,
+         and without a reason here refuses it without asking: Claude Code's
+         /voice got no microphone. Worded as Ghostty's. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>A program running within ${APP_NAME} would like to use your microphone.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>A program running within ${APP_NAME} would like to use speech recognition.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>A program running within ${APP_NAME} would like to access your system's audio.</string>
     <!-- Finder's Open With and the Dock icon: a folder opens as a tab, a
          file in the editor. Alternate rank: listed, never the default. -->
     <key>CFBundleDocumentTypes</key>

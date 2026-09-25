@@ -55,6 +55,9 @@ theme, keybinds) applies as-is. Private, internal tool.
 - **Search** (⌘F): one overlay over the terminal's scrollback, the checkout's
   file names and their contents; ⌘-click a `path:line` in the terminal to open
   it in the editor at that line.
+- **Microphone** for programs in the terminal (Claude Code's `/voice`): macOS
+  asks the first time one wants it. Refused, or never asked? Allow Terminus in
+  System Settings ▸ Privacy & Security ▸ Microphone.
 
 ## Keys
 

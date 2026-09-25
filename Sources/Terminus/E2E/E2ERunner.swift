@@ -219,6 +219,14 @@ final class E2ERunner {
 
     /// Keyboard → TerminalView → libghostty → pty → shell, from the bundle.
     private func terminal() async {
+        // macOS charges a program's microphone use to the app it runs in, and
+        // refuses it without asking when that app's Info.plist gives no reason
+        // (Claude Code's /voice got silence).
+        let usage = ["NSMicrophoneUsageDescription", "NSSpeechRecognitionUsageDescription", "NSAudioCaptureUsageDescription"]
+        check(
+            "programs in it may ask for the microphone and speech recognition",
+            usage.allSatisfy { (Bundle.main.object(forInfoDictionaryKey: $0) as? String)?.isEmpty == false },
+            "missing: \(usage.filter { Bundle.main.object(forInfoDictionaryKey: $0) == nil })")
         check("a surface exists", terminal?.surface != nil)
         check("shell reaches its prompt", await waitForPrompt())
         await runAndExpect("echo $TERM > \(out("term").path)", file: out("term"), content: "xterm-ghostty", "typed command runs; TERM is xterm-ghostty")

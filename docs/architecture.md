@@ -210,6 +210,18 @@ call `TerminalWindowController.open(_:)`. `make install` runs `lsregister -f`
 and `pbs -update` so Finder sees a change at once. `public.data` alone did not
 get files listed; the explicit text types did.
 
+## Microphone and other privacy prompts
+
+macOS charges what a program in the terminal asks for to Terminus, the app
+it runs in. `Info.plist` therefore carries `NSMicrophoneUsageDescription`,
+`NSSpeechRecognitionUsageDescription` and `NSAudioCaptureUsageDescription`
+(Ghostty's wording): without them macOS refused the microphone without asking
+— Claude Code's `/voice` got silence, and Terminus never appeared in System
+Settings ▸ Privacy & Security ▸ Microphone. Now the first request asks; the
+setting is there to change it. The `terminal` scenario checks the keys.
+An ad-hoc signed build is a new app to macOS each time, so the answer does
+not survive a reinstall.
+
 ## Opening files in another app
 
 A file leaves Terminus — the file tree's double-click, its menu's **Open in
