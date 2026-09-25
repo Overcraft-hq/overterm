@@ -36,6 +36,10 @@ theme, keybinds) applies as-is. Private, internal tool.
   tab, a file in the editor, in the tab already in its repository), or
   Services → **New Terminus Tab Here**; dropping on the Dock icon works too.
   Terminus is never made the default app for anything.
+- **Claude sessions** (sidebar, speech-bubble icon): every conversation run
+  in this repository's worktrees, newest first, with Claude's title for it;
+  a click goes to the tab it runs in, or resumes it (`claude --resume`) in a
+  new tab where it ran.
 - **Agent overview** (⇧⌘A, or the grid button in the title bar): every tab
   as a card — who is waiting for you, working, done or failed, where, the
   branch's PR, and for Claude what the session is about, what you asked and

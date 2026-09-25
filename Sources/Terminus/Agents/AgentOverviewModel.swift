@@ -60,7 +60,7 @@ final class AgentOverviewModel: ObservableObject {
         let directory = process?.workingDirectory ?? snapshot.directory
         let claude =
             agent == .claude
-            ? directory.flatMap(ClaudeUsageReader.latestSession(for:)).flatMap(ClaudeActivity.read) : nil
+            ? directory.flatMap(ClaudeUsageReader.latestSession(for:)).flatMap { ClaudeActivity.read($0) } : nil
         return Card(
             id: snapshot.id, title: snapshot.title, color: snapshot.color, agent: agent, agentRunning: running != nil,
             activity: snapshot.activity, directory: directory, branch: claude?.branch ?? directory.flatMap(Self.branch(in:)),

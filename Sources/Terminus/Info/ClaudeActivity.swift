@@ -14,17 +14,19 @@ struct ClaudeActivity: Equatable {
     /// what it is doing now ("Bash: make test").
     var currentTool: String?
     var branch: String?
+    /// Where the session runs (its transcript's cwd).
+    var cwd: String?
     var updated: Date?
 
     /// How much of the end of the transcript is read — transcripts reach
     /// gigabytes; the latest state is always at the end.
     static let tailSize = 512 * 1024
 
-    static func read(_ file: URL) -> ClaudeActivity? {
+    static func read(_ file: URL, tail: Int = tailSize) -> ClaudeActivity? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
-        let start = size > UInt64(tailSize) ? size - UInt64(tailSize) : 0
+        let start = size > UInt64(tail) ? size - UInt64(tail) : 0
         try? handle.seek(toOffset: start)
         guard let data = try? handle.readToEnd() else { return nil }
         var lines = data.split(separator: 0x0A)
@@ -43,6 +45,7 @@ struct ClaudeActivity: Equatable {
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = object["type"] as? String
             else { continue }
             if activity.branch == nil, let branch = object["gitBranch"] as? String, !branch.isEmpty { activity.branch = branch }
+            if activity.cwd == nil, let cwd = object["cwd"] as? String, !cwd.isEmpty { activity.cwd = cwd }
             switch type {
             case "ai-title":
                 if activity.title == nil { activity.title = object["aiTitle"] as? String }
@@ -75,7 +78,7 @@ struct ClaudeActivity: Equatable {
             default:
                 break
             }
-            if activity.title != nil, activity.lastPrompt != nil, activity.lastReply != nil, activity.branch != nil { break }
+            if activity.title != nil, activity.lastPrompt != nil, activity.lastReply != nil, activity.branch != nil, activity.cwd != nil { break }
         }
         return activity
     }

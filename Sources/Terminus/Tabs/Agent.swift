@@ -31,6 +31,12 @@ enum Agent: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Picks one conversation back up (Claude Code's --resume); nil for
+    /// an id that isn't one.
+    static func claudeResume(session id: String) -> String? {
+        ClaudeSession.isValidID(id) ? "claude --resume \(id)" : nil
+    }
+
     var symbol: String {
         switch self {
         case .claude: "sparkle"

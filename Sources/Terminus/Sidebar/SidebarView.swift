@@ -41,9 +41,18 @@ struct SnippetActions {
     var edit: (Snippet?) -> Void
 }
 
+/// What the Sessions panel asks the window to do.
+struct SessionActions {
+    /// Go to the tab it runs in, else resume it in a new tab there.
+    var resume: (ClaudeSession) -> Void
+    /// Always a new tab, even when it runs somewhere.
+    var resumeInNewTab: (ClaudeSession) -> Void
+    var refresh: () -> Void
+}
+
 /// What the sidebar can show, one at a time — Warp-style icon tabs.
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, worktrees, snippets
+    case files, worktrees, sessions, snippets
 
     var id: String { rawValue }
 
@@ -51,6 +60,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         switch self {
         case .files: "doc.on.doc"
         case .worktrees: "arrow.triangle.branch"
+        case .sessions: "bubble.left.and.text.bubble.right"
         case .snippets: "text.alignleft"
         }
     }
@@ -64,10 +74,12 @@ struct SidebarView: View {
     @ObservedObject var tree: FileTreeModel
     @ObservedObject var worktrees: WorktreeModel
     @ObservedObject var snippets: SnippetStore
+    @ObservedObject var sessions: SessionsModel
     let theme: ChromeTheme
     let actions: FileTreeActions
     let worktreeActions: WorktreeActions
     let snippetActions: SnippetActions
+    let sessionActions: SessionActions
     let onClose: () -> Void
     @AppStorage("sidebarPanel", store: AppEnvironment.defaults) private var panel: SidebarPanel = .files
 
@@ -78,6 +90,7 @@ struct SidebarView: View {
             switch panel {
             case .files: files
             case .worktrees: WorktreeListView(model: worktrees, currentRoot: tree.root, theme: theme, actions: worktreeActions)
+            case .sessions: SessionListView(model: sessions, worktrees: worktrees, theme: theme, actions: sessionActions)
             case .snippets: SnippetListView(store: snippets, theme: theme, actions: snippetActions)
             }
         }
@@ -406,6 +419,107 @@ private struct WorktreeRowView: View {
             }
         }
         .help(worktree.path.path)
+    }
+}
+
+/// Claude Code conversations in this repository's worktrees, newest first.
+/// A click goes to the tab it runs in, or resumes it in a new tab.
+private struct SessionListView: View {
+    @ObservedObject var model: SessionsModel
+    @ObservedObject var worktrees: WorktreeModel
+    let theme: ChromeTheme
+    let actions: SessionActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Claude Sessions")
+                    .font(.system(size: 11, weight: .semibold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(theme.dimText)
+                    .lineLimit(1)
+                    .fixedSize()
+                Spacer(minLength: 4)
+                if model.loading { ProgressView().controlSize(.mini) }
+                Button(action: actions.refresh) {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .help("Reload")
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            if model.sessions.isEmpty {
+                Text(model.loading ? "" : "No Claude sessions here yet")
+                    .font(.system(size: 12)).foregroundStyle(theme.dimText).padding(12)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(model.sessions) { session in
+                            SessionRowView(
+                                session: session, running: model.running[session.id] != nil,
+                                worktree: Worktree.containing(session.directory, in: worktrees.worktrees),
+                                theme: theme, actions: actions)
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
+        }
+        .onAppear(perform: actions.refresh)
+        .onChange(of: worktrees.worktrees) { _ in actions.refresh() }
+    }
+}
+
+private struct SessionRowView: View {
+    let session: ClaudeSession
+    let running: Bool
+    let worktree: Worktree?
+    let theme: ChromeTheme
+    let actions: SessionActions
+    @State private var hovering = false
+
+    private var title: String {
+        let text = session.activity.title ?? session.activity.lastPrompt ?? session.id
+        return text.replacingOccurrences(of: "\n", with: " ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                if running {
+                    Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6).help("Running in a tab")
+                }
+                Text(verbatim: title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+            }
+            HStack(spacing: 4) {
+                Text(verbatim: worktree?.displayName ?? (session.directory as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
+                Text("·")
+                Text(session.updated, format: .relative(presentation: .named)).lineLimit(1)
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(theme.dimText)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 5).fill(hovering ? theme.hover : .clear).padding(.horizontal, 4))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { actions.resume(session) }
+        .help(session.activity.lastPrompt.map { "You: \($0)" } ?? session.directory)
+        .contextMenu {
+            Button(running ? "Go to Its Tab" : "Resume") { actions.resume(session) }
+            Button("Resume in a New Tab") { actions.resumeInNewTab(session) }
+            Divider()
+            Button("Copy Session ID") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(session.id, forType: .string)
+            }
+            Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([session.file]) }
+        }
     }
 }
 

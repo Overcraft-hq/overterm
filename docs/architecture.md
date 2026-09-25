@@ -123,6 +123,19 @@ Claude `ClaudeActivity` from the last 512 KB of the session transcript:
 reply, and the tool call after it if there is one — what it is doing now.
 A card selects its tab; Esc (the host takes the keyboard) closes.
 
+## Claude sessions (sidebar)
+
+`ClaudeSessions.list` finds transcripts in `~/.claude/projects` for the
+repository's worktrees and folders below them. Claude flattens paths into
+folder names (every non-alphanumeric is `-`), so a folder is a candidate by
+prefix and kept only if the transcript's `cwd` is really inside a worktree —
+`repo-other` is not `repo`. Only the newest 60 are read, 128 KB of each end
+(`ClaudeActivity`). `SessionsModel.running` pairs tabs' Claude processes with
+sessions: the id after `--resume` in its command, else the newest session in
+its directory. A click selects that tab, else opens one with
+`claude --resume <id>` (`Agent.claudeResume`, UUIDs only — it is typed into
+a shell).
+
 ## Pull requests
 
 Everything GitHub goes through the user's own `gh` (`Sources/Terminus/GitHub/`;

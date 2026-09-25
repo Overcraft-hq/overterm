@@ -47,6 +47,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let rightPane = RightPane()
     /// ⇧⌘A: every tab as a card.
     let overview = AgentOverviewModel()
+    /// The Sessions panel's Claude conversations.
+    let sessions = SessionsModel()
     private(set) var overviewView: NSView?
     private var overviewPoll: Timer?
     /// Esc while the overview shows, wherever the keyboard is: its host
@@ -136,6 +138,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 tree: tree,
                 worktrees: worktrees,
                 snippets: snippets,
+                sessions: sessions,
                 theme: theme,
                 actions: FileTreeActions(
                     insertPath: { [weak self] in self?.insertPath($0) },
@@ -157,6 +160,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
                     edit: { [weak self] in self?.editSnippet($0) }
+                ),
+                sessionActions: SessionActions(
+                    resume: { [weak self] in self?.resume($0) },
+                    resumeInNewTab: { [weak self] in self?.resume($0, inNewTab: true) },
+                    refresh: { [weak self] in self?.refreshSessions() }
                 ),
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -511,9 +519,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// starting `agent` in it, if given.
     /// `startAgent: false` makes an agent tab without starting the agent
     /// (the E2E scenarios use it; nothing else should).
-    func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true) {
+    /// `command`: what starts the agent, when not its plain command (a resume).
+    func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let input = startAgent ? agent.map { $0.command + "\n" } : nil
+        let input = startAgent ? agent.map { (command ?? $0.command) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         addTab(terminal, agent: agent, after: store.selected)
     }
@@ -543,6 +552,28 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         store.select(tab)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: Claude sessions
+
+    /// Re-lists the sessions of the repository's worktrees (or, outside
+    /// one, of the file tree's root).
+    func refreshSessions() {
+        let directories = worktrees.worktrees.isEmpty ? [tree.root?.path].compactMap { $0 } : worktrees.worktrees.map(\.path.path)
+        Task { await sessions.refresh(directories: directories, tabs: store.tabs, inspector: inspector) }
+    }
+
+    /// The tab a session runs in, or — `inNewTab`, or not running — a new
+    /// tab in its directory with `claude --resume <id>`. `start: false`
+    /// opens the tab without typing it (the E2E scenarios; nothing else).
+    func resume(_ session: ClaudeSession, inNewTab: Bool = false, start: Bool = true) {
+        if !inNewTab, let id = sessions.running[session.id], let tab = store.tabs.first(where: { $0.id == id }) {
+            store.select(tab)
+            focusSelectedTerminal()
+            return
+        }
+        guard let command = Agent.claudeResume(session: session.id) else { return }
+        newTab(in: URL(fileURLWithPath: session.directory), agent: .claude, startAgent: start, command: command)
     }
 
     // MARK: Opening from Finder

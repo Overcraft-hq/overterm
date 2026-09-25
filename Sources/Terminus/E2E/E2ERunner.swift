@@ -41,6 +41,7 @@ final class E2ERunner {
         "overview": { await $0.overviewScenario() },
         "scrollback": { await $0.scrollbackScenario() },
         "openFromFinder": { await $0.openFromFinderScenario() },
+        "sessions": { await $0.sessionsScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1399,6 +1400,90 @@ final class E2ERunner {
         (NSApp.delegate as? AppDelegate)?.newTabHere(pasteboard, userData: nil, error: &error)
         check("New Terminus Tab Here opens one there", app.store.selected?.workingDirectory == other.path, error as String)
         pasteboard.releaseGlobally()
+    }
+
+    /// The Sessions panel lists the repository's Claude conversations
+    /// (worktrees and subfolders, not look-alike folders), newest first; a
+    /// running one switches to its tab, another resumes in a new tab.
+    private func sessionsScenario() async {
+        let projects = scratch.appendingPathComponent("claude-projects")
+        ClaudeUsageReader.projectsDirectory = projects
+        let repo = scratch.appendingPathComponent("sessrepo").resolvingSymlinksInPath()
+        let worktree = scratch.appendingPathComponent("sessrepo-wt").resolvingSymlinksInPath()
+        let lookalike = scratch.appendingPathComponent("sessrepo-other").resolvingSymlinksInPath()
+        for dir in [repo.appendingPathComponent("sub"), lookalike] {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "i"], in: repo)
+        try? await git(["worktree", "add", "-q", "-b", "feat/s", worktree.path], in: repo)
+        let ids = (
+            old: "00000000-0000-0000-0000-00000000000a", feature: "00000000-0000-0000-0000-00000000000b",
+            sub: "00000000-0000-0000-0000-00000000000c", other: "00000000-0000-0000-0000-00000000000d",
+            empty: "00000000-0000-0000-0000-00000000000e"
+        )
+        func transcript(_ id: String, cwd: URL, title: String?, age: TimeInterval) {
+            let folder = projects.appendingPathComponent(ClaudeUsageReader.projectFolder(for: cwd.path))
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var lines = [#"{"type":"user","cwd":"\#(cwd.path)","message":{"role":"user","content":"\#(title ?? "")"}}"#]
+            if let title { lines.append(#"{"type":"ai-title","aiTitle":"\#(title)"}"#) } else { lines = [#"{"type":"mode","cwd":"\#(cwd.path)"}"#] }
+            let file = folder.appendingPathComponent("\(id).jsonl")
+            try? (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+            try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-age)], ofItemAtPath: file.path)
+        }
+        transcript(ids.old, cwd: repo, title: "Old work", age: 3600)
+        transcript(ids.feature, cwd: worktree, title: "Feature work", age: 10)
+        transcript(ids.sub, cwd: repo.appendingPathComponent("sub"), title: "Subfolder chat", age: 600)
+        transcript(ids.other, cwd: lookalike, title: "Not this repo", age: 5)
+        transcript(ids.empty, cwd: repo, title: nil, age: 1)
+
+        app.newTab(in: repo)
+        await eventually { self.app.worktrees.worktrees.count == 2 }
+        app.refreshSessions()
+        let listed = await eventually(5) { self.app.sessions.sessions.count == 3 }
+        check(
+            "the repo's sessions, newest first", listed && app.sessions.sessions.map(\.id) == [ids.feature, ids.sub, ids.old],
+            app.sessions.sessions.map { $0.activity.title ?? $0.id }.joined(separator: ", "))
+        check("with their titles and where they ran", app.sessions.sessions.first?.activity.title == "Feature work" && app.sessions.sessions.first?.directory == worktree.path)
+        // The row's worktree label: sessrepo-wt starts with "sessrepo" too.
+        check(
+            "labelled with its own worktree",
+            app.sessions.sessions.first.flatMap { Worktree.containing($0.directory, in: self.app.worktrees.worktrees) }?.branch == "feat/s")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            AppEnvironment.defaults.set(SidebarPanel.sessions.rawValue, forKey: "sidebarPanel")
+            await pause(1)
+            app.captureWindow(to: png)
+        }
+
+        // A stand-in `claude --resume <feature>` running in its own tab.
+        let script = scratch.appendingPathComponent("claude.sh")
+        try? "cd '\(worktree.path)' && exec -a claude /bin/sh -c 'sleep 60; true' --resume \(ids.feature)\n"
+            .write(to: script, atomically: true, encoding: .utf8)
+        app.newTab(in: worktree)
+        guard let claudeTab = app.store.selected else { return check("a tab", false) }
+        await run("bash \(script.path) &", timeout: 6) {
+            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag)
+                .flatMap(\.flattened).contains { $0.command.contains("--resume") }
+        }
+        app.refreshSessions()
+        check("the running one is known, by its --resume id", await eventually(5) { self.app.sessions.running[ids.feature] == claudeTab.id })
+
+        guard let feature = app.sessions.sessions.first(where: { $0.id == ids.feature }),
+            let old = app.sessions.sessions.first(where: { $0.id == ids.old })
+        else { return check("sessions", false) }
+        app.store.select(app.store.tabs[0])
+        let count = app.store.tabs.count
+        app.resume(feature)
+        check("clicking it goes to its tab", app.store.selectedID == claudeTab.id && app.store.tabs.count == count)
+        app.resume(old, start: false)
+        check(
+            "another resumes in a new tab, where it ran",
+            app.store.tabs.count == count + 1 && app.store.selected?.workingDirectory == repo.path && app.store.selected?.agent == .claude)
+        for node in ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag)
+            .flatMap(\.flattened) where node.name != "login" && node.name != "zsh"
+        {
+            kill(node.pid, SIGTERM)
+        }
     }
 
     /// ⌘P shows, searches across kinds, and hides.
