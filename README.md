@@ -28,10 +28,12 @@ theme, keybinds) applies as-is. Private, internal tool.
 - **Open in your editor**: double-click a file in the tree (or ↗ in the
   editor pane) and it opens in the app you picked — asked once, remembered;
   **Open With ▸** in the file's menu, or right-click on ↗, switches it.
-- **Diff panel** (⌥⌘D) above the terminal: changed files of the tab's
-  worktree with +N −M, live diff. **Uncommitted** (stage / discard / commit),
-  or **Branch**: everything since the branch left the default branch, its
-  commits listed too — an agent's work stays visible after it commits.
+- **Changes** on the right (the ± badge in the title bar, View ▸ Changes, or
+  ⌥⌘D): changed files of the tab's worktree with +N −M, live diff.
+  **Uncommitted** (stage / discard / commit), or **Branch**: everything since
+  the branch left the default branch, its commits listed too — an agent's
+  work stays visible after it commits. The badge shows in any repository: the
+  uncommitted totals, else the branch's, else a plain ±.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
 - **Merged worktree clean-up**: merged worktrees (merged into the default
@@ -70,7 +72,7 @@ theme, keybinds) applies as-is. Private, internal tool.
 | ⇧⌘N | New Task (worktree + branch + agent) |
 | ⌘1…9, ⇧⌘[ ⇧⌘] | Go to tab |
 | ⌘B | Sidebar |
-| ⌥⌘D | Diff panel |
+| ⌥⌘D | Changes |
 | ⌘P | Command palette (↵ run, ⌥↵ insert snippet) |
 | ⌘D / ⇧⌘D | Split right / down (⌘[ ⌘] or ⌥⌘arrows move between panes, ⇧⌘↩ zooms one) |
 | ⇧⌘A | Agent overview |

@@ -213,6 +213,22 @@ final class E2ERunner {
         _ = try await Git.run(["-c", "user.email=e2e@terminus", "-c", "user.name=e2e"] + args, in: dir)
     }
 
+    /// An item of the menu bar's `menu`, as the menu bar has it.
+    private func menuItem(_ menu: String, _ title: String) -> NSMenuItem? {
+        NSApp.mainMenu?.items.first { $0.submenu?.title == menu }?.submenu?.items.first { $0.title == title }
+    }
+
+    /// Chooses a menu item: its action goes up the responder chain from the
+    /// window's first responder, as it does from the menu bar (the run's
+    /// window is never key, so NSApp.sendAction wouldn't find it). Then the
+    /// item is validated, as before the menu opens again.
+    @discardableResult
+    private func perform(_ item: NSMenuItem) -> Bool {
+        guard let action = item.action, (window.firstResponder ?? window).tryToPerform(action, with: item) else { return false }
+        _ = app.validateMenuItem(item)
+        return true
+    }
+
     /// A shell-safe path for typing (the scratch path has no spaces).
     private func out(_ name: String) -> URL { scratch.appendingPathComponent(name) }
 
@@ -402,8 +418,10 @@ final class E2ERunner {
         check("the model follows the tab into the repo", await eventually { self.app.diff.root?.resolvingSymlinksInPath() == repo.resolvingSymlinksInPath() })
         check("badge counts, before the first commit", await eventually { self.app.diff.totals.added == 3 }, "\(app.diff.totals)")
         check("no diff text while the pane is closed", app.diff.diffs.isEmpty)
-        app.toggleDiff(nil)
-        check("the pane opens", await eventually(2) { self.app.diffItem?.isCollapsed == false })
+        guard let changes = menuItem("View", "Changes") else { return check("View ▸ Changes exists", false) }
+        check("View ▸ Changes is ⌥⌘D", changes.keyEquivalent == "d" && changes.keyEquivalentModifierMask == [.command, .option])
+        check("View ▸ Changes opens the pane", perform(changes) && app.diffItem?.isCollapsed == false)
+        check("and is ticked while it shows", changes.state == .on)
         check("every file gets its diff", await eventually { self.app.diff.diffs.count == 2 })
         check("the diff has the new lines", app.diff.diffs["a.txt"]?.lines.filter { $0.kind == .added }.map(\.text) == ["ddd", "eee"])
 
@@ -416,7 +434,9 @@ final class E2ERunner {
         let log = (try? await Git.run(["log", "--format=%s"], in: repo))?.trimmingCharacters(in: .whitespacesAndNewlines)
         check("the commit is in git", log == "e2e commit", log ?? "nil")
         check("the badge clears", app.diff.totals.added == 0)
-        app.toggleDiff(nil)
+        check("to a plain ±, still there to open the pane", app.diff.badge == .plain, "\(String(describing: app.diff.badge))")
+        check("View ▸ Changes again closes it", perform(changes) && app.diffItem?.isCollapsed == true)
+        check("and it is no longer ticked", changes.state == .off)
     }
 
     /// What an agent did on its branch, committed or not. Uncommitted shows
@@ -1599,6 +1619,8 @@ final class E2ERunner {
         check("fuzzy search finds New Claude Tab", app.palette.results.first?.title == "New Claude Tab")
         app.palette.query = "validate"
         check("snippets are searchable", app.palette.results.first?.group == .snippet)
+        app.palette.query = "changes"
+        check("the changes pane is Changes", app.palette.results.first?.title == "Changes", app.palette.results.first?.title ?? "nil")
         app.showPalette(nil)
         check("⌘P again hides it", app.paletteView?.isHidden == true)
     }

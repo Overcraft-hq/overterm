@@ -290,16 +290,19 @@ private struct WindowDragArea: NSViewRepresentable {
 }
 
 /// Warp's "± +N −M": the selected tab's uncommitted change totals — or,
-/// with nothing uncommitted, its branch's; a click opens the changes pane.
+/// with nothing uncommitted, its branch's; in a repository with neither, a
+/// plain ±. A click opens the changes pane.
 private struct DiffBadge: View {
     let badge: DiffModel.Badge
     let theme: ChromeTheme
     let action: () -> Void
     @State private var hovering = false
 
-    private var totals: (added: Int, removed: Int) {
+    /// None for the plain ±.
+    private var totals: (added: Int, removed: Int)? {
         switch badge {
         case .uncommitted(let added, let removed), .branch(let added, let removed): (added, removed)
+        case .plain: nil
         }
     }
 
@@ -307,6 +310,7 @@ private struct DiffBadge: View {
         switch badge {
         case .uncommitted: "Uncommitted changes (⌥⌘D)"
         case .branch: "Changes on this branch, all committed (⌥⌘D)"
+        case .plain: "Changes (⌥⌘D)"
         }
     }
 
@@ -314,8 +318,10 @@ private struct DiffBadge: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "plusminus").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text)
-                Text(verbatim: "+\(totals.added)").foregroundStyle(DiffColors.added)
-                Text(verbatim: "−\(totals.removed)").foregroundStyle(DiffColors.removed)
+                if let totals {
+                    Text(verbatim: "+\(totals.added)").foregroundStyle(DiffColors.added)
+                    Text(verbatim: "−\(totals.removed)").foregroundStyle(DiffColors.removed)
+                }
             }
             .font(.system(size: 12, weight: .medium, design: .monospaced))
             .padding(.horizontal, 8)

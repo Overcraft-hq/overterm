@@ -9,10 +9,11 @@ libghostty's own threads and git calls.
 ┌──────────── tab strip (SwiftUI, in the title bar) ─────── ± +N −M ┐
 ├──────────┬──────────────────────────┬──────────────┬──────────────┤
 │ sidebar  │ terminal container       │ editor pane  │ changes pane │
-│ Files /  │ (every tab's TerminalView;│ (opens on a  │ (± badge or  │
-│ Worktrees│  only the selected one   │  file click) │  ⌥⌘D; Warp-  │
-│ Snippets │  visible)                │              │  style cards)│
-│ (⌘B)     │                          │              │              │
+│ Files /  │ (every tab's TerminalView;│ (opens on a  │ (± badge,    │
+│ Worktrees│  only the selected one   │  file click) │  View ▸      │
+│ Snippets │  visible)                │              │  Changes or  │
+│ (⌘B)     │                          │              │  ⌥⌘D; Warp-  │
+│          │                          │              │  style cards)│
 └──────────┴──────────────────────────┴──────────────┴──────────────┘
       + ⌘P palette: an overlay over the whole content view
       + ⌘F search: an overlay over the terminal container; a compact find
@@ -125,10 +126,13 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   HEAD on the base branch itself, or no merge-base (unrelated history),
   Branch has nothing to compare with: the pane says why ("On main — nothing
   to compare with") and lists Uncommitted.
-- Both lists' counts are always live. The ± badge shows the uncommitted
-  totals while there are any, else the branch's: an agent's work stays in
-  sight after it commits. Diff text loads only while the pane is open, for
-  the scope shown, from that scope's base.
+- Both lists' counts are always live. The ± badge shows in any git
+  repository, so the pane is one click away: the uncommitted totals while
+  there are any, else the branch's — an agent's work stays in sight after it
+  commits — else a plain ± (`DiffModel.badge`). View ▸ Changes (⌥⌘D, the
+  palette's Changes) toggles the pane and is ticked while it shows. Diff text
+  loads only while the pane is open, for the scope shown, from that scope's
+  base.
 - It refreshes on FSEvents under the checkout and, for a linked worktree,
   under its git dir (`.git/worktrees/<name>`: index, HEAD) and the
   repository's `refs/` — a commit there writes nothing inside the checkout.

@@ -355,6 +355,17 @@ final class DiffModelTests: XCTestCase {
         XCTAssertEqual(model.commits.first?.files, ["new.txt"])
     }
 
+    /// The ± badge: in any repository, so the pane is always one click away —
+    /// the uncommitted totals, else the branch's, else a plain ±.
+    func testTheBadgeShowsInAnyRepository() {
+        let edit = ChangedFile(path: "a.txt", originalPath: nil, kind: .modified, isStaged: false, hasUnstaged: true, added: 2, removed: 1)
+        let committed = ChangedFile(path: "b.txt", originalPath: nil, kind: .added, isStaged: false, hasUnstaged: false, added: 5, removed: 0)
+        XCTAssertEqual(DiffModel.badge(isRepository: true, uncommitted: [edit], branch: [committed, edit]), .uncommitted(added: 2, removed: 1))
+        XCTAssertEqual(DiffModel.badge(isRepository: true, uncommitted: [], branch: [committed]), .branch(added: 5, removed: 0))
+        XCTAssertEqual(DiffModel.badge(isRepository: true, uncommitted: [], branch: []), .plain, "nothing changed: still there, to open the pane")
+        XCTAssertNil(DiffModel.badge(isRepository: false, uncommitted: [], branch: []), "not in a repository: nothing to open")
+    }
+
     @MainActor
     func testOutsideARepositorySaysSo() async throws {
         let model = DiffModel()

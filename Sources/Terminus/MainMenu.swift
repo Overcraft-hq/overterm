@@ -65,8 +65,9 @@ enum MainMenu {
         overview.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(TerminalWindowController.toggleFileTree(_:)), keyEquivalent: "b")
-        let diff = viewMenu.addItem(withTitle: "Toggle Diff", action: #selector(TerminalWindowController.toggleDiff(_:)), keyEquivalent: "d")
-        diff.keyEquivalentModifierMask = [.command, .option]
+        // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
+        let changes = viewMenu.addItem(withTitle: "Changes", action: #selector(TerminalWindowController.toggleDiff(_:)), keyEquivalent: "d")
+        changes.keyEquivalentModifierMask = [.command, .option]
         viewMenu.addItem(withTitle: "Pull Request", action: #selector(TerminalWindowController.showPullRequest(_:)), keyEquivalent: "")
         // Ghostty's own defaults, so they also work while the editor has the keyboard.
         viewMenu.addItem(.separator())

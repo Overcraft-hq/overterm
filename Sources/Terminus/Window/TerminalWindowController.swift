@@ -223,7 +223,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         self.editorItem = editorItem
 
         // Changes pane on the far right, as in Warp; opened from the ± badge
-        // in the title bar or ⌥⌘D.
+        // in the title bar, View ▸ Changes or ⌥⌘D.
         let diffPanel = NSHostingController(
             rootView: RightPaneView(
                 pane: rightPane, diff: diff, worktrees: worktrees, theme: theme,
@@ -1486,8 +1486,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _ in
                 self?.toggleFileTree(nil)
             },
-            PaletteItem(id: "a.diff", group: .action, title: "Toggle Diff", subtitle: "⌥⌘D", symbol: "plusminus") { [weak self] _ in
-                self?.toggleDiff(nil)
+            PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
+                [weak self] _ in self?.toggleDiff(nil)
             },
             PaletteItem(id: "a.snippet", group: .action, title: "New Snippet…", subtitle: nil, symbol: "text.badge.plus") { [weak self] _ in
                 self?.editSnippet(nil)
@@ -1855,6 +1855,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
+    }
+}
+
+extension TerminalWindowController: NSMenuItemValidation {
+    /// View ▸ Changes is ticked while the pane shows. Everything else it
+    /// handles stays enabled, as without validation.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleDiff(_:)) {
+            menuItem.state = diffItem?.isCollapsed == false ? .on : .off
+        }
+        return true
     }
 }
 

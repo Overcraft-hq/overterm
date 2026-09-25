@@ -54,6 +54,7 @@ final class DiffModel: ObservableObject {
     enum Badge: Equatable {
         case uncommitted(added: Int, removed: Int)
         case branch(added: Int, removed: Int)
+        case plain
     }
 
     @Published private(set) var root: URL?
@@ -154,11 +155,14 @@ final class DiffModel: ObservableObject {
         }
     }
 
-    var badge: Badge? { error == nil ? Self.badge(uncommitted: files, branch: branchFiles) : nil }
+    /// A refresh worked (it always sets `comparison`): a git repository.
+    var badge: Badge? { Self.badge(isRepository: error == nil && comparison != nil, uncommitted: files, branch: branchFiles) }
 
-    /// What is uncommitted while there is some, else the branch's totals: the
-    /// agent's work stays in sight after it commits.
-    nonisolated static func badge(uncommitted: [ChangedFile], branch: [ChangedFile]) -> Badge? {
+    /// In any repository, so the pane is one click away: what is uncommitted
+    /// while there is some, else the branch's totals — the agent's work stays
+    /// in sight after it commits — else a plain ±.
+    nonisolated static func badge(isRepository: Bool, uncommitted: [ChangedFile], branch: [ChangedFile]) -> Badge? {
+        guard isRepository else { return nil }
         if !uncommitted.isEmpty {
             let sum = totals(uncommitted)
             return .uncommitted(added: sum.added, removed: sum.removed)
@@ -167,7 +171,7 @@ final class DiffModel: ObservableObject {
             let sum = totals(branch)
             return .branch(added: sum.added, removed: sum.removed)
         }
-        return nil
+        return .plain
     }
 
     /// Follows the selected tab's checkout. Watching starts right away: the
