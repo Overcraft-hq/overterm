@@ -37,6 +37,10 @@ final class DiffModel: ObservableObject {
     static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
     private var watcher: DirectoryWatcher?
+    /// The git state kept outside the checkout: a linked worktree's index,
+    /// HEAD and reflog are in the main repository's .git/worktrees/<name>, its
+    /// branch in .git/refs. Without it a commit there went unseen.
+    private var gitWatcher: DirectoryWatcher?
     private var pendingRefresh: Task<Void, Never>?
     /// Bumped per refresh, so a slow git answer for an old root can't
     /// overwrite a newer one.
@@ -61,14 +65,42 @@ final class DiffModel: ObservableObject {
         error = nil
         watcher?.stop()
         watcher = nil
+        gitWatcher?.stop()
+        gitWatcher = nil
         pendingRefresh?.cancel()
         guard let url else { return }
         watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
+        Task { await watchGitDirectories(of: url) }
         Task { await refresh() }
     }
 
-    /// Coalesces a burst of file events (an agent writing many files) into
-    /// one git status.
+    private func watchGitDirectories(of url: URL) async {
+        let directories = await Self.gitDirectories(outside: url)
+        // The tab may have moved on while git answered.
+        guard url == root, !directories.isEmpty else { return }
+        gitWatcher = DirectoryWatcher(roots: directories, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
+    }
+
+    /// Where git keeps this checkout's state, when that is not inside it: the
+    /// worktree's own git directory (index, HEAD, its reflog) and the
+    /// repository's refs/ (its branch, origin/HEAD). A main checkout's .git
+    /// is inside it, so none.
+    nonisolated static func gitDirectories(outside root: URL) async -> [URL] {
+        guard let output = try? await Git.run(["rev-parse", "--absolute-git-dir", "--git-common-dir"], in: root) else { return [] }
+        let lines = output.split(separator: "\n").map(String.init)
+        guard lines.count == 2 else { return [] }
+        // --git-common-dir is relative to the checkout when it is inside it.
+        let gitDir = URL(fileURLWithPath: lines[0])
+        let common = lines[1].hasPrefix("/") ? URL(fileURLWithPath: lines[1]) : root.appendingPathComponent(lines[1])
+        let inside = root.resolvingSymlinksInPath().path
+        return [gitDir, common.appendingPathComponent("refs")].filter {
+            let path = $0.resolvingSymlinksInPath().path
+            return path != inside && !path.hasPrefix(inside + "/")
+        }
+    }
+
+    /// Coalesces a burst of file events (an agent writing many files, git
+    /// writing its index and refs) into one git status.
     private func scheduleRefresh() {
         pendingRefresh?.cancel()
         pendingRefresh = Task { @MainActor [weak self] in

@@ -33,7 +33,7 @@ libghostty's own threads and git calls.
 | `Tab` | a `TerminalView` + title, custom name, colour, pin, agent, cwd, `TabActivity` |
 | `FileTreeModel` | tree of the selected tab's checkout; lazy listings, FSEvents invalidation, gitignore dimming |
 | `WorktreeModel` | `git worktree list` of that repository |
-| `DiffModel` | status, counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit of that checkout; works before the first commit (empty-tree base) |
+| `DiffModel` | status, counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit of that checkout; works before the first commit (empty-tree base). Refreshes on FSEvents under the checkout and, for a linked worktree, under its git dir (`.git/worktrees/<name>`: index, HEAD) and the repository's `refs/` — a commit there writes nothing inside the checkout |
 | `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
 | `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |

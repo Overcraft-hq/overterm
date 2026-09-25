@@ -839,6 +839,12 @@ final class E2ERunner {
         check("the tree follows too", app.tree.root?.resolvingSymlinksInPath() == feat)
         check("the agent's change is in the diff", await eventually { self.app.diff.files.contains { $0.path == "agent-change.txt" } })
         check("the worktree list marks it", app.worktrees.showing?.reason == .agent(.claude))
+        // The agent commits: git writes only under main's .git (the worktree's
+        // index, HEAD, its branch), nothing in the worktree itself.
+        await pause(1)
+        try? await git(["add", "agent-change.txt"], in: worktree)
+        try? await git(["commit", "-q", "-m", "agent commit"], in: worktree)
+        check("a commit in the agent's worktree clears the pane", await eventually(5) { self.app.diff.files.isEmpty }, "\(app.diff.files.map(\.path))")
 
         guard let mainWorktree = app.worktrees.worktrees.first(where: \.isMain) else { return check("main worktree listed", false) }
         app.attach(mainWorktree)

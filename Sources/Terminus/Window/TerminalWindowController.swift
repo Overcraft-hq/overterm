@@ -656,8 +656,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
         editor?.reloadIfChangedOnDisk()
-        // Catches what the file watcher can't see, e.g. staging from another
-        // app (a worktree's index lives in the main repository's .git).
+        // Catches what the watchers can't see: they cover the checkout and its
+        // git state, not all of .git (packed-refs, say).
         Task { await diff.refresh() }
     }
 

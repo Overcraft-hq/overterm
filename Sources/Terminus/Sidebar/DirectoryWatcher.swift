@@ -1,7 +1,7 @@
 import CoreServices
 import Foundation
 
-/// Recursive change notifications for one directory tree, via FSEvents.
+/// Recursive change notifications for directory trees, via FSEvents.
 /// Reports the directories whose contents changed, coalesced over `latency`,
 /// on the main queue.
 @MainActor
@@ -13,7 +13,12 @@ final class DirectoryWatcher {
     private nonisolated(unsafe) var stream: FSEventStreamRef?
     private let onChange: ([URL]) -> Void
 
-    init?(root: URL, latency: TimeInterval = 0.3, onChange: @escaping ([URL]) -> Void) {
+    convenience init?(root: URL, latency: TimeInterval = 0.3, onChange: @escaping ([URL]) -> Void) {
+        self.init(roots: [root], latency: latency, onChange: onChange)
+    }
+
+    /// One stream over several trees.
+    init?(roots: [URL], latency: TimeInterval = 0.3, onChange: @escaping ([URL]) -> Void) {
         self.onChange = onChange
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
@@ -29,7 +34,7 @@ final class DirectoryWatcher {
         }
         guard
             let stream = FSEventStreamCreate(
-                nil, callback, &context, [root.path] as CFArray,
+                nil, callback, &context, roots.map(\.path) as CFArray,
                 FSEventStreamEventId(kFSEventStreamEventIdSinceNow), latency,
                 FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer))
         else { return nil }

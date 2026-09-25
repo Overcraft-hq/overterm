@@ -141,6 +141,49 @@ final class DiffModelTests: XCTestCase {
         XCTAssertEqual(log.trimmingCharacters(in: .newlines), "first")
     }
 
+    /// A linked worktree's index and HEAD live in the main repository's
+    /// .git/worktrees/<name>, its branch in .git/refs — outside the checkout.
+    /// A commit there (what an agent does) must still clear the pane.
+    @MainActor
+    func testACommitInALinkedWorktreeClearsIt() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        let worktree = URL(fileURLWithPath: repo.path + "-wt")
+        defer { try? FileManager.default.removeItem(at: worktree) }
+        try await git("worktree", "add", "-q", "-b", "feat", worktree.path)
+        try "two\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+
+        let model = DiffModel()
+        model.setRoot(worktree)
+        try await eventually { model.files.count == 1 }
+        XCTAssertEqual(model.files.map(\.path), ["a.txt"])
+        // Let any event from before settle, and the watchers go live.
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+
+        _ = try await Git.run(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "edit"], in: worktree)
+        try await eventually { model.files.isEmpty }
+        XCTAssertEqual(model.files.map(\.path), [], "the commit is seen without anything else touching the checkout")
+    }
+
+    /// What the second watcher covers: nothing for a main checkout (its .git
+    /// is inside it), the worktree's git dir and the refs for a linked one.
+    @MainActor
+    func testGitDirectoriesOutsideTheCheckout() async throws {
+        try await git("init", "-q", "-b", "main")
+        try await git("commit", "-q", "--allow-empty", "-m", "init")
+        let worktree = URL(fileURLWithPath: repo.path + "-wt")
+        defer { try? FileManager.default.removeItem(at: worktree) }
+        try await git("worktree", "add", "-q", "-b", "feat", worktree.path)
+
+        let none = await DiffModel.gitDirectories(outside: repo)
+        XCTAssertEqual(none, [])
+        let linked = await DiffModel.gitDirectories(outside: worktree).map { $0.resolvingSymlinksInPath().path }
+        let dotGit = repo.appendingPathComponent(".git").resolvingSymlinksInPath().path
+        XCTAssertEqual(linked, ["\(dotGit)/worktrees/\(worktree.lastPathComponent)", "\(dotGit)/refs"])
+    }
+
     @MainActor
     func testOutsideARepositorySaysSo() async throws {
         let model = DiffModel()
