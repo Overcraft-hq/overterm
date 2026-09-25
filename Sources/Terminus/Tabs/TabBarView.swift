@@ -80,8 +80,8 @@ struct TabBarView: View {
                 PullRequestChip(pr: pr, theme: theme, action: actions.showPullRequest)
                     .padding(.trailing, 6)
             }
-            if diff.error == nil, !diff.files.isEmpty {
-                DiffBadge(added: diff.totals.added, removed: diff.totals.removed, theme: theme, action: actions.toggleDiff)
+            if let badge = diff.badge {
+                DiffBadge(badge: badge, theme: theme, action: actions.toggleDiff)
             }
         }
         .padding(.trailing, 8)
@@ -289,21 +289,33 @@ private struct WindowDragArea: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// Warp's "± +N −M": the selected tab's uncommitted change totals; a click
-/// opens the changes pane.
+/// Warp's "± +N −M": the selected tab's uncommitted change totals — or,
+/// with nothing uncommitted, its branch's; a click opens the changes pane.
 private struct DiffBadge: View {
-    let added: Int
-    let removed: Int
+    let badge: DiffModel.Badge
     let theme: ChromeTheme
     let action: () -> Void
     @State private var hovering = false
+
+    private var totals: (added: Int, removed: Int) {
+        switch badge {
+        case .uncommitted(let added, let removed), .branch(let added, let removed): (added, removed)
+        }
+    }
+
+    private var help: String {
+        switch badge {
+        case .uncommitted: "Uncommitted changes (⌥⌘D)"
+        case .branch: "Changes on this branch, all committed (⌥⌘D)"
+        }
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: "plusminus").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text)
-                Text(verbatim: "+\(added)").foregroundStyle(DiffColors.added)
-                Text(verbatim: "−\(removed)").foregroundStyle(DiffColors.removed)
+                Text(verbatim: "+\(totals.added)").foregroundStyle(DiffColors.added)
+                Text(verbatim: "−\(totals.removed)").foregroundStyle(DiffColors.removed)
             }
             .font(.system(size: 12, weight: .medium, design: .monospaced))
             .padding(.horizontal, 8)
@@ -313,7 +325,7 @@ private struct DiffBadge: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Uncommitted changes (⌥⌘D)")
+        .help(help)
     }
 }
 

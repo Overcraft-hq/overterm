@@ -29,7 +29,9 @@ theme, keybinds) applies as-is. Private, internal tool.
   editor pane) and it opens in the app you picked — asked once, remembered;
   **Open With ▸** in the file's menu, or right-click on ↗, switches it.
 - **Diff panel** (⌥⌘D) above the terminal: changed files of the tab's
-  worktree, live diff, stage / discard / commit.
+  worktree with +N −M, live diff. **Uncommitted** (stage / discard / commit),
+  or **Branch**: everything since the branch left the default branch, its
+  commits listed too — an agent's work stays visible after it commits.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
 - **Merged worktree clean-up**: merged worktrees (merged into the default

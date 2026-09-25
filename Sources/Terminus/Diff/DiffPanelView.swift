@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 
 /// The changes pane beside the terminal, laid out like Warp's: a header
-/// (checkout, branch, file count, totals), an "Uncommitted changes" row with
-/// Commit, and one foldable card per changed file with its diff inline.
+/// (checkout, branch, file count, totals), the Uncommitted | Branch switch
+/// (Commit beside it for uncommitted changes), the branch's commits, and one
+/// foldable card per changed file with its diff inline.
 struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
@@ -15,43 +16,37 @@ struct DiffPanelView: View {
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
     @State private var composing = false
+    /// Commits whose message is shown.
+    @State private var openCommits: Set<String> = []
+
+    /// Stage, discard and commit act on the index: only for uncommitted changes.
+    private var editable: Bool { model.shownScope == .uncommitted }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             if let error = model.error {
                 placeholder(error)
-            } else if model.files.isEmpty {
-                placeholder(model.root == nil ? "" : "No uncommitted changes")
+            } else if model.root == nil {
+                placeholder("")
             } else {
-                changesBar
-                if composing {
+                scopeBar
+                if let note = model.scopeNote {
+                    Text(verbatim: note)
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.dimText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
+                        .help(branchHelp)
+                }
+                if composing, editable {
                     CommitComposer(model: model, theme: theme, onDone: { composing = false })
                 }
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(model.files) { file in
-                            FileCard(
-                                file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
-                                theme: theme,
-                                onToggle: {
-                                    if model.collapsed.contains(file.path) {
-                                        model.collapsed.remove(file.path)
-                                    } else {
-                                        model.collapsed.insert(file.path)
-                                    }
-                                },
-                                onStage: { Task { await model.toggleStaged(file) } },
-                                onDiscard: { discarding = file },
-                                onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
-                            )
-                        }
-                        if model.files.count > DiffModel.maxDiffedFiles {
-                            Text("Diffs shown for the first \(DiffModel.maxDiffedFiles) files.")
-                                .font(.system(size: 11)).foregroundStyle(theme.dimText)
-                        }
-                    }
-                    .padding(12)
+                if model.shownFiles.isEmpty, editable || model.commits.isEmpty {
+                    placeholder(editable ? "No uncommitted changes" : "No changes on this branch")
+                } else {
+                    cards
                 }
             }
         }
@@ -71,6 +66,41 @@ struct DiffPanelView: View {
         }
     }
 
+    private var cards: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                if !editable, !model.commits.isEmpty {
+                    CommitList(
+                        commits: model.commits, more: model.moreCommits, open: openCommits, theme: theme,
+                        onToggle: { id in
+                            if openCommits.contains(id) { openCommits.remove(id) } else { openCommits.insert(id) }
+                        })
+                }
+                ForEach(model.shownFiles) { file in
+                    FileCard(
+                        file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
+                        editable: editable, theme: theme,
+                        onToggle: {
+                            if model.collapsed.contains(file.path) {
+                                model.collapsed.remove(file.path)
+                            } else {
+                                model.collapsed.insert(file.path)
+                            }
+                        },
+                        onStage: { Task { await model.toggleStaged(file) } },
+                        onDiscard: { discarding = file },
+                        onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
+                    )
+                }
+                if model.shownFiles.count > DiffModel.maxDiffedFiles {
+                    Text("Diffs shown for the first \(DiffModel.maxDiffedFiles) files.")
+                        .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                }
+            }
+            .padding(12)
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
             Text(headerTitle)
@@ -79,12 +109,12 @@ struct DiffPanelView: View {
                 .lineLimit(1)
                 .truncationMode(.head)
                 .help(model.root?.path ?? "")
-            if !model.files.isEmpty {
+            if !model.shownFiles.isEmpty {
                 Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(theme.dimText)
-                Text(verbatim: "\(model.files.count)").foregroundStyle(theme.text)
+                Text(verbatim: "\(model.shownFiles.count)").foregroundStyle(theme.text)
                 Text("·").foregroundStyle(theme.dimText)
-                Text(verbatim: "+\(model.totals.added)").foregroundStyle(DiffColors.added)
-                Text(verbatim: "−\(model.totals.removed)").foregroundStyle(DiffColors.removed)
+                Text(verbatim: "+\(model.shownTotals.added)").foregroundStyle(DiffColors.added)
+                Text(verbatim: "−\(model.shownTotals.removed)").foregroundStyle(DiffColors.removed)
             }
             Spacer(minLength: 0)
             sourceChip
@@ -122,21 +152,60 @@ struct DiffPanelView: View {
         return model.branch.map { "\(path): \($0)" } ?? path
     }
 
-    private var changesBar: some View {
+    /// Uncommitted | Branch, each with its file count, and Commit.
+    private var scopeBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "arrow.left.arrow.right").font(.system(size: 11))
-            Text("Uncommitted changes").font(.system(size: 13, weight: .semibold))
-            Spacer(minLength: 0)
-            Button {
-                composing.toggle()
-            } label: {
-                Label("Commit", systemImage: "arrow.triangle.merge")
+            HStack(spacing: 2) {
+                scopeButton(.uncommitted, "Uncommitted", count: model.files.count)
+                    .help("Staged, unstaged and untracked changes, against HEAD")
+                scopeButton(.branch, "Branch", count: model.comparison?.mergeBase == nil ? nil : model.branchFiles.count)
+                    .help(branchHelp)
             }
-            .controlSize(.small)
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 7).fill(theme.selected.opacity(0.5)))
+            Spacer(minLength: 0)
+            if editable, !model.files.isEmpty {
+                Button {
+                    composing.toggle()
+                } label: {
+                    Label("Commit", systemImage: "arrow.triangle.merge")
+                }
+                .controlSize(.small)
+            }
         }
         .foregroundStyle(theme.text)
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
+    }
+
+    /// Highlighted: the scope listed below — Uncommitted when Branch is
+    /// picked but has nothing to compare with (the note says why).
+    private func scopeButton(_ scope: DiffModel.Scope, _ title: String, count: Int?) -> some View {
+        let on = model.shownScope == scope
+        return Button {
+            model.choose(scope)
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                if let count { Text(verbatim: "\(count)").foregroundStyle(theme.dimText) }
+            }
+            .font(.system(size: 12, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? theme.text : theme.dimText)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(RoundedRectangle(cornerRadius: 5).fill(on ? theme.selected : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var branchHelp: String {
+        switch model.comparison {
+        case .since(let mergeBase, let base)?:
+            "Everything since this branch left \(base) — its commits and what is not committed yet — against their merge-base \(mergeBase.prefix(7))"
+        case let other?: other.unavailable ?? ""
+        case nil: ""
+        }
     }
 
     private func placeholder(_ text: String) -> some View {
@@ -163,11 +232,18 @@ private struct FileCard: View {
     let file: ChangedFile
     let diff: DiffModel.FileDiff?
     let collapsed: Bool
+    /// Stage and Discard: only for uncommitted changes.
+    let editable: Bool
     let theme: ChromeTheme
     let onToggle: () -> Void
     let onStage: () -> Void
     let onDiscard: () -> Void
     let onOpen: () -> Void
+
+    private var emptyDiff: String {
+        if file.kind == .renamed, let original = file.originalPath { return "Renamed from \(original), content unchanged." }
+        return "No textual diff (binary or empty)."
+    }
 
     private var stageSymbol: String {
         switch file.stageState {
@@ -193,7 +269,7 @@ private struct FileCard: View {
                     .font(.system(size: 12, design: .monospaced))
                     .textSelection(.enabled)
                 } else {
-                    Text(diff == nil ? "Loading…" : "No textual diff (binary or empty).")
+                    Text(verbatim: diff == nil ? "Loading…" : emptyDiff)
                         .font(.system(size: 11)).foregroundStyle(theme.dimText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
@@ -213,12 +289,14 @@ private struct FileCard: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
-            Button(action: onStage) {
-                Image(systemName: stageSymbol).font(.system(size: 12))
+            if editable {
+                Button(action: onStage) {
+                    Image(systemName: stageSymbol).font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(file.stageState == .none ? theme.dimText : theme.text)
+                .help(file.stageState == .full ? "Unstage" : "Stage")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(file.stageState == .none ? theme.dimText : theme.text)
-            .help(file.stageState == .full ? "Unstage" : "Stage")
             Text((file.path as NSString).lastPathComponent)
                 .font(.system(size: 13))
                 .foregroundStyle(theme.text)
@@ -238,12 +316,14 @@ private struct FileCard: View {
             .help("Copy Path")
             counts
             Spacer(minLength: 4)
-            Button(action: onDiscard) {
-                Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
+            if editable {
+                Button(action: onDiscard) {
+                    Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .help("Discard Changes…")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .help("Discard Changes…")
             Button(action: onOpen) {
                 Image(systemName: "arrow.up.forward.square").font(.system(size: 11))
             }
@@ -271,6 +351,87 @@ private struct FileCard: View {
             .padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.dimText.opacity(0.3)))
         }
+    }
+}
+
+/// The branch's commits, newest first: subject and short hash; a click
+/// shows when, the rest of the message and the files it touched.
+private struct CommitList: View {
+    let commits: [BranchCommit]
+    /// There are more than those listed.
+    let more: Bool
+    let open: Set<String>
+    let theme: ChromeTheme
+    let onToggle: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "smallcircle.filled.circle").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                Text("Commits").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                Text(verbatim: more ? "\(commits.count)+" : "\(commits.count)").foregroundStyle(theme.dimText)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            Divider().opacity(0.3)
+            ForEach(commits) { commit in
+                CommitRow(commit: commit, open: open.contains(commit.id), theme: theme, onToggle: { onToggle(commit.id) })
+            }
+        }
+        .padding(.bottom, 4)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.55)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.dimText.opacity(0.2)))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct CommitRow: View {
+    let commit: BranchCommit
+    let open: Bool
+    let theme: ChromeTheme
+    let onToggle: () -> Void
+    /// A huge commit's file list is cut here.
+    private static let maxFiles = 20
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: open ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(theme.dimText).frame(width: 12)
+                Text(verbatim: commit.subject).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 4)
+                Text(verbatim: commit.shortSHA).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText)
+            }
+            .frame(minHeight: 22)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onToggle)
+            .help(commit.subject)
+            if open {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(verbatim: commit.date).font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    if !commit.body.isEmpty {
+                        Text(verbatim: commit.body)
+                            .font(.system(size: 12)).foregroundStyle(theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(commit.files.prefix(Self.maxFiles), id: \.self) { path in
+                            Text(verbatim: path).lineLimit(1).truncationMode(.head)
+                        }
+                        if commit.files.count > Self.maxFiles {
+                            Text(verbatim: "and \(commit.files.count - Self.maxFiles) more")
+                        }
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(theme.dimText)
+                }
+                .padding(.leading, 18)
+                .padding(.bottom, 4)
+            }
+        }
+        .padding(.horizontal, 10)
     }
 }
 

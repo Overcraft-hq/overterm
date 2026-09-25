@@ -1,10 +1,14 @@
 import Foundation
 
-/// The working-tree changes of one checkout — staged and unstaged together,
-/// against HEAD (or the empty tree before the first commit) — and, while
-/// the panel is open, every changed file's diff.
+/// The changes of one checkout, in one of two scopes, and — while the panel
+/// is open — every shown file's diff:
+/// - uncommitted: staged and unstaged together, against HEAD (or the empty
+///   tree before the first commit) — what staging and committing act on;
+/// - branch: everything since the branch left the default branch, its
+///   commits and what is not committed yet, against merge-base(HEAD, base).
+///   Committed work stays visible after the agent commits.
 ///
-/// The counts are always live (the title-bar badge shows them); the
+/// Both lists' counts are always live (the title-bar badge shows one); the
 /// per-file diffs only load while `panelVisible`.
 @MainActor
 final class DiffModel: ObservableObject {
@@ -13,10 +17,60 @@ final class DiffModel: ObservableObject {
         let truncated: Bool
     }
 
+    enum Scope: String {
+        case uncommitted, branch
+    }
+
+    /// What `.branch` compares the working tree with — or why it can't.
+    enum BranchComparison: Equatable {
+        /// merge-base(HEAD, base); `base` as MergedWorktrees.base names it.
+        case since(mergeBase: String, base: String)
+        /// No HEAD yet.
+        case noCommits
+        /// Neither origin/HEAD nor a main worktree on a branch.
+        case noBase
+        /// HEAD is on the base branch itself.
+        case onBase(String)
+        /// HEAD shares no history with the base.
+        case unrelated(String)
+
+        var mergeBase: String? {
+            if case .since(let mergeBase, _) = self { mergeBase } else { nil }
+        }
+
+        /// Why `.branch` can't be shown; nil when it can.
+        var unavailable: String? {
+            switch self {
+            case .since: nil
+            case .noCommits: "No commits yet — nothing to compare with"
+            case .noBase: "No default branch found — nothing to compare with"
+            case .onBase(let branch): "On \(branch) — nothing to compare with"
+            case .unrelated(let base): "No history shared with \(base) — nothing to compare with"
+            }
+        }
+    }
+
+    /// What the ± badge in the title bar shows.
+    enum Badge: Equatable {
+        case uncommitted(added: Int, removed: Int)
+        case branch(added: Int, removed: Int)
+    }
+
     @Published private(set) var root: URL?
     /// Why this checkout is the one shown (set by the window).
     @Published var showing: CheckoutReason = .shell
+    /// Uncommitted: staged, unstaged and untracked, against HEAD.
     @Published private(set) var files: [ChangedFile] = []
+    /// Everything since the branch left its base, committed or not.
+    @Published private(set) var branchFiles: [ChangedFile] = []
+    /// The branch's commits since then, newest first.
+    @Published private(set) var commits: [BranchCommit] = []
+    /// There were more than `maxCommits`.
+    @Published private(set) var moreCommits = false
+    /// nil until the checkout's first refresh.
+    @Published private(set) var comparison: BranchComparison?
+    /// The one picked in the pane (`choose`); remembered.
+    @Published private(set) var scope: Scope
     @Published private(set) var branch: String?
     @Published private(set) var diffs: [String: FileDiff] = [:]
     /// Cards the user folded.
@@ -33,9 +87,15 @@ final class DiffModel: ObservableObject {
     /// Diffs past this many files aren't loaded — a huge change set is for
     /// the terminal, not a panel.
     static let maxDiffedFiles = 60
+    /// Commits listed at most: a base far behind is no reason to parse
+    /// thousands on every refresh.
+    static let maxCommits = 100
     /// git's well-known empty tree: the base before a repository's first commit.
     static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    /// The picked scope, in AppEnvironment.defaults.
+    static let scopeKey = "diffScope"
 
+    private let defaults: UserDefaults
     private var watcher: DirectoryWatcher?
     /// The git state kept outside the checkout: a linked worktree's index,
     /// HEAD and reflog are in the main repository's .git/worktrees/<name>, its
@@ -46,11 +106,68 @@ final class DiffModel: ObservableObject {
     /// overwrite a newer one.
     private var generation = 0
 
-    var totals: (added: Int, removed: Int) {
+    init(defaults: UserDefaults = AppEnvironment.defaults) {
+        self.defaults = defaults
+        scope = defaults.string(forKey: Self.scopeKey).flatMap(Scope.init(rawValue:)) ?? .uncommitted
+    }
+
+    /// The pane's Uncommitted | Branch switch.
+    func choose(_ scope: Scope) {
+        guard scope != self.scope else { return }
+        self.scope = scope
+        defaults.set(scope.rawValue, forKey: Self.scopeKey)
+        // The diffs loaded, or loading, are against the other base.
+        generation += 1
+        diffs = [:]
+        Task { await refresh() }
+    }
+
+    /// What the pane lists: Branch when picked and there is something to
+    /// compare with, else Uncommitted.
+    var shownScope: Scope { scope == .branch && comparison?.mergeBase != nil ? .branch : .uncommitted }
+    var shownFiles: [ChangedFile] { shownScope == .branch ? branchFiles : files }
+
+    var totals: (added: Int, removed: Int) { Self.totals(files) }
+    var shownTotals: (added: Int, removed: Int) { Self.totals(shownFiles) }
+
+    nonisolated static func totals(_ files: [ChangedFile]) -> (added: Int, removed: Int) {
         files.reduce(into: (0, 0)) { sum, file in
             sum.0 += file.added ?? 0
             sum.1 += file.removed ?? 0
         }
+    }
+
+    /// Under the switch when Branch is picked: what it compares with, or
+    /// why there is nothing to compare with.
+    var scopeNote: String? {
+        guard scope == .branch, let comparison else { return nil }
+        guard case .since(_, let base) = comparison else { return comparison.unavailable }
+        return "Since \(base) · \(Self.commitCount(commits.count, more: moreCommits))"
+    }
+
+    nonisolated static func commitCount(_ count: Int, more: Bool) -> String {
+        if more { return "\(count)+ commits" }
+        switch count {
+        case 0: return "no commits yet"
+        case 1: return "1 commit"
+        default: return "\(count) commits"
+        }
+    }
+
+    var badge: Badge? { error == nil ? Self.badge(uncommitted: files, branch: branchFiles) : nil }
+
+    /// What is uncommitted while there is some, else the branch's totals: the
+    /// agent's work stays in sight after it commits.
+    nonisolated static func badge(uncommitted: [ChangedFile], branch: [ChangedFile]) -> Badge? {
+        if !uncommitted.isEmpty {
+            let sum = totals(uncommitted)
+            return .uncommitted(added: sum.added, removed: sum.removed)
+        }
+        if !branch.isEmpty {
+            let sum = totals(branch)
+            return .branch(added: sum.added, removed: sum.removed)
+        }
+        return nil
     }
 
     /// Follows the selected tab's checkout. Watching starts right away: the
@@ -59,6 +176,10 @@ final class DiffModel: ObservableObject {
         guard url != root else { return }
         root = url
         files = []
+        branchFiles = []
+        commits = []
+        moreCommits = false
+        comparison = nil
         diffs = [:]
         collapsed = []
         branch = nil
@@ -116,37 +237,80 @@ final class DiffModel: ObservableObject {
         let ticket = generation
         do {
             let status = try await Git.run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], in: root)
-            let base = await Self.base(in: root)
-            let numstat = (try? await Git.run(["diff", "--numstat", "-z", base], in: root)) ?? ""
-            let head = (try? await Git.run(["branch", "--show-current"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
-            var changed = GitStatus.parse(porcelainZ: status)
-            let counts = GitStatus.parse(numstatZ: numstat)
-            for i in changed.indices {
-                if changed[i].kind == .untracked {
-                    // numstat doesn't see untracked files; their lines are all additions.
-                    changed[i].added = Self.lineCount(root.appendingPathComponent(changed[i].path))
-                    changed[i].removed = changed[i].added == nil ? nil : 0
-                } else {
-                    changed[i].added = counts[changed[i].path]?.added ?? nil
-                    changed[i].removed = counts[changed[i].path]?.removed ?? nil
-                }
+            let hasHead = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)) != nil
+            // HEAD, or the empty tree when there is no commit yet.
+            let head = hasHead ? "HEAD" : Self.emptyTree
+            let numstat = (try? await Git.run(["diff", "--numstat", "-z", head], in: root)) ?? ""
+            let current = (try? await Git.run(["branch", "--show-current"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let branchName = current?.isEmpty == false ? current : nil
+            let changed = Self.counted(GitStatus.parse(porcelainZ: status), GitStatus.parse(numstatZ: numstat), in: root)
+            let comparison = await Self.comparison(in: root, hasHead: hasHead, branch: branchName)
+            var onBranch: [ChangedFile] = []
+            var log: [BranchCommit] = []
+            if let mergeBase = comparison.mergeBase {
+                onBranch = await Self.branchFiles(in: root, since: mergeBase, untracked: changed.filter { $0.kind == .untracked })
+                let listed = try? await Git.run(BranchLog.arguments(since: mergeBase, limit: Self.maxCommits + 1), in: root)
+                log = BranchLog.parse(listed ?? "")
             }
             guard ticket == generation else { return }
             files = changed
-            branch = head?.isEmpty == false ? head : nil
+            branchFiles = onBranch
+            commits = Array(log.prefix(Self.maxCommits))
+            moreCommits = log.count > Self.maxCommits
+            self.comparison = comparison
+            branch = branchName
             error = nil
-            if panelVisible { await loadDiffs(base: base, ticket: ticket) }
+            if panelVisible { await loadDiffs(head: head, ticket: ticket) }
         } catch {
             guard ticket == generation else { return }
             files = []
+            branchFiles = []
+            commits = []
+            moreCommits = false
+            comparison = nil
             diffs = [:]
             self.error = error is GitError ? "Not a git repository" : error.localizedDescription
         }
     }
 
-    /// HEAD, or the empty tree when there is no commit yet.
-    private static func base(in root: URL) async -> String {
-        (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)) != nil ? "HEAD" : emptyTree
+    /// Fills in each file's counts from numstat; an untracked file's lines
+    /// (numstat doesn't see those) are all additions.
+    private static func counted(_ files: [ChangedFile], _ counts: [String: (added: Int?, removed: Int?)], in root: URL) -> [ChangedFile] {
+        var files = files
+        for i in files.indices {
+            if files[i].kind == .untracked {
+                files[i].added = lineCount(root.appendingPathComponent(files[i].path))
+                files[i].removed = files[i].added == nil ? nil : 0
+            } else {
+                files[i].added = counts[files[i].path]?.added ?? nil
+                files[i].removed = counts[files[i].path]?.removed ?? nil
+            }
+        }
+        return files
+    }
+
+    /// The merge-base of HEAD and the default branch (the one merged
+    /// worktrees are judged by) — or why there is none to use.
+    private static func comparison(in root: URL, hasHead: Bool, branch: String?) async -> BranchComparison {
+        guard hasHead else { return .noCommits }
+        guard let base = await MergedWorktrees.base(in: root) else { return .noBase }
+        // The base is origin/<branch> or a local branch.
+        if let branch, base == branch || base == "origin/\(branch)" { return .onBase(branch) }
+        let mergeBase = (try? await Git.run(["merge-base", "HEAD", base], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let mergeBase, !mergeBase.isEmpty else { return .unrelated(base) }
+        return .since(mergeBase: mergeBase, base: base)
+    }
+
+    /// Everything that differs from the merge-base: the tracked files git
+    /// diff compares (committed, staged, unstaged; renames paired), and the
+    /// untracked ones, already counted.
+    private static func branchFiles(in root: URL, since mergeBase: String, untracked: [ChangedFile]) async -> [ChangedFile] {
+        let names = (try? await Git.run(["diff", "--name-status", "-z", "-M", mergeBase], in: root)) ?? ""
+        let numstat = (try? await Git.run(["diff", "--numstat", "-z", "-M", mergeBase], in: root)) ?? ""
+        var files = counted(GitStatus.parse(nameStatusZ: names), GitStatus.parse(numstatZ: numstat), in: root)
+        let tracked = Set(files.map(\.path))
+        files += untracked.filter { !tracked.contains($0.path) }
+        return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
     /// Lines in a small text file; nil for binary, unreadable or > 1 MB.
@@ -159,10 +323,14 @@ final class DiffModel: ObservableObject {
         return data.last == 0x0A ? newlines : newlines + 1
     }
 
-    private func loadDiffs(base: String, ticket: Int) async {
+    /// The shown scope's diffs: against HEAD (`head`: or the empty tree), or
+    /// against the merge-base.
+    private func loadDiffs(head: String, ticket: Int) async {
         guard let root else { return }
+        let mergeBase = shownScope == .branch ? comparison?.mergeBase : nil
+        let base = mergeBase ?? head
         var loaded: [String: FileDiff] = [:]
-        for file in files.prefix(Self.maxDiffedFiles) {
+        for file in (mergeBase == nil ? files : branchFiles).prefix(Self.maxDiffedFiles) {
             let arguments: [String]
             switch file.kind {
             case .untracked: arguments = ["diff", "--no-color", "--no-index", "--", "/dev/null", file.path]

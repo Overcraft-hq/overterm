@@ -72,6 +72,12 @@ enum MergedWorktrees {
         return mainBranch
     }
 
+    /// The same, finding the main worktree's branch itself.
+    static func base(in repo: URL) async -> String? {
+        let listed = (try? await Git.run(["worktree", "list", "--porcelain"], in: repo)).map(Worktree.parse(porcelain:)) ?? []
+        return await base(in: repo, mainBranch: listed.first { $0.isMain }?.branch)
+    }
+
     /// Merged branches among `worktrees`' (the main worktree's is never one).
     static func find(in repo: URL, worktrees: [Worktree]) async -> [String: Reason] {
         let mainBranch = worktrees.first { $0.isMain }?.branch

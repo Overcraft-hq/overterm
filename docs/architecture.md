@@ -33,7 +33,7 @@ libghostty's own threads and git calls.
 | `Tab` | a `TerminalView` + title, custom name, colour, pin, agent, cwd, `TabActivity` |
 | `FileTreeModel` | tree of the selected tab's checkout; lazy listings, FSEvents invalidation, gitignore dimming |
 | `WorktreeModel` | `git worktree list` of that repository |
-| `DiffModel` | status, counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit of that checkout; works before the first commit (empty-tree base). Refreshes on FSEvents under the checkout and, for a linked worktree, under its git dir (`.git/worktrees/<name>`: index, HEAD) and the repository's `refs/` — a commit there writes nothing inside the checkout |
+| `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
 | `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
 | `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |
@@ -108,6 +108,32 @@ menu): `git fetch --prune` (ssh in BatchMode), then one sheet listing what
 goes and what stays — kept: a tab in it, uncommitted changes, locked. It runs
 `git worktree remove` without `--force` and, if ticked, `git branch -D`
 (`-d` refuses a squash-merged branch). The Worktrees reload button fetches too.
+
+## Changes pane
+
+The fourth column (`Sources/Terminus/Diff/`): `DiffModel` for the selected
+tab's checkout, `DiffPanelView` its Warp-style cards. A switch under its
+header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`):
+
+| Scope | Against | From |
+|---|---|---|
+| Uncommitted | HEAD (the empty tree before the first commit) | `status --porcelain=v1 -z` + `diff --numstat -z HEAD`. Stage, discard and commit act here only |
+| Branch | `merge-base(HEAD, base)` | `diff --name-status -z -M <mb>` + its `--numstat` (committed, staged and unstaged; renames paired), untracked files from status; above the cards the commits `<mb>..HEAD`, newest first (`BranchLog`: subject and short SHA; a click shows the date, message and files) |
+
+- The base is `MergedWorktrees.base`: origin/HEAD, else the main worktree's
+  branch — the one merged worktrees are judged by. With no HEAD, no base,
+  HEAD on the base branch itself, or no merge-base (unrelated history),
+  Branch has nothing to compare with: the pane says why ("On main — nothing
+  to compare with") and lists Uncommitted.
+- Both lists' counts are always live. The ± badge shows the uncommitted
+  totals while there are any, else the branch's: an agent's work stays in
+  sight after it commits. Diff text loads only while the pane is open, for
+  the scope shown, from that scope's base.
+- It refreshes on FSEvents under the checkout and, for a linked worktree,
+  under its git dir (`.git/worktrees/<name>`: index, HEAD) and the
+  repository's `refs/` — a commit there writes nothing inside the checkout.
+  A burst of events is one refresh (400 ms debounce); the window becoming
+  key refreshes too.
 
 ## Agent overview (⇧⌘A)
 
@@ -261,7 +287,7 @@ opener (the browser).
 | Tabs (cwd, name, colour, pin, agent) + selection | `~/Library/Application Support/Terminus/session.json` (1 s debounced + on quit) |
 | Shell panes' text (last 2000 lines, plain) | `…/Terminus/scrollback/<uuid>.txt`, named in session.json; written once, at quit or window close |
 | Snippets | `…/Terminus/snippets.json` |
-| Sidebar/diff visible, sidebar panel | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`) |
+| Sidebar/changes visible, sidebar panel, changes scope | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`, `diffScope`) |
 | The app files open in | `UserDefaults` (`openWithApp`, a bundle id) |
 | Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
 

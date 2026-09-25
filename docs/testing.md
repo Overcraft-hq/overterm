@@ -13,10 +13,12 @@ and for E2E the app itself).
 ## Unit / integration — `Tests/TerminusTests`
 
 Pure logic and anything that can run without a window: parsers (worktree,
-status, numstat, unified diff), `FileTreeModel`, `DirectoryWatcher` (real
-FSEvents), `WorktreeModel`, `TaskCreator`, `DiffModel` (real repos, incl. no
-HEAD yet), `EditorDocument`, `SyntaxHighlighter`, snippets, palette ranking,
-session file, `TabActivity`, `GhosttyInput`, and `TabStore`/`Tab`.
+status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
+`DirectoryWatcher` (real FSEvents), `WorktreeModel`, `TaskCreator`,
+`DiffModel` (real repos, incl. no HEAD yet, a commit in a linked worktree,
+the branch scope and when it has nothing to compare with), `EditorDocument`,
+`SyntaxHighlighter`, snippets, palette ranking, session file, `TabActivity`,
+`GhosttyInput`, and `TabStore`/`Tab`.
 
 Tabs are real: the unit-test process never calls `ghostty_init`, so
 `GhosttyRuntime` has no app and every `TerminalView` is surfaceless — no
@@ -47,8 +49,8 @@ What makes it end-to-end without being dangerous:
   a throwaway git identity.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
-`layout`, `session`, `task`, `snippets`, `attention`, `marks`, `palette`,
-`reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`.
+`branchDiff`, `layout`, `session`, `task`, `snippets`, `attention`, `marks`,
+`palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

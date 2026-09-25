@@ -4,14 +4,21 @@ import XCTest
 
 final class DiffModelTests: XCTestCase {
     private var repo: URL!
+    /// The scope is remembered: tests that pick one get their own suite.
+    private var suite: String!
+    private var defaults: UserDefaults!
 
     override func setUpWithError() throws {
         repo = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-diff-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        suite = "terminus-tests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     }
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: repo)
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: repo.path + "-wt"))
+        defaults.removePersistentDomain(forName: suite)
     }
 
     /// Refreshes run on file events too and a newer one supersedes an older
@@ -182,6 +189,170 @@ final class DiffModelTests: XCTestCase {
         let linked = await DiffModel.gitDirectories(outside: worktree).map { $0.resolvingSymlinksInPath().path }
         let dotGit = repo.appendingPathComponent(".git").resolvingSymlinksInPath().path
         XCTAssertEqual(linked, ["\(dotGit)/worktrees/\(worktree.lastPathComponent)", "\(dotGit)/refs"])
+    }
+
+    // MARK: Branch scope
+
+    /// A repository on main with `files` committed, and a linked worktree
+    /// next to it on a new branch `feat` — New Task's layout.
+    @MainActor
+    private func featureWorktree(_ files: [String: String]) async throws -> URL {
+        try await git("init", "-q", "-b", "main")
+        for (name, text) in files { try write(name, text) }
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        let worktree = URL(fileURLWithPath: repo.path + "-wt")
+        try await git("worktree", "add", "-q", "-b", "feat", worktree.path)
+        return worktree
+    }
+
+    @MainActor
+    private func git(in dir: URL, _ args: String...) async throws {
+        _ = try await Git.run(["-c", "user.email=t@t", "-c", "user.name=t"] + args, in: dir)
+    }
+
+    /// The agent committed one change and has another under way. Uncommitted
+    /// shows only the latter; Branch shows both, from where the branch left
+    /// main, and the commit — and keeps showing it once everything is committed.
+    @MainActor
+    func testTheBranchScopeKeepsWhatWasCommitted() async throws {
+        let worktree = try await featureWorktree(["a.txt": "one\n", "b.txt": "one\n"])
+        try "two\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try await git(in: worktree, "commit", "-q", "-am", "Change a", "-m", "Because the test says so.")
+        try "one\nmore\n".write(to: worktree.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        let mainTip = try await Git.run(["rev-parse", "main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let model = DiffModel(defaults: defaults)
+        model.panelVisible = true
+        model.setRoot(worktree)
+        try await eventually { model.branchFiles.count == 2 && model.diffs.count == 1 }
+
+        XCTAssertEqual(model.comparison, .since(mergeBase: mainTip, base: "main"))
+        XCTAssertEqual(model.files.map(\.path), ["b.txt"], "uncommitted: the edit under way")
+        XCTAssertEqual(model.branchFiles.map(\.path), ["a.txt", "b.txt"], "the branch: the committed file too")
+        XCTAssertEqual(model.branchFiles.map { [$0.added, $0.removed] }, [[1, 1], [1, 0]])
+        XCTAssertEqual(model.commits.map(\.subject), ["Change a"])
+        XCTAssertEqual(model.commits.first?.body, "Because the test says so.")
+        XCTAssertEqual(model.commits.first?.files, ["a.txt"])
+        XCTAssertEqual(model.scope, .uncommitted, "Uncommitted until Branch is picked")
+        XCTAssertEqual(model.shownFiles.map(\.path), ["b.txt"])
+        XCTAssertNil(model.scopeNote)
+        XCTAssertEqual(model.badge, .uncommitted(added: 1, removed: 0), "the badge: what is uncommitted, while there is some")
+
+        model.choose(.branch)
+        try await eventually { model.diffs.count == 2 }
+        XCTAssertEqual(model.shownScope, .branch)
+        XCTAssertEqual(model.shownFiles.map(\.path), ["a.txt", "b.txt"])
+        XCTAssertEqual(model.diffs["a.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["two"], "diffed from the merge-base")
+        XCTAssertEqual(model.diffs["b.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["more"])
+        XCTAssertEqual(model.scopeNote, "Since main · 1 commit")
+        XCTAssertEqual(defaults.string(forKey: DiffModel.scopeKey), "branch", "the pick is remembered")
+        XCTAssertEqual(DiffModel(defaults: defaults).scope, .branch)
+
+        // The rest is committed too: nothing uncommitted, the branch keeps it all.
+        try await Task.sleep(nanoseconds: 500_000_000)
+        try await git(in: worktree, "commit", "-q", "-am", "More b")
+        try await eventually { model.files.isEmpty && model.commits.count == 2 }
+        XCTAssertEqual(model.files, [])
+        XCTAssertEqual(model.branchFiles.map(\.path), ["a.txt", "b.txt"])
+        XCTAssertEqual(model.commits.map(\.subject), ["More b", "Change a"], "newest first")
+        XCTAssertEqual(model.badge, .branch(added: 2, removed: 1), "then the branch's totals")
+        XCTAssertEqual(model.scopeNote, "Since main · 2 commits")
+    }
+
+    @MainActor
+    func testOnTheBaseBranchThereIsNothingToCompareWith() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        try write("a.txt", "two\n")
+
+        let model = DiffModel(defaults: defaults)
+        model.choose(.branch)
+        model.panelVisible = true
+        model.setRoot(repo)
+        try await eventually { model.comparison != nil && model.diffs.count == 1 }
+        XCTAssertEqual(model.comparison, .onBase("main"))
+        XCTAssertEqual(model.scope, .branch, "the pick stays")
+        XCTAssertEqual(model.shownScope, .uncommitted, "but Uncommitted is shown")
+        XCTAssertEqual(model.shownFiles.map(\.path), ["a.txt"])
+        XCTAssertEqual(model.diffs["a.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["two"])
+        XCTAssertEqual(model.branchFiles, [])
+        XCTAssertEqual(model.scopeNote, "On main — nothing to compare with")
+    }
+
+    @MainActor
+    func testWithNoCommitYetThereIsNothingToCompareWith() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        let model = DiffModel(defaults: defaults)
+        model.choose(.branch)
+        model.setRoot(repo)
+        try await eventually { model.comparison != nil }
+        XCTAssertEqual(model.comparison, .noCommits)
+        XCTAssertEqual(model.shownScope, .uncommitted)
+        XCTAssertEqual(model.shownFiles.map(\.path), ["a.txt"])
+        XCTAssertEqual(model.scopeNote, "No commits yet — nothing to compare with")
+    }
+
+    /// A branch with no history in common with main (an orphan) can't be
+    /// compared with it.
+    @MainActor
+    func testUnrelatedHistoryHasNothingToCompareWith() async throws {
+        let worktree = try await featureWorktree(["a.txt": "one\n"])
+        try await git(in: worktree, "checkout", "-q", "--orphan", "lonely")
+        try await git(in: worktree, "commit", "-q", "-m", "alone")
+        let model = DiffModel(defaults: defaults)
+        model.choose(.branch)
+        model.setRoot(worktree)
+        try await eventually { model.comparison != nil }
+        XCTAssertEqual(model.comparison, .unrelated("main"))
+        XCTAssertEqual(model.shownScope, .uncommitted)
+        XCTAssertEqual(model.scopeNote, "No history shared with main — nothing to compare with")
+    }
+
+    /// origin/HEAD is the base when there is one, so a feature branch in the
+    /// main checkout itself has something to compare with.
+    @MainActor
+    func testTheRemotesDefaultBranchIsTheBase() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        try await git("update-ref", "refs/remotes/origin/main", "HEAD")
+        try await git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        try await git("checkout", "-q", "-b", "feat")
+        try write("c.txt", "new\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "Add c")
+        let base = try await Git.run(["rev-parse", "origin/main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let model = DiffModel(defaults: defaults)
+        model.setRoot(repo)
+        try await eventually { model.comparison != nil }
+        XCTAssertEqual(model.comparison, .since(mergeBase: base, base: "origin/main"))
+        XCTAssertEqual(model.branchFiles.map(\.path), ["c.txt"])
+        XCTAssertEqual(model.commits.map(\.subject), ["Add c"])
+    }
+
+    @MainActor
+    func testARenameOnTheBranchIsReportedAsARename() async throws {
+        let worktree = try await featureWorktree(["old.txt": "1\n2\n3\n4\n5\n"])
+        try await git(in: worktree, "mv", "old.txt", "new.txt")
+        try await git(in: worktree, "commit", "-q", "-m", "Rename")
+
+        let model = DiffModel(defaults: defaults)
+        model.choose(.branch)
+        model.panelVisible = true
+        model.setRoot(worktree)
+        try await eventually { model.diffs["new.txt"] != nil }
+        XCTAssertEqual(model.branchFiles.map(\.path), ["new.txt"], "one file, not a deletion and an addition")
+        XCTAssertEqual(model.branchFiles.first?.kind, .renamed)
+        XCTAssertEqual(model.branchFiles.first?.originalPath, "old.txt")
+        XCTAssertEqual(model.branchFiles.first.map { [$0.added, $0.removed] }, [0, 0])
+        XCTAssertEqual(model.diffs["new.txt"]?.lines.filter { $0.kind == .added || $0.kind == .removed }.count, 0)
+        XCTAssertEqual(model.commits.first?.files, ["new.txt"])
     }
 
     @MainActor

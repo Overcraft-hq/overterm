@@ -10,8 +10,8 @@ final class RightPane: ObservableObject {
     @Published var mode: Mode = .changes
 }
 
-/// The pane on the right: the checkout's uncommitted changes, or its pull
-/// request — a switch at the top chooses.
+/// The pane on the right: the checkout's changes (uncommitted, or the
+/// branch's), or its pull request — a switch at the top chooses.
 struct RightPaneView: View {
     @ObservedObject var pane: RightPane
     @ObservedObject var diff: DiffModel
@@ -27,7 +27,7 @@ struct RightPaneView: View {
             HStack(spacing: 4) {
                 tab(.changes) {
                     Text("Changes")
-                    if !diff.files.isEmpty { Text(verbatim: "\(diff.files.count)").foregroundStyle(theme.dimText) }
+                    if !diff.shownFiles.isEmpty { Text(verbatim: "\(diff.shownFiles.count)").foregroundStyle(theme.dimText) }
                 }
                 tab(.pullRequest) {
                     Text("Pull Request")

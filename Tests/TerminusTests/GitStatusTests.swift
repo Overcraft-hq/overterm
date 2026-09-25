@@ -32,6 +32,34 @@ final class GitStatusTests: XCTestCase {
         XCTAssertEqual(files.first { $0.kind == .renamed }?.originalPath, "old name.swift")
     }
 
+    /// `git diff --name-status -z -M <merge-base>`: a letter (with a
+    /// similarity for renames and copies) and the path; a rename or copy
+    /// names both paths, the original first.
+    func testNameStatusAgainstABase() {
+        let output =
+            "M\0b/mod.swift\0A\0z-new.swift\0D\0gone.swift\0R100\0old name.swift\0renamed.swift\0"
+            + "C075\0template.swift\0copy.swift\0T\0link\0U\0x-conflict.swift\0"
+        let files = GitStatus.parse(nameStatusZ: output)
+        XCTAssertEqual(
+            files.map(\.path), ["b/mod.swift", "copy.swift", "gone.swift", "link", "renamed.swift", "x-conflict.swift", "z-new.swift"])
+        let byPath = Dictionary(uniqueKeysWithValues: files.map { ($0.path, $0) })
+        XCTAssertEqual(byPath["b/mod.swift"]?.kind, .modified)
+        XCTAssertEqual(byPath["z-new.swift"]?.kind, .added)
+        XCTAssertEqual(byPath["gone.swift"]?.kind, .deleted)
+        XCTAssertEqual(byPath["renamed.swift"]?.kind, .renamed)
+        XCTAssertEqual(byPath["renamed.swift"]?.originalPath, "old name.swift")
+        XCTAssertEqual(byPath["copy.swift"]?.kind, .added, "a copy is a new file; its source stays")
+        XCTAssertEqual(byPath["copy.swift"]?.originalPath, "template.swift")
+        XCTAssertEqual(byPath["link"]?.kind, .typeChanged)
+        XCTAssertEqual(byPath["x-conflict.swift"]?.kind, .conflicted)
+        XCTAssertNil(byPath["z-new.swift"]?.originalPath)
+        XCTAssertFalse(files.contains { $0.isStaged || $0.hasUnstaged }, "against a commit there is no index to stage in")
+    }
+
+    func testNameStatusOfNothing() {
+        XCTAssertEqual(GitStatus.parse(nameStatusZ: ""), [])
+    }
+
     func testNumstat() {
         let stats = GitStatus.parse(numstatZ: "3\t1\tsrc/a.swift\0-\t-\tlogo.png\0" + "2\t0\t\0old.swift\0new.swift\0")
         XCTAssertEqual(stats["src/a.swift"]?.added, 3)

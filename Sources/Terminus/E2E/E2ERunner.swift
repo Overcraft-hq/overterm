@@ -21,6 +21,7 @@ final class E2ERunner {
         "close": { await $0.close() },
         "editor": { await $0.editorScenario() },
         "diff": { await $0.diffScenario() },
+        "branchDiff": { await $0.branchDiffScenario() },
         "layout": { await $0.layout() },
         "session": { await $0.session() },
         "task": { await $0.task() },
@@ -415,6 +416,71 @@ final class E2ERunner {
         let log = (try? await Git.run(["log", "--format=%s"], in: repo))?.trimmingCharacters(in: .whitespacesAndNewlines)
         check("the commit is in git", log == "e2e commit", log ?? "nil")
         check("the badge clears", app.diff.totals.added == 0)
+        app.toggleDiff(nil)
+    }
+
+    /// What an agent did on its branch, committed or not. Uncommitted shows
+    /// the edit under way; Branch shows everything since the branch left
+    /// main — the committed change too — and the commit. Once all is
+    /// committed the badge shows the branch's totals; on main itself there
+    /// is nothing to compare with, and the pane says so.
+    private func branchDiffScenario() async {
+        let repo = scratch.appendingPathComponent("brepo")
+        let worktree = scratch.appendingPathComponent("brepo-feat")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        for name in ["a.txt", "b.txt"] { try? "one\n".write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        try? await git(["add", "."], in: repo)
+        try? await git(["commit", "-q", "-m", "init"], in: repo)
+        try? await git(["worktree", "add", "-q", "-b", "feat", worktree.path], in: repo)
+        try? "two\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? await git(["commit", "-q", "-am", "Change a", "-m", "The agent's reason."], in: worktree)
+        try? "one\nmore\n".write(to: worktree.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        let diff = app.diff
+
+        app.newTab(in: worktree)
+        check(
+            "the model follows the tab into the worktree",
+            await eventually { diff.root?.resolvingSymlinksInPath() == worktree.resolvingSymlinksInPath() })
+        check("Uncommitted: the edit under way", await eventually { diff.files.map(\.path) == ["b.txt"] }, "\(diff.files.map(\.path))")
+        check("Branch: the committed file too", await eventually { diff.branchFiles.map(\.path) == ["a.txt", "b.txt"] }, "\(diff.branchFiles.map(\.path))")
+        check("the badge shows what is uncommitted", diff.badge == .uncommitted(added: 1, removed: 0), "\(String(describing: diff.badge))")
+
+        app.toggleDiff(nil)
+        check("the pane opens on Uncommitted", await eventually { self.app.diffItem?.isCollapsed == false && diff.diffs.count == 1 })
+        check("Uncommitted says nothing about the branch", diff.shownScope == .uncommitted && diff.scopeNote == nil)
+        // The switch's Branch button.
+        diff.choose(.branch)
+        check("Branch lists both files", await eventually { diff.shownFiles.map(\.path) == ["a.txt", "b.txt"] }, "\(diff.shownFiles.map(\.path))")
+        check(
+            "and the commit, with its reason",
+            diff.commits.map(\.subject) == ["Change a"] && diff.commits.first?.body == "The agent's reason." && diff.commits.first?.files == ["a.txt"],
+            "\(diff.commits)")
+        check("the header says what it compares with", diff.scopeNote == "Since main · 1 commit", diff.scopeNote ?? "nil")
+        check(
+            "each file's diff is from where the branch left main",
+            await eventually { diff.diffs["a.txt"]?.lines.filter { $0.kind == .added }.map(\.text) == ["two"] && diff.diffs.count == 2 })
+        check("the pick is remembered", AppEnvironment.defaults.string(forKey: DiffModel.scopeKey) == "branch")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+
+        // The agent commits the rest.
+        await pause(0.5)
+        try? await git(["commit", "-q", "-am", "More b"], in: worktree)
+        check("nothing is uncommitted then", await eventually { diff.files.isEmpty }, "\(diff.files.map(\.path))")
+        check(
+            "the branch keeps both files and both commits",
+            await eventually { diff.branchFiles.count == 2 && diff.commits.map(\.subject) == ["More b", "Change a"] }, "\(diff.commits.map(\.subject))")
+        check("the badge shows the branch's totals", diff.badge == .branch(added: 2, removed: 1), "\(String(describing: diff.badge))")
+        check("the header counts both commits", diff.scopeNote == "Since main · 2 commits", diff.scopeNote ?? "nil")
+
+        app.newTab(in: repo)
+        check("on main there is nothing to compare with", await eventually { diff.comparison == .onBase("main") }, "\(String(describing: diff.comparison))")
+        check(
+            "the pane says so and shows Uncommitted", diff.scopeNote == "On main — nothing to compare with" && diff.shownScope == .uncommitted,
+            diff.scopeNote ?? "nil")
         app.toggleDiff(nil)
     }
 

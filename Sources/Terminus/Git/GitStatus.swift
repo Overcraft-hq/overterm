@@ -72,6 +72,33 @@ enum GitStatus {
         return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
+    /// Parses `git diff --name-status -z -M <base>`: NUL-separated records of
+    /// a status letter and a path; a rename or copy (`R100`, `C075`: the
+    /// letter and a similarity) has two paths, the original first. Against a
+    /// commit there is no index, so nothing is staged.
+    static func parse(nameStatusZ output: String) -> [ChangedFile] {
+        var files: [ChangedFile] = []
+        var fields = output.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)[...]
+        while let status = fields.popFirst() {
+            guard let letter = status.first else { continue }
+            let original = letter == "R" || letter == "C" ? fields.popFirst() : nil
+            guard let path = fields.popFirst(), !path.isEmpty else { continue }
+            let kind: ChangedFile.Kind
+            switch letter {
+            case "A": kind = .added
+            case "D": kind = .deleted
+            case "R": kind = .renamed
+            // A copy is a new file; the one it was copied from stays.
+            case "C": kind = .added
+            case "T": kind = .typeChanged
+            case "U": kind = .conflicted
+            default: kind = .modified
+            }
+            files.append(ChangedFile(path: path, originalPath: original, kind: kind, isStaged: false, hasUnstaged: false))
+        }
+        return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
     /// Parses `git diff --numstat -z HEAD` into path → (added, removed).
     /// Binary files report `-`, which becomes nil. A rename is
     /// `a\tb\t\0old\0new\0` — keyed by the new path.
