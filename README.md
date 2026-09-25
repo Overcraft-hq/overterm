@@ -88,6 +88,21 @@ make run                     # build Terminus.app and open it
 make install                 # …and copy it to /Applications (Launchpad, Spotlight)
 ```
 
+Builds are signed ad hoc, which makes each one a new app to macOS: a
+permission such as the microphone would be asked for again after every
+update. With `SIGN_IDENTITY` set — in the environment, or in an untracked
+`local.mk` next to the Makefile — `make install` re-signs the installed copy
+with that identity, and the grants stay (`make app`, `test` and `e2e` stay ad
+hoc and never touch the keychain):
+
+```make
+# local.mk (gitignored); list yours with: security find-identity -v -p codesigning
+SIGN_IDENTITY ?= Apple Development: you@example.com (TEAMID1234)
+```
+
+The first signing asks for the keychain's permission to use the key
+(Always Allow).
+
 Details: `docs/` (architecture, Ghostty embedding, debugging).
 
 Ghostty is pinned to v1.3.1 in `Scripts/build-ghosttykit.sh`: main needs

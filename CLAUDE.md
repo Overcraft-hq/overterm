@@ -13,7 +13,9 @@ make test                    # unit + integration tests (~3 s)
 make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
                              # both: run OUTSIDE the Bash sandbox — docs/testing.md
 make app                     # Terminus.app in the repo
-make install                 # …and copy it to /Applications
+make install                 # …and copy it to /Applications, re-signed with
+                             # $SIGN_IDENTITY (env or untracked local.mk) if set;
+                             # a stable identity keeps privacy grants (mic)
 make icon                    # Resources/AppIcon.svg → AppIcon.icns
 ```
 

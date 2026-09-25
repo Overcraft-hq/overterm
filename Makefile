@@ -1,5 +1,8 @@
 APP := Terminus.app
 
+# This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
+-include local.mk
+
 .PHONY: ghosttykit icon build test e2e app run install clean
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
@@ -30,10 +33,16 @@ app:
 run: app
 	open $(APP)
 
-## install: build and copy $(APP) into /Applications (Launchpad, Spotlight)
+## install: build and copy $(APP) into /Applications (Launchpad, Spotlight);
+## with SIGN_IDENTITY set (environment or local.mk), re-sign that copy with it
 install: app
 	rm -rf /Applications/$(APP)
 	cp -R $(APP) /Applications/
+ifneq ($(strip $(SIGN_IDENTITY)),)
+	@# Ad hoc, every build is a new app to macOS and loses its privacy grants
+	@# (the microphone); one identity keeps them. No timestamp: no network.
+	codesign --force --deep --timestamp=none --sign "$(SIGN_IDENTITY)" /Applications/$(APP)
+endif
 	@# So Finder's Open With and the "New Terminus Tab Here" service see it now.
 	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/$(APP)
 	/System/Library/CoreServices/pbs -update

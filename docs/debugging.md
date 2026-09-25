@@ -105,6 +105,7 @@ in `deinit`.
 | Esc in the find bar does nothing; the keyboard jumps back into the bar | Something takes the keyboard back whenever a terminal takes it. The bar rebinds on every terminal focus; only a search starting may focus its field (`bindSearchBar`, `dropFirst`). With text, Esc is two steps, as in Ghostty: back to the terminal, then Ghostty's `escape` → `end_search` closes it. |
 | `git check-ignore -z` fails | `-z` only works with `--stdin`; parse lines. |
 | App not in Launchpad | `make install` (the build lands in the repo). |
+| The microphone is asked for again after every update | The install is ad hoc, a new app to macOS each time: set `SIGN_IDENTITY` (README, Build). |
 | Tab rename ends as soon as it starts | Something took first responder after it began — re-selecting the tab used to (focus → terminal). `TERMINUS_DUMP_RENAME` checks it. |
 | Diff empty in a fresh repo | No HEAD yet: diff against the empty tree (`DiffModel.emptyTree`); `restore --staged` needs HEAD, use `rm --cached --force`. |
 | Idle shell reported as running | Shell integration hasn't reported the prompt yet (first seconds after launch). |

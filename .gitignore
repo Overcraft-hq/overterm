@@ -8,3 +8,6 @@ dist/
 # reproduced by `make ghosttykit` from the pin in Scripts/build-ghosttykit.sh.
 vendor/
 Frameworks/
+
+# This Mac's make settings (SIGN_IDENTITY for make install).
+local.mk
