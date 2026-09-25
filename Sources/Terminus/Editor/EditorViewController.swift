@@ -13,6 +13,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     private let theme: ChromeTheme
     private let background: NSColor
     private let foreground: NSColor
+    /// The header's ↗: the file in the app picked for files.
+    private let opener: ExternalOpener
     private var textView: NSTextView!
     private var ruler: LineNumberRuler!
     private var messageLabel: NSTextField!
@@ -24,10 +26,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Past this, highlighting on every keystroke would lag; plain text it is.
     private static let highlightLimit = 300_000
 
-    init(theme: ChromeTheme, background: NSColor, foreground: NSColor) {
+    init(theme: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener) {
         self.theme = theme
         self.background = background
         self.foreground = foreground
+        self.opener = opener
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -39,11 +42,22 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         let root = NSView()
         let header = EditorHeaderView(
             background: theme.stripNS, text: foreground,
-            onReveal: { [weak self] in self?.document.url.map { NSWorkspace.shared.open($0) } },
+            onReveal: { [weak self] in
+                guard let self, let url = self.document.url else { return }
+                self.opener.open(url)
+            },
+            revealMenu: { [weak self] in
+                guard let self, let url = self.document.url else { return nil }
+                return self.opener.menu(for: url)
+            },
             onClose: { [weak self] in self?.requestClose() })
         document.$url.combineLatest(document.$isDirty)
             .receive(on: DispatchQueue.main)
             .sink { url, dirty in header.update(name: url?.lastPathComponent ?? "", path: url?.path ?? "", dirty: dirty) }
+            .store(in: &cancellables)
+        // The emitted value: @Published sends before the property changes.
+        opener.$current
+            .sink { header.setRevealTitle(OpenWith.openTitle($0)) }
             .store(in: &cancellables)
 
         // TextKit 1 on purpose: the line-number ruler walks the layout
@@ -295,6 +309,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 private final class EditorHeaderView: NSView {
     private let title = NSTextField(labelWithString: "")
     private let dot = NSView()
+    private let reveal = MenuButton()
     private let onReveal: () -> Void
     private let onClose: () -> Void
     private let background: NSColor
@@ -304,7 +319,11 @@ private final class EditorHeaderView: NSView {
         dirtyRect.fill()
     }
 
-    init(background: NSColor, text: NSColor, onReveal: @escaping () -> Void, onClose: @escaping () -> Void) {
+    /// `revealMenu`: Open With, on a right-click on ↗.
+    init(
+        background: NSColor, text: NSColor, onReveal: @escaping () -> Void, revealMenu: @escaping () -> NSMenu?,
+        onClose: @escaping () -> Void
+    ) {
         self.onReveal = onReveal
         self.onClose = onClose
         self.background = background
@@ -320,8 +339,10 @@ private final class EditorHeaderView: NSView {
         dot.isHidden = true
         dot.toolTip = "Unsaved — ⌘S"
 
-        let reveal = Self.button("arrow.up.forward.app", tip: "Open in Default App", color: text, target: self, action: #selector(reveal))
-        let close = Self.button("xmark", tip: "Close Editor", color: text, target: self, action: #selector(close))
+        Self.style(reveal, "arrow.up.forward.app", tip: OpenWith.openTitle(nil), color: text, target: self, action: #selector(revealFile))
+        reveal.identifier = NSUserInterfaceItemIdentifier("openExternally")
+        reveal.menuProvider = revealMenu
+        let close = Self.style(NSButton(), "xmark", tip: "Close Editor", color: text, target: self, action: #selector(close))
         for view in [title, dot, reveal, close] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
@@ -355,17 +376,39 @@ private final class EditorHeaderView: NSView {
         dot.isHidden = !dirty
     }
 
-    private static func button(_ symbol: String, tip: String, color: NSColor, target: AnyObject, action: Selector) -> NSButton {
-        let image =
+    /// "Open in Zed", or "Open With…" while no app is picked.
+    func setRevealTitle(_ tip: String) {
+        reveal.toolTip = tip
+        reveal.setAccessibilityLabel(tip)
+    }
+
+    @discardableResult
+    private static func style<Button: NSButton>(
+        _ button: Button, _ symbol: String, tip: String, color: NSColor, target: AnyObject, action: Selector
+    ) -> Button {
+        button.image =
             NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?
             .withSymbolConfiguration(.init(pointSize: 11, weight: .medium)) ?? NSImage()
-        let button = NSButton(image: image, target: target, action: action)
+        button.imagePosition = .imageOnly
+        button.title = ""
+        button.target = target
+        button.action = action
         button.isBordered = false
         button.contentTintColor = color.withAlphaComponent(0.7)
         button.toolTip = tip
         return button
     }
 
-    @objc private func reveal() { onReveal() }
+    @objc private func revealFile() { onReveal() }
     @objc private func close() { onClose() }
+}
+
+/// A button with a menu on right-click (NSView asks `menu(for:)`), built
+/// when asked: Open With depends on the file and on the app in use.
+private final class MenuButton: NSButton {
+    var menuProvider: (() -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?() ?? super.menu(for: event)
+    }
 }

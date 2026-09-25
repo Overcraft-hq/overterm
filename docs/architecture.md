@@ -210,6 +210,36 @@ call `TerminalWindowController.open(_:)`. `make install` runs `lsregister -f`
 and `pbs -update` so Finder sees a change at once. `public.data` alone did not
 get files listed; the explicit text types did.
 
+## Opening files in another app
+
+A file leaves Terminus — the file tree's double-click, its menu's **Open in
+<App>**, the editor header's ↗ — in the app the user picked, not the macOS
+default for its type (that was Antigravity for `.md`, Xcode for
+`Package.swift`, Ghostty for `.sh`). `ExternalOpener` (`Sources/Terminus/Editor/`):
+
+- The pick is remembered as a bundle id (`openWithApp` in
+  `AppEnvironment.defaults`) and opened with
+  `NSWorkspace.open(_:withApplicationAt:configuration:)`. Nothing picked yet,
+  or that app is gone: a sheet asks — "Open files with which app?", a pop-up
+  of candidates with their icons — and remembers the answer. Never a silent
+  fall-back to the default.
+- **Open With ▸** (the file menu's submenu; right-click on ↗) lists the
+  candidates, the one in use ticked, then Other… (an `NSOpenPanel` of
+  applications). Picking one opens the file there and makes it the one.
+- Candidates (`OpenWith.candidates`, pure): installed code editors first, in
+  a fixed order, whether or not they claim the file (`OpenWith.editors`, bundle
+  ids from the apps' Info.plist: VS Code, Cursor, Windsurf, Antigravity, Zed,
+  Xcode, Sublime Text, Nova, BBEdit, JetBrains IDEs), then the system default
+  marked "(default)", then by name whatever `urlsForApplications(toOpen:)`
+  returns. One entry per bundle id; Terminus itself (it claims text files for
+  Finder) never.
+- An isolated run's `AppCatalog` is `IsolatedApps`: its scenario installs
+  stand-in apps and it records what it would have opened — an E2E run never
+  launches anything, as it never touches the real clipboard.
+
+Web links from the terminal and Tab Info's ports still go to the system
+opener (the browser).
+
 ## Persistence
 
 | What | Where |
@@ -218,6 +248,7 @@ get files listed; the explicit text types did.
 | Shell panes' text (last 2000 lines, plain) | `…/Terminus/scrollback/<uuid>.txt`, named in session.json; written once, at quit or window close |
 | Snippets | `…/Terminus/snippets.json` |
 | Sidebar/diff visible, sidebar panel | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`) |
+| The app files open in | `UserDefaults` (`openWithApp`, a bundle id) |
 | Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
 
 Bundle id `ai.promptrails.terminus`.

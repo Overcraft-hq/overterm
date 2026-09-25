@@ -43,6 +43,7 @@ final class E2ERunner {
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
         "clipboard": { await $0.clipboardScenario() },
+        "openWith": { await $0.openWithScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1647,6 +1648,78 @@ final class E2ERunner {
             termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         open(sys.argv[1], "wb").write(reply)
         """#
+
+    /// Opening a file outside Terminus (the file tree's double-click, the
+    /// editor's ↗): the first time a sheet asks which app, the answer is
+    /// remembered and later opens go straight there; Open With switches it;
+    /// an app that is gone is asked about again. Nothing is launched — an
+    /// isolated run's apps are stand-ins that only record.
+    private func openWithScenario() async {
+        guard let apps = app.opener.apps as? IsolatedApps else { return check("an isolated run has stand-in apps", false) }
+        let alpha = ExternalApp(bundleID: "e2e.terminus.alpha", name: "Alpha", url: scratch.appendingPathComponent("Alpha.app"))
+        let beta = ExternalApp(bundleID: "e2e.terminus.beta", name: "Beta", url: scratch.appendingPathComponent("Beta.app"))
+        apps.installed = [alpha, beta]
+        apps.defaultBundleID = beta.bundleID
+        let file = out("notes.md")
+        try? "# notes\n".write(to: file, atomically: true, encoding: .utf8)
+        func remembered() -> String? { AppEnvironment.defaults.string(forKey: OpenWith.rememberedKey) }
+        func opened(_ count: Int, with app: ExternalApp) async -> Bool {
+            await eventually(3) { apps.opened.count == count } && apps.opened.last == .init(file: file, bundleID: app.bundleID)
+        }
+
+        // Nothing picked yet: the file tree's double-click asks.
+        app.openExternally(file)
+        check("with nothing remembered, opening a file asks which app", await eventually(3) { self.window.attachedSheet != nil })
+        check("the sheet asks it", sheetTexts().contains(OpenWith.question), sheetTexts().joined(separator: " | "))
+        let popup = Self.find(NSPopUpButton.self, in: window.attachedSheet?.contentView) { _ in true }
+        check(
+            "it offers the apps with their icons, the system's default marked, then Other…",
+            popup?.itemTitles == ["Beta (default)", "Alpha", "", "Other…"] && popup?.itemArray.first?.image != nil,
+            "\(popup?.itemTitles ?? [])")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let sheet = window.attachedSheet {
+            await pause(0.8)
+            app.captureWindow(to: png, window: sheet)
+        }
+        popup?.selectItem(withTitle: "Alpha")
+        check("Open answers", clickSheetButton("Open"))
+        check("the file opens in the chosen app", await opened(1, with: alpha), "\(apps.opened)")
+        check("and the choice is remembered", remembered() == alpha.bundleID, remembered() ?? "nil")
+
+        app.openExternally(file)
+        check("opening again goes straight there, without asking", await opened(2, with: alpha) && window.attachedSheet == nil, "\(apps.opened)")
+
+        // The editor's ↗ names the app; its right-click is Open With.
+        app.openInEditor(file)
+        await eventually(2) { self.app.editor?.document.url == file }
+        guard let editor = app.editor, let reveal = Self.find(NSButton.self, in: editor.view, where: { $0.identifier?.rawValue == "openExternally" })
+        else { return check("the editor header has ↗", false) }
+        check("↗ says where it opens", reveal.toolTip == "Open in Alpha", reveal.toolTip ?? "nil")
+        let rightClick = NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        let menu = rightClick.flatMap { reveal.menu(for: $0) }
+        check(
+            "its Open With menu: the apps, the one in use ticked, then Other…",
+            menu?.items.map(\.title) == ["Beta (default)", "Alpha", "", "Other…"] && menu?.items[1].state == .on && menu?.items[0].state == .off,
+            "\(menu?.items.map { "\($0.title) \($0.state.rawValue)" } ?? [])")
+        menu?.items.first { $0.title == "Beta (default)" }.map { item in _ = (item.target as? NSObject)?.perform(item.action, with: item) }
+        check("choosing another app from Open With opens it there", await opened(3, with: beta), "\(apps.opened)")
+        check(
+            "and switches to it", remembered() == beta.bundleID && reveal.toolTip == "Open in Beta",
+            "\(remembered() ?? "nil"), \(reveal.toolTip ?? "nil")")
+        reveal.performClick(nil)
+        check("↗ then goes to the new one, without asking", await opened(4, with: beta) && window.attachedSheet == nil, "\(apps.opened)")
+
+        // The remembered app was uninstalled: ask again, never fall back.
+        apps.installed = [alpha]
+        reveal.performClick(nil)
+        check("an app that is gone is asked about again", await eventually(3) { self.window.attachedSheet != nil })
+        check("↗ no longer names it", reveal.toolTip == "Open With…", reveal.toolTip ?? "nil")
+        check("Cancel answers", clickSheetButton("Cancel"))
+        await pause(0.3)
+        check("and opens nothing", apps.opened.count == 4 && window.attachedSheet == nil, "\(apps.opened)")
+        check("no real app was launched", SystemApps.launched == 0)
+    }
 
     // MARK: Keyboard map (US)
 

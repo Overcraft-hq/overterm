@@ -59,6 +59,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var pullRequestPoll: Timer?
     private var finalSaveDone = false
     private(set) var editor: EditorViewController?
+    /// Opens files in the app picked for them (the file tree, the editor's ↗).
+    let opener = ExternalOpener()
     private(set) var editorItem: NSSplitViewItem?
     private(set) var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
@@ -105,6 +107,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let runtime = GhosttyRuntime.shared
         let theme = ChromeTheme(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
         self.theme = theme
+        opener.window = window
         let tabBar = TabStripHostingView(
             rootView: TabBarView(
                 store: store,
@@ -139,10 +142,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 worktrees: worktrees,
                 snippets: snippets,
                 sessions: sessions,
+                opener: opener,
                 theme: theme,
                 actions: FileTreeActions(
                     insertPath: { [weak self] in self?.insertPath($0) },
                     openInEditor: { [weak self] in self?.openInEditor($0) },
+                    openExternally: { [weak self] in self?.openExternally($0) },
                     newTab: { [weak self] in self?.newTab(in: $0) },
                     relativePath: { [weak self] in self?.relativePath($0) ?? $0.path }
                 ),
@@ -206,7 +211,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         self.spotlightView = spotlightView
 
         // Editor to the right of the terminal, opened from the file tree.
-        let editor = EditorViewController(theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor)
+        let editor = EditorViewController(
+            theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor, opener: opener)
         let editorItem = NSSplitViewItem(viewController: editor)
         editorItem.canCollapse = true
         editorItem.isCollapsed = true
@@ -1103,6 +1109,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private func closeEditor() {
         editorItem?.animator().isCollapsed = true
         focusSelectedTerminal()
+    }
+
+    /// A file in the app picked for files — asking which first, if none is
+    /// yet (or it is gone). The file tree's double-click and "Open in …".
+    func openExternally(_ url: URL) {
+        opener.open(url)
     }
 
     // MARK: Layout diagnostics

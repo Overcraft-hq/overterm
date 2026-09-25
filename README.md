@@ -25,6 +25,9 @@ theme, keybinds) applies as-is. Private, internal tool.
   notification (click → that tab) and a Dock badge.
 - **Sidebar** (⌘B): the repo's worktrees, the file tree of the tab's checkout
   (follows `cd`, live), and snippets.
+- **Open in your editor**: double-click a file in the tree (or ↗ in the
+  editor pane) and it opens in the app you picked — asked once, remembered;
+  **Open With ▸** in the file's menu, or right-click on ↗, switches it.
 - **Diff panel** (⌥⌘D) above the terminal: changed files of the tab's
   worktree, live diff, stage / discard / commit.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.

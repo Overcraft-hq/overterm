@@ -7,6 +7,9 @@ struct FileTreeActions {
     var insertPath: (URL) -> Void
     /// Show a file in the editor pane.
     var openInEditor: (URL) -> Void
+    /// Open a file in the app picked for files (ExternalOpener), asking
+    /// which the first time.
+    var openExternally: (URL) -> Void
     /// Open a new tab whose shell starts in this folder.
     var newTab: (URL) -> Void
     /// The path as the selected tab's shell would write it (relative to its
@@ -75,6 +78,7 @@ struct SidebarView: View {
     @ObservedObject var worktrees: WorktreeModel
     @ObservedObject var snippets: SnippetStore
     @ObservedObject var sessions: SessionsModel
+    let opener: ExternalOpener
     let theme: ChromeTheme
     let actions: FileTreeActions
     let worktreeActions: WorktreeActions
@@ -131,7 +135,7 @@ struct SidebarView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(tree.rows) { row in
-                        FileRowView(row: row, tree: tree, theme: theme, actions: actions)
+                        FileRowView(row: row, tree: tree, opener: opener, theme: theme, actions: actions)
                     }
                 }
                 .padding(.vertical, 4)
@@ -172,6 +176,8 @@ struct SidebarView: View {
 private struct FileRowView: View {
     let row: FileRow
     @ObservedObject var tree: FileTreeModel
+    /// Observed for "Open in <the app picked>".
+    @ObservedObject var opener: ExternalOpener
     let theme: ChromeTheme
     let actions: FileTreeActions
     @State private var hovering = false
@@ -215,10 +221,11 @@ private struct FileRowView: View {
         }
         // Simultaneous, so a plain click isn't held back for the double-click
         // interval. A folder already toggled on the single clicks; a file
-        // already opened in the editor, and double-click hands it to its app.
+        // already opened in the editor, and double-click hands it to the app
+        // picked for files.
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
-                if !row.entry.isDirectory { NSWorkspace.shared.open(row.entry.url) }
+                if !row.entry.isDirectory { actions.openExternally(row.entry.url) }
             }
         )
         .contextMenu { menu }
@@ -232,7 +239,8 @@ private struct FileRowView: View {
             Button("New Tab Here") { actions.newTab(url) }
         } else {
             Button("Open in Editor") { actions.openInEditor(url) }
-            Button("Open in Default App") { NSWorkspace.shared.open(url) }
+            Button(OpenWith.openTitle(opener.current)) { actions.openExternally(url) }
+            Menu(OpenWith.submenuTitle) { OpenWithItems(file: url, opener: opener) }
         }
         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         Divider()
@@ -243,6 +251,35 @@ private struct FileRowView: View {
     private func copy(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
+    }
+}
+
+/// A file's Open With submenu — the editor ↗'s right-click menu in SwiftUI
+/// (ExternalOpener.menu): the apps, the one in use ticked, then Other….
+/// Its own view, so LaunchServices is asked when the menu is built, not on
+/// every redraw of the row.
+private struct OpenWithItems: View {
+    let file: URL
+    @ObservedObject var opener: ExternalOpener
+
+    var body: some View {
+        ForEach(Array(opener.entries(for: file).enumerated()), id: \.offset) { _, entry in
+            switch entry {
+            case .app(let app, let title, let isCurrent):
+                Toggle(isOn: Binding(get: { isCurrent }, set: { _ in opener.open(file, with: app) })) {
+                    Label {
+                        Text(verbatim: title)
+                    } icon: {
+                        Image(nsImage: opener.icon(for: app))
+                    }
+                    .labelStyle(.titleAndIcon)
+                }
+            case .divider:
+                Divider()
+            case .other:
+                Button(OpenWith.otherTitle) { opener.chooseApp(for: file) }
+            }
+        }
     }
 }
 

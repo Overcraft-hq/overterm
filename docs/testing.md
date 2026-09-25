@@ -48,7 +48,7 @@ What makes it end-to-end without being dangerous:
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `layout`, `session`, `task`, `snippets`, `attention`, `marks`, `palette`,
-`reorder`, `info`, `claude`, `disk`, `clipboard`.
+`reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
@@ -82,6 +82,15 @@ The `pullRequest` scenario writes a stand-in `gh` (a Python script answering
 asked to post) and points `GitHub.executableOverride` at it: the app's real
 calls and parsing run, nothing reaches GitHub. New gh calls need a branch in
 that script, or the scenario fails with "fake gh: unexpected".
+
+### Other apps without launching them
+
+Opening a file in another app goes through `ExternalOpener`, whose catalog in
+an isolated run is `IsolatedApps`: the `openWith` scenario installs two
+stand-in apps (bundle ids and names only) and checks what it *would* have
+opened; `SystemApps.launched` stays 0. A new way of opening a file
+elsewhere goes through the opener too, or a scenario driving it would launch
+a real app.
 
 ### Adding a scenario
 

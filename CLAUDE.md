@@ -26,7 +26,7 @@ make icon                    # Resources/AppIcon.svg → AppIcon.icns
 | `Sources/Terminus/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme`, `AttentionNotifier`, split controllers |
 | `Sources/Terminus/Sidebar/` | Files / Worktrees / Snippets panels, `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |
 | `Sources/Terminus/Diff/` | changes pane on the right + ± badge, `DiffModel` (live counts, per-file diffs, stage/commit) |
-| `Sources/Terminus/Editor/` | editor pane beside the terminal, `EditorDocument`, gutter, `SyntaxHighlighter` |
+| `Sources/Terminus/Editor/` | editor pane beside the terminal, `EditorDocument`, gutter, `SyntaxHighlighter`; `ExternalOpener`/`OpenWith` (files in the app the user picked) |
 | `Sources/Terminus/Git/` | `Git.run` (libdispatch-backed), porcelain / numstat / unified-diff parsers, `Worktree` |
 | `Sources/Terminus/Tasks/` | New Task: worktree + branch + agent |
 | `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |

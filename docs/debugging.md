@@ -90,6 +90,7 @@ in `deinit`.
 | Snippets | delete `…/Terminus/snippets.json` (starters come back) |
 | Divider positions | `defaults delete ai.promptrails.terminus "NSSplitView Subview Frames TerminusColumns.v2"` |
 | Panels shown | `defaults delete ai.promptrails.terminus sidebarVisible` / `diffVisible` / `sidebarPanel` |
+| The app files open in (asked again next time) | `defaults delete ai.promptrails.terminus openWithApp` |
 
 ## Things that looked like bugs elsewhere
 
