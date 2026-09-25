@@ -576,6 +576,49 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         newTab(in: URL(fileURLWithPath: session.directory), agent: .claude, startAgent: start, command: command)
     }
 
+    // MARK: Clipboard confirmations
+
+    /// A sheet is asking about a clipboard request: one at a time.
+    private var askingClipboard = false
+
+    /// libghostty wants `confirmation` confirmed for `terminal`: a paste that
+    /// could run commands, or a program reading the clipboard. Asks in a
+    /// sheet — for the selected tab only, one at a time; anything else is
+    /// refused at once — and tells `answer` whether it's allowed.
+    func confirmClipboard(_ confirmation: ClipboardConfirmation, from terminal: TerminalView, answer: @escaping @MainActor (Bool) -> Void) {
+        let fromSelectedTab = store.selected?.terminals.contains { $0 === terminal } == true
+        guard let window, ClipboardConfirmation.shouldAsk(fromSelectedTab: fromSelectedTab, alreadyAsking: askingClipboard) else {
+            return answer(false)
+        }
+        askingClipboard = true
+        let alert = NSAlert()
+        alert.messageText = confirmation.title
+        alert.informativeText = confirmation.message(tab: store.selected?.title ?? "this tab")
+        alert.accessoryView = Self.clipboardPreview(confirmation.preview())
+        // Deny (Cancel) first: Return answers no — Esc does for "Cancel" —
+        // and handing anything over takes a click. A Return already on its
+        // way to the terminal must never paste or share.
+        alert.addButton(withTitle: confirmation.denyTitle)
+        alert.addButton(withTitle: confirmation.allowTitle)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            self?.askingClipboard = false
+            answer(response == .alertSecondButtonReturn)
+        }
+    }
+
+    /// The text a clipboard sheet is about: scrollable, selectable, monospaced.
+    private static func clipboardPreview(_ text: String) -> NSView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.frame = NSRect(x: 0, y: 0, width: 420, height: 140)
+        scroll.borderType = .bezelBorder
+        if let textView = scroll.documentView as? NSTextView {
+            textView.isEditable = false
+            textView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            textView.string = text
+        }
+        return scroll
+    }
+
     // MARK: Opening from Finder
 
     /// Finder's Open With, the Dock icon, the "New Terminus Tab Here"

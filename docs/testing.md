@@ -48,7 +48,7 @@ What makes it end-to-end without being dangerous:
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `layout`, `session`, `task`, `snippets`, `attention`, `marks`, `palette`,
-`reorder`, `info`, `claude`, `disk`.
+`reorder`, `info`, `claude`, `disk`, `clipboard`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

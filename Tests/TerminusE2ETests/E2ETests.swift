@@ -75,6 +75,7 @@ final class E2ETests: XCTestCase {
     func testScrollback() throws { try run("scrollback") }
     func testOpenFromFinder() throws { try run("openFromFinder") }
     func testSessions() throws { try run("sessions") }
+    func testClipboard() throws { try run("clipboard") }
 
     /// A prepared session.json comes back (pin, colour, names, selection,
     /// directories, a split tab's panes) and changes are autosaved to it.

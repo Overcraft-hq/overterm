@@ -76,6 +76,17 @@ When adding a shortcut, grep `Config.zig` first. The user's own
 
 ## Clipboard
 
-Paste/OSC 52 confirmations have no UI: `confirm_read_clipboard_cb` answers
-"not confirmed", and a write with `confirm = true` is dropped. The macOS
-"selection clipboard" is a private named pasteboard.
+A paste libghostty flags (a line break no bracketed paste frames, or the
+bracketed-paste end sequence inside it) and a program reading the clipboard
+(OSC 52, under the default `clipboard-read = ask`) come to
+`confirm_read_clipboard_cb`. `ClipboardConfirmation` says what to ask, and
+the window asks in a sheet: for the selected tab only, one sheet at a time —
+anything else is refused at once — and only a click hands anything over
+(Return answers Deny, Esc answers Cancel). Both answers complete the request
+*confirmed*, with the text or `""`: completed unconfirmed, libghostty asks
+again at once, and Terminus once looped that way until the stack overflowed.
+A write with `confirm = true` (`clipboard-write = ask`) is still dropped.
+
+The macOS "selection clipboard" is a private named pasteboard. An isolated
+run (E2E) gets a private standard clipboard too, so tests never touch the
+user's.

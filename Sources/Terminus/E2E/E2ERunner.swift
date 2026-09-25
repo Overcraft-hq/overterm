@@ -42,6 +42,7 @@ final class E2ERunner {
         "scrollback": { await $0.scrollbackScenario() },
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
+        "clipboard": { await $0.clipboardScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1498,6 +1499,132 @@ final class E2ERunner {
         app.showPalette(nil)
         check("⌘P again hides it", app.paletteView?.isHidden == true)
     }
+
+    /// A program reading the clipboard (OSC 52) and a paste that could run
+    /// commands ask first, in a sheet, and either answer ends the request —
+    /// answering "not confirmed" made libghostty ask again until the app
+    /// crashed. The run's clipboard is its own, never the user's.
+    private func clipboardScenario() async {
+        guard let clipboard = GhosttyRuntime.pasteboard(GHOSTTY_CLIPBOARD_STANDARD), clipboard != .general else {
+            return check("an isolated run has its own clipboard", false)
+        }
+        let reader = scratch.appendingPathComponent("osc52.py")
+        try? Self.osc52Reader.write(to: reader, atomically: true, encoding: .utf8)
+        func contents(_ file: URL) -> String? { (try? Data(contentsOf: file)).map { String(decoding: $0, as: UTF8.self) } }
+
+        clipboard.clearContents()
+        clipboard.setString("e2e-clipboard-secret", forType: .string)
+        for (button, file, encoded) in [("Deny", out("denied"), ""), ("Allow", out("allowed"), "ZTJlLWNsaXBib2FyZC1zZWNyZXQ=")] {
+            let asked = await run("python3 \(reader.path) \(file.path)") { self.window.attachedSheet != nil }
+            check("\(button): a program reading the clipboard asks first", asked, String(terminal?.visibleText?.suffix(400) ?? "no text"))
+            check("\(button): the sheet shows what it would get", sheetPreview == "e2e-clipboard-secret", sheetPreview ?? "no preview")
+            check("\(button): only a click allows it, no key does", await onlyAClickPresses("Allow"), "\(sheetButtons)")
+            if button == "Allow", let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let sheet = window.attachedSheet {
+                await pause(0.8)
+                app.captureWindow(to: png, window: sheet)
+            }
+            check("\(button): answered", clickSheetButton(button))
+            await eventually { contents(file) != nil }
+            check(
+                "\(button): the program gets \(encoded.isEmpty ? "an empty reply" : "the clipboard")", contents(file) == "\u{1b}]52;c;\(encoded)\u{1b}\\",
+                contents(file)?.debugDescription ?? "no reply")
+        }
+
+        // While a sheet is up, another request is refused at once — not
+        // queued behind it, not pasted into the waiting program.
+        clipboard.clearContents()
+        clipboard.setString("one\ntwo", forType: .string)
+        let third = out("third")
+        check("a read asks again", await run("python3 \(reader.path) \(third.path)") { self.window.attachedSheet != nil })
+        terminal?.paste(nil)
+        await pause(0.5)
+        check("Deny answers it", clickSheetButton("Deny"))
+        await eventually { contents(third) != nil }
+        check("the program got only the empty reply", contents(third) == "\u{1b}]52;c;\u{1b}\\", contents(third)?.debugDescription ?? "no reply")
+        await pause(1)
+        check("the paste meanwhile was refused, not queued", window.attachedSheet == nil)
+
+        // A paste with line breaks into a program without bracketed paste
+        // (cat): Cancel pastes nothing, Paste hands it over.
+        clipboard.clearContents()
+        clipboard.setString("first line\nsecond line\n", forType: .string)
+        let pasted = out("pasted")
+        check("cat reads the terminal", await run("cat > \(pasted.path)") { self.terminal?.needsConfirmClose == true })
+        terminal?.paste(nil)
+        check("a paste that could run commands asks first", await eventually(5) { self.window.attachedSheet != nil })
+        check("the sheet shows the paste", sheetPreview == "first line\nsecond line\n", sheetPreview?.debugDescription ?? "no preview")
+        check("only a click pastes it, no key does", await onlyAClickPresses("Paste"), "\(sheetButtons)")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let sheet = window.attachedSheet {
+            await pause(0.8)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-paste.png", window: sheet)
+        }
+        check("Cancel answers", clickSheetButton("Cancel"))
+        await pause(0.5)
+        check("Cancel pastes nothing", contents(pasted) == "", contents(pasted)?.debugDescription ?? "missing")
+        terminal?.paste(nil)
+        check("asked again", await eventually(5) { self.window.attachedSheet != nil })
+        check("Paste answers", clickSheetButton("Paste"))
+        check("the terminal has the keyboard back", await eventually(3) { self.window.firstResponder === self.terminal })
+        await pause(0.3)
+        key(kVK_ANSI_D, "\u{4}", modifiers: .control, ignoringModifiers: "d")
+        check(
+            "Paste hands it over", await eventually { contents(pasted) == "first line\nsecond line\n" },
+            contents(pasted)?.debugDescription ?? "missing")
+
+        // A program in a tab you aren't looking at is refused without a sheet.
+        let background = out("background")
+        check(
+            "a reader waits in this tab",
+            await run("sleep 2; python3 \(reader.path) \(background.path)") { self.terminal?.needsConfirmClose == true })
+        app.newTab(nil)
+        await eventually(15) { contents(background) != nil }
+        check(
+            "a background tab's read is refused without asking", window.attachedSheet == nil && contents(background) == "\u{1b}]52;c;\u{1b}\\",
+            "sheet: \(window.attachedSheet != nil), reply: \(contents(background)?.debugDescription ?? "none")")
+    }
+
+    /// The attached sheet's preview: the text view in its accessory.
+    private var sheetPreview: String? {
+        Self.find(NSTextView.self, in: window.attachedSheet?.contentView, where: { _ in true })?.string
+    }
+
+    /// The attached sheet's buttons, each with the key that presses it ("" for none).
+    private var sheetButtons: [(title: String, key: String)] {
+        var found: [(title: String, key: String)] = []
+        func walk(_ view: NSView) {
+            if let button = view as? NSButton { found.append((button.title, button.keyEquivalent)) }
+            view.subviews.forEach(walk)
+        }
+        window.attachedSheet?.contentView.map(walk)
+        return found
+    }
+
+    /// Only a click presses the sheet's `title` button: once AppKit has given
+    /// the buttons their keys (Return, Esc) — a moment after the sheet shows
+    /// — none of them is its.
+    private func onlyAClickPresses(_ title: String) async -> Bool {
+        await eventually(2) { self.sheetButtons.contains { !$0.key.isEmpty } }
+            && sheetButtons.contains { $0.title == title && $0.key.isEmpty }
+    }
+
+    /// Asks the terminal for the clipboard (OSC 52), as a remote editor
+    /// does, and writes the reply as it came to argv[1].
+    private static let osc52Reader = #"""
+        import os, select, sys, termios, time, tty
+        fd = os.open("/dev/tty", os.O_RDWR)
+        saved = termios.tcgetattr(fd)
+        tty.setraw(fd)
+        reply = b""
+        try:
+            os.write(fd, b"\x1b]52;c;?\x07")
+            deadline = time.time() + 30
+            while time.time() < deadline and not reply.endswith((b"\x1b\\", b"\x07")):
+                if select.select([fd], [], [], 0.2)[0]:
+                    reply += os.read(fd, 4096)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        open(sys.argv[1], "wb").write(reply)
+        """#
 
     // MARK: Keyboard map (US)
 

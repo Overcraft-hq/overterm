@@ -93,14 +93,13 @@ final class GhosttyRuntime {
                 nonisolated(unsafe) let (userdata, state) = (userdata, state)
                 return MainActor.assumeIsolated { TerminalView.from(userdata: userdata)?.readClipboard(location, state: state) ?? false }
             },
-            confirm_read_clipboard_cb: { userdata, string, state, _ in
-                // Paste-safety and OSC 52 read confirmations. Until there is a
-                // confirmation UI, answer them unconfirmed rather than silently
-                // allowing: libghostty then refuses the unsafe case.
+            confirm_read_clipboard_cb: { userdata, string, state, request in
+                // A paste that could run commands, or a program reading the
+                // clipboard (OSC 52): the window asks. The string only lives
+                // for this call.
                 nonisolated(unsafe) let (userdata, string, state) = (userdata, string, state)
                 MainActor.assumeIsolated {
-                    guard let view = TerminalView.from(userdata: userdata), let surface = view.surface, let string else { return }
-                    ghostty_surface_complete_clipboard_request(surface, string, state, false)
+                    GhosttyRuntime.confirmClipboard(userdata: userdata, text: string.map { String(cString: $0) } ?? "", state: state, request: request)
                 }
             },
             write_clipboard_cb: { _, location, content, count, confirm in
@@ -321,12 +320,34 @@ final class GhosttyRuntime {
 
     static func pasteboard(_ location: ghostty_clipboard_e) -> NSPasteboard? {
         switch location {
-        case GHOSTTY_CLIPBOARD_STANDARD: .general
+        // An isolated run (AppEnvironment) has a clipboard of its own: the
+        // E2E scenarios put text on it and must never touch the user's.
+        case GHOSTTY_CLIPBOARD_STANDARD: AppEnvironment.isIsolated ? isolatedClipboard : .general
         // macOS has no primary selection; a private named pasteboard stands in
         // so select-to-copy / middle-click-paste work inside Terminus.
         case GHOSTTY_CLIPBOARD_SELECTION: NSPasteboard(name: .init("ai.promptrails.terminus.selection"))
         default: nil
         }
+    }
+
+    private static let isolatedClipboard = NSPasteboard(name: .init("ai.promptrails.terminus.isolated.clipboard"))
+
+    /// A request libghostty wants confirmed (ClipboardConfirmation): the
+    /// terminal's window asks, and the request is completed confirmed either
+    /// way — unconfirmed, libghostty asks again, forever.
+    private static func confirmClipboard(
+        userdata: UnsafeMutableRawPointer?, text: String, state: UnsafeMutableRawPointer?, request: ghostty_clipboard_request_e
+    ) {
+        guard let view = TerminalView.from(userdata: userdata), let surface = view.surface else { return }
+        let confirmation = ClipboardConfirmation(request: request, text: text)
+        let complete: @MainActor (Bool) -> Void = { [weak view] allowed in
+            // The pane closed while the sheet was up: the request went with it.
+            guard let view, view.surface == surface else { return }
+            let reply = confirmation?.reply(allowed: allowed) ?? ClipboardConfirmation.Reply(text: "", confirmed: true)
+            reply.text.withCString { ghostty_surface_complete_clipboard_request(surface, $0, state, reply.confirmed) }
+        }
+        guard let confirmation, let window = view.window?.windowController as? TerminalWindowController else { return complete(false) }
+        window.confirmClipboard(confirmation, from: view, answer: complete)
     }
 
     private static func writeClipboard(_ location: ghostty_clipboard_e, content: UnsafePointer<ghostty_clipboard_content_s>?, count: Int) {
