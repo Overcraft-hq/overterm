@@ -766,25 +766,37 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Find in terminal
 
-    /// Shows `terminal`'s find bar while its search is active; focuses the
-    /// field when a search starts.
+    /// Shows `terminal`'s find bar while its search is active; a search
+    /// starting (showBar) gives the field the keyboard. Rebinding — whenever
+    /// a terminal takes focus — only shows or hides the bar: taking the
+    /// keyboard there bounced Esc and clicks straight back into the bar.
     private func bindSearchBar(to terminal: TerminalView) {
         guard let searchBar, let theme else { return }
         searchBar.rootView = AnyView(
             TerminalSearchBar(search: terminal.search, theme: theme, onDismiss: { [weak self] in self?.focusSelectedTerminal() }))
+        showSearchBar(terminal.search.barVisible)
+        // $barVisible replays its current value to a new subscriber — just
+        // shown above, without the keyboard.
         searchSubscription = terminal.search.$barVisible
-            .removeDuplicates()
-            .sink { [weak self, weak searchBar] active in
-                guard let self, let searchBar else { return }
-                searchBar.isHidden = !active
-                // Keep it above the terminals (a new tab's view is added later).
-                if active, let container = searchBar.superview {
-                    container.addSubview(searchBar, positioned: .above, relativeTo: nil)
-                    DispatchQueue.main.async {
-                        if let field = Self.firstTextField(in: searchBar) { self.window?.makeFirstResponder(field) }
-                    }
+            .dropFirst()
+            .sink { [weak self] active in
+                guard let self else { return }
+                self.showSearchBar(active)
+                guard active, let searchBar = self.searchBar else { return }
+                DispatchQueue.main.async {
+                    if let field = Self.firstTextField(in: searchBar) { self.window?.makeFirstResponder(field) }
                 }
             }
+    }
+
+    /// Shows or hides the find bar, above the terminals (a new tab's view is
+    /// added later).
+    private func showSearchBar(_ visible: Bool) {
+        guard let searchBar else { return }
+        searchBar.isHidden = !visible
+        if visible, let container = searchBar.superview {
+            container.addSubview(searchBar, positioned: .above, relativeTo: nil)
+        }
     }
 
     /// ⌘F with the terminal focused comes through Ghostty's own binding;

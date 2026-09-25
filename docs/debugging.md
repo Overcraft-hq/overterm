@@ -101,6 +101,7 @@ in `deinit`.
 | Something paints over a neighbour | macOS 14+ views don't clip; `clipsToBounds = true`. |
 | Snippet "Run" doesn't run | Bracketed paste: newline is literal → `pressReturn()`. |
 | A key does nothing | A Ghostty default binding consumed it and the action is unhandled — see docs/ghostty.md. |
+| Esc in the find bar does nothing; the keyboard jumps back into the bar | Something takes the keyboard back whenever a terminal takes it. The bar rebinds on every terminal focus; only a search starting may focus its field (`bindSearchBar`, `dropFirst`). With text, Esc is two steps, as in Ghostty: back to the terminal, then Ghostty's `escape` → `end_search` closes it. |
 | `git check-ignore -z` fails | `-z` only works with `--stdin`; parse lines. |
 | App not in Launchpad | `make install` (the build lands in the repo). |
 | Tab rename ends as soon as it starts | Something took first responder after it began — re-selecting the tab used to (focus → terminal). `TERMINUS_DUMP_RENAME` checks it. |

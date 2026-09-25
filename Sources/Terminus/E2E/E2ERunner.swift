@@ -928,8 +928,30 @@ final class E2ERunner {
             await eventually(2) {
                 self.app.spotlightView?.isHidden == true && tab.terminal.search.barVisible && self.app.searchBar?.isHidden == false
             })
-        tab.terminal.search.end()
-        check("closing the bar hides it", await eventually(2) { self.app.searchBar?.isHidden == true })
+        // Esc in the bar, with text in it, gives the terminal the keyboard and
+        // keeps the highlights (as in Ghostty); Esc there then closes the bar.
+        // Seen by hand: the keyboard bounced back into the bar, so Esc never
+        // closed it. Through the app's event path, as a key press arrives.
+        func escape() {
+            NSApp.sendEvent(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                    isARepeat: false, keyCode: 53)!)
+        }
+        check(
+            "a search starting gives the bar's field the keyboard",
+            await eventually(2) {
+                guard let bar = self.app.searchBar, let field = (self.window.firstResponder as? NSTextView)?.delegate as? NSView else { return false }
+                return field.isDescendant(of: bar)
+            })
+        escape()
+        await pause(0.5)
+        check(
+            "Esc in the bar gives the terminal the keyboard, and it stays there", window.firstResponder === tab.terminal && tab.terminal.search.barVisible,
+            "keyboard: \(window.firstResponder.map { String(describing: Swift.type(of: $0)) } ?? "nil")")
+        escape()
+        check("Esc again, in the terminal, closes the bar", await eventually(2) { self.app.searchBar?.isHidden == true && !tab.terminal.search.isActive })
 
         app.showSpotlight(for: tab.terminal, needle: nil)
         await eventually(2) { self.spotlightHasKeyboard }
