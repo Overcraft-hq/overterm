@@ -23,11 +23,12 @@ final class DiffModel: ObservableObject {
 
     /// What `.branch` compares the working tree with — or why it can't.
     enum BranchComparison: Equatable {
-        /// merge-base(HEAD, base); `base` as MergedWorktrees.base names it.
+        /// merge-base(HEAD, base); `base` as `branchBase` names it.
         case since(mergeBase: String, base: String)
         /// No HEAD yet.
         case noCommits
-        /// Neither origin/HEAD nor a main worktree on a branch.
+        /// Neither origin/HEAD, nor a main worktree on another branch, nor
+        /// any of `fallbackBases`.
         case noBase
         /// HEAD is on the base branch itself.
         case onBase(String)
@@ -303,16 +304,51 @@ final class DiffModel: ObservableObject {
         return files
     }
 
-    /// The merge-base of HEAD and the default branch (the one merged
-    /// worktrees are judged by) — or why there is none to use.
+    /// The merge-base of HEAD and the default branch (see `branchBase`) —
+    /// or why there is none to use.
     private static func comparison(in root: URL, hasHead: Bool, branch: String?) async -> BranchComparison {
         guard hasHead else { return .noCommits }
-        guard let base = await MergedWorktrees.base(in: root) else { return .noBase }
-        // The base is origin/<branch> or a local branch.
-        if let branch, base == branch || base == "origin/\(branch)" { return .onBase(branch) }
+        let preferred = await MergedWorktrees.base(in: root)
+        func isCurrent(_ base: String) -> Bool { branch.map { isBranch(base, $0) } ?? false }
+        // The fallback costs a git call: only when the default branch won't do.
+        let existing = preferred.map(isCurrent) == false ? [] : await existingRefs(fallbackBases, in: root)
+        guard let base = branchBase(default: preferred, current: branch, existing: existing) else {
+            // Nothing but the branch itself (main, and its origin/main) to compare with.
+            if let branch, preferred.map(isCurrent) == true || existing.contains(where: isCurrent) { return .onBase(branch) }
+            return .noBase
+        }
         let mergeBase = (try? await Git.run(["merge-base", "HEAD", base], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let mergeBase, !mergeBase.isEmpty else { return .unrelated(base) }
         return .since(mergeBase: mergeBase, base: base)
+    }
+
+    /// Tried in order when the default branch can't be used.
+    nonisolated static let fallbackBases = ["origin/main", "origin/master", "main", "master"]
+
+    /// What Branch compares with: `preferred` — MergedWorktrees.base, the
+    /// default branch merged worktrees are judged by (origin/HEAD, else the
+    /// main worktree's branch) — unless it is missing or is `current`
+    /// itself; then the first of `fallbackBases` that exists and isn't. A
+    /// repository pushed from a local init has no origin/HEAD, and its main
+    /// checkout may be on a feature branch: that branch then gets main.
+    /// MergedWorktrees.base itself stays as it is: clean-up relies on it.
+    nonisolated static func branchBase(default preferred: String?, current: String?, existing: Set<String>) -> String? {
+        func isCurrent(_ base: String) -> Bool { current.map { isBranch(base, $0) } ?? false }
+        if let preferred, !isCurrent(preferred) { return preferred }
+        return fallbackBases.first { existing.contains($0) && !isCurrent($0) }
+    }
+
+    /// Which of `names` (a branch, or origin/<branch>) exist.
+    private static func existingRefs(_ names: [String], in root: URL) async -> Set<String> {
+        let refs = names.map { $0.hasPrefix("origin/") ? "refs/remotes/\($0)" : "refs/heads/\($0)" }
+        let listed = (try? await Git.run(["for-each-ref", "--format=%(refname)"] + refs, in: root)) ?? ""
+        let found = Set(listed.split(separator: "\n").map(String.init))
+        return Set(zip(names, refs).filter { found.contains($0.1) }.map(\.0))
+    }
+
+    /// `base` names `branch`: the branch itself, or its origin/ twin.
+    nonisolated private static func isBranch(_ base: String, _ branch: String) -> Bool {
+        base == branch || base == "origin/\(branch)"
     }
 
     /// Everything that differs from the merge-base: the tracked files git

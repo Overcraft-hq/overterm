@@ -122,10 +122,15 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
 | Branch | `merge-base(HEAD, base)` | `diff --name-status -z -M <mb>` + its `--numstat` (committed, staged and unstaged; renames paired), untracked files from status; above the cards the commits `<mb>..HEAD`, newest first (`BranchLog`: subject and short SHA; a click shows the date, message and files) |
 
 - The base is `MergedWorktrees.base`: origin/HEAD, else the main worktree's
-  branch — the one merged worktrees are judged by. With no HEAD, no base,
-  HEAD on the base branch itself, or no merge-base (unrelated history),
-  Branch has nothing to compare with: the pane says why ("On main — nothing
-  to compare with") and lists Uncommitted.
+  branch — the one merged worktrees are judged by. Where that is missing or
+  is the branch itself — a repository pushed from a local init has no
+  origin/HEAD, and its main checkout may be on a feature branch — it is the
+  first of origin/main, origin/master, main, master that exists and isn't
+  (`DiffModel.branchBase`; `MergedWorktrees.base` stays as it is, clean-up
+  relies on it). With no HEAD, no base, HEAD on the base branch itself (main,
+  or its own origin/main), or no merge-base (unrelated history), Branch has
+  nothing to compare with: the pane says why ("On main — nothing to compare
+  with") and lists Uncommitted.
 - Both lists' counts are always live. The ± badge shows in any git
   repository, so the pane is one click away: the uncommitted totals while
   there are any, else the branch's — an agent's work stays in sight after it

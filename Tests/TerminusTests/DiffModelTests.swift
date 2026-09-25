@@ -336,6 +336,82 @@ final class DiffModelTests: XCTestCase {
         XCTAssertEqual(model.commits.map(\.subject), ["Add c"])
     }
 
+    /// A repository pushed from a local `git init` has no origin/HEAD, and
+    /// its main checkout may be on a feature branch: the main worktree's
+    /// branch is then the branch itself. Branch falls back to main.
+    @MainActor
+    func testWithoutOriginAFeatureBranchInTheMainCheckoutComparesWithMain() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        let mainTip = try await Git.run(["rev-parse", "main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        try await git("checkout", "-q", "-b", "feat")
+        try write("c.txt", "new\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "Add c")
+
+        let model = DiffModel(defaults: defaults)
+        model.setRoot(repo)
+        try await eventually { model.comparison != nil }
+        XCTAssertEqual(model.comparison, .since(mergeBase: mainTip, base: "main"))
+        XCTAssertEqual(model.branchFiles.map(\.path), ["c.txt"])
+        XCTAssertEqual(model.commits.map(\.subject), ["Add c"])
+    }
+
+    /// Pushed, but origin/HEAD never set (only a clone sets it): the
+    /// remote's main comes first.
+    @MainActor
+    func testWithoutOriginHeadTheRemotesMainComesFirst() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        try await git("update-ref", "refs/remotes/origin/main", "HEAD")
+        try await git("commit", "-q", "--allow-empty", "-m", "unpushed on main")
+        try await git("checkout", "-q", "-b", "feat")
+        try await git("commit", "-q", "--allow-empty", "-m", "on feat")
+        let pushed = try await Git.run(["rev-parse", "origin/main"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let model = DiffModel(defaults: defaults)
+        model.setRoot(repo)
+        try await eventually { model.comparison != nil }
+        XCTAssertEqual(model.comparison, .since(mergeBase: pushed, base: "origin/main"))
+        XCTAssertEqual(model.commits.map(\.subject), ["on feat", "unpushed on main"])
+    }
+
+    /// On main itself there is still nothing to compare with — its own
+    /// origin/main is not another branch.
+    @MainActor
+    func testOnMainWithoutOriginHeadThereIsStillNothingToCompareWith() async throws {
+        try await git("init", "-q", "-b", "main")
+        try await git("commit", "-q", "--allow-empty", "-m", "init")
+        try await git("update-ref", "refs/remotes/origin/main", "HEAD")
+        try await git("commit", "-q", "--allow-empty", "-m", "unpushed")
+
+        let model = DiffModel(defaults: defaults)
+        model.choose(.branch)
+        model.setRoot(repo)
+        try await eventually { model.comparison != nil }
+        XCTAssertEqual(model.comparison, .onBase("main"))
+        XCTAssertEqual(model.shownScope, .uncommitted)
+        XCTAssertEqual(model.scopeNote, "On main — nothing to compare with")
+    }
+
+    /// The fallback's order, and never the branch itself.
+    func testTheBranchBaseFallsBackToTheFirstOtherDefaultBranch() {
+        let all: Set<String> = ["origin/main", "origin/master", "main", "master"]
+        XCTAssertEqual(DiffModel.branchBase(default: "origin/develop", current: "feat", existing: all), "origin/develop", "origin/HEAD, as merged worktrees use it")
+        XCTAssertEqual(DiffModel.branchBase(default: "main", current: "feat", existing: all), "main")
+        XCTAssertEqual(DiffModel.branchBase(default: "feat", current: "feat", existing: all), "origin/main", "the main checkout is on this branch")
+        XCTAssertEqual(DiffModel.branchBase(default: nil, current: "feat", existing: ["master", "origin/master"]), "origin/master")
+        XCTAssertEqual(DiffModel.branchBase(default: nil, current: "feat", existing: ["master"]), "master")
+        XCTAssertEqual(DiffModel.branchBase(default: nil, current: nil, existing: ["main"]), "main", "a detached HEAD compares with main")
+        XCTAssertNil(DiffModel.branchBase(default: "main", current: "main", existing: ["origin/main", "main"]), "main and its own origin/main")
+        XCTAssertEqual(DiffModel.branchBase(default: "main", current: "main", existing: ["origin/main", "master"]), "master")
+        XCTAssertNil(DiffModel.branchBase(default: nil, current: "feat", existing: []))
+    }
+
     @MainActor
     func testARenameOnTheBranchIsReportedAsARename() async throws {
         let worktree = try await featureWorktree(["old.txt": "1\n2\n3\n4\n5\n"])

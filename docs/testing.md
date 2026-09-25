@@ -16,7 +16,8 @@ Pure logic and anything that can run without a window: parsers (worktree,
 status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
 `DirectoryWatcher` (real FSEvents), `WorktreeModel`, `TaskCreator`,
 `DiffModel` (real repos, incl. no HEAD yet, a commit in a linked worktree,
-the branch scope and when it has nothing to compare with), `EditorDocument`,
+the branch scope, its base without origin/HEAD, and when it has nothing to
+compare with), `EditorDocument`,
 `SyntaxHighlighter`, snippets, palette ranking, session file, `TabActivity`,
 `GhosttyInput`, and `TabStore`/`Tab`.
 
