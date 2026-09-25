@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = MainMenu.build()
+        NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
 
         let controller = TerminalWindowController()
@@ -55,6 +56,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
+    }
+
+    /// Finder's Open With, or a drop on the Dock icon.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        windowController?.open(urls)
+    }
+
+    /// Finder's "New Terminus Tab Here" (Info.plist NSServices): the
+    /// selected files and folders, as for Open With.
+    @objc func newTabHere(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        guard !urls.isEmpty else {
+            error.pointee = "No files or folders to open." as NSString
+            return
+        }
+        windowController?.open(urls)
     }
 
     /// Returning to the app is "seeing" the selected tab.

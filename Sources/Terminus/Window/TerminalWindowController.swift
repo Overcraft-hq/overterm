@@ -545,6 +545,34 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    // MARK: Opening from Finder
+
+    /// Finder's Open With, the Dock icon, the "New Terminus Tab Here"
+    /// service: a folder becomes a tab there; a file opens in the editor, in
+    /// a tab already in its checkout if there is one, else a new tab in its
+    /// folder (so the sidebar and changes match it).
+    func open(_ urls: [URL]) {
+        for url in urls.map(\.standardizedFileURL) {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
+            if isDirectory.boolValue {
+                newTab(in: url)
+                continue
+            }
+            let folder = url.deletingLastPathComponent()
+            let checkout = FileTreeModel.treeRoot(for: folder.path).standardizedFileURL
+            if let tab = store.tabs.first(where: { $0.checkoutSource?.root.standardizedFileURL == checkout }) {
+                store.select(tab)
+            } else {
+                newTab(in: folder)
+            }
+            // After the tab's checkout lands in the sidebar and changes pane.
+            DispatchQueue.main.async { [weak self] in self?.openInEditor(url) }
+        }
+        window?.makeKeyAndOrderFront(nil)
+        if !AppEnvironment.isIsolated { NSApp.activate(ignoringOtherApps: true) }
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
         editor?.reloadIfChangedOnDisk()

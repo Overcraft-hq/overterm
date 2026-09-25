@@ -64,6 +64,59 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Internal tool — PromptRails</string>
+    <!-- Finder's Open With and the Dock icon: a folder opens as a tab, a
+         file in the editor. Alternate rank: listed, never the default. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Folder</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array><string>public.folder</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.text</string>
+                <string>public.plain-text</string>
+                <string>public.source-code</string>
+                <string>public.script</string>
+                <string>public.json</string>
+                <string>public.yaml</string>
+                <string>public.xml</string>
+                <string>net.daringfireball.markdown</string>
+                <string>public.data</string>
+                <string>public.item</string>
+            </array>
+        </dict>
+    </array>
+    <!-- Finder's right-click > Services / Quick Actions. NSRequiredContext
+         makes it on by default. Handled by AppDelegate.newTabHere. -->
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict><key>default</key><string>New Terminus Tab Here</string></dict>
+            <key>NSMessage</key>
+            <string>newTabHere</string>
+            <key>NSPortName</key>
+            <string>${APP_NAME}</string>
+            <key>NSRequiredContext</key>
+            <dict/>
+            <key>NSSendFileTypes</key>
+            <array><string>public.folder</string><string>public.data</string></array>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

@@ -34,6 +34,9 @@ run: app
 install: app
 	rm -rf /Applications/$(APP)
 	cp -R $(APP) /Applications/
+	@# So Finder's Open With and the "New Terminus Tab Here" service see it now.
+	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/$(APP)
+	/System/Library/CoreServices/pbs -update
 	@echo "==> installed /Applications/$(APP)"
 
 ## clean: remove build products and the assembled app (keeps GhosttyKit)

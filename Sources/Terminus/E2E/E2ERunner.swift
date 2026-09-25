@@ -40,6 +40,7 @@ final class E2ERunner {
         "pullRequest": { await $0.pullRequestScenario() },
         "overview": { await $0.overviewScenario() },
         "scrollback": { await $0.scrollbackScenario() },
+        "openFromFinder": { await $0.openFromFinderScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1358,6 +1359,46 @@ final class E2ERunner {
         }
         check("and reports its directory", followed, restored.workingDirectory ?? "nil")
         await runAndExpect("echo $0 > \(out("shell").path)", file: out("shell"), content: "-zsh", "as a login zsh")
+    }
+
+    /// Finder's Open With and "New Terminus Tab Here": a folder becomes a
+    /// tab; a file opens in the editor, in the tab already in its checkout.
+    private func openFromFinderScenario() async {
+        let repo = scratch.appendingPathComponent("finderrepo")
+        try? FileManager.default.createDirectory(at: repo.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try? "let x = 1\n".write(to: repo.appendingPathComponent("src/main.swift"), atomically: true, encoding: .utf8)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        let before = app.store.tabs.count
+
+        app.open([repo])
+        check("a folder opens as a tab there", app.store.tabs.count == before + 1 && app.store.selected?.workingDirectory == repo.path)
+        let repoTab = app.store.selected
+
+        app.open([repo.appendingPathComponent("src/main.swift")])
+        check(
+            "a file in an open checkout: that tab, in the editor",
+            await eventually(3) { self.app.editor?.document.url?.lastPathComponent == "main.swift" }
+                && app.store.selected?.id == repoTab?.id && app.store.tabs.count == before + 1)
+
+        let elsewhere = scratch.appendingPathComponent("notes")
+        try? FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try? "hello\n".write(to: elsewhere.appendingPathComponent("todo.md"), atomically: true, encoding: .utf8)
+        app.open([elsewhere.appendingPathComponent("todo.md")])
+        check(
+            "a file elsewhere: a new tab in its folder",
+            await eventually(3) { self.app.editor?.document.url?.lastPathComponent == "todo.md" }
+                && app.store.selected?.workingDirectory == elsewhere.path)
+
+        // The service Finder calls, with a pasteboard as Finder fills it.
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("terminus-e2e-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let other = scratch.appendingPathComponent("service-dir")
+        try? FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        pasteboard.writeObjects([other as NSURL])
+        var error: NSString = ""
+        (NSApp.delegate as? AppDelegate)?.newTabHere(pasteboard, userData: nil, error: &error)
+        check("New Terminus Tab Here opens one there", app.store.selected?.workingDirectory == other.path, error as String)
+        pasteboard.releaseGlobally()
     }
 
     /// ⌘P shows, searches across kinds, and hides.

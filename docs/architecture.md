@@ -186,6 +186,17 @@ Claude Code needs no configuration for tab flags: with `TERM_PROGRAM=ghostty`
 its default notification channel is OSC 777 and its progress bar (OSC 9;4) is
 on by default (checked against 2.1.280).
 
+## Opening from Finder
+
+`Info.plist` (`Scripts/make-app.sh`) declares folders and text/source/any
+files at `LSHandlerRank` Alternate — listed under Open With, never the default
+— and an `NSServices` entry, "New Terminus Tab Here" (`NSRequiredContext`
+makes it on by default). `AppDelegate.application(_:open:)` and
+`AppDelegate.newTabHere` (the service; `NSApp.servicesProvider = self`) both
+call `TerminalWindowController.open(_:)`. `make install` runs `lsregister -f`
+and `pbs -update` so Finder sees a change at once. `public.data` alone did not
+get files listed; the explicit text types did.
+
 ## Persistence
 
 | What | Where |
