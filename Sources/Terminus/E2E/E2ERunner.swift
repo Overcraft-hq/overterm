@@ -459,6 +459,7 @@ final class E2ERunner {
         let diff = app.diff
 
         app.newTab(in: worktree)
+        let feature = app.store.selected
         check(
             "the model follows the tab into the worktree",
             await eventually { diff.root?.resolvingSymlinksInPath() == worktree.resolvingSymlinksInPath() })
@@ -502,6 +503,47 @@ final class E2ERunner {
             "the pane says so and shows Uncommitted", diff.scopeNote == "On main — nothing to compare with" && diff.shownScope == .uncommitted,
             diff.scopeNote ?? "nil")
         app.toggleDiff(nil)
+
+        // The ± badge opens the pane on what it counts; View ▸ Changes (⌥⌘D)
+        // opens it on the scope picked last.
+        guard let feature, let changes = menuItem("View", "Changes") else { return check("the branch's tab, View ▸ Changes", false) }
+        app.store.select(feature)
+        check(
+            "back on the branch, the badge shows its totals",
+            await eventually {
+                diff.root?.resolvingSymlinksInPath() == worktree.resolvingSymlinksInPath() && diff.badge == .branch(added: 2, removed: 1)
+            }, "\(String(describing: diff.badge))")
+        // Uncommitted picked in the pane's switch, and the pane closed.
+        perform(changes)
+        diff.choose(.uncommitted)
+        perform(changes)
+        check(
+            "View ▸ Changes opens on the scope picked last, whatever the badge counts",
+            perform(changes) && app.diffItem?.isCollapsed == false && diff.shownScope == .uncommitted, "\(diff.shownScope)")
+        perform(changes)
+        // Last on the Pull Request view: the badge is about changes.
+        app.rightPane.mode = .pullRequest
+        app.toggleDiffFromBadge()
+        check(
+            "the badge showing the branch's totals opens Branch", app.diffItem?.isCollapsed == false && diff.shownScope == .branch,
+            "open: \(app.diffItem?.isCollapsed == false), \(diff.shownScope)")
+        check("on the changes, not the pull request", app.rightPane.mode == .changes)
+        check("listing the branch's files", await eventually { diff.shownFiles.map(\.path) == ["a.txt", "b.txt"] }, "\(diff.shownFiles.map(\.path))")
+        app.toggleDiffFromBadge()
+        check("the badge again closes it", await eventually(2) { self.app.diffItem?.isCollapsed == true })
+
+        // Branch picked in the switch; then an edit is under way.
+        perform(changes)
+        diff.choose(.branch)
+        perform(changes)
+        try? "one\nmore\nstill more\n".write(to: worktree.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        check("an edit under way: the badge counts it", await eventually { diff.badge == .uncommitted(added: 1, removed: 0) }, "\(String(describing: diff.badge))")
+        app.toggleDiffFromBadge()
+        check(
+            "the badge showing uncommitted totals opens Uncommitted",
+            app.diffItem?.isCollapsed == false && diff.shownScope == .uncommitted && diff.shownFiles.map(\.path) == ["b.txt"],
+            "\(diff.shownScope) \(diff.shownFiles.map(\.path))")
+        app.toggleDiffFromBadge()
     }
 
     /// Dividers can be grabbed next to the 1 pt line and dragged.

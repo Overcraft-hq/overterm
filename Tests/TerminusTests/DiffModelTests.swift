@@ -364,6 +364,10 @@ final class DiffModelTests: XCTestCase {
         XCTAssertEqual(DiffModel.badge(isRepository: true, uncommitted: [], branch: [committed]), .branch(added: 5, removed: 0))
         XCTAssertEqual(DiffModel.badge(isRepository: true, uncommitted: [], branch: []), .plain, "nothing changed: still there, to open the pane")
         XCTAssertNil(DiffModel.badge(isRepository: false, uncommitted: [], branch: []), "not in a repository: nothing to open")
+        // A click opens the scope it counts; the plain ± the one picked last.
+        XCTAssertEqual(DiffModel.Badge.uncommitted(added: 2, removed: 1).scope, .uncommitted)
+        XCTAssertEqual(DiffModel.Badge.branch(added: 5, removed: 0).scope, .branch)
+        XCTAssertNil(DiffModel.Badge.plain.scope)
     }
 
     @MainActor

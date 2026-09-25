@@ -9,7 +9,8 @@ struct TabBarActions {
     var newTab: () -> Void
     var newAgentTab: (Agent) -> Void
     var newTask: () -> Void
-    /// The ± badge: show or hide the changes pane.
+    /// The ± badge: open the changes pane on the scope the badge counts,
+    /// or hide it.
     var toggleDiff: () -> Void
     /// The PR chip: the right pane on the checkout's pull request.
     var showPullRequest: () -> Void
@@ -291,7 +292,7 @@ private struct WindowDragArea: NSViewRepresentable {
 
 /// Warp's "± +N −M": the selected tab's uncommitted change totals — or,
 /// with nothing uncommitted, its branch's; in a repository with neither, a
-/// plain ±. A click opens the changes pane.
+/// plain ±. A click opens the changes pane on the scope it counts.
 private struct DiffBadge: View {
     let badge: DiffModel.Badge
     let theme: ChromeTheme

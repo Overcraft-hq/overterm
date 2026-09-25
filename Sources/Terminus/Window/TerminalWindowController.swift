@@ -121,7 +121,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
                     newAgentTab: { [weak self] in self?.newAgentTab($0) },
                     newTask: { [weak self] in self?.newTask(nil) },
-                    toggleDiff: { [weak self] in self?.toggleDiff(nil) },
+                    toggleDiff: { [weak self] in self?.toggleDiffFromBadge() },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     showOverview: { [weak self] in self?.showAgentOverview(nil) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
@@ -1778,6 +1778,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
         updatePullRequestVisibility()
         if !show { focusSelectedTerminal() }
+    }
+
+    /// The ± badge in the title bar: opens the changes pane on what the
+    /// badge counts — the uncommitted changes, or the branch's once all is
+    /// committed; a plain ± keeps the scope picked last — or closes it.
+    /// View ▸ Changes (⌥⌘D) opens it on the scope picked last.
+    func toggleDiffFromBadge() {
+        if diffItem?.isCollapsed == true {
+            rightPane.mode = .changes
+            if let scope = diff.badge?.scope { diff.choose(scope) }
+        }
+        toggleDiff(nil)
     }
 
     /// The right pane, on the checkout's pull request.

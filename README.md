@@ -33,7 +33,8 @@ theme, keybinds) applies as-is. Private, internal tool.
   **Uncommitted** (stage / discard / commit), or **Branch**: everything since
   the branch left the default branch, its commits listed too — an agent's
   work stays visible after it commits. The badge shows in any repository: the
-  uncommitted totals, else the branch's, else a plain ±.
+  uncommitted totals, else the branch's, else a plain ±; a click on it opens
+  the scope it counts.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
 - **Merged worktree clean-up**: merged worktrees (merged into the default

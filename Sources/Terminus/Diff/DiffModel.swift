@@ -55,6 +55,16 @@ final class DiffModel: ObservableObject {
         case uncommitted(added: Int, removed: Int)
         case branch(added: Int, removed: Int)
         case plain
+
+        /// The scope whose totals it shows — the one a click on it opens;
+        /// none for the plain ±.
+        var scope: Scope? {
+            switch self {
+            case .uncommitted: .uncommitted
+            case .branch: .branch
+            case .plain: nil
+            }
+        }
     }
 
     @Published private(set) var root: URL?

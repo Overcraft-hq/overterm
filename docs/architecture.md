@@ -129,10 +129,12 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
 - Both lists' counts are always live. The ± badge shows in any git
   repository, so the pane is one click away: the uncommitted totals while
   there are any, else the branch's — an agent's work stays in sight after it
-  commits — else a plain ± (`DiffModel.badge`). View ▸ Changes (⌥⌘D, the
-  palette's Changes) toggles the pane and is ticked while it shows. Diff text
-  loads only while the pane is open, for the scope shown, from that scope's
-  base.
+  commits — else a plain ± (`DiffModel.badge`). A click on it opens the pane
+  on the Changes view, in the scope it counts (`Badge.scope`, picked as the
+  switch would; the plain ± keeps the one picked last). View ▸ Changes (⌥⌘D,
+  the palette's Changes) toggles the pane on the scope picked last and is
+  ticked while it shows. Diff text loads only while the pane is open, for the
+  scope shown, from that scope's base.
 - It refreshes on FSEvents under the checkout and, for a linked worktree,
   under its git dir (`.git/worktrees/<name>`: index, HEAD) and the
   repository's `refs/` — a commit there writes nothing inside the checkout.
