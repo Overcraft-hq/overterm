@@ -34,7 +34,11 @@ theme, keybinds) applies as-is. Private, internal tool.
   the branch left the default branch, its commits listed too — an agent's
   work stays visible after it commits. The badge shows in any repository: the
   uncommitted totals, else the branch's, else a plain ±; a click on it opens
-  the scope it counts.
+  the scope it counts. Each file says **why** it changed: what Claude said
+  when it edited it (from Claude Code's session transcripts on this Mac,
+  subagents' included; nothing leaves it), two lines and when — a click shows
+  it all and what it said at the edits before — and in Branch the commits
+  that touched it.
 - **Drop files on a terminal** — from Finder, the Desktop, another app,
   Photos or Safari (their images are saved first), or the sidebar's file
   tree: a shell gets their quoted paths; where Claude Code runs, other files

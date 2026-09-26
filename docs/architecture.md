@@ -34,7 +34,7 @@ libghostty's own threads and git calls.
 | `Tab` | a `TerminalView` + title, custom name, colour, pin, agent, cwd, `TabActivity` |
 | `FileTreeModel` | tree of the selected tab's checkout; lazy listings, FSEvents invalidation, gitignore dimming |
 | `WorktreeModel` | `git worktree list` of that repository |
-| `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
+| `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs and why each file changed (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
 | `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
 | `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |
@@ -145,6 +145,48 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   repository's `refs/` — a commit there writes nothing inside the checkout.
   A burst of events is one refresh (400 ms debounce); the window becoming
   key refreshes too.
+
+### Why each file changed
+
+Under each card's header, quiet: what Claude said when it edited the file —
+two lines of the newest and when, `+N` for more; a click (`toggleWhy`) shows
+every one in full — and in Branch the commits that touched it
+(`BranchLog.byFile`). Nothing when there is nothing to say. The card shows
+`DiffModel.why(for:)` as it is; `reasons` is read only while the pane is open.
+
+- **Which transcripts** (`ClaudeEditsReader`, `Sources/Terminus/Info/ClaudeEdits.swift`):
+  the sessions started in the checkout or below it, found by folder name as
+  the Sessions panel finds them (`ClaudeSessions.transcripts`; both spellings
+  of a path under a symlink, `/var` and `/private/var` — Claude Code names
+  the folder after its resolved cwd); in a linked worktree also those
+  started in the main checkout: a session keeps its transcript where it
+  started, also after EnterWorktree moved it. With each, its subagents'
+  (`<session>/subagents/agent-*.jsonl`, whose edits count as the session's).
+- **How much**: only transcripts written since the branch left its base — the
+  merge-base or the branch's oldest commit, whichever is older (a rebase
+  moves the merge-base, not the work) — else a week back; the newest 60.
+  Edits from before then are dropped too.
+- **How**: off the main thread, one read at a time (a refresh meanwhile asks
+  for one more, so a busy agent can't starve a slow first read), incremental
+  per transcript like `ClaudeUsageReader` — its byte offset and the parser's
+  state are kept, so a refresh parses only what was appended. A byte search
+  picks the lines worth parsing (assistant text, edit calls, an edit's
+  result, prompts, titles); tool output, thinking and most attachments are
+  never parsed as JSON. 200 MB: 0.3 s the first time, a millisecond after.
+- **What** (`ClaudeEdits.Parser`, measured on 2.1.1xx–2.1.28x transcripts):
+  an Edit, Write, MultiEdit or NotebookEdit call paired with its
+  `tool_result` on a later line (`tool_use_id`); `is_error`, or no result,
+  and it changed nothing. Its reason: the nearest assistant text before it
+  since the last prompt typed — Claude writes a message's parts on lines of
+  their own, and one text often covers several edits — else that prompt,
+  else the session's title (`custom-title`, `ai-title`, an old `summary`).
+  Thinking is never a reason. A slash command, a background task's notice
+  start a turn nobody typed; reminders, caveats, command output and a
+  compaction's summary are no turn at all; a coordinator's message is a
+  subagent's prompt, a prompt queued while Claude worked (`queued_command`)
+  one too. `ClaudeEdits.byFile` keys them by path in the checkout (symlinks
+  resolved, a file's own name kept), newest first, one per reason, three per
+  file.
 
 ## Agent overview (⇧⌘A)
 

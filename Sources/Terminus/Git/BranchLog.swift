@@ -57,4 +57,13 @@ enum BranchLog {
         }
         return commits
     }
+
+    /// The commits that touched each path, in `commits`' order (newest first).
+    static func byFile(_ commits: [BranchCommit]) -> [String: [BranchCommit]] {
+        var byFile: [String: [BranchCommit]] = [:]
+        for commit in commits {
+            for path in Set(commit.files) { byFile[path, default: []].append(commit) }
+        }
+        return byFile
+    }
 }

@@ -37,13 +37,9 @@ final class ClaudeUsageReader: @unchecked Sendable {
     private let lock = NSLock()
     private var progress: [URL: Progress] = [:]
 
-    /// Where Claude Code keeps transcripts. Overridable for tests.
-    nonisolated(unsafe) static var projectsDirectory: URL = {
-        if let dir = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] {
-            return URL(fileURLWithPath: dir).appendingPathComponent("projects")
-        }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
-    }()
+    /// Where Claude Code keeps transcripts (an isolated run's own, see
+    /// AppEnvironment). Overridable for tests.
+    nonisolated(unsafe) static var projectsDirectory: URL = AppEnvironment.claudeProjectsDirectory
 
     /// Claude Code's folder name for a working directory: every character
     /// that isn't a letter or digit becomes "-" (/Users/b/.claude →

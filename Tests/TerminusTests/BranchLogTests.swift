@@ -36,4 +36,15 @@ final class BranchLogTests: XCTestCase {
     func testNoCommits() {
         XCTAssertEqual(BranchLog.parse(""), [])
     }
+
+    /// For each file's card in Branch: the commits that touched it.
+    func testTheCommitsThatTouchedEachFileNewestFirst() {
+        func commit(_ sha: String, _ files: [String]) -> BranchCommit {
+            BranchCommit(sha: sha, shortSHA: String(sha.prefix(7)), date: "now", subject: "s\(sha)", body: "", files: files)
+        }
+        let byFile = BranchLog.byFile([commit(sha3, ["a", "b"]), commit(sha2, []), commit(sha1, ["a"])])
+        XCTAssertEqual(byFile["a"]?.map(\.sha), [sha3, sha1])
+        XCTAssertEqual(byFile["b"]?.map(\.sha), [sha3])
+        XCTAssertNil(byFile["c"])
+    }
 }

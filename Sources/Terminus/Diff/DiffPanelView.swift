@@ -4,7 +4,8 @@ import SwiftUI
 /// The changes pane beside the terminal, laid out like Warp's: a header
 /// (checkout, branch, file count, totals), the Uncommitted | Branch switch
 /// (Commit beside it for uncommitted changes), the branch's commits, and one
-/// foldable card per changed file with its diff inline.
+/// foldable card per changed file with its diff inline — and, under its
+/// header, why it changed.
 struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
@@ -80,6 +81,8 @@ struct DiffPanelView: View {
                     FileCard(
                         file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
                         editable: editable, theme: theme,
+                        why: model.why(for: file.path),
+                        onToggleWhy: { model.toggleWhy(file.path) },
                         onToggle: {
                             if model.collapsed.contains(file.path) {
                                 model.collapsed.remove(file.path)
@@ -235,6 +238,8 @@ private struct FileCard: View {
     /// Stage and Discard: only for uncommitted changes.
     let editable: Bool
     let theme: ChromeTheme
+    let why: FileWhy
+    let onToggleWhy: () -> Void
     let onToggle: () -> Void
     let onStage: () -> Void
     let onDiscard: () -> Void
@@ -256,6 +261,10 @@ private struct FileCard: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if !why.isEmpty {
+                Divider().opacity(0.3)
+                WhyStrip(why: why, theme: theme, onToggle: onToggleWhy)
+            }
             if !collapsed {
                 Divider().opacity(0.3)
                 if let diff, !diff.lines.isEmpty {
@@ -350,6 +359,95 @@ private struct FileCard: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.dimText.opacity(0.3)))
+        }
+    }
+}
+
+/// Under a card's header, quiet: why the file changed. Claude's words at its
+/// latest edit, two lines and when; a click shows them in full, and what it
+/// said at the edits before. In Branch, the commits that touched the file.
+/// Nothing when there is nothing to say.
+private struct WhyStrip: View {
+    let why: FileWhy
+    let theme: ChromeTheme
+    let onToggle: () -> Void
+    /// Commits listed at most; the rest are counted.
+    private static let maxCommits = 3
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(why.shownReasons.enumerated()), id: \.offset) { index, edit in
+                ReasonRow(edit: edit, open: why.open, more: index == 0 ? why.hiddenReasons : 0, theme: theme)
+            }
+            ForEach(why.commits.prefix(Self.maxCommits)) { commit in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "smallcircle.filled.circle").font(.system(size: 9)).foregroundStyle(theme.dimText).frame(width: 12)
+                    Text(verbatim: commit.subject)
+                        .font(.system(size: 12)).foregroundStyle(theme.text.opacity(0.85))
+                        .lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(verbatim: commit.shortSHA).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText)
+                }
+                .help(Self.help(commit))
+            }
+            if why.commits.count > Self.maxCommits {
+                Text(verbatim: "and \(why.commits.count - Self.maxCommits) more commits")
+                    .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(.leading, 18)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggle)
+    }
+
+    /// A plain string: a subject is never read as markdown or localized.
+    private static func help(_ commit: BranchCommit) -> String { "\(commit.shortSHA), \(commit.date): \(commit.subject)" }
+}
+
+/// One reason: what it is (Claude's words, your prompt, the session's title),
+/// the text, and when.
+private struct ReasonRow: View {
+    let edit: ClaudeEdit
+    let open: Bool
+    /// Reasons not shown until opened.
+    let more: Int
+    let theme: ChromeTheme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(theme.dimText).frame(width: 12)
+            Text(verbatim: edit.reason?.text ?? "")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.text.opacity(0.85))
+                .lineLimit(open ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 4) {
+                if more > 0 { Text(verbatim: "+\(more)") }
+                if let time = edit.time { Text(verbatim: ClaudeEdits.ago(time)) }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(theme.dimText)
+            .fixedSize()
+        }
+        .help(help)
+    }
+
+    private var symbol: String {
+        switch edit.reason?.source {
+        case .said?: Agent.claude.symbol
+        case .asked?: "person"
+        case .title?, nil: "text.bubble"
+        }
+    }
+
+    private var help: String {
+        switch edit.reason?.source {
+        case .said?: "What Claude said making this edit (\(edit.tool))"
+        case .asked?: "What Claude was asked: it said nothing before this edit (\(edit.tool))"
+        case .title?, nil: "The session's title: nothing was said or asked before this edit (\(edit.tool))"
         }
     }
 }

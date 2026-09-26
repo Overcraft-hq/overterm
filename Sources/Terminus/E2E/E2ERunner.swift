@@ -23,6 +23,7 @@ final class E2ERunner {
         "editor": { await $0.editorScenario() },
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
+        "why": { await $0.whyScenario() },
         "layout": { await $0.layout() },
         "session": { await $0.session() },
         "task": { await $0.task() },
@@ -546,6 +547,122 @@ final class E2ERunner {
             app.diffItem?.isCollapsed == false && diff.shownScope == .uncommitted && diff.shownFiles.map(\.path) == ["b.txt"],
             "\(diff.shownScope) \(diff.shownFiles.map(\.path))")
         app.toggleDiffFromBadge()
+    }
+
+    /// Why each file changed, on its card: what Claude said making the edit,
+    /// from a transcript in Claude Code's shape (a scratch projects
+    /// directory, never ~/.claude) — never the words of an edit that failed
+    /// — read only once the pane is open; a click shows the edits before; in
+    /// Branch the commits that touched the file too. A file no session
+    /// edited says nothing.
+    private func whyScenario() async {
+        let projects = scratch.appendingPathComponent("claude-projects")
+        ClaudeUsageReader.projectsDirectory = projects
+        let repo = scratch.appendingPathComponent("whyrepo")
+        let worktree = scratch.appendingPathComponent("whyrepo-feat")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        for name in ["a.txt", "b.txt"] { try? "one\n".write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        try? await git(["add", "."], in: repo)
+        try? await git(["commit", "-q", "-m", "init"], in: repo)
+        try? await git(["worktree", "add", "-q", "-b", "feat", worktree.path], in: repo)
+        try? "one\ntwo\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? await git(["commit", "-q", "-am", "Teach a.txt to count"], in: worktree)
+        try? "one\ntwo\nthree\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? "one\nmore\n".write(to: worktree.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+
+        let earlier = "a.txt should count; adding the second line."
+        let failed = "Trying the edit on a line that is not there."
+        let reason = "a.txt stops at two; the count goes on to three."
+        writeTranscript(
+            earlier: earlier, failed: failed, reason: reason, file: worktree.appendingPathComponent("a.txt").path,
+            // Claude Code names the folder after its cwd, symlinks resolved.
+            in: projects.appendingPathComponent(ClaudeUsageReader.projectFolder(for: ClaudeEdits.canonical(worktree.path))))
+
+        let diff = app.diff
+        app.newTab(in: worktree)
+        check(
+            "the model follows the tab into the worktree",
+            await eventually { diff.root?.resolvingSymlinksInPath() == worktree.resolvingSymlinksInPath() })
+        check("both files are changed", await eventually { diff.files.map(\.path) == ["a.txt", "b.txt"] }, "\(diff.files.map(\.path))")
+        await pause(0.5)
+        check("no transcript is read while the pane is closed", diff.reasons.isEmpty)
+
+        guard let changes = menuItem("View", "Changes") else { return check("View ▸ Changes exists", false) }
+        check("View ▸ Changes opens the pane", perform(changes) && app.diffItem?.isCollapsed == false)
+        // What the cards show (DiffPanelView renders `why(for:)` as it is).
+        func said(_ path: String) -> [String?] { diff.why(for: path).shownReasons.map(\.reason?.text) }
+        check("a.txt's card says why: Claude's words at its last edit", await eventually { said("a.txt") == [reason] }, "\(said("a.txt"))")
+        let newest = diff.why(for: "a.txt").shownReasons.first
+        check("in Claude's words, with when", newest?.reason?.source == .said && newest?.time.map { ClaudeEdits.ago($0) } == "just now")
+        check("and that there is more", diff.why(for: "a.txt").hiddenReasons == 1)
+        check("b.txt, which no session edited, has nothing to say", diff.why(for: "b.txt").isEmpty)
+        check("Uncommitted lists no commits", diff.why(for: "a.txt").commits.isEmpty)
+        // A click on the strip.
+        diff.toggleWhy("a.txt")
+        check("opened, it shows what Claude said at the edit before", said("a.txt") == [reason, earlier], "\(said("a.txt"))")
+        check("an edit that failed changed nothing: its words never show", !diff.reasons.values.joined().contains { $0.reason?.text == failed })
+
+        // The switch's Branch button.
+        diff.choose(.branch)
+        check(
+            "Branch lists the commit that touched a.txt on its card",
+            await eventually { diff.shownScope == .branch && diff.why(for: "a.txt").commits.map(\.subject) == ["Teach a.txt to count"] },
+            "\(diff.why(for: "a.txt").commits.map(\.subject))")
+        check("with Claude's words still", said("a.txt") == [reason, earlier])
+        check("b.txt no commit touched", diff.why(for: "b.txt").isEmpty)
+        diff.toggleWhy("a.txt")
+        check("a second click shows the newest again", said("a.txt") == [reason])
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+    }
+
+    /// A session transcript in Claude Code's shape (2.1.28x): a prompt; words,
+    /// an edit and its result for each change — the first one's result an
+    /// error — each part on a line of its own.
+    private func writeTranscript(earlier: String, failed: String, reason: String, file: String, in folder: URL) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let start = Date()
+        func line(_ type: String, _ body: String, at second: Int, extra: String = "") -> String {
+            let stamp = formatter.string(from: start.addingTimeInterval(TimeInterval(second)))
+            return
+                #"{"parentUuid":null,"isSidechain":false,\#(body),"type":"\#(type)","uuid":"u\#(second)","timestamp":"\#(stamp)","cwd":"\#((file as NSString).deletingLastPathComponent)","sessionId":"00000000-0000-0000-0000-0000000000f1","version":"2.1.281"\#(extra)}"#
+        }
+        func said(_ text: String, at second: Int) -> String {
+            line("assistant", #""message":{"id":"msg_\#(second)","role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"\#(text)"}]}"#, at: second)
+        }
+        func edit(_ id: String, at second: Int) -> String {
+            line(
+                "assistant",
+                #""message":{"id":"msg_\#(second)","role":"assistant","model":"claude-opus-5","content":[{"type":"tool_use","id":"\#(id)","name":"Edit","input":{"file_path":"\#(file)","old_string":"two","new_string":"two\nthree","replace_all":false}}]}"#,
+                at: second)
+        }
+        func result(_ id: String, error: Bool, at second: Int) -> String {
+            error
+                ? line(
+                    "user",
+                    #""message":{"role":"user","content":[{"type":"tool_result","content":"<tool_use_error>String to replace not found in file.</tool_use_error>","is_error":true,"tool_use_id":"\#(id)"}]}"#,
+                    at: second, extra: #","toolUseResult":"Error: String to replace not found in file.""#)
+                : line(
+                    "user", #""message":{"role":"user","content":[{"tool_use_id":"\#(id)","type":"tool_result","content":"The file has been updated successfully."}]}"#,
+                    at: second,
+                    extra:
+                        #","toolUseResult":{"filePath":"\#(file)","structuredPatch":[{"oldStart":2,"oldLines":1,"newStart":2,"newLines":2,"lines":[" two","+three"]}],"userModified":false}"#
+                )
+        }
+        let lines = [
+            line("user", #""message":{"role":"user","content":"make a.txt count"}"#, at: 0),
+            said(earlier, at: 1), edit("toolu_e2e_1", at: 2), result("toolu_e2e_1", error: false, at: 3),
+            line("user", #""message":{"role":"user","content":"and on to three"}"#, at: 4),
+            said(failed, at: 5), edit("toolu_e2e_2", at: 6), result("toolu_e2e_2", error: true, at: 7),
+            said(reason, at: 8), edit("toolu_e2e_3", at: 9), result("toolu_e2e_3", error: false, at: 10),
+        ]
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? (lines.joined(separator: "\n") + "\n").write(
+            to: folder.appendingPathComponent("00000000-0000-0000-0000-0000000000f1.jsonl"), atomically: true, encoding: .utf8)
     }
 
     /// Dividers can be grabbed next to the 1 pt line and dragged.

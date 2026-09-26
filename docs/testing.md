@@ -49,14 +49,17 @@ What makes it end-to-end without being dangerous:
 - **Isolated state** (`AppEnvironment`): its own defaults suite (wiped at
   launch), a temp support dir (or `TERMINUS_SUPPORT_DIR` for a prepared
   session), notifications counted not posted, no split autosave, never
-  activated (it stays behind your windows).
+  activated (it stays behind your windows), and Claude Code's transcripts an
+  empty projects directory of its own until a scenario points
+  `ClaudeUsageReader.projectsDirectory` at the ones it wrote — never the
+  real `~/.claude`.
 - **Scratch files** in a temp dir removed at the end; repos are created with
   a throwaway git identity.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
-`branchDiff`, `layout`, `session`, `task`, `snippets`, `attention`, `marks`,
-`palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`,
-`dropFiles`.
+`branchDiff`, `why`, `layout`, `session`, `task`, `snippets`, `attention`,
+`marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
+`openWith`, `dropFiles`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
@@ -113,6 +116,16 @@ kept only at the end of a real drag, which a run can't start:
 `TerminalDrop.keepPromise` stands in for the source and writes the file
 where asked. The sidebar's rows get in-process clicks at their position, and
 their menu comes from `menu(for:)` without being shown.
+
+### Clicks in the changes pane
+
+In-process mouse events that land in the pane's SwiftUI `ScrollView` don't
+reach its gestures (the run's window is never key): a card header's fold and
+its why strip ignore them, and a mouseDown on a diff line (selectable text)
+starts a tracking loop that waits for a real mouseUp — the run hangs. Its
+accessibility tree is empty in-process too. Scenarios there call the model
+action the gesture calls (`toggleWhy`) and check what a card is given
+(`DiffModel.why(for:)`), which the view renders as it is.
 
 ### Adding a scenario
 

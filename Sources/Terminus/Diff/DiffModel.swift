@@ -9,7 +9,8 @@ import Foundation
 ///   Committed work stays visible after the agent commits.
 ///
 /// Both lists' counts are always live (the title-bar badge shows one); the
-/// per-file diffs only load while `panelVisible`.
+/// per-file diffs — and why each file changed — only load while
+/// `panelVisible`.
 @MainActor
 final class DiffModel: ObservableObject {
     struct FileDiff {
@@ -87,7 +88,15 @@ final class DiffModel: ObservableObject {
     @Published private(set) var diffs: [String: FileDiff] = [:]
     /// Cards the user folded.
     @Published var collapsed: Set<String> = []
+    /// Cards whose why the user opened: every reason, in full.
+    @Published private(set) var openWhy: Set<String> = []
     @Published private(set) var error: String?
+    /// Why each file changed, by path: what Claude said making its edits,
+    /// newest first (ClaudeEdits.byFile) — from the checkout's session
+    /// transcripts, read only while the panel is open.
+    @Published private(set) var reasons: [String: [ClaudeEdit]] = [:]
+    /// The branch's commits that touched each file, newest first.
+    @Published private(set) var commitsByFile: [String: [BranchCommit]] = [:]
 
     var panelVisible = false {
         didSet {
@@ -117,9 +126,17 @@ final class DiffModel: ObservableObject {
     /// Bumped per refresh, so a slow git answer for an old root can't
     /// overwrite a newer one.
     private var generation = 0
+    /// Reads Claude Code's transcripts for `reasons`; none, no reasons (a
+    /// unit test's model never reads ~/.claude).
+    private let transcripts: ClaudeEditsReader?
+    /// Bumped per root, so reasons read for another checkout are dropped.
+    private var reasonsGeneration = 0
+    private var readingReasons = false
+    private var readReasonsAgain = false
 
-    init(defaults: UserDefaults = AppEnvironment.defaults) {
+    init(defaults: UserDefaults = AppEnvironment.defaults, transcripts: ClaudeEditsReader? = nil) {
         self.defaults = defaults
+        self.transcripts = transcripts
         scope = defaults.string(forKey: Self.scopeKey).flatMap(Scope.init(rawValue:)) ?? .uncommitted
     }
 
@@ -196,6 +213,10 @@ final class DiffModel: ObservableObject {
         moreCommits = false
         comparison = nil
         diffs = [:]
+        reasons = [:]
+        commitsByFile = [:]
+        reasonsGeneration += 1
+        openWhy = []
         collapsed = []
         branch = nil
         error = nil
@@ -271,19 +292,25 @@ final class DiffModel: ObservableObject {
             files = changed
             branchFiles = onBranch
             commits = Array(log.prefix(Self.maxCommits))
+            commitsByFile = BranchLog.byFile(commits)
             moreCommits = log.count > Self.maxCommits
             self.comparison = comparison
             branch = branchName
             error = nil
-            if panelVisible { await loadDiffs(head: head, ticket: ticket) }
+            if panelVisible {
+                readReasons()
+                await loadDiffs(head: head, ticket: ticket)
+            }
         } catch {
             guard ticket == generation else { return }
             files = []
             branchFiles = []
             commits = []
+            commitsByFile = [:]
             moreCommits = false
             comparison = nil
             diffs = [:]
+            reasons = [:]
             self.error = error is GitError ? "Not a git repository" : error.localizedDescription
         }
     }
@@ -396,6 +423,79 @@ final class DiffModel: ObservableObject {
         diffs = loaded
     }
 
+    // MARK: Why
+
+    /// What a file's card says about why it changed: what Claude said making
+    /// its edits — the newest, or all once opened — and, in Branch, the
+    /// commits that touched it.
+    func why(for path: String) -> FileWhy {
+        FileWhy(reasons: reasons[path] ?? [], commits: shownScope == .branch ? commitsByFile[path] ?? [] : [], open: openWhy.contains(path))
+    }
+
+    /// A click on a card's why: all of it, or back to the newest.
+    func toggleWhy(_ path: String) {
+        if openWhy.contains(path) { openWhy.remove(path) } else { openWhy.insert(path) }
+    }
+
+    /// Transcripts are read this far back when the branch gives no better
+    /// point (on the default branch, before the first commit).
+    nonisolated static let reasonsWindow: TimeInterval = 7 * 86_400
+
+    /// Reads, off the main thread, what the checkout's Claude sessions said
+    /// making their edits. One read at a time: asked again meanwhile, it
+    /// reads once more when done — a burst of refreshes is two reads, and an
+    /// agent writing all the time can't keep a slow first read from landing.
+    /// Reads after the first parse only what the transcripts appended.
+    private func readReasons() {
+        guard panelVisible, let root, let transcripts else { return }
+        guard !readingReasons else {
+            readReasonsAgain = true
+            return
+        }
+        readingReasons = true
+        let ticket = reasonsGeneration
+        let mergeBase = comparison?.mergeBase
+        Task {
+            let since = await Self.reasonsSince(mergeBase: mergeBase, in: root)
+            let main = await Self.mainWorktree(of: root)
+            let read = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    let edits = transcripts.edits(in: [root.path], exactly: main.map { [$0] } ?? [], since: since)
+                    continuation.resume(returning: ClaudeEdits.byFile(edits, root: root, since: since))
+                }
+            }
+            readingReasons = false
+            if ticket == reasonsGeneration, read != reasons { reasons = read }
+            if readReasonsAgain {
+                readReasonsAgain = false
+                readReasons()
+            }
+        }
+    }
+
+    /// Since when an edit can be about this checkout's changes: since the
+    /// branch left its base — the merge-base, or its oldest commit if older
+    /// (a rebase moves the merge-base on, not the work) — else a week back.
+    /// Older transcripts aren't read at all, so a long history stays cheap.
+    nonisolated static func reasonsSince(mergeBase: String?, in root: URL, now: Date = Date()) async -> Date {
+        let fallback = now.addingTimeInterval(-reasonsWindow)
+        guard let mergeBase,
+            let times = try? await Git.run(["log", "--boundary", "--no-show-signature", "--format=%at %ct", "\(mergeBase)..HEAD"], in: root)
+        else { return fallback }
+        return times.split(whereSeparator: \.isWhitespace).compactMap { TimeInterval($0) }.min().map(Date.init(timeIntervalSince1970:)) ?? fallback
+    }
+
+    /// The repository's main checkout, when `root` is another worktree of
+    /// it: a session started there and moved here (EnterWorktree) keeps its
+    /// transcript under the main checkout's name.
+    nonisolated static func mainWorktree(of root: URL) async -> String? {
+        guard let listed = try? await Git.run(["worktree", "list", "--porcelain"], in: root),
+            let main = Worktree.parse(porcelain: listed).first(where: \.isMain), !main.isBare,
+            ClaudeEdits.canonical(main.path.path) != ClaudeEdits.canonical(root.path)
+        else { return nil }
+        return main.path.path
+    }
+
     // MARK: Staging and committing
 
     /// Set when a stage/discard/commit fails; shown in the panel.
@@ -464,4 +564,20 @@ final class DiffModel: ObservableObject {
             return false
         }
     }
+}
+
+/// Why a file changed, as its card shows it.
+struct FileWhy: Equatable {
+    /// What Claude said making its edits, newest first.
+    let reasons: [ClaudeEdit]
+    /// The branch's commits that touched it (Branch only), newest first.
+    let commits: [BranchCommit]
+    /// Opened: every reason, in full; else the newest, in two lines.
+    let open: Bool
+
+    /// Nothing to say: no strip at all.
+    var isEmpty: Bool { reasons.isEmpty && commits.isEmpty }
+    var shownReasons: [ClaudeEdit] { open ? reasons : Array(reasons.prefix(1)) }
+    /// Reasons a click would show.
+    var hiddenReasons: Int { reasons.count - shownReasons.count }
 }
