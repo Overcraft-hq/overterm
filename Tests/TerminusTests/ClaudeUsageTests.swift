@@ -20,7 +20,7 @@ final class ClaudeUsageTests: XCTestCase {
 
     func testFolderNaming() {
         XCTAssertEqual(ClaudeUsageReader.projectFolder(for: "/Users/b/.claude"), "-Users-b--claude")
-        XCTAssertEqual(ClaudeUsageReader.projectFolder(for: "/Users/b/Projects/promptrails/monorepo"), "-Users-b-Projects-promptrails-monorepo")
+        XCTAssertEqual(ClaudeUsageReader.projectFolder(for: "/Users/b/Projects/acme/monorepo"), "-Users-b-Projects-acme-monorepo")
         XCTAssertEqual(ClaudeUsageReader.projectFolder(for: "/tmp/my repo_x"), "-tmp-my-repo-x")
     }
 

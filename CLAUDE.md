@@ -1,8 +1,8 @@
 # Terminus
 
-Private macOS terminal for PromptRails work — Swift/AppKit around libghostty
+macOS terminal for agent-driven work — Swift/AppKit around libghostty
 (`GhosttyKit`), built for several worktrees at once, each with an agent
-(Claude Code, Codex) in it. Not a product: no `*rails` name, no remote users.
+(Claude Code, Codex) in it. Repository: `terminus-app/terminus` (private).
 
 ## Quick reference
 

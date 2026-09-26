@@ -63,7 +63,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Internal tool — PromptRails</string>
+    <string>Terminus</string>
     <!-- macOS charges what a program in the terminal asks for to Terminus,
          and without a reason here refuses it without asking: Claude Code's
          /voice got no microphone. Worded as Ghostty's. -->

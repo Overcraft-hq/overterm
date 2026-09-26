@@ -1,13 +1,13 @@
 # Terminus
 
-> Your terminal for the rails.
+> A terminal for working with agents.
 
-A native macOS terminal built around how PromptRails work actually happens:
+A native macOS terminal built around how agent-driven work actually happens:
 several worktrees at once, each with an agent (Claude Code, Codex) running in it.
 
 The terminal itself is [libghostty](https://github.com/ghostty-org/ghostty)
 (`GhosttyKit`) in a Swift/AppKit app — your `~/.config/ghostty/config` (font,
-theme, keybinds) applies as-is. Private, internal tool.
+theme, keybinds) applies as-is.
 
 ## What's in it
 

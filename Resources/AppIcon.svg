@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
   <title id="title">Terminus app icon</title>
-  <desc id="desc">A terminal prompt on an ink tile: a cream chevron, and the PromptRails rail cross-section in signal yellow standing where the cursor would be.</desc>
+  <desc id="desc">A terminal prompt on an ink tile: a cream chevron, and a signal-yellow block standing where the cursor would be.</desc>
   <!-- macOS icon grid: 824pt tile centred on the 1024 canvas, transparent margin. -->
   <rect x="100" y="100" width="824" height="824" rx="185" fill="#0D0D0C"/>
   <!-- Prompt chevron. -->
   <path d="M 288 382 L 458 512 L 288 642" fill="none" stroke="#F4F1EA" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- The rail mark (marks/promptrails-rail.svg, unmodified path) as the cursor. -->
+  <!-- The cursor. -->
   <g transform="translate(532 330) scale(2.6)">
     <path d="M 22 4 Q 22 0 26 0 L 74 0 Q 78 0 78 4 L 78 22 Q 78 28 72 30 L 64 34 Q 60 36 60 42 L 60 94 Q 60 100 66 104 L 84 114 Q 92 118 92 126 L 92 136 Q 92 140 88 140 L 12 140 Q 8 140 8 136 L 8 126 Q 8 118 16 114 L 34 104 Q 40 100 40 94 L 40 42 Q 40 36 36 34 L 28 30 Q 22 28 22 22 Z" fill="#FFE14A"/>
   </g>

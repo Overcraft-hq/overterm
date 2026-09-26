@@ -121,8 +121,8 @@ final class TaskCreatorTests: XCTestCase {
     }
 
     func testWorktreePathIsASiblingOfTheRepo() {
-        let path = TaskCreator.worktreePath(repo: URL(fileURLWithPath: "/Users/b/promptrails/monorepo"), branch: "feat/app-switcher")
-        XCTAssertEqual(path.path, "/Users/b/promptrails/monorepo-wt-feat-app-switcher")
+        let path = TaskCreator.worktreePath(repo: URL(fileURLWithPath: "/Users/b/acme/monorepo"), branch: "feat/app-switcher")
+        XCTAssertEqual(path.path, "/Users/b/acme/monorepo-wt-feat-app-switcher")
     }
 
     private func makeRepo() async throws -> (base: URL, repo: URL) {

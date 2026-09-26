@@ -49,7 +49,7 @@ final class SnippetStore: ObservableObject {
         AppEnvironment.supportDirectory.appendingPathComponent("snippets.json")
     }
 
-    /// A first run starts with the everyday PromptRails commands.
+    /// A first run starts with a few everyday commands.
     static let starters: [Snippet] = [
         Snippet(name: "Validate everything", command: "mise run validate"),
         Snippet(name: "Deploy a service", command: "infra/scripts/deploy.sh release {{service}}"),

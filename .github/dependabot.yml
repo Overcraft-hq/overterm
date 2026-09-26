@@ -14,7 +14,7 @@
 # Add a `package-ecosystem: swift` block (directory: /) the day the manifest
 # gains an external package — same weekly/grouped shape.
 #
-# Cadence matches the other promptrails repos: one batched PR per week,
+# Cadence: one batched PR per week,
 # minor + patch grouped so review stays cheap; a major gets its own PR.
 
 version: 2
