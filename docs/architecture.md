@@ -145,6 +145,16 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   repository's `refs/` — a commit there writes nothing inside the checkout.
   A burst of events is one refresh (400 ms debounce); the window becoming
   key refreshes too.
+- With more than 8 files (`DiffModel.startFoldedAbove`) the cards start
+  folded: the pane reads as a list of files with their +N −M, and a click on
+  one opens it. A card starts as it is when first shown with the pane open
+  (closed, none is: opened on many files, the pane is a list, however they
+  came); after that only the user changes it — a click on its header, or
+  Collapse All / Expand All in the pane's header, for every card and those
+  shown after. So a refresh never folds or opens a card: the list growing
+  past 8 folds only the cards that come then, not the one being read. The
+  folds are the checkout's, in either scope; another checkout, or coming
+  back, starts afresh.
 
 ### How a diff reads
 

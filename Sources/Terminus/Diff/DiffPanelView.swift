@@ -4,8 +4,9 @@ import SwiftUI
 /// The changes pane beside the terminal, laid out like Warp's: a header
 /// (checkout, branch, file count, totals), the Uncommitted | Branch switch
 /// (Commit beside it for uncommitted changes), the branch's commits, and one
-/// foldable card per changed file with its diff inline — and, under its
-/// header, why it changed.
+/// foldable card per changed file with its diff inline — folded to start
+/// with when many files changed, a list of them — and, under its header, why
+/// it changed.
 struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
@@ -80,17 +81,11 @@ struct DiffPanelView: View {
                 }
                 ForEach(model.shownFiles) { file in
                     FileCard(
-                        file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
+                        file: file, diff: model.diffs[file.path], collapsed: model.isFolded(file.path),
                         editable: editable, theme: theme, palette: palette,
                         why: model.why(for: file.path),
                         onToggleWhy: { model.toggleWhy(file.path) },
-                        onToggle: {
-                            if model.collapsed.contains(file.path) {
-                                model.collapsed.remove(file.path)
-                            } else {
-                                model.collapsed.insert(file.path)
-                            }
-                        },
+                        onToggle: { model.toggleFold(file.path) },
                         onStage: { Task { await model.toggleStaged(file) } },
                         onDiscard: { discarding = file },
                         onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
@@ -122,6 +117,14 @@ struct DiffPanelView: View {
             }
             Spacer(minLength: 0)
             sourceChip
+            if !model.shownFiles.isEmpty {
+                // Expand All once every card is folded, else Collapse All.
+                if model.everyCardFolded {
+                    iconButton("rectangle.expand.vertical", help: "Expand All") { model.expandAll() }
+                } else {
+                    iconButton("rectangle.compress.vertical", help: "Collapse All") { model.collapseAll() }
+                }
+            }
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
             iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
         }

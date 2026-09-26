@@ -16,9 +16,10 @@ Pure logic and anything that can run without a window: parsers (worktree,
 status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
 `DirectoryWatcher` (real FSEvents), `WorktreeModel`, `TaskCreator`,
 `DiffModel` (real repos, incl. no HEAD yet, a commit in a linked worktree,
-the branch scope, its base without origin/HEAD, and when it has nothing to
-compare with), `DiffHighlight` (colours per hunk side, a line's changed
-part, which lines pair; one capped file's cost), `EditorDocument`,
+the branch scope, its base without origin/HEAD, when it has nothing to
+compare with, and which cards start folded and stay so), `DiffHighlight`
+(colours per hunk side, a line's changed part, which lines pair; one capped
+file's cost), `EditorDocument`,
 `SyntaxHighlighter`, snippets, palette ranking, session file, `TabActivity`,
 `GhosttyInput`, `TabStore`/`Tab`, and `ClaudeEdits` — Claude Code's edits
 and why it made them, from transcript lines in its shape (one content part
@@ -125,9 +126,10 @@ reach its gestures (the run's window is never key): a card header's fold and
 its why strip ignore them, and a mouseDown on a diff line (selectable text)
 starts a tracking loop that waits for a real mouseUp — the run hangs. Its
 accessibility tree is empty in-process too. Scenarios there call the model
-action the gesture calls (`toggleWhy`) and check what a card is given
-(`DiffModel.why(for:)`) and what a line is given (`FileDiff.style(of:)`, in
-`diffStyle`), which the view renders as it is.
+action the gesture or button calls (`toggleWhy`, `toggleFold`, `expandAll`)
+and check what a card is given (`DiffModel.why(for:)`, `isFolded`) and what a
+line is given (`FileDiff.style(of:)`, in `diffStyle`), which the view renders
+as it is.
 
 ### Adding a scenario
 

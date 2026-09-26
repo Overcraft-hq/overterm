@@ -670,9 +670,11 @@ final class E2ERunner {
     /// colours — a block comment over context lines a comment on each line,
     /// keywords, strings, numbers — and, in a line that was edited rather
     /// than replaced, the part that changed, on it and on the line it
-    /// replaced. A file the highlighter doesn't know stays plain. SwiftUI
-    /// builds no accessibility tree in-process: the checks are on what each
-    /// line is given (`FileDiff.style(of:)`), which DiffLineView draws as it is.
+    /// replaced. A file the highlighter doesn't know stays plain. With many
+    /// files the cards start folded, a list of them, and what the user folds
+    /// or opens stays so. SwiftUI builds no accessibility tree in-process:
+    /// the checks are on what each line and card is given
+    /// (`FileDiff.style(of:)`, `DiffModel.isFolded`), which the view draws as it is.
     private func diffStyleScenario() async {
         let repo = scratch.appendingPathComponent("stylerepo")
         try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
@@ -721,10 +723,41 @@ final class E2ERunner {
         check("a closing brace is plain", drawn(greeter, .context, "}") == [])
         let plain = [drawn(notes, .removed, "status: draft"), drawn(notes, .added, "status: final")]
         check("a file the highlighter doesn't know: no colours, what changed marked", plain == [["changed: draft"], ["changed: final"]], "\(plain)")
+
+        // Many files: the pane reads as a list of them.
+        check("two files: their cards start open", !diff.isFolded("Greeter.swift") && !diff.isFolded("notes.txt"))
+        // Nine more, moved in at once: a refresh sees all of them or none.
+        let batch = scratch.appendingPathComponent("more")
+        try? FileManager.default.createDirectory(at: batch, withIntermediateDirectories: true)
+        for i in 1...9 { try? "one more\n".write(to: batch.appendingPathComponent("more\(i).txt"), atomically: true, encoding: .utf8) }
+        try? FileManager.default.moveItem(at: batch, to: repo.appendingPathComponent("more"))
+        let more = (1...9).map { "more/more\($0).txt" }
+        check("eleven files: the cards that come start folded", await eventually { diff.shownFiles.count == 11 } && more.allSatisfy(diff.isFolded))
+        check("the open ones stay open: one may be being read", !diff.isFolded("Greeter.swift") && !diff.isFolded("notes.txt"))
         if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
             await pause(0.8)
             app.captureWindow(to: png)
         }
+        // The pane header's Expand All, then Collapse All.
+        diff.expandAll()
+        check("Expand All opens every card", diff.shownFiles.allSatisfy { !diff.isFolded($0.path) })
+        diff.collapseAll()
+        check("Collapse All folds every card", diff.everyCardFolded)
+        // A click on a card's header, then the agent writes another file.
+        diff.toggleFold("Greeter.swift")
+        write("more10.txt", ["and another"])
+        check(
+            "a card opened with a click stays open through a refresh",
+            await eventually { diff.shownFiles.count == 12 } && !diff.isFolded("Greeter.swift") && diff.isFolded("more10.txt"))
+
+        let busy = scratch.appendingPathComponent("busyrepo")
+        try? FileManager.default.createDirectory(at: busy, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: busy)
+        for i in 1...12 { try? "new\n".write(to: busy.appendingPathComponent("file\(i).txt"), atomically: true, encoding: .utf8) }
+        app.newTab(in: busy)
+        check(
+            "a checkout with 12 changed files opens as a list, every card folded",
+            await eventually { diff.root?.resolvingSymlinksInPath() == busy.resolvingSymlinksInPath() && diff.shownFiles.count == 12 } && diff.everyCardFolded)
     }
 
     /// Dividers can be grabbed next to the 1 pt line and dragged.
