@@ -31,7 +31,7 @@ final class SettingsWindowController: NSWindowController {
 
 /// The window's sections, as in the list on its left.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, appearance
+    case general, appearance, agents
 
     var id: String { rawValue }
 
@@ -39,6 +39,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
+        case .agents: "Agents"
         }
     }
 
@@ -46,6 +47,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .appearance: "paintbrush"
+        case .agents: "sparkle"
         }
     }
 
@@ -54,6 +56,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: ["restore", "session", "tabs", "scrollback", "new tab", "folder", "home", "close", "confirm", "notifications", "dock", "badge"]
         case .appearance: ["font", "size", "theme", "colour", "color", "padding", "cursor", "dim", "split", "pane", "ghostty"]
+        case .agents: ["claude", "codex", "model", "arguments", "flags", "task", "worktree", "branch", "base"]
         }
     }
 
@@ -122,6 +125,7 @@ struct SettingsView: View {
                     switch model.section {
                     case .general: GeneralSettings(settings: settings)
                     case .appearance: AppearanceSettings(settings: settings, model: model)
+                    case .agents: AgentSettings(settings: settings)
                     }
                 }
                 .padding(24)
@@ -186,6 +190,41 @@ private struct GeneralSettings: View {
             Toggle("Notifications while Terminus is in the background", isOn: $settings.notifications)
             Toggle("Count them on the Dock icon", isOn: $settings.dockBadge)
         }
+    }
+}
+
+private struct AgentSettings: View {
+    @ObservedObject var settings: Settings
+
+    var body: some View {
+        SettingsGroup(title: "Arguments") {
+            argumentField("Claude", text: $settings.claudeArguments, example: "--model opus")
+            argumentField("Codex", text: $settings.codexArguments, example: "-m gpt-5")
+            SettingsNote(
+                "Added wherever the agent starts or picks up again: ⌥⌘C / ⌥⌘X, New Task, tabs reopened at launch, and Sessions' resume."
+            )
+        }
+        SettingsGroup(title: "New Task") {
+            Picker("Starts", selection: $settings.taskAgent) {
+                ForEach(Agent.allCases) { Text($0.name).tag($0.rawValue) }
+                Text("A shell only").tag("shell")
+            }
+            .fixedSize()
+            Picker("Worktrees go", selection: $settings.worktreeLocation) {
+                Text("Next to the repository — repo-wt-branch").tag(Settings.WorktreeLocation.sibling)
+                Text("Inside it — repo/.worktrees/branch").tag(Settings.WorktreeLocation.inside)
+            }
+            .fixedSize()
+            SettingsNote("Inside the repository, .worktrees/ is added to its local exclude file (.git/info/exclude) — no tracked file changes.")
+            TextField("New branches start from", text: $settings.taskBase, prompt: Text("the main worktree's branch"))
+                .frame(maxWidth: 380)
+        }
+    }
+
+    private func argumentField(_ name: String, text: Binding<String>, example: String) -> some View {
+        TextField(name, text: text, prompt: Text(example))
+            .font(.system(.body, design: .monospaced))
+            .frame(maxWidth: 380)
     }
 }
 

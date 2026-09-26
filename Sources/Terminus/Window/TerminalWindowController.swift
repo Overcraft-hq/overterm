@@ -532,7 +532,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// `command`: what starts the agent, when not its plain command (a resume).
     func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let input = startAgent ? agent.map { (command ?? $0.command) + "\n" } : nil
+        let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         addTab(terminal, agent: agent, after: store.selected)
     }
@@ -582,7 +582,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             focusSelectedTerminal()
             return
         }
-        guard let command = Agent.claudeResume(session: session.id) else { return }
+        guard let command = Agent.claudeResume(session: session.id, arguments: Settings.shared.claudeArguments) else { return }
         newTab(in: URL(fileURLWithPath: session.directory), agent: .claude, startAgent: start, command: command)
     }
 
@@ -715,7 +715,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             var made: [TerminalView] = []
             let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
                 let pane = TerminalView(
-                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand + "\n" } : nil,
+                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" } : nil,
                     restoring: Scrollback.file(named: scrollback))
                 made.append(pane)
                 return pane
@@ -723,7 +723,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             let terminal =
                 made.first
                 ?? TerminalView(
-                    workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand + "\n" },
+                    workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" },
                     restoring: Scrollback.file(named: saved.scrollback))
             addTab(terminal, agent: saved.agent, after: store.tabs.last)
             guard let tab = store.tabs.last else { continue }
@@ -1092,7 +1092,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         presentSheet { close in
             NewTaskView(
                 repo: repo,
-                defaultBase: worktrees.main?.branch ?? "HEAD",
+                defaultBase: Settings.shared.taskBase.isEmpty ? worktrees.main?.branch ?? "HEAD" : Settings.shared.taskBase,
+                defaultAgent: Settings.shared.defaultTaskAgent,
+                location: Settings.shared.worktreeLocation,
                 onCreate: { [weak self] branch, base, agent in
                     guard let self else { return nil }
                     do {
@@ -1537,7 +1539,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// What New Task does once the sheet is filled in: the worktree, then a
     /// tab in it named after the branch, with the agent started.
     func createTask(repo: URL, branch: String, base: String, agent: Agent?) async throws {
-        let path = try await TaskCreator.create(repo: repo, branch: branch, base: base)
+        let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
         newTab(in: path, agent: agent)
         store.selected?.customTitle = branch
         await worktrees.refresh()

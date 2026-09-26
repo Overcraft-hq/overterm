@@ -33,8 +33,17 @@ enum Agent: String, CaseIterable, Identifiable, Codable {
 
     /// Picks one conversation back up (Claude Code's --resume); nil for
     /// an id that isn't one.
-    static func claudeResume(session id: String) -> String? {
-        ClaudeSession.isValidID(id) ? "claude --resume \(id)" : nil
+    static func claudeResume(session id: String, arguments: String = "") -> String? {
+        ClaudeSession.isValidID(id) ? with("claude --resume \(id)", arguments) : nil
+    }
+
+    /// The command with Settings ▸ Agents' extra arguments (e.g. `--model opus`).
+    func command(arguments: String) -> String { Self.with(command, arguments) }
+    func resumeCommand(arguments: String) -> String { Self.with(resumeCommand, arguments) }
+
+    private static func with(_ command: String, _ arguments: String) -> String {
+        let extra = arguments.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+        return extra.isEmpty ? command : "\(command) \(extra)"
     }
 
     var symbol: String {

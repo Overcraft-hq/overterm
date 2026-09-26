@@ -1979,6 +1979,23 @@ final class E2ERunner {
             check("Always asks again", await eventually(2) { self.window.attachedSheet != nil })
             clickSheetButton("Cancel")
         }
+
+        // Agents ▸ New Task's worktrees inside the repository, locally ignored.
+        let repo = scratch.appendingPathComponent("taskrepo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "i"], in: repo)
+        settings.worktreeLocation = .inside
+        do {
+            try await app.createTask(repo: repo, branch: "feat/inside", base: "main", agent: nil)
+        } catch {
+            check("New Task creates it", false, error.localizedDescription)
+        }
+        let inside = repo.appendingPathComponent(".worktrees/feat-inside").standardizedFileURL.path
+        check("New Task's worktree goes inside the repository", app.store.selected?.workingDirectory == inside, app.store.selected?.workingDirectory ?? "nil")
+        let status = (try? await Git.run(["status", "--porcelain"], in: repo)) ?? "?"
+        check("and the main checkout stays clean", status.isEmpty, status)
+        settings.worktreeLocation = .sibling
         SettingsWindowController.shared.window?.close()
     }
 

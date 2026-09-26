@@ -4,6 +4,9 @@ import SwiftUI
 struct NewTaskView: View {
     let repo: URL
     let defaultBase: String
+    /// Settings ▸ Agents: what to start, and where the worktree goes.
+    let defaultAgent: Agent?
+    let location: Settings.WorktreeLocation
     /// Called with (branch, base, agent) — agent nil means a plain shell.
     /// Returns an error message to show, or nil when the task was created.
     let onCreate: (String, String, Agent?) async -> String?
@@ -11,7 +14,7 @@ struct NewTaskView: View {
 
     @State private var branch = ""
     @State private var base = ""
-    @State private var agent: Agent? = .claude
+    @State private var agent: Agent?
     @State private var error: String?
     @State private var working = false
 
@@ -31,7 +34,7 @@ struct NewTaskView: View {
                 }
             }
 
-            Text(branch.isEmpty ? " " : TaskCreator.worktreePath(repo: repo, branch: branch).path)
+            Text(branch.isEmpty ? " " : TaskCreator.worktreePath(repo: repo, branch: branch, location: location).path)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -52,7 +55,10 @@ struct NewTaskView: View {
         }
         .padding(20)
         .frame(width: 440)
-        .onAppear { base = defaultBase }
+        .onAppear {
+            base = defaultBase
+            agent = defaultAgent
+        }
     }
 
     private func create() {

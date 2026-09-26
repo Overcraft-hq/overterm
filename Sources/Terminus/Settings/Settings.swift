@@ -22,6 +22,15 @@ final class Settings: ObservableObject {
         var id: String { rawValue }
     }
 
+    /// Where New Task puts a worktree.
+    enum WorktreeLocation: String, CaseIterable, Identifiable {
+        /// Next to the repository: `<repo>-wt-<branch>`.
+        case sibling
+        /// Inside it: `<repo>/.worktrees/<branch>`, locally ignored.
+        case inside
+        var id: String { rawValue }
+    }
+
     /// Ghostty's cursor-style values.
     enum CursorStyle: String, CaseIterable, Identifiable {
         case block, bar, underline
@@ -36,6 +45,27 @@ final class Settings: ObservableObject {
     @Published var confirmClose: CloseConfirmation { didSet { save(confirmClose.rawValue, "confirmClose") } }
     @Published var notifications: Bool { didSet { save(notifications, "notifications") } }
     @Published var dockBadge: Bool { didSet { save(dockBadge, "dockBadge") } }
+
+    // MARK: Agents
+
+    /// What New Task starts: an agent's raw value, or "shell".
+    @Published var taskAgent: String { didSet { save(taskAgent, "taskAgent") } }
+    @Published var claudeArguments: String { didSet { save(claudeArguments, "claudeArguments") } }
+    @Published var codexArguments: String { didSet { save(codexArguments, "codexArguments") } }
+    @Published var worktreeLocation: WorktreeLocation { didSet { save(worktreeLocation.rawValue, "worktreeLocation") } }
+    /// New Task's "From"; empty is the main worktree's branch.
+    @Published var taskBase: String { didSet { save(taskBase, "taskBase") } }
+
+    /// New Task's agent, nil for a plain shell.
+    var defaultTaskAgent: Agent? { Agent(rawValue: taskAgent) }
+
+    /// Added to an agent's command wherever it starts or resumes.
+    func arguments(for agent: Agent) -> String {
+        switch agent {
+        case .claude: claudeArguments
+        case .codex: codexArguments
+        }
+    }
 
     // MARK: Appearance
 
@@ -60,6 +90,11 @@ final class Settings: ObservableObject {
         confirmClose = string("confirmClose").flatMap(CloseConfirmation.init(rawValue:)) ?? .always
         notifications = bool("notifications", true)
         dockBadge = bool("dockBadge", true)
+        taskAgent = string("taskAgent") ?? Agent.claude.rawValue
+        claudeArguments = string("claudeArguments") ?? ""
+        codexArguments = string("codexArguments") ?? ""
+        worktreeLocation = string("worktreeLocation").flatMap(WorktreeLocation.init(rawValue:)) ?? .sibling
+        taskBase = string("taskBase") ?? ""
         fontFamily = string("fontFamily")
         fontSize = defaults.object(forKey: Self.prefix + "fontSize") as? Double
         theme = string("theme")
