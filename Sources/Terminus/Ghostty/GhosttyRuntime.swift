@@ -102,8 +102,6 @@ final class GhosttyRuntime {
         )
     }
 
-    /// The terminal theme's background and foreground, so the chrome around
-    /// the terminal can match it.
     /// The user's regular Ghostty config (~/.config/ghostty/config) applies
     /// as-is — font, theme, keybinds all carry over — and then what
     /// Terminus ▸ Settings overrides (Settings.ghosttyOverridesFile).
@@ -144,6 +142,15 @@ final class GhosttyRuntime {
         return Double(value)
     }
 
+    /// The key the config binds to a Ghostty action ("new_split:right");
+    /// Settings ▸ Keyboard Shortcuts lists them.
+    func trigger(for action: String) -> ghostty_input_trigger_s? {
+        guard let config else { return nil }
+        return ghostty_config_trigger(config, action, UInt(action.utf8.count))
+    }
+
+    /// The terminal theme's background and foreground, so the chrome around
+    /// the terminal can match it.
     var backgroundColor: NSColor { color("background") ?? .windowBackgroundColor }
     var foregroundColor: NSColor { color("foreground") ?? .labelColor }
 

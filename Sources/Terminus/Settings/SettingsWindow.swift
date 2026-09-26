@@ -31,7 +31,7 @@ final class SettingsWindowController: NSWindowController {
 
 /// The window's sections, as in the list on its left.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, appearance, agents
+    case general, appearance, agents, shortcuts
 
     var id: String { rawValue }
 
@@ -40,6 +40,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .appearance: "Appearance"
         case .agents: "Agents"
+        case .shortcuts: "Keyboard Shortcuts"
         }
     }
 
@@ -48,6 +49,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .appearance: "paintbrush"
         case .agents: "sparkle"
+        case .shortcuts: "keyboard"
         }
     }
 
@@ -57,6 +59,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: ["restore", "session", "tabs", "scrollback", "new tab", "folder", "home", "close", "confirm", "notifications", "dock", "badge"]
         case .appearance: ["font", "size", "theme", "colour", "color", "padding", "cursor", "dim", "split", "pane", "ghostty"]
         case .agents: ["claude", "codex", "model", "arguments", "flags", "task", "worktree", "branch", "base"]
+        case .shortcuts: ["keys", "keybind", "hotkey", "split", "search", "copy", "paste", "tab", "pane", "click"]
         }
     }
 
@@ -126,6 +129,7 @@ struct SettingsView: View {
                     case .general: GeneralSettings(settings: settings)
                     case .appearance: AppearanceSettings(settings: settings, model: model)
                     case .agents: AgentSettings(settings: settings)
+                    case .shortcuts: ShortcutSettings()
                     }
                 }
                 .padding(24)
@@ -190,6 +194,43 @@ private struct GeneralSettings: View {
             Toggle("Notifications while Terminus is in the background", isOn: $settings.notifications)
             Toggle("Count them on the Dock icon", isOn: $settings.dockBadge)
         }
+    }
+}
+
+private struct ShortcutSettings: View {
+    @State private var filter = ""
+    @State private var shortcuts: [Shortcut] = []
+
+    var body: some View {
+        TextField("Filter shortcuts", text: $filter)
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 380)
+        ForEach(Shortcut.Group.allCases, id: \.self) { group in
+            let rows = shortcuts.filter { $0.group == group && $0.matches(filter) }
+            if !rows.isEmpty {
+                SettingsGroup(title: group.rawValue) {
+                    VStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            HStack {
+                                Text(verbatim: row.title).lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength: 12)
+                                Text(verbatim: row.keys)
+                                    .font(.system(.body, design: .rounded).weight(.medium))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(RoundedRectangle(cornerRadius: 5).fill(Color.secondary.opacity(0.15)))
+                            }
+                            .padding(.vertical, 4)
+                            Divider().opacity(0.5)
+                        }
+                    }
+                }
+            }
+        }
+        SettingsNote(
+            "A menu's shortcut changes in System Settings ▸ Keyboard ▸ Keyboard Shortcuts ▸ App Shortcuts. The terminal's come from your Ghostty config: a line like keybind = cmd+d=new_split:right."
+        )
+        .onAppear { shortcuts = Shortcuts.all() }
     }
 }
 

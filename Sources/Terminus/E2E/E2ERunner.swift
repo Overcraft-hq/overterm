@@ -1996,6 +1996,18 @@ final class E2ERunner {
         let status = (try? await Git.run(["status", "--porcelain"], in: repo)) ?? "?"
         check("and the main checkout stays clean", status.isEmpty, status)
         settings.worktreeLocation = .sibling
+
+        // Keyboard Shortcuts: the real menus and the real Ghostty keybinds.
+        let shortcuts = Shortcuts.all()
+        check("the shortcuts list reads the menus", shortcuts.contains { $0.title == "Settings…" && $0.keys == "⌘," })
+        check(
+            "and the terminal's keys from the Ghostty config", shortcuts.contains { $0.group == .terminal && $0.title == "Split right" && $0.keys == "⌘D" },
+            shortcuts.filter { $0.group == .terminal }.map { "\($0.title) \($0.keys)" }.joined(separator: ", "))
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let settingsWindow = SettingsWindowController.shared.window {
+            SettingsWindowController.shared.model.section = .shortcuts
+            await pause(0.8)
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-shortcuts.png"), window: settingsWindow)
+        }
         SettingsWindowController.shared.window?.close()
     }
 
