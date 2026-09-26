@@ -32,21 +32,7 @@ final class GhosttyRuntime {
 
     private init() {
         guard Self.initialized.withLock({ $0 }) else { return }
-        // The user's regular Ghostty config (~/.config/ghostty/config) applies
-        // as-is: font, theme, keybinds all carry over.
-        guard let config = ghostty_config_new() else {
-            Self.logger.critical("ghostty_config_new failed")
-            return
-        }
-        ghostty_config_load_default_files(config)
-        ghostty_config_load_recursive_files(config)
-        ghostty_config_finalize(config)
-        for i in 0..<ghostty_config_diagnostics_count(config) {
-            let diag = ghostty_config_get_diagnostic(config, i)
-            if let message = diag.message {
-                Self.logger.warning("config: \(String(cString: message), privacy: .public)")
-            }
-        }
+        guard let config = Self.makeConfig() else { return }
         self.config = config
 
         var runtime = Self.runtimeConfig()
@@ -118,6 +104,46 @@ final class GhosttyRuntime {
 
     /// The terminal theme's background and foreground, so the chrome around
     /// the terminal can match it.
+    /// The user's regular Ghostty config (~/.config/ghostty/config) applies
+    /// as-is — font, theme, keybinds all carry over — and then what
+    /// Terminus ▸ Settings overrides (Settings.ghosttyOverridesFile).
+    private static func makeConfig() -> ghostty_config_t? {
+        guard let config = ghostty_config_new() else {
+            logger.critical("ghostty_config_new failed")
+            return nil
+        }
+        ghostty_config_load_default_files(config)
+        ghostty_config_load_recursive_files(config)
+        let overrides = Settings.ghosttyOverridesFile.path
+        if FileManager.default.fileExists(atPath: overrides) { ghostty_config_load_file(config, overrides) }
+        ghostty_config_finalize(config)
+        for i in 0..<ghostty_config_diagnostics_count(config) {
+            let diag = ghostty_config_get_diagnostic(config, i)
+            if let message = diag.message {
+                logger.warning("config: \(String(cString: message), privacy: .public)")
+            }
+        }
+        return config
+    }
+
+    /// Re-reads the config (the user's and Settings' overrides) and hands it
+    /// to every terminal: font, theme, padding and cursor change in place.
+    func reloadConfig() {
+        guard let app, let fresh = Self.makeConfig() else { return }
+        ghostty_app_update_config(app, fresh)
+        if let old = config { ghostty_config_free(old) }
+        config = fresh
+    }
+
+    /// A number the config holds (e.g. "font-size"): what Settings shows as
+    /// the current value when it overrides nothing.
+    func configNumber(_ key: String) -> Double? {
+        guard let config else { return nil }
+        var value: Float = 0
+        guard ghostty_config_get(config, &value, key, UInt(key.utf8.count)) else { return nil }
+        return Double(value)
+    }
+
     var backgroundColor: NSColor { color("background") ?? .windowBackgroundColor }
     var foregroundColor: NSColor { color("foreground") ?? .labelColor }
 

@@ -46,6 +46,7 @@ final class E2ERunner {
         "scrollback": { await $0.scrollbackScenario() },
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
+        "settings": { await $0.settingsScenario() },
         "clipboard": { await $0.clipboardScenario() },
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
@@ -1900,6 +1901,85 @@ final class E2ERunner {
         {
             kill(node.pid, SIGTERM)
         }
+    }
+
+    /// Settings (⌘,): Appearance changes reach terminals already open, a
+    /// reset hands back to the user's Ghostty config, and the General
+    /// choices change what closing and new tabs do.
+    private func settingsScenario() async {
+        let settings = Settings.shared
+        await settledPrompt()
+        guard let tab = app.store.selected, let surface = tab.terminal.surface else { return check("a tab", false) }
+
+        (NSApp.delegate as? AppDelegate)?.showSettings(nil)
+        check("⌘, opens the Settings window", await eventually(2) { SettingsWindowController.shared.window?.isVisible == true })
+        SettingsWindowController.shared.model.search = "font"
+        check("its search finds Appearance by a setting in it", SettingsWindowController.shared.model.sections == [.appearance])
+        SettingsWindowController.shared.model.search = ""
+
+        let configured = GhosttyRuntime.shared.configNumber("font-size") ?? 13
+        let before = ghostty_surface_size(surface).cell_width_px
+        settings.fontSize = configured + 8
+        let grew = await eventually(4) { ghostty_surface_size(surface).cell_width_px > before }
+        check("a font size reaches the terminal already open", grew, "\(before) → \(ghostty_surface_size(surface).cell_width_px)")
+        let written = (try? String(contentsOf: Settings.ghosttyOverridesFile, encoding: .utf8)) ?? ""
+        check("written as a Ghostty override", written.contains("font-size = \(String(format: "%g", configured + 8))"), written)
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let settingsWindow = SettingsWindowController.shared.window {
+            SettingsWindowController.shared.model.section = .appearance
+            await pause(0.8)
+            app.captureWindow(to: png, window: settingsWindow)
+        }
+        settings.fontSize = nil
+        check(
+            "Reset hands it back to the Ghostty config",
+            await eventually(4) { ghostty_surface_size(surface).cell_width_px == before }
+                && !FileManager.default.fileExists(atPath: Settings.ghosttyOverridesFile.path))
+
+        let background = GhosttyRuntime.shared.backgroundColor
+        if let theme = SettingsWindowController.shared.model.themes.first(where: { $0 == "Dracula" }) ?? SettingsWindowController.shared.model.themes.first {
+            settings.theme = theme
+            check(
+                "a theme changes the colours", await eventually(4) { GhosttyRuntime.shared.backgroundColor != background },
+                "\(theme): \(background) → \(GhosttyRuntime.shared.backgroundColor)")
+            settings.theme = nil
+            await eventually(4) { GhosttyRuntime.shared.backgroundColor == background }
+        } else {
+            check("the bundled themes are listed", false)
+        }
+
+        settings.unfocusedPaneDim = 0.6
+        check(
+            "the pane dim follows its slider",
+            await eventually(2) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
+        settings.unfocusedPaneDim = 0.35
+
+        // New tabs open at home, not in the current tab's folder.
+        let folder = scratch.appendingPathComponent("somewhere")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        app.newTab(in: folder)
+        settings.newTabDirectory = .home
+        app.newTab(nil)
+        check(
+            "New tabs open in: Home",
+            app.store.selected?.workingDirectory == FileManager.default.homeDirectoryForCurrentUser.path,
+            app.store.selected?.workingDirectory ?? "nil")
+        settings.newTabDirectory = .current
+
+        // Ask before closing: only when something runs — an idle tab just closes.
+        settings.confirmClose = .whenRunning
+        guard let idle = app.store.selected else { return check("a tab to close", false) }
+        await settledPrompt()
+        let count = app.store.tabs.count
+        app.closeTab(idle)
+        check(
+            "an idle tab closes without asking", await eventually(2) { self.app.store.tabs.count == count - 1 } && window.attachedSheet == nil)
+        settings.confirmClose = .always
+        if let another = app.store.selected {
+            app.closeTab(another)
+            check("Always asks again", await eventually(2) { self.window.attachedSheet != nil })
+            clickSheetButton("Cancel")
+        }
+        SettingsWindowController.shared.window?.close()
     }
 
     /// ⌘P shows, searches across kinds, and hides.

@@ -92,6 +92,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         buildLayout(in: window)
 
+        applySettingsAsTheyChange()
         store.$selectedID
             .sink { [weak self] _ in
                 // @Published fires before the value lands; read it next turn.
@@ -341,7 +342,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // The tab's own OSC 7 directory first: libghostty's inherited pwd can
         // lag it under load, and the new tab then opened in ~.
         let known = source?.workingDirectory
-        let terminal = TerminalView(workingDirectory: known ?? inherited?.workingDirectory, fontSize: inherited?.fontSize)
+        // Settings ▸ General: new tabs in the current tab's folder, or home.
+        let directory = Settings.shared.newTabDirectory == .home ? nil : known ?? inherited?.workingDirectory
+        let terminal = TerminalView(workingDirectory: directory, fontSize: inherited?.fontSize)
         addTab(terminal, after: tab(containing: source))
     }
 
@@ -351,7 +354,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
         let host = SplitHostView(
             dividerColor: GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.18),
-            dimColor: GhosttyRuntime.shared.backgroundColor.withAlphaComponent(0.35))
+            dimColor: Self.paneDim)
         host.onRatioChange = { [weak self, weak tab] path, ratio in
             guard let self, let tab else { return }
             tab.setSplits(tab.splits.settingRatio(ratio, at: path))
@@ -689,7 +692,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard !finalSaveDone else { return }
         finalSaveDone = true
         var saved: [ObjectIdentifier: String] = [:]
-        for tab in store.tabs where tab.agent == nil {
+        // Settings ▸ General: reopening tabs, and each shell pane's text with them.
+        for tab in store.tabs where tab.agent == nil && Settings.shared.restoreTabs && Settings.shared.restoreScrollback {
             for pane in tab.terminals {
                 if let text = pane.scrollbackText, let name = Scrollback.save(text) { saved[ObjectIdentifier(pane)] = name }
             }
@@ -1645,6 +1649,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Closes several tabs behind one confirmation.
     func closeTabs(_ tabs: [Tab]) {
         guard !tabs.isEmpty, let window else { return }
+        // Settings ▸ General ▸ Ask before closing: only when something runs.
+        if !Self.needsCloseConfirmation(tabs) { return tabs.forEach { removeTab($0) } }
         if tabs.count == 1 { store.select(tabs[0]) }
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Close “\(tabs[0].title)”?" : "Close \(tabs.count) tabs?"
@@ -1656,6 +1662,49 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             guard response == .alertFirstButtonReturn else { return }
             tabs.forEach { self?.removeTab($0) }
         }
+    }
+
+    /// Whether closing these tabs asks first: always, unless Settings says
+    /// only when something runs in them.
+    static func needsCloseConfirmation(_ tabs: [Tab]) -> Bool {
+        Settings.shared.confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
+    }
+
+    /// The dim over panes without the keyboard (Settings ▸ Appearance).
+    static var paneDim: NSColor { GhosttyRuntime.shared.backgroundColor.withAlphaComponent(Settings.shared.unfocusedPaneDim) }
+
+    /// Appearance settings take effect as they change: the Ghostty overrides
+    /// are rewritten and every terminal reloads its config; the pane dim
+    /// repaints. Debounced — a slider or stepper moves in small steps.
+    private func applySettingsAsTheyChange() {
+        let settings = Settings.shared
+        Publishers.MergeMany(
+            settings.$fontFamily.map { _ in () }.eraseToAnyPublisher(),
+            settings.$fontSize.map { _ in () }.eraseToAnyPublisher(),
+            settings.$theme.map { _ in () }.eraseToAnyPublisher(),
+            settings.$windowPadding.map { _ in () }.eraseToAnyPublisher(),
+            settings.$cursorStyle.map { _ in () }.eraseToAnyPublisher()
+        )
+        .dropFirst(5)  // each publisher's current value, on subscribing
+        .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
+        .sink {
+            Settings.shared.writeGhosttyOverrides()
+            GhosttyRuntime.shared.reloadConfig()
+        }
+        .store(in: &cancellables)
+        settings.$unfocusedPaneDim
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.hosts.values.forEach { $0.dimColor = Self.paneDim }
+                }
+            }
+            .store(in: &cancellables)
+        settings.$dockBadge
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateAttentionBadge() } }
+            .store(in: &cancellables)
     }
 
     /// What closing these tabs would end — running processes by name, agents
@@ -1857,6 +1906,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             return false
         }
         guard !store.tabs.isEmpty else { return true }
+        if !Self.needsCloseConfirmation(store.tabs) {
+            closeConfirmed = true
+            return true
+        }
         let alert = NSAlert()
         alert.messageText = store.tabs.count == 1 ? "Close the window?" : "Close the window and its \(store.tabs.count) tabs?"
         alert.informativeText = Self.closeWarning(for: store.tabs)

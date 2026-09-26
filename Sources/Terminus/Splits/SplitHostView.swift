@@ -20,7 +20,10 @@ final class SplitHostView: NSView {
     private var dividers: [SplitTree<TerminalView>.Divider] = []
     private var dims: [ObjectIdentifier: NSView] = [:]
     private var visible = true
-    private let dimColor: NSColor
+    /// Over the panes without the keyboard; Settings can change it.
+    var dimColor: NSColor {
+        didSet { dims.values.forEach { $0.layer?.backgroundColor = dimColor.cgColor } }
+    }
 
     init(dividerColor: NSColor, dimColor: NSColor) {
         self.dimColor = dimColor

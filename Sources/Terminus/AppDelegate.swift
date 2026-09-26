@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         // An isolated run (E2E, layout dump) reads and writes its own support
         // directory — empty unless a test prepared a session there.
         let env = ProcessInfo.processInfo.environment
-        if let saved = SessionState.load(), !saved.tabs.isEmpty {
+        if Settings.shared.restoreTabs, let saved = SessionState.load(), !saved.tabs.isEmpty {
             controller.restore(saved)
         } else if AppEnvironment.isIsolated, let cwd = env["TERMINUS_E2E_CWD"] ?? env["TERMINUS_DUMP_CWD"] {
             controller.newTab(in: URL(fileURLWithPath: cwd))
@@ -40,7 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
     /// Quitting closes every tab: always confirmed — unless the window's own
     /// close was just confirmed, or nothing is open.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty else { return .terminateNow }
+        guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
+            TerminalWindowController.needsCloseConfirmation(controller.store.tabs)
+        else { return .terminateNow }
         let tabs = controller.store.tabs
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Quit Terminus?" : "Quit Terminus and close \(tabs.count) tabs?"
@@ -57,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
+    }
+
+    /// Terminus ▸ Settings… (⌘,).
+    @objc func showSettings(_ sender: Any?) {
+        SettingsWindowController.shared.show()
     }
 
     /// Finder's Open With, or a drop on the Dock icon.

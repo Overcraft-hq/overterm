@@ -12,7 +12,7 @@ enum AttentionNotifier {
     static var suppressed = 0
 
     static func notify(tab: Tab) {
-        guard !NSApp.isActive else { return }
+        guard !NSApp.isActive, Settings.shared.notifications else { return }
         if AppEnvironment.isIsolated {
             suppressed += 1
             return
@@ -39,6 +39,6 @@ enum AttentionNotifier {
     }
 
     static func updateBadge(count: Int) {
-        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+        NSApp.dockTile.badgeLabel = count > 0 && Settings.shared.dockBadge ? "\(count)" : nil
     }
 }
