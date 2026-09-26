@@ -128,6 +128,9 @@ final class FileTreeModel: ObservableObject {
         return entries
     }
 
+    /// Paths per `check-ignore`, well under Git.maxArguments.
+    static let ignoreBatch = 1000
+
     /// Asks git which of a folder's entries are ignored — one
     /// `check-ignore` per folder listing — then redraws. Outside a
     /// repository git fails and nothing is dimmed.
@@ -138,13 +141,19 @@ final class FileTreeModel: ObservableObject {
         Task { [weak self] in
             // Exit 1 means "none of these are ignored". Paths come back as
             // given, one per line (-z needs --stdin); quotePath off keeps
-            // non-ASCII names unescaped.
-            guard
-                let output = try? await Git.run(
-                    ["-c", "core.quotePath=false", "check-ignore", "--"] + paths, in: root, success: [0, 1])
-            else { return }
+            // non-ASCII names unescaped. In batches: a folder of 13 000
+            // entries (a temporary folder) as one argument list crashed the
+            // app — Git.maxArguments.
+            var hits: [URL] = []
+            for start in stride(from: 0, to: paths.count, by: Self.ignoreBatch) {
+                let batch = Array(paths[start..<min(start + Self.ignoreBatch, paths.count)])
+                guard
+                    let output = try? await Git.run(
+                        ["-c", "core.quotePath=false", "check-ignore", "--"] + batch, in: root, success: [0, 1])
+                else { return }
+                hits += output.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
+            }
             guard let self, self.root == root else { return }
-            let hits = output.split(separator: "\n").map { URL(fileURLWithPath: String($0)) }
             let before = self.ignored.count
             self.ignored.formUnion(hits)
             if self.ignored.count != before { self.rebuild() }

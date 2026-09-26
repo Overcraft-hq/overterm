@@ -33,7 +33,15 @@ enum Git {
         }
     }
 
+    /// Foundation raises an Objective-C exception — the app dies — launching
+    /// a process with more arguments than this; a caller batching paths
+    /// stays under it (FileTreeModel.checkIgnored).
+    static let maxArguments = 4000
+
     private static func runBlocking(_ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>) throws -> String {
+        guard arguments.count <= maxArguments else {
+            throw GitError(arguments: Array(arguments.prefix(4)), status: -1, stderr: "too many arguments (\(arguments.count))")
+        }
         let process = Process()
         process.executableURL = tool
         process.arguments = arguments
