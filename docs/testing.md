@@ -19,7 +19,11 @@ status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
 the branch scope, its base without origin/HEAD, and when it has nothing to
 compare with), `EditorDocument`,
 `SyntaxHighlighter`, snippets, palette ranking, session file, `TabActivity`,
-`GhosttyInput`, and `TabStore`/`Tab`.
+`GhosttyInput`, `TabStore`/`Tab`, and `ClaudeEdits` — Claude Code's edits
+and why it made them, from transcript lines in its shape (one content part
+per line, results on later lines, a subagent's without `toolUseResult`),
+written by `TranscriptFixture` into a scratch projects directory: never the
+real `~/.claude`.
 
 Tabs are real: the unit-test process never calls `ghostty_init`, so
 `GhosttyRuntime` has no app and every `TerminalView` is surfaceless — no
