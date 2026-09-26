@@ -3,7 +3,7 @@ APP := Terminus.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit icon build test e2e app run install clean
+.PHONY: ghosttykit icon build test e2e app dmg run install clean
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -28,6 +28,10 @@ e2e: app
 ## app: assemble and ad-hoc sign $(APP)
 app:
 	./Scripts/make-app.sh
+
+## dmg: pack the built $(APP) as dist/Terminus-$(VERSION).dmg (VERSION as for make app)
+dmg:
+	./Scripts/make-dmg.sh
 
 ## run: build the .app and launch it
 run: app

@@ -115,6 +115,18 @@ SIGN_IDENTITY ?= Apple Development: you@example.com (TEAMID1234)
 The first signing asks for the keychain's permission to use the key
 (Always Allow).
 
+## Releasing
+
+GitHub → Actions → **Release** → Run workflow, with a version (`0.2.0`). On a
+macOS runner it runs the unit tests, builds the app and a DMG, and publishes
+release `v0.2.0` — the tag goes on the commit it ran on — with notes grouped
+by area from the commits since the previous tag, and the DMG attached. Only
+by hand: nothing triggers it on push. Locally, the same pieces:
+`VERSION=0.2.0 make app dmg` and `Scripts/release-notes.sh 0.2.0`.
+
+The release is signed ad hoc and not notarized: the first open needs
+right-click → Open (the notes say so).
+
 Details: `docs/` (architecture, Ghostty embedding, debugging).
 
 Ghostty is pinned to v1.3.1 in `Scripts/build-ghosttykit.sh`: main needs

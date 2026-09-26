@@ -17,6 +17,8 @@ make install                 # …and copy it to /Applications, re-signed with
                              # $SIGN_IDENTITY (env or untracked local.mk) if set;
                              # a stable identity keeps privacy grants (mic)
 make icon                    # Resources/AppIcon.svg → AppIcon.icns
+VERSION=0.2.0 make app dmg   # dist/Terminus-0.2.0.dmg; a release is the Release
+                             # workflow, run by hand (tag, notes, DMG attached)
 ```
 
 ## Layout

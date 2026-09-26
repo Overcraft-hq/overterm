@@ -2,8 +2,9 @@
 # open an issue (once per release) — the bump itself is by hand (Xcode and
 # Zig requirements move with it). Logic: Scripts/check-ghostty-release.sh.
 #
-# Deliberately the only workflow: macOS CI is expensive, and this needs
-# nothing but git and gh on the cheapest runner, for a few seconds a week.
+# The only scheduled workflow: macOS CI is expensive, and this needs nothing
+# but git and gh on the cheapest runner, for a few seconds a week. (Release
+# runs on macOS, but only when started by hand.)
 name: Ghostty release check
 
 on:
