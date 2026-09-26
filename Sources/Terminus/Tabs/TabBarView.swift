@@ -16,6 +16,8 @@ struct TabBarActions {
     var showPullRequest: () -> Void
     /// Every tab as a card (⇧⌘A).
     var showOverview: () -> Void
+    /// The update chip: Settings ▸ About.
+    var showUpdate: () -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -28,6 +30,8 @@ struct TabBarView: View {
     @ObservedObject var diff: DiffModel
     /// For the checkout's pull request, next to the ± badge.
     @ObservedObject var worktrees: WorktreeModel
+    /// A newer release, as a chip.
+    @ObservedObject var updates: UpdateChecker
     let theme: ChromeTheme
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
@@ -70,6 +74,20 @@ struct TabBarView: View {
             .help("New Tab (⌘T) — arrow for Claude / Codex")
             .padding(.leading, 6)
             Spacer(minLength: 0)
+            if let release = updates.available {
+                Button(action: actions.showUpdate) {
+                    Label("Update \(release.version)", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .background(Capsule().fill(TabStatusStyle.signal.opacity(0.22)))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(TabStatusStyle.signal)
+                .help("Terminus \(release.version) is out — Settings ▸ About")
+                .padding(.trailing, 6)
+            }
             Button(action: actions.showOverview) {
                 Image(systemName: "square.grid.2x2").font(.system(size: 12)).frame(width: 26, height: 24).contentShape(Rectangle())
             }

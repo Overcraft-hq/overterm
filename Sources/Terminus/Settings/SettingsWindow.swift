@@ -31,7 +31,7 @@ final class SettingsWindowController: NSWindowController {
 
 /// The window's sections, as in the list on its left.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, appearance, agents, shortcuts
+    case general, appearance, agents, shortcuts, about
 
     var id: String { rawValue }
 
@@ -41,6 +41,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .agents: "Agents"
         case .shortcuts: "Keyboard Shortcuts"
+        case .about: "About"
         }
     }
 
@@ -50,6 +51,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "paintbrush"
         case .agents: "sparkle"
         case .shortcuts: "keyboard"
+        case .about: "info.circle"
         }
     }
 
@@ -60,6 +62,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: ["font", "size", "theme", "colour", "color", "padding", "cursor", "dim", "split", "pane", "ghostty"]
         case .agents: ["claude", "codex", "model", "arguments", "flags", "task", "worktree", "branch", "base"]
         case .shortcuts: ["keys", "keybind", "hotkey", "split", "search", "copy", "paste", "tab", "pane", "click"]
+        case .about: ["version", "update", "changelog", "release", "commit", "download"]
         }
     }
 
@@ -130,6 +133,7 @@ struct SettingsView: View {
                     case .appearance: AppearanceSettings(settings: settings, model: model)
                     case .agents: AgentSettings(settings: settings)
                     case .shortcuts: ShortcutSettings()
+                    case .about: AboutSettings(settings: settings, updates: .shared)
                     }
                 }
                 .padding(24)
@@ -193,6 +197,108 @@ private struct GeneralSettings: View {
         SettingsGroup(title: "When a tab needs you") {
             Toggle("Notifications while Terminus is in the background", isOn: $settings.notifications)
             Toggle("Count them on the Dock icon", isOn: $settings.dockBadge)
+        }
+    }
+}
+
+private struct AboutSettings: View {
+    @ObservedObject var settings: Settings
+    @ObservedObject var updates: UpdateChecker
+
+    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "" }
+    private var whatsNew: [String] { Changelog.bundled.map { Changelog.entry(for: updates.currentVersion, in: $0) } ?? [] }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: "Terminus \(updates.currentVersion)").font(.title3.weight(.semibold))
+                Text(verbatim: "Build \(build)").foregroundStyle(.secondary)
+                if let credits = AboutPanel.credits(for: .main) { Text(verbatim: credits).font(.caption).foregroundStyle(.secondary) }
+            }
+        }
+        SettingsGroup(title: "Updates") {
+            Button("Check for Updates") { Task { await updates.check() } }
+                .fixedSize()
+                .disabled(updates.state == .checking)
+            status
+            Toggle("Check once a day, at launch", isOn: $settings.checkForUpdates)
+            SettingsNote("Releases come from GitHub (\(UpdateChecker.repository)), through your gh login.")
+        }
+        if !whatsNew.isEmpty {
+            SettingsGroup(title: "What's new in \(updates.currentVersion)") {
+                ForEach(whatsNew, id: \.self) { Text(verbatim: "• \($0)").fixedSize(horizontal: false, vertical: true) }
+            }
+        }
+        Button("View the Full Changelog") { ChangelogWindowController.shared.show() }
+    }
+
+    @ViewBuilder private var status: some View {
+        switch updates.state {
+        case .idle: EmptyView()
+        case .checking: ProgressView().controlSize(.small)
+        case .upToDate: Label("Up to date", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+        case .available(let release):
+            Text(verbatim: "Terminus \(release.version) is available — you have \(updates.currentVersion).").foregroundStyle(.orange)
+            HStack(spacing: 8) {
+                Button("Download & Open") { Task { await updates.download(release) } }.fixedSize()
+                if let url = release.url { Button("Release Page") { NSWorkspace.shared.open(url) }.fixedSize() }
+            }
+        case .downloading:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Downloading…").foregroundStyle(.secondary)
+            }
+        case .downloaded(let dmg):
+            Text(verbatim: "Opened \(dmg.lastPathComponent) — drag Terminus to Applications, then relaunch.")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        case .failed(let message):
+            Text(verbatim: message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// View ▸ Latest Changelog (⌥⌘O): the bundled CHANGELOG.md.
+@MainActor
+final class ChangelogWindowController: NSWindowController {
+    static let shared = ChangelogWindowController()
+
+    private init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered,
+            defer: false)
+        window.title = "Terminus Changelog"
+        window.contentViewController = NSHostingController(rootView: ChangelogView(text: Changelog.bundled ?? "No changelog in this build."))
+        super.init(window: window)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func show() {
+        if window?.isVisible != true { window?.center() }
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+private struct ChangelogView: View {
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                // The file's own preamble is for committers; versions start at the first "## ".
+                let lines = text.components(separatedBy: "\n").drop { !$0.hasPrefix("## ") }
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    if line.hasPrefix("## ") {
+                        Text(verbatim: String(line.dropFirst(3))).font(.headline).padding(.top, 10)
+                    } else if line.hasPrefix("- ") {
+                        Text(verbatim: "• " + line.dropFirst(2)).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

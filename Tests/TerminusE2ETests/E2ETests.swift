@@ -79,6 +79,7 @@ final class E2ETests: XCTestCase {
     func testOpenFromFinder() throws { try run("openFromFinder") }
     func testSessions() throws { try run("sessions") }
     func testSettings() throws { try run("settings") }
+    func testUpdates() throws { try run("updates") }
     func testClipboard() throws { try run("clipboard") }
     func testOpenWith() throws { try run("openWith") }
     func testDropFiles() throws { try run("dropFiles") }

@@ -45,6 +45,8 @@ final class Settings: ObservableObject {
     @Published var confirmClose: CloseConfirmation { didSet { save(confirmClose.rawValue, "confirmClose") } }
     @Published var notifications: Bool { didSet { save(notifications, "notifications") } }
     @Published var dockBadge: Bool { didSet { save(dockBadge, "dockBadge") } }
+    /// Once a day at launch, against the latest release (UpdateChecker).
+    @Published var checkForUpdates: Bool { didSet { save(checkForUpdates, "checkForUpdates") } }
 
     // MARK: Agents
 
@@ -90,6 +92,7 @@ final class Settings: ObservableObject {
         confirmClose = string("confirmClose").flatMap(CloseConfirmation.init(rawValue:)) ?? .always
         notifications = bool("notifications", true)
         dockBadge = bool("dockBadge", true)
+        checkForUpdates = bool("checkForUpdates", true)
         taskAgent = string("taskAgent") ?? Agent.claude.rawValue
         claudeArguments = string("claudeArguments") ?? ""
         codexArguments = string("codexArguments") ?? ""

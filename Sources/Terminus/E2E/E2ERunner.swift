@@ -47,6 +47,7 @@ final class E2ERunner {
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
         "settings": { await $0.settingsScenario() },
+        "updates": { await $0.updatesScenario() },
         "clipboard": { await $0.clipboardScenario() },
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
@@ -2008,6 +2009,72 @@ final class E2ERunner {
             await pause(0.8)
             app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-shortcuts.png"), window: settingsWindow)
         }
+        SettingsWindowController.shared.window?.close()
+    }
+
+    /// Settings ▸ About: a newer release (a stand-in gh answering for
+    /// GitHub) shows as available — a chip in the title bar too — and
+    /// downloads; none published yet is "up to date"; this version's
+    /// changelog entry is in the app.
+    private func updatesScenario() async {
+        let log = scratch.appendingPathComponent("gh-updates.log")
+        let mode = scratch.appendingPathComponent("gh-mode")
+        let gh = scratch.appendingPathComponent("gh")
+        try? #"""
+        #!/usr/bin/python3
+        import json, os, sys
+        args = sys.argv[1:]
+        open("\#(log.path)", "a").write(" ".join(args) + "\n")
+        mode = open("\#(mode.path)").read().strip() if os.path.exists("\#(mode.path)") else "newer"
+        if args[:1] == ["api"] and args[1].endswith("/releases/latest"):
+            if mode == "none":
+                sys.stderr.write("gh: Not Found (HTTP 404)\n"); sys.exit(1)
+            print(json.dumps({"tag_name": "v99.0.0", "html_url": "https://example.invalid/v99.0.0",
+                              "assets": [{"name": "Terminus-99.0.0.dmg"}]}))
+        elif args[:2] == ["release", "download"]:
+            folder = args[args.index("-D") + 1]
+            open(os.path.join(folder, "Terminus-99.0.0.dmg"), "w").write("dmg")
+        else:
+            sys.stderr.write("fake gh: unexpected %s\n" % args); sys.exit(2)
+        """#.write(to: gh, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
+        GitHub.executableOverride = gh
+        defer { GitHub.executableOverride = nil }
+        let updates = UpdateChecker.shared
+
+        await updates.check()
+        check("a newer release shows as available", updates.available?.version == "99.0.0", "\(updates.state)")
+        let asked = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
+        check("asked for the release repository's latest", asked.contains("api repos/\(UpdateChecker.repository)/releases/latest"), asked)
+
+        (NSApp.delegate as? AppDelegate)?.checkForUpdates(nil)
+        check("Check for Updates opens Settings on About", await eventually(3) { SettingsWindowController.shared.model.section == .about })
+        await eventually(3) { updates.available != nil }
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let settingsWindow = SettingsWindowController.shared.window {
+            await pause(0.8)
+            app.captureWindow(to: png, window: settingsWindow)
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-titlebar.png"))
+        }
+
+        if let release = updates.available {
+            let downloads = scratch.appendingPathComponent("Downloads")
+            try? FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+            await updates.download(release, into: downloads)
+            check(
+                "Download fetches its DMG",
+                updates.state == .downloaded(downloads.appendingPathComponent("Terminus-99.0.0.dmg"))
+                    && FileManager.default.fileExists(atPath: downloads.appendingPathComponent("Terminus-99.0.0.dmg").path), "\(updates.state)")
+        }
+
+        try? "none".write(to: mode, atomically: true, encoding: .utf8)
+        await updates.check()
+        check("no release yet reads as up to date", updates.state == .upToDate, "\(updates.state)")
+
+        let entry = Changelog.bundled.map { Changelog.entry(for: updates.currentVersion, in: $0) } ?? []
+        check("the app carries this version's changelog entry", !entry.isEmpty, "\(updates.currentVersion): \(entry)")
+        (NSApp.delegate as? AppDelegate)?.showChangelog(nil)
+        check("View Latest Changelog opens it", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
+        ChangelogWindowController.shared.window?.close()
         SettingsWindowController.shared.window?.close()
     }
 

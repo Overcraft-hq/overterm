@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         }
         controller.autosaveSession()
         controller.showWindow(nil)
+        UpdateChecker.shared.checkIfDue()
         windowController = controller
         controller.dumpLayoutIfRequested()
         if let scenario = AppEnvironment.e2eScenario { E2ERunner.start(scenario, app: controller) }
@@ -64,6 +65,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
     /// Terminus ▸ Settings… (⌘,).
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.show()
+    }
+
+    @objc func showChangelog(_ sender: Any?) {
+        ChangelogWindowController.shared.show()
+    }
+
+    /// Settings ▸ About, checking.
+    @objc func checkForUpdates(_ sender: Any?) {
+        SettingsWindowController.shared.show(.about)
+        Task { await UpdateChecker.shared.check() }
     }
 
     /// Finder's Open With, or a drop on the Dock icon.

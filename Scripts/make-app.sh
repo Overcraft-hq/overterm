@@ -55,6 +55,8 @@ if [[ ! -d "$GHOSTTY_RES" ]]; then
 fi
 cp -R "$GHOSTTY_RES/." "$CONTENTS/Resources/"
 cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
+# Settings ▸ About shows this version's entry; View Latest Changelog, all of it.
+cp "$ROOT/CHANGELOG.md" "$CONTENTS/Resources/CHANGELOG.md"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

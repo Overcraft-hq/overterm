@@ -11,6 +11,13 @@ theme, keybinds) applies as-is.
 
 ## What's in it
 
+- **Settings** (⌘,): General (reopening tabs and their text, where new tabs
+  open, when closing asks, notifications), Appearance (font, size, theme,
+  padding, cursor — over your Ghostty config, applied to open terminals at
+  once), Agents (arguments for Claude and Codex, New Task's agent, worktree
+  place and base), Keyboard Shortcuts (every one, searchable), and About —
+  the version, what's new, and updates from GitHub releases (⌥⌘O: the
+  changelog; a chip in the title bar when a newer version is out).
 - **Tabs** in the title bar, Chrome-style: rename (double-click), colour, pin
   (pinned = protected from ⌘W), drag to reorder. Tabs, their names, colours,
   pins and directories come back on relaunch, shell panes with their text
@@ -87,6 +94,7 @@ theme, keybinds) applies as-is.
 | ⌘P | Command palette (↵ run, ⌥↵ insert snippet) |
 | ⌘D / ⇧⌘D | Split right / down (⌘[ ⌘] or ⌥⌘arrows move between panes, ⇧⌘↩ zooms one) |
 | ⇧⌘A | Agent overview |
+| ⌘, / ⌥⌘O | Settings / the changelog |
 | ⌘F | Search terminal + files (↵ open; the terminal row keeps a find bar) |
 | ⌘-click | Open a printed `path:line` in the editor |
 | ⌥ while dropping files | Plain quoted paths, even where Claude Code runs |

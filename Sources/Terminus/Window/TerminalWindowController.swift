@@ -115,6 +115,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 store: store,
                 diff: diff,
                 worktrees: worktrees,
+                updates: .shared,
                 theme: theme,
                 leadingInset: 78,
                 actions: TabBarActions(
@@ -126,6 +127,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     toggleDiff: { [weak self] in self?.toggleDiffFromBadge() },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     showOverview: { [weak self] in self?.showAgentOverview(nil) },
+                    showUpdate: { SettingsWindowController.shared.show(.about) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )

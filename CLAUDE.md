@@ -38,6 +38,7 @@ make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
 | `Sources/Terminus/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
 | `Sources/Terminus/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
+| `Sources/Terminus/Settings/` | ⌘, window: `Settings` (the store; Appearance as Ghostty overrides), `SettingsWindow` (sections), `Shortcuts`, `Updates` (GitHub releases, bundled changelog) |
 | `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic) and `SplitHostView` (frames, dividers, dim) |
 | `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
 | `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |
@@ -56,7 +57,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Views don't clip by default since macOS 14.** A subview drawing past its bounds (the editor gutter did) paints over neighbours — set `clipsToBounds` where content is taller than the view.
 - **The tab strip lives in the title bar**, which swallows right-clicks before SwiftUI sees them. Context menus there go through the window's local event monitor (`installTabRightClick`), not `.contextMenu`.
 - **Split dividers are 1 pt**; `WideDividerSplitViewController` widens the grab area. Autosave key `TerminusColumns.v2` — bump the version whenever the column set changes, or stale positions are applied to new columns.
-- **Closing always asks** (tab, window, app); only a shell's own `exit` closes silently. Keep it that way — it was asked for.
+- **Closing always asks** by default (tab, window, app); only a shell's own `exit` closes silently. Keep "Always" the default — it was asked for. Settings ▸ General can make it "only when something is running" (`needsCloseConfirmation`); any new close path goes through that.
 - **`@Published` emits before the property changes.** In a Combine sink, use the emitted values; reading the object back gives the old value (bit twice: selection, and attach). A new subscriber also gets the current value at once — `dropFirst()` when only a change should act (the find bar's rebinding on every terminal focus took the keyboard back, so Esc never closed it).
 - **`tab.terminal` is the focused pane**, not "the tab's terminal". Anything about the whole tab (closing, its processes, busy checks) must go over `tab.terminals`, or it silently ignores the other panes of a split. Find a pane's tab with `tab(containing:)`.
 - **Don't re-publish selection**: `TabStore.select` is a no-op for the selected tab; a selection change takes the keyboard for the terminal, which kills an in-place rename.

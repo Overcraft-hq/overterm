@@ -13,6 +13,10 @@ enum MainMenu {
         // The standard panel, with the commit it was built from (AboutPanel).
         appMenu.addItem(withTitle: "About Terminus", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        let changelog = appMenu.addItem(withTitle: "View Latest Changelog", action: #selector(AppDelegate.showChangelog(_:)), keyEquivalent: "o")
+        changelog.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)), keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Terminus", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")

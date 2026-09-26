@@ -232,6 +232,30 @@ every one in full — and in Branch the commits that touched it
   resolved, a file's own name kept), newest first, one per reason, three per
   file.
 
+## Settings (⌘,)
+
+`Settings` (`Sources/Terminus/Settings/`) is one store in
+`AppEnvironment.defaults` (an isolated run has its own), read where each
+setting acts — `AppDelegate` (restore), `closeTabs` / `windowShouldClose` /
+`applicationShouldTerminate` (`needsCloseConfirmation`), `newTab(from:)`,
+`AttentionNotifier`, `saveFinalSession`, `Agent.command(arguments:)`,
+`TaskCreator` (worktree place, `.git/info/exclude`).
+
+Appearance is Ghostty's own settings: `Settings.writeGhosttyOverrides()`
+writes `Application Support/Terminus/ghostty-overrides.conf`, which
+`GhosttyRuntime.makeConfig()` loads after the user's config — only what is
+set overrides it. `reloadConfig()` builds a fresh config and hands it to
+`ghostty_app_update_config`, which updates every open surface; the chrome's
+colours (ChromeTheme) are read at launch.
+
+Keyboard Shortcuts reads the menus as they are (System Settings' app
+shortcuts show) and the terminal's keys with `ghostty_config_trigger`.
+About: `UpdateChecker` asks `gh api repos/terminus-app/terminus/releases/latest`
+(private: the user's gh login), compares SemVer with CFBundleShortVersionString,
+downloads the DMG with `gh release download`; once a day at launch when
+allowed, a title-bar chip when newer. `make-app.sh` bundles `CHANGELOG.md`
+for "What's new" and View Latest Changelog (⌥⌘O).
+
 ## Agent overview (⇧⌘A)
 
 Every tab as a card over the window (`Sources/Terminus/Agents/`), refreshed
