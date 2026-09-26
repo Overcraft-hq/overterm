@@ -74,6 +74,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         windowController?.open(urls)
     }
 
+    /// Terminus ▸ About Terminus. The menu item has no target: the action
+    /// reaches the app's delegate after the windows' responders.
+    @objc func showAbout(_ sender: Any?) {
+        AboutPanel.show()
+    }
+
     /// Returning to the app is "seeing" the selected tab.
     func applicationDidBecomeActive(_ notification: Notification) {
         windowController?.windowDidBecomeKey(notification)

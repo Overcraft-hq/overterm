@@ -1,0 +1,164 @@
+# Changelog
+
+What changed in each version of Terminus, newest first. `VERSION` is the
+version ([SemVer](https://semver.org)): a commit that changes the app bumps it
+— major, minor or patch, as CLAUDE.md's Commits section sets out — with
+`Scripts/bump-version.sh`, which adds the line here. The commit that brings a
+version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
+(bfb55fb); its lines are the commits up to it.
+
+## 1.10.0 — 2026-09-26
+
+- build: version the app — VERSION, changelog, About shows version and commit
+
+## 1.9.0 — 2026-09-26
+
+- diff: start cards folded when many files changed
+
+## 1.8.0 — 2026-09-26
+
+- diff: colour diffs like code and mark what changed within a line
+
+## 1.7.0 — 2026-09-26
+
+- diff: show why each changed file changed
+
+## 1.6.1 — 2026-09-26
+
+- agents: read why Claude made each edit from its session transcripts
+
+## 1.6.0 — 2026-09-26
+
+- terminal: drop files onto a pane to insert references to them
+
+## 1.5.3 — 2026-09-26
+
+- diff: Branch finds main when there is no origin/HEAD
+
+## 1.5.2 — 2026-09-26
+
+- window: the ± badge opens the scope it counts
+
+## 1.5.1 — 2026-09-26
+
+- agents: an agent exiting mid-poll no longer crashes the app
+
+## 1.5.0 — 2026-09-26
+
+- window: make the changes pane easy to find
+
+## 1.4.0 — 2026-09-26
+
+- diff: show what the branch changed, not only what is uncommitted
+
+## 1.3.2 — 2026-09-26
+
+- diff: refresh the changes pane after a commit in a linked worktree
+
+## 1.3.1 — 2026-09-25
+
+- build: sign installs with a stable identity so privacy grants survive updates
+
+## 1.3.0 — 2026-09-25
+
+- build: let programs running in Terminus ask for the microphone
+
+## 1.2.0 — 2026-09-25
+
+- editor: open files in the app the user picked, not the per-type default
+
+## 1.1.1 — 2026-09-25
+
+- window: the find bar takes the keyboard only when a search starts
+
+## 1.1.0 — 2026-09-25
+
+- terminal: ask before a program reads the clipboard or pastes unsafe text
+
+## 1.0.0 — 2026-09-25
+
+- sessions: list the repository's Claude sessions and resume one
+- finder: open files and folders in Terminus from Finder
+- agents: Esc closes the overview wherever the keyboard is
+- session: a shell pane's text comes back on the next launch
+- agents: an overview of every tab (⇧⌘A)
+- diff: wrap long lines instead of centring them off the pane
+- github: pull requests and CI for worktrees, and a Pull Request pane
+- session: a split tab comes back split
+- splits: split a tab into panes (⌘D, ⇧⌘D)
+- e2e: survive keys lost mid-command, and output not yet drawn
+- worktrees: mark merged worktrees and clean them up in one step
+- editor: reading the selected line before any file was opened trapped
+- docs: ⌘F search and ⌘-click file links
+- terminal: ⌘-click a file path to open it in the editor, at its line
+- e2e: type only after the shell has reported its first prompt
+- window: centre the tabs in the title bar, no empty band under them
+- search: ⌘F searches the terminal, file names and contents in one overlay
+- tabs: open a new tab in the directory the tab already knows
+- docs: how a tab picks its checkout; the @Published trap
+- worktrees: follow the agent into its worktree; attach / detach
+- build(deps): bump actions/checkout from 4 to 7
+- build: weekly Ghostty release check opens an issue
+- build: dependabot config (GitHub Actions, weekly, grouped)
+- tabs: dragging reorders without flip-flopping
+- docs: Tab Info, typing into shells in E2E, verbatim numbers
+- info: the checkout's disk use, biggest entries first
+- info: the Claude session's token use
+- diff: print change counts verbatim
+- info: listening ports, with Open
+- e2e: type only at a settled prompt; don't depend on the app being inactive
+- info: Tab Info — where a tab is and what it is running
+- info: find and measure a tab's processes
+- e2e: raise the failure mark from a background tab
+- window: exit closes a tab silently even when libghostty is late
+- tabs: drag to reorder actually works
+- docs: tab activity marks; the marks scenario
+- tabs: show what an agent is doing — working, waiting, done, failed
+- docs: testing guide — unit, integration and end-to-end
+- e2e: end-to-end scenarios run inside the real app
+- app: isolate test and diagnostic runs from the real state
+- tests: tab logic on real Tabs, input translation, agents
+- docs: changes pane on the right, new diagnostic switches, lessons
+- window: always confirm closing a tab, the window, or the app
+- tabs: renaming no longer loses focus the moment it starts
+- diff: Warp-style changes pane on the right, ± badge in the title bar
+- docs: CLAUDE.md, architecture, Ghostty embedding, debugging
+- window: grabbable dividers; terminal can't be squeezed to 0
+- editor: make the text, header and gutter actually render
+- editor: syntax colours
+- editor: open files in a resizable pane beside the terminal
+- sidebar: Warp-style icon tabs for Files, Worktrees, Snippets
+- tabs: working right-click menu, Chrome-style pinned tabs
+- build: make install copies the app into /Applications
+- sidebar: dim gitignored entries
+- agents: note why Claude Code needs no setup for tab flags
+- keys: route Ghostty's close-window and palette bindings
+- readme: what Terminus does and its keys
+- diff: stage, discard and commit from the panel
+- palette: ⌘P over actions, tabs, worktrees and snippets
+- snippets: sidebar section, editor, placeholder prompt
+- snippets: model, store and fuzzy matching
+- diff: live diff panel above the terminal
+- git: status, numstat and unified-diff parsing
+- agents: flag tabs that want you
+- session: restore tabs on launch, agents resume
+- tasks: New Task — a worktree, a branch and an agent in one step
+- agents: open a Claude or Codex tab
+- sidebar: worktrees of the tab's repository
+- git: a libdispatch-backed git runner and worktree parsing
+- sidebar: stop the FSEvents stream when a watcher is freed
+- sidebar: live refresh via FSEvents
+- tests: path quoting, tree root and file tree model
+- sidebar: file actions
+- sidebar: collapsible file tree of the tab's checkout
+- tabs: drag to reorder
+- tabs: pin
+- tabs: colour marks
+- tabs: rename in place
+- tabs: several terminals in one window, strip in the title bar
+- icon: PromptRails rail as the cursor on a terminal prompt
+- terminal: embed a libghostty surface in the window
+- ghosttykit: stage terminfo and shell integration, bundle them
+- app: SwiftPM skeleton with an empty window
+- ghosttykit: build the xcframework from a pinned Ghostty release
+- repo: scaffold

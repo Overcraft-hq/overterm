@@ -3,7 +3,7 @@ APP := Terminus.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit icon build test e2e app run install clean
+.PHONY: ghosttykit icon build test e2e app run install clean hooks
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -47,6 +47,11 @@ endif
 	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/$(APP)
 	/System/Library/CoreServices/pbs -update
 	@echo "==> installed /Applications/$(APP)"
+
+## hooks: use the repository's git hooks (once per clone): pre-commit refuses an
+## app change without a VERSION bump, post-commit tags v<VERSION>
+hooks:
+	git config core.hooksPath .githooks
 
 ## clean: remove build products and the assembled app (keeps GhosttyKit)
 clean:

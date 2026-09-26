@@ -254,6 +254,42 @@ final class E2ERunner {
         await runAndExpect(
             "echo ${GHOSTTY_SHELL_FEATURES:+integrated} > \(out("si").path)", file: out("si"), content: "integrated", "shell integration is on")
         await runAndExpect("echo 'Mixed Case_!' > \(out("chars").path)", file: out("chars"), content: "Mixed Case_!", "shifted characters survive")
+        versionChecks()
+    }
+
+    /// The version, from the bundle (Scripts/make-app.sh): VERSION of the
+    /// checkout it was built in — the run's app is that checkout's
+    /// Terminus.app — the commit count as the build, the commit. About
+    /// Terminus shows them.
+    private func versionChecks() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let file = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("VERSION")
+        let version = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = info["CFBundleShortVersionString"] as? String ?? ""
+        check("the app's version is the checkout's VERSION", shown == version, "bundle \(shown), VERSION \(version ?? "missing")")
+        let build = info["CFBundleVersion"] as? String ?? ""
+        check("its build number is a positive integer", (Int(build) ?? 0) > 0, "CFBundleVersion \(build)")
+        let commit = info[AboutPanel.commitKey] as? String ?? ""
+        check("it names the commit it was built from", !commit.isEmpty, "no \(AboutPanel.commitKey)")
+
+        // The menu item, as the menu bar sends it: the standard panel, with
+        // the commit as its credits.
+        guard let about = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title == "About Terminus" }), let action = about.action
+        else { return check("the app menu has About Terminus", false) }
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        NSApp.sendAction(action, to: about.target, from: about)
+        let panel = NSApp.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
+        var texts: [String] = []
+        func walk(_ view: NSView) {
+            if let field = view as? NSTextField { texts.append(field.stringValue) }
+            if let text = view as? NSTextView { texts.append(text.string) }
+            view.subviews.forEach(walk)
+        }
+        panel?.contentView.map(walk)
+        check("About Terminus shows the version and build", texts.contains { $0.contains("\(shown) (\(build))") }, "\(texts)")
+        check("…and the commit it was built from", texts.contains { $0.hasPrefix("commit \(commit) · ") }, "\(texts)")
+        check("…without bringing the app forward", !NSApp.isActive)
+        panel?.close()
     }
 
     /// New tab inherits the cwd; tab keys; cwd follows cd.

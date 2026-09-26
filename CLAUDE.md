@@ -9,6 +9,7 @@ Private macOS terminal for PromptRails work — Swift/AppKit around libghostty
 ```
 mise trust && mise install   # pinned Zig (only needed to build GhosttyKit)
 make ghosttykit              # Frameworks/GhosttyKit.xcframework + GhosttyResources (once; ~2 min)
+make hooks                   # .githooks: VERSION bump check, v<VERSION> tags (once per clone)
 make test                    # unit + integration tests (~3 s)
 make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
                              # both: run OUTSIDE the Bash sandbox — docs/testing.md
@@ -37,7 +38,8 @@ make icon                    # Resources/AppIcon.svg → AppIcon.icns
 | `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic) and `SplitHostView` (frames, dividers, dim) |
 | `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
 | `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |
-| `Scripts/` | GhosttyKit build, app bundling, icon |
+| `Scripts/` | GhosttyKit build, app bundling (with the build metadata About shows), icon, `bump-version.sh` |
+| `VERSION`, `CHANGELOG.md`, `.githooks/` | the app's version, what each version changed, the hooks that keep them in step (Commits) |
 
 More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugging.md`.
 
@@ -66,3 +68,13 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 ## Commits
 
 `area: what changed` subject (areas: `terminal`, `tabs`, `sidebar`, `diff`, `editor`, `git`, `agents`, `session`, `palette`, `snippets`, `window`, `keys`, `build`, `docs`…), body says why. One fix per commit. Author `bahattincinic@gmail.com`; no `Co-Authored-By` trailer. Run `swift format --in-place --recursive Sources Tests`, `make test` and `make e2e` before committing.
+
+**Versioning.** `VERSION` is the app's version (SemVer), `CHANGELOG.md` what each version changed; About Terminus shows it with the commit (docs/architecture.md, Build metadata).
+
+- A commit that changes the app bumps VERSION in the same commit. "Changes the app": anything under `Sources/`, `Resources/` or `Scripts/`, or `Package.swift`, the `Makefile` or `mise.toml`.
+- **MAJOR**: incompatible — a saved-state format older versions can't read (session.json, snippets.json…), or a removed feature or shortcut.
+- **MINOR**: a new user-visible feature or capability.
+- **PATCH**: a fix, performance work, polish, or an internal step of a larger feature.
+- Docs- and tests-only commits don't bump.
+- Bump with `Scripts/bump-version.sh major|minor|patch "<the commit's subject>"`: it sets VERSION and adds the line to CHANGELOG.md under the new version and today's date; commit both with the change. Run again before committing, it adds a line to the same entry — it counts from the committed VERSION, so it never bumps twice.
+- `make hooks` (once per clone) turns on `.githooks`: pre-commit refuses an app change without VERSION (`SKIP_VERSION_CHECK=1` lets one through — e.g. amending a commit that bumped already: the check compares with HEAD), post-commit tags the commit `v<VERSION>`. Tags stay local; push them yourself (`git push origin v1.10.0`).

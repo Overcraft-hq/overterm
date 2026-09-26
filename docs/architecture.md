@@ -347,6 +347,31 @@ not survive a reinstall; `make install` re-signs the installed copy with
 `SIGN_IDENTITY` (environment or the untracked `local.mk`) when it is set, and
 one identity keeps the grant (README, Build).
 
+## Build metadata
+
+`Scripts/make-app.sh` writes what About Terminus shows into `Info.plist`:
+
+| Key | From |
+|---|---|
+| `CFBundleShortVersionString` | `VERSION` — SemVer, bumped by each commit that changes the app (CLAUDE.md, Commits) |
+| `CFBundleVersion` | `git rev-list --count HEAD`: the build number, growing with every commit on main |
+| `TerminusCommit` | `git rev-parse --short HEAD`, plus `-dirty` when `git status --porcelain` lists anything |
+| `TerminusBuildDate` | the day it was built, `YYYY-MM-DD` |
+
+`VERSION` and `BUILD` in the environment override the first two. Without git
+(a copy of the tree, no repository) the build is 1 and the commit `unknown`.
+
+About Terminus (`AppDelegate.showAbout` → `AboutPanel.show`) is the standard
+panel, which prints "Version 1.10.0 (103)" from the first two keys itself,
+with credits from the other two: `commit 7e68283 · 26 Sep 2026`
+(`AboutPanel.credits`, pure: English in any locale, what is missing left out,
+no credits for a bundle with neither key). The credits get an explicit
+colour: the panel draws them as given, black in dark mode otherwise.
+
+`CHANGELOG.md` is the history; the commit that brings a version carries an
+annotated tag `v<version>`, made by the post-commit hook (`.githooks`,
+`make hooks`).
+
 ## Dropping onto a terminal
 
 Every pane (`TerminalView`) is a drag destination for file URLs, file

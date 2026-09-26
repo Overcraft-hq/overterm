@@ -27,6 +27,16 @@ per line, results on later lines, a subagent's without `toolUseResult`),
 written by `TranscriptFixture` into a scratch projects directory: never the
 real `~/.claude`.
 
+The version (`VersioningTests`, `AboutPanelTests`): `VERSION` is SemVer and
+`CHANGELOG.md`'s top entry, the changelog newest first; About's credits;
+`Scripts/bump-version.sh` run for real on a scratch copy (with `/bin/bash`,
+macOS's 3.2 — each part's arithmetic, the entry on top, a second run adding
+to the same version, bad input changing nothing); and the hooks in a scratch
+repository whose `core.hooksPath` is this checkout's `.githooks` (an app change
+without VERSION refused, with it or docs-only committed, the escape hatch,
+`v<VERSION>` tagged once). Those runs get no global git config and no
+`SKIP_VERSION_CHECK` from the caller.
+
 Tabs are real: the unit-test process never calls `ghostty_init`, so
 `GhosttyRuntime` has no app and every `TerminalView` is surfaceless — no
 pty, same object. Don't initialize the runtime in unit tests.
@@ -62,6 +72,10 @@ Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
 `marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
 `openWith`, `dropFiles`.
+`terminal` also checks the bundle: its version is the `VERSION` next to
+`Terminus.app` (the run's app is the checkout's), the build a positive
+integer, the commit named — and that About Terminus shows them, opened
+through its menu item, without bringing the app forward.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
