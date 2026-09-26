@@ -16,6 +16,21 @@ final class DiffModel: ObservableObject {
     struct FileDiff {
         let lines: [DiffLine]
         let truncated: Bool
+        /// Each line's syntax colours and changed part, by `DiffLine.id`;
+        /// lines with neither are left out.
+        let styles: [Int: DiffLineStyle]
+
+        /// A file's `git diff`: its hunks and their lines (the card's header
+        /// already names the file), at most `limit`, each styled — the
+        /// work done once as the diff loads, never while drawing.
+        init(parsing diff: String, path: String, limit: Int = DiffModel.maxDiffLines) {
+            let parsed = UnifiedDiff.parse(diff, limit: limit)
+            lines = parsed.lines.filter { $0.kind != .meta || $0.text.hasPrefix("\\") }
+            truncated = parsed.truncated
+            styles = DiffHighlight.styles(for: lines, language: SyntaxHighlighter.language(for: URL(fileURLWithPath: path)))
+        }
+
+        func style(of line: DiffLine) -> DiffLineStyle { styles[line.id] ?? DiffLineStyle() }
     }
 
     enum Scope: String {
@@ -108,6 +123,8 @@ final class DiffModel: ObservableObject {
     /// Diffs past this many files aren't loaded — a huge change set is for
     /// the terminal, not a panel.
     static let maxDiffedFiles = 60
+    /// Lines of one file's diff shown at most.
+    nonisolated static let maxDiffLines = 3_000
     /// Commits listed at most: a base far behind is no reason to parse
     /// thousands on every refresh.
     static let maxCommits = 100
@@ -415,12 +432,20 @@ final class DiffModel: ObservableObject {
             default: arguments = ["diff", "--no-color", base, "--", file.path]
             }
             let text = (try? await Git.run(arguments, in: root, success: [0, 1])) ?? ""
-            let parsed = UnifiedDiff.parse(text, limit: 3_000)
-            // Only hunks and their lines: the card header already names the file.
-            loaded[file.path] = FileDiff(lines: parsed.lines.filter { $0.kind != .meta || $0.text.hasPrefix("\\") }, truncated: parsed.truncated)
+            loaded[file.path] = await Self.fileDiff(parsing: text, path: file.path)
         }
         guard ticket == generation else { return }
         diffs = loaded
+    }
+
+    /// Parses and styles a file's diff off the main thread: tokenizing a
+    /// capped diff takes milliseconds, which a scroll can't spare.
+    nonisolated static func fileDiff(parsing text: String, path: String) async -> FileDiff {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: FileDiff(parsing: text, path: path))
+            }
+        }
     }
 
     // MARK: Why

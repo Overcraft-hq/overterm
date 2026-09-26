@@ -24,6 +24,7 @@ final class E2ERunner {
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
         "why": { await $0.whyScenario() },
+        "diffStyle": { await $0.diffStyleScenario() },
         "layout": { await $0.layout() },
         "session": { await $0.session() },
         "task": { await $0.task() },
@@ -663,6 +664,67 @@ final class E2ERunner {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try? (lines.joined(separator: "\n") + "\n").write(
             to: folder.appendingPathComponent("00000000-0000-0000-0000-0000000000f1.jsonl"), atomically: true, encoding: .utf8)
+    }
+
+    /// The changes pane reads like code: a Swift change in the editor's
+    /// colours — a block comment over context lines a comment on each line,
+    /// keywords, strings, numbers — and, in a line that was edited rather
+    /// than replaced, the part that changed, on it and on the line it
+    /// replaced. A file the highlighter doesn't know stays plain. SwiftUI
+    /// builds no accessibility tree in-process: the checks are on what each
+    /// line is given (`FileDiff.style(of:)`), which DiffLineView draws as it is.
+    private func diffStyleScenario() async {
+        let repo = scratch.appendingPathComponent("stylerepo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        func write(_ name: String, _ lines: [String]) {
+            try? (lines.joined(separator: "\n") + "\n").write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        write("Greeter.swift", ["/* Greets", "   the user. */", "func greet() -> String {", "    let times = 1", "    return \"hello\"", "}"])
+        write("notes.txt", ["status: draft"])
+        try? await git(["add", "."], in: repo)
+        try? await git(["commit", "-q", "-m", "init"], in: repo)
+        write(
+            "Greeter.swift",
+            ["/* Greets", "   the user. */", "func greet() -> String {", "    let times = 2", "    return \"hello, world\"", "    // unreachable, on purpose", "}"])
+        write("notes.txt", ["status: final"])
+        let diff = app.diff
+
+        app.newTab(in: repo)
+        check("the model follows the tab into the repo", await eventually { diff.root?.resolvingSymlinksInPath() == repo.resolvingSymlinksInPath() })
+        guard let changes = menuItem("View", "Changes") else { return check("View ▸ Changes exists", false) }
+        check("View ▸ Changes opens the pane", perform(changes) && app.diffItem?.isCollapsed == false)
+        guard await eventually(10, { diff.diffs.count == 2 }), let greeter = diff.diffs["Greeter.swift"], let notes = diff.diffs["notes.txt"] else {
+            return check("both files' diffs load", false, "\(diff.diffs.keys.sorted())")
+        }
+        /// What a line is given: its colours, "kind: text", then its changed part.
+        func drawn(_ file: DiffModel.FileDiff, _ kind: DiffLine.Kind, _ text: String) -> [String] {
+            guard let line = file.lines.first(where: { $0.kind == kind && $0.text == text }) else { return ["no \(kind) line \(text)"] }
+            let style = file.style(of: line)
+            let ns = line.text as NSString
+            return style.tokens.map { "\($0.kind): \(ns.substring(with: $0.range))" } + (style.changed.map { ["changed: \(ns.substring(with: $0))"] } ?? [])
+        }
+        let comment = [drawn(greeter, .context, "/* Greets"), drawn(greeter, .context, "   the user. */")]
+        check("a block comment over two context lines is a comment on each", comment == [["comment: /* Greets"], ["comment:    the user. */"]], "\(comment)")
+        let signature = drawn(greeter, .context, "func greet() -> String {")
+        check("a keyword on a context line", signature == ["keyword: func"], "\(signature)")
+        let replaced = drawn(greeter, .removed, "    let times = 1")
+        check("an edited line: its keyword and number, and the part replaced", replaced == ["keyword: let", "number: 1", "changed: 1"], "\(replaced)")
+        let replacing = drawn(greeter, .added, "    let times = 2")
+        check("the line that replaced it: the part that replaced it", replacing == ["keyword: let", "number: 2", "changed: 2"], "\(replacing)")
+        let removed = drawn(greeter, .removed, "    return \"hello\"")
+        check("a string on a removed line, nothing of it replaced", removed == ["keyword: return", "string: \"hello\""], "\(removed)")
+        let added = drawn(greeter, .added, "    return \"hello, world\"")
+        check("its added line marks what was added", added == ["keyword: return", "string: \"hello, world\"", "changed: , world"], "\(added)")
+        let note = drawn(greeter, .added, "    // unreachable, on purpose")
+        check("an added comment, with no line to pair with", note == ["comment: // unreachable, on purpose"], "\(note)")
+        check("a closing brace is plain", drawn(greeter, .context, "}") == [])
+        let plain = [drawn(notes, .removed, "status: draft"), drawn(notes, .added, "status: final")]
+        check("a file the highlighter doesn't know: no colours, what changed marked", plain == [["changed: draft"], ["changed: final"]], "\(plain)")
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
     }
 
     /// Dividers can be grabbed next to the 1 pt line and dragged.

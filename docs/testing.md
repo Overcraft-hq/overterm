@@ -17,7 +17,8 @@ status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
 `DirectoryWatcher` (real FSEvents), `WorktreeModel`, `TaskCreator`,
 `DiffModel` (real repos, incl. no HEAD yet, a commit in a linked worktree,
 the branch scope, its base without origin/HEAD, and when it has nothing to
-compare with), `EditorDocument`,
+compare with), `DiffHighlight` (colours per hunk side, a line's changed
+part, which lines pair; one capped file's cost), `EditorDocument`,
 `SyntaxHighlighter`, snippets, palette ranking, session file, `TabActivity`,
 `GhosttyInput`, `TabStore`/`Tab`, and `ClaudeEdits` — Claude Code's edits
 and why it made them, from transcript lines in its shape (one content part
@@ -57,7 +58,7 @@ What makes it end-to-end without being dangerous:
   a throwaway git identity.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
-`branchDiff`, `why`, `layout`, `session`, `task`, `snippets`, `attention`,
+`branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
 `marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
 `openWith`, `dropFiles`.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
@@ -125,7 +126,8 @@ its why strip ignore them, and a mouseDown on a diff line (selectable text)
 starts a tracking loop that waits for a real mouseUp — the run hangs. Its
 accessibility tree is empty in-process too. Scenarios there call the model
 action the gesture calls (`toggleWhy`) and check what a card is given
-(`DiffModel.why(for:)`), which the view renders as it is.
+(`DiffModel.why(for:)`) and what a line is given (`FileDiff.style(of:)`, in
+`diffStyle`), which the view renders as it is.
 
 ### Adding a scenario
 

@@ -22,6 +22,7 @@ struct DiffPanelView: View {
 
     /// Stage, discard and commit act on the index: only for uncommitted changes.
     private var editable: Bool { model.shownScope == .uncommitted }
+    private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -80,7 +81,7 @@ struct DiffPanelView: View {
                 ForEach(model.shownFiles) { file in
                     FileCard(
                         file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
-                        editable: editable, theme: theme,
+                        editable: editable, theme: theme, palette: palette,
                         why: model.why(for: file.path),
                         onToggleWhy: { model.toggleWhy(file.path) },
                         onToggle: {
@@ -230,6 +231,55 @@ enum DiffColors {
     static let removed = Color(red: 0.94, green: 0.36, blue: 0.34)
 }
 
+/// What a diff line's text is drawn with: the editor's syntax colours
+/// (SyntaxPalette), comments in italics, and the part that changed marked
+/// stronger than the line's tint.
+struct DiffPalette {
+    private let comment: AttributeContainer
+    private let string: AttributeContainer
+    private let number: AttributeContainer
+    private let keyword: AttributeContainer
+
+    init(text: NSColor) {
+        func attributes(_ kind: SyntaxHighlighter.Kind) -> AttributeContainer {
+            var attributes = AttributeContainer()
+            attributes.foregroundColor = Color(nsColor: SyntaxPalette.color(kind, text: text))
+            if kind == .comment { attributes.inlinePresentationIntent = .emphasized }
+            return attributes
+        }
+        comment = attributes(.comment)
+        string = attributes(.string)
+        number = attributes(.number)
+        keyword = attributes(.keyword)
+    }
+
+    private func attributes(_ kind: SyntaxHighlighter.Kind) -> AttributeContainer {
+        switch kind {
+        case .comment: comment
+        case .string: string
+        case .number: number
+        case .keyword: keyword
+        }
+    }
+
+    /// The line's text with its style put on — worked out as the diff
+    /// loaded (`FileDiff.style(of:)`), only applied here: a few microseconds
+    /// a line (kept as ranges, not as attributed text, a capped file's lines
+    /// would take megabytes).
+    func text(_ line: DiffLine, _ style: DiffLineStyle) -> AttributedString {
+        var text = AttributedString(line.text)
+        // Tokens don't overlap and the text has no attributes yet: set, not merged.
+        for token in style.tokens {
+            guard let range = Range(token.range, in: text) else { continue }
+            text[range].setAttributes(attributes(token.kind))
+        }
+        if let changed = style.changed, let range = Range(changed, in: text) {
+            text[range].backgroundColor = (line.kind == .added ? DiffColors.added : DiffColors.removed).opacity(0.32)
+        }
+        return text
+    }
+}
+
 /// One changed file: a header row and, unfolded, its diff.
 private struct FileCard: View {
     let file: ChangedFile
@@ -238,6 +288,7 @@ private struct FileCard: View {
     /// Stage and Discard: only for uncommitted changes.
     let editable: Bool
     let theme: ChromeTheme
+    let palette: DiffPalette
     let why: FileWhy
     let onToggleWhy: () -> Void
     let onToggle: () -> Void
@@ -269,7 +320,9 @@ private struct FileCard: View {
                 Divider().opacity(0.3)
                 if let diff, !diff.lines.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(diff.lines) { DiffLineView(line: $0, theme: theme) }
+                        ForEach(diff.lines) { line in
+                            DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable()
+                        }
                         if diff.truncated {
                             Text("Diff truncated.").font(.system(size: 11)).foregroundStyle(theme.dimText).padding(8)
                         }
@@ -533,9 +586,15 @@ private struct CommitRow: View {
     }
 }
 
-private struct DiffLineView: View {
+private struct DiffLineView: View, Equatable {
     let line: DiffLine
+    let style: DiffLineStyle
+    let palette: DiffPalette
     let theme: ChromeTheme
+
+    /// The palette and theme are the app's for its life: a line is drawn
+    /// again only when its text or style changes, not on every refresh.
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.line == b.line && a.style == b.style }
 
     /// A long line wraps within the pane, under its own text: kept on one
     /// row it grew wider than the pane, was centred, and lost its start.
@@ -543,7 +602,7 @@ private struct DiffLineView: View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             number(line.oldNumber)
             number(line.newNumber)
-            Text(verbatim: line.text.isEmpty ? " " : line.text)
+            text
                 .foregroundStyle(line.kind == .hunk || line.kind == .meta ? theme.dimText : theme.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -553,6 +612,13 @@ private struct DiffLineView: View {
         .frame(minHeight: 18)
         .background(background)
         .overlay(alignment: .leading) { Rectangle().fill(edge).frame(width: 3) }
+    }
+
+    /// Syntax colours over the line's colour; the changed part marked.
+    private var text: Text {
+        if line.text.isEmpty { return Text(verbatim: " ") }
+        if style.isEmpty { return Text(verbatim: line.text) }
+        return Text(palette.text(line, style))
     }
 
     private var edge: Color {

@@ -6,6 +6,11 @@ import Foundation
 enum SyntaxHighlighter {
     enum Kind: Equatable { case comment, string, number, keyword }
 
+    /// Past this (UTF-16), highlighting on every keystroke would lag the
+    /// editor, and tokenizing a hunk would hold up the changes pane: plain
+    /// text it is.
+    static let maxLength = 300_000
+
     struct Language {
         let lineComment: [String]
         let blockComment: (open: String, close: String)?

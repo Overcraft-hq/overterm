@@ -23,9 +23,6 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private var pendingHighlight: DispatchWorkItem?
 
-    /// Past this, highlighting on every keystroke would lag; plain text it is.
-    private static let highlightLimit = 300_000
-
     init(theme: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener) {
         self.theme = theme
         self.background = background
@@ -233,15 +230,6 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     // MARK: Highlighting
 
-    private func color(_ kind: SyntaxHighlighter.Kind) -> NSColor {
-        switch kind {
-        case .comment: foreground.withAlphaComponent(0.45)
-        case .string: NSColor(srgbRed: 0.60, green: 0.80, blue: 0.47, alpha: 1)
-        case .number: NSColor(srgbRed: 0.96, green: 0.66, blue: 0.40, alpha: 1)
-        case .keyword: NSColor(srgbRed: 0.78, green: 0.56, blue: 0.95, alpha: 1)
-        }
-    }
-
     /// Re-colours the whole document. Attributes only — never the text —
     /// so undo is untouched.
     private func highlight() {
@@ -251,9 +239,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         storage.beginEditing()
         storage.setAttributes([.foregroundColor: foreground, .font: font], range: full)
-        if let language, storage.length <= Self.highlightLimit {
+        if let language, storage.length <= SyntaxHighlighter.maxLength {
             for (range, kind) in SyntaxHighlighter.tokens(in: storage.string, language: language) where NSMaxRange(range) <= storage.length {
-                storage.addAttribute(.foregroundColor, value: color(kind), range: range)
+                storage.addAttribute(.foregroundColor, value: SyntaxPalette.color(kind, text: foreground), range: range)
                 if kind == .comment { storage.addAttribute(.font, value: italic, range: range) }
             }
         }

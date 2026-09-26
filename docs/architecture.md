@@ -146,6 +146,40 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   A burst of events is one refresh (400 ms debounce); the window becoming
   key refreshes too.
 
+### How a diff reads
+
+As in the Claude Code desktop app: in the editor's colours, with what
+changed inside an edited line marked. `DiffModel.FileDiff(parsing:path:)`
+works it out as each file's diff loads, off the main thread
+(`DiffModel.fileDiff`), into compact ranges per line
+(`FileDiff.style(of:)`); `DiffLineView` only puts them on the text
+(`DiffPalette`), once per line drawn — it is equatable, so a refresh that
+leaves a line alone doesn't redo it.
+
+- **Colours** (`DiffHighlight.syntaxTokens`): `SyntaxHighlighter` for the
+  file's language over each hunk's two sides, each tokenized as one text —
+  the old (context and removed lines) and the new (context and added) — so
+  a block comment or a string spanning lines is one token, then split per
+  line. Context lines take the new side's: they read as the file now does.
+  Only the hunk is read: a comment opened above it isn't seen. The palette
+  is the editor's (`SyntaxPalette`: comments the text colour faded, in
+  italics); the line keeps its green/red tint. A file the highlighter
+  doesn't know stays plain, and so does a side past the editor's limit
+  (`SyntaxHighlighter.maxLength`).
+- **What changed in a line** (`DiffHighlight.pairs`, `changedRanges`): in a
+  hunk, a run of removed lines pairs in order with the run of added lines
+  right after it (git writes a change as its removals, then its additions);
+  the rest of the longer run has no pair. A pair's changed part is what lies
+  between their common prefix and suffix, counted in characters — never
+  splitting an emoji, a flag or a letter from its accent — and drawn as
+  UTF-16 ranges, stronger than the line's tint. Lines sharing under 40% of
+  the longer were replaced rather than edited, and get no mark; nor do
+  lines over 10,000 UTF-16 units.
+- **Cost**, one capped file (3,000 lines, 133 KB, a third of them changed and
+  paired), release build: 11 ms off the main thread (parsing 1.6, tokens 8.3,
+  changed parts 0.5); drawing adds about 6 µs a line. Kept as attributed text
+  instead of ranges, such a file's lines would take 6 MB.
+
 ### Why each file changed
 
 Under each card's header, quiet: what Claude said when it edited the file —
