@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_NAME="Terminus"
-BUNDLE_ID="ai.promptrails.terminus"
+BUNDLE_ID="io.github.terminus-app.terminus"
 VERSION="${VERSION:-0.1.0}"
 BUILD="${BUILD:-1}"
 

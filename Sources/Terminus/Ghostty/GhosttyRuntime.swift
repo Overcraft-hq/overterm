@@ -10,7 +10,7 @@ import os
 /// then runs.
 @MainActor
 final class GhosttyRuntime {
-    static let logger = Logger(subsystem: "ai.promptrails.terminus", category: "ghostty")
+    static let logger = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "ghostty")
 
     /// Process-wide libghostty init. Must run before anything else touches the
     /// library, so main.swift calls it first.
@@ -325,12 +325,12 @@ final class GhosttyRuntime {
         case GHOSTTY_CLIPBOARD_STANDARD: AppEnvironment.isIsolated ? isolatedClipboard : .general
         // macOS has no primary selection; a private named pasteboard stands in
         // so select-to-copy / middle-click-paste work inside Terminus.
-        case GHOSTTY_CLIPBOARD_SELECTION: NSPasteboard(name: .init("ai.promptrails.terminus.selection"))
+        case GHOSTTY_CLIPBOARD_SELECTION: NSPasteboard(name: .init("\(AppEnvironment.bundleIdentifier).selection"))
         default: nil
         }
     }
 
-    private static let isolatedClipboard = NSPasteboard(name: .init("ai.promptrails.terminus.isolated.clipboard"))
+    private static let isolatedClipboard = NSPasteboard(name: .init("\(AppEnvironment.bundleIdentifier).isolated.clipboard"))
 
     /// A request libghostty wants confirmed (ClipboardConfirmation): the
     /// terminal's window asks, and the request is completed confirmed either

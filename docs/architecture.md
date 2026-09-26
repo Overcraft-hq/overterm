@@ -272,7 +272,7 @@ with a trailing space; the pane gets the keyboard.
   (Finder, the Desktop, the sidebar — reference URLs resolved to paths);
   else file promises (Photos, Safari, the screenshot thumbnail), received
   into a folder of their own under `AppEnvironment.dropsDirectory`
-  (~/Library/Caches/ai.promptrails.terminus/Drops; an isolated run's own);
+  (~/Library/Caches/io.github.terminus-app.terminus/Drops; an isolated run's own);
   else web URLs, else text, both inserted as they are, less line breaks at
   either end.
 - **What goes in** (`TerminalDrop.insertion`, pure) depends on what has the
@@ -349,10 +349,10 @@ opener (the browser).
 | Snippets | `…/Terminus/snippets.json` |
 | Sidebar/changes visible, sidebar panel, changes scope | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`, `diffScope`) |
 | The app files open in | `UserDefaults` (`openWithApp`, a bundle id) |
-| Files dropped as promises (Photos, Safari) | `~/Library/Caches/ai.promptrails.terminus/Drops/<uuid>/` (`AppEnvironment.dropsDirectory`) |
+| Files dropped as promises (Photos, Safari) | `~/Library/Caches/io.github.terminus-app.terminus/Drops/<uuid>/` (`AppEnvironment.dropsDirectory`) |
 | Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
 
-Bundle id `ai.promptrails.terminus`.
+Bundle id `io.github.terminus-app.terminus`.
 
 ### Scrollback restore
 

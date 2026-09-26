@@ -84,7 +84,7 @@ final class TerminalView: NSView {
     static var dropModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
     /// Where panes look at what runs in them: one scan at a time, so the
     /// answers come back in the order asked.
-    private static let programQueue = DispatchQueue(label: "ai.promptrails.terminus.pane-program", qos: .userInitiated)
+    private static let programQueue = DispatchQueue(label: "\(AppEnvironment.bundleIdentifier).pane-program", qos: .userInitiated)
 
     /// - Parameters:
     ///   - workingDirectory: where the shell starts; home when nil.

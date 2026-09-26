@@ -11,6 +11,13 @@ import Foundation
 enum AppEnvironment {
     private static let env = ProcessInfo.processInfo.environment
 
+    /// The app's bundle id (Scripts/make-app.sh writes the same one): its
+    /// defaults domain, log subsystem, caches folder, pasteboards.
+    static let bundleIdentifier = "io.github.terminus-app.terminus"
+    /// What it was until 2026-09-26; settings are carried over from it once.
+    static let formerBundleIdentifier = "ai.promptrails.terminus"
+    private static let migratedKey = "migratedFromFormerBundleIdentifier"
+
     /// The end-to-end scenario to run, if any.
     static let e2eScenario = env["TERMINUS_E2E"]
 
@@ -37,10 +44,10 @@ enum AppEnvironment {
             return supportDirectory.appendingPathComponent("Drops", isDirectory: true)
         }
         return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ai.promptrails.terminus/Drops", isDirectory: true)
+            .appendingPathComponent("\(bundleIdentifier)/Drops", isDirectory: true)
     }()
 
-    private static let isolatedSuite = "ai.promptrails.terminus.isolated"
+    private static let isolatedSuite = "\(bundleIdentifier).isolated"
 
     /// UserDefaults.standard, or a throwaway suite for an isolated run.
     nonisolated(unsafe) static let defaults: UserDefaults = {
@@ -48,4 +55,24 @@ enum AppEnvironment {
         suite.removePersistentDomain(forName: isolatedSuite)
         return suite
     }()
+
+    /// Once, on the first launch under the new bundle id: the old id's
+    /// settings (window frame, divider positions, panels, the app files
+    /// open in) are copied over. Before the window is built — it reads them.
+    /// Privacy grants belong to the id and are asked for again; the session
+    /// and snippets live in Application Support/Terminus and never moved.
+    static func carryOverFormerDefaults() {
+        guard !isIsolated, !defaults.bool(forKey: migratedKey) else { return }
+        let former = UserDefaults.standard.persistentDomain(forName: formerBundleIdentifier) ?? [:]
+        carryOver(former, into: defaults)
+        defaults.set(true, forKey: migratedKey)
+    }
+
+    /// Copies what `into` doesn't already have: a setting made under the new
+    /// id wins over the old one.
+    static func carryOver(_ former: [String: Any], into defaults: UserDefaults) {
+        for (key, value) in former where defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+    }
 }

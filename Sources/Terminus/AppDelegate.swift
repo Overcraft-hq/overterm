@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
     private var windowController: TerminalWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppEnvironment.carryOverFormerDefaults()
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self

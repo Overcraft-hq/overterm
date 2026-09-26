@@ -60,7 +60,7 @@ layout question comes up, rather than asking the user for screenshots first.
 ## Logs
 
 ```sh
-log stream --level debug --predicate 'subsystem == "ai.promptrails.terminus" OR subsystem == "com.mitchellh.ghostty"'
+log stream --level debug --predicate 'subsystem == "io.github.terminus-app.terminus" OR subsystem == "com.mitchellh.ghostty"'
 ```
 
 libghostty logs config diagnostics, the resources dir it found ("ghostty
@@ -88,9 +88,9 @@ in `deinit`.
 |---|---|
 | Tabs | delete `~/Library/Application Support/Terminus/session.json` |
 | Snippets | delete `…/Terminus/snippets.json` (starters come back) |
-| Divider positions | `defaults delete ai.promptrails.terminus "NSSplitView Subview Frames TerminusColumns.v2"` |
-| Panels shown | `defaults delete ai.promptrails.terminus sidebarVisible` / `diffVisible` / `sidebarPanel` |
-| The app files open in (asked again next time) | `defaults delete ai.promptrails.terminus openWithApp` |
+| Divider positions | `defaults delete io.github.terminus-app.terminus "NSSplitView Subview Frames TerminusColumns.v2"` |
+| Panels shown | `defaults delete io.github.terminus-app.terminus sidebarVisible` / `diffVisible` / `sidebarPanel` |
+| The app files open in (asked again next time) | `defaults delete io.github.terminus-app.terminus openWithApp` |
 
 ## Things that looked like bugs elsewhere
 

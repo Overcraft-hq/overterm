@@ -14,7 +14,7 @@ final class OpenWithTests: XCTestCase {
     private let ghostty = app("com.mitchellh.ghostty", "Ghostty")
     private let bbedit = app("com.barebones.bbedit", "BBEdit")
     private let macVim = app("org.vim.MacVim", "MacVim")
-    private let terminus = app("ai.promptrails.terminus", "Terminus")
+    private let terminus = app(AppEnvironment.bundleIdentifier, "Terminus")
 
     // MARK: Candidates
 
