@@ -1,48 +1,28 @@
 #!/usr/bin/env bash
-# Release notes for v<version>: the commits since the previous v* tag,
-# grouped by their "area:" prefix — docs, test and CI commits left out, they
-# change nothing you'd notice. The first release has no previous tag and a
-# hundred commits of history; it gets the README's "What's in it" instead.
-# Usage: Scripts/release-notes.sh <version> [dmg]
+# Release notes for a version: its CHANGELOG.md entry (the source of truth
+# for what a version changed — CLAUDE.md, Commits), how to install, and the
+# DMG's checksum. Fails when the changelog has no entry for the version.
+# Usage: Scripts/release-notes.sh [version] [dmg]   (version: VERSION's)
 set -euo pipefail
 
-VERSION="${1:?usage: release-notes.sh <version> [dmg]}"
-DMG="${2:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+VERSION="${1:-$(tr -d '[:space:]' <"$ROOT/VERSION")}"
+DMG="${2:-}"
 
-PREVIOUS="$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null || true)"
-RANGE="${PREVIOUS:+$PREVIOUS..}HEAD"
-
-echo "## Terminus ${VERSION}"
-echo
-if [[ -z "$PREVIOUS" ]]; then
-  echo "The first release."
-  echo
-  echo "### What's in it"
-  echo
-  # The README section, up to the next heading.
-  awk '/^## What.s in it/ { on = 1; next } /^## / { on = 0 } on' README.md | sed '/./,$!d'
-else
-  echo "Changes since ${PREVIOUS}."
-  echo
-  # "area: what changed" → grouped under the area, in the order areas first appear.
-  git log --reverse --no-merges --format='%s' "$RANGE" | { grep -viE 'rails' || true; } | awk '
-  {
-    split($0, parts, ": ")
-    area = (index($0, ": ") > 0) ? parts[1] : "other"
-    text = (index($0, ": ") > 0) ? substr($0, length(area) + 3) : $0
-    if (area ~ /^(docs|tests?|e2e|ci)$/) next
-    if (!(area in seen)) { seen[area] = 1; order[++n] = area }
-    items[area] = items[area] "- " text "\n"
-  }
-  END {
-    if (n == 0) print "No user-facing changes."
-    for (i = 1; i <= n; i++) { printf "### %s\n\n%s\n", order[i], items[order[i]] }
-  }'
+# "## 1.11.0 — 2026-09-26" up to the next "## ".
+entry="$(awk -v v="$VERSION" '
+  $0 ~ "^## " { if (on) exit; if ($2 == v) { on = 1; next } }
+  on' "$ROOT/CHANGELOG.md" | sed '/./,$!d')"
+if [[ -z "$entry" ]]; then
+  echo "error: CHANGELOG.md has no entry for $VERSION" >&2
+  exit 1
 fi
 
 cat <<NOTES
+## Terminus ${VERSION}
+
+${entry}
+
 ### Install
 
 1. Open \`Terminus-${VERSION}.dmg\` and drag **Terminus** to **Applications**.

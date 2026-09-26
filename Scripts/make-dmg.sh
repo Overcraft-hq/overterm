@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Package Terminus.app (built by make-app.sh) as dist/Terminus-<version>.dmg:
-# the app and an Applications link, compressed.
+# the app and an Applications link, compressed. The version is VERSION's
+# (the file), as make-app.sh's is; VERSION in the environment overrides.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:?set VERSION, e.g. VERSION=0.2.0}"
+VERSION="${VERSION:-$(tr -d '[:space:]' <"$ROOT/VERSION")}"
 APP="$ROOT/Terminus.app"
 DMG="$ROOT/dist/Terminus-${VERSION}.dmg"
 

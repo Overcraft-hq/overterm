@@ -122,12 +122,13 @@ The first signing asks for the keychain's permission to use the key
 
 ## Releasing
 
-GitHub → Actions → **Release** → Run workflow, with a version (`0.2.0`). On a
-macOS runner it runs the unit tests, builds the app and a DMG, and publishes
-release `v0.2.0` — the tag goes on the commit it ran on — with notes grouped
-by area from the commits since the previous tag, and the DMG attached. Only
-by hand: nothing triggers it on push. Locally, the same pieces:
-`VERSION=0.2.0 make app dmg` and `Scripts/release-notes.sh 0.2.0`.
+Push the commit (and its `v<VERSION>` tag: `git push origin main --tags`),
+then GitHub → Actions → **Release** → Run workflow. On a macOS runner it runs
+the unit tests, builds the app and a DMG, and publishes release `v<VERSION>`
+— on that tag, or a new one on the commit it ran on — with the version's
+`CHANGELOG.md` entry as notes and the DMG attached. It refuses a version
+already released: bump first. Only by hand: nothing triggers it on push.
+Locally, the same pieces: `make app dmg` and `Scripts/release-notes.sh`.
 
 The release is signed ad hoc and not notarized: the first open needs
 right-click → Open (the notes say so).

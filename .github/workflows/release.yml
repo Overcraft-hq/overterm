@@ -1,7 +1,8 @@
-# Release: run it by hand (Actions → Release → Run workflow) with a version.
-# It tests, builds Terminus.app, packs it in a DMG, and publishes a GitHub
-# release — creating the tag v<version> on the commit it ran on — with notes
-# from Scripts/release-notes.sh and the DMG attached.
+# Release: run it by hand (Actions → Release → Run workflow) on the commit
+# to ship. The version is VERSION's; the notes are its CHANGELOG.md entry
+# (Scripts/release-notes.sh). It tests, builds Terminus.app, packs it in a
+# DMG, and publishes release v<version> with the DMG attached — on the tag
+# the post-commit hook made, once pushed, or a new one on this commit.
 #
 # Manual only: a macOS runner is expensive, so nothing triggers it on push.
 name: Release
@@ -9,10 +10,6 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version, e.g. 0.2.0 — tagged v0.2.0"
-        required: true
-        type: string
       prerelease:
         description: "Mark as a pre-release"
         required: false
@@ -31,21 +28,29 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      VERSION: ${{ inputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # tags and history, for the notes
+          fetch-depth: 0  # the build number counts commits; tags
 
-      - name: Check the version and that v<version> is free
+      - name: Version, tag and notes
         run: |
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::version must look like 1.2.3, got '$VERSION'"; exit 1
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION is '$version', not MAJOR.MINOR.PATCH"; exit 1
           fi
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
-            echo "::error::tag v$VERSION already exists"; exit 1
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "::error::release v$version already exists — bump VERSION (Scripts/bump-version.sh)"; exit 1
           fi
+          # The hook's tag, if pushed, must be on this commit.
+          if tagged="$(git rev-parse -q --verify "refs/tags/v$version^{commit}")"; then
+            if [[ "$tagged" != "$GITHUB_SHA" ]]; then
+              echo "::error::v$version tags ${tagged:0:7}, not ${GITHUB_SHA:0:7} — run the workflow on that commit, or bump"; exit 1
+            fi
+          fi
+          Scripts/release-notes.sh "$version" > /dev/null  # fails early without a changelog entry
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       # Ghostty v1.3.1 (GhosttyKit's pin) builds with Xcode 16, not 26.
       - name: Use Xcode 16.4
@@ -68,18 +73,12 @@ jobs:
         run: make test
 
       - name: Build Terminus.app and the DMG
-        run: |
-          BUILD=${{ github.run_number }} make app
-          make dmg
+        run: make app dmg
 
       - name: Publish the release
         run: |
           dmg="dist/Terminus-$VERSION.dmg"
           Scripts/release-notes.sh "$VERSION" "$dmg" > notes.md
-          flags=()
+          flags=(--target "$GITHUB_SHA")
           if [[ "${{ inputs.prerelease }}" == "true" ]]; then flags+=(--prerelease); fi
-          gh release create "v$VERSION" "$dmg" \
-            --target "$GITHUB_SHA" \
-            --title "Terminus $VERSION" \
-            --notes-file notes.md \
-            "${flags[@]}"
+          gh release create "v$VERSION" "$dmg" --title "Terminus $VERSION" --notes-file notes.md "${flags[@]}"

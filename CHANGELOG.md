@@ -7,9 +7,13 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.11.1 — 2026-09-26
+
+- build: releases take the version from VERSION and their notes from CHANGELOG.md
+
 ## 1.11.0 — 2026-09-26
 
-- docs: drop the rails and PromptRails wording
+- docs: README, About and docs describe Terminus on its own
 - build: bundle id io.github.terminus-app.terminus; settings carried over once from the old id
 - build: a Release workflow, run by hand — tag, notes, DMG
 
