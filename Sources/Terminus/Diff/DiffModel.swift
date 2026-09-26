@@ -9,12 +9,28 @@ import Foundation
 ///   Committed work stays visible after the agent commits.
 ///
 /// Both lists' counts are always live (the title-bar badge shows one); the
-/// per-file diffs only load while `panelVisible`.
+/// per-file diffs — and why each file changed — only load while
+/// `panelVisible`.
 @MainActor
 final class DiffModel: ObservableObject {
     struct FileDiff {
         let lines: [DiffLine]
         let truncated: Bool
+        /// Each line's syntax colours and changed part, by `DiffLine.id`;
+        /// lines with neither are left out.
+        let styles: [Int: DiffLineStyle]
+
+        /// A file's `git diff`: its hunks and their lines (the card's header
+        /// already names the file), at most `limit`, each styled — the
+        /// work done once as the diff loads, never while drawing.
+        init(parsing diff: String, path: String, limit: Int = DiffModel.maxDiffLines) {
+            let parsed = UnifiedDiff.parse(diff, limit: limit)
+            lines = parsed.lines.filter { $0.kind != .meta || $0.text.hasPrefix("\\") }
+            truncated = parsed.truncated
+            styles = DiffHighlight.styles(for: lines, language: SyntaxHighlighter.language(for: URL(fileURLWithPath: path)))
+        }
+
+        func style(of line: DiffLine) -> DiffLineStyle { styles[line.id] ?? DiffLineStyle() }
     }
 
     enum Scope: String {
@@ -85,9 +101,21 @@ final class DiffModel: ObservableObject {
     @Published private(set) var scope: Scope
     @Published private(set) var branch: String?
     @Published private(set) var diffs: [String: FileDiff] = [:]
-    /// Cards the user folded.
-    @Published var collapsed: Set<String> = []
+    /// Folded or not, by path: how each card started when first shown in
+    /// the pane, or how the user left it. Kept while the pane stays on this
+    /// checkout, in either scope; another starts afresh.
+    @Published private(set) var folded: [String: Bool] = [:]
+    /// Collapse All / Expand All: how the cards shown after it start.
+    private var allFolded: Bool?
+    /// Cards whose why the user opened: every reason, in full.
+    @Published private(set) var openWhy: Set<String> = []
     @Published private(set) var error: String?
+    /// Why each file changed, by path: what Claude said making its edits,
+    /// newest first (ClaudeEdits.byFile) — from the checkout's session
+    /// transcripts, read only while the panel is open.
+    @Published private(set) var reasons: [String: [ClaudeEdit]] = [:]
+    /// The branch's commits that touched each file, newest first.
+    @Published private(set) var commitsByFile: [String: [BranchCommit]] = [:]
 
     var panelVisible = false {
         didSet {
@@ -99,6 +127,8 @@ final class DiffModel: ObservableObject {
     /// Diffs past this many files aren't loaded — a huge change set is for
     /// the terminal, not a panel.
     static let maxDiffedFiles = 60
+    /// Lines of one file's diff shown at most.
+    nonisolated static let maxDiffLines = 3_000
     /// Commits listed at most: a base far behind is no reason to parse
     /// thousands on every refresh.
     static let maxCommits = 100
@@ -117,9 +147,17 @@ final class DiffModel: ObservableObject {
     /// Bumped per refresh, so a slow git answer for an old root can't
     /// overwrite a newer one.
     private var generation = 0
+    /// Reads Claude Code's transcripts for `reasons`; none, no reasons (a
+    /// unit test's model never reads ~/.claude).
+    private let transcripts: ClaudeEditsReader?
+    /// Bumped per root, so reasons read for another checkout are dropped.
+    private var reasonsGeneration = 0
+    private var readingReasons = false
+    private var readReasonsAgain = false
 
-    init(defaults: UserDefaults = AppEnvironment.defaults) {
+    init(defaults: UserDefaults = AppEnvironment.defaults, transcripts: ClaudeEditsReader? = nil) {
         self.defaults = defaults
+        self.transcripts = transcripts
         scope = defaults.string(forKey: Self.scopeKey).flatMap(Scope.init(rawValue:)) ?? .uncommitted
     }
 
@@ -128,6 +166,8 @@ final class DiffModel: ObservableObject {
         guard scope != self.scope else { return }
         self.scope = scope
         defaults.set(scope.rawValue, forKey: Self.scopeKey)
+        // The other list's cards not seen yet start now, as it shows.
+        settleFolds()
         // The diffs loaded, or loading, are against the other base.
         generation += 1
         diffs = [:]
@@ -196,7 +236,12 @@ final class DiffModel: ObservableObject {
         moreCommits = false
         comparison = nil
         diffs = [:]
-        collapsed = []
+        reasons = [:]
+        commitsByFile = [:]
+        reasonsGeneration += 1
+        openWhy = []
+        folded = [:]
+        allFolded = nil
         branch = nil
         error = nil
         watcher?.stop()
@@ -271,19 +316,26 @@ final class DiffModel: ObservableObject {
             files = changed
             branchFiles = onBranch
             commits = Array(log.prefix(Self.maxCommits))
+            commitsByFile = BranchLog.byFile(commits)
             moreCommits = log.count > Self.maxCommits
             self.comparison = comparison
             branch = branchName
             error = nil
-            if panelVisible { await loadDiffs(head: head, ticket: ticket) }
+            if panelVisible {
+                settleFolds()
+                readReasons()
+                await loadDiffs(head: head, ticket: ticket)
+            }
         } catch {
             guard ticket == generation else { return }
             files = []
             branchFiles = []
             commits = []
+            commitsByFile = [:]
             moreCommits = false
             comparison = nil
             diffs = [:]
+            reasons = [:]
             self.error = error is GitError ? "Not a git repository" : error.localizedDescription
         }
     }
@@ -388,12 +440,137 @@ final class DiffModel: ObservableObject {
             default: arguments = ["diff", "--no-color", base, "--", file.path]
             }
             let text = (try? await Git.run(arguments, in: root, success: [0, 1])) ?? ""
-            let parsed = UnifiedDiff.parse(text, limit: 3_000)
-            // Only hunks and their lines: the card header already names the file.
-            loaded[file.path] = FileDiff(lines: parsed.lines.filter { $0.kind != .meta || $0.text.hasPrefix("\\") }, truncated: parsed.truncated)
+            loaded[file.path] = await Self.fileDiff(parsing: text, path: file.path)
         }
         guard ticket == generation else { return }
         diffs = loaded
+    }
+
+    /// Parses and styles a file's diff off the main thread: tokenizing a
+    /// capped diff takes milliseconds, which a scroll can't spare.
+    nonisolated static func fileDiff(parsing text: String, path: String) async -> FileDiff {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: FileDiff(parsing: text, path: path))
+            }
+        }
+    }
+
+    // MARK: Folding
+
+    /// More files changed than this, and cards start folded: the pane reads
+    /// as a list of files with their counts, a click opening one.
+    static let startFoldedAbove = 8
+
+    func isFolded(_ path: String) -> Bool { folded[path] ?? startsFolded }
+
+    /// How a card not shown before starts: as Collapse All or Expand All
+    /// last said, else folded when the list is long.
+    private var startsFolded: Bool { allFolded ?? (shownFiles.count > Self.startFoldedAbove) }
+
+    /// Every card shown is folded: the header offers Expand All.
+    var everyCardFolded: Bool { shownFiles.allSatisfy { isFolded($0.path) } }
+
+    /// A click on a card's header.
+    func toggleFold(_ path: String) { folded[path] = !isFolded(path) }
+
+    /// The pane header's Collapse All: every card, and those shown later.
+    func collapseAll() { foldAll(true) }
+
+    /// The pane header's Expand All: every card, and those shown later.
+    func expandAll() { foldAll(false) }
+
+    private func foldAll(_ fold: Bool) {
+        allFolded = fold
+        folded = Dictionary(shownFiles.map { ($0.path, fold) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Settles how the cards shown for the first time start, so a refresh
+    /// never folds or opens a card by itself: the list growing past 8 folds
+    /// only the cards that come then — an open one may be being read. Only
+    /// while the pane is open: a card never shown hasn't started, and the
+    /// pane opened on many files is a list, however they came.
+    private func settleFolds() {
+        guard panelVisible else { return }
+        let start = startsFolded
+        let new = shownFiles.filter { folded[$0.path] == nil }
+        guard !new.isEmpty else { return }
+        var settled = folded
+        for file in new { settled[file.path] = start }
+        folded = settled
+    }
+
+    // MARK: Why
+
+    /// What a file's card says about why it changed: what Claude said making
+    /// its edits — the newest, or all once opened — and, in Branch, the
+    /// commits that touched it.
+    func why(for path: String) -> FileWhy {
+        FileWhy(reasons: reasons[path] ?? [], commits: shownScope == .branch ? commitsByFile[path] ?? [] : [], open: openWhy.contains(path))
+    }
+
+    /// A click on a card's why: all of it, or back to the newest.
+    func toggleWhy(_ path: String) {
+        if openWhy.contains(path) { openWhy.remove(path) } else { openWhy.insert(path) }
+    }
+
+    /// Transcripts are read this far back when the branch gives no better
+    /// point (on the default branch, before the first commit).
+    nonisolated static let reasonsWindow: TimeInterval = 7 * 86_400
+
+    /// Reads, off the main thread, what the checkout's Claude sessions said
+    /// making their edits. One read at a time: asked again meanwhile, it
+    /// reads once more when done — a burst of refreshes is two reads, and an
+    /// agent writing all the time can't keep a slow first read from landing.
+    /// Reads after the first parse only what the transcripts appended.
+    private func readReasons() {
+        guard panelVisible, let root, let transcripts else { return }
+        guard !readingReasons else {
+            readReasonsAgain = true
+            return
+        }
+        readingReasons = true
+        let ticket = reasonsGeneration
+        let mergeBase = comparison?.mergeBase
+        Task {
+            let since = await Self.reasonsSince(mergeBase: mergeBase, in: root)
+            let main = await Self.mainWorktree(of: root)
+            let read = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    let edits = transcripts.edits(in: [root.path], exactly: main.map { [$0] } ?? [], since: since)
+                    continuation.resume(returning: ClaudeEdits.byFile(edits, root: root, since: since))
+                }
+            }
+            readingReasons = false
+            if ticket == reasonsGeneration, read != reasons { reasons = read }
+            if readReasonsAgain {
+                readReasonsAgain = false
+                readReasons()
+            }
+        }
+    }
+
+    /// Since when an edit can be about this checkout's changes: since the
+    /// branch left its base — the merge-base, or its oldest commit if older
+    /// (a rebase moves the merge-base on, not the work) — else a week back.
+    /// Older transcripts aren't read at all, so a long history stays cheap.
+    nonisolated static func reasonsSince(mergeBase: String?, in root: URL, now: Date = Date()) async -> Date {
+        let fallback = now.addingTimeInterval(-reasonsWindow)
+        guard let mergeBase,
+            let times = try? await Git.run(["log", "--boundary", "--no-show-signature", "--format=%at %ct", "\(mergeBase)..HEAD"], in: root)
+        else { return fallback }
+        return times.split(whereSeparator: \.isWhitespace).compactMap { TimeInterval($0) }.min().map(Date.init(timeIntervalSince1970:)) ?? fallback
+    }
+
+    /// The repository's main checkout, when `root` is another worktree of
+    /// it: a session started there and moved here (EnterWorktree) keeps its
+    /// transcript under the main checkout's name.
+    nonisolated static func mainWorktree(of root: URL) async -> String? {
+        guard let listed = try? await Git.run(["worktree", "list", "--porcelain"], in: root),
+            let main = Worktree.parse(porcelain: listed).first(where: \.isMain), !main.isBare,
+            ClaudeEdits.canonical(main.path.path) != ClaudeEdits.canonical(root.path)
+        else { return nil }
+        return main.path.path
     }
 
     // MARK: Staging and committing
@@ -464,4 +641,20 @@ final class DiffModel: ObservableObject {
             return false
         }
     }
+}
+
+/// Why a file changed, as its card shows it.
+struct FileWhy: Equatable {
+    /// What Claude said making its edits, newest first.
+    let reasons: [ClaudeEdit]
+    /// The branch's commits that touched it (Branch only), newest first.
+    let commits: [BranchCommit]
+    /// Opened: every reason, in full; else the newest, in two lines.
+    let open: Bool
+
+    /// Nothing to say: no strip at all.
+    var isEmpty: Bool { reasons.isEmpty && commits.isEmpty }
+    var shownReasons: [ClaudeEdit] { open ? reasons : Array(reasons.prefix(1)) }
+    /// Reasons a click would show.
+    var hiddenReasons: Int { reasons.count - shownReasons.count }
 }

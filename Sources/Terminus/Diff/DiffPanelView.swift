@@ -4,7 +4,9 @@ import SwiftUI
 /// The changes pane beside the terminal, laid out like Warp's: a header
 /// (checkout, branch, file count, totals), the Uncommitted | Branch switch
 /// (Commit beside it for uncommitted changes), the branch's commits, and one
-/// foldable card per changed file with its diff inline.
+/// foldable card per changed file with its diff inline — folded to start
+/// with when many files changed, a list of them — and, under its header, why
+/// it changed.
 struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
     let theme: ChromeTheme
@@ -21,6 +23,7 @@ struct DiffPanelView: View {
 
     /// Stage, discard and commit act on the index: only for uncommitted changes.
     private var editable: Bool { model.shownScope == .uncommitted }
+    private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,15 +81,11 @@ struct DiffPanelView: View {
                 }
                 ForEach(model.shownFiles) { file in
                     FileCard(
-                        file: file, diff: model.diffs[file.path], collapsed: model.collapsed.contains(file.path),
-                        editable: editable, theme: theme,
-                        onToggle: {
-                            if model.collapsed.contains(file.path) {
-                                model.collapsed.remove(file.path)
-                            } else {
-                                model.collapsed.insert(file.path)
-                            }
-                        },
+                        file: file, diff: model.diffs[file.path], collapsed: model.isFolded(file.path),
+                        editable: editable, theme: theme, palette: palette,
+                        why: model.why(for: file.path),
+                        onToggleWhy: { model.toggleWhy(file.path) },
+                        onToggle: { model.toggleFold(file.path) },
                         onStage: { Task { await model.toggleStaged(file) } },
                         onDiscard: { discarding = file },
                         onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
@@ -118,6 +117,14 @@ struct DiffPanelView: View {
             }
             Spacer(minLength: 0)
             sourceChip
+            if !model.shownFiles.isEmpty {
+                // Expand All once every card is folded, else Collapse All.
+                if model.everyCardFolded {
+                    iconButton("rectangle.expand.vertical", help: "Expand All") { model.expandAll() }
+                } else {
+                    iconButton("rectangle.compress.vertical", help: "Collapse All") { model.collapseAll() }
+                }
+            }
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
             iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
         }
@@ -227,6 +234,55 @@ enum DiffColors {
     static let removed = Color(red: 0.94, green: 0.36, blue: 0.34)
 }
 
+/// What a diff line's text is drawn with: the editor's syntax colours
+/// (SyntaxPalette), comments in italics, and the part that changed marked
+/// stronger than the line's tint.
+struct DiffPalette {
+    private let comment: AttributeContainer
+    private let string: AttributeContainer
+    private let number: AttributeContainer
+    private let keyword: AttributeContainer
+
+    init(text: NSColor) {
+        func attributes(_ kind: SyntaxHighlighter.Kind) -> AttributeContainer {
+            var attributes = AttributeContainer()
+            attributes.foregroundColor = Color(nsColor: SyntaxPalette.color(kind, text: text))
+            if kind == .comment { attributes.inlinePresentationIntent = .emphasized }
+            return attributes
+        }
+        comment = attributes(.comment)
+        string = attributes(.string)
+        number = attributes(.number)
+        keyword = attributes(.keyword)
+    }
+
+    private func attributes(_ kind: SyntaxHighlighter.Kind) -> AttributeContainer {
+        switch kind {
+        case .comment: comment
+        case .string: string
+        case .number: number
+        case .keyword: keyword
+        }
+    }
+
+    /// The line's text with its style put on — worked out as the diff
+    /// loaded (`FileDiff.style(of:)`), only applied here: a few microseconds
+    /// a line (kept as ranges, not as attributed text, a capped file's lines
+    /// would take megabytes).
+    func text(_ line: DiffLine, _ style: DiffLineStyle) -> AttributedString {
+        var text = AttributedString(line.text)
+        // Tokens don't overlap and the text has no attributes yet: set, not merged.
+        for token in style.tokens {
+            guard let range = Range(token.range, in: text) else { continue }
+            text[range].setAttributes(attributes(token.kind))
+        }
+        if let changed = style.changed, let range = Range(changed, in: text) {
+            text[range].backgroundColor = (line.kind == .added ? DiffColors.added : DiffColors.removed).opacity(0.32)
+        }
+        return text
+    }
+}
+
 /// One changed file: a header row and, unfolded, its diff.
 private struct FileCard: View {
     let file: ChangedFile
@@ -235,6 +291,9 @@ private struct FileCard: View {
     /// Stage and Discard: only for uncommitted changes.
     let editable: Bool
     let theme: ChromeTheme
+    let palette: DiffPalette
+    let why: FileWhy
+    let onToggleWhy: () -> Void
     let onToggle: () -> Void
     let onStage: () -> Void
     let onDiscard: () -> Void
@@ -256,11 +315,17 @@ private struct FileCard: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if !why.isEmpty {
+                Divider().opacity(0.3)
+                WhyStrip(why: why, theme: theme, onToggle: onToggleWhy)
+            }
             if !collapsed {
                 Divider().opacity(0.3)
                 if let diff, !diff.lines.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(diff.lines) { DiffLineView(line: $0, theme: theme) }
+                        ForEach(diff.lines) { line in
+                            DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable()
+                        }
                         if diff.truncated {
                             Text("Diff truncated.").font(.system(size: 11)).foregroundStyle(theme.dimText).padding(8)
                         }
@@ -354,6 +419,95 @@ private struct FileCard: View {
     }
 }
 
+/// Under a card's header, quiet: why the file changed. Claude's words at its
+/// latest edit, two lines and when; a click shows them in full, and what it
+/// said at the edits before. In Branch, the commits that touched the file.
+/// Nothing when there is nothing to say.
+private struct WhyStrip: View {
+    let why: FileWhy
+    let theme: ChromeTheme
+    let onToggle: () -> Void
+    /// Commits listed at most; the rest are counted.
+    private static let maxCommits = 3
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(why.shownReasons.enumerated()), id: \.offset) { index, edit in
+                ReasonRow(edit: edit, open: why.open, more: index == 0 ? why.hiddenReasons : 0, theme: theme)
+            }
+            ForEach(why.commits.prefix(Self.maxCommits)) { commit in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "smallcircle.filled.circle").font(.system(size: 9)).foregroundStyle(theme.dimText).frame(width: 12)
+                    Text(verbatim: commit.subject)
+                        .font(.system(size: 12)).foregroundStyle(theme.text.opacity(0.85))
+                        .lineLimit(1).truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(verbatim: commit.shortSHA).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText)
+                }
+                .help(Self.help(commit))
+            }
+            if why.commits.count > Self.maxCommits {
+                Text(verbatim: "and \(why.commits.count - Self.maxCommits) more commits")
+                    .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(.leading, 18)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggle)
+    }
+
+    /// A plain string: a subject is never read as markdown or localized.
+    private static func help(_ commit: BranchCommit) -> String { "\(commit.shortSHA), \(commit.date): \(commit.subject)" }
+}
+
+/// One reason: what it is (Claude's words, your prompt, the session's title),
+/// the text, and when.
+private struct ReasonRow: View {
+    let edit: ClaudeEdit
+    let open: Bool
+    /// Reasons not shown until opened.
+    let more: Int
+    let theme: ChromeTheme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(theme.dimText).frame(width: 12)
+            Text(verbatim: edit.reason?.text ?? "")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.text.opacity(0.85))
+                .lineLimit(open ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 4) {
+                if more > 0 { Text(verbatim: "+\(more)") }
+                if let time = edit.time { Text(verbatim: ClaudeEdits.ago(time)) }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(theme.dimText)
+            .fixedSize()
+        }
+        .help(help)
+    }
+
+    private var symbol: String {
+        switch edit.reason?.source {
+        case .said?: Agent.claude.symbol
+        case .asked?: "person"
+        case .title?, nil: "text.bubble"
+        }
+    }
+
+    private var help: String {
+        switch edit.reason?.source {
+        case .said?: "What Claude said making this edit (\(edit.tool))"
+        case .asked?: "What Claude was asked: it said nothing before this edit (\(edit.tool))"
+        case .title?, nil: "The session's title: nothing was said or asked before this edit (\(edit.tool))"
+        }
+    }
+}
+
 /// The branch's commits, newest first: subject and short hash; a click
 /// shows when, the rest of the message and the files it touched.
 private struct CommitList: View {
@@ -435,9 +589,15 @@ private struct CommitRow: View {
     }
 }
 
-private struct DiffLineView: View {
+private struct DiffLineView: View, Equatable {
     let line: DiffLine
+    let style: DiffLineStyle
+    let palette: DiffPalette
     let theme: ChromeTheme
+
+    /// The palette and theme are the app's for its life: a line is drawn
+    /// again only when its text or style changes, not on every refresh.
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.line == b.line && a.style == b.style }
 
     /// A long line wraps within the pane, under its own text: kept on one
     /// row it grew wider than the pane, was centred, and lost its start.
@@ -445,7 +605,7 @@ private struct DiffLineView: View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             number(line.oldNumber)
             number(line.newNumber)
-            Text(verbatim: line.text.isEmpty ? " " : line.text)
+            text
                 .foregroundStyle(line.kind == .hunk || line.kind == .meta ? theme.dimText : theme.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -455,6 +615,13 @@ private struct DiffLineView: View {
         .frame(minHeight: 18)
         .background(background)
         .overlay(alignment: .leading) { Rectangle().fill(edge).frame(width: 3) }
+    }
+
+    /// Syntax colours over the line's colour; the changed part marked.
+    private var text: Text {
+        if line.text.isEmpty { return Text(verbatim: " ") }
+        if style.isEmpty { return Text(verbatim: line.text) }
+        return Text(palette.text(line, style))
     }
 
     private var edge: Color {

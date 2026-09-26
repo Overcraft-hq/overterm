@@ -34,7 +34,7 @@ libghostty's own threads and git calls.
 | `Tab` | a `TerminalView` + title, custom name, colour, pin, agent, cwd, `TabActivity` |
 | `FileTreeModel` | tree of the selected tab's checkout; lazy listings, FSEvents invalidation, gitignore dimming |
 | `WorktreeModel` | `git worktree list` of that repository |
-| `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
+| `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs and why each file changed (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
 | `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
 | `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |
@@ -145,6 +145,92 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   repository's `refs/` — a commit there writes nothing inside the checkout.
   A burst of events is one refresh (400 ms debounce); the window becoming
   key refreshes too.
+- With more than 8 files (`DiffModel.startFoldedAbove`) the cards start
+  folded: the pane reads as a list of files with their +N −M, and a click on
+  one opens it. A card starts as it is when first shown with the pane open
+  (closed, none is: opened on many files, the pane is a list, however they
+  came); after that only the user changes it — a click on its header, or
+  Collapse All / Expand All in the pane's header, for every card and those
+  shown after. So a refresh never folds or opens a card: the list growing
+  past 8 folds only the cards that come then, not the one being read. The
+  folds are the checkout's, in either scope; another checkout, or coming
+  back, starts afresh.
+
+### How a diff reads
+
+As in the Claude Code desktop app: in the editor's colours, with what
+changed inside an edited line marked. `DiffModel.FileDiff(parsing:path:)`
+works it out as each file's diff loads, off the main thread
+(`DiffModel.fileDiff`), into compact ranges per line
+(`FileDiff.style(of:)`); `DiffLineView` only puts them on the text
+(`DiffPalette`), once per line drawn — it is equatable, so a refresh that
+leaves a line alone doesn't redo it.
+
+- **Colours** (`DiffHighlight.syntaxTokens`): `SyntaxHighlighter` for the
+  file's language over each hunk's two sides, each tokenized as one text —
+  the old (context and removed lines) and the new (context and added) — so
+  a block comment or a string spanning lines is one token, then split per
+  line. Context lines take the new side's: they read as the file now does.
+  Only the hunk is read: a comment opened above it isn't seen. The palette
+  is the editor's (`SyntaxPalette`: comments the text colour faded, in
+  italics); the line keeps its green/red tint. A file the highlighter
+  doesn't know stays plain, and so does a side past the editor's limit
+  (`SyntaxHighlighter.maxLength`).
+- **What changed in a line** (`DiffHighlight.pairs`, `changedRanges`): in a
+  hunk, a run of removed lines pairs in order with the run of added lines
+  right after it (git writes a change as its removals, then its additions);
+  the rest of the longer run has no pair. A pair's changed part is what lies
+  between their common prefix and suffix, counted in characters — never
+  splitting an emoji, a flag or a letter from its accent — and drawn as
+  UTF-16 ranges, stronger than the line's tint. Lines sharing under 40% of
+  the longer were replaced rather than edited, and get no mark; nor do
+  lines over 10,000 UTF-16 units.
+- **Cost**, one capped file (3,000 lines, 133 KB, a third of them changed and
+  paired), release build: 11 ms off the main thread (parsing 1.6, tokens 8.3,
+  changed parts 0.5); drawing adds about 6 µs a line. Kept as attributed text
+  instead of ranges, such a file's lines would take 6 MB.
+
+### Why each file changed
+
+Under each card's header, quiet: what Claude said when it edited the file —
+two lines of the newest and when, `+N` for more; a click (`toggleWhy`) shows
+every one in full — and in Branch the commits that touched it
+(`BranchLog.byFile`). Nothing when there is nothing to say. The card shows
+`DiffModel.why(for:)` as it is; `reasons` is read only while the pane is open.
+
+- **Which transcripts** (`ClaudeEditsReader`, `Sources/Terminus/Info/ClaudeEdits.swift`):
+  the sessions started in the checkout or below it, found by folder name as
+  the Sessions panel finds them (`ClaudeSessions.transcripts`; both spellings
+  of a path under a symlink, `/var` and `/private/var` — Claude Code names
+  the folder after its resolved cwd); in a linked worktree also those
+  started in the main checkout: a session keeps its transcript where it
+  started, also after EnterWorktree moved it. With each, its subagents'
+  (`<session>/subagents/agent-*.jsonl`, whose edits count as the session's).
+- **How much**: only transcripts written since the branch left its base — the
+  merge-base or the branch's oldest commit, whichever is older (a rebase
+  moves the merge-base, not the work) — else a week back; the newest 60.
+  Edits from before then are dropped too.
+- **How**: off the main thread, one read at a time (a refresh meanwhile asks
+  for one more, so a busy agent can't starve a slow first read), incremental
+  per transcript like `ClaudeUsageReader` — its byte offset and the parser's
+  state are kept, so a refresh parses only what was appended. A byte search
+  picks the lines worth parsing (assistant text, edit calls, an edit's
+  result, prompts, titles); tool output, thinking and most attachments are
+  never parsed as JSON. 200 MB: 0.3 s the first time, a millisecond after.
+- **What** (`ClaudeEdits.Parser`, measured on 2.1.1xx–2.1.28x transcripts):
+  an Edit, Write, MultiEdit or NotebookEdit call paired with its
+  `tool_result` on a later line (`tool_use_id`); `is_error`, or no result,
+  and it changed nothing. Its reason: the nearest assistant text before it
+  since the last prompt typed — Claude writes a message's parts on lines of
+  their own, and one text often covers several edits — else that prompt,
+  else the session's title (`custom-title`, `ai-title`, an old `summary`).
+  Thinking is never a reason. A slash command, a background task's notice
+  start a turn nobody typed; reminders, caveats, command output and a
+  compaction's summary are no turn at all; a coordinator's message is a
+  subagent's prompt, a prompt queued while Claude worked (`queued_command`)
+  one too. `ClaudeEdits.byFile` keys them by path in the checkout (symlinks
+  resolved, a file's own name kept), newest first, one per reason, three per
+  file.
 
 ## Agent overview (⇧⌘A)
 
@@ -260,6 +346,31 @@ An ad-hoc signed build is a new app to macOS each time, so the answer would
 not survive a reinstall; `make install` re-signs the installed copy with
 `SIGN_IDENTITY` (environment or the untracked `local.mk`) when it is set, and
 one identity keeps the grant (README, Build).
+
+## Build metadata
+
+`Scripts/make-app.sh` writes what About Terminus shows into `Info.plist`:
+
+| Key | From |
+|---|---|
+| `CFBundleShortVersionString` | `VERSION` — SemVer, bumped by each commit that changes the app (CLAUDE.md, Commits) |
+| `CFBundleVersion` | `git rev-list --count HEAD`: the build number, growing with every commit on main |
+| `TerminusCommit` | `git rev-parse --short HEAD`, plus `-dirty` when `git status --porcelain` lists anything |
+| `TerminusBuildDate` | the day it was built, `YYYY-MM-DD` |
+
+`VERSION` and `BUILD` in the environment override the first two. Without git
+(a copy of the tree, no repository) the build is 1 and the commit `unknown`.
+
+About Terminus (`AppDelegate.showAbout` → `AboutPanel.show`) is the standard
+panel, which prints "Version 1.10.0 (103)" from the first two keys itself,
+with credits from the other two: `commit 7e68283 · 26 Sep 2026`
+(`AboutPanel.credits`, pure: English in any locale, what is missing left out,
+no credits for a bundle with neither key). The credits get an explicit
+colour: the panel draws them as given, black in dark mode otherwise.
+
+`CHANGELOG.md` is the history; the commit that brings a version carries an
+annotated tag `v<version>`, made by the post-commit hook (`.githooks`,
+`make hooks`).
 
 ## Dropping onto a terminal
 

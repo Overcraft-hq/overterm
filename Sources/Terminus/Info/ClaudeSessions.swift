@@ -27,22 +27,9 @@ enum ClaudeSessions {
     /// non-alphanumeric is "-"), so a folder is a candidate by prefix and
     /// kept only if its transcript's cwd really is inside a directory.
     static func list(in directories: [String], limit: Int = 60) -> [ClaudeSession] {
-        let projects = ClaudeUsageReader.projectsDirectory
         let roots = directories.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
-        let prefixes = roots.map { ClaudeUsageReader.projectFolder(for: $0) }
-        let folders = (try? FileManager.default.contentsOfDirectory(atPath: projects.path)) ?? []
-        var candidates: [(file: URL, updated: Date)] = []
-        for folder in folders where prefixes.contains(where: { folder == $0 || folder.hasPrefix($0 + "-") }) {
-            let dir = projects.appendingPathComponent(folder)
-            let files =
-                (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
-            for file in files where file.pathExtension == "jsonl" {
-                let updated = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                candidates.append((file, updated))
-            }
-        }
         var sessions: [ClaudeSession] = []
-        for candidate in candidates.sorted(by: { $0.updated > $1.updated }) {
+        for candidate in transcripts(in: roots.map { ClaudeUsageReader.projectFolder(for: $0) }) {
             guard sessions.count < limit, let activity = ClaudeActivity.read(candidate.file, tail: tail) else { continue }
             // A transcript with nothing typed in it isn't a conversation to go back to.
             guard activity.lastPrompt != nil || activity.title != nil, let cwd = activity.cwd else { continue }
@@ -53,5 +40,26 @@ enum ClaudeSessions {
             sessions.append(ClaudeSession(id: id, file: candidate.file, directory: path, updated: candidate.updated, activity: activity))
         }
         return sessions
+    }
+
+    /// The transcripts in Claude's project folders named `folders` (see
+    /// `ClaudeUsageReader.projectFolder`) and — `below` — in those of the
+    /// folders under them, newest first. By name only: a look-alike
+    /// (`repo-other` for `repo`) is a candidate too.
+    static func transcripts(
+        in folders: [String], below: Bool = true, projects: URL = ClaudeUsageReader.projectsDirectory
+    ) -> [(file: URL, updated: Date)] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: projects.path)) ?? []
+        var candidates: [(file: URL, updated: Date)] = []
+        for name in names where folders.contains(where: { name == $0 || (below && name.hasPrefix($0 + "-")) }) {
+            let dir = projects.appendingPathComponent(name)
+            let files =
+                (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            for file in files where file.pathExtension == "jsonl" {
+                let updated = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                candidates.append((file, updated))
+            }
+        }
+        return candidates.sorted { $0.updated > $1.updated }
     }
 }

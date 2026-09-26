@@ -16,10 +16,26 @@ Pure logic and anything that can run without a window: parsers (worktree,
 status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
 `DirectoryWatcher` (real FSEvents), `WorktreeModel`, `TaskCreator`,
 `DiffModel` (real repos, incl. no HEAD yet, a commit in a linked worktree,
-the branch scope, its base without origin/HEAD, and when it has nothing to
-compare with), `EditorDocument`,
+the branch scope, its base without origin/HEAD, when it has nothing to
+compare with, and which cards start folded and stay so), `DiffHighlight`
+(colours per hunk side, a line's changed part, which lines pair; one capped
+file's cost), `EditorDocument`,
 `SyntaxHighlighter`, snippets, palette ranking, session file, `TabActivity`,
-`GhosttyInput`, and `TabStore`/`Tab`.
+`GhosttyInput`, `TabStore`/`Tab`, and `ClaudeEdits` — Claude Code's edits
+and why it made them, from transcript lines in its shape (one content part
+per line, results on later lines, a subagent's without `toolUseResult`),
+written by `TranscriptFixture` into a scratch projects directory: never the
+real `~/.claude`.
+
+The version (`VersioningTests`, `AboutPanelTests`): `VERSION` is SemVer and
+`CHANGELOG.md`'s top entry, the changelog newest first; About's credits;
+`Scripts/bump-version.sh` run for real on a scratch copy (with `/bin/bash`,
+macOS's 3.2 — each part's arithmetic, the entry on top, a second run adding
+to the same version, bad input changing nothing); and the hooks in a scratch
+repository whose `core.hooksPath` is this checkout's `.githooks` (an app change
+without VERSION refused, with it or docs-only committed, the escape hatch,
+`v<VERSION>` tagged once). Those runs get no global git config and no
+`SKIP_VERSION_CHECK` from the caller.
 
 Tabs are real: the unit-test process never calls `ghostty_init`, so
 `GhosttyRuntime` has no app and every `TerminalView` is surfaceless — no
@@ -45,14 +61,21 @@ What makes it end-to-end without being dangerous:
 - **Isolated state** (`AppEnvironment`): its own defaults suite (wiped at
   launch), a temp support dir (or `TERMINUS_SUPPORT_DIR` for a prepared
   session), notifications counted not posted, no split autosave, never
-  activated (it stays behind your windows).
+  activated (it stays behind your windows), and Claude Code's transcripts an
+  empty projects directory of its own until a scenario points
+  `ClaudeUsageReader.projectsDirectory` at the ones it wrote — never the
+  real `~/.claude`.
 - **Scratch files** in a temp dir removed at the end; repos are created with
   a throwaway git identity.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
-`branchDiff`, `layout`, `session`, `task`, `snippets`, `attention`, `marks`,
-`palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`, `openWith`,
-`dropFiles`.
+`branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
+`marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
+`openWith`, `dropFiles`.
+`terminal` also checks the bundle: its version is the `VERSION` next to
+`Terminus.app` (the run's app is the checkout's), the build a positive
+integer, the commit named — and that About Terminus shows them, opened
+through its menu item, without bringing the app forward.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
@@ -109,6 +132,18 @@ kept only at the end of a real drag, which a run can't start:
 `TerminalDrop.keepPromise` stands in for the source and writes the file
 where asked. The sidebar's rows get in-process clicks at their position, and
 their menu comes from `menu(for:)` without being shown.
+
+### Clicks in the changes pane
+
+In-process mouse events that land in the pane's SwiftUI `ScrollView` don't
+reach its gestures (the run's window is never key): a card header's fold and
+its why strip ignore them, and a mouseDown on a diff line (selectable text)
+starts a tracking loop that waits for a real mouseUp — the run hangs. Its
+accessibility tree is empty in-process too. Scenarios there call the model
+action the gesture or button calls (`toggleWhy`, `toggleFold`, `expandAll`)
+and check what a card is given (`DiffModel.why(for:)`, `isFolded`) and what a
+line is given (`FileDiff.style(of:)`, in `diffStyle`), which the view renders
+as it is.
 
 ### Adding a scenario
 

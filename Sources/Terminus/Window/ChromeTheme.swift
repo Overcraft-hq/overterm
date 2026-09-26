@@ -14,6 +14,8 @@ struct ChromeTheme {
     let selected: Color
     let hover: Color
     let text: Color
+    /// The text colour for AppKit (and SyntaxPalette, which fades it for comments).
+    let textNS: NSColor
     let dimText: Color
 
     @MainActor
@@ -27,6 +29,7 @@ struct ChromeTheme {
         selected = Color(nsColor: bg)
         hover = Color(nsColor: bg.withAlphaComponent(0.5))
         text = Color(nsColor: foreground)
+        textNS = foreground
         dimText = Color(nsColor: foreground.withAlphaComponent(0.6))
     }
 }

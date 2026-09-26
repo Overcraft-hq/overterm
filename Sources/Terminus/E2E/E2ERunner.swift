@@ -23,6 +23,8 @@ final class E2ERunner {
         "editor": { await $0.editorScenario() },
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
+        "why": { await $0.whyScenario() },
+        "diffStyle": { await $0.diffStyleScenario() },
         "layout": { await $0.layout() },
         "session": { await $0.session() },
         "task": { await $0.task() },
@@ -252,6 +254,42 @@ final class E2ERunner {
         await runAndExpect(
             "echo ${GHOSTTY_SHELL_FEATURES:+integrated} > \(out("si").path)", file: out("si"), content: "integrated", "shell integration is on")
         await runAndExpect("echo 'Mixed Case_!' > \(out("chars").path)", file: out("chars"), content: "Mixed Case_!", "shifted characters survive")
+        versionChecks()
+    }
+
+    /// The version, from the bundle (Scripts/make-app.sh): VERSION of the
+    /// checkout it was built in — the run's app is that checkout's
+    /// Terminus.app — the commit count as the build, the commit. About
+    /// Terminus shows them.
+    private func versionChecks() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let file = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("VERSION")
+        let version = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shown = info["CFBundleShortVersionString"] as? String ?? ""
+        check("the app's version is the checkout's VERSION", shown == version, "bundle \(shown), VERSION \(version ?? "missing")")
+        let build = info["CFBundleVersion"] as? String ?? ""
+        check("its build number is a positive integer", (Int(build) ?? 0) > 0, "CFBundleVersion \(build)")
+        let commit = info[AboutPanel.commitKey] as? String ?? ""
+        check("it names the commit it was built from", !commit.isEmpty, "no \(AboutPanel.commitKey)")
+
+        // The menu item, as the menu bar sends it: the standard panel, with
+        // the commit as its credits.
+        guard let about = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title == "About Terminus" }), let action = about.action
+        else { return check("the app menu has About Terminus", false) }
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        NSApp.sendAction(action, to: about.target, from: about)
+        let panel = NSApp.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
+        var texts: [String] = []
+        func walk(_ view: NSView) {
+            if let field = view as? NSTextField { texts.append(field.stringValue) }
+            if let text = view as? NSTextView { texts.append(text.string) }
+            view.subviews.forEach(walk)
+        }
+        panel?.contentView.map(walk)
+        check("About Terminus shows the version and build", texts.contains { $0.contains("\(shown) (\(build))") }, "\(texts)")
+        check("…and the commit it was built from", texts.contains { $0.hasPrefix("commit \(commit) · ") }, "\(texts)")
+        check("…without bringing the app forward", !NSApp.isActive)
+        panel?.close()
     }
 
     /// New tab inherits the cwd; tab keys; cwd follows cd.
@@ -546,6 +584,216 @@ final class E2ERunner {
             app.diffItem?.isCollapsed == false && diff.shownScope == .uncommitted && diff.shownFiles.map(\.path) == ["b.txt"],
             "\(diff.shownScope) \(diff.shownFiles.map(\.path))")
         app.toggleDiffFromBadge()
+    }
+
+    /// Why each file changed, on its card: what Claude said making the edit,
+    /// from a transcript in Claude Code's shape (a scratch projects
+    /// directory, never ~/.claude) — never the words of an edit that failed
+    /// — read only once the pane is open; a click shows the edits before; in
+    /// Branch the commits that touched the file too. A file no session
+    /// edited says nothing.
+    private func whyScenario() async {
+        let projects = scratch.appendingPathComponent("claude-projects")
+        ClaudeUsageReader.projectsDirectory = projects
+        let repo = scratch.appendingPathComponent("whyrepo")
+        let worktree = scratch.appendingPathComponent("whyrepo-feat")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        for name in ["a.txt", "b.txt"] { try? "one\n".write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        try? await git(["add", "."], in: repo)
+        try? await git(["commit", "-q", "-m", "init"], in: repo)
+        try? await git(["worktree", "add", "-q", "-b", "feat", worktree.path], in: repo)
+        try? "one\ntwo\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? await git(["commit", "-q", "-am", "Teach a.txt to count"], in: worktree)
+        try? "one\ntwo\nthree\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? "one\nmore\n".write(to: worktree.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+
+        let earlier = "a.txt should count; adding the second line."
+        let failed = "Trying the edit on a line that is not there."
+        let reason = "a.txt stops at two; the count goes on to three."
+        writeTranscript(
+            earlier: earlier, failed: failed, reason: reason, file: worktree.appendingPathComponent("a.txt").path,
+            // Claude Code names the folder after its cwd, symlinks resolved.
+            in: projects.appendingPathComponent(ClaudeUsageReader.projectFolder(for: ClaudeEdits.canonical(worktree.path))))
+
+        let diff = app.diff
+        app.newTab(in: worktree)
+        check(
+            "the model follows the tab into the worktree",
+            await eventually { diff.root?.resolvingSymlinksInPath() == worktree.resolvingSymlinksInPath() })
+        check("both files are changed", await eventually { diff.files.map(\.path) == ["a.txt", "b.txt"] }, "\(diff.files.map(\.path))")
+        await pause(0.5)
+        check("no transcript is read while the pane is closed", diff.reasons.isEmpty)
+
+        guard let changes = menuItem("View", "Changes") else { return check("View ▸ Changes exists", false) }
+        check("View ▸ Changes opens the pane", perform(changes) && app.diffItem?.isCollapsed == false)
+        // What the cards show (DiffPanelView renders `why(for:)` as it is).
+        func said(_ path: String) -> [String?] { diff.why(for: path).shownReasons.map(\.reason?.text) }
+        check("a.txt's card says why: Claude's words at its last edit", await eventually { said("a.txt") == [reason] }, "\(said("a.txt"))")
+        let newest = diff.why(for: "a.txt").shownReasons.first
+        check("in Claude's words, with when", newest?.reason?.source == .said && newest?.time.map { ClaudeEdits.ago($0) } == "just now")
+        check("and that there is more", diff.why(for: "a.txt").hiddenReasons == 1)
+        check("b.txt, which no session edited, has nothing to say", diff.why(for: "b.txt").isEmpty)
+        check("Uncommitted lists no commits", diff.why(for: "a.txt").commits.isEmpty)
+        // A click on the strip.
+        diff.toggleWhy("a.txt")
+        check("opened, it shows what Claude said at the edit before", said("a.txt") == [reason, earlier], "\(said("a.txt"))")
+        check("an edit that failed changed nothing: its words never show", !diff.reasons.values.joined().contains { $0.reason?.text == failed })
+
+        // The switch's Branch button.
+        diff.choose(.branch)
+        check(
+            "Branch lists the commit that touched a.txt on its card",
+            await eventually { diff.shownScope == .branch && diff.why(for: "a.txt").commits.map(\.subject) == ["Teach a.txt to count"] },
+            "\(diff.why(for: "a.txt").commits.map(\.subject))")
+        check("with Claude's words still", said("a.txt") == [reason, earlier])
+        check("b.txt no commit touched", diff.why(for: "b.txt").isEmpty)
+        diff.toggleWhy("a.txt")
+        check("a second click shows the newest again", said("a.txt") == [reason])
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+    }
+
+    /// A session transcript in Claude Code's shape (2.1.28x): a prompt; words,
+    /// an edit and its result for each change — the first one's result an
+    /// error — each part on a line of its own.
+    private func writeTranscript(earlier: String, failed: String, reason: String, file: String, in folder: URL) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let start = Date()
+        func line(_ type: String, _ body: String, at second: Int, extra: String = "") -> String {
+            let stamp = formatter.string(from: start.addingTimeInterval(TimeInterval(second)))
+            return
+                #"{"parentUuid":null,"isSidechain":false,\#(body),"type":"\#(type)","uuid":"u\#(second)","timestamp":"\#(stamp)","cwd":"\#((file as NSString).deletingLastPathComponent)","sessionId":"00000000-0000-0000-0000-0000000000f1","version":"2.1.281"\#(extra)}"#
+        }
+        func said(_ text: String, at second: Int) -> String {
+            line("assistant", #""message":{"id":"msg_\#(second)","role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"\#(text)"}]}"#, at: second)
+        }
+        func edit(_ id: String, at second: Int) -> String {
+            line(
+                "assistant",
+                #""message":{"id":"msg_\#(second)","role":"assistant","model":"claude-opus-5","content":[{"type":"tool_use","id":"\#(id)","name":"Edit","input":{"file_path":"\#(file)","old_string":"two","new_string":"two\nthree","replace_all":false}}]}"#,
+                at: second)
+        }
+        func result(_ id: String, error: Bool, at second: Int) -> String {
+            error
+                ? line(
+                    "user",
+                    #""message":{"role":"user","content":[{"type":"tool_result","content":"<tool_use_error>String to replace not found in file.</tool_use_error>","is_error":true,"tool_use_id":"\#(id)"}]}"#,
+                    at: second, extra: #","toolUseResult":"Error: String to replace not found in file.""#)
+                : line(
+                    "user", #""message":{"role":"user","content":[{"tool_use_id":"\#(id)","type":"tool_result","content":"The file has been updated successfully."}]}"#,
+                    at: second,
+                    extra:
+                        #","toolUseResult":{"filePath":"\#(file)","structuredPatch":[{"oldStart":2,"oldLines":1,"newStart":2,"newLines":2,"lines":[" two","+three"]}],"userModified":false}"#
+                )
+        }
+        let lines = [
+            line("user", #""message":{"role":"user","content":"make a.txt count"}"#, at: 0),
+            said(earlier, at: 1), edit("toolu_e2e_1", at: 2), result("toolu_e2e_1", error: false, at: 3),
+            line("user", #""message":{"role":"user","content":"and on to three"}"#, at: 4),
+            said(failed, at: 5), edit("toolu_e2e_2", at: 6), result("toolu_e2e_2", error: true, at: 7),
+            said(reason, at: 8), edit("toolu_e2e_3", at: 9), result("toolu_e2e_3", error: false, at: 10),
+        ]
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? (lines.joined(separator: "\n") + "\n").write(
+            to: folder.appendingPathComponent("00000000-0000-0000-0000-0000000000f1.jsonl"), atomically: true, encoding: .utf8)
+    }
+
+    /// The changes pane reads like code: a Swift change in the editor's
+    /// colours — a block comment over context lines a comment on each line,
+    /// keywords, strings, numbers — and, in a line that was edited rather
+    /// than replaced, the part that changed, on it and on the line it
+    /// replaced. A file the highlighter doesn't know stays plain. With many
+    /// files the cards start folded, a list of them, and what the user folds
+    /// or opens stays so. SwiftUI builds no accessibility tree in-process:
+    /// the checks are on what each line and card is given
+    /// (`FileDiff.style(of:)`, `DiffModel.isFolded`), which the view draws as it is.
+    private func diffStyleScenario() async {
+        let repo = scratch.appendingPathComponent("stylerepo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        func write(_ name: String, _ lines: [String]) {
+            try? (lines.joined(separator: "\n") + "\n").write(to: repo.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        write("Greeter.swift", ["/* Greets", "   the user. */", "func greet() -> String {", "    let times = 1", "    return \"hello\"", "}"])
+        write("notes.txt", ["status: draft"])
+        try? await git(["add", "."], in: repo)
+        try? await git(["commit", "-q", "-m", "init"], in: repo)
+        write(
+            "Greeter.swift",
+            ["/* Greets", "   the user. */", "func greet() -> String {", "    let times = 2", "    return \"hello, world\"", "    // unreachable, on purpose", "}"])
+        write("notes.txt", ["status: final"])
+        let diff = app.diff
+
+        app.newTab(in: repo)
+        check("the model follows the tab into the repo", await eventually { diff.root?.resolvingSymlinksInPath() == repo.resolvingSymlinksInPath() })
+        guard let changes = menuItem("View", "Changes") else { return check("View ▸ Changes exists", false) }
+        check("View ▸ Changes opens the pane", perform(changes) && app.diffItem?.isCollapsed == false)
+        guard await eventually(10, { diff.diffs.count == 2 }), let greeter = diff.diffs["Greeter.swift"], let notes = diff.diffs["notes.txt"] else {
+            return check("both files' diffs load", false, "\(diff.diffs.keys.sorted())")
+        }
+        /// What a line is given: its colours, "kind: text", then its changed part.
+        func drawn(_ file: DiffModel.FileDiff, _ kind: DiffLine.Kind, _ text: String) -> [String] {
+            guard let line = file.lines.first(where: { $0.kind == kind && $0.text == text }) else { return ["no \(kind) line \(text)"] }
+            let style = file.style(of: line)
+            let ns = line.text as NSString
+            return style.tokens.map { "\($0.kind): \(ns.substring(with: $0.range))" } + (style.changed.map { ["changed: \(ns.substring(with: $0))"] } ?? [])
+        }
+        let comment = [drawn(greeter, .context, "/* Greets"), drawn(greeter, .context, "   the user. */")]
+        check("a block comment over two context lines is a comment on each", comment == [["comment: /* Greets"], ["comment:    the user. */"]], "\(comment)")
+        let signature = drawn(greeter, .context, "func greet() -> String {")
+        check("a keyword on a context line", signature == ["keyword: func"], "\(signature)")
+        let replaced = drawn(greeter, .removed, "    let times = 1")
+        check("an edited line: its keyword and number, and the part replaced", replaced == ["keyword: let", "number: 1", "changed: 1"], "\(replaced)")
+        let replacing = drawn(greeter, .added, "    let times = 2")
+        check("the line that replaced it: the part that replaced it", replacing == ["keyword: let", "number: 2", "changed: 2"], "\(replacing)")
+        let removed = drawn(greeter, .removed, "    return \"hello\"")
+        check("a string on a removed line, nothing of it replaced", removed == ["keyword: return", "string: \"hello\""], "\(removed)")
+        let added = drawn(greeter, .added, "    return \"hello, world\"")
+        check("its added line marks what was added", added == ["keyword: return", "string: \"hello, world\"", "changed: , world"], "\(added)")
+        let note = drawn(greeter, .added, "    // unreachable, on purpose")
+        check("an added comment, with no line to pair with", note == ["comment: // unreachable, on purpose"], "\(note)")
+        check("a closing brace is plain", drawn(greeter, .context, "}") == [])
+        let plain = [drawn(notes, .removed, "status: draft"), drawn(notes, .added, "status: final")]
+        check("a file the highlighter doesn't know: no colours, what changed marked", plain == [["changed: draft"], ["changed: final"]], "\(plain)")
+
+        // Many files: the pane reads as a list of them.
+        check("two files: their cards start open", !diff.isFolded("Greeter.swift") && !diff.isFolded("notes.txt"))
+        // Nine more, moved in at once: a refresh sees all of them or none.
+        let batch = scratch.appendingPathComponent("more")
+        try? FileManager.default.createDirectory(at: batch, withIntermediateDirectories: true)
+        for i in 1...9 { try? "one more\n".write(to: batch.appendingPathComponent("more\(i).txt"), atomically: true, encoding: .utf8) }
+        try? FileManager.default.moveItem(at: batch, to: repo.appendingPathComponent("more"))
+        let more = (1...9).map { "more/more\($0).txt" }
+        check("eleven files: the cards that come start folded", await eventually { diff.shownFiles.count == 11 } && more.allSatisfy(diff.isFolded))
+        check("the open ones stay open: one may be being read", !diff.isFolded("Greeter.swift") && !diff.isFolded("notes.txt"))
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+        // The pane header's Expand All, then Collapse All.
+        diff.expandAll()
+        check("Expand All opens every card", diff.shownFiles.allSatisfy { !diff.isFolded($0.path) })
+        diff.collapseAll()
+        check("Collapse All folds every card", diff.everyCardFolded)
+        // A click on a card's header, then the agent writes another file.
+        diff.toggleFold("Greeter.swift")
+        write("more10.txt", ["and another"])
+        check(
+            "a card opened with a click stays open through a refresh",
+            await eventually { diff.shownFiles.count == 12 } && !diff.isFolded("Greeter.swift") && diff.isFolded("more10.txt"))
+
+        let busy = scratch.appendingPathComponent("busyrepo")
+        try? FileManager.default.createDirectory(at: busy, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: busy)
+        for i in 1...12 { try? "new\n".write(to: busy.appendingPathComponent("file\(i).txt"), atomically: true, encoding: .utf8) }
+        app.newTab(in: busy)
+        check(
+            "a checkout with 12 changed files opens as a list, every card folded",
+            await eventually { diff.root?.resolvingSymlinksInPath() == busy.resolvingSymlinksInPath() && diff.shownFiles.count == 12 } && diff.everyCardFolded)
     }
 
     /// Dividers can be grabbed next to the 1 pt line and dragged.

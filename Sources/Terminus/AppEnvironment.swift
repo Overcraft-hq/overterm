@@ -47,6 +47,17 @@ enum AppEnvironment {
             .appendingPathComponent("\(bundleIdentifier)/Drops", isDirectory: true)
     }()
 
+    /// Claude Code's session transcripts: ~/.claude/projects, or
+    /// $CLAUDE_CONFIG_DIR/projects. An isolated run gets an empty one of its
+    /// own — the changes pane reads transcripts, and a scenario must never
+    /// read the user's — until a scenario points ClaudeUsageReader at the
+    /// transcripts it wrote.
+    static let claudeProjectsDirectory: URL = {
+        if isIsolated { return supportDirectory.appendingPathComponent("claude-projects", isDirectory: true) }
+        if let dir = env["CLAUDE_CONFIG_DIR"] { return URL(fileURLWithPath: dir).appendingPathComponent("projects") }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+    }()
+
     private static let isolatedSuite = "\(bundleIdentifier).isolated"
 
     /// UserDefaults.standard, or a throwaway suite for an isolated run.

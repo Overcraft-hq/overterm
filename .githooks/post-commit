@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# A commit that changes VERSION gets an annotated tag v<VERSION> ("Terminus
+# <VERSION>"), unless that tag exists. Enabled by `make hooks`. Tags stay
+# local: push one with `git push origin v<VERSION>`.
+set -euo pipefail
+
+# Changed against the first parent; a first commit brings it if it has one.
+if parent="$(git rev-parse -q --verify 'HEAD^1^{commit}')"; then
+  if git diff --quiet "$parent" HEAD -- VERSION; then exit 0; fi
+fi
+version="$(git show HEAD:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+if [[ -z "$version" ]]; then exit 0; fi
+semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+if [[ ! "$version" =~ $semver ]]; then
+  echo "post-commit: VERSION is '$version', not MAJOR.MINOR.PATCH; not tagged" >&2
+  exit 0
+fi
+
+tag="v$version"
+if existing="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")"; then
+  if [[ "$existing" != "$(git rev-parse HEAD)" ]]; then
+    echo "post-commit: $tag already tags ${existing:0:7}; left there. To move it here:" >&2
+    echo "    git tag -f -a $tag -m \"Terminus $version\"" >&2
+  fi
+  exit 0
+fi
+git tag -a "$tag" -m "Terminus $version"
+echo "Tagged $tag (local; to publish: git push origin $tag)"

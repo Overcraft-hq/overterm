@@ -34,7 +34,11 @@ theme, keybinds) applies as-is.
   the branch left the default branch, its commits listed too — an agent's
   work stays visible after it commits. The badge shows in any repository: the
   uncommitted totals, else the branch's, else a plain ±; a click on it opens
-  the scope it counts.
+  the scope it counts. Each file says **why** it changed: what Claude said
+  when it edited it (from Claude Code's session transcripts on this Mac,
+  subagents' included; nothing leaves it), two lines and when — a click shows
+  it all and what it said at the edits before — and in Branch the commits
+  that touched it.
 - **Drop files on a terminal** — from Finder, the Desktop, another app,
   Photos or Safari (their images are saved first), or the sidebar's file
   tree: a shell gets their quoted paths; where Claude Code runs, other files
@@ -94,6 +98,7 @@ Requirements: macOS 13+, Xcode 16, [mise](https://mise.jdx.dev).
 ```sh
 mise trust && mise install   # pinned Zig
 make ghosttykit              # GhosttyKit from the pinned Ghostty (once, ~2 min)
+make hooks                   # git hooks: version bump check, release tags (once)
 make test                    # unit + integration tests
 make e2e                     # end-to-end scenarios in the real app
 make run                     # build Terminus.app and open it
@@ -132,3 +137,25 @@ Details: `docs/` (architecture, Ghostty embedding, debugging).
 Ghostty is pinned to v1.3.1 in `Scripts/build-ghosttykit.sh`: main needs
 Xcode 26. State lives in `~/Library/Application Support/Terminus/`
 (`session.json`, `snippets.json`).
+
+## Versioning
+
+`VERSION` holds the version ([SemVer](https://semver.org)), `CHANGELOG.md`
+what each version changed, and the commit that brings a version is tagged
+`v<version>`. **Terminus ▸ About Terminus** shows it — "Version 1.10.0 (103)",
+the number in brackets counting commits — and under it the commit the app was
+built from and the day: `commit 7e68283 · 26 Sep 2026`, with `-dirty` after the
+hash when it was built with uncommitted changes.
+
+Every commit that changes the app bumps the version as its effect warrants —
+major, minor or patch; the rules are in CLAUDE.md (Commits):
+
+```sh
+make hooks                                          # once per clone
+Scripts/bump-version.sh minor "tabs: what changed"  # or patch, major
+git add VERSION CHANGELOG.md                        # commit them with the change
+```
+
+The pre-commit hook refuses a change to the app without a new VERSION
+(`SKIP_VERSION_CHECK=1 git commit …` lets one through), and the post-commit
+hook adds the tag. Tags stay local until pushed: `git push origin v1.10.0`.

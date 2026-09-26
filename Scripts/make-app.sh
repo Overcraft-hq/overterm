@@ -4,11 +4,32 @@ set -euo pipefail
 
 APP_NAME="Terminus"
 BUNDLE_ID="io.github.terminus-app.terminus"
-VERSION="${VERSION:-0.1.0}"
-BUILD="${BUILD:-1}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+# What About Terminus shows (docs/architecture.md, Build metadata): the
+# version from VERSION, the commit count as the build number (monotonic on
+# main), the commit — "-dirty" with uncommitted changes — and the day.
+# VERSION and BUILD in the environment override; without git, build 1 and
+# commit "unknown".
+if [[ -z "${VERSION:-}" ]]; then
+  if [[ ! -f "$ROOT/VERSION" ]]; then
+    echo "error: $ROOT/VERSION missing" >&2
+    exit 1
+  fi
+  VERSION="$(tr -d '[:space:]' <"$ROOT/VERSION")"
+fi
+if git -C "$ROOT" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+  BUILD="${BUILD:-$(git -C "$ROOT" rev-list --count HEAD)}"
+  COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)"
+  if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then COMMIT="$COMMIT-dirty"; fi
+else
+  BUILD="${BUILD:-1}"
+  COMMIT="unknown"
+fi
+BUILD_DATE="$(date +%Y-%m-%d)"
+echo "==> Terminus $VERSION ($BUILD), commit $COMMIT, $BUILD_DATE"
 
 echo "==> swift build -c release"
 swift build -c release
@@ -54,6 +75,11 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>${VERSION}</string>
     <key>CFBundleVersion</key>
     <string>${BUILD}</string>
+    <!-- About Terminus's credits (AboutPanel): the commit built, and when. -->
+    <key>TerminusCommit</key>
+    <string>${COMMIT}</string>
+    <key>TerminusBuildDate</key>
+    <string>${BUILD_DATE}</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>

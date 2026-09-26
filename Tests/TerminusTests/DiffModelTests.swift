@@ -446,12 +446,211 @@ final class DiffModelTests: XCTestCase {
         XCTAssertNil(DiffModel.Badge.plain.scope)
     }
 
+    // MARK: Folding
+
+    /// The shown cards that are folded.
+    @MainActor
+    private func folded(_ model: DiffModel) -> Set<String> {
+        Set(model.shownFiles.map(\.path).filter { model.isFolded($0) })
+    }
+
+    /// More than 8 files changed: the cards start folded, and the pane reads
+    /// as a list of files with their counts. What the user opens or folds —
+    /// a card with a click, every card with Expand All or Collapse All —
+    /// stays so through every refresh.
+    @MainActor
+    func testManyChangedFilesStartFoldedAndWhatTheUserFoldsSticks() async throws {
+        try await git("init", "-q", "-b", "main")
+        for i in 1...9 { try write("f\(i).txt", "\(i)\n") }
+        let model = DiffModel(defaults: defaults)
+        model.panelVisible = true
+        model.setRoot(repo)
+        try await eventually { model.files.count == 9 }
+        XCTAssertEqual(folded(model).count, 9, "more than 8: every card starts folded")
+        XCTAssertTrue(model.everyCardFolded)
+
+        model.toggleFold("f1.txt")
+        XCTAssertFalse(model.isFolded("f1.txt"), "a click opens one")
+        try write("f10.txt", "10\n")
+        try await eventually { model.files.count == 10 }
+        XCTAssertFalse(model.isFolded("f1.txt"), "and a refresh leaves it open")
+        XCTAssertTrue(model.isFolded("f10.txt"), "a card that comes later starts folded")
+
+        model.expandAll()
+        XCTAssertEqual(folded(model), [], "Expand All")
+        try write("f11.txt", "11\n")
+        try await eventually { model.files.count == 11 }
+        XCTAssertFalse(model.isFolded("f11.txt"), "after Expand All, a card that comes starts open")
+        model.toggleFold("f2.txt")
+        try write("f12.txt", "12\n")
+        try await eventually { model.files.count == 12 }
+        XCTAssertEqual(folded(model), ["f2.txt"], "folded with a click, it stays folded")
+
+        model.collapseAll()
+        XCTAssertEqual(folded(model).count, 12, "Collapse All")
+        XCTAssertTrue(model.everyCardFolded)
+    }
+
+    /// A few files start open. The list growing past 8 folds only the cards
+    /// that come then: an open one may be being read.
+    @MainActor
+    func testAFewChangedFilesStartOpenAndAGrowingListFoldsOnlyTheNewCards() async throws {
+        try await git("init", "-q", "-b", "main")
+        for i in 1...8 { try write("f\(i).txt", "\(i)\n") }
+        let model = DiffModel(defaults: defaults)
+        model.panelVisible = true
+        model.setRoot(repo)
+        try await eventually { model.files.count == 8 }
+        XCTAssertEqual(folded(model), [], "8 files: every card starts open")
+        XCTAssertFalse(model.everyCardFolded)
+        model.toggleFold("f1.txt")
+
+        for name in ["f9.txt", "f10.txt"] { try write(name, "new\n") }
+        try await eventually { model.files.count == 10 }
+        XCTAssertEqual(folded(model), ["f1.txt", "f9.txt", "f10.txt"], "the new cards folded, the others as they were")
+    }
+
+    /// A card starts as it is when first shown, and with the pane closed none
+    /// is: a pane opened on 12 files is a list, however they came. The folds
+    /// belong to the checkout — another starts afresh, and so does coming back.
+    @MainActor
+    func testCardsStartWhenFirstShownAndFoldsBelongToTheCheckout() async throws {
+        try await git("init", "-q", "-b", "main")
+        let model = DiffModel(defaults: defaults)
+        model.setRoot(repo)
+        try write("f1.txt", "1\n")
+        try await eventually { model.files.count == 1 }
+        for i in 2...12 { try write("f\(i).txt", "\(i)\n") }
+        try await eventually { model.files.count == 12 }
+        model.panelVisible = true
+        try await eventually { model.diffs.count == 12 }
+        XCTAssertEqual(folded(model).count, 12, "opened on 12 files: a list")
+        model.toggleFold("f1.txt")
+
+        let other = URL(fileURLWithPath: repo.path + "-wt")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        try await git(in: other, "init", "-q", "-b", "main")
+        try "a\n".write(to: other.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        model.setRoot(other)
+        try await eventually { model.files.map(\.path) == ["a.txt"] }
+        XCTAssertEqual(folded(model), [], "another checkout starts afresh: one file, open")
+        model.setRoot(repo)
+        try await eventually { model.files.count == 12 }
+        XCTAssertTrue(model.isFolded("f1.txt"), "back again, afresh too: the click on f1 is forgotten")
+    }
+
+    /// A file's card is the same card in Uncommitted and in Branch. Branch
+    /// listing many files starts the cards not seen yet folded.
+    @MainActor
+    func testFoldsCarryAcrossScopes() async throws {
+        var files: [String: String] = [:]
+        for i in 1...10 { files["f\(i).txt"] = "\(i)\n" }
+        let worktree = try await featureWorktree(files)
+        for i in 1...10 { try "changed\n".write(to: worktree.appendingPathComponent("f\(i).txt"), atomically: true, encoding: .utf8) }
+        try await git(in: worktree, "commit", "-q", "-am", "Change them all")
+        try "again\n".write(to: worktree.appendingPathComponent("f1.txt"), atomically: true, encoding: .utf8)
+
+        let model = DiffModel(defaults: defaults)
+        model.panelVisible = true
+        model.setRoot(worktree)
+        try await eventually { model.files.count == 1 && model.branchFiles.count == 10 }
+        XCTAssertEqual(folded(model), [], "Uncommitted: one file, open")
+        model.choose(.branch)
+        XCTAssertEqual(model.shownFiles.count, 10)
+        XCTAssertEqual(folded(model), Set((2...10).map { "f\($0).txt" }), "Branch: ten files, those not seen yet folded; f1 as it was")
+    }
+
     @MainActor
     func testOutsideARepositorySaysSo() async throws {
         let model = DiffModel()
         model.setRoot(repo)
         try await eventually { model.error != nil }
         XCTAssertEqual(model.error, "Not a git repository")
+    }
+
+    // MARK: Why
+
+    /// Why each file changed, from the checkout's Claude sessions (a scratch
+    /// projects directory, never ~/.claude), read only while the pane is
+    /// open. A linked worktree's include those started in the main checkout:
+    /// Claude Code keeps a transcript where the session started, also after
+    /// EnterWorktree moved it.
+    @MainActor
+    func testWhyEachFileChangedFromTheCheckoutsClaudeSessions() async throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-projects-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: projects) }
+        let worktree = try await featureWorktree(["a.txt": "one\n", "b.txt": "one\n", "c.txt": "one\n"])
+        try "two\n".write(to: worktree.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try await git(in: worktree, "commit", "-q", "-am", "Teach a to count")
+        for name in ["b.txt", "c.txt"] {
+            try "one\nmore\n".write(to: worktree.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        var inWorktree = TranscriptFixture()
+        inWorktree.base = Date()
+        try inWorktree.write(
+            [
+                inWorktree.prompt("count in b", at: 1), inWorktree.said("b.txt needs a second line.", at: 2),
+                inWorktree.edit("toolu_1", worktree.path + "/b.txt", at: 3), inWorktree.result("toolu_1", at: 4),
+            ], to: projects, for: worktree.path)
+        var moved = inWorktree
+        moved.session = "11111111-2222-3333-4444-555555555555"
+        try moved.write(
+            [
+                moved.prompt("and a", at: 5), moved.said("a.txt counts too.", at: 6),
+                moved.edit("toolu_2", worktree.path + "/a.txt", at: 7), moved.result("toolu_2", at: 8),
+            ], to: projects, for: repo.path)
+
+        let model = DiffModel(defaults: defaults, transcripts: ClaudeEditsReader(projects: { projects }))
+        model.setRoot(worktree)
+        try await eventually { model.files.count == 2 && model.commits.count == 1 }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertTrue(model.reasons.isEmpty, "not read while the pane is closed")
+
+        model.panelVisible = true
+        try await eventually { model.reasons.count == 2 }
+        XCTAssertEqual(model.reasons["b.txt"]?.map(\.reason?.text), ["b.txt needs a second line."])
+        XCTAssertEqual(model.reasons["a.txt"]?.map(\.reason?.text), ["a.txt counts too."], "a session started in the main checkout")
+        XCTAssertNil(model.reasons["c.txt"], "no session edited it: nothing to say")
+        XCTAssertEqual(model.commitsByFile["a.txt"]?.map(\.subject), ["Teach a to count"])
+        XCTAssertNil(model.commitsByFile["b.txt"])
+
+        // What the cards show: commits in Branch only; the newest reason until opened.
+        XCTAssertEqual(model.why(for: "a.txt").commits, [], "Uncommitted")
+        XCTAssertTrue(model.why(for: "c.txt").isEmpty, "no strip at all")
+        model.choose(.branch)
+        try await eventually { model.shownScope == .branch }
+        XCTAssertEqual(model.why(for: "a.txt").commits.map(\.subject), ["Teach a to count"])
+        XCTAssertEqual(model.why(for: "a.txt").shownReasons.map(\.reason?.text), ["a.txt counts too."])
+        XCTAssertEqual(model.why(for: "b.txt").commits, [], "no commit touched it")
+        XCTAssertFalse(model.why(for: "b.txt").isEmpty, "but Claude said why")
+    }
+
+    /// A card's why shows the newest reason, and all of them once clicked.
+    @MainActor
+    func testAClickOnAWhyShowsItAll() async throws {
+        let projects = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-projects-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: projects) }
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        var t = TranscriptFixture()
+        t.base = Date()
+        let path = repo.path + "/a.txt"
+        try t.write(
+            [
+                t.prompt("start", at: 1), t.said("First pass.", at: 2), t.edit("toolu_1", path, at: 3), t.result("toolu_1", at: 4),
+                t.said("Second pass.", at: 5), t.edit("toolu_2", path, at: 6), t.result("toolu_2", at: 7),
+            ], to: projects, for: repo.path)
+        let model = DiffModel(defaults: defaults, transcripts: ClaudeEditsReader(projects: { projects }))
+        model.panelVisible = true
+        model.setRoot(repo)
+        try await eventually { model.reasons["a.txt"]?.count == 2 }
+        XCTAssertEqual(model.why(for: "a.txt").shownReasons.map(\.reason?.text), ["Second pass."])
+        XCTAssertEqual(model.why(for: "a.txt").hiddenReasons, 1)
+        model.toggleWhy("a.txt")
+        XCTAssertEqual(model.why(for: "a.txt").shownReasons.map(\.reason?.text), ["Second pass.", "First pass."])
+        XCTAssertEqual(model.why(for: "a.txt").hiddenReasons, 0)
+        model.toggleWhy("a.txt")
+        XCTAssertEqual(model.why(for: "a.txt").shownReasons.count, 1)
     }
 
     func testLineCount() throws {

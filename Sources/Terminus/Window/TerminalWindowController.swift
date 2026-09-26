@@ -42,7 +42,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     // Readable (not writable) outside so the E2E scenarios can check them.
     private(set) var split = WideDividerSplitViewController()
     private(set) var sidebarItem: NSSplitViewItem?
-    private(set) var diff = DiffModel()
+    /// Reads the checkout's Claude transcripts for why each file changed.
+    private(set) var diff = DiffModel(transcripts: ClaudeEditsReader())
     /// The right pane's switch (Changes / Pull Request) and the PR it shows.
     let rightPane = RightPane()
     /// ⇧⌘A: every tab as a card.
