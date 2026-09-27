@@ -1,3 +1,5 @@
+import AppKit
+import QuartzCore
 import SwiftUI
 
 /// How a tab shows what its agent is doing. Motion is the signal's volume:
@@ -18,17 +20,10 @@ struct WorkingGlyph: View {
     let symbol: String
     var size: CGFloat = 10
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dim = false
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size, weight: .semibold))
-            .foregroundStyle(TabStatusStyle.signal)
-            .opacity(dim ? 0.35 : 1)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) { dim = true }
-            }
+        LoopingStatus(kind: .breathing(symbol: symbol, size: size), animated: !reduceMotion)
+            .fixedSize()
             .help("Working")
     }
 }
@@ -37,24 +32,10 @@ struct WorkingGlyph: View {
 struct WaitingDot: View {
     var size: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var ring = false
 
     var body: some View {
-        ZStack {
-            if !reduceMotion {
-                Circle()
-                    .stroke(TabStatusStyle.signal, lineWidth: 1.5)
-                    .frame(width: size, height: size)
-                    .scaleEffect(ring ? 2.4 : 1)
-                    .opacity(ring ? 0 : 0.9)
-            }
-            Circle().fill(TabStatusStyle.signal).frame(width: size, height: size)
-        }
-        .frame(width: size * 2.4, height: size * 2.4)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { ring = true }
-        }
+        LoopingStatus(kind: .ringing(size: size), animated: !reduceMotion)
+            .frame(width: size * 2.4, height: size * 2.4)
     }
 }
 
@@ -74,28 +55,162 @@ struct ResultMark: View {
 /// loading in Chrome — visible even on a 38 pt pinned tab.
 struct WorkingBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var phase: CGFloat = -0.4
 
     var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            ZStack(alignment: .leading) {
-                Capsule().fill(TabStatusStyle.signal.opacity(0.18))
-                if reduceMotion {
-                    Capsule().fill(TabStatusStyle.signal.opacity(0.7))
-                } else {
-                    Capsule()
-                        .fill(TabStatusStyle.signal)
-                        .frame(width: width * 0.4)
-                        .offset(x: width * phase)
-                }
-            }
-            .clipShape(Capsule())
+        LoopingStatus(kind: .sweeping, animated: !reduceMotion).frame(height: 2)
+    }
+}
+
+/// The three motions, run by Core Animation rather than SwiftUI. A SwiftUI
+/// `repeatForever` animation re-renders its view on the main thread every
+/// frame: five working tabs took the app from 2.6% to 11.8% CPU, all day
+/// while agents work. A CAAnimation, once added, is the window server's.
+private struct LoopingStatus: NSViewRepresentable {
+    enum Kind: Equatable {
+        case breathing(symbol: String, size: CGFloat)
+        case ringing(size: CGFloat)
+        case sweeping
+    }
+
+    let kind: Kind
+    let animated: Bool
+
+    func makeNSView(context: Context) -> LoopingStatusView { LoopingStatusView() }
+
+    func updateNSView(_ view: LoopingStatusView, context: Context) {
+        view.configure(kind, animated: animated)
+    }
+}
+
+private final class LoopingStatusView: NSView {
+    private var kind: LoopingStatus.Kind?
+    private var animated = false
+    private var image: NSImage?
+    private let content = CALayer()
+    private let ring = CAShapeLayer()
+    private let track = CALayer()
+    private let slider = CALayer()
+    private static let signal = NSColor(TabStatusStyle.signal).cgColor
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }
+
+    override var intrinsicContentSize: NSSize {
+        if case .breathing = kind, let image { return image.size }
+        return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    /// Called on every SwiftUI update of the tab strip; only a real change
+    /// rebuilds, or the motion would restart on every title change.
+    func configure(_ kind: LoopingStatus.Kind, animated: Bool) {
+        guard kind != self.kind || animated != self.animated else { return }
+        self.kind = kind
+        self.animated = animated
+        layer?.sublayers?.forEach { $0.removeFromSuperlayer() }
+        switch kind {
+        case .breathing(let symbol, let size):
+            let config = NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
+                .applying(.init(paletteColors: [NSColor(TabStatusStyle.signal)]))
+            image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Working")?.withSymbolConfiguration(config)
+            content.contents = image
+            content.contentsGravity = .resizeAspect
+            layer?.addSublayer(content)
+            invalidateIntrinsicContentSize()
+        case .ringing:
+            ring.fillColor = nil
+            ring.strokeColor = Self.signal
+            ring.lineWidth = 1.5
+            content.contents = nil
+            content.backgroundColor = Self.signal
+            if animated { layer?.addSublayer(ring) }
+            layer?.addSublayer(content)
+        case .sweeping:
+            track.backgroundColor = NSColor(TabStatusStyle.signal).withAlphaComponent(animated ? 0.18 : 0.7).cgColor
+            slider.backgroundColor = Self.signal
+            layer?.masksToBounds = true
+            layer?.addSublayer(track)
+            if animated { layer?.addSublayer(slider) }
         }
-        .frame(height: 2)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) { phase = 1.0 }
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        guard let kind else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let b = bounds
+        switch kind {
+        case .breathing:
+            content.frame = b
+            content.contentsScale = window?.backingScaleFactor ?? 2
+        case .ringing(let size):
+            let dot = CGRect(x: b.midX - size / 2, y: b.midY - size / 2, width: size, height: size)
+            content.frame = dot
+            content.cornerRadius = size / 2
+            ring.bounds = CGRect(origin: .zero, size: dot.size)
+            ring.position = CGPoint(x: b.midX, y: b.midY)
+            ring.path = CGPath(ellipseIn: ring.bounds, transform: nil)
+        case .sweeping:
+            layer?.cornerRadius = b.height / 2
+            track.frame = b
+            slider.frame = CGRect(x: 0, y: 0, width: b.width * 0.4, height: b.height)
+            slider.cornerRadius = b.height / 2
         }
+        CATransaction.commit()
+        restart()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        restart()
+    }
+
+    /// (Re)adds the loop — after a size change the sweep's distance is new.
+    private func restart() {
+        for layer in [content, ring, slider] { layer.removeAllAnimations() }
+        guard animated, window != nil, let kind else { return }
+        switch kind {
+        case .breathing:
+            content.add(Self.loop("opacity", from: 1.0, to: 0.35, duration: 0.75, autoreverses: true, .easeInEaseOut), forKey: "loop")
+        case .ringing:
+            let group = CAAnimationGroup()
+            group.animations = [
+                Self.loop("transform.scale", from: 1.0, to: 2.4, duration: 1.4, autoreverses: false, .easeOut),
+                Self.loop("opacity", from: 0.9, to: 0.0, duration: 1.4, autoreverses: false, .easeOut),
+            ]
+            group.duration = 1.4
+            group.repeatCount = .infinity
+            group.isRemovedOnCompletion = false
+            ring.add(group, forKey: "loop")
+        case .sweeping:
+            let width = bounds.width
+            guard width > 0 else { return }
+            // Its centre from 0.4 widths before the start to past the end.
+            slider.add(
+                Self.loop("position.x", from: width * -0.2, to: width * 1.2, duration: 1.1, autoreverses: false, .linear),
+                forKey: "loop")
+        }
+    }
+
+    private static func loop(
+        _ keyPath: String, from: Double, to: Double, duration: CFTimeInterval, autoreverses: Bool,
+        _ timing: CAMediaTimingFunctionName
+    ) -> CABasicAnimation {
+        let animation = CABasicAnimation(keyPath: keyPath)
+        animation.fromValue = from
+        animation.toValue = to
+        animation.duration = duration
+        animation.autoreverses = autoreverses
+        animation.repeatCount = .infinity
+        animation.timingFunction = CAMediaTimingFunction(name: timing)
+        animation.isRemovedOnCompletion = false
+        return animation
     }
 }

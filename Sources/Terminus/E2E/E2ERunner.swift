@@ -2159,6 +2159,18 @@ final class E2ERunner {
         check("and never stalls the main thread (< 150 ms)", idleStall < 0.15, String(format: "%.0f ms", idleStall * 1000))
         check("in a sane amount of memory (< 900 MB)", footprint < 900, String(format: "%.0f MB", footprint))
 
+        // Five agents at work (as OSC 9;4 marks them): their tabs animate.
+        let working = app.store.tabs.suffix(5)
+        for tab in working { tab.activity.handle(.progress(active: true, failed: false), visible: false) }
+        await pause(1)
+        let busy0 = Self.cpuSeconds()
+        let busyWall0 = Date()
+        await pause(10)
+        let busyCPU = (Self.cpuSeconds() - busy0) / Date().timeIntervalSince(busyWall0) * 100
+        note(String(format: "five working tabs: CPU %.2f%%", busyCPU))
+        check("five working agents' tabs cost little CPU (< 5%)", busyCPU < 5, String(format: "%.2f%%", busyCPU))
+        for tab in working { tab.activity.handle(.progress(active: false, failed: false), visible: true) }
+
         stalls.reset()
         let started = Date()
         await runAndExpect("seq 1 300000; echo done > \(out("flood").path)", file: out("flood"), content: "done", "300 000 lines of output")

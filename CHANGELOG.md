@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.12 — 2026-09-27
+
+- tabs: working and waiting marks animate in Core Animation — five working tabs no longer cost 9% CPU
+
 ## 1.15.11 — 2026-09-27
 
 - editor: opening a FIFO or a device no longer hangs the app
