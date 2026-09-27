@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.3 — 2026-09-27
+
+- worktrees: Clean Up keeps a gone branch with commits no remote has, and worktrees an agent works in
+
 ## 1.15.2 — 2026-09-27
 
 - editor: unsaved changes are asked about on ⌘Q and keep the window when its last tab closes

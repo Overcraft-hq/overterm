@@ -1434,12 +1434,17 @@ final class E2ERunner {
             if push { try? await git(["push", "-q", "-u", "origin", branch], in: path) }
             return path
         }
-        // Merged by a merge commit; merged and deleted on the remote (a squash);
+        // Merged by a merge commit; merged, pushed, then deleted on the remote;
+        // gone as after a squash but committed on and never pushed (stays);
         // merged but dirty; merged with a tab in it; still open.
         let merged = await worktree("merged")
         try? await git(["merge", "-q", "--no-ff", "-m", "Merge merged", "merged"], in: repo)
-        let squashed = await worktree("squashed")
-        try? await git(["push", "-q", "origin", "--delete", "squashed"], in: repo)
+        let squashed = await worktree("goneMerged")
+        try? await git(["merge", "-q", "--no-ff", "-m", "Merge goneMerged", "goneMerged"], in: repo)
+        try? await git(["push", "-q", "origin", "--delete", "goneMerged"], in: repo)
+        let continued = await worktree("continued")
+        try? await git(["push", "-q", "origin", "--delete", "continued"], in: repo)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "more work, never pushed"], in: continued)
         let dirty = await worktree("dirty")
         try? await git(["merge", "-q", "--no-ff", "-m", "Merge dirty", "dirty"], in: repo)
         try? "wip\n".write(to: dirty.appendingPathComponent("wip.txt"), atomically: true, encoding: .utf8)
@@ -1454,11 +1459,11 @@ final class E2ERunner {
         await eventually { self.app.worktrees.main != nil }
         await app.worktrees.refresh(fetch: true)
         check(
-            "the merged ones are marked, the open one isn't",
-            Set(app.worktrees.merged.keys) == ["merged", "squashed", "dirty", "busy"],
+            "the merged ones are marked — not the open one, nor one with unpushed commits",
+            Set(app.worktrees.merged.keys) == ["merged", "goneMerged", "dirty", "busy"],
             app.worktrees.merged.keys.sorted().joined(separator: ","))
         check(
-            "and say why", app.worktrees.merged["squashed"] == .upstreamGone && app.worktrees.merged["merged"] == .mergedInto("origin/main"))
+            "and say why", app.worktrees.merged["goneMerged"] == .upstreamGone && app.worktrees.merged["merged"] == .mergedInto("origin/main"))
 
         if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
             AppEnvironment.defaults.set(SidebarPanel.worktrees.rawValue, forKey: "sidebarPanel")
@@ -1477,15 +1482,16 @@ final class E2ERunner {
         }
         check("removes the merged worktrees", gone)
         // Branches go after each folder, and the list refreshes last.
-        await eventually(10) { self.app.worktrees.worktrees.count == 4 }
+        await eventually(10) { self.app.worktrees.worktrees.count == 5 }
         let branches = (try? await Git.run(["branch", "--format=%(refname:short)"], in: repo)) ?? ""
         let names = Set(branches.split(separator: "\n").map(String.init))
-        check("and their branches", !names.contains("merged") && !names.contains("squashed"), names.sorted().joined(separator: ","))
+        check("and their branches", !names.contains("merged") && !names.contains("goneMerged"), names.sorted().joined(separator: ","))
         check(
             "keeps the rest",
-            [dirty, busy, open].allSatisfy { FileManager.default.fileExists(atPath: $0.path) } && names.isSuperset(of: ["dirty", "busy", "open"]))
+            [dirty, busy, open, continued].allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+                && names.isSuperset(of: ["dirty", "busy", "open", "continued"]))
         check(
-            "the list updates", await eventually { self.app.worktrees.worktrees.count == 4 },
+            "the list updates", await eventually { self.app.worktrees.worktrees.count == 5 },
             app.worktrees.worktrees.map(\.displayName).joined(separator: ","))
     }
 

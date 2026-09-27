@@ -49,12 +49,19 @@ enum MergedWorktrees {
         }
     }
 
-    /// The pure decision: `reachable` is `git branch --merged <base>`.
-    static func merged(branches: [Branch], reachable: Set<String>, base: String, protected: Set<String>) -> [String: Reason] {
+    /// The pure decision: `reachable` is `git branch --merged <base>`;
+    /// `pushed` the branches whose tip is on some remote ref. A gone upstream
+    /// alone is not enough: after a squash merge you may have committed on
+    /// and never pushed — Clean Up would delete those commits with the
+    /// branch. Unpushed, it takes a merged pull request at that very tip
+    /// (mergedByPullRequest) to count.
+    static func merged(branches: [Branch], reachable: Set<String>, pushed: Set<String>, base: String, protected: Set<String>)
+        -> [String: Reason]
+    {
         var result: [String: Reason] = [:]
         for branch in branches where !protected.contains(branch.name) {
             if branch.upstreamGone {
-                result[branch.name] = .upstreamGone
+                if pushed.contains(branch.name) { result[branch.name] = .upstreamGone }
             } else if branch.hasUpstream, reachable.contains(branch.name) {
                 result[branch.name] = .mergedInto(base)
             }
@@ -90,8 +97,25 @@ enum MergedWorktrees {
         let shortBase = base.split(separator: "/", maxSplits: 1).last.map(String.init) ?? base
         let protected = Set([mainBranch, shortBase].compactMap { $0 })
         let inWorktrees = Set(worktrees.filter { !$0.isMain }.compactMap(\.branch))
-        return merged(branches: parse(refs: refs), reachable: reachable, base: base, protected: protected)
+        let pushed = await pushedBranches(in: repo)
+        return merged(branches: parse(refs: refs), reachable: reachable, pushed: pushed, base: base, protected: protected)
             .filter { inWorktrees.contains($0.key) }
+    }
+
+    /// Branches whose tip is on some remote ref — so all their commits are.
+    /// One `rev-list` of every local commit no remote has, not one call per
+    /// branch.
+    static func pushedBranches(in repo: URL) async -> Set<String> {
+        guard let tips = try? await Git.run(["for-each-ref", "--format=%(refname:short)%00%(objectname)", "refs/heads"], in: repo),
+            let unpushed = try? await Git.run(["rev-list", "--branches", "--not", "--remotes"], in: repo)
+        else { return [] }
+        let local = Set(unpushed.split(separator: "\n").map(String.init))
+        var pushed: Set<String> = []
+        for line in tips.split(separator: "\n") {
+            let fields = line.split(separator: "\0").map(String.init)
+            if fields.count == 2, !local.contains(fields[1]) { pushed.insert(fields[0]) }
+        }
+        return pushed
     }
 
     /// `git fetch --prune`, so gone upstreams and new merges show. Best

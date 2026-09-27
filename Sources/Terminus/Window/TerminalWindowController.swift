@@ -919,9 +919,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Worktrees
 
+    /// Tabs whose shell is in `worktree` — or whose agent works there
+    /// (Claude Code moves into a worktree on its own): Clean Up and Remove
+    /// must not pull a worktree from under a running agent.
     private func tabs(in worktree: Worktree) -> [Tab] {
         store.tabs.filter { tab in
-            tab.workingDirectory.flatMap { Worktree.containing($0, in: worktrees.worktrees) } == worktree
+            [tab.workingDirectory, tab.agentDirectory].contains { directory in
+                directory.flatMap { Worktree.containing($0, in: worktrees.worktrees) } == worktree
+            }
         }
     }
 
