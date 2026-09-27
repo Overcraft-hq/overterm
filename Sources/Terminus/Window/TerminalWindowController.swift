@@ -880,8 +880,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// A scan still running: the next tick skips it (see pollAgentDirectory).
+    private var agentPollInFlight = false
+
     private func pollAgentDirectory() {
-        guard let tab = store.selected else { return }
+        // A process scan slower than the 2 s tick (a loaded machine) would
+        // otherwise stack up scans on the pool, their answers out of order.
+        guard !agentPollInFlight, let tab = store.selected else { return }
+        agentPollInFlight = true
         // The focused pane's agent first, then any other pane's.
         let panes = [tab.terminal] + tab.terminals.filter { $0 !== tab.terminal }
         let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
@@ -891,6 +897,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             let directory = agent?.workingDirectory
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    self.agentPollInFlight = false
                     // Only when it differs from the shell's: an agent in the
                     // tab's own directory changes nothing.
                     let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }

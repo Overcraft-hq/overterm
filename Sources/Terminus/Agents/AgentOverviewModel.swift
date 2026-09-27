@@ -23,6 +23,9 @@ final class AgentOverviewModel: ObservableObject {
     }
 
     @Published private(set) var cards: [Card] = []
+    /// A refresh still reading: the next poll skips rather than piling up
+    /// (and landing out of order) behind a slow one.
+    private(set) var isRefreshing = false
 
     struct Snapshot: Sendable {
         let id: Tab.ID
@@ -36,6 +39,9 @@ final class AgentOverviewModel: ObservableObject {
     }
 
     func refresh(_ tabs: [Tab], inspector: ProcessInspector) async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         let snapshots = tabs.map { tab in
             Snapshot(
                 id: tab.id, title: tab.title, color: tab.color, agent: tab.agent, activity: tab.activity,

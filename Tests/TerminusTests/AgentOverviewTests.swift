@@ -76,4 +76,18 @@ final class AgentOverviewTests: XCTestCase {
         XCTAssertEqual(AgentOverviewModel.branch(in: worktree.path), "feat/x", "through the .git file")
         XCTAssertNil(AgentOverviewModel.branch(in: base.path), "not in a repository")
     }
+
+    /// The overview polls every 2 s; a refresh slower than that must not
+    /// start another behind it.
+    @MainActor
+    func testARefreshInFlightIsNotStartedAgain() async {
+        let model = AgentOverviewModel()
+        let first = Task { await model.refresh([], inspector: ProcessInspector()) }
+        await Task.yield()
+        XCTAssertTrue(model.isRefreshing, "the first refresh is reading off the main thread")
+        await model.refresh([], inspector: ProcessInspector())  // returns at once
+        XCTAssertTrue(model.isRefreshing, "the skipped call did not end the first one's flag")
+        await first.value
+        XCTAssertFalse(model.isRefreshing)
+    }
 }
