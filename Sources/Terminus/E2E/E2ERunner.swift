@@ -2171,6 +2171,25 @@ final class E2ERunner {
         check("five working agents' tabs cost little CPU (< 5%)", busyCPU < 5, String(format: "%.2f%%", busyCPU))
         for tab in working { tab.activity.handle(.progress(active: false, failed: false), visible: true) }
 
+        // An agent leaves a thousand new files: counting their lines for
+        // the ± badge must not hold up the window.
+        let busyRepo = scratch.appendingPathComponent("many-files")
+        try? FileManager.default.createDirectory(at: busyRepo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: busyRepo)
+        let body = Data(String(repeating: "a line of generated output\n", count: 3000).utf8)  // ~80 KB
+        await Task.detached { for i in 0..<1000 { try? body.write(to: busyRepo.appendingPathComponent("gen-\(i).txt")) } }.value
+        await pause(0.3)  // let the meter tick past the setup before measuring
+        stalls.reset()
+        app.newTab(in: busyRepo)
+        let countedAll = await eventually(30) { self.app.diff.files.count == 1000 && self.app.diff.totals.added == 3_000_000 }
+        note(String(format: "1000 untracked files counted: worst main-thread stall %.0f ms", stalls.worst * 1000))
+        check("a thousand new files are counted", countedAll, "\(app.diff.files.count) files, \(app.diff.totals)")
+        // Counting on the main thread stalled 2 s, on every refresh. What
+        // remains (~0.2-0.4 s, once) is showing a 1000-entry folder: the
+        // file tree's sort and SwiftUI laying out its rows.
+        check("without stalling the main thread for long (< 600 ms)", stalls.worst < 0.6, String(format: "%.0f ms", stalls.worst * 1000))
+        try? FileManager.default.removeItem(at: busyRepo)
+
         stalls.reset()
         let started = Date()
         await runAndExpect("seq 1 300000; echo done > \(out("flood").path)", file: out("flood"), content: "done", "300 000 lines of output")

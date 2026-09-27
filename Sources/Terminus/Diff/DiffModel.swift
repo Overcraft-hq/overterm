@@ -303,7 +303,7 @@ final class DiffModel: ObservableObject {
             let numstat = (try? await Git.run(["diff", "--numstat", "-z", head], in: root)) ?? ""
             let current = (try? await Git.run(["branch", "--show-current"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
             let branchName = current?.isEmpty == false ? current : nil
-            let changed = Self.counted(GitStatus.parse(porcelainZ: status), GitStatus.parse(numstatZ: numstat), in: root)
+            let changed = await Self.counted(GitStatus.parse(porcelainZ: status), GitStatus.parse(numstatZ: numstat), in: root)
             let comparison = await Self.comparison(in: root, hasHead: hasHead, branch: branchName)
             var onBranch: [ChangedFile] = []
             var log: [BranchCommit] = []
@@ -341,8 +341,17 @@ final class DiffModel: ObservableObject {
     }
 
     /// Fills in each file's counts from numstat; an untracked file's lines
-    /// (numstat doesn't see those) are all additions.
-    private static func counted(_ files: [ChangedFile], _ counts: [String: (added: Int?, removed: Int?)], in root: URL) -> [ChangedFile] {
+    /// (numstat doesn't see those) are all additions. Off the main thread:
+    /// that reads every untracked file, and an agent can leave thousands.
+    private static func counted(
+        _ files: [ChangedFile], _ counts: [String: (added: Int?, removed: Int?)], in root: URL
+    ) async -> [ChangedFile] {
+        await Task.detached(priority: .userInitiated) { countedNow(files, counts, in: root) }.value
+    }
+
+    nonisolated private static func countedNow(
+        _ files: [ChangedFile], _ counts: [String: (added: Int?, removed: Int?)], in root: URL
+    ) -> [ChangedFile] {
         var files = files
         for i in files.indices {
             if files[i].kind == .untracked {
@@ -409,7 +418,7 @@ final class DiffModel: ObservableObject {
     private static func branchFiles(in root: URL, since mergeBase: String, untracked: [ChangedFile]) async -> [ChangedFile] {
         let names = (try? await Git.run(["diff", "--name-status", "-z", "-M", mergeBase], in: root)) ?? ""
         let numstat = (try? await Git.run(["diff", "--numstat", "-z", "-M", mergeBase], in: root)) ?? ""
-        var files = counted(GitStatus.parse(nameStatusZ: names), GitStatus.parse(numstatZ: numstat), in: root)
+        var files = await counted(GitStatus.parse(nameStatusZ: names), GitStatus.parse(numstatZ: numstat), in: root)
         let tracked = Set(files.map(\.path))
         files += untracked.filter { !tracked.contains($0.path) }
         return files.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
