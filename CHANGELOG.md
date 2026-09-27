@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.9 — 2026-09-27
+
+- session: an unreadable session or snippets file is set aside, not written over
+
 ## 1.15.8 — 2026-09-27
 
 - session: autosave keeps saving while agents work, and stops after the final save

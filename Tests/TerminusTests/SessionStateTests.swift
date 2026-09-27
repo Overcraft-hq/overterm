@@ -84,6 +84,11 @@ final class SessionStateTests: XCTestCase {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("{not json".utf8).write(to: url)
         XCTAssertNil(SessionState.load(from: url))
+        // Set aside, so the autosave that follows doesn't write over it.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        let aside = try FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("session.unreadable-") }
+        XCTAssertEqual(try aside.first.map { try String(contentsOf: $0, encoding: .utf8) }, "{not json")
     }
 
     func testUnknownAgentIsACorruptFileNotACrash() throws {

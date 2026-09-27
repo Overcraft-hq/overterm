@@ -41,7 +41,13 @@ final class SnippetTests: XCTestCase {
 
         let store = SnippetStore(url: url)
         XCTAssertTrue(store.snippets.isEmpty)
-        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "[{broken")
+        // The next save used to write over it: every snippet lost to a typo.
+        store.upsert(Snippet(name: "new", command: "ls"))
+        let aside = try FileManager.default.contentsOfDirectory(at: url.deletingLastPathComponent(), includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("snippets.unreadable-") && $0.pathExtension == "json" }
+        XCTAssertEqual(aside.count, 1)
+        XCTAssertEqual(try aside.first.map { try String(contentsOf: $0, encoding: .utf8) }, "[{broken")
+        XCTAssertEqual(SnippetStore(url: url).snippets.map(\.name), ["new"])
     }
 }
 

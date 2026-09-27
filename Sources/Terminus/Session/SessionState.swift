@@ -71,10 +71,15 @@ struct SessionState: Codable, Equatable {
     }
 
     /// Nil when there is no file or it can't be read — a bad session file
-    /// means a fresh start, never a failed launch.
+    /// means a fresh start, never a failed launch. The bad file is set aside
+    /// (UnreadableFile), not written over by the next save.
     static func load(from url: URL = defaultURL) -> SessionState? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(SessionState.self, from: data)
+        guard let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
+            UnreadableFile.setAside(url)
+            return nil
+        }
+        return state
     }
 
     func save(to url: URL = defaultURL) throws {

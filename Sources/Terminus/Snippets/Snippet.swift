@@ -65,8 +65,11 @@ final class SnippetStore: ObservableObject {
         } else if !FileManager.default.fileExists(atPath: url.path) {
             snippets = Self.starters
             save()
+        } else {
+            // Unreadable: set aside, so the next save doesn't write over what
+            // was in it; the list starts empty.
+            UnreadableFile.setAside(url)
         }
-        // An unreadable file is left alone (not overwritten) and shows empty.
     }
 
     func upsert(_ snippet: Snippet) {
