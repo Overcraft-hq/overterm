@@ -756,21 +756,32 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if let i = state.selectedIndex { store.select(index: i) }
     }
 
-    /// Saves the session a second after anything about the tabs changes, so
-    /// a crash loses at most that second.
+    /// Saves the session when anything about the tabs changes, at most once
+    /// a second, so a crash loses at most that second. A throttle, not a
+    /// debounce: a working agent changes its tab's title and activity many
+    /// times a second, and a debounce waiting for a quiet second never saved.
     func autosaveSession(to url: URL = SessionState.defaultURL) {
         let tabChanges = store.$tabs
             .map { tabs in Publishers.MergeMany(tabs.map { $0.objectWillChange }).map { _ in () }.prepend(()) }
             .switchToLatest()
         tabChanges.merge(with: store.$selectedID.map { _ in () })
-            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+            .throttle(for: .seconds(1), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] in self?.saveSession(to: url) }
             .store(in: &cancellables)
     }
 
+    /// What the last save wrote, so an unchanged session isn't written again.
+    private var savedSession: (url: URL, data: Data)?
+
     func saveSession(to url: URL = SessionState.defaultURL) {
+        // After the final save, a late autosave — the terminals closing
+        // change their tabs — would write over it without the scrollback.
+        guard !finalSaveDone else { return }
         do {
-            try sessionState.save(to: url)
+            let data = try sessionState.encoded()
+            if let savedSession, savedSession.url == url, savedSession.data == data { return }
+            try SessionState.write(data, to: url)
+            savedSession = (url, data)
         } catch {
             GhosttyRuntime.logger.error("session save failed: \(error.localizedDescription, privacy: .public)")
         }

@@ -861,6 +861,20 @@ final class E2ERunner {
         let saved = await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed" }
         check("a change is autosaved", saved)
         check("with the panes", SessionState.load()?.tabs.last?.panes != nil && SessionState.load()?.tabs.last?.focusedPane == 1)
+
+        // A working agent changes its tab many times a second; a change
+        // elsewhere must still be saved meanwhile, not after a quiet second.
+        let churn = Task { @MainActor in
+            while !Task.isCancelled {
+                tabs[0].objectWillChange.send()
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        tabs[1].customTitle = "renamed while busy"
+        check(
+            "a change is saved while another tab keeps changing",
+            await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed while busy" })
+        churn.cancel()
     }
 
     /// New Task: a worktree on a new branch next to the repo, a tab in it.
