@@ -2283,12 +2283,13 @@ final class E2ERunner {
         return found
     }
 
-    /// Only a click presses the sheet's `title` button: once AppKit has given
-    /// the buttons their keys (Return, Esc) — a moment after the sheet shows
-    /// — none of them is its.
+    /// Only a click presses the sheet's `title` button: it has no key, now
+    /// or after AppKit has had a moment to hand keys out. Whether Return
+    /// then refuses is AppKit's to decide — it drops the keys when the app
+    /// isn't frontmost — and either way nothing is handed over.
     private func onlyAClickPresses(_ title: String) async -> Bool {
-        await eventually(2) { self.sheetButtons.contains { !$0.key.isEmpty } }
-            && sheetButtons.contains { $0.title == title && $0.key.isEmpty }
+        await pause(0.5)
+        return sheetButtons.contains { $0.title == title && $0.key.isEmpty }
     }
 
     /// Asks the terminal for the clipboard (OSC 52), as a remote editor

@@ -607,11 +607,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         alert.messageText = confirmation.title
         alert.informativeText = confirmation.message(tab: store.selected?.title ?? "this tab")
         alert.accessoryView = Self.clipboardPreview(confirmation.preview())
-        // Deny (Cancel) first: Return answers no — Esc does for "Cancel" —
-        // and handing anything over takes a click. A Return already on its
-        // way to the terminal must never paste or share.
-        alert.addButton(withTitle: confirmation.denyTitle)
-        alert.addButton(withTitle: confirmation.allowTitle)
+        // Deny (Cancel) first: Return answers no, and handing anything over
+        // takes a click. A Return already on its way to the terminal must
+        // never paste or share. Set here rather than left to AppKit, which
+        // hands keys out late and drops them when the app isn't frontmost.
+        alert.addButton(withTitle: confirmation.denyTitle).keyEquivalent = "\r"
+        alert.addButton(withTitle: confirmation.allowTitle).keyEquivalent = ""
         alert.beginSheetModal(for: window) { [weak self] response in
             self?.askingClipboard = false
             answer(response == .alertSecondButtonReturn)

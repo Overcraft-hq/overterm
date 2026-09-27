@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.5 — 2026-09-27
+
+- terminal: the clipboard sheet sets its own keys — Return refuses, Allow and Paste take a click
+
 ## 1.15.4 — 2026-09-27
 
 - git: a hung git or gh is killed after two minutes, and a burst of calls can no longer deadlock
