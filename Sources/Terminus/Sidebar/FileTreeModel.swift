@@ -3,7 +3,16 @@ import Foundation
 struct FileEntry: Hashable {
     let url: URL
     let isDirectory: Bool
-    var name: String { url.lastPathComponent }
+    /// Stored, not derived: URL.lastPathComponent is slow enough that
+    /// sorting a 1000-entry folder (twice per comparison) took ~90 ms on
+    /// the main thread.
+    let name: String
+
+    init(url: URL, isDirectory: Bool) {
+        self.url = url
+        self.isDirectory = isDirectory
+        name = url.lastPathComponent
+    }
 }
 
 /// One visible line of the tree: the outline flattened, so the view is a
