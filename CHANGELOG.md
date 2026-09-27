@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.1 — 2026-09-27
+
+- terminal: Ghostty's close keys no longer free a terminal from inside its own callback
+
 ## 1.15.0 — 2026-09-26
 
 - settings: About — version, what's new, updates from GitHub releases; View Latest Changelog (⌥⌘O)

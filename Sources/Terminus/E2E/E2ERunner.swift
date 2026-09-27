@@ -1981,6 +1981,17 @@ final class E2ERunner {
         app.closeTab(idle)
         check(
             "an idle tab closes without asking", await eventually(2) { self.app.store.tabs.count == count - 1 } && window.attachedSheet == nil)
+        // Ghostty's own close_tab binding, from inside the terminal it closes,
+        // with nothing to ask: must not free the surface mid-callback.
+        app.newTab(nil)
+        await settledPrompt()
+        if let bound = app.store.selected {
+            let before = app.store.tabs.count
+            bound.terminal.perform(binding: "close_tab")
+            check(
+                "Ghostty's close_tab closes an idle tab, and the app lives",
+                await eventually(3) { self.app.store.tabs.count == before - 1 && !self.app.store.tabs.contains { $0.id == bound.id } })
+        }
         settings.confirmClose = .always
         if let another = app.store.selected {
             app.closeTab(another)

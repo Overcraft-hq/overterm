@@ -235,9 +235,17 @@ final class GhosttyRuntime {
             window?.toggleSplitZoom(view)
             return window != nil
 
+        // Closing frees surfaces — this one included, whose key handler we are
+        // still inside. Deferred to the next turn of the run loop: with
+        // Settings' "only when something runs" and an idle shell nothing asks
+        // first, and freeing here was a use-after-free.
         case GHOSTTY_ACTION_CLOSE_TAB:
             guard let window, let view else { return false }
-            window.closeTabs(of: view, mode: action.action.close_tab_mode)
+            let mode = action.action.close_tab_mode
+            DispatchQueue.main.async { [weak window, weak view] in
+                guard let window, let view else { return }
+                window.closeTabs(of: view, mode: mode)
+            }
             return true
 
         case GHOSTTY_ACTION_GOTO_TAB:
@@ -248,7 +256,7 @@ final class GhosttyRuntime {
         // unhandled they did nothing at all.
         case GHOSTTY_ACTION_CLOSE_WINDOW, GHOSTTY_ACTION_CLOSE_ALL_WINDOWS:
             guard let window = window?.window else { return false }
-            window.performClose(nil)
+            DispatchQueue.main.async { [weak window] in window?.performClose(nil) }
             return true
 
         // Ghostty's ⇧⌘P opens our palette rather than its own (which we
@@ -290,7 +298,7 @@ final class GhosttyRuntime {
             return true
 
         case GHOSTTY_ACTION_QUIT:
-            NSApp.terminate(nil)
+            DispatchQueue.main.async { NSApp.terminate(nil) }
             return true
 
         case GHOSTTY_ACTION_SET_TITLE:
