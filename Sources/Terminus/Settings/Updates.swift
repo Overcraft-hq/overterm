@@ -65,7 +65,7 @@ final class UpdateChecker: ObservableObject {
         do {
             _ = try await GitHub.run(
                 ["release", "download", "v\(release.version)", "-R", Self.repository, "-p", "*.dmg", "-D", folder.path, "--clobber"],
-                in: FileManager.default.homeDirectoryForCurrentUser)
+                in: FileManager.default.homeDirectoryForCurrentUser, timeout: nil)
             let dmg = folder.appendingPathComponent(release.dmgName ?? "Terminus-\(release.version).dmg")
             state = .downloaded(dmg)
             if !AppEnvironment.isIsolated { NSWorkspace.shared.open(dmg) }

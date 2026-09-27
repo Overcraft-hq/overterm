@@ -619,21 +619,21 @@ final class DiffModel: ObservableObject {
     /// Commits what is staged. Returns whether it worked (the panel clears
     /// its message field then).
     func commit(message: String) async -> Bool {
-        await perform(["commit", "-m", message])
+        await perform(["commit", "-m", message], timeout: nil)
     }
 
     /// Nothing staged: stage everything, then commit — Warp's one-button path.
     func commitAll(message: String) async -> Bool {
         guard await perform(["add", "--all"]) else { return false }
-        return await perform(["commit", "-m", message])
+        return await perform(["commit", "-m", message], timeout: nil)
     }
 
     @discardableResult
-    private func perform(_ arguments: [String]) async -> Bool {
+    private func perform(_ arguments: [String], timeout: TimeInterval? = Git.defaultTimeout) async -> Bool {
         guard let root else { return false }
         defer { Task { await refresh() } }
         do {
-            _ = try await Git.run(arguments, in: root)
+            _ = try await Git.run(arguments, in: root, timeout: timeout)
             actionError = nil
             return true
         } catch {

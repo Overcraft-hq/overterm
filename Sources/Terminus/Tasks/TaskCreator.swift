@@ -69,9 +69,9 @@ enum TaskCreator {
 
         let exists = (try? await Git.run(["rev-parse", "--verify", "--quiet", "refs/heads/\(branch)"], in: repo)) != nil
         if exists {
-            _ = try await Git.run(["worktree", "add", path.path, branch], in: repo)
+            _ = try await Git.run(["worktree", "add", path.path, branch], in: repo, timeout: nil)
         } else {
-            _ = try await Git.run(["worktree", "add", "-b", branch, path.path, base], in: repo)
+            _ = try await Git.run(["worktree", "add", "-b", branch, path.path, base], in: repo, timeout: nil)
         }
         return path
     }

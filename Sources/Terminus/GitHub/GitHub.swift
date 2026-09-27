@@ -27,10 +27,10 @@ enum GitHub {
     }
 
     @MainActor
-    static func run(_ arguments: [String], in directory: URL) async throws -> Data {
+    static func run(_ arguments: [String], in directory: URL, timeout: TimeInterval? = Git.defaultTimeout) async throws -> Data {
         guard let executable else { throw Failure.notInstalled }
         do {
-            return Data(try await Git.run(executable, arguments, in: directory).utf8)
+            return Data(try await Git.run(executable, arguments, in: directory, timeout: timeout).utf8)
         } catch let error as GitError {
             throw Failure.failed(message(for: error.stderr))
         }

@@ -18,17 +18,43 @@ enum Git {
     /// /usr/bin/git is the Xcode shim; a GUI app's PATH has no Homebrew.
     static let executable = URL(fileURLWithPath: "/usr/bin/git")
 
+    /// How long a call may take before it is killed. A read that hangs — a
+    /// fetch on a dead network, gh waiting on an API — would otherwise hold
+    /// its thread, and what waits on it, forever.
+    static let defaultTimeout: TimeInterval = 120
+
+    /// Processes running at once. Each blocks a thread for its whole life;
+    /// without a cap, a burst of refreshes (many tabs, many worktrees) used
+    /// up libdispatch's threads.
+    static let maxConcurrent = 16
+
+    private static let queue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "Git"
+        queue.maxConcurrentOperationCount = maxConcurrent
+        queue.qualityOfService = .userInitiated
+        return queue
+    }()
+
     /// - Parameter success: exit codes that are not failures. `git diff
     ///   --no-index` exits 1 when the files differ, which is the point.
-    static func run(_ arguments: [String], in directory: URL, success: Set<Int32> = [0]) async throws -> String {
-        try await run(executable, arguments, in: directory, success: success)
+    /// - Parameter timeout: nil for what may rightly take long — a commit
+    ///   runs the repository's hooks.
+    static func run(
+        _ arguments: [String], in directory: URL, success: Set<Int32> = [0], timeout: TimeInterval? = defaultTimeout
+    ) async throws -> String {
+        try await run(executable, arguments, in: directory, success: success, timeout: timeout)
     }
 
-    /// Any tool, the same way: a GCD thread, stderr drained, no prompts.
-    static func run(_ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32> = [0]) async throws -> String {
+    /// Any tool, the same way: a GCD thread, output read as it comes, no prompts.
+    static func run(
+        _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32> = [0],
+        timeout: TimeInterval? = defaultTimeout
+    ) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result { try runBlocking(tool, arguments, in: directory, success: success) })
+            queue.addOperation {
+                continuation.resume(
+                    with: Result { try runBlocking(tool, arguments, in: directory, success: success, timeout: timeout) })
             }
         }
     }
@@ -38,7 +64,9 @@ enum Git {
     /// stays under it (FileTreeModel.checkIgnored).
     static let maxArguments = 4000
 
-    private static func runBlocking(_ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>) throws -> String {
+    static func runBlocking(
+        _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>, timeout: TimeInterval?
+    ) throws -> String {
         guard arguments.count <= maxArguments else {
             throw GitError(arguments: Array(arguments.prefix(4)), status: -1, stderr: "too many arguments (\(arguments.count))")
         }
@@ -56,23 +84,65 @@ enum Git {
         process.standardOutput = out
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
+        // Both pipes are read as data arrives, not by a thread blocked on
+        // each: a full pipe would block git, and the old stderr drain waited
+        // for a pool thread that a burst of calls had all taken.
+        let outReader = PipeReader(out)
+        let errReader = PipeReader(err)
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         try process.run()
 
-        // Drain stderr concurrently: a full pipe would block git, and git
-        // would never close stdout.
-        var errData = Data()
-        let drained = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            errData = err.fileHandleForReading.readDataToEndOfFile()
-            drained.signal()
+        var timedOut = false
+        if exited.wait(timeout: timeout.map { .now() + $0 } ?? .distantFuture) == .timedOut {
+            timedOut = true
+            process.terminate()
+            if exited.wait(timeout: .now() + 2) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                exited.wait()
+            }
         }
-        let outData = out.fileHandleForReading.readDataToEndOfFile()
-        drained.wait()
-        process.waitUntilExit()
+        // A child it left behind (ssh under fetch) can hold the pipes open
+        // past its exit; don't wait for that.
+        let grace = DispatchTime.now() + 2
+        outReader.finish(waitingUntil: grace)
+        errReader.finish(waitingUntil: grace)
 
-        guard success.contains(process.terminationStatus) else {
-            throw GitError(arguments: arguments, status: process.terminationStatus, stderr: String(decoding: errData, as: UTF8.self))
+        if timedOut {
+            throw GitError(arguments: arguments, status: -1, stderr: "\(tool.lastPathComponent) timed out after \(Int(timeout ?? 0)) s")
         }
-        return String(decoding: outData, as: UTF8.self)
+        guard success.contains(process.terminationStatus) else {
+            throw GitError(arguments: arguments, status: process.terminationStatus, stderr: String(decoding: errReader.data, as: UTF8.self))
+        }
+        return String(decoding: outReader.data, as: UTF8.self)
     }
+}
+
+/// Collects what a pipe delivers, on FileHandle's own queue.
+private final class PipeReader: @unchecked Sendable {
+    private let handle: FileHandle
+    private let lock = NSLock()
+    private var buffer = Data()
+    private let closed = DispatchSemaphore(value: 0)
+
+    init(_ pipe: Pipe) {
+        handle = pipe.fileHandleForReading
+        handle.readabilityHandler = { [weak self] handle in
+            let chunk = handle.availableData
+            guard let self else { return }
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+                closed.signal()
+            } else {
+                lock.withLock { buffer.append(chunk) }
+            }
+        }
+    }
+
+    /// Waits for end of file until `deadline`, then stops reading.
+    func finish(waitingUntil deadline: DispatchTime) {
+        if closed.wait(timeout: deadline) == .timedOut { handle.readabilityHandler = nil }
+    }
+
+    var data: Data { lock.withLock { buffer } }
 }
