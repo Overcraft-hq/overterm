@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.14 — 2026-09-27
+
+- build: builds with Xcode 27 (Swift 6.4) — the saved split layout declares Sendable
+
 ## 1.15.13 — 2026-09-27
 
 - diff: counting untracked files' lines no longer stalls the window
