@@ -442,6 +442,17 @@ final class E2ERunner {
         check("⌘S writes the file", (try? String(contentsOf: file, encoding: .utf8))?.contains("let added = 1") == true)
         check("and clears the unsaved mark", !editor.document.isDirty)
 
+        // Unsaved changes keep the window when its last tab closes.
+        textView?.insertText("// unsaved\n", replacementRange: textView?.selectedRange() ?? NSRange())
+        check("…unsaved again", app.unsavedEditorFile == "hello.swift")
+        let lastTabs = app.store.tabs
+        app.closeTabsWithoutAsking(lastTabs)
+        check(
+            "closing the last tab keeps the window while the editor has unsaved changes",
+            await eventually(3) { self.window.isVisible && self.app.store.tabs.count == 1 && !lastTabs.contains { $0.id == self.app.store.tabs[0].id } })
+        editor.saveDocument(nil)
+        await settledPrompt()
+
         try? "rewritten by an agent\n".write(to: file, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: file.path)
         editor.reloadIfChangedOnDisk()

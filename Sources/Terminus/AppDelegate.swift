@@ -41,6 +41,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
     /// Quitting closes every tab: always confirmed — unless the window's own
     /// close was just confirmed, or nothing is open.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Unsaved editor changes ask first, whatever Settings says about tabs
+        // (closing the window asks about them itself).
+        if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedEditorFile {
+            let alert = NSAlert()
+            alert.messageText = "“\(file)” has unsaved changes."
+            alert.informativeText = "Quitting loses them. Save it (⌘S) first, or quit anyway."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Quit Anyway")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        }
         guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
             TerminalWindowController.needsCloseConfirmation(controller.store.tabs)
         else { return .terminateNow }

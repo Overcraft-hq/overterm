@@ -1733,7 +1733,25 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         hosts[tab.id] = nil
         store.remove(tab)
         updateAttentionBadge()
-        if store.tabs.isEmpty { window?.close() }
+        guard store.tabs.isEmpty else { return }
+        // The editor's unsaved changes keep the window: a fresh tab takes the
+        // last one's place instead of the window closing — window.close()
+        // skips windowShouldClose, which is where they are asked about.
+        if unsavedEditorFile != nil {
+            newTab(from: nil)
+        } else {
+            window?.close()
+        }
+    }
+
+    /// Removes tabs at once, as their shells exiting would (E2E: the last
+    /// tab's close path, without a sheet).
+    func closeTabsWithoutAsking(_ tabs: [Tab]) { tabs.forEach { removeTab($0) } }
+
+    /// The editor's file, when it has unsaved changes.
+    var unsavedEditorFile: String? {
+        guard let editor, editor.document.isDirty else { return nil }
+        return editor.document.name
     }
 
     func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
