@@ -73,7 +73,9 @@ final class ProcessInspectorTests: XCTestCase {
         _ = inspector.tree(root: getpid(), tag: nil)
         Thread.sleep(forTimeInterval: 0.5)
         let cpu = inspector.tree(root: getpid(), tag: nil).first { $0.pid == busy.processIdentifier }?.totalCPU ?? 0
-        XCTAssertGreaterThan(cpu, 50, "a busy loop uses most of a core")
+        // Measured at all, not how much: a busy loop gets well under a core
+        // on a loaded machine (41% at load 10), an idle process reads ~0.
+        XCTAssertGreaterThan(cpu, 10, "a busy loop's CPU shows between two samples")
     }
 
     func testParseProcArgs() {
