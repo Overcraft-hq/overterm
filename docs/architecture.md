@@ -96,17 +96,23 @@ tracking loop, `acceptsFirstMouse`), unfocused panes under a dim.
 are done with; `WorktreeModel.merged` holds it, refreshed with the list.
 A branch is merged when
 
-- its upstream is `[gone]` — pushed, then deleted on the remote: GitHub's
-  delete-on-merge, and the only trace a squash merge leaves; or
+- its upstream is `[gone]` (pushed, then deleted on the remote: GitHub's
+  delete-on-merge) **and** its tip is on some remote ref — every commit is
+  pushed (`pushedBranches`: one `rev-list --branches --not --remotes`);
+  a gone branch with commits no remote has (made after a squash merge) is
+  never deleted on that alone; or
 - it has an upstream and its tip is reachable from the default branch
-  (`origin/HEAD`, else the main worktree's branch).
+  (`origin/HEAD`, else the main worktree's branch); or
+- `gh` reports a merged pull request whose head is exactly the branch's tip
+  (`mergedByPullRequest`) — how a squash merge is recognised.
 
 Never pushed never counts: a New Task branch with no commits is reachable
 from main too. A worktree whose folder was deleted by hand (`prunable`) is
 cleanable as well. Rows get a purple merge mark; the Worktrees header gets a
 count that runs **Clean Up Merged Worktrees…** (also File menu, ⌘P, a row's
 menu): `git fetch --prune` (ssh in BatchMode), then one sheet listing what
-goes and what stays — kept: a tab in it, uncommitted changes, locked. It runs
+goes and what stays — kept: a tab in it (a shell's directory or where its
+agent works), uncommitted changes, locked. It runs
 `git worktree remove` without `--force` and, if ticked, `git branch -D`
 (`-d` refuses a squash-merged branch). The Worktrees reload button fetches too.
 

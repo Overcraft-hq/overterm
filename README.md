@@ -55,8 +55,9 @@ theme, keybinds) applies as-is.
 - **Snippets** with `{{placeholders}}`; click to type in, Run to execute.
 - **Command palette** (⌘P) over actions, tabs, worktrees and snippets.
 - **Merged worktree clean-up**: merged worktrees (merged into the default
-  branch, or deleted on the remote after a squash) get a purple mark; one
-  click removes them and their branches, keeping any with changes or a tab.
+  branch, or squash-merged by a pull request) get a purple mark; one click
+  removes them and their branches, keeping any with changes, a tab, or
+  commits no remote has.
 - **From Finder**: right-click → Open With → Terminus (a folder opens as a
   tab, a file in the editor, in the tab already in its repository), or
   Services → **New Terminus Tab Here**; dropping on the Dock icon works too.
