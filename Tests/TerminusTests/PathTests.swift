@@ -35,4 +35,11 @@ final class PathTests: XCTestCase {
         XCTAssertEqual(TerminalWindowController.relativePath(URL(fileURLWithPath: "/repo2/a"), cwd: "/repo"), "/repo2/a")
         XCTAssertEqual(TerminalWindowController.relativePath(url, cwd: nil), "/other/a.swift")
     }
+
+    func testPastedFilesAreQuotedAsDropsAre() {
+        let urls = ["/tmp/shot.png", "/tmp/My Shot.png", "/tmp/x;$(touch pwned)", "/tmp/it's"].map(URL.init(fileURLWithPath:))
+        XCTAssertEqual(
+            TerminalView.pastedPaths(urls),
+            #"/tmp/shot.png '/tmp/My Shot.png' '/tmp/x;$(touch pwned)' '/tmp/it'\''s'"#)
+    }
 }

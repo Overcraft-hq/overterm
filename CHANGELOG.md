@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.6 — 2026-09-27
+
+- terminal: pasted files are shell-quoted like dropped ones
+
 ## 1.15.5 — 2026-09-27
 
 - terminal: the clipboard sheet sets its own keys — Return refuses, Allow and Paste take a click

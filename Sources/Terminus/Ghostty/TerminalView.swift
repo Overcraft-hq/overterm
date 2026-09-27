@@ -606,13 +606,18 @@ final class TerminalView: NSView {
 
     // MARK: Clipboard
 
+    /// Files paste as their paths, which is what an agent prompt wants when
+    /// you paste a screenshot in — quoted as a drop's are: a file named
+    /// `x;$(…)` must not become a command once Return is pressed.
+    nonisolated static func pastedPaths(_ urls: [URL]) -> String {
+        urls.map { TerminalWindowController.shellQuoted($0.path) }.joined(separator: " ")
+    }
+
     func readClipboard(_ location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) -> Bool {
         guard let surface, let pasteboard = GhosttyRuntime.pasteboard(location) else { return false }
-        // Files paste as their (shell-escaped) paths, which is what an agent
-        // prompt wants when you drop a screenshot in.
         let string: String
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-            string = urls.map { $0.path.replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
+            string = Self.pastedPaths(urls)
         } else if let text = pasteboard.string(forType: .string) {
             string = text
         } else {
