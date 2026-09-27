@@ -27,6 +27,12 @@ final class EditorDocument: ObservableObject {
             // Through a symlink to what it points at: attributesOfItem
             // describes the link itself.
             let attributes = try FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path)
+            // A FIFO or a device would block the main thread on read — for a
+            // FIFO, until something writes to it.
+            guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                unavailable = "Not a regular file."
+                return
+            }
             if let size = attributes[.size] as? Int, size > Self.maxBytes {
                 unavailable = "Too large to edit here (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)))."
                 return

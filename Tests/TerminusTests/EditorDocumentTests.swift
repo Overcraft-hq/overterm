@@ -88,6 +88,15 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "two\n")
     }
 
+    @MainActor
+    func testAFIFOIsNotReadNorBlocks() throws {
+        let fifo = dir.appendingPathComponent("pipe")
+        XCTAssertEqual(mkfifo(fifo.path, 0o600), 0)
+        let doc = EditorDocument()
+        doc.load(fifo)  // blocked forever before: nothing writes to it
+        XCTAssertEqual(doc.unavailable, "Not a regular file.")
+    }
+
     func testLineIndex() {
         let starts = LineIndex.starts(of: "ab\ncd\n\nef" as NSString)
         XCTAssertEqual(starts, [0, 3, 6, 7])
