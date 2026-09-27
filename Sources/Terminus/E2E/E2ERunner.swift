@@ -1587,6 +1587,10 @@ final class E2ERunner {
         check("⌘W closes the focused pane", await eventually(2) { tab.terminals.count == 1 } && window.attachedSheet == nil)
         check("the last pane fills the tab again", await eventually(2) { first.frame.size == host.bounds.size })
         check("and has the keyboard", await eventually(2) { self.window.firstResponder === first })
+        // A close that arrives for a pane already gone (confirmed in a
+        // sheet, an exit noticed late) must not take the tab with it.
+        app.removePane(right, from: tab)
+        check("a late close of a gone pane leaves the tab", app.store.tabs.contains { $0.id == tab.id } && tab.terminals == [first])
     }
 
     /// A stand-in gh (fixtures in, posts logged) drives the real calls:

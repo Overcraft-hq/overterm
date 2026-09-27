@@ -517,7 +517,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Takes `pane` out of `tab` — the tab itself when it was its last pane.
-    private func removePane(_ pane: TerminalView, from tab: Tab) {
+    /// A pane no longer in the tab is left alone: a close confirmed in a
+    /// sheet, or an exit noticed late, after the pane had already gone
+    /// would otherwise close the tab — and the panes left in it — unasked.
+    func removePane(_ pane: TerminalView, from tab: Tab) {
+        guard tab.splits.contains(pane) else { return }
         guard tab.isSplit, let rest = tab.splits.removing(pane) else { return removeTab(tab) }
         let wasFocused = tab.terminal === pane
         pane.close()
