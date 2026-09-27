@@ -250,10 +250,31 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     @objc func saveDocument(_ sender: Any?) {
+        save(overwriting: false)
+    }
+
+    private func save(overwriting: Bool) {
         do {
-            try document.save(textView.string)
+            try document.save(textView.string, overwriting: overwriting)
+        } catch is EditorDocument.ChangedOnDisk {
+            confirmOverwrite()
         } catch {
             view.window.map { NSAlert(error: error).beginSheetModal(for: $0) }
+        }
+    }
+
+    /// Something else wrote the file while it had edits here. Cancel first:
+    /// Return keeps both — theirs on disk, yours in the editor.
+    private func confirmOverwrite() {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "“\(document.name)” changed on disk"
+        alert.informativeText = "Something else saved it since you opened it — an agent, most likely. Saving replaces those changes with yours."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Save Anyway").keyEquivalent = ""
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertSecondButtonReturn else { return }
+            self?.save(overwriting: true)
         }
     }
 

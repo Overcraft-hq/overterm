@@ -56,6 +56,38 @@ final class EditorDocumentTests: XCTestCase {
         XCTAssertTrue(doc.changedOnDisk)
     }
 
+    @MainActor
+    func testASaveDoesNotSilentlyOverwriteAnOutsideChange() throws {
+        let url = dir.appendingPathComponent("a.txt")
+        try "mine\n".write(to: url, atomically: true, encoding: .utf8)
+        let doc = EditorDocument()
+        doc.load(url)
+        doc.markEdited()
+        // An agent writes it meanwhile (a later mtime than the load's).
+        try "theirs\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: url.path)
+        XCTAssertThrowsError(try doc.save("edited\n")) { XCTAssertTrue($0 is EditorDocument.ChangedOnDisk) }
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "theirs\n")
+        XCTAssertTrue(doc.isDirty)
+        try doc.save("edited\n", overwriting: true)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "edited\n")
+        XCTAssertFalse(doc.changedOnDisk)
+    }
+
+    @MainActor
+    func testSavingThroughASymlinkKeepsTheLink() throws {
+        let target = dir.appendingPathComponent("real.md")
+        let link = dir.appendingPathComponent("link.md")
+        try "one\n".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let doc = EditorDocument()
+        doc.load(link)
+        XCTAssertEqual(doc.text, "one\n")
+        try doc.save("two\n")
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), target.path)
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "two\n")
+    }
+
     func testLineIndex() {
         let starts = LineIndex.starts(of: "ab\ncd\n\nef" as NSString)
         XCTAssertEqual(starts, [0, 3, 6, 7])

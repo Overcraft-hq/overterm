@@ -24,7 +24,9 @@ final class EditorDocument: ObservableObject {
         unavailable = nil
         text = ""
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            // Through a symlink to what it points at: attributesOfItem
+            // describes the link itself.
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path)
             if let size = attributes[.size] as? Int, size > Self.maxBytes {
                 unavailable = "Too large to edit here (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)))."
                 return
@@ -51,21 +53,35 @@ final class EditorDocument: ObservableObject {
         isDirty = true
     }
 
-    func save(_ newText: String) throws {
+    /// The file changed on disk while it had unsaved edits here: saving would
+    /// silently throw away what changed it (usually an agent).
+    struct ChangedOnDisk: LocalizedError {
+        let name: String
+        var errorDescription: String? { "“\(name)” changed on disk since you opened it." }
+    }
+
+    /// Writes `newText`. Refuses with `ChangedOnDisk` when the file changed
+    /// meanwhile, unless `overwriting`. Written through a symlink to its
+    /// target — an atomic write to the link would replace it with a file.
+    func save(_ newText: String, overwriting: Bool = false) throws {
         guard let url, unavailable == nil else { return }
-        try Data(newText.utf8).write(to: url, options: .atomic)
+        if changedOnDisk, !overwriting { throw ChangedOnDisk(name: name) }
+        let target = url.resolvingSymlinksInPath()
+        try Data(newText.utf8).write(to: target, options: .atomic)
         text = newText
         isDirty = false
-        loadedModification = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+        loadedModification = Self.modification(of: url)
     }
 
     /// The file changed on disk since it was loaded or saved (an agent
     /// edited it).
     var changedOnDisk: Bool {
-        guard let url, let loadedModification,
-            let current = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-        else { return false }
+        guard let url, let loadedModification, let current = Self.modification(of: url) else { return false }
         return current > loadedModification
+    }
+
+    private static func modification(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate] as? Date
     }
 
     func close() {
