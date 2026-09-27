@@ -48,6 +48,7 @@ final class E2ERunner {
         "sessions": { await $0.sessionsScenario() },
         "settings": { await $0.settingsScenario() },
         "updates": { await $0.updatesScenario() },
+        "performance": { await $0.performanceScenario() },
         "clipboard": { await $0.clipboardScenario() },
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
@@ -80,6 +81,12 @@ final class E2ERunner {
     }
 
     // MARK: Primitives
+
+    /// A measurement, printed whether or not a check passes.
+    private func note(_ text: String) {
+        print("E2E INFO \(text)")
+        fflush(stdout)
+    }
 
     private func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
         if !ok { failures += 1 }
@@ -2078,6 +2085,62 @@ final class E2ERunner {
         SettingsWindowController.shared.window?.close()
     }
 
+    /// How heavy Terminus is to live in: idle with ten tabs (two split),
+    /// then a flood of output. Measures this process's CPU time, its memory
+    /// footprint, and the longest the main thread went without running a
+    /// 50 ms timer — what you'd feel as a hitch.
+    private func performanceScenario() async {
+        await settledPrompt()
+        for i in 0..<9 {
+            app.newTab(nil)
+            if i == 3 || i == 6 { app.splitRight(nil) }
+        }
+        await settledPrompt()
+        await pause(3)  // shells started, first prompts drawn, polls warmed up
+
+        let stalls = StallMeter()
+        let cpu0 = Self.cpuSeconds()
+        let wall0 = Date()
+        await pause(20)
+        let idleCPU = (Self.cpuSeconds() - cpu0) / Date().timeIntervalSince(wall0) * 100
+        let idleStall = stalls.worst
+        let footprint = Self.footprintMB()
+        note(
+            String(
+                format: "idle, %d tabs / %d panes: CPU %.2f%%, footprint %.0f MB, worst main-thread stall %.0f ms",
+                app.store.tabs.count, app.store.tabs.map(\.terminals.count).reduce(0, +), idleCPU, footprint, idleStall * 1000))
+        check("idle with ten tabs costs little CPU (< 3%)", idleCPU < 3, String(format: "%.2f%%", idleCPU))
+        check("and never stalls the main thread (< 150 ms)", idleStall < 0.15, String(format: "%.0f ms", idleStall * 1000))
+        check("in a sane amount of memory (< 900 MB)", footprint < 900, String(format: "%.0f MB", footprint))
+
+        stalls.reset()
+        let started = Date()
+        await runAndExpect("seq 1 300000; echo done > \(out("flood").path)", file: out("flood"), content: "done", "300 000 lines of output")
+        let flood = Date().timeIntervalSince(started)
+        let floodStall = stalls.worst
+        note(String(format: "flood: 300 000 lines in %.1f s, worst main-thread stall %.0f ms", flood, floodStall * 1000))
+        check("the window stays responsive while output floods (< 250 ms)", floodStall < 0.25, String(format: "%.0f ms", floodStall * 1000))
+        stalls.stop()
+    }
+
+    /// This process's user + system CPU time, in seconds.
+    private static func cpuSeconds() -> Double {
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        func seconds(_ t: timeval) -> Double { Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000 }
+        return seconds(usage.ru_utime) + seconds(usage.ru_stime)
+    }
+
+    /// Memory as Activity Monitor's "Memory" column counts it.
+    private static func footprintMB() -> Double {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+
     /// ⌘P shows, searches across kinds, and hides.
     private func paletteScenario() async {
         app.showPalette(nil)
@@ -2596,4 +2659,31 @@ final class E2EPromise: NSObject, NSFilePromiseProviderDelegate {
             completionHandler(error)
         }
     }
+}
+
+/// The longest the main thread went without running a 50 ms timer.
+@MainActor
+private final class StallMeter {
+    private var timer: Timer?
+    private var last = Date()
+    private(set) var worst: TimeInterval = 0
+
+    init() {
+        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = Date()
+                self.worst = max(self.worst, now.timeIntervalSince(self.last) - 0.05)
+                self.last = now
+            }
+        }
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    func reset() {
+        worst = 0
+        last = Date()
+    }
+
+    func stop() { timer?.invalidate() }
 }
