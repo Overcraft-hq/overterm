@@ -201,11 +201,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         // At least as big as the visible area, so a click below the last line
         // still lands in the text view; then show the top-left corner.
+        ruler.textDidChange()
         textView.minSize = scrollView.contentSize
         textView.sizeToFit()
-        scrollView.contentView.scroll(to: .zero)
+        // The ruler floats over the clip view (macOS 14+), which makes room
+        // with a content inset as wide as the gutter: the top-left is minus
+        // that inset. Scrolled to .zero, the gutter covered the first
+        // characters of every line — six in a file of 70 000 lines.
+        let insets = scrollView.contentView.contentInsets
+        scrollView.contentView.scroll(to: NSPoint(x: -insets.left, y: -insets.top))
         scrollView.reflectScrolledClipView(scrollView.contentView)
-        ruler.textDidChange()
     }
 
     /// An agent may have rewritten the file: pick that up unless you have

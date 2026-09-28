@@ -2261,6 +2261,17 @@ final class E2ERunner {
             await eventually(10) { self.app.editor?.document.url == bigSource }
             await pause(1)
             let openStall = stalls.worst
+            if let textView = Self.find(NSTextView.self, in: app.editor?.view, where: { _ in true }),
+                let clip = textView.enclosingScrollView?.contentView
+            {
+                // The gutter floats over the clip view: the first character
+                // (after the inset and padding) must start right of it.
+                let firstCharacter =
+                    textView.textContainerInset.width + (textView.textContainer?.lineFragmentPadding ?? 0) - clip.bounds.minX
+                check(
+                    "the gutter covers none of the \(size / 1000) KB file's text", firstCharacter >= clip.contentInsets.left,
+                    "first character at \(firstCharacter), gutter \(clip.contentInsets.left)")
+            }
             if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
                 app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-\(size / 1000)k.png"))
             }
