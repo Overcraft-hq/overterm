@@ -2201,6 +2201,37 @@ final class E2ERunner {
         note(String(format: "a watched folder churning: CPU %.2f%%", churnCPU))
         check("changes in folders never opened cost little (< 10%)", churnCPU < 10, String(format: "%.2f%%", churnCPU))
 
+        // A build writing steadily into an ignored folder of a repo: the
+        // badge must still move for a real edit, and refreshes must not
+        // stack up (the app's CPU and its git processes').
+        let buildRepo = scratch.appendingPathComponent("building")
+        try? FileManager.default.createDirectory(at: buildRepo.appendingPathComponent("out"), withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: buildRepo)
+        try? "out/\n".write(to: buildRepo.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        try? "one\n".write(to: buildRepo.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        try? await git(["add", "."], in: buildRepo)
+        try? await git(["commit", "-q", "-m", "init"], in: buildRepo)
+        app.newTab(in: buildRepo)
+        await eventually(5) { self.app.diff.root?.lastPathComponent == "building" }
+        await pause(1)
+        let build = Process()
+        build.executableURL = URL(fileURLWithPath: "/bin/sh")
+        build.arguments = ["-c", "i=0; while :; do echo x > out/o$((i % 50)); i=$((i + 1)); sleep 0.01; done"]
+        build.currentDirectoryURL = buildRepo
+        try? build.run()
+        let build0 = Self.cpuSeconds(children: true)
+        let buildWall0 = Date()
+        await pause(3)
+        try? "one\ntwo\n".write(to: buildRepo.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        let seen = await eventually(4) { self.app.diff.totals.added == 1 }
+        await pause(3)
+        let buildCPU = (Self.cpuSeconds(children: true) - build0) / Date().timeIntervalSince(buildWall0) * 100
+        build.terminate()
+        note(String(format: "a build writing into an ignored folder: CPU %.2f%% (with git's)", buildCPU))
+        check("an edit reaches the badge while a build writes (< 4 s)", seen, "\(app.diff.totals)")
+        check("and refreshing costs little meanwhile (< 25%)", buildCPU < 25, String(format: "%.2f%%", buildCPU))
+        try? FileManager.default.removeItem(at: buildRepo)
+
         // An agent leaves a thousand new files: counting their lines for
         // the ± badge must not hold up the window.
         let busyRepo = scratch.appendingPathComponent("many-files")
@@ -2306,11 +2337,16 @@ final class E2ERunner {
     }
 
     /// This process's user + system CPU time, in seconds.
-    private static func cpuSeconds() -> Double {
-        var usage = rusage()
-        getrusage(RUSAGE_SELF, &usage)
+    /// `children`: plus the processes it ran that have ended (git).
+    private static func cpuSeconds(children: Bool = false) -> Double {
         func seconds(_ t: timeval) -> Double { Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000 }
-        return seconds(usage.ru_utime) + seconds(usage.ru_stime)
+        var total = 0.0
+        for who in children ? [RUSAGE_SELF, RUSAGE_CHILDREN] : [RUSAGE_SELF] {
+            var usage = rusage()
+            getrusage(who, &usage)
+            total += seconds(usage.ru_utime) + seconds(usage.ru_stime)
+        }
+        return total
     }
 
     /// Memory as Activity Monitor's "Memory" column counts it.

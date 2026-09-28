@@ -249,13 +249,19 @@ final class DiffModel: ObservableObject {
         gitWatcher?.stop()
         gitWatcher = nil
         pendingRefresh?.cancel()
+        pendingRefresh = nil
+        pendingSince = nil
         guard let url else { return }
-        watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
-        Task { await watchGitDirectories(of: url) }
+        Task { await watch(url) }
         Task { await refresh() }
     }
 
-    private func watchGitDirectories(of url: URL) async {
+    /// Watches the checkout, and git's state outside it — only once git says
+    /// it is a work tree. A tab in ~ (no repository) watched all of home, and
+    /// every change in ~/Library ran a git status that could only fail.
+    private func watch(_ url: URL) async {
+        guard (try? await Git.run(["rev-parse", "--is-inside-work-tree"], in: url)) != nil, url == root else { return }
+        watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
         let directories = await Self.gitDirectories(outside: url)
         // The tab may have moved on while git answered.
         guard url == root, !directories.isEmpty else { return }
@@ -282,16 +288,54 @@ final class DiffModel: ObservableObject {
 
     /// Coalesces a burst of file events (an agent writing many files, git
     /// writing its index and refs) into one git status.
+    /// When the first change of the burst now waiting for a refresh came.
+    private var pendingSince: Date?
+    /// The refresh running, and whether another was asked for meanwhile.
+    private var refreshLoop: Task<Void, Never>?
+    private var refreshAgain = false
+
+    /// A refresh 0.4 s after the changes stop — but no later than 2 s after
+    /// the first: a build writing steadily kept a plain debounce waiting,
+    /// and the badge never moved.
     private func scheduleRefresh() {
+        let now = Date()
+        if let pendingSince, let pendingRefresh, !pendingRefresh.isCancelled, now.timeIntervalSince(pendingSince) >= 2 { return }
+        if pendingSince == nil { pendingSince = now }
         pendingRefresh?.cancel()
         pendingRefresh = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
-            await self?.refresh()
+            guard !Task.isCancelled, let self else { return }
+            self.pendingSince = nil
+            self.pendingRefresh = nil
+            await self.refresh()
         }
     }
 
+    /// One refresh at a time: asked while one runs, it runs once more after
+    /// it — however many asked — and every caller returns after a refresh
+    /// that started after its call. Overlapping ones (each six-odd git
+    /// processes) stacked up under a stream of changes.
     func refresh() async {
+        if let refreshLoop {
+            refreshAgain = true
+            await refreshLoop.value
+            return
+        }
+        let loop = Task { @MainActor [weak self] in
+            guard let self else { return }
+            repeat {
+                self.refreshAgain = false
+                await self.refreshOnce()
+            } while self.refreshAgain
+            // In the same turn as the last check: a call arriving later
+            // starts a new loop rather than waiting on this finished one.
+            self.refreshLoop = nil
+        }
+        refreshLoop = loop
+        await loop.value
+    }
+
+    private func refreshOnce() async {
         guard let root else { return }
         generation += 1
         let ticket = generation
