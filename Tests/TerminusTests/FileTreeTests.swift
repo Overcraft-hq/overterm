@@ -118,6 +118,22 @@ extension FileTreeTests {
         XCTAssertEqual(tree.rows.map(\.entry.name), ["src", "new.swift"], "root listing is still cached")
     }
 
+    /// FSEvents reports real paths (/private/var/…, symlinks resolved),
+    /// not the URL the tree was given.
+    @MainActor
+    func testInvalidateMatchesTheRealPathFSEventsReports() throws {
+        try mkdir("src")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        tree.toggle(try XCTUnwrap(tree.rows.first))
+        touch("src/new.swift")
+        // As the watcher hands it over: a string, with a trailing slash.
+        let reported = FileTreeModel.realPath(dir.appendingPathComponent("src")) + "/"
+        XCTAssertTrue(reported.hasPrefix("/private/"), reported)
+        tree.invalidate(paths: [reported])
+        XCTAssertEqual(tree.rows.map(\.entry.name), ["src", "new.swift"])
+    }
+
     @MainActor
     func testInvalidateIgnoresGitAndUnlistedFolders() throws {
         try mkdir("src")

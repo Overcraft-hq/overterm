@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.17 — 2026-09-28
+
+- sidebar: a busy watched folder (a tab in ~) no longer costs 35-50% CPU
+
 ## 1.15.16 — 2026-09-28
 
 - diff: a file's diff builds its lines lazily — a 3000-line diff froze the window 9 s

@@ -2171,6 +2171,28 @@ final class E2ERunner {
         check("five working agents' tabs cost little CPU (< 5%)", busyCPU < 5, String(format: "%.2f%%", busyCPU))
         for tab in working { tab.activity.handle(.progress(active: false, failed: false), visible: true) }
 
+        // A tab in ~ watches everything under it, and ~/Library never stops
+        // changing: events for folders nobody opened must cost nearly nothing.
+        let churnRoot = scratch.appendingPathComponent("churn")
+        let folders = (0..<200).map { churnRoot.appendingPathComponent("d\($0)") }
+        for folder in folders { try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        app.newTab(in: churnRoot)
+        await eventually(5) { self.app.tree.root?.lastPathComponent == "churn" }
+        await pause(1)
+        // Written from another process, so this one's CPU is the watching alone.
+        let churning = Process()
+        churning.executableURL = URL(fileURLWithPath: "/bin/sh")
+        churning.arguments = ["-c", "i=0; while :; do echo x > d$((i % 200))/f$((i % 7)); i=$((i + 1)); done"]
+        churning.currentDirectoryURL = churnRoot
+        try? churning.run()
+        let churn0 = Self.cpuSeconds()
+        let churnWall0 = Date()
+        await pause(8)
+        let churnCPU = (Self.cpuSeconds() - churn0) / Date().timeIntervalSince(churnWall0) * 100
+        churning.terminate()
+        note(String(format: "a watched folder churning: CPU %.2f%%", churnCPU))
+        check("changes in folders never opened cost little (< 10%)", churnCPU < 10, String(format: "%.2f%%", churnCPU))
+
         // An agent leaves a thousand new files: counting their lines for
         // the ± badge must not hold up the window.
         let busyRepo = scratch.appendingPathComponent("many-files")

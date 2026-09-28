@@ -37,6 +37,11 @@ final class FileTreeModel: ObservableObject {
 
     private var expanded: Set<URL> = []
     private var listings: [URL: [FileEntry]] = [:]
+    /// Each listed folder by its real path — what FSEvents reports — so an
+    /// event is one lookup. Matching by standardizing URLs cost a stat per
+    /// event per listing: a tab in ~ ran the app at 35-40% CPU while
+    /// ~/Library churned.
+    private var listedByRealPath: [String: URL] = [:]
     /// Expanded folders per root, so hopping between tabs in different repos
     /// comes back to the tree as you left it.
     private var expandedByRoot: [URL: Set<URL>] = [:]
@@ -55,25 +60,37 @@ final class FileTreeModel: ObservableObject {
         root = url
         expanded = url.flatMap { expandedByRoot[$0] } ?? []
         listings = [:]
+        listedByRealPath = [:]
         ignored = []
         ignoreChecked = []
         selection = nil
         rebuild()
         watcher?.stop()
-        watcher = url.flatMap { DirectoryWatcher(root: $0) { [weak self] in self?.invalidate($0) } }
+        watcher = url.flatMap { DirectoryWatcher(root: $0) { [weak self] in self?.invalidate(paths: $0) } }
     }
 
     /// Forgets the cached listings of `directories` and rebuilds, if any of
     /// them was listed. Changes under .git (constant while git works) and in
     /// folders never opened cost nothing.
     func invalidate(_ directories: [URL]) {
-        let stale = directories.map(\.standardizedFileURL).filter { dir in
-            !dir.pathComponents.contains(".git") && listings.keys.contains { $0.standardizedFileURL == dir }
-        }
+        invalidate(paths: directories.map(\.path))
+    }
+
+    /// The watcher's form: FSEvents paths, possibly with a trailing slash.
+    /// Only a listed folder costs more than a dictionary lookup — .git and
+    /// its insides are never listed, so they drop out here too.
+    func invalidate(paths: [String]) {
+        let stale = Set(
+            paths.compactMap { path -> URL? in
+                if let dir = listedByRealPath[path] { return dir }
+                // /var and /tmp are /private/var and /private/tmp — no stat needed.
+                return path.hasPrefix("/var/") || path.hasPrefix("/tmp/") ? listedByRealPath["/private" + path] : nil
+            })
         guard !stale.isEmpty else { return }
         for dir in stale {
-            listings = listings.filter { $0.key.standardizedFileURL != dir }
-            ignoreChecked = ignoreChecked.filter { $0.standardizedFileURL != dir }
+            listings[dir] = nil
+            ignoreChecked.remove(dir)
+            listedByRealPath = listedByRealPath.filter { $0.value != dir }
         }
         // A deleted folder that was expanded would otherwise stay "open".
         expanded = expanded.filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -98,6 +115,7 @@ final class FileTreeModel: ObservableObject {
     /// Re-reads every listed folder (keeping what is expanded).
     func reload() {
         listings = [:]
+        listedByRealPath = [:]
         ignoreChecked = []
         rebuild()
     }
@@ -133,8 +151,23 @@ final class FileTreeModel: ObservableObject {
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
         listings[dir] = entries
+        // Under the path as given too (a caller may name it that way), and
+        // each with a trailing slash, as FSEvents often reports folders: an
+        // event is then a plain lookup, no string trimmed.
+        for path in Set([Self.realPath(dir), dir.path]) {
+            listedByRealPath[path] = dir
+            listedByRealPath[path + "/"] = dir
+        }
         checkIgnored(entries, in: dir)
         return entries
+    }
+
+    /// The path FSEvents reports for `dir`: symlinks resolved, /var as
+    /// /private/var (URL.resolvingSymlinksInPath drops that /private).
+    nonisolated static func realPath(_ dir: URL) -> String {
+        guard let resolved = realpath(dir.path, nil) else { return dir.path }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     /// Paths per `check-ignore`, well under Git.maxArguments.

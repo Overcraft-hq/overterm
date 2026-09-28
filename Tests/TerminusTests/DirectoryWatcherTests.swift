@@ -13,10 +13,11 @@ final class DirectoryWatcherTests: XCTestCase {
 
         let fired = expectation(description: "change reported for sub/")
         fired.assertForOverFulfill = false
-        let resolved = dir.appendingPathComponent("sub").resolvingSymlinksInPath().path
+        // What FSEvents reports: the real path (/private/var/…), as a string.
+        let resolved = FileTreeModel.realPath(dir.appendingPathComponent("sub"))
         let watcher = try XCTUnwrap(
             DirectoryWatcher(root: dir, latency: 0.05) { urls in
-                if urls.contains(where: { $0.resolvingSymlinksInPath().path == resolved }) { fired.fulfill() }
+                if urls.contains(where: { $0 == resolved || $0 == resolved + "/" }) { fired.fulfill() }
             })
         defer { watcher.stop() }
 

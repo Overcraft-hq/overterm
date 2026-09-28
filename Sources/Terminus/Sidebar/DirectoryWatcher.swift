@@ -2,8 +2,9 @@ import CoreServices
 import Foundation
 
 /// Recursive change notifications for directory trees, via FSEvents.
-/// Reports the directories whose contents changed, coalesced over `latency`,
-/// on the main queue.
+/// Reports the directories whose contents changed — as paths, which is all
+/// anyone needs (a URL each cost more than the check that used it) —
+/// coalesced over `latency`, on the main queue.
 @MainActor
 final class DirectoryWatcher {
     /// nonisolated(unsafe) so deinit can reach it: the stream holds an
@@ -11,14 +12,14 @@ final class DirectoryWatcher {
     /// Only ever touched on the main queue (init, stop, deinit of a
     /// main-actor object).
     private nonisolated(unsafe) var stream: FSEventStreamRef?
-    private let onChange: ([URL]) -> Void
+    private let onChange: ([String]) -> Void
 
-    convenience init?(root: URL, latency: TimeInterval = 0.3, onChange: @escaping ([URL]) -> Void) {
+    convenience init?(root: URL, latency: TimeInterval = 0.3, onChange: @escaping ([String]) -> Void) {
         self.init(roots: [root], latency: latency, onChange: onChange)
     }
 
     /// One stream over several trees.
-    init?(roots: [URL], latency: TimeInterval = 0.3, onChange: @escaping ([URL]) -> Void) {
+    init?(roots: [URL], latency: TimeInterval = 0.3, onChange: @escaping ([String]) -> Void) {
         self.onChange = onChange
         var context = FSEventStreamContext(
             version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
@@ -26,10 +27,11 @@ final class DirectoryWatcher {
             guard let info else { return }
             // kFSEventStreamCreateFlagUseCFTypes: paths is a CFArray of CFString.
             let array = unsafeBitCast(paths, to: NSArray.self)
-            let urls = (0..<count).compactMap { (array[$0] as? String).map { URL(fileURLWithPath: $0) } }
+            // A watched home folder reports thousands a second.
+            let paths = (0..<count).compactMap { array[$0] as? String }
             nonisolated(unsafe) let pointer = info
             MainActor.assumeIsolated {
-                Unmanaged<DirectoryWatcher>.fromOpaque(pointer).takeUnretainedValue().onChange(urls)
+                Unmanaged<DirectoryWatcher>.fromOpaque(pointer).takeUnretainedValue().onChange(paths)
             }
         }
         guard
