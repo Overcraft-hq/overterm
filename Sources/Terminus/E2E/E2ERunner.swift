@@ -2053,7 +2053,14 @@ final class E2ERunner {
 
         // Keyboard Shortcuts: the real menus and the real Ghostty keybinds.
         let shortcuts = Shortcuts.all()
-        check("the shortcuts list reads the menus", shortcuts.contains { $0.title == "Settings…" && $0.keys == "⌘," })
+        // Settings… is built as ⌘, but AppKit localizes key equivalents to the
+        // keyboard layout, keeping the key: on Turkish Q it is ⌘Ö. The list
+        // shows what the menu does, so the menu item sets the expectation.
+        let settingsItem = NSApp.mainMenu?.items.first?.submenu?.items.first { $0.action == #selector(AppDelegate.showSettings(_:)) }
+        let settingsKeys = settingsItem.map { Shortcuts.format(keyEquivalent: $0.keyEquivalent, modifiers: $0.keyEquivalentModifierMask) }
+        check(
+            "the shortcuts list reads the menus", settingsKeys != nil && shortcuts.contains { $0.title == "Settings…" && $0.keys == settingsKeys },
+            "menu: \(settingsKeys ?? "no Settings…"), list: " + shortcuts.filter { $0.title == "Settings…" }.map(\.keys).joined(separator: ", "))
         check(
             "and the terminal's keys from the Ghostty config", shortcuts.contains { $0.group == .terminal && $0.title == "Split right" && $0.keys == "⌘D" },
             shortcuts.filter { $0.group == .terminal }.map { "\($0.title) \($0.keys)" }.joined(separator: ", "))

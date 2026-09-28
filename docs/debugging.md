@@ -110,3 +110,4 @@ in `deinit`.
 | Diff empty in a fresh repo | No HEAD yet: diff against the empty tree (`DiffModel.emptyTree`); `restore --staged` needs HEAD, use `rm --cached --force`. |
 | Idle shell reported as running | Shell integration hasn't reported the prompt yet (first seconds after launch). |
 | The app aborts with `Swift/FlatMap.swift: Unexpectedly found nil` while an agent starts or exits | `lazy.compactMap(…).first` read a pane's process tree twice and force-unwrapped the second read, by which time the agent was gone. Read live state once, in a loop (`TerminalWindowController.firstAgent`). |
+| Keyboard Shortcuts shows another key than `MainMenu` sets (Settings… as ⌘Ö) | AppKit localizes menu key equivalents to the keyboard layout, keeping the physical key (Turkish Q: ⌘, → ⌘Ö), once the app's run loop runs; `keyEquivalent` then reads the localized one. The list reads the live menus, so it matches what the menu shows — expect keys from the menu item, not a literal. |
