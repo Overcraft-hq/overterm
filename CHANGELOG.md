@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.24 — 2026-09-28
+
+- agents: transcript parse state is kept for the latest 120 Claude sessions, not every one ever read
+
 ## 1.15.23 — 2026-09-28
 
 - diff: the badge keeps up while a build writes, refreshes run one at a time, and only in repositories

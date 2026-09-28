@@ -35,7 +35,10 @@ final class ClaudeUsageReader: @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    private var progress: [URL: Progress] = [:]
+    /// The transcripts read lately: a week of sessions would otherwise all
+    /// stay here, each with everything parsed from it.
+    private var progress = RecentlyUsed<URL, Progress>(capacity: 120)
+    var trackedTranscripts: Int { lock.withLock { progress.count } }
 
     /// Where Claude Code keeps transcripts (an isolated run's own, see
     /// AppEnvironment). Overridable for tests.
