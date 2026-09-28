@@ -6,7 +6,7 @@ import UserNotifications
 /// Dock badge counting such tabs.
 @MainActor
 enum AttentionNotifier {
-    nonisolated static let tabIDKey = "tabID"
+    static let tabIDKey = "tabID"
 
     /// Notifications an isolated run would have posted (it posts none).
     static var suppressed = 0
@@ -28,22 +28,9 @@ enum AttentionNotifier {
         let request = UNNotificationRequest(identifier: tab.id.uuidString, content: content, trigger: nil)
         // Asks for permission the first time; if refused, the badge and the
         // Dock bounce still say it.
-        center.requestAuthorization(options: [.alert, .sound, .badge], completionHandler: authorized(then: request))
-    }
-
-    /// What runs once permission is answered — built outside the main
-    /// actor. UserNotifications calls it on a queue of its own; a closure
-    /// written in this @MainActor type is main-actor-isolated, and Swift 6
-    /// traps when it runs anywhere else: the app crashed (EXC_BREAKPOINT in
-    /// dispatch_assert_queue) at an agent's notification while in the
-    /// background, 2026-09-28.
-    nonisolated static func authorized(
-        then request: UNNotificationRequest, add: @escaping @Sendable (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
-    ) -> @Sendable (Bool, (any Error)?) -> Void {
-        nonisolated(unsafe) let request = request
-        return { granted, _ in
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             guard granted else { return }
-            add(request)
+            center.add(request)
         }
     }
 

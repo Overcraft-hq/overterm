@@ -7,10 +7,6 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
-## 1.15.28 — 2026-09-28
-
-- agents: an agent's notification no longer crashes the app while it is in the background
-
 ## 1.15.27 — 2026-09-28
 
 - diff: the changes pane renders nothing while hidden — closing it over a big diff froze the window
