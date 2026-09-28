@@ -49,6 +49,7 @@ final class E2ERunner {
         "settings": { await $0.settingsScenario() },
         "updates": { await $0.updatesScenario() },
         "performance": { await $0.performanceScenario() },
+        "bigFiles": { await $0.bigFilesScenario() },
         "clipboard": { await $0.clipboardScenario() },
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
@@ -2242,6 +2243,47 @@ final class E2ERunner {
         let floodStall = stalls.worst
         note(String(format: "flood: 300 000 lines in %.1f s, worst main-thread stall %.0f ms", flood, floodStall * 1000))
         check("the window stays responsive while output floods (< 250 ms)", floodStall < 0.25, String(format: "%.0f ms", floodStall * 1000))
+        stalls.stop()
+    }
+
+    /// Big files in the editor: opening one, then typing in it (each pause
+    /// re-highlights) — just under the highlighting cap, and far over it.
+    private func bigFilesScenario() async {
+        await settledPrompt()
+        let stalls = StallMeter()
+        let codeLine = "    let value = compute(\"a string\", 42) // a comment here\n"
+        for size in [290_000, 4_000_000] {
+            let bigSource = scratch.appendingPathComponent("big-\(size).swift")
+            try? String(repeating: codeLine, count: size / codeLine.utf8.count).write(to: bigSource, atomically: true, encoding: .utf8)
+            await pause(0.3)
+            stalls.reset()
+            app.openInEditor(bigSource)
+            await eventually(10) { self.app.editor?.document.url == bigSource }
+            await pause(1)
+            let openStall = stalls.worst
+            if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+                app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-\(size / 1000)k.png"))
+            }
+            stalls.reset()
+            if let editor = app.editor, let textView = Self.find(NSTextView.self, in: editor.view, where: { _ in true }) {
+                let expected = (try? String(contentsOf: bigSource, encoding: .utf8))?.utf16.count ?? -1
+                check("the \(size / 1000) KB file is all in the editor", textView.string.utf16.count == expected, "\(textView.string.utf16.count) of \(expected)")
+                textView.setSelectedRange(NSRange(location: 100, length: 0))
+                for _ in 0..<5 {
+                    textView.insertText("x", replacementRange: textView.selectedRange())
+                    await pause(0.3)  // past the highlight debounce
+                }
+                check("and the typing landed", textView.string.utf16.count == expected + 5)
+                textView.undoManager?.removeAllActions()
+            }
+            let typeStall = stalls.worst
+            note(
+                String(
+                    format: "editor, %d KB: open stall %.0f ms, typing stall %.0f ms", size / 1000, openStall * 1000, typeStall * 1000))
+            check("typing in a \(size / 1000) KB file stays responsive (< 100 ms)", typeStall < 0.1, String(format: "%.0f ms", typeStall * 1000))
+            app.editor?.document.close()
+        }
+
         stalls.stop()
     }
 

@@ -61,6 +61,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         // manager's line fragments.
         let storage = NSTextStorage()
         let layout = NSLayoutManager()
+        // Only what is on screen gets laid out: a 4 MB file took 1.8 s to open
+        // with the whole of it laid out first. The ruler draws the visible
+        // fragments only, so it is unaffected.
+        layout.allowsNonContiguousLayout = true
         storage.addLayoutManager(layout)
         // Unbounded width: no wrapping. (A 0-wide container lays out nothing —
         // the gutter numbered empty lines.)
@@ -192,7 +196,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.isHidden = document.unavailable != nil
         textView.string = document.text
         language = SyntaxHighlighter.language(for: url)
-        highlight()
+        highlight(loading: true)
         textView.undoManager?.removeAllActions()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         // At least as big as the visible area, so a click below the last line
@@ -232,8 +236,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// Re-colours the whole document. Attributes only — never the text —
     /// so undo is untouched.
-    private func highlight() {
+    /// Past SyntaxHighlighter.maxLength there are no colours to update, and
+    /// re-setting the base attributes over the whole text on every pause in
+    /// typing made it all lay out again (165 ms a pause in a 4 MB file): it is
+    /// done once, as the file loads.
+    private func highlight(loading: Bool = false) {
         guard let storage = textView.textStorage else { return }
+        guard loading || storage.length <= SyntaxHighlighter.maxLength else { return }
         let full = NSRange(location: 0, length: storage.length)
         let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)

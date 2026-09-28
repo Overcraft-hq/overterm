@@ -104,11 +104,19 @@ enum LineIndex {
     /// UTF-16 offsets of every line start (the first is 0).
     static func starts(of text: NSString) -> [Int] {
         var starts = [0]
-        var i = 0
         let length = text.length
-        while i < length {
-            if text.character(at: i) == 0x0A { starts.append(i + 1) }
-            i += 1
+        // In chunks: character(at:) per character is a message send each,
+        // and this runs on every edit (the gutter) — 4 MB made that visible.
+        let chunk = 64 * 1024
+        var buffer = [unichar](repeating: 0, count: chunk)
+        var base = 0
+        while base < length {
+            let count = min(chunk, length - base)
+            buffer.withUnsafeMutableBufferPointer { pointer in
+                text.getCharacters(pointer.baseAddress!, range: NSRange(location: base, length: count))
+                for i in 0..<count where pointer[i] == 0x0A { starts.append(base + i + 1) }
+            }
+            base += count
         }
         return starts
     }
