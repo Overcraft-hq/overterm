@@ -457,7 +457,10 @@ final class ClaudeEditsReader: @unchecked Sendable {
                 try? handle.seek(toOffset: state.offset)
                 var carry = Data()
                 while true {
-                    let chunk = handle.readData(ofLength: Self.chunkSize)
+                    // In its own pool: readData's buffer is autoreleased, and without
+                    // one every chunk of the file stayed until the whole read ended
+                    // (+161 MB for a 160 MB transcript).
+                    let chunk = autoreleasepool { handle.readData(ofLength: Self.chunkSize) }
                     if chunk.isEmpty { break }
                     var data = carry
                     data.append(chunk)
