@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.19 — 2026-09-28
+
+- search: ⌘F ranks off the main thread, and a superseded or runaway git grep is stopped
+
 ## 1.15.18 — 2026-09-28
 
 - merge: the Xcode 27 build fix (tagged v1.15.14) together with 1.15.14-1.15.17

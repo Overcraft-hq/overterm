@@ -56,4 +56,27 @@ final class GitRunTests: XCTestCase {
         XCTAssertEqual(output, "early\n")
         XCTAssertLessThan(Date().timeIntervalSince(start), 10)
     }
+
+    func testOutputLimitStopsTheToolAndKeepsWhatCame() async throws {
+        // `yes` never ends on its own: only the limit stops it.
+        let start = Date()
+        let output = try await Git.run(sh, ["-c", "yes line"], in: tmp, timeout: 20, outputLimit: 64 * 1024)
+        XCTAssertGreaterThanOrEqual(output.utf8.count, 64 * 1024)
+        XCTAssertTrue(output.hasPrefix("line\nline\n"))
+        XCTAssertLessThan(Date().timeIntervalSince(start), 5)
+    }
+
+    func testCancellingTheTaskStopsTheTool() async throws {
+        let sh = sh
+        let tmp = tmp
+        let start = Date()
+        let task = Task { try await Git.run(sh, ["-c", "sleep 30"], in: tmp, timeout: 60) }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("a cancelled 30 s sleep returned")
+        } catch is CancellationError {}
+        XCTAssertLessThan(Date().timeIntervalSince(start), 5)
+    }
 }

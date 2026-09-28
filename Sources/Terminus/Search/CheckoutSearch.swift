@@ -36,14 +36,21 @@ enum CheckoutSearch {
     }
 
     /// Lines containing `query` (literal, case-insensitive), a few per file.
+    /// git grep has no overall limit: a two-letter query in a big repo
+    /// printed a few lines of nearly every file (~0.8 s, megabytes) to show
+    /// 50. Past this much output it is stopped.
+    static let grepOutputLimit = 256 * 1024
+
     static func grep(_ query: String, in root: URL, perFile: Int = 3, limit: Int = 50) async -> [ContentMatch] {
         guard query.count >= 2 else { return [] }
         // -z: NUL between path, line and text, so any file name survives;
-        // exit 1 means no matches.
-        let output =
+        // exit 1 means no matches. Cancelling the task stops git.
+        var output =
             (try? await Git.run(
                 ["grep", "-z", "-n", "-I", "-F", "-i", "--no-color", "--untracked", "--max-count=\(perFile)", "-e", query],
-                in: root, success: [0, 1])) ?? ""
+                in: root, success: [0, 1], outputLimit: grepOutputLimit)) ?? ""
+        // Stopped mid-line: the last record may be cut.
+        if output.utf8.count >= grepOutputLimit, let end = output.lastIndex(of: "\n") { output = String(output[...end]) }
         return Array(parse(grep: output).prefix(limit))
     }
 

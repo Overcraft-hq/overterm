@@ -75,20 +75,24 @@ final class SpotlightModel: ObservableObject {
 
     private func search() {
         terminal?.search.needle = query
+        // The last keystroke's search is superseded: cancelling it stops its
+        // git grep too.
         pending?.cancel()
         let query = self.query
-        names = CheckoutSearch.rank(files, query: query)
-        rebuild()
-        guard let root, query.count >= 2 else {
-            contents = []
-            rebuild()
-            return
-        }
+        let files = self.files
+        let root = self.root
+        if query.count < 2 { contents = [] }
         pending = Task { [weak self] in
+            // Off the main thread: every file of the checkout, per keystroke.
+            let ranked = await Task.detached(priority: .userInitiated) { CheckoutSearch.rank(files, query: query) }.value
+            guard !Task.isCancelled, let self, self.query == query else { return }
+            self.names = ranked
+            self.rebuild()
+            guard let root, query.count >= 2 else { return }
             try? await Task.sleep(nanoseconds: 150_000_000)  // settle typing
             guard !Task.isCancelled else { return }
             let found = await CheckoutSearch.grep(query, in: root)
-            guard !Task.isCancelled, let self, self.query == query else { return }
+            guard !Task.isCancelled, self.query == query else { return }
             self.contents = found
             self.rebuild()
         }
