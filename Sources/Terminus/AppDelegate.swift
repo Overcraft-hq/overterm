@@ -115,12 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         windowController?.windowDidBecomeKey(notification)
     }
 
-    /// Clicking a tab's notification brings that tab up.
-    func userNotificationCenter(
+    /// Clicking a tab's notification brings that tab up. nonisolated: the
+    /// system may call it off the main thread, and this conformance's
+    /// isolation check would trap there (as AttentionNotifier's completion
+    /// did); the tab is revealed on the main thread.
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let id = (response.notification.request.content.userInfo[AttentionNotifier.tabIDKey] as? String).flatMap(UUID.init(uuidString:)) {
-            windowController?.reveal(tabID: id)
+        let id = (response.notification.request.content.userInfo[AttentionNotifier.tabIDKey] as? String).flatMap(UUID.init(uuidString:))
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if let id { self.windowController?.reveal(tabID: id) }
+            }
         }
         completionHandler()
     }
