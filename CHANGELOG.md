@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.15.18 — 2026-09-28
+
+- merge: the Xcode 27 build fix (tagged v1.15.14) together with 1.15.14-1.15.17
+
 ## 1.15.17 — 2026-09-28
 
 - sidebar: a busy watched folder (a tab in ~) no longer costs 35-50% CPU
@@ -21,6 +25,9 @@ version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 
 ## 1.15.14 — 2026-09-27
 
+Two commits took this number at once; the tag is the first.
+
+- build: builds with Xcode 27 (Swift 6.4) — the saved split layout declares Sendable (tagged v1.15.14)
 - agents: the 2 s polls skip a tick while the last scan still runs
 
 ## 1.15.13 — 2026-09-27

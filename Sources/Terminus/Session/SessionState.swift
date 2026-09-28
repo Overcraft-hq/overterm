@@ -22,7 +22,10 @@ struct SessionState: Codable, Equatable {
     }
 
     /// A split tab's layout: each pane's directory, each split's shape.
-    indirect enum PaneLayout: Codable, Equatable {
+    /// Sendable spelled out: Swift 6.4 doesn't infer it for an enum that
+    /// holds itself, and without it neither TabState nor SessionState is
+    /// Sendable — `empty` then fails to build.
+    indirect enum PaneLayout: Codable, Equatable, Sendable {
         /// `scrollback`: the pane's saved text, a file in Scrollback.directory.
         case pane(directory: String?, scrollback: String? = nil)
         case split(axis: String, ratio: Double, first: PaneLayout, second: PaneLayout)
