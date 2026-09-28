@@ -43,15 +43,22 @@ final class SurfaceProcesses {
 
     /// The same, pairing with `children` — ProcessInspector.children(of:
     /// getpid()), listed off the main thread.
-    func loginPID(of terminal: TerminalView, children: [(pid: pid_t, start: UInt64)]) -> pid_t? {
+    func loginPID(of terminal: TerminalView, children: [(pid: pid_t, start: UInt64, name: String)]) -> pid_t? {
         if let pid = pairedLoginPID(of: terminal) { return pid }
         let live = Set(children.map(\.pid))
         // A dead child's pairing is over (the tab's shell exited).
         for entry in entries where entry.pid.map({ !live.contains($0) }) == true { entry.pid = nil }
-        let claimed = Set(entries.compactMap(\.pid))
-        let free = children.filter { !claimed.contains($0.pid) }.map(\.pid)
+        let free = Self.unclaimedLogins(children, claimed: Set(entries.compactMap(\.pid)))
         let waiting = entries.filter { $0.pid == nil && $0.terminal?.surface != nil }.sorted { $0.created < $1.created }
         for (entry, pid) in zip(waiting, free) { entry.pid = pid }
         return entries.first { $0.terminal === terminal }?.pid
+    }
+
+    /// The children a surface may pair with: `login` processes no terminal
+    /// has, oldest first. Only logins — the app's git and gh are its
+    /// children too, and a surface created while one ran was paired with
+    /// it: its tab's processes, agent and "still running" were git's.
+    nonisolated static func unclaimedLogins(_ children: [(pid: pid_t, start: UInt64, name: String)], claimed: Set<pid_t>) -> [pid_t] {
+        children.filter { $0.name == "login" && !claimed.contains($0.pid) }.sorted { $0.start < $1.start }.map(\.pid)
     }
 }

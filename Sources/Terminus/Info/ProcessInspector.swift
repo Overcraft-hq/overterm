@@ -108,12 +108,16 @@ final class ProcessInspector: @unchecked Sendable {
         return Self.assemble(nodes)
     }
 
-    /// This process's direct children with their start times (µs), oldest
-    /// first — libghostty's `login` per surface.
-    static func children(of parent: pid_t) -> [(pid: pid_t, start: UInt64)] {
-        allPIDs().compactMap { pid -> (pid_t, UInt64)? in
-            guard let info = kinfo(pid), info.parent == parent else { return nil }
-            return (pid, info.start)
+    /// This process's direct children with their start times (µs) and
+    /// command names, oldest first — libghostty's `login` per surface, and
+    /// whatever else the app runs (git, gh).
+    static func children(of parent: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] {
+        allPIDs().compactMap { pid -> (pid_t, UInt64, String)? in
+            guard let proc = kinfoProc(pid), proc.kp_eproc.e_ppid == parent else { return nil }
+            let start = proc.kp_proc.p_starttime
+            // p_comm, from sysctl: readable for root's processes too (login).
+            let name = withUnsafeBytes(of: proc.kp_proc.p_comm) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+            return (pid, UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec), name)
         }
         .sorted { $0.1 < $1.1 }
     }
