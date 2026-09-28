@@ -322,7 +322,9 @@ private struct FileCard: View {
             if !collapsed {
                 Divider().opacity(0.3)
                 if let diff, !diff.lines.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
+                    // Lazy: a file at the cap (DiffModel.maxDiffLines) built
+                    // every line's view at once and froze the window ~9 s.
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(diff.lines) { line in
                             DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable()
                         }

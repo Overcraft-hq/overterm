@@ -2190,6 +2190,29 @@ final class E2ERunner {
         check("without stalling the main thread for long (< 600 ms)", stalls.worst < 0.6, String(format: "%.0f ms", stalls.worst * 1000))
         try? FileManager.default.removeItem(at: busyRepo)
 
+        // An agent rewrites a big file: its 3000-line diff (the cap) opens in
+        // the changes pane.
+        let bigRepo = scratch.appendingPathComponent("big-diff")
+        try? FileManager.default.createDirectory(at: bigRepo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: bigRepo)
+        let bigFile = bigRepo.appendingPathComponent("big.swift")
+        try? (0..<3000).map { "let value\($0) = \($0)" }.joined(separator: "\n").write(to: bigFile, atomically: true, encoding: .utf8)
+        try? await git(["add", "."], in: bigRepo)
+        try? await git(["commit", "-q", "-m", "init"], in: bigRepo)
+        try? (0..<3000).map { "let value\($0) = \($0 * 2)" }.joined(separator: "\n").write(to: bigFile, atomically: true, encoding: .utf8)
+        app.newTab(in: bigRepo)
+        await eventually(10) { self.app.diff.files.count == 1 }
+        await pause(0.3)
+        stalls.reset()
+        if app.diffItem?.isCollapsed == true { app.toggleDiff(nil) }
+        let shown = await eventually(15) { self.app.diff.diffs["big.swift"]?.truncated == true }
+        await pause(1)  // drawn
+        note(String(format: "3000-line diff opened: worst main-thread stall %.0f ms", stalls.worst * 1000))
+        check("a diff at the line cap loads", shown, "\(app.diff.diffs["big.swift"]?.lines.count ?? 0) lines")
+        check("and opens without freezing the window (< 500 ms)", stalls.worst < 0.5, String(format: "%.0f ms", stalls.worst * 1000))
+        if app.diffItem?.isCollapsed == false { app.toggleDiff(nil) }
+        try? FileManager.default.removeItem(at: bigRepo)
+
         stalls.reset()
         let started = Date()
         await runAndExpect("seq 1 300000; echo done > \(out("flood").path)", file: out("flood"), content: "done", "300 000 lines of output")
