@@ -100,9 +100,40 @@ theme, keybinds) applies as-is.
 | ⌘-click | Open a printed `path:line` in the editor |
 | ⌥ while dropping files | Plain quoted paths, even where Claude Code runs |
 
+## Install
+
+**Without Xcode: the release DMG.** Download `Terminus-<version>.dmg` from
+[Releases](https://github.com/terminus-app/terminus/releases), open it and
+drag **Terminus** to **Applications** (Apple Silicon, macOS 13+). It is signed
+ad hoc and not notarized, so macOS stops the first open: right-click → **Open**
+(macOS 15 and later: System Settings → Privacy & Security → **Open Anyway**),
+or `xattr -dr com.apple.quarantine /Applications/Terminus.app`. Releases are
+published by hand (Releasing, below).
+
+**With Xcode: build from source.** The Command Line Tools alone can't build
+GhosttyKit: it needs `xcodebuild` and the Metal compiler. With the
+requirements under Build:
+
+```sh
+mise trust && mise install   # pinned Zig
+make ghosttykit              # GhosttyKit from the pinned Ghostty (once, ~2 min)
+make install                 # build Terminus.app and copy it to /Applications
+```
+
 ## Build
 
-Requirements: macOS 13+, Xcode 16, [mise](https://mise.jdx.dev).
+Requirements: macOS 13+, Xcode 16 or 26.2, [mise](https://mise.jdx.dev).
+Newer SDKs don't work yet: the pinned Zig 0.15.2 can't link against the macOS
+26.5 and 27 SDKs (their libSystem lists only arm64e), and Xcode 27's SwiftPM
+builds an app that macOS runs in 13.0 compatibility mode. With such an Xcode
+selected, point the shell at a supported one; the system's choice stays:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode-26.2.app/Contents/Developer  # that Xcode's path
+```
+
+Xcode 26 downloads the Metal compiler separately. If `make ghosttykit` can't
+find `metal`: `xcodebuild -downloadComponent MetalToolchain`.
 
 ```sh
 mise trust && mise install   # pinned Zig
@@ -139,8 +170,8 @@ the unit tests, builds the app and a DMG, and publishes release `v<VERSION>`
 already released: bump first. Only by hand: nothing triggers it on push.
 Locally, the same pieces: `make app dmg` and `Scripts/release-notes.sh`.
 
-The release is signed ad hoc and not notarized: the first open needs
-right-click → Open (the notes say so).
+The release is signed ad hoc and not notarized: its notes say how to open it
+the first time, as Install does above.
 
 Details: `docs/` (architecture, Ghostty embedding, debugging).
 
