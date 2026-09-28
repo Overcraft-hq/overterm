@@ -252,6 +252,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         diffItem.isCollapsed = !showDiff
         diff.panelVisible = showDiff
         self.diffItem = diffItem
+        // Dragged open from collapsed: the pane must have its content again
+        // (it renders nothing while hidden). Only ever on — dragged shut, it
+        // just keeps rendering, as it always did.
+        split.onResize = { [weak self] in
+            guard let self, let item = self.diffItem, !item.isCollapsed, !self.diff.panelVisible else { return }
+            self.diff.panelVisible = true
+        }
         watchPullRequests()
 
         // The terminal pane never gives up all its width to the panels
@@ -1873,8 +1880,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func toggleDiff(_ sender: Any?) {
         guard let diffItem else { return }
         let show = diffItem.isCollapsed
-        diffItem.animator().isCollapsed = !show
+        // First: closing, the content goes before the pane animates shut.
         diff.panelVisible = show
+        diffItem.animator().isCollapsed = !show
         AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
         updatePullRequestVisibility()
         if !show { focusSelectedTerminal() }

@@ -7,6 +7,15 @@ import AppKit
 final class WideDividerSplitViewController: NSSplitViewController {
     private static let grabSlop: CGFloat = 4
 
+    /// After the panes change size — a divider dragged, a pane collapsed or
+    /// opened, by the app or by hand.
+    var onResize: (() -> Void)?
+
+    override func splitViewDidResizeSubviews(_ notification: Notification) {
+        super.splitViewDidResizeSubviews(notification)
+        onResize?()
+    }
+
     override func splitView(
         _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect,
         ofDividerAt dividerIndex: Int

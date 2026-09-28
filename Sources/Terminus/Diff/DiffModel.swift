@@ -117,7 +117,8 @@ final class DiffModel: ObservableObject {
     /// The branch's commits that touched each file, newest first.
     @Published private(set) var commitsByFile: [String: [BranchCommit]] = [:]
 
-    var panelVisible = false {
+    /// Published: the pane renders nothing while hidden (RightPaneView).
+    @Published var panelVisible = false {
         didSet {
             guard panelVisible != oldValue, panelVisible else { return }
             Task { await refresh() }

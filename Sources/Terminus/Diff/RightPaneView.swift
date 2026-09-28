@@ -23,6 +23,18 @@ struct RightPaneView: View {
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
     var body: some View {
+        // Nothing while the pane is collapsed: its views kept updating
+        // behind it (a thousand changed files' rows), and collapsing it over
+        // a 3000-line diff animated every laid-out row — the window froze
+        // for up to a second.
+        if diff.panelVisible {
+            content
+        } else {
+            theme.strip
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 tab(.changes) {
