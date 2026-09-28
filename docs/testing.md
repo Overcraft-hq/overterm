@@ -97,6 +97,14 @@ make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null
   vanished from the middle and left zsh at `for>`; a plain retry then typed
   into the continuation prompt. Only for commands that are fine to run twice.
 - **Keep typed lines short**: put code in a script and run the script.
+- **`clipboard` is the scenario this hits most.** Ten runs at load 6 on
+  2026-09-28: 7 clean; 2 lost the `python3 …` line entirely, retry
+  included (the terminal showed only "Last login"), and every later check
+  failed in a chain; 1 answered Deny in the sheet — the app completed the
+  request — yet the reader had no reply after 35 s. With logging on
+  (`confirmClipboard` → complete, each time) that one did not recur, so it
+  is open: a lost reply, or the reader stuck restoring the tty. Rerun
+  before suspecting the app; if it recurs, log what the reader receives.
 - **Output on disk isn't output on screen.** A file the command wrote can
   exist before libghostty's IO thread has drawn the output; wait on
   `TerminalView.visibleText` before clicking at a screen position.
