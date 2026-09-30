@@ -60,7 +60,7 @@ jobs:
 
       - name: Restore GhosttyKit
         id: ghosttykit
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Frameworks
           key: ghosttykit-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'mise.toml') }}
