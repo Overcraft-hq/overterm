@@ -154,7 +154,7 @@ hoc and never touch the keychain):
 
 ```make
 # local.mk (gitignored); list yours with: security find-identity -v -p codesigning
-SIGN_IDENTITY ?= Apple Development: you@example.com (TEAMID1234)
+SIGN_IDENTITY ?= Apple Development: Your Name (TEAMID1234)
 ```
 
 The first signing asks for the keychain's permission to use the key
