@@ -15,15 +15,15 @@ final class AgentSettingsTests: XCTestCase {
     }
 
     func testAgentDefaultsKeepTodaysBehaviour() throws {
-        let suite = "terminus-agent-settings-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let settings = Settings(defaults: defaults)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-agent-settings-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("settings.json")
+        let settings = Settings(url: url, watch: false)
         XCTAssertEqual(settings.defaultTaskAgent, .claude)
         XCTAssertEqual(settings.worktreeLocation, .sibling)
         XCTAssertEqual(settings.arguments(for: .claude), "")
-        settings.taskAgent = "shell"
-        XCTAssertNil(Settings(defaults: defaults).defaultTaskAgent, "a shell only")
+        settings.set("agents.newTaskAgent", .string("shell"))
+        XCTAssertNil(Settings(url: url, watch: false).defaultTaskAgent, "a shell only")
     }
 
     func testWorktreeLocations() {

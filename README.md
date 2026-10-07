@@ -11,13 +11,19 @@ theme, keybinds) applies as-is.
 
 ## What's in it
 
-- **Settings** (⌘,): General (reopening tabs and their text, where new tabs
-  open, when closing asks, notifications), Appearance (font, size, theme,
-  padding, cursor — over your Ghostty config, applied to open terminals at
-  once), Agents (arguments for Claude and Codex, New Task's agent, worktree
-  place and base), Keyboard Shortcuts (every one, searchable), and About —
-  the version, what's new, and updates from GitHub releases (⌥⌘O: the
-  changelog; a chip in the title bar when a newer version is out).
+- **Settings** (⌘,) — a tab, as in Warp, over two files you can also edit
+  by hand, as in VS Code: `settings.json` and `keybindings.json` in
+  `~/Library/Application Support/Terminus/` (only what you changed is in
+  them; comments are fine; a hand edit applies at once). Every section
+  switches between controls and its JSON. General (reopening tabs and their
+  text, where new tabs open, when closing asks, Tab Peek), Appearance and
+  Terminal (font, theme, cursor, padding, ⌥ as Alt, copy on select,
+  scrollback, clipboard — over your Ghostty config, applied to open
+  terminals at once), Agents, Editor, Notifications (which events notify),
+  Keyboard Shortcuts (click a shortcut, press the new keys; menus and the
+  terminal's keys alike, clashes flagged), and About — the version, what's
+  new, and updates from GitHub releases (⌥⌘O: the changelog; a chip in the
+  title bar when a newer version is out).
 - **Tabs** in the title bar, Chrome-style: rename (double-click), colour, pin
   (pinned = protected from ⌘W), drag to reorder. Tabs, their names, colours,
   pins and directories come back on relaunch, shell panes with their text

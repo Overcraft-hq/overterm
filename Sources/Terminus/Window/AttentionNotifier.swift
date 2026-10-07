@@ -12,7 +12,8 @@ enum AttentionNotifier {
     static var suppressed = 0
 
     static func notify(tab: Tab) {
-        guard !NSApp.isActive, Settings.shared.notifications else { return }
+        // Settings ▸ Notifications: on at all, and for this kind of mark.
+        guard !NSApp.isActive, Settings.shared.notifies(tab.activity.mark) else { return }
         if AppEnvironment.isIsolated {
             suppressed += 1
             return

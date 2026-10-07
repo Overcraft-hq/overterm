@@ -18,6 +18,9 @@ struct TabBarActions {
     var showOverview: () -> Void
     /// The update chip: Settings ▸ About.
     var showUpdate: () -> Void
+    /// The Settings tab: show it, close it.
+    var showSettings: () -> Void
+    var closeSettings: () -> Void
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -47,6 +50,9 @@ struct TabBarView: View {
                     theme: theme,
                     actions: actions
                 )
+            }
+            if store.settingsOpen {
+                SettingsTabItem(selected: store.settingsShowing, theme: theme, select: actions.showSettings, close: actions.closeSettings)
             }
             // Click: a plain tab. The arrow: an agent tab.
             Menu {
@@ -130,7 +136,8 @@ private struct TabItemView: View {
     let actions: TabBarActions
     @State private var hovering = false
 
-    private var isSelected: Bool { tab.id == store.selectedID }
+    /// Not while the Settings tab shows: it covers this one.
+    private var isSelected: Bool { tab.id == store.selectedID && !store.settingsShowing }
     private var isRenaming: Bool { tab.id == store.renamingID }
 
     private var symbol: String { tab.agent?.symbol ?? "terminal" }
@@ -256,6 +263,41 @@ private struct TabItemView: View {
         )
         .help(tab.title)
         .padding(.horizontal, 2)
+    }
+}
+
+/// The Settings tab in the strip: a gear and its name, closable as any tab.
+private struct SettingsTabItem: View {
+    let selected: Bool
+    let theme: ChromeTheme
+    let select: () -> Void
+    let close: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gearshape").font(.system(size: 11)).foregroundStyle(selected ? theme.text : theme.dimText)
+            Text("Settings")
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .foregroundStyle(selected ? theme.text : theme.dimText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: close) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .opacity(selected || hovering ? 1 : 0)
+            .help("Close Settings (⌘W)")
+        }
+        .padding(.horizontal, 10)
+        .frame(minWidth: 60, idealWidth: 160, maxWidth: 180, minHeight: 28, maxHeight: 28)
+        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? theme.selected : (hovering ? theme.hover : .clear)))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, 2)
+        .accessibilityIdentifier("settings.tab")
     }
 }
 

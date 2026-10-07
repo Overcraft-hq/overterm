@@ -2,7 +2,7 @@ import AppKit
 import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var windowController: TerminalWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -73,9 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
     }
 
-    /// Terminus ▸ Settings… (⌘,).
+    /// Terminus ▸ Settings… (⌘,): the Settings tab.
     @objc func showSettings(_ sender: Any?) {
-        SettingsWindowController.shared.show()
+        windowController?.openSettings()
     }
 
     @objc func showChangelog(_ sender: Any?) {
@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUser
 
     /// Settings ▸ About, checking.
     @objc func checkForUpdates(_ sender: Any?) {
-        SettingsWindowController.shared.show(.about)
+        windowController?.openSettings(.about)
         Task { await UpdateChecker.shared.check() }
     }
 

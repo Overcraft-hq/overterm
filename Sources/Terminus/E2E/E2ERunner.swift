@@ -2025,70 +2025,86 @@ final class E2ERunner {
         }
     }
 
-    /// Settings (⌘,): Appearance changes reach terminals already open, a
-    /// reset hands back to the user's Ghostty config, and the General
-    /// choices change what closing and new tabs do.
+    /// Settings (⌘,): a tab, as Warp's; settings.json behind it, as VS
+    /// Code's — the page and the file edited by hand both apply at once, the
+    /// file keeps what a person wrote, and one that doesn't parse is never
+    /// written over. Appearance reaches terminals already open; General and
+    /// Agents change what tabs and New Task do; Keyboard Shortcuts rebinds
+    /// menus and Ghostty's keys.
     private func settingsScenario() async {
         let settings = Settings.shared
+        let keys = Keybindings.shared
         await settledPrompt()
         guard let tab = app.store.selected, let surface = tab.terminal.surface else { return check("a tab", false) }
+        func fileText() -> String { (try? String(contentsOf: settings.url, encoding: .utf8)) ?? "" }
+        func overrides() -> String { (try? String(contentsOf: Settings.ghosttyOverridesFile, encoding: .utf8)) ?? "" }
 
+        // The tab.
         (NSApp.delegate as? AppDelegate)?.showSettings(nil)
-        check("⌘, opens the Settings window", await eventually(2) { SettingsWindowController.shared.window?.isVisible == true })
-        SettingsWindowController.shared.model.search = "font"
-        check("its search finds Appearance by a setting in it", SettingsWindowController.shared.model.sections == [.appearance])
-        SettingsWindowController.shared.model.search = ""
+        check("⌘, opens the Settings tab", app.store.settingsOpen && app.store.settingsShowing && app.settingsView?.isHidden == false)
+        check("the terminal tab under it isn't drawn selected, but still is", app.store.selectedID == tab.id)
+        app.settingsPage.search = "theme"
+        check("its search finds Appearance by a setting in it", app.settingsPage.sections == [.appearance], "\(app.settingsPage.sections)")
+        app.settingsPage.search = "split"
+        check("and Keyboard Shortcuts by a command", app.settingsPage.sections.contains(.shortcuts), "\(app.settingsPage.sections)")
+        app.settingsPage.search = ""
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            app.settingsPage.show(.appearance)
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
 
+        // A value from the page reaches open terminals, through settings.json.
         let configured = GhosttyRuntime.shared.configNumber("font-size") ?? 13
         let before = ghostty_surface_size(surface).cell_width_px
-        settings.fontSize = configured + 8
+        settings.set("appearance.fontSize", .int(Int(configured) + 8))
         let grew = await eventually(4) { ghostty_surface_size(surface).cell_width_px > before }
         check("a font size reaches the terminal already open", grew, "\(before) → \(ghostty_surface_size(surface).cell_width_px)")
-        let written = (try? String(contentsOf: Settings.ghosttyOverridesFile, encoding: .utf8)) ?? ""
-        check("written as a Ghostty override", written.contains("font-size = \(String(format: "%g", configured + 8))"), written)
-        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let settingsWindow = SettingsWindowController.shared.window {
-            SettingsWindowController.shared.model.section = .appearance
-            await pause(0.8)
-            app.captureWindow(to: png, window: settingsWindow)
-        }
-        settings.fontSize = nil
+        check("settings.json holds it", fileText().contains("\"appearance.fontSize\": \(Int(configured) + 8)"), fileText())
+        check("written as a Ghostty override", overrides().contains("font-size = \(Int(configured) + 8)"), overrides())
+        settings.set("appearance.fontSize", nil)
         check(
             "Reset hands it back to the Ghostty config",
             await eventually(4) { ghostty_surface_size(surface).cell_width_px == before }
-                && !FileManager.default.fileExists(atPath: Settings.ghosttyOverridesFile.path))
+                && !fileText().contains("appearance.fontSize") && !FileManager.default.fileExists(atPath: Settings.ghosttyOverridesFile.path),
+            fileText())
 
-        let background = GhosttyRuntime.shared.backgroundColor
-        if let theme = SettingsWindowController.shared.model.themes.first(where: { $0 == "Dracula" }) ?? SettingsWindowController.shared.model.themes.first {
-            settings.theme = theme
-            check(
-                "a theme changes the colours", await eventually(4) { GhosttyRuntime.shared.backgroundColor != background },
-                "\(theme): \(background) → \(GhosttyRuntime.shared.backgroundColor)")
-            settings.theme = nil
-            await eventually(4) { GhosttyRuntime.shared.backgroundColor == background }
-        } else {
-            check("the bundled themes are listed", false)
-        }
-
-        settings.unfocusedPaneDim = 0.6
+        // settings.json by hand: applies at once, and keeps its comments when the page changes something.
+        try? "{\n  // mine\n  \"appearance.unfocusedPaneDim\": 0.6\n}\n".write(to: settings.url, atomically: true, encoding: .utf8)
         check(
-            "the pane dim follows its slider",
-            await eventually(2) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
-        settings.unfocusedPaneDim = 0.35
+            "a hand edit applies at once (the pane dim)",
+            await eventually(4) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
+        settings.set("general.newTabDirectory", .string("home"))
+        check(
+            "the page edits the file in place, comments kept",
+            fileText().contains("// mine") && fileText().contains("\"general.newTabDirectory\": \"home\"")
+                && fileText().contains("\"appearance.unfocusedPaneDim\": 0.6"), fileText())
 
         // New tabs open at home, not in the current tab's folder.
         let folder = scratch.appendingPathComponent("somewhere")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         app.newTab(in: folder)
-        settings.newTabDirectory = .home
+        check("a new tab comes out from under Settings", !app.store.settingsShowing && app.store.settingsOpen && app.settingsView?.isHidden == true)
         app.newTab(nil)
         check(
             "New tabs open in: Home",
             app.store.selected?.workingDirectory == FileManager.default.homeDirectoryForCurrentUser.path,
             app.store.selected?.workingDirectory ?? "nil")
-        settings.newTabDirectory = .current
+
+        // A file that doesn't parse: the last good settings stay, it isn't written over.
+        let broken = "{\n  \"general.newTabDirectory\": \"current\",\n  oops\n"
+        try? broken.write(to: settings.url, atomically: true, encoding: .utf8)
+        check("a broken file is reported", await eventually(4) { settings.problems.first?.contains("doesn't parse") == true }, "\(settings.problems)")
+        check("and the last good settings stay", settings.newTabDirectory == .home)
+        settings.set("general.confirmClose", .string("whenRunning"))
+        check("the page doesn't write over it", fileText() == broken, fileText())
+        settings.save(text: "{\n  \"general.confirmClose\": \"whenRunning\",\n  \"general.nonsense\": 1\n}\n")
+        check(
+            "saved from the JSON view: what is good applies, the rest is listed",
+            settings.confirmClose == .whenRunning && settings.newTabDirectory == .current
+                && settings.problems.contains { $0.contains("general.nonsense") }, "\(settings.problems)")
 
         // Ask before closing: only when something runs — an idle tab just closes.
-        settings.confirmClose = .whenRunning
         guard let idle = app.store.selected else { return check("a tab to close", false) }
         await settledPrompt()
         let count = app.store.tabs.count
@@ -2106,7 +2122,7 @@ final class E2ERunner {
                 "Ghostty's close_tab closes an idle tab, and the app lives",
                 await eventually(3) { self.app.store.tabs.count == before - 1 && !self.app.store.tabs.contains { $0.id == bound.id } })
         }
-        settings.confirmClose = .always
+        settings.set("general.confirmClose", nil)
         if let another = app.store.selected {
             app.closeTab(another)
             check("Always asks again", await eventually(2) { self.window.attachedSheet != nil })
@@ -2118,7 +2134,7 @@ final class E2ERunner {
         try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
         try? await git(["init", "-q", "-b", "main"], in: repo)
         try? await git(["commit", "-q", "--allow-empty", "-m", "i"], in: repo)
-        settings.worktreeLocation = .inside
+        settings.set("agents.worktreeLocation", .string("inside"))
         do {
             try await app.createTask(repo: repo, branch: "feat/inside", base: "main", agent: nil)
         } catch {
@@ -2128,27 +2144,88 @@ final class E2ERunner {
         check("New Task's worktree goes inside the repository", app.store.selected?.workingDirectory == inside, app.store.selected?.workingDirectory ?? "nil")
         let status = (try? await Git.run(["status", "--porcelain"], in: repo)) ?? "?"
         check("and the main checkout stays clean", status.isEmpty, status)
-        settings.worktreeLocation = .sibling
+        settings.set("agents.worktreeLocation", nil)
 
-        // Keyboard Shortcuts: the real menus and the real Ghostty keybinds.
-        let shortcuts = Shortcuts.all()
-        // Settings… is built as ⌘, but AppKit localizes key equivalents to the
-        // keyboard layout, keeping the key: on Turkish Q it is ⌘Ö. The list
-        // shows what the menu does, so the menu item sets the expectation.
-        let settingsItem = NSApp.mainMenu?.items.first?.submenu?.items.first { $0.action == #selector(AppDelegate.showSettings(_:)) }
-        let settingsKeys = settingsItem.map { Shortcuts.format(keyEquivalent: $0.keyEquivalent, modifiers: $0.keyEquivalentModifierMask) }
+        // Keyboard Shortcuts: a menu command moves to a new key; Ghostty lets go of both.
+        let diagnosticsBefore = GhosttyRuntime.shared.configDiagnostics
+        guard let newTab = KeyCommands.byID["tabs.new"], let splitRight = KeyCommands.byID["splits.right"],
+            let clear = KeyCommands.byID["terminal.clear"]
+        else { return check("the commands", false) }
+        check("a menu item starts with its command's key", menuItem("tabs.new")?.keyEquivalent.lowercased() == "t")
+        keys.set(newTab, to: KeyCombo("cmd+y"))
         check(
-            "the shortcuts list reads the menus", settingsKeys != nil && shortcuts.contains { $0.title == "Settings…" && $0.keys == settingsKeys },
-            "menu: \(settingsKeys ?? "no Settings…"), list: " + shortcuts.filter { $0.title == "Settings…" }.map(\.keys).joined(separator: ", "))
+            "a new key goes on the menu item", menuItem("tabs.new")?.keyEquivalent.lowercased() == "y",
+            menuItem("tabs.new")?.keyEquivalent ?? "nil")
+        let bindings = (try? String(contentsOf: keys.url, encoding: .utf8)) ?? ""
+        check("keybindings.json holds it", bindings.contains("{ \"key\": \"cmd+y\", \"command\": \"tabs.new\" }"), bindings)
         check(
-            "and the terminal's keys from the Ghostty config", shortcuts.contains { $0.group == .terminal && $0.title == "Split right" && $0.keys == "⌘D" },
-            shortcuts.filter { $0.group == .terminal }.map { "\($0.title) \($0.keys)" }.joined(separator: ", "))
-        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let settingsWindow = SettingsWindowController.shared.window {
-            SettingsWindowController.shared.model.section = .shortcuts
+            "Ghostty lets go of the old key and the new one",
+            await eventually(3) { overrides().contains("keybind = super+t=unbind") && overrides().contains("keybind = super+y=unbind") },
+            overrides())
+        // A terminal-only command is bound in Ghostty itself.
+        keys.set(clear, to: KeyCombo("ctrl+alt+l"))
+        check(
+            "a terminal command's new key is Ghostty's",
+            await eventually(3) {
+                GhosttyRuntime.shared.trigger(for: "clear_screen").flatMap(KeyCombo.init(trigger:)) == KeyCombo("ctrl+alt+l")
+            }, overrides())
+        // Removed: no key at all.
+        keys.set(splitRight, to: nil)
+        check("a removed shortcut leaves the menu item without one", menuItem("splits.right")?.keyEquivalent == "")
+        check(
+            "and Ghostty's binding goes too",
+            await eventually(3) { GhosttyRuntime.shared.trigger(for: "new_split:right").flatMap(KeyCombo.init(trigger:)) == nil })
+        check(
+            "Ghostty takes the lines without complaint", GhosttyRuntime.shared.configDiagnostics == diagnosticsBefore,
+            GhosttyRuntime.shared.configDiagnostics.joined(separator: " | "))
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            app.openSettings(.shortcuts)
             await pause(0.8)
-            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-shortcuts.png"), window: settingsWindow)
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-shortcuts.png"))
         }
-        SettingsWindowController.shared.window?.close()
+        // The JSON view shows the section's file, as saved.
+        app.openSettings(.general)
+        app.settingsPage.mode = .json
+        check(
+            "JSON shows settings.json itself", await eventually(2) { self.app.settingsPage.draft == fileText() },
+            app.settingsPage.draft ?? "nil")
+        app.settingsPage.show(.shortcuts)
+        app.settingsPage.mode = .json
+        check(
+            "and Keyboard Shortcuts' JSON is keybindings.json",
+            await eventually(2) { self.app.settingsPage.draft?.contains("\"command\": \"tabs.new\"") == true })
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.6)
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-json.png"))
+        }
+        app.settingsPage.show(.general)
+        keys.resetAll()
+        check(
+            "Reset All puts the defaults back",
+            await eventually(3) {
+                self.menuItem("tabs.new")?.keyEquivalent.lowercased() == "t" && self.menuItem("splits.right")?.keyEquivalent.lowercased() == "d"
+                    && !overrides().contains("keybind")
+            }, overrides())
+
+        // Clicking the terminal tab uncovers it; ⌘W on the Settings tab closes only that.
+        app.openSettings()
+        let tabs = app.store.tabs.count
+        app.closeSelectedTab(nil)
+        check(
+            "⌘W closes the Settings tab, not a terminal one",
+            !app.store.settingsOpen && app.settingsView?.isHidden == true && app.store.tabs.count == tabs && window.attachedSheet == nil)
+        settings.save(text: "{\n}\n")
+    }
+
+    private func menuItem(_ id: String) -> NSMenuItem? {
+        func find(_ menu: NSMenu?) -> NSMenuItem? {
+            for item in menu?.items ?? [] {
+                if item.identifier?.rawValue == id { return item }
+                if let found = find(item.submenu) { return found }
+            }
+            return nil
+        }
+        return find(NSApp.mainMenu)
     }
 
     /// Settings ▸ About: a newer release (a stand-in gh answering for
@@ -2187,12 +2264,13 @@ final class E2ERunner {
         check("asked for the release repository's latest", asked.contains("api repos/\(UpdateChecker.repository)/releases/latest"), asked)
 
         (NSApp.delegate as? AppDelegate)?.checkForUpdates(nil)
-        check("Check for Updates opens Settings on About", await eventually(3) { SettingsWindowController.shared.model.section == .about })
+        check(
+            "Check for Updates opens the Settings tab on About",
+            await eventually(3) { self.app.settingsPage.section == .about && self.app.store.settingsShowing })
         await eventually(3) { updates.available != nil }
-        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let settingsWindow = SettingsWindowController.shared.window {
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
             await pause(0.8)
-            app.captureWindow(to: png, window: settingsWindow)
-            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-titlebar.png"))
+            app.captureWindow(to: png)
         }
 
         if let release = updates.available {
@@ -2214,7 +2292,7 @@ final class E2ERunner {
         (NSApp.delegate as? AppDelegate)?.showChangelog(nil)
         check("View Latest Changelog opens it", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
         ChangelogWindowController.shared.window?.close()
-        SettingsWindowController.shared.window?.close()
+        app.closeSettings()
     }
 
     /// How heavy Terminus is to live in: idle with ten tabs (two split),

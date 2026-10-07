@@ -83,7 +83,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         ] {
             textView[keyPath: off] = false
         }
-        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.font = Self.font
         textView.textColor = foreground
         textView.backgroundColor = background
         textView.insertionPointColor = foreground
@@ -239,6 +239,17 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     // MARK: Highlighting
 
+    /// Settings ▸ Editor's size.
+    private static var font: NSFont { .monospacedSystemFont(ofSize: CGFloat(Settings.shared.editorFontSize), weight: .regular) }
+
+    /// The size changed in Settings: the open file takes it.
+    func applyFontSize() {
+        guard isViewLoaded else { return }
+        textView.font = Self.font
+        highlight(loading: true)
+        ruler.textDidChange()
+    }
+
     /// Re-colours the whole document. Attributes only — never the text —
     /// so undo is untouched.
     /// Past SyntaxHighlighter.maxLength there are no colours to update, and
@@ -249,7 +260,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         guard let storage = textView.textStorage else { return }
         guard loading || storage.length <= SyntaxHighlighter.maxLength else { return }
         let full = NSRange(location: 0, length: storage.length)
-        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let font = Self.font
         let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         storage.beginEditing()
         storage.setAttributes([.foregroundColor: foreground, .font: font], range: full)

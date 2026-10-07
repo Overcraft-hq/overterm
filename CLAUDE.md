@@ -38,7 +38,7 @@ make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
 | `Sources/Terminus/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
 | `Sources/Terminus/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
-| `Sources/Terminus/Settings/` | ⌘, window: `Settings` (the store; Appearance as Ghostty overrides), `SettingsWindow` (sections), `Shortcuts`, `Updates` (GitHub releases, bundled changelog) |
+| `Sources/Terminus/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
 | `Sources/Terminus/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
 | `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic) and `SplitHostView` (frames, dividers, dim) |
 | `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
@@ -69,6 +69,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Typing text then running it**: `insertText` is a bracketed paste, so a trailing newline is literal. Use `pressReturn()`.
 - Keep features built-in (Claude, Codex, the snippet starters); no plugin slots.
 - **Tests are part of the change**: unit/integration in `Tests/TerminusTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
+- **A new setting is a `SettingsSchema` entry** (key, section, kind, default): the page, validation and search follow. A new shortcut is a `KeyCommands` entry — and, for a menu item, `MainMenu.command(…, id)`. Never read UserDefaults for a setting.
 - **Isolated runs** (`TERMINUS_E2E`, `TERMINUS_DUMP_LAYOUT`) go through `AppEnvironment` for every piece of persistent state; new state must too, or tests will write into the user's real app.
 
 ## Commits

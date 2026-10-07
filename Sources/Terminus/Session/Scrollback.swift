@@ -17,17 +17,18 @@ enum Scrollback {
 
     static var directory: URL { AppEnvironment.supportDirectory.appendingPathComponent("scrollback", isDirectory: true) }
 
-    /// Trailing blank rows dropped, the last `maxLines` kept.
-    static func trimmed(_ text: String) -> String {
+    /// Trailing blank rows dropped, the last `lines` kept (Settings ▸
+    /// General decides how many; `maxLines` is its default).
+    static func trimmed(_ text: String, keeping count: Int = maxLines) -> String {
         var lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \r")) == "" ? "" : $0 }
         while lines.last == "" { lines.removeLast() }
-        return lines.suffix(maxLines).joined(separator: "\n")
+        return lines.suffix(count).joined(separator: "\n")
     }
 
     /// Writes a pane's text; the file's name (for the session), or nil
     /// when there was nothing worth keeping.
-    static func save(_ text: String) -> String? {
-        let text = trimmed(text)
+    static func save(_ text: String, keeping count: Int = maxLines) -> String? {
+        let text = trimmed(text, keeping: count)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let name = UUID().uuidString + ".txt"
         do {

@@ -29,11 +29,15 @@ final class GhosttyRuntime {
 
     private(set) var app: ghostty_app_t?
     private var config: ghostty_config_t?
+    /// The user's config without Settings' overrides: what a key is bound
+    /// to before Keyboard Shortcuts changes it (KeyCombo defaults).
+    private var baseConfig: ghostty_config_t?
 
     private init() {
         guard Self.initialized.withLock({ $0 }) else { return }
         guard let config = Self.makeConfig() else { return }
         self.config = config
+        baseConfig = Self.makeConfig(overrides: false)
 
         var runtime = Self.runtimeConfig()
         guard let app = ghostty_app_new(&runtime, config) else {
@@ -105,15 +109,15 @@ final class GhosttyRuntime {
     /// The user's regular Ghostty config (~/.config/ghostty/config) applies
     /// as-is — font, theme, keybinds all carry over — and then what
     /// Terminus ▸ Settings overrides (Settings.ghosttyOverridesFile).
-    private static func makeConfig() -> ghostty_config_t? {
+    private static func makeConfig(overrides: Bool = true) -> ghostty_config_t? {
         guard let config = ghostty_config_new() else {
             logger.critical("ghostty_config_new failed")
             return nil
         }
         ghostty_config_load_default_files(config)
         ghostty_config_load_recursive_files(config)
-        let overrides = Settings.ghosttyOverridesFile.path
-        if FileManager.default.fileExists(atPath: overrides) { ghostty_config_load_file(config, overrides) }
+        let file = Settings.ghosttyOverridesFile.path
+        if overrides, FileManager.default.fileExists(atPath: file) { ghostty_config_load_file(config, file) }
         ghostty_config_finalize(config)
         for i in 0..<ghostty_config_diagnostics_count(config) {
             let diag = ghostty_config_get_diagnostic(config, i)
@@ -131,6 +135,25 @@ final class GhosttyRuntime {
         ghostty_app_update_config(app, fresh)
         if let old = config { ghostty_config_free(old) }
         config = fresh
+        // The user's own config may have changed its keybinds too.
+        if let old = baseConfig { ghostty_config_free(old) }
+        baseConfig = Self.makeConfig(overrides: false)
+    }
+
+    /// What `action` is bound to without Settings' changes: Ghostty's
+    /// default, or the user's Ghostty config's.
+    func defaultTrigger(for action: String) -> ghostty_input_trigger_s? {
+        guard let baseConfig else { return nil }
+        let trigger = ghostty_config_trigger(baseConfig, action, UInt(action.utf8.count))
+        return trigger.tag == GHOSTTY_TRIGGER_UNICODE && trigger.key.unicode == 0 ? nil : trigger
+    }
+
+    /// Problems Ghostty found in the config it runs (Settings shows them).
+    var configDiagnostics: [String] {
+        guard let config else { return [] }
+        return (0..<ghostty_config_diagnostics_count(config)).compactMap { i in
+            ghostty_config_get_diagnostic(config, i).message.map { String(cString: $0) }
+        }
     }
 
     /// A number the config holds (e.g. "font-size"): what Settings shows as
@@ -315,6 +338,16 @@ final class GhosttyRuntime {
 
         case GHOSTTY_ACTION_MOUSE_SHAPE:
             view?.setMouseShape(action.action.mouse_shape)
+            return true
+
+        // mouse-hide-while-typing (Settings ▸ Terminal): hidden until it moves.
+        case GHOSTTY_ACTION_MOUSE_VISIBILITY:
+            NSCursor.setHiddenUntilMouseMoves(action.action.mouse_visibility == GHOSTTY_MOUSE_HIDDEN)
+            return true
+
+        // Ghostty's ⌘, (open_config): Terminus's Settings, not a text file.
+        case GHOSTTY_ACTION_OPEN_CONFIG:
+            DispatchQueue.main.async { (NSApp.delegate as? AppDelegate)?.showSettings(nil) }
             return true
 
         case GHOSTTY_ACTION_OPEN_URL:

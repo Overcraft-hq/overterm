@@ -242,27 +242,60 @@ every one in full — and in Branch the commits that touched it
 
 ## Settings (⌘,)
 
-`Settings` (`Sources/Terminus/Settings/`) is one store in
-`AppEnvironment.defaults` (an isolated run has its own), read where each
-setting acts — `AppDelegate` (restore), `closeTabs` / `windowShouldClose` /
-`applicationShouldTerminate` (`needsCloseConfirmation`), `newTab(from:)`,
-`AttentionNotifier`, `saveFinalSession`, `Agent.command(arguments:)`,
-`TaskCreator` (worktree place, `.git/info/exclude`).
+A tab, as Warp's; files behind it, as VS Code's (`Sources/Terminus/Settings/`).
 
-Appearance is Ghostty's own settings: `Settings.writeGhosttyOverrides()`
-writes `Application Support/Terminus/ghostty-overrides.conf`, which
-`GhosttyRuntime.makeConfig()` loads after the user's config — only what is
-set overrides it. `reloadConfig()` builds a fresh config and hands it to
-`ghostty_app_update_config`, which updates every open surface; the chrome's
-colours (ChromeTheme) are read at launch.
+**The tab.** `TabStore.settingsOpen` / `settingsShowing` put a Settings tab
+after the terminal tabs (`SettingsTabItem` in the strip). It is a page, not
+a terminal: `SettingsPageView` covers the window's body under the strip,
+and the terminal tab under it stays `selectedID` — so nothing that assumes
+"a tab has terminals" changes. Choosing any terminal tab (a click, ⌘T,
+⇧⌘]) uncovers it; ⌘W while it shows closes only it (`closeSelectedTab`).
+Ghostty's `open_config` (its ⌘,) opens it too.
 
-Keyboard Shortcuts reads the menus as they are (System Settings' app
-shortcuts show) and the terminal's keys with `ghostty_config_trigger`.
+**settings.json.** `Settings` reads `Application Support/Terminus/settings.json`
+(isolated runs: their own). Only what differs from the defaults is in it —
+`SettingsSchema` holds every setting: key, section, group, title, kind,
+default, and for Ghostty's options the option it writes. The page's rows
+are made from that list, and so are validation and search. The file is
+JSON5 (comments, trailing commas); the page edits it in place
+(`SettingsJSON.setting`: the key's own line, so comments and order stay),
+rewriting it whole only when it isn't laid out one key per line. A
+`DirectoryWatcher` applies a hand edit at once. A file that doesn't parse
+is never written over: the last good settings stay, the page says why.
+A value that doesn't fit its setting is listed and its default applies;
+an unknown key is listed and left alone. `changes` names the keys that
+changed, for whatever acts on them. Before 1.17 settings were UserDefaults
+(`settings.*`): `Settings.migrate` carries them over once.
+
+Appearance and Terminal are Ghostty's own settings: unset, the user's
+Ghostty config decides; set, `writeGhosttyOverrides` puts them in
+`ghostty-overrides.conf`, which `GhosttyRuntime.makeConfig()` loads after
+the user's config, and `reloadConfig()` hands every open surface the new
+config (`ghostty_app_update_config`). The chrome's colours (ChromeTheme)
+are read at launch.
+
+**keybindings.json.** VS Code's form: a list of `{ "key", "command" }`; a
+`"-command"` entry removes that key from it; the last word on a command
+wins (one key each: a menu item holds one). `KeyCommands` lists every
+command — a menu item (its `identifier` is the command id, `MainMenu`
+gives it the default key), a Ghostty action, or both. A command without a
+default of its own takes Ghostty's (`GhosttyRuntime.defaultTrigger`: a
+config built without Settings' overrides, so the user's Ghostty keybinds
+count). `Keybindings.apply(to:)` puts the keys on the menus. Ghostty sees
+keys first in the terminal (`performKeyEquivalent` asks
+`ghostty_surface_key_is_binding`), so `ghosttyLines` adds to the overrides
+file: for a menu command, `unbind` of its old key and of its new one (the
+menu does it); for a terminal-only command, `unbind` of the old and the
+new key bound to the action. Keys are written by position on a US layout
+(`KeyCombo(event:)` reads key codes): AppKit shows ⌘, as ⌘Ö on a Turkish
+Q, and it is still `cmd+,`.
+
 About: `UpdateChecker` asks `gh api repos/terminus-app/terminus/releases/latest`
 (private: the user's gh login), compares SemVer with CFBundleShortVersionString,
 downloads the DMG with `gh release download`; once a day at launch when
-allowed, a title-bar chip when newer. `make-app.sh` bundles `CHANGELOG.md`
-for "What's new" and View Latest Changelog (⌥⌘O).
+allowed, a title-bar chip when newer (it opens Settings ▸ About).
+`make-app.sh` bundles `CHANGELOG.md` for "What's new" and View Latest
+Changelog (⌥⌘O).
 
 ## Agent overview (⇧⌘A)
 

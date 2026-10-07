@@ -52,6 +52,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let sessions = SessionsModel()
     private(set) var overviewView: NSView?
     private var overviewPoll: Timer?
+    /// The Settings tab's page (Warp's): over the window's body while it shows.
+    let settingsPage = SettingsPageModel()
+    private(set) var settingsView: NSView?
     /// Three fingers down (or ⇧⌘E): every tab's live terminal as a card.
     private(set) lazy var peek = TabPeekController(container: container)
     private(set) var peekView: TabPeekHostingView<TabPeekView>?
@@ -100,6 +103,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
         applySettingsAsTheyChange()
         store.$selectedID
+            .dropFirst()
+            .sink { [weak self] _ in
+                // Another terminal tab chosen (⌘T, ⇧⌘], a click): it comes
+                // out from under the Settings tab.
+                self?.hideSettingsPage(focus: false)
+            }
+            .store(in: &cancellables)
+        store.$selectedID
             .sink { [weak self] _ in
                 // @Published fires before the value lands; read it next turn.
                 DispatchQueue.main.async { self?.showSelectedTab() }
@@ -125,7 +136,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 theme: theme,
                 leadingInset: 78,
                 actions: TabBarActions(
-                    select: { [weak self] in self?.store.select($0) },
+                    select: { [weak self] tab in
+                        // The terminal tab under the Settings tab is still the
+                        // selected one: clicking it only uncovers it.
+                        self?.hideSettingsPage()
+                        self?.store.select(tab)
+                    },
                     close: { [weak self] in self?.closeTab($0) },
                     newTab: { [weak self] in self?.newTab(from: self?.store.selected?.terminal) },
                     newAgentTab: { [weak self] in self?.newAgentTab($0) },
@@ -133,7 +149,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     toggleDiff: { [weak self] in self?.toggleDiffFromBadge() },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     showOverview: { [weak self] in self?.showAgentOverview(nil) },
-                    showUpdate: { SettingsWindowController.shared.show(.about) },
+                    showUpdate: { [weak self] in self?.openSettings(.about) },
+                    showSettings: { [weak self] in self?.showSettingsPage() },
+                    closeSettings: { [weak self] in self?.closeSettings() },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
                 )
@@ -330,6 +348,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             body.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
+
+        // The Settings tab's page covers the body, under the tab strip.
+        let settingsView = NSHostingView(
+            rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme))
+        settingsView.translatesAutoresizingMaskIntoConstraints = false
+        settingsView.isHidden = true
+        content.addSubview(settingsView)
+        NSLayoutConstraint.activate([
+            settingsView.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            settingsView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            settingsView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            settingsView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        self.settingsView = settingsView
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(
@@ -748,7 +780,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Settings ▸ General: reopening tabs, and each shell pane's text with them.
         for tab in store.tabs where tab.agent == nil && Settings.shared.restoreTabs && Settings.shared.restoreScrollback {
             for pane in tab.terminals {
-                if let text = pane.scrollbackText, let name = Scrollback.save(text) { saved[ObjectIdentifier(pane)] = name }
+                if let text = pane.scrollbackText, let name = Scrollback.save(text, keeping: Settings.shared.scrollbackLines) { saved[ObjectIdentifier(pane)] = name }
             }
         }
         Scrollback.removeAll(except: Set(saved.values))
@@ -1805,38 +1837,76 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
     static var paneDim: NSColor { GhosttyRuntime.shared.backgroundColor.withAlphaComponent(Settings.shared.unfocusedPaneDim) }
 
-    /// Appearance settings take effect as they change: the Ghostty overrides
-    /// are rewritten and every terminal reloads its config; the pane dim
-    /// repaints. Debounced — a slider or stepper moves in small steps.
+    /// Settings take effect as they change — from the Settings tab, or
+    /// settings.json / keybindings.json edited by hand: Ghostty's options
+    /// and keys are rewritten into the overrides file and every terminal
+    /// reloads its config (debounced: a slider moves in small steps); menu
+    /// keys change at once; the pane dim repaints; the editor's text resizes.
     private func applySettingsAsTheyChange() {
         let settings = Settings.shared
-        Publishers.MergeMany(
-            settings.$fontFamily.map { _ in () }.eraseToAnyPublisher(),
-            settings.$fontSize.map { _ in () }.eraseToAnyPublisher(),
-            settings.$theme.map { _ in () }.eraseToAnyPublisher(),
-            settings.$windowPadding.map { _ in () }.eraseToAnyPublisher(),
-            settings.$cursorStyle.map { _ in () }.eraseToAnyPublisher()
-        )
-        .dropFirst(5)  // each publisher's current value, on subscribing
-        .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
-        .sink {
-            Settings.shared.writeGhosttyOverrides()
-            GhosttyRuntime.shared.reloadConfig()
-        }
-        .store(in: &cancellables)
-        settings.$unfocusedPaneDim
-            .dropFirst()
-            .sink { [weak self] _ in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.hosts.values.forEach { $0.dimColor = Self.paneDim }
-                }
+        let keybindings = Keybindings.shared
+        // Edited while Terminus was closed, the files may say more than the
+        // overrides written last time.
+        writeGhosttyOverrides()
+        keybindings.apply(to: NSApp.mainMenu)
+        let ghosttyKeys = Set(SettingsSchema.all.compactMap { $0.ghostty == nil ? nil : $0.key })
+        settings.changes
+            .filter { !$0.isDisjoint(with: ghosttyKeys) }
+            .map { _ in () }
+            .merge(with: keybindings.changes)
+            .debounce(for: .milliseconds(250), scheduler: DispatchQueue.main)
+            .sink { [weak self] in self?.writeGhosttyOverrides() }
+            .store(in: &cancellables)
+        keybindings.changes
+            .sink { Keybindings.shared.apply(to: NSApp.mainMenu) }
+            .store(in: &cancellables)
+        settings.changes
+            .sink { [weak self] keys in
+                guard let self else { return }
+                if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
+                if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
+                if keys.contains("editor.fontSize") { self.editor?.applyFontSize() }
             }
             .store(in: &cancellables)
-        settings.$dockBadge
-            .dropFirst()
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateAttentionBadge() } }
-            .store(in: &cancellables)
+    }
+
+    /// The overrides file from both files; Ghostty reloads only when it changed.
+    private func writeGhosttyOverrides() {
+        if Settings.shared.writeGhosttyOverrides(keybindings: Keybindings.shared.ghosttyLines) { GhosttyRuntime.shared.reloadConfig() }
+    }
+
+    // MARK: The Settings tab
+
+    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
+    func openSettings(_ section: SettingsSection? = nil) {
+        if let section { settingsPage.show(section) }
+        store.settingsOpen = true
+        showSettingsPage()
+    }
+
+    func showSettingsPage() {
+        guard let settingsView else { return }
+        hideAgentOverview()
+        if peek.isOpen { peek.close() }
+        hideSpotlight(keepTerminalSearch: false)
+        store.settingsShowing = true
+        settingsView.isHidden = false
+        window?.makeFirstResponder(settingsView)
+    }
+
+    /// Uncovers the selected terminal tab; the Settings tab stays in the strip.
+    func hideSettingsPage(focus: Bool = true) {
+        guard store.settingsShowing else { return }
+        store.settingsShowing = false
+        settingsView?.isHidden = true
+        if focus { focusSelectedTerminal() }
+    }
+
+    /// Its ✕, or ⌘W while it shows.
+    func closeSettings() {
+        hideSettingsPage()
+        store.settingsOpen = false
+        settingsPage.draft = nil
     }
 
     /// What closing these tabs would end — running processes by name, agents
@@ -1966,6 +2036,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
     /// ⌘W: the focused pane of a split tab, else the tab.
     @objc func closeSelectedTab(_ sender: Any?) {
+        if store.settingsShowing { return closeSettings() }
         guard let tab = store.selected else { return }
         if tab.isSplit {
             closePane(tab.terminal, in: tab)

@@ -9,6 +9,11 @@ final class TabStore: ObservableObject {
     @Published private(set) var selectedID: Tab.ID?
     /// The tab whose name is being edited in the strip, if any.
     @Published var renamingID: Tab.ID?
+    /// The Settings tab: a page, not a terminal, after the terminal tabs
+    /// while open (Warp's). Selecting it covers the window's body; the
+    /// selected terminal tab stays selected underneath.
+    @Published var settingsOpen = false
+    @Published var settingsShowing = false
 
     var selected: Tab? { tabs.first { $0.id == selectedID } }
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }
