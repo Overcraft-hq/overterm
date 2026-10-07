@@ -18,6 +18,8 @@ libghostty's own threads and git calls.
       + ⌘P palette: an overlay over the whole content view
       + ⌘F search: an overlay over the terminal container; a compact find
         bar in its top-right corner while a terminal search is kept
+      + Tab Peek (⇧⌘E, three fingers down): every tab's host scaled into a
+        card inside the terminal container, chrome drawn over them
 ```
 
 - One split (`split`, vertical, autosave `TerminusColumns.v2`): sidebar | terminal | editor | changes. Bump the key's version whenever the column set changes, or stale positions get applied to the new columns.
@@ -275,6 +277,62 @@ Claude `ClaudeActivity` from the last 512 KB of the session transcript:
 `ai-title` (Claude Code's title for the session), the last prompt, the last
 reply, and the tool call after it if there is one — what it is doing now.
 A card selects its tab; Esc (the host takes the keyboard) closes.
+
+## Tab peek (⇧⌘E, three fingers down)
+
+Every tab's terminal at once, live (`Sources/Terminus/Peek/`). Three fingers
+down the trackpad opens it a stage at a time: first a row of previews under
+the tab strip with the selected terminal pushed down below it, then — if the
+fingers carry on — a grid. A card is the tab's **real** terminal, so it keeps
+drawing, splits included.
+
+- **No new rendering path, and no reflow.** Every tab's `SplitHostView`
+  already fills `container`, pinned to its four edges; the peek only puts a
+  `CATransform3D` on its layer. A layer transform moves pixels without
+  changing a frame, so `TerminalView.setFrameSize` → `ghostty_surface_set_size`
+  never runs and no pty is resized. Opening it un-occludes every pane
+  (`setVisible(true)`), which libghostty answers with an immediate draw — so
+  a card is current, not the frame left over from when the tab was hidden.
+  Past `TabPeek.liveLimit` (12 panes) the rest stay occluded and are drawn
+  by hand at 6 Hz (`TerminalView.drawNow` → `ghostty_surface_draw`, the one
+  call that renders an occluded surface).
+- **`TabPeek` is pure** — `Stage`, `placements(tabs:selected:progress:in:)`,
+  `grid`, `move`, `transform` — in a top-left origin space, like
+  `SplitTree.layout`. The controller turns a placement into a transform and
+  the SwiftUI chrome draws that card's title bar and border from the same
+  rectangle, so the two can't drift. `progress` runs 0…2 and the stages are
+  interpolated, so there is no jump at 1.
+- **Two measured AppKit facts the transform depends on** (both learned the
+  hard way, both checked by `TabPeekTests`): AppKit anchors a layer-backed
+  view's layer at (0, 0), not its centre; and the host's layer has its
+  geometry flipped while its superlayer's is not, so x is top-left and y is
+  mirrored. AppKit also **resets the transform** when it syncs the layer to
+  the view's geometry — it had silently undone the scale on every host but
+  the first — so `SplitHostView` owns it (`peekTransform`) and puts it back
+  in `viewWillDraw`.
+- **`container.clipsToBounds`** goes on when the peek opens: since macOS 14
+  a view doesn't clip, and the pushed-down terminal would paint over the
+  editor and changes panes.
+- **The gesture is one direction.** `TabPeekGesture` is a pure state machine
+  fed finger counts and positions (`NSTouch`, `allowedTouchTypes =
+  [.indirect]` on `TerminalView` and on the peek's own host, so a swipe
+  started over a terminal carries on once the peek is over it). Down opens
+  the strip, down again the grid, and a **fresh** swipe down at the grid
+  takes it back out: macOS claims three *and* four fingers up for Mission
+  Control, and WindowServer recognizes it before any app sees a touch.
+  Settings ▸ General picks three fingers, four, or off; ⇧⌘E, Esc, a click
+  outside and picking a card work either way. Two-finger scrolling is
+  untouched — it is a scroll event and never reaches this.
+- **The keyboard**: ⇧⌘E toggles (free in Ghostty v1.3.1; ⇧⌘↓ would never
+  arrive, `jump_to_prompt` eats it), arrows and ⇥ move the highlight, Return
+  picks, Esc closes. As with the agent overview, Esc goes through a window
+  event monitor as well: its host having the keyboard was not enough.
+  `showSelectedTab` leaves first responder alone while the peek shows —
+  selection is published a turn late, and a peek opened right after a tab
+  switch lost the keyboard to the terminal behind it.
+
+⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
+overview its agent's **state**.
 
 ## Claude sessions (sidebar)
 

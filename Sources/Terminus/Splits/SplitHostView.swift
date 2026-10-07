@@ -17,6 +17,27 @@ final class SplitHostView: NSView {
     /// A divider was dragged: the split at `path` wants `ratio`.
     var onRatioChange: (([Bool], Double) -> Void)?
 
+    /// Tab peek scales the whole host into a card with a layer transform:
+    /// pixels move, no frame changes, so no surface is resized and nothing
+    /// reflows. AppKit resets a layer-backed view's transform whenever it
+    /// syncs the layer to the view's geometry — it had silently undone the
+    /// scale on every host but the first — so the host owns it and puts it
+    /// back after each layout.
+    var peekTransform = CATransform3DIdentity {
+        didSet { layer?.transform = peekTransform }
+    }
+
+    private func restorePeekTransform() {
+        guard let layer, !CATransform3DEqualToTransform(layer.transform, peekTransform) else { return }
+        // Not mid-flight: the settling animation owns the transform until it
+        // lands, and this would snap it to the end.
+        guard layer.animation(forKey: "transform") == nil else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = peekTransform
+        CATransaction.commit()
+    }
+
     private var dividers: [SplitTree<TerminalView>.Divider] = []
     private var dims: [ObjectIdentifier: NSView] = [:]
     private var visible = true
@@ -58,6 +79,7 @@ final class SplitHostView: NSView {
         applyVisibility()
         needsLayout = true
         layoutSubtreeIfNeeded()
+        restorePeekTransform()
     }
 
     /// The tab shown or hidden; hidden panes are occluded (libghostty stops
@@ -66,6 +88,16 @@ final class SplitHostView: NSView {
         self.visible = visible
         isHidden = !visible
         applyVisibility()
+    }
+
+    /// Shown for tab peek without waking the renderer: the peek draws these
+    /// panes itself, at its own cadence.
+    func setPreviewing(_ previewing: Bool) {
+        visible = previewing
+        isHidden = !previewing
+        for pane in tree?.leaves ?? [] {
+            pane.setPreviewing(previewing && (zoomed == nil || pane === zoomed))
+        }
     }
 
     private func applyVisibility() {
@@ -93,6 +125,14 @@ final class SplitHostView: NSView {
             }
         }
         window?.invalidateCursorRects(for: self)
+        restorePeekTransform()
+    }
+
+    /// After layout, before display — AppKit writes the layer's geometry
+    /// from the view's between the two, which is where the scale was lost.
+    override func viewWillDraw() {
+        super.viewWillDraw()
+        restorePeekTransform()
     }
 
     private func dimView(for pane: TerminalView) -> NSView {

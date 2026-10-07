@@ -75,6 +75,7 @@ final class E2ETests: XCTestCase {
     func testSplits() throws { try run("splits") }
     func testPullRequest() throws { try run("pullRequest") }
     func testOverview() throws { try run("overview") }
+    func testPeek() throws { try run("peek") }
     func testScrollback() throws { try run("scrollback") }
     func testOpenFromFinder() throws { try run("openFromFinder") }
     func testSessions() throws { try run("sessions") }

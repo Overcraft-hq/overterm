@@ -47,6 +47,9 @@ final class Settings: ObservableObject {
     @Published var dockBadge: Bool { didSet { save(dockBadge, "dockBadge") } }
     /// Once a day at launch, against the latest release (UpdateChecker).
     @Published var checkForUpdates: Bool { didSet { save(checkForUpdates, "checkForUpdates") } }
+    /// Tab peek's swipe. Four fingers is the way out where macOS claims
+    /// three for Mission Control or App Exposé; ⇧⌘E works either way.
+    @Published var tabPeekGesture: TabPeekGesture.Fingers { didSet { save(tabPeekGesture.rawValue, "tabPeekGesture") } }
 
     // MARK: Agents
 
@@ -93,6 +96,7 @@ final class Settings: ObservableObject {
         notifications = bool("notifications", true)
         dockBadge = bool("dockBadge", true)
         checkForUpdates = bool("checkForUpdates", true)
+        tabPeekGesture = string("tabPeekGesture").flatMap(TabPeekGesture.Fingers.init(rawValue:)) ?? .three
         taskAgent = string("taskAgent") ?? Agent.claude.rawValue
         claudeArguments = string("claudeArguments") ?? ""
         codexArguments = string("codexArguments") ?? ""

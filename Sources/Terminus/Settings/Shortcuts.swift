@@ -157,5 +157,6 @@ enum Shortcuts {
         Shortcut(group: .mouse, title: "Reorder tabs", keys: "Drag a tab"),
         Shortcut(group: .mouse, title: "Tab menu: colour, pin, Show Info", keys: "Right-click a tab"),
         Shortcut(group: .mouse, title: "Resize panes and panels", keys: "Drag a divider"),
+        Shortcut(group: .mouse, title: "Peek at every tab, then the full grid, then close", keys: "Swipe down with three fingers"),
     ]
 }

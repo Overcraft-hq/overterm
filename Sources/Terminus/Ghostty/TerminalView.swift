@@ -100,6 +100,9 @@ final class TerminalView: NSView {
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         registerForDraggedTypes(TerminalDrop.draggedTypes)
+        // Tab peek's three fingers. Trackpad touches are routed like mouse
+        // events, so the pane under the pointer is where a swipe begins.
+        allowedTouchTypes = [.indirect]
 
         let cwd = workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path
         self.workingDirectory = cwd
@@ -202,9 +205,25 @@ final class TerminalView: NSView {
     }
 
     /// Hidden tabs stop rendering; libghostty keeps the pty running.
+    /// Becoming visible draws a frame at once, so nothing stale is shown.
     func setVisible(_ visible: Bool) {
         isHidden = !visible
         if let surface { ghostty_surface_set_occlusion(surface, visible) }
+    }
+
+    /// Shown, but still occluded: the renderer thread stays asleep and
+    /// whoever asked for this draws the pane itself (`drawNow`). Tab peek
+    /// uses it past its live limit, so twenty previews don't all run at
+    /// full rate.
+    func setPreviewing(_ previewing: Bool) {
+        isHidden = !previewing
+    }
+
+    /// One frame, now, on this thread — the only way to refresh an occluded
+    /// surface (libghostty's renderer skips the draw while it is hidden).
+    func drawNow() {
+        guard let surface, !frame.isEmpty else { return }
+        ghostty_surface_draw(surface)
     }
 
     /// Whether the shell/command has exited (as opposed to a close being
@@ -368,6 +387,33 @@ final class TerminalView: NSView {
         // Keep reporting while a drag leaves the view (selection).
         guard let surface, NSEvent.pressedMouseButtons == 0 else { return }
         ghostty_surface_mouse_pos(surface, -1, -1, GhosttyInput.mods(event.modifierFlags))
+    }
+
+    // MARK: The trackpad
+
+    /// Tab peek watches the trackpad through here: `(fingers, averageY,
+    /// ended)`. It answers whether the swipe was its own, which is only ever
+    /// true for the configured finger count — two-finger scrolling is a
+    /// scroll event and never reaches this at all.
+    var onTouches: ((Int, CGFloat, Bool) -> Bool)?
+
+    override func touchesBegan(with event: NSEvent) {
+        if !report(event, ended: false) { super.touchesBegan(with: event) }
+    }
+    override func touchesMoved(with event: NSEvent) {
+        if !report(event, ended: false) { super.touchesMoved(with: event) }
+    }
+    override func touchesEnded(with event: NSEvent) {
+        if !report(event, ended: true) { super.touchesEnded(with: event) }
+    }
+    override func touchesCancelled(with event: NSEvent) {
+        if !report(event, ended: true) { super.touchesCancelled(with: event) }
+    }
+
+    private func report(_ event: NSEvent, ended: Bool) -> Bool {
+        guard let onTouches else { return false }
+        let touches = event.touches(matching: .touching, in: self)
+        return onTouches(touches.count, TabPeekTouches.averageY(touches), ended)
     }
 
     override func scrollWheel(with event: NSEvent) {

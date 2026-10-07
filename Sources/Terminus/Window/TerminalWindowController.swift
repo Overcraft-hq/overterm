@@ -52,6 +52,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let sessions = SessionsModel()
     private(set) var overviewView: NSView?
     private var overviewPoll: Timer?
+    /// Three fingers down (or ⇧⌘E): every tab's live terminal as a card.
+    private(set) lazy var peek = TabPeekController(container: container)
+    private(set) var peekView: TabPeekHostingView<TabPeekView>?
+    /// Esc / the arrows while the peek shows, wherever the keyboard is —
+    /// as the overview's, and for the same reason.
+    private var peekKeys: Any?
     /// Esc while the overview shows, wherever the keyboard is: its host
     /// having it was not enough (a click, or the terminal behind, took it).
     private var overviewEscape: Any?
@@ -213,6 +219,33 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             spotlightView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
         self.spotlightView = spotlightView
+
+        // Tab peek draws over the terminals, inside their column: the cards
+        // are the hosts themselves, scaled in place.
+        let peekView = TabPeekHostingView(
+            rootView: TabPeekView(
+                model: peek.model, theme: theme,
+                onChoose: { [weak self] in self?.peek.choose($0) },
+                onClose: { [weak self] in self?.peek.closeTab($0) },
+                onDismiss: { [weak self] in self?.peek.close() }))
+        peekView.onEscape = { [weak self] in self?.peek.close() }
+        peekView.onKey = { [weak self] in self?.peek.handle(key: $0) ?? false }
+        peekView.onTouches = { [weak self] fingers, y, ended in
+            self?.peek.touched(fingers: fingers, y: y, ended: ended)
+        }
+        peekView.allowedTouchTypes = [.indirect]
+        peekView.translatesAutoresizingMaskIntoConstraints = false
+        peekView.isHidden = true
+        container.addSubview(peekView)
+        NSLayoutConstraint.activate([
+            peekView.topAnchor.constraint(equalTo: container.topAnchor),
+            peekView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            peekView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            peekView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        self.peekView = peekView
+        peek.owner = self
+        peek.chrome = peekView
 
         // Editor to the right of the terminal, opened from the file tree.
         let editor = EditorViewController(
@@ -380,6 +413,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         hosts[tab.id] = host
         refreshHost(tab)
         store.insert(tab, after: anchor)
+        peek.relayout()
     }
 
     /// Connects one pane to its tab and the window. The tab's title and
@@ -398,6 +432,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tab.focus(pane)
             self.refreshHost(tab)
             if self.store.selectedID == tab.id { self.bindSearchBar(to: pane) }
+        }
+        pane.onTouches = { [weak self] fingers, y, ended in
+            guard let self, self.peek.wantsTouches(fingers) else { return false }
+            self.peek.touched(fingers: fingers, y: y, ended: ended)
+            return true
         }
         pane.onSearchRequest = { [weak self, weak pane] needle in
             guard let self, let pane else { return }
@@ -1207,7 +1246,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         Data("rename: still renaming=\(self?.store.renamingID != nil) firstResponder=\(responder)\n".utf8))
                 }
             }
-            let settle = 1.5 + (Double(env["TERMINUS_DUMP_CLOSE"] ?? "") ?? 0)
+            // TERMINUS_DUMP_PEEK=1: open tab peek first, so the tree and the
+            // PNG show its cards. A second tab, since one tab has nothing to
+            // peek at.
+            if env["TERMINUS_DUMP_PEEK"] == "1" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    guard let self else { return }
+                    if self.store.tabs.count < 3 {
+                        self.newTab(from: self.store.selected?.terminal)
+                        self.newTab(from: self.store.selected?.terminal)
+                    }
+                    self.peek.open(.overview)
+                }
+            }
+            let settle = 1.5 + (env["TERMINUS_DUMP_PEEK"] == "1" ? 1.5 : 0) + (Double(env["TERMINUS_DUMP_CLOSE"] ?? "") ?? 0)
             DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
                 guard let self, let content = self.window?.contentView else { return }
                 var out = "window \(self.window!.frame.size) split dividers=\(self.split.splitView.dividerThickness)\n"
@@ -1227,6 +1279,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // The composited window as it is on screen (terminal included).
                 // An app may capture its own windows without Screen Recording
                 // permission; cacheDisplay misses layer-backed content here.
+                if env["TERMINUS_DUMP_PEEK"] == "1" {
+                    out += "peek open=\(self.peek.isOpen) cards=\(self.peek.model.cards.count)\n"
+                    for (tab, card) in zip(self.store.tabs, self.peek.model.cards) {
+                        // Where the host's layer really lands, which is the
+                        // only way the transform was ever got right: AppKit
+                        // anchors it at (0, 0) and flips its geometry.
+                        let layer = self.host(of: tab)?.layer
+                        let landed = layer.flatMap { l in l.superlayer.map { l.convert(CGPoint.zero, to: $0) } }
+                        out += "  card \(card.content.integral) host origin -> \(landed.map { "\($0)" } ?? "nil")\n"
+                    }
+                }
+                FileHandle.standardError.write(Data(out.utf8))
+                out = ""
                 if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] { self.captureWindow(to: png) }
                 // Drag both dividers 80 pt with in-process events (posted to
                 // this app's own queue only) and see whether the panes follow.
@@ -1444,6 +1509,31 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         return nil
     }
 
+    // MARK: Tab peek
+
+    /// ⇧⌘E: every tab's live terminal as a card. Three fingers down the
+    /// trackpad opens it a stage at a time (TabPeekController).
+    @objc func toggleTabPeek(_ sender: Any?) {
+        peek.toggle()
+    }
+
+    /// Esc and the arrows wherever the keyboard is, as the overview's: a
+    /// click, or the terminal behind, takes first responder back.
+    func installPeekKeys() {
+        if let peekKeys { NSEvent.removeMonitor(peekKeys) }
+        peekKeys = nil
+        guard peek.isOpen else { return }
+        peekKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window, self.peek.isOpen else { return event }
+            if event.keyCode == 53 {
+                self.peek.close()
+                self.installPeekKeys()
+                return nil
+            }
+            return self.peek.handle(key: event) ? nil : event
+        }
+    }
+
     /// ⇧⌘A: every tab as a card; again (or Esc) hides it.
     @objc func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }
@@ -1505,6 +1595,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             },
             PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
                 [weak self] _ in self?.showAgentOverview(nil)
+            },
+            PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
+                [weak self] _ in self?.toggleTabPeek(nil)
             },
             PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
                 [weak self] _ in self?.showPullRequest(nil)
@@ -1768,6 +1861,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         hosts[tab.id] = nil
         store.remove(tab)
         updateAttentionBadge()
+        peek.relayout()
         guard store.tabs.isEmpty else { return }
         // The editor's unsaved changes keep the window: a fresh tab takes the
         // last one's place instead of the window closing — window.close()
@@ -1819,19 +1913,31 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         store.move(tab, by: amount)
     }
 
-    private func focusSelectedTerminal() {
+    func focusSelectedTerminal() {
         guard let terminal = store.selected?.terminal else { return }
         window?.makeFirstResponder(terminal)
     }
 
-    private func showSelectedTab() {
+    /// Only the selected tab renders. Apart from a tab switch this is what
+    /// tab peek calls to put the others back to sleep when it closes.
+    func applyTabVisibility() {
         guard let selected = store.selected else { return }
         for tab in store.tabs where tab.id != selected.id {
             hosts[tab.id]?.setVisible(false)
         }
         hosts[selected.id]?.setVisible(true)
+    }
+
+    private func showSelectedTab() {
+        guard let selected = store.selected else { return }
+        // A tab chosen from the peek selects before the peek has flown out;
+        // leaving the others visible until then keeps the animation.
+        if !peek.isOpen && !peek.isSettling { applyTabVisibility() }
         // Not while a tab name is being edited: that field has the keyboard.
-        if store.renamingID == nil { window?.makeFirstResponder(selected.terminal) }
+        // Nor while tab peek shows: selection is published a turn late, so a
+        // peek opened right after a tab switch would lose the keyboard to
+        // the terminal behind it and stop answering the arrows.
+        if store.renamingID == nil && !peek.isOpen { window?.makeFirstResponder(selected.terminal) }
         window?.title = selected.title
         markSelectedSeen()
         // Tree, worktrees and diff show the tab's checkout: attached, else
@@ -1982,9 +2088,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         return false
     }
 
+    /// The peek's cards are frames in the container; a resize moves them.
+    func windowDidResize(_ notification: Notification) { peek.relayout() }
+
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
+        if let peekKeys { NSEvent.removeMonitor(peekKeys) }
+        peek.close()
         saveFinalSession()
         agentPoll?.invalidate()
         pullRequestPoll?.invalidate()
@@ -1999,6 +2110,10 @@ extension TerminalWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(toggleDiff(_:)) {
             menuItem.state = diffItem?.isCollapsed == false ? .on : .off
+        }
+        if menuItem.action == #selector(toggleTabPeek(_:)) {
+            menuItem.state = peek.isOpen ? .on : .off
+            return store.tabs.count > 1 || peek.isOpen
         }
         return true
     }

@@ -43,6 +43,7 @@ final class E2ERunner {
         "splits": { await $0.splitsScenario() },
         "pullRequest": { await $0.pullRequestScenario() },
         "overview": { await $0.overviewScenario() },
+        "peek": { await $0.peekScenario() },
         "scrollback": { await $0.scrollbackScenario() },
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
@@ -1784,6 +1785,83 @@ final class E2ERunner {
         app.chooseOverviewCard(agentTab.id)
         check("a card goes to its tab", app.overviewView?.isHidden == true && app.store.selectedID == agentTab.id)
         check("with the keyboard", await eventually(3) { self.app.store.selected?.terminal === self.window.firstResponder })
+    }
+
+    /// Tab peek: three fingers (here, its menu action) and every tab's live
+    /// terminal becomes a card. Its whole promise is that the terminals are
+    /// moved, never resized — so that is what this measures.
+    private func peekScenario() async {
+        await waitForPrompt()
+        guard let first = app.store.selected else { return check("a tab", false) }
+        app.newTab(from: first.terminal)
+        guard let second = app.store.selected, second.id != first.id else { return check("a second tab", false) }
+        app.splitRight(nil)
+        check("a split tab to preview", second.terminals.count == 2)
+        app.newTab(from: second.terminal)
+        guard let third = app.store.selected else { return check("a third tab", false) }
+        _ = await eventually(3) { first.terminal.frame.width > 0 }
+
+        let panes = { self.app.store.tabs.flatMap { $0.terminals } }
+        let sizes = panes().compactMap { $0.surface.map { ghostty_surface_size($0) } }
+        let frames = panes().map(\.frame)
+
+        app.toggleTabPeek(nil)
+        check("⇧⌘E opens the peek", app.peekView?.isHidden == false)
+        check("it has the keyboard", window.firstResponder === app.peekView)
+        check("every tab gets a card", app.peek.model.cards.count == app.store.tabs.count, "\(app.peek.model.cards.count)")
+        check("the selected tab is highlighted", app.peek.model.highlighted == third.id)
+        check(
+            "every host is scaled into its card", app.store.tabs.allSatisfy { !CATransform3DIsIdentity(app.host(of: $0)?.layer?.transform ?? CATransform3DIdentity) },
+            app.store.tabs.map { "\(app.host(of: $0)?.layer?.transform.m11 ?? -1)" }.joined(separator: " "))
+
+        // The point of the whole design: pixels move, the pty does not.
+        await pause(0.4)
+        let after = panes().compactMap { $0.surface.map { ghostty_surface_size($0) } }
+        let sameGrid = sizes.count == after.count && zip(sizes, after).allSatisfy { $0.columns == $1.columns && $0.rows == $1.rows }
+        check("no terminal is resized by the peek", sameGrid, "\(sizes.map(\.columns)) → \(after.map(\.columns))")
+        check(
+            "and no pane's frame moved", zip(frames, panes().map(\.frame)).allSatisfy { $0 == $1 },
+            "a changed frame is a reflow")
+
+        check("every tab is showing, not just the selected one", app.store.tabs.allSatisfy { app.host(of: $0)?.isHidden == false })
+        let container = app.peekView?.superview
+        check("the cards stay inside the terminal column", app.peek.model.cards.allSatisfy { container?.bounds.insetBy(dx: -2, dy: -2).contains($0.frame) ?? false })
+        check("so the column clips what hangs out of it", container?.clipsToBounds == true)
+
+        if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+
+        // The arrows move the highlight; Return goes there.
+        let left = TabPeek.move(.left, from: third.id, in: app.peek.model.cards)
+        check("there is a card to the left", left != third.id)
+        key(123, "\u{1c}")
+        check(
+            "an arrow key moves the highlight", await eventually(2) { self.app.peek.model.highlighted == left },
+            "responder=\(String(describing: window.firstResponder.map { String(describing: Swift.type(of: $0)) })) highlighted=\(String(describing: app.peek.model.highlighted)) want=\(left) open=\(app.peek.isOpen)"
+        )
+        key(36, "\r")
+        check("Return goes to that tab", await eventually(2) { self.app.peekView?.isHidden == true && self.app.store.selectedID == left })
+        check("with the keyboard", await eventually(3) { self.app.store.selected?.terminal === self.window.firstResponder })
+        check(
+            "and the other tabs go back to sleep",
+            await eventually(2) { self.app.store.tabs.allSatisfy { $0.id == left || self.app.host(of: $0)?.isHidden == true } })
+        check(
+            "every host back where it was",
+            app.store.tabs.allSatisfy { CATransform3DIsIdentity(app.host(of: $0)?.layer?.transform ?? CATransform3DIdentity) })
+
+        // Seen by hand on the overview: something else had the keyboard and
+        // Esc did nothing. The peek goes through the same monitor.
+        app.toggleTabPeek(nil)
+        check("it opens again", app.peekView?.isHidden == false)
+        window.makeFirstResponder(app.store.selected?.terminal)
+        let escape = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53)!
+        NSApp.sendEvent(escape)
+        check("Esc closes it even when it lost the keyboard", await eventually(2) { self.app.peekView?.isHidden == true })
     }
 
     /// A shell pane's text is saved at quit and printed back into the pane

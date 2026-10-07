@@ -58,7 +58,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// What the search matches besides the title: the settings in it.
     var keywords: [String] {
         switch self {
-        case .general: ["restore", "session", "tabs", "scrollback", "new tab", "folder", "home", "close", "confirm", "notifications", "dock", "badge"]
+        case .general:
+            ["restore", "session", "tabs", "scrollback", "new tab", "folder", "home", "close", "confirm", "notifications", "dock", "badge", "peek", "swipe", "gesture", "fingers", "trackpad"]
         case .appearance: ["font", "size", "theme", "colour", "color", "padding", "cursor", "dim", "split", "pane", "ghostty"]
         case .agents: ["claude", "codex", "model", "arguments", "flags", "task", "worktree", "branch", "base"]
         case .shortcuts: ["keys", "keybind", "hotkey", "split", "search", "copy", "paste", "tab", "pane", "click"]
@@ -193,6 +194,15 @@ private struct GeneralSettings: View {
             }
             .fixedSize()
             SettingsNote("Tabs, the window and quitting. A pane of a split asks only when something runs in it.")
+        }
+        SettingsGroup(title: "Tab Peek") {
+            Picker("Peek at every tab with", selection: $settings.tabPeekGesture) {
+                ForEach(TabPeekGesture.Fingers.allCases) { Text($0.name).tag($0) }
+            }
+            .fixedSize()
+            SettingsNote(
+                "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Down all the way, because macOS takes three and four fingers up for Mission Control before any app sees them. Esc and ⇧⌘E work whatever this says."
+            )
         }
         SettingsGroup(title: "When a tab needs you") {
             Toggle("Notifications while Terminus is in the background", isOn: $settings.notifications)

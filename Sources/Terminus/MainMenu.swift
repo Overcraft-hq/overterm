@@ -70,6 +70,11 @@ enum MainMenu {
         let overview = viewMenu.addItem(
             withTitle: "Agent Overview", action: #selector(TerminalWindowController.showAgentOverview(_:)), keyEquivalent: "a")
         overview.keyEquivalentModifierMask = [.command, .shift]
+        // ⇧⌘E is free in Ghostty v1.3.1 (only ⌘E and ⌃⇧E are bound); ⇧⌘↓
+        // would never arrive — jump_to_prompt eats it in performKeyEquivalent.
+        let peek = viewMenu.addItem(
+            withTitle: "Tab Peek", action: #selector(TerminalWindowController.toggleTabPeek(_:)), keyEquivalent: "e")
+        peek.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(.separator())
         viewMenu.addItem(withTitle: "Toggle Sidebar", action: #selector(TerminalWindowController.toggleFileTree(_:)), keyEquivalent: "b")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
