@@ -142,6 +142,27 @@ enum TabPeek {
         return cards
     }
 
+    /// Hovering a collapsed island: just that group's tabs, one row under
+    /// the strip. The same cards as the peek's first stage, so the chrome
+    /// and the transforms are the ones already tested — only which tabs
+    /// are in it differs.
+    static func row(tabs: [UUID], in bounds: CGRect) -> [Card] {
+        guard !tabs.isEmpty, bounds.width > 0, bounds.height > 0 else { return [] }
+        let push = (bounds.height * pushFraction).rounded()
+        let cardHeight = max(push - margin * 2, headerHeight + 1)
+        let contentHeight = cardHeight - headerHeight
+        let ideal = (contentHeight * (bounds.width / bounds.height)).rounded()
+        // Narrow the cards rather than run off the edge.
+        let available = bounds.width - margin * 2 - gap * CGFloat(tabs.count - 1)
+        let cardWidth = min(ideal, max(available / CGFloat(tabs.count), 80))
+        var x = bounds.minX + margin
+        return tabs.map { id in
+            let frame = CGRect(x: x, y: bounds.minY + margin, width: cardWidth, height: cardHeight)
+            x += cardWidth + gap
+            return Card(id: id, frame: frame, content: contentRect(in: frame), isSelected: false)
+        }
+    }
+
     /// How many columns fit `count` cards of `shape`'s proportions in
     /// `area` largest, and the scale that gets them there.
     static func grid(count: Int, in area: CGSize, shape: CGSize) -> (columns: Int, scale: CGFloat) {

@@ -241,6 +241,14 @@ enum KeyCommands {
         .init("tabs.info", "Tab Info", group: "Tabs", key: "cmd+i"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),
+        // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty v1.3.1 binds
+        // both (navigate_search, inspector) and eats them before the menu,
+        // so these live on ⌃⌘, which is free apart from ⌃⌘[ and ⌃⌘].
+        .init("groups.new", "Group Selected Tabs", group: "Groups", key: "ctrl+cmd+n"),
+        .init("groups.switcher", "Group Switcher", group: "Groups", key: "ctrl+cmd+g"),
+        .init("groups.focus", "Focus on This Group", group: "Groups", key: "ctrl+cmd+f"),
+        .init("groups.stash", "Stash Group", group: "Groups", key: "ctrl+cmd+s"),
+        .init("groups.broadcast", "Broadcast Input to Group…", group: "Groups", key: "ctrl+cmd+b"),
         // Panes
         .init("splits.right", "Split Right", group: "Panes", key: "cmd+d", ghostty: "new_split:right"),
         .init("splits.down", "Split Down", group: "Panes", key: "shift+cmd+d", ghostty: "new_split:down"),
@@ -278,7 +286,7 @@ enum KeyCommands {
     ]
 
     static let byID: [String: KeyCommand] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    static let groups = ["Terminus", "Tabs", "Panes", "Panels", "Editing", "Terminal", "Window"]
+    static let groups = ["Terminus", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window"]
 }
 
 /// keybindings.json, VS Code's way: a list of { "key", "command" }, each

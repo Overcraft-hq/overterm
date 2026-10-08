@@ -61,6 +61,10 @@ final class Tab: ObservableObject, Identifiable {
 
     @Published var activity = TabActivity()
 
+    /// The island this tab belongs to, if any. The group is looked up in
+    /// `TabStore.groups`; the store keeps a group's tabs contiguous.
+    @Published var groupID: TabGroup.ID?
+
     /// The agent this tab was opened for, if any.
     let agent: Agent?
 
@@ -72,7 +76,25 @@ final class Tab: ObservableObject, Identifiable {
         self.shellTitle = terminal.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? "Terminal"
     }
 
-    var title: String { customTitle ?? shellTitle }
+    /// What the strip shows: the name you gave it, else the shell's title
+    /// shortened to the folder itself. Shells (and themes) set the title to
+    /// the whole path, which fills a tab with `~/Documents/opensource/`
+    /// and hides the part that tells them apart.
+    var title: String { customTitle ?? Self.shortened(shellTitle) }
+
+    /// The last component of a title that is nothing but a path; anything
+    /// else is left alone — `pnpm dev` and `nvim src/main.swift` say what
+    /// they say, and cutting them would lose it.
+    static func shortened(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard trimmed.contains("/"), !trimmed.contains(" ") else { return title }
+        // A path and nothing else: /src/app, ~/src/app, src/app, with any
+        // number of trailing slashes.
+        var path = trimmed
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        let last = (path as NSString).lastPathComponent
+        return last.isEmpty ? title : last
+    }
 
     /// `pane` has the keyboard now; the tab shows its title and directory.
     func focus(_ pane: TerminalView) {

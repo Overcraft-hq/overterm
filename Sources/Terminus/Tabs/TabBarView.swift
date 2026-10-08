@@ -39,17 +39,18 @@ struct TabBarView: View {
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
     let actions: TabBarActions
+    let groupActions: TabGroupActions
 
     var body: some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: leadingInset)
-            ForEach(store.tabs) { tab in
-                TabItemView(
-                    tab: tab,
-                    store: store,
-                    theme: theme,
-                    actions: actions
-                )
+            ForEach(Array(store.focusedStrip.enumerated()), id: \.offset) { _, item in
+                switch item {
+                case .loose(let tab):
+                    TabItemView(tab: tab, store: store, theme: theme, actions: actions)
+                case .group(let group, let tabs):
+                    GroupIslandView(group: group, tabs: tabs, store: store, theme: theme, actions: actions, groupActions: groupActions)
+                }
             }
             if store.settingsOpen {
                 SettingsTabItem(selected: store.settingsShowing, theme: theme, select: actions.showSettings, close: actions.closeSettings)
@@ -94,6 +95,8 @@ struct TabBarView: View {
                 .help("Terminus \(release.version) is out — Settings ▸ About")
                 .padding(.trailing, 6)
             }
+            StashedGroupsChip(store: store, theme: theme, restore: groupActions.restore)
+                .padding(.trailing, 4)
             Button(action: actions.showOverview) {
                 Image(systemName: "square.grid.2x2").font(.system(size: 12)).frame(width: 26, height: 24).contentShape(Rectangle())
             }
@@ -116,6 +119,21 @@ struct TabBarView: View {
         .onPreferenceChange(TabFramesKey.self) { frames in
             MainActor.assumeIsolated { store.tabFrames = frames }
         }
+        .onPreferenceChange(GroupChipFramesKey.self) { frames in
+            MainActor.assumeIsolated { store.groupChipFrames = frames }
+        }
+    }
+}
+
+/// Each island chip's frame in the strip, top-left origin — so the
+/// window's event monitor can tell which chip a context click landed on.
+/// The strip is in the title bar, which eats right-clicks before SwiftUI
+/// sees them, so `.contextMenu` there does nothing (docs/debugging.md).
+struct GroupChipFramesKey: PreferenceKey {
+    static let defaultValue: [TabGroup.ID: CGRect] = [:]
+
+    static func reduce(value: inout [TabGroup.ID: CGRect], nextValue: () -> [TabGroup.ID: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
@@ -129,7 +147,9 @@ struct TabFramesKey: PreferenceKey {
     }
 }
 
-private struct TabItemView: View {
+/// One tab in the strip. Not private: the group islands draw their
+/// members with it too (Groups/TabGroupViews).
+struct TabItemView: View {
     @ObservedObject var tab: Tab
     @ObservedObject var store: TabStore
     let theme: ChromeTheme
@@ -249,6 +269,16 @@ private struct TabItemView: View {
         // Single and double tap together, not exclusively: an exclusive double
         // tap would delay every plain click by the double-click interval.
         .onTapGesture { actions.select(tab) }
+        // ⌘-click marks a tab for a group command. It is handled by the
+        // window's mouse monitor, not here: a SwiftUI
+        // `TapGesture().modifiers(.command)` in the strip swallowed every
+        // ⌘ shortcut in the app — ⌘B stopped hiding the sidebar.
+        .overlay {
+            if store.isMarked(tab) {
+                RoundedRectangle(cornerRadius: 6).strokeBorder(TabStatusStyle.signal.opacity(0.9), lineWidth: 1.5)
+                    .allowsHitTesting(false)
+            }
+        }
         .simultaneousGesture(TapGesture(count: 2).onEnded { if !tab.isPinned { store.renamingID = tab.id } })
         .onHover { hovering = $0 }
         // Reordering is done by the window (installTabMouseHandling): drags

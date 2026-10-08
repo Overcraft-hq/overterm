@@ -19,6 +19,20 @@ struct SessionState: Codable, Equatable {
         var focusedPane: Int?
         /// A one-pane tab's saved text (a file in Scrollback.directory).
         var scrollback: String?
+        /// The island it belonged to — an index into `groups` (absent in
+        /// older session files, and for a tab in no group).
+        var group: Int?
+    }
+
+    /// An island, enough to put it back (Groups/TabGroup).
+    struct GroupState: Codable, Equatable {
+        var name: String
+        var color: String
+        var isCollapsed: Bool
+        var isStashed: Bool
+        var folder: String?
+        /// Off: the group's tabs are not reopened on the next launch.
+        var restoresOnLaunch: Bool
     }
 
     /// A split tab's layout: each pane's directory, each split's shape.
@@ -66,6 +80,9 @@ struct SessionState: Codable, Equatable {
 
     var tabs: [TabState]
     var selectedIndex: Int?
+    /// The islands, in strip order; a tab points at one by index. Absent
+    /// in session files written before groups existed.
+    var groups: [GroupState]?
 
     static let empty = SessionState(tabs: [], selectedIndex: nil)
 

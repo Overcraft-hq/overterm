@@ -9,6 +9,42 @@ final class TabStore: ObservableObject {
     @Published private(set) var selectedID: Tab.ID?
     /// The tab whose name is being edited in the strip, if any.
     @Published var renamingID: Tab.ID?
+
+    /// The islands (TabStore+Groups). Their order in the strip comes from
+    /// the tabs, not from this list.
+    @Published var groups: [TabGroup] = []
+    /// Focus on one group: only its island is in the strip. Set it through
+    /// `setFocused`, which moves the selection with it.
+    @Published var focusedGroupID: TabGroup.ID?
+    /// The group whose name is being edited in its chip, if any.
+    @Published var renamingGroupID: TabGroup.ID?
+    /// Where the arrows are in the group switcher (⌃⌘G).
+    @Published var switcherHighlight: TabGroup.ID?
+
+    /// ⌘-clicked tabs, for "Add 2 Tabs to New Group". The selected tab is
+    /// not in here: `selectedTabs` adds it.
+    @Published private(set) var multiSelection: Set<Tab.ID> = []
+
+    /// What a group command acts on: the ⌘-clicked tabs in strip order,
+    /// with the selected one, or just the selected one.
+    var selectedTabs: [Tab] {
+        let marked = tabs.filter { multiSelection.contains($0.id) || $0.id == selectedID }
+        return marked.isEmpty ? [selected].compactMap { $0 } : marked
+    }
+
+    /// ⌘-click: add or remove a tab from the marked set. The selected tab
+    /// can't be unmarked — it is always part of the command.
+    func toggleMultiSelection(_ tab: Tab) {
+        guard tab.id != selectedID else { return }
+        if multiSelection.contains(tab.id) { multiSelection.remove(tab.id) } else { multiSelection.insert(tab.id) }
+    }
+
+    func clearMultiSelection() {
+        guard !multiSelection.isEmpty else { return }
+        multiSelection = []
+    }
+
+    func isMarked(_ tab: Tab) -> Bool { multiSelection.contains(tab.id) }
     /// The Settings tab: a page, not a terminal, after the terminal tabs
     /// while open (Warp's). Selecting it covers the window's body; the
     /// selected terminal tab stays selected underneath.
@@ -24,15 +60,22 @@ final class TabStore: ObservableObject {
     private var pinnedCount: Int { tabs.prefix { $0.isPinned }.count }
 
     /// Chrome's rule: a new tab goes right after the current one — or, from a
-    /// pinned tab, first among the unpinned ones.
+    /// pinned tab, first among the unpinned ones. It joins the anchor's
+    /// island, as Chrome's does, so a group doesn't gain a hole.
     func insert(_ tab: Tab, after anchor: Tab?) {
         if let anchor, let i = index(of: anchor) {
+            if tab.groupID == nil, !anchor.isPinned { tab.groupID = anchor.groupID }
             tabs.insert(tab, at: max(i + 1, pinnedCount))
         } else {
             tabs.append(tab)
         }
         selectedID = tab.id
+        normalize()
     }
+
+    /// Reorders the whole list. Only the group layer (TabStore+Groups) uses
+    /// it, and only to restore the invariants it documents.
+    func replaceTabs(_ newTabs: [Tab]) { tabs = newTabs }
 
     func setPinned(_ tab: Tab, _ pinned: Bool) {
         guard tab.isPinned != pinned, let i = index(of: tab) else { return }
@@ -50,9 +93,12 @@ final class TabStore: ObservableObject {
         if selectedID == tab.id {
             selectedID = tabs.isEmpty ? nil : tabs[min(i, tabs.count - 1)].id
         }
+        pruneEmptyGroups()
     }
 
     func select(_ tab: Tab) {
+        // A plain click starts a new command: the ⌘-clicked set goes.
+        clearMultiSelection()
         // Re-selecting would still publish, and the window answers a
         // selection by focusing the terminal — which ended an in-place
         // rename the moment it began (menu and double-click select first).
@@ -75,6 +121,13 @@ final class TabStore: ObservableObject {
     /// Where each tab is drawn in the strip (top-left origin), so the window
     /// can tell which tab a right-click landed on.
     var tabFrames: [Tab.ID: CGRect] = [:]
+
+    /// The same for the islands' chips.
+    var groupChipFrames: [TabGroup.ID: CGRect] = [:]
+
+    func group(at point: CGPoint) -> TabGroup? {
+        groups.first { groupChipFrames[$0.id]?.contains(point) == true }
+    }
 
     func tab(at point: CGPoint) -> Tab? {
         tabs.first { tabFrames[$0.id]?.contains(point) == true }

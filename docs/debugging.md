@@ -36,6 +36,8 @@ More switches, combinable:
 | `TERMINUS_DUMP_DIFF=1` | open the changes pane |
 | `TERMINUS_DUMP_RENAME=1` | select the tab and start renaming it (as the UI does); 0.5 s later print whether it is still renaming and who has the keyboard |
 | `TERMINUS_DUMP_CLOSE=<s>` | after `<s>` seconds, run Close Tab; print whether the confirmation sheet came up, its text, and the tab count; dismiss it |
+| `TERMINUS_DUMP_PEEK=1` | open Tab Peek (making tabs if needed) before the dump, and print where each host's layer actually lands — how the peek's transform was got right |
+| `TERMINUS_DUMP_GROUPS=1` | make an island of two tabs before the dump, and print the strip's islands with the tab and chip frames the context-click monitor needs |
 
 Run it from the **bundle** (`Terminus.app/Contents/MacOS/Terminus`): a bare
 `.build/debug/Terminus` crashes in `UNUserNotificationCenter` ("bundleProxy

@@ -182,6 +182,57 @@ final class TabPeekController {
         owner.closeTab(tab)
     }
 
+    // MARK: Peeking into one collapsed island
+
+    /// Hovering a collapsed group's chip shows that group's terminals as a
+    /// row, live, without opening the full peek. Nil ends it.
+    func peekGroup(_ tabs: [Tab]?) {
+        guard stage == .closed || groupPeek != nil else { return }
+        if let tabs, !tabs.isEmpty {
+            if groupPeek == nil {
+                container.clipsToBounds = true
+                refreshEntries()
+                chrome?.isHidden = false
+                chrome?.superview?.addSubview(chrome!, positioned: .above, relativeTo: nil)
+            }
+            let first = groupPeek == nil
+            groupPeek = tabs.map(\.id)
+            for tab in tabs { owner?.host(of: tab)?.setVisible(true) }
+            applyGroupPeek(animated: first)
+        } else {
+            guard groupPeek != nil else { return }
+            groupPeek = nil
+            chrome?.isHidden = true
+            model.cards = []
+            model.progress = 0
+            resetLayers()
+            owner?.applyTabVisibility()
+        }
+    }
+
+    /// The tabs of the island being hovered, if any.
+    private(set) var groupPeek: [Tab.ID]?
+
+    private func applyGroupPeek(animated: Bool) {
+        guard let ids = groupPeek else { return }
+        let bounds = container.bounds
+        let cards = TabPeek.row(tabs: ids, in: bounds)
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        for card in cards {
+            guard let tab = owner?.store.tabs.first(where: { $0.id == card.id }),
+                let host = owner?.host(of: tab)
+            else { continue }
+            host.peekTransform = TabPeek.transform(from: bounds, to: card.content)
+            host.layer?.masksToBounds = true
+            host.layer?.cornerRadius = bounds.width > 0 ? TabPeek.cornerRadius / (card.content.width / bounds.width) : 0
+            host.layer?.minificationFilter = .trilinear
+        }
+        CATransaction.commit()
+        model.progress = 1
+        model.cards = cards
+    }
+
     // MARK: Laying the hosts out
 
     /// Puts every host where `progress` says, by transform only.

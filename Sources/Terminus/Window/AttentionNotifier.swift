@@ -48,6 +48,21 @@ enum AttentionNotifier {
         }
     }
 
+    /// Leaving focus: everything that waited, as one notice rather than a
+    /// burst — the point of focusing was not to be interrupted.
+    static func summarize(_ held: [GroupFocus.Held]) {
+        guard !NSApp.isActive, Settings.shared.notifications, !held.isEmpty else { return }
+        if AppEnvironment.isIsolated {
+            suppressed += 1
+            return
+        }
+        let content = UNMutableNotificationContent()
+        content.title = held.count == 1 ? "1 tab waited while you focused" : "\(held.count) tabs waited while you focused"
+        content.body = held.map { "\($0.groupName) · \($0.title) — \($0.note)" }.joined(separator: "\n")
+        let request = UNNotificationRequest(identifier: "focus-summary", content: content, trigger: nil)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound], completionHandler: authorized(then: request))
+    }
+
     static func withdraw(tab: Tab) {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [tab.id.uuidString])
     }

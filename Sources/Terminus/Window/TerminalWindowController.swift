@@ -55,6 +55,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// The Settings tab's page (Warp's): over the window's body while it shows.
     let settingsPage = SettingsPageModel()
     private(set) var settingsView: NSView?
+    /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
+    let focus = GroupFocus()
+    /// ⌥⌘I: one line typed into every tab of an island.
+    let broadcast = BroadcastModel()
+    /// The broadcast and focus bars, under the terminal.
+    private(set) var groupBars: NSHostingView<GroupBarsView>?
+    /// ⌃⌘G: the islands and their tabs.
+    private(set) var switcherView: GroupSwitcherHostingView<GroupSwitcherView>?
+    /// Esc / the arrows while the switcher shows, wherever the keyboard is.
+    private var switcherKeys: Any?
     /// Three fingers down (or ⇧⌘E): every tab's live terminal as a card.
     private(set) lazy var peek = TabPeekController(container: container)
     private(set) var peekView: TabPeekHostingView<TabPeekView>?
@@ -154,6 +164,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     closeSettings: { [weak self] in self?.closeSettings() },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
+                ),
+                groupActions: TabGroupActions(
+                    select: { [weak self] group in self?.selectGroup(group) },
+                    toggleCollapsed: { [weak self] group in self?.toggleGroupCollapsed(group) },
+                    rename: { [weak self] group in self?.store.renamingGroupID = group.id },
+                    setColor: { group, color in group.color = color },
+                    newTab: { [weak self] group in self?.newTab(in: group) },
+                    broadcast: { [weak self] group in self?.beginBroadcast(to: group) },
+                    closeIdle: { [weak self] group in self?.closeIdleTabs(in: group) },
+                    focus: { [weak self] group in self?.toggleFocus(on: group) },
+                    stash: { [weak self] group in self?.stashGroup(group) },
+                    restore: { [weak self] group in self?.restoreGroup(group) },
+                    ungroup: { [weak self] group in self?.store.ungroup(group) },
+                    close: { [weak self] group in self?.closeGroup(group) },
+                    setRestoresOnLaunch: { group, value in group.restoresOnLaunch = value },
+                    peek: { [weak self] group in self?.peekGroup(group) }
                 )
             )
             .background(theme.strip)
@@ -264,6 +290,33 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         self.peekView = peekView
         peek.owner = self
         peek.chrome = peekView
+
+        // Group modes live under the terminal, not over it: you work inside
+        // them. They take no room while closed.
+        let groupBars = NSHostingView(
+            rootView: GroupBarsView(
+                broadcast: broadcast, focus: focus, store: store, theme: theme,
+                onSend: { [weak self] in self?.broadcast.send() },
+                onStopBroadcast: { [weak self] in self?.stopBroadcast() },
+                onLeaveFocus: { [weak self] in self?.leaveFocus() }))
+        groupBars.translatesAutoresizingMaskIntoConstraints = false
+        // Out of the layout entirely while no group mode is on, so an empty
+        // bar can never take part in sizing the column.
+        groupBars.isHidden = true
+        container.addSubview(groupBars)
+        // All four edges, as the peek's host and the ⌘F overlay are. Pinned
+        // only to the bottom, its height was its content's — and SwiftUI
+        // then offered a fitting *width* too, which decided the terminal
+        // column's: the sidebar came up 458 pt wide instead of 184 and the
+        // whole window looked wrong. Filling the column instead, the bars
+        // sit at the bottom from inside (GroupBarsView).
+        NSLayoutConstraint.activate([
+            groupBars.topAnchor.constraint(equalTo: container.topAnchor),
+            groupBars.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            groupBars.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            groupBars.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        self.groupBars = groupBars
 
         // Editor to the right of the terminal, opened from the file tree.
         let editor = EditorViewController(
@@ -401,6 +454,26 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             overviewView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         self.overviewView = overviewView
+
+        let switcherView = GroupSwitcherHostingView(
+            rootView: GroupSwitcherView(
+                store: store, theme: theme,
+                onChoose: { [weak self] in self?.chooseGroup($0) },
+                onChooseTab: { [weak self] in self?.chooseGroupTab($0) },
+                onMoveHere: { [weak self] in self?.moveSelectedTab(to: $0) },
+                onDismiss: { [weak self] in self?.hideGroupSwitcher() }))
+        switcherView.onEscape = { [weak self] in self?.hideGroupSwitcher() }
+        switcherView.onKey = { [weak self] in self?.handleSwitcher(key: $0) ?? false }
+        switcherView.translatesAutoresizingMaskIntoConstraints = false
+        switcherView.isHidden = true
+        content.addSubview(switcherView)
+        NSLayoutConstraint.activate([
+            switcherView.topAnchor.constraint(equalTo: content.topAnchor),
+            switcherView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            switcherView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            switcherView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        self.switcherView = switcherView
         window.contentView = content
     }
 
@@ -484,7 +557,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         pane.onEvent = { [weak self, weak tab] event in
             guard let self, let tab else { return }
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
-                AttentionNotifier.notify(tab: tab)
+                // While focusing on one island, another group's notice waits
+                // — unless its agent is blocked on you.
+                self.notifyUnlessHeld(tab)
             }
             if event == .bell, self.isVisible(tab) { NSSound.beep() }
             self.updateAttentionBadge()
@@ -756,7 +831,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// `scrollback`: each pane's saved text, by pane (only at quit).
     func sessionState(scrollback: [ObjectIdentifier: String]) -> SessionState {
-        SessionState(
+        // Islands in strip order, stashed ones after, so a tab's index is
+        // stable and the strip comes back as it was.
+        let ordered = switcherGroups
+        let indexOf = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset) })
+        return SessionState(
             tabs: store.tabs.map { tab in
                 .init(
                     workingDirectory: tab.workingDirectory, customTitle: tab.customTitle, color: tab.color?.rawValue,
@@ -765,9 +844,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         ? SessionState.PaneLayout(tab.splits, directory: \.workingDirectory, scrollback: { scrollback[ObjectIdentifier($0)] })
                         : nil,
                     focusedPane: tab.isSplit ? tab.terminals.firstIndex { $0 === tab.terminal } : nil,
-                    scrollback: tab.isSplit ? nil : scrollback[ObjectIdentifier(tab.terminal)])
+                    scrollback: tab.isSplit ? nil : scrollback[ObjectIdentifier(tab.terminal)],
+                    group: tab.groupID.flatMap { indexOf[$0] })
             },
-            selectedIndex: store.selectedIndex)
+            selectedIndex: store.selectedIndex,
+            groups: ordered.isEmpty
+                ? nil
+                : ordered.map {
+                    .init(
+                        name: $0.name, color: $0.color.rawValue, isCollapsed: $0.isCollapsed, isStashed: $0.isStashed,
+                        folder: $0.folder, restoresOnLaunch: $0.restoresOnLaunch)
+                })
     }
 
     /// The last save, at quit or when the window closes (whichever comes
@@ -795,7 +882,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// is gone), agents resuming their last conversation there.
     func restore(_ state: SessionState) {
         func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
+        // The islands first, so each tab can point at one as it is made.
+        let groups: [TabGroup] = (state.groups ?? []).map {
+            TabGroup(
+                name: $0.name, color: TabColor(rawValue: $0.color) ?? .blue, isCollapsed: $0.isCollapsed,
+                isStashed: $0.isStashed, stashedAt: $0.isStashed ? Date() : nil, folder: $0.folder,
+                restoresOnLaunch: $0.restoresOnLaunch)
+        }
+        store.groups = groups
         for saved in state.tabs {
+            // Settings ▸ the group's own switch: an island marked not to
+            // come back brings none of its tabs with it.
+            if let i = saved.group, groups.indices.contains(i), !groups[i].restoresOnLaunch { continue }
             // A split tab's panes, the first resuming the agent; else one terminal.
             var made: [TerminalView] = []
             let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
@@ -830,8 +928,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil
             }
             if saved.isPinned { store.setPinned(tab, true) }
+            if let i = saved.group, groups.indices.contains(i) { tab.groupID = groups[i].id }
         }
-        if let i = state.selectedIndex { store.select(index: i) }
+        store.normalize()
+        if let i = state.selectedIndex, store.tabs.indices.contains(i) { store.select(index: i) }
+        // A tab inside a stashed or collapsed island must not stay selected.
+        if let selected = store.selected, let group = store.group(of: selected), group.isStashed || group.isCollapsed,
+            let out = store.tabs.first(where: { store.group(of: $0)?.isStashed != true && store.group(of: $0)?.isCollapsed != true })
+        {
+            store.select(out)
+        }
     }
 
     /// Saves the session when anything about the tabs changes, at most once
@@ -1291,7 +1397,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     self.peek.open(.overview)
                 }
             }
-            let settle = 1.5 + (env["TERMINUS_DUMP_PEEK"] == "1" ? 1.5 : 0) + (Double(env["TERMINUS_DUMP_CLOSE"] ?? "") ?? 0)
+            // TERMINUS_DUMP_GROUPS=1: three tabs, two of them an island, so
+            // the strip's islands and the frames the context-click monitor
+            // needs can be read off the dump.
+            if env["TERMINUS_DUMP_GROUPS"] == "1" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    guard let self else { return }
+                    while self.store.tabs.count < 3 { self.newTab(from: self.store.selected?.terminal) }
+                    self.store.addToNewGroup(Array(self.store.tabs.prefix(2)), name: "island")
+                    self.store.renamingGroupID = nil
+                }
+            }
+            let settle = 1.5 + (env["TERMINUS_DUMP_GROUPS"] == "1" ? 1.0 : 0) + (env["TERMINUS_DUMP_PEEK"] == "1" ? 1.5 : 0) + (Double(env["TERMINUS_DUMP_CLOSE"] ?? "") ?? 0)
             DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
                 guard let self, let content = self.window?.contentView else { return }
                 var out = "window \(self.window!.frame.size) split dividers=\(self.split.splitView.dividerThickness)\n"
@@ -1311,6 +1428,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // The composited window as it is on screen (terminal included).
                 // An app may capture its own windows without Screen Recording
                 // permission; cacheDisplay misses layer-backed content here.
+                // Does the sidebar still collapse, and does a double-click
+                // on the strip still zoom the window? Both in-process, on
+                // this window only.
+                if let item = self.sidebarItem {
+                    let before = item.isCollapsed
+                    self.toggleFileTree(nil)
+                    out += "sidebar: collapsed \(before) -> \(item.isCollapsed)\n"
+                    self.toggleFileTree(nil)
+                }
+                if env["TERMINUS_DUMP_GROUPS"] == "1" {
+                    out += "strip: \(self.store.strip.map { item in switch item { case .group(let g, let t): "[\(g.name):\(t.count)]" case .loose(let t): t.title } }.joined(separator: " "))\n"
+                    out += "tabFrames=\(self.store.tabFrames.count) chipFrames=\(self.store.groupChipFrames.count)\n"
+                    for tab in self.store.tabs { out += "  tab \(tab.title) frame=\(self.store.tabFrames[tab.id].map { "\($0.integral)" } ?? "MISSING")\n" }
+                    for group in self.store.groups { out += "  chip \(group.name) frame=\(self.store.groupChipFrames[group.id].map { "\($0.integral)" } ?? "MISSING")\n" }
+                }
                 if env["TERMINUS_DUMP_PEEK"] == "1" {
                     out += "peek open=\(self.peek.isOpen) cards=\(self.peek.model.cards.count)\n"
                     for (tab, card) in zip(self.store.tabs, self.peek.model.cards) {
@@ -1376,14 +1508,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// dispatch, finds the tab under the pointer and shows the menu itself.
     private func installTabRightClick() {
         rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
-            guard let self, event.window === self.window, let strip = self.tabBarView else { return event }
-            var point = strip.convert(event.locationInWindow, from: nil)
-            guard strip.bounds.contains(point) else { return event }
-            if !strip.isFlipped { point.y = strip.bounds.height - point.y }
-            guard let tab = self.store.tab(at: point) else { return event }
-            NSMenu.popUpContextMenu(self.menu(for: tab), with: event, for: strip)
-            return nil
+            guard let self, let point = self.stripPoint(event) else { return event }
+            return self.showStripMenu(at: point, with: event) ? nil : event
         }
+    }
+
+    /// The menu for whatever is under `point` in the strip: an island's chip
+    /// first (it sits inside its island, over the same area), else a tab.
+    /// Returns whether anything was shown.
+    private func showStripMenu(at point: CGPoint, with event: NSEvent) -> Bool {
+        guard let strip = tabBarView else { return false }
+        if let group = store.group(at: point) {
+            NSMenu.popUpContextMenu(menu(for: group), with: event, for: strip)
+            return true
+        }
+        guard let tab = store.tab(at: point) else { return false }
+        NSMenu.popUpContextMenu(menu(for: tab), with: event, for: strip)
+        return true
     }
 
     /// The strip point (top-left origin) under a window event, if the event
@@ -1408,10 +1549,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             switch event.type {
             case .leftMouseDown:
                 self.pressedTab = nil
-                if self.store.renamingID == nil, let point = self.stripPoint(event), let tab = self.store.tab(at: point) {
-                    self.pressedTab = (tab, point.x)
+                guard let point = self.stripPoint(event) else { return event }
+                // ⌃-click and ⌘-click ride this monitor rather than one of
+                // their own: a second monitor on .leftMouseDown is one more
+                // thing between the title bar and its own mouse handling.
+                switch StripClick.kind(type: event.type, modifiers: event.modifierFlags) {
+                case .context:
+                    return self.showStripMenu(at: point, with: event) ? nil : event
+                case .mark:
+                    guard let tab = self.store.tab(at: point) else { return event }
+                    self.store.toggleMultiSelection(tab)
+                    return nil
+                case .press, nil:
+                    if self.store.renamingID == nil, let tab = self.store.tab(at: point) {
+                        self.pressedTab = (tab, point.x)
+                    }
+                    return event
                 }
-                return event
             case .leftMouseDragged:
                 guard let pressed = self.pressedTab, let strip = self.tabBarView, event.window === self.window else { return event }
                 var point = strip.convert(event.locationInWindow, from: nil)
@@ -1452,6 +1606,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
         menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        addWorkingDirectoryItems(to: menu, for: tab)
+        menu.addItem(.separator())
+        addGroupItems(to: menu, for: tab)
         menu.addItem(.separator())
         menu.addItem(
             ClosureMenuItem(tab.isPinned ? "Unpin Tab" : "Pin Tab") { [weak self] in
@@ -1533,7 +1690,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private static func firstTextField(in view: NSView) -> NSTextField? {
+    static func firstTextField(in view: NSView) -> NSTextField? {
         if let field = view as? NSTextField, field.isEditable { return field }
         for sub in view.subviews {
             if let found = firstTextField(in: sub) { return found }
@@ -1923,6 +2080,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     private func removeTab(_ tab: Tab) {
         AttentionNotifier.withdraw(tab: tab)
+        focus.forget(tab.id)
+        broadcast.forget(tab)
         for pane in tab.terminals {
             pane.close()
             pane.removeFromSuperview()

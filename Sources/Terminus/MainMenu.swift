@@ -71,6 +71,12 @@ enum MainMenu {
         // would never arrive — jump_to_prompt eats it in performKeyEquivalent.
         command(viewMenu, "Tab Peek", #selector(TerminalWindowController.toggleTabPeek(_:)), "tabs.peek")
         viewMenu.addItem(.separator())
+        command(viewMenu, "Group Selected Tabs", #selector(TerminalWindowController.groupSelectedTabs(_:)), "groups.new")
+        command(viewMenu, "Group Switcher", #selector(TerminalWindowController.showGroupSwitcher(_:)), "groups.switcher")
+        command(viewMenu, "Focus on This Group", #selector(TerminalWindowController.toggleFocusedGroup(_:)), "groups.focus")
+        command(viewMenu, "Stash Group", #selector(TerminalWindowController.stashSelectedGroup(_:)), "groups.stash")
+        command(viewMenu, "Broadcast Input to Group…", #selector(TerminalWindowController.broadcastToGroup(_:)), "groups.broadcast")
+        viewMenu.addItem(.separator())
         command(viewMenu, "Toggle Sidebar", #selector(TerminalWindowController.toggleFileTree(_:)), "sidebar.toggle")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
