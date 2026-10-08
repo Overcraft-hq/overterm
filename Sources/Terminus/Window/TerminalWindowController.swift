@@ -99,11 +99,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         )
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        // An empty compact toolbar makes the title bar tall enough for tabs
-        // and vertically centres the traffic lights in it.
+        // An empty toolbar makes the title bar tall enough for the tab strip
+        // and vertically centres the traffic lights in it. Unified rather
+        // than unifiedCompact: the strip holds 30 pt tabs with an island
+        // around them, which needs the taller bar.
         window.toolbar = NSToolbar()
-        window.toolbarStyle = .unifiedCompact
-        window.backgroundColor = GhosttyRuntime.shared.backgroundColor
+        window.toolbarStyle = .unified
+        // The window ground is what shows between the cards, never behind a
+        // terminal — so it is the chrome's `win`, not the terminal's colour.
+        window.backgroundColor =
+            ChromeTheme(
+                background: GhosttyRuntime.shared.backgroundColor,
+                foreground: GhosttyRuntime.shared.foregroundColor
+            ).winNS
         window.tabbingMode = .disallowed
         window.center()
         window.setFrameAutosaveName("TerminusMainWindow")
@@ -228,7 +236,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
         sidebar.sizingOptions = []
-        let sidebarItem = NSSplitViewItem(viewController: sidebar)
+        let sidebarItem = NSSplitViewItem(
+            viewController: CardColumnController(sidebar, fill: theme.cardNS, theme: theme))
         sidebarItem.canCollapse = true
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 520
@@ -236,7 +245,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Shown on first launch; after that, as the user left it.
         sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
         let terminalPane = NSViewController()
-        terminalPane.view = container
+        terminalPane.view = CardColumn(content: container, fill: theme.termNS, theme: theme)
 
         let searchBar = NSHostingView(rootView: AnyView(EmptyView()))
         searchBar.translatesAutoresizingMaskIntoConstraints = false
@@ -321,7 +330,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Editor to the right of the terminal, opened from the file tree.
         let editor = EditorViewController(
             theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor, opener: opener)
-        let editorItem = NSSplitViewItem(viewController: editor)
+        let editorItem = NSSplitViewItem(
+            viewController: CardColumnController(editor, fill: theme.termNS, theme: theme))
         editorItem.canCollapse = true
         editorItem.isCollapsed = true
         editorItem.minimumThickness = 280
@@ -348,7 +358,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         self.openInEditor(root.appendingPathComponent(path), line: line)
                     })))
         diffPanel.sizingOptions = []
-        let diffItem = NSSplitViewItem(viewController: diffPanel)
+        let diffItem = NSSplitViewItem(
+            viewController: CardColumnController(diffPanel, fill: theme.cardNS, theme: theme))
         diffItem.canCollapse = true
         diffItem.minimumThickness = 320
         diffItem.holdingPriority = .defaultLow + 5
@@ -373,11 +384,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
         split.addSplitViewItem(diffItem)
-        split.splitView.dividerStyle = .thin
         // A diagnostic run shares the real app's defaults: it must not save
-        // (or restore) divider positions. The key changes with the column
-        // set (v2: diff moved here), so old positions aren't misapplied.
-        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "TerminusColumns.v2" }
+        // (or restore) divider positions. The key changes whenever a column's
+        // width means something new (v3: the cards and their 10 pt gaps), so
+        // old positions aren't misapplied.
+        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "TerminusColumns.v3" }
         self.sidebarItem = sidebarItem
 
         tabBarView = tabBar
@@ -395,11 +406,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tabBar.topAnchor.constraint(equalTo: content.topAnchor),
             tabBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            tabBar.heightAnchor.constraint(equalToConstant: titleBarHeight(of: window)),
+            tabBar.heightAnchor.constraint(equalToConstant: TabStripHostingView<AnyView>.height),
+            // The cards sit flush under the strip and 10 pt in from the
+            // window's other three edges — the same gap the dividers leave
+            // between them.
             body.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
-            body.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            body.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            body.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: GapSplitView.gap),
+            body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -GapSplitView.gap),
+            body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -GapSplitView.gap),
         ])
 
         // The Settings tab's page covers the body, under the tab strip.
@@ -1412,6 +1426,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
                 guard let self, let content = self.window?.contentView else { return }
                 var out = "window \(self.window!.frame.size) split dividers=\(self.split.splitView.dividerThickness)\n"
+                if let window = self.window {
+                    let lights = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+                        .compactMap { window.standardWindowButton($0) }
+                        .map { $0.convert($0.bounds, to: nil).integral }
+                    out += "titlebar height=\(self.titleBarHeight(of: window)) lights=\(lights)\n"
+                }
                 @MainActor func walk(_ v: NSView, _ depth: Int) {
                     guard depth < 11 else { return }
                     let name = String(describing: Swift.type(of: v)).prefix(60)
@@ -1428,15 +1448,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // The composited window as it is on screen (terminal included).
                 // An app may capture its own windows without Screen Recording
                 // permission; cacheDisplay misses layer-backed content here.
-                // Does the sidebar still collapse, and does a double-click
-                // on the strip still zoom the window? Both in-process, on
-                // this window only.
-                if let item = self.sidebarItem {
-                    let before = item.isCollapsed
-                    self.toggleFileTree(nil)
-                    out += "sidebar: collapsed \(before) -> \(item.isCollapsed)\n"
-                    self.toggleFileTree(nil)
-                }
                 if env["TERMINUS_DUMP_GROUPS"] == "1" {
                     out += "strip: \(self.store.strip.map { item in switch item { case .group(let g, let t): "[\(g.name):\(t.count)]" case .loose(let t): t.title } }.joined(separator: " "))\n"
                     out += "tabFrames=\(self.store.tabFrames.count) chipFrames=\(self.store.groupChipFrames.count)\n"
@@ -1457,6 +1468,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 FileHandle.standardError.write(Data(out.utf8))
                 out = ""
                 if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"] { self.captureWindow(to: png) }
+                // After the capture: collapsing it animates, and a window
+                // caught mid-animation is not what the PNG is for.
+                if let item = self.sidebarItem {
+                    let before = item.isCollapsed
+                    self.toggleFileTree(nil)
+                    FileHandle.standardError.write(Data("sidebar: collapsed \(before) -> \(item.isCollapsed)\n".utf8))
+                    self.toggleFileTree(nil)
+                }
                 // Drag both dividers 80 pt with in-process events (posted to
                 // this app's own queue only) and see whether the panes follow.
                 let splitView = self.split.splitView

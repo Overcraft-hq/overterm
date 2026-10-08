@@ -456,7 +456,16 @@ private struct PullRequestChip: View {
 /// The strip's host. Its clicks must never start a window drag — the empty
 /// part of the strip does that itself (WindowDragArea) — or dragging a tab
 /// would move the window instead of the tab.
+/// The tab strip, which lives in the title bar.
 final class TabStripHostingView<Content: View>: NSHostingView<Content> {
+    /// How tall the strip is.
+    ///
+    /// The unified toolbar's title bar measures 66 pt, but AppKit does not
+    /// centre the traffic lights in all of it: it puts them 19 pt from the
+    /// top, centred in the top 52. The strip is that row, so a tab lines up
+    /// with the lights; the 14 pt below is title bar the cards take.
+    static var height: CGFloat { 52 }
+
     override var mouseDownCanMoveWindow: Bool { false }
     /// The strip IS the title bar. With the title bar's inset (which
     /// `.ignoresSafeArea()` doesn't undo here) SwiftUI laid it out in the top
