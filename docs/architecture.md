@@ -372,6 +372,50 @@ drawing, splits included.
 ⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
 overview its agent's **state**.
 
+## Command blocks and the scroll map
+
+libghostty exposes **none** of OSC 133 over its C API — no prompt marks,
+no command boundaries, no jump target. What it does push is the title the
+shell integration sets, `COMMAND_FINISHED` (exit code and duration) and
+`GHOSTTY_ACTION_SCROLLBAR` (total rows, the viewport's top row, its
+height). `Blocks/CommandLedger` is those three assembled into a list of
+commands, and it is pure — every case in it is row arithmetic.
+
+Three things about it are not obvious and all three were found the hard
+way:
+
+- **The title is the command *and* the directory.** Shell integration sets
+  it to the command while one runs and back to the cwd at the prompt, so
+  half of what arrives is a path. `CommandLedger.isPrompt` tells them
+  apart; without it every prompt made a block, and each one stole the rows
+  of the command before it.
+- **`total` does not count lines.** It is the scrollback plus the screen,
+  and the screen is a fixed height — so it does not move until output
+  starts falling off the top. A command whose output fits on screen has no
+  row of its own, and says so (`CommandBlock.isLocated`): nothing
+  row-based draws for one.
+- **The scrollbar lags the exit.** The renderer recomputes it on its own
+  cadence, so the scroll caused by a command's last lines can arrive after
+  `COMMAND_FINISHED`. A finished block stays open for the one scrollbar
+  update that follows.
+
+Reading a command's output is **not** done by row: `ghostty_selection_s`
+takes exact points and libghostty clamps their y to the active screen's
+height (`embedded.zig`, `Point.pin`), so a scrollback row cannot be
+addressed at all. The whole region is readable, and the output is
+everything after the last line that *ends with* the command.
+
+The map (`Blocks/ScrollMapView`) draws over the terminal's right edge
+rather than beside it — libghostty owns the grid, and insetting it would
+cost every pane two columns forever for something you look at while
+scrolling. It follows the system's scrollbar rule: visible while you
+scroll, unless you have asked for scrollbars always. While invisible it
+takes no clicks, or selecting text at the edge of a pane would hit it.
+
+A failed command gets a ring over its rows (`Blocks/BlockFrameView`,
+AppKit and inert — it lies over live text), and the three things you then
+want are in the pane header, which does not scroll away.
+
 ## Claude sessions (sidebar)
 
 `ClaudeSessions.list` finds transcripts in `~/.claude/projects` for the

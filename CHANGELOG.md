@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.24.0 — 2026-10-08
+
+- terminal: command blocks and a scroll map
+
 ## 1.23.1 — 2026-10-08
 
 - terminal: read the scrollbar, the cell size and the selection

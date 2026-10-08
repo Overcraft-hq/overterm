@@ -59,6 +59,13 @@ enum MainMenu {
         let find = command(editMenu, "Find…", #selector(NSResponder.performTextFinderAction(_:)), "edit.find")
         find.tag = NSTextFinder.Action.showFindInterface.rawValue
         editMenu.addItem(withTitle: "Search Terminal & Files…", action: #selector(TerminalWindowController.findInTerminal(_:)), keyEquivalent: "")
+        editMenu.addItem(.separator())
+        command(
+            editMenu, "Copy the Last Command's Output", #selector(TerminalWindowController.copyLastOutput(_:)),
+            "terminal.copyOutput")
+        command(
+            editMenu, "Run the Last Command Again", #selector(TerminalWindowController.rerunLastCommand(_:)),
+            "terminal.rerun")
         editItem.submenu = editMenu
         main.addItem(editItem)
 
@@ -68,7 +75,7 @@ enum MainMenu {
         command(viewMenu, "Tab Info", #selector(TerminalWindowController.showSelectedTabInfo(_:)), "tabs.info")
         command(viewMenu, "Agent Overview", #selector(TerminalWindowController.showAgentOverview(_:)), "agents.overview")
         command(
-            viewMenu, "Next Tab That Needs You", #selector(TerminalWindowController.showNextAttention(_:)),
+            viewMenu, "Next Failure or Tab That Needs You", #selector(TerminalWindowController.showNextAttention(_:)),
             "tabs.nextAttention")
         for n in 1...9 {
             // One selector, the group's number in the tag: nine near-identical

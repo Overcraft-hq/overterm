@@ -44,9 +44,18 @@ final class SplitHostView: NSView {
     /// goes in it needs the tab, its group and the window's actions, none
     /// of which a view over TerminalViews should know about.
     var makeHeader: ((TerminalView) -> NSView)?
+    /// The same for the scroll map down a pane's right edge. A view of its
+    /// own rather than part of the header: one covering the whole pane
+    /// would sit between the terminal and the mouse.
+    var makeScrollMap: ((TerminalView) -> NSView)?
+    /// And the ring around a failed command's output, which covers the
+    /// grid and takes no clicks.
+    var makeBlockFrame: ((TerminalView) -> NSView)?
 
     private var dividers: [SplitTree<TerminalView>.Divider] = []
     private var headers: [ObjectIdentifier: NSView] = [:]
+    private var maps: [ObjectIdentifier: NSView] = [:]
+    private var frames: [ObjectIdentifier: NSView] = [:]
     private var dims: [ObjectIdentifier: NSView] = [:]
     private var visible = true
     /// Scaled into a tab peek card, which draws a header of its own: ours
@@ -91,6 +100,14 @@ final class SplitHostView: NSView {
             header.removeFromSuperview()
             headers[id] = nil
         }
+        for (id, map) in maps where !panes.contains(where: { ObjectIdentifier($0) == id }) {
+            map.removeFromSuperview()
+            maps[id] = nil
+        }
+        for (id, frame) in frames where !panes.contains(where: { ObjectIdentifier($0) == id }) {
+            frame.removeFromSuperview()
+            frames[id] = nil
+        }
         applyVisibility()
         needsLayout = true
         layoutSubtreeIfNeeded()
@@ -114,6 +131,8 @@ final class SplitHostView: NSView {
         self.previewing = previewing
         isHidden = !previewing
         headers.values.forEach { $0.isHidden = previewing }
+        maps.values.forEach { $0.isHidden = previewing }
+        frames.values.forEach { $0.isHidden = previewing }
         for pane in tree?.leaves ?? [] {
             pane.setPreviewing(previewing && (zoomed == nil || pane === zoomed))
         }
@@ -133,6 +152,8 @@ final class SplitHostView: NSView {
             dividers = []
             dims.values.forEach { $0.isHidden = true }
             for (id, header) in headers { header.isHidden = previewing || id != ObjectIdentifier(zoomed) }
+            for (id, map) in maps { map.isHidden = previewing || id != ObjectIdentifier(zoomed) }
+            for (id, frame) in frames { frame.isHidden = previewing || id != ObjectIdentifier(zoomed) }
         } else {
             let (panes, dividers) = tree.layout(in: bounds, divider: Self.dividerThickness)
             self.dividers = dividers
@@ -165,9 +186,38 @@ final class SplitHostView: NSView {
         }
         header.isHidden = previewing
         header.frame = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: Self.headerHeight)
-        pane.frame = CGRect(
+        let body = CGRect(
             x: rect.minX, y: rect.minY + Self.headerHeight,
             width: rect.width, height: max(rect.height - Self.headerHeight, 0))
+        pane.frame = body
+        // Over the terminal's right edge, not beside it — the map is for
+        // while you scroll, and insetting the grid for it would cost every
+        // pane two columns forever.
+        if let frame = chrome(for: pane, in: &frames, make: makeBlockFrame) {
+            frame.isHidden = previewing
+            frame.frame = body
+        }
+        if let map = mapView(for: pane) {
+            map.isHidden = previewing
+            map.frame = CGRect(
+                x: body.maxX - ScrollMapView.width, y: body.minY, width: ScrollMapView.width, height: body.height)
+        }
+    }
+
+    private func mapView(for pane: TerminalView) -> NSView? {
+        chrome(for: pane, in: &maps, make: makeScrollMap)
+    }
+
+    /// A piece of chrome over a pane, made once and kept with it.
+    private func chrome(
+        for pane: TerminalView, in store: inout [ObjectIdentifier: NSView], make: ((TerminalView) -> NSView)?
+    ) -> NSView? {
+        if let existing = store[ObjectIdentifier(pane)] { return existing }
+        guard let view = make?(pane) else { return nil }
+        view.translatesAutoresizingMaskIntoConstraints = true
+        addSubview(view, positioned: .above, relativeTo: pane)
+        store[ObjectIdentifier(pane)] = view
+        return view
     }
 
     private func headerView(for pane: TerminalView) -> NSView? {

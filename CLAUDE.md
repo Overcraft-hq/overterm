@@ -41,6 +41,7 @@ make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
 | `Sources/Terminus/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
 | `Sources/Terminus/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
+| `Sources/Terminus/Blocks/` | what a pane has run: `CommandLedger` (pure — the title, `COMMAND_FINISHED` and the scrollbar assembled into commands), `ScrollMapView`, `BlockFrameView` |
 | `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |
 | `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
 | `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |

@@ -89,6 +89,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
+    /// What each pane has run (`CommandLedger`), kept for as long as the
+    /// pane is. Keyed by the view because a pane outlives nothing else.
+    private var paneBlocks: [ObjectIdentifier: PaneBlocks] = [:]
+
     /// A new island's settings, under its chip (`showGroupPopover`).
     var groupPopover: NSPopover?
 
@@ -527,12 +531,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tab.setSplits(tab.splits.settingRatio(ratio, at: path))
             self.refreshHost(tab)
         }
+        host.makeBlockFrame = { [weak self] pane in
+            guard let self else { return NSView() }
+            return BlockFrameView(blocks: self.blocks(of: pane), cellHeight: { [weak pane] in pane?.cellSize.height ?? 0 })
+        }
+        host.makeScrollMap = { [weak self] pane in
+            guard let self, let theme = self.theme else { return NSView() }
+            let map = NSHostingView(
+                rootView: ScrollMapView(
+                    blocks: self.blocks(of: pane), theme: theme,
+                    scroll: { [weak pane] lines in
+                        guard lines != 0 else { return }
+                        pane?.perform(binding: "scroll_lines:\(lines)")
+                    }))
+            return map
+        }
         host.makeHeader = { [weak self, weak tab] pane in
             guard let self, let tab, let theme = self.theme else { return NSView() }
             return NSHostingView(
                 rootView: PaneHeaderView(
-                    tab: tab, pane: pane, store: self.store, theme: theme,
+                    tab: tab, pane: pane, store: self.store, blocks: self.blocks(of: pane), theme: theme,
                     actions: PaneHeaderActions(
+                        copyOutput: { [weak self] in self?.copyOutput(of: $0) },
+                        rerun: { [weak self] in self?.rerun(in: $0) },
                         splitRight: { [weak self] in self?.split($0, .right) },
                         splitDown: { [weak self] in self?.split($0, .down) },
                         zoom: { [weak self] in self?.toggleSplitZoom($0) },
@@ -558,8 +579,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Connects one pane to its tab and the window. The tab's title and
     /// directory follow the focused pane; events and attention are the tab's.
+    /// A pane's ledger, made the first time anything asks for it.
+    func blocks(of pane: TerminalView?) -> PaneBlocks {
+        guard let pane else { return PaneBlocks() }
+        let key = ObjectIdentifier(pane)
+        if let existing = paneBlocks[key] { return existing }
+        let blocks = PaneBlocks()
+        paneBlocks[key] = blocks
+        return blocks
+    }
+
     private func wire(_ pane: TerminalView, in tab: Tab) {
-        pane.onTitleChange = { [weak tab, weak pane] title in
+        pane.onTitleChange = { [weak self, weak tab, weak pane] title in
+            // Every pane's ledger, not only the focused one's: a build left
+            // running in a split still wants its blocks recorded.
+            self?.blocks(of: pane).titleChanged(title, cwd: pane?.workingDirectory)
             guard let tab, tab.terminal === pane else { return }
             tab.shellTitle = title
         }
@@ -589,8 +623,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             self.openInEditor(link.url, line: link.line)
             return true
         }
-        pane.onEvent = { [weak self, weak tab] event in
+        pane.onEvent = { [weak self, weak tab, weak pane] event in
             guard let self, let tab else { return }
+            self.blocks(of: pane).handle(event)
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
                 // While focusing on one island, another group's notice waits
                 // — unless its agent is blocked on you.
@@ -1812,6 +1847,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// order rather than by urgency means pressing it repeatedly walks the
     /// strip once instead of bouncing between two tabs.
     @objc func showNextAttention(_ sender: Any?) {
+        // The nearest thing wanting you first: a failed command further
+        // down this pane, before another tab entirely. One key, widening
+        // scope — the designs wanted ⌥⌘↓ for both and they are the same
+        // question asked at two distances.
+        if let pane = store.selected?.terminal {
+            let ledger = blocks(of: pane).ledger
+            if let failure = ledger.nextFailure(after: ledger.offset) {
+                let lines = ledger.lines(toReach: failure.startRow)
+                if lines != 0 { pane.perform(binding: "scroll_lines:\(lines)") }
+                return
+            }
+        }
         let tabs = store.tabs
         guard !tabs.isEmpty else { return }
         let start = tabs.firstIndex { $0.id == store.selectedID }.map { $0 + 1 } ?? 0
@@ -1819,6 +1866,56 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard let next = order.first(where: \.activity.needsAttention) else { return }
         reveal(tabID: next.id)
     }
+
+    /// ⇧⌘C: the last finished command's output on the clipboard. Its rows
+    /// are the ledger's; libghostty hands over any range of them.
+    @objc func copyLastOutput(_ sender: Any?) {
+        store.selected.map { copyOutput(of: $0.terminal) }
+    }
+
+    func copyOutput(of pane: TerminalView) {
+        guard let block = blocks(of: pane).ledger.lastFinished, let text = output(of: block, in: pane), !text.isEmpty
+        else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// What a command printed.
+    ///
+    /// Not by row: libghostty clamps an exact point to the active screen,
+    /// so a scrollback row cannot be addressed (see `TerminalView`). What
+    /// can be read is the whole thing, and the command's own prompt line
+    /// is in it — the output is everything after the last line that *ends*
+    /// with the command. Ends, not contains: a command that prints itself
+    /// would otherwise cut its own output in half.
+    func output(of block: CommandBlock, in pane: TerminalView) -> String? {
+        // The visible screen is far cheaper, and covers output that never
+        // scrolled — which is exactly the case the ledger calls unlocated.
+        let whole = block.isLocated ? pane.scrollbackText : pane.visibleText
+        guard let whole else { return nil }
+        let lines = whole.components(separatedBy: "\n")
+        let command = block.command.trimmingCharacters(in: .whitespaces)
+        guard
+            let ran = lines.lastIndex(where: {
+                $0.trimmingCharacters(in: .whitespaces).hasSuffix(command)
+            })
+        else { return nil }
+        return lines[(ran + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// ⌘R: type the last command again. Typed rather than run, so a
+    /// destructive one is still yours to press Return on — and because the
+    /// name comes from the shell's title, which can be approximate.
+    @objc func rerunLastCommand(_ sender: Any?) {
+        store.selected.map { rerun(in: $0.terminal) }
+    }
+
+    func rerun(in pane: TerminalView) {
+        guard let block = blocks(of: pane).ledger.lastFinished else { return }
+        pane.insertText(block.command)
+        window?.makeFirstResponder(pane)
+    }
+
 
     @objc func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }

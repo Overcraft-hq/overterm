@@ -5,6 +5,8 @@ import SwiftUI
 /// button works on the pane you clicked rather than on whichever one
 /// happens to have the keyboard.
 struct PaneHeaderActions {
+    var copyOutput: (TerminalView) -> Void
+    var rerun: (TerminalView) -> Void
     var splitRight: (TerminalView) -> Void
     var splitDown: (TerminalView) -> Void
     var zoom: (TerminalView) -> Void
@@ -23,6 +25,8 @@ struct PaneHeaderView: View {
     @ObservedObject var tab: Tab
     let pane: TerminalView
     @ObservedObject var store: TabStore
+    /// What this pane has run — the failure it is showing, if any.
+    @ObservedObject var blocks: PaneBlocks
     let theme: ChromeTheme
     let actions: PaneHeaderActions
 
@@ -47,7 +51,11 @@ struct PaneHeaderView: View {
                 GroupLabel(group: group, theme: theme)
             }
             Spacer(minLength: 4)
-            if isFocused { status }
+            if let failure = blocks.ledger.lastFinished, failure.failed, blocks.ledger.running == nil {
+                failed(failure)
+            } else if isFocused {
+                status
+            }
             ForEach(tab.ports) { port in
                 PortPill(port: port, theme: theme, open: { actions.openPort(port) })
             }
@@ -68,6 +76,37 @@ struct PaneHeaderView: View {
         .background(theme.card)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.border).frame(height: 1) }
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
+    }
+
+    /// The last command failed. The ring in the grid says *where*; this
+    /// says what, and is where the three things you then want live —
+    /// pinned, rather than hanging off the output, which scrolls away.
+    private func failed(_ block: CommandBlock) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+            Text(block.command)
+                .font(.system(size: 11, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(theme.text2)
+            Text(block.detail).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+            smallButton("Copy output") { actions.copyOutput(pane) }
+            smallButton("Rerun ⌘R") { actions.rerun(pane) }
+        }
+        .layoutPriority(1)
+    }
+
+    private func smallButton(_ title: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 5).fill(theme.rowSel))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(theme.text2)
     }
 
     /// The one thing the tab strip's badge cannot say in a word: what the

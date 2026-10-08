@@ -239,7 +239,7 @@ enum KeyCommands {
         .init("tabs.next", "Show Next Tab", group: "Tabs", key: "shift+cmd+]", ghostty: "next_tab"),
         .init("tabs.previous", "Show Previous Tab", group: "Tabs", key: "shift+cmd+[", ghostty: "previous_tab"),
         .init("tabs.info", "Tab Info", group: "Tabs", key: "cmd+i"),
-        .init("tabs.nextAttention", "Next Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
+        .init("tabs.nextAttention", "Next Failure or Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),
         // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty v1.3.1 binds
@@ -288,8 +288,10 @@ enum KeyCommands {
         .init("terminal.fontBigger", "Bigger Text", group: "Terminal", ghostty: "increase_font_size:1", menu: false),
         .init("terminal.fontSmaller", "Smaller Text", group: "Terminal", ghostty: "decrease_font_size:1", menu: false),
         .init("terminal.fontReset", "Text Size Back", group: "Terminal", ghostty: "reset_font_size", menu: false),
-        .init("terminal.promptPrevious", "Previous Prompt", group: "Terminal", ghostty: "jump_to_prompt:-1", menu: false),
-        .init("terminal.promptNext", "Next Prompt", group: "Terminal", ghostty: "jump_to_prompt:1", menu: false),
+        .init("terminal.promptPrevious", "Previous Prompt", group: "Terminal", key: "cmd+up", ghostty: "jump_to_prompt:-1", menu: false),
+        .init("terminal.promptNext", "Next Prompt", group: "Terminal", key: "cmd+down", ghostty: "jump_to_prompt:1", menu: false),
+        .init("terminal.copyOutput", "Copy the Last Command's Output", group: "Terminal", key: "shift+cmd+c"),
+        .init("terminal.rerun", "Run the Last Command Again", group: "Terminal", key: "cmd+r"),
         .init("terminal.scrollTop", "Scroll to the Top", group: "Terminal", ghostty: "scroll_to_top", menu: false),
         .init("terminal.scrollBottom", "Scroll to the Bottom", group: "Terminal", ghostty: "scroll_to_bottom", menu: false),
         // Window

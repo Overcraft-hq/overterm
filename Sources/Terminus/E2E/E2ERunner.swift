@@ -55,6 +55,7 @@ final class E2ERunner {
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
         "groups": { await $0.groupsScenario() },
+        "blocks": { await $0.blocksScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -876,6 +877,87 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+    }
+
+    /// The command ledger, against a real shell: libghostty gives no
+    /// command boundaries, so everything here is inferred and everything
+    /// here can therefore be wrong.
+    private func blocksScenario() async {
+        await waitForPrompt()
+        guard let pane = app.store.selected?.terminal else { return check("a pane", false) }
+        let blocks = app.blocks(of: pane)
+        check(
+            "the scrollbar is reported at all",
+            await eventually(8) {
+                pane.drawNow()
+                return blocks.ledger.total > 0
+            }, "total=\(blocks.ledger.total) rows=\(blocks.ledger.rows)")
+        check("the cell has a size", pane.cellSize.height > 0, "\(pane.cellSize)")
+
+        // A command that succeeds, with output of a known length.
+        type("for i in 1 2 3 4 5; do echo line $i; done")
+        pressReturn()
+        let ran = await eventually(10) { blocks.ledger.blocks.contains { !$0.isRunning && $0.command.contains("echo line") } }
+        check("a command becomes a block", ran, blocks.ledger.blocks.map(\.command).joined(separator: " | "))
+        check(
+            "and the directory the prompt shows does not",
+            !blocks.ledger.blocks.contains { CommandLedger.isPrompt($0.command, cwd: pane.workingDirectory) },
+            blocks.ledger.blocks.map(\.command).joined(separator: " | "))
+        guard let ok = blocks.ledger.blocks.last(where: { $0.command.contains("echo line") }) else { return }
+        check("that did not fail", !ok.failed, "exit \(ok.exit ?? -1)")
+        // Five lines on a fresh screen never reach the scrollback, so the
+        // block has no rows of its own — the ledger must say so rather
+        // than name rows that are not there.
+        check("short output has no rows to point at", !ok.isLocated, "\(ok.rows) rows (\(ok.startRow)…\(ok.endRow))")
+
+        // Read back off the screen, because it is not located.
+        app.copyOutput(of: pane)
+        let copied = NSPasteboard.general.string(forType: .string) ?? ""
+        check("⇧⌘C copies that block's output", copied.contains("line 1") && copied.contains("line 5"), copied.debugDescription)
+        check("and nothing from before it", !copied.contains("Last login"), copied.debugDescription)
+
+        // Enough output to push into the scrollback: now a block has rows
+        // of its own, and everything row-based works on it.
+        type("for i in $(seq 1 120); do echo filler $i; done")
+        pressReturn()
+        // The scrollbar is only recomputed when a frame is drawn, and this
+        // window is never activated — so the renderer has to be asked, the
+        // same way tab peek asks it.
+        let scrolled = await eventually(15) {
+            pane.drawNow()
+            return blocks.ledger.blocks.last { $0.command.contains("seq 1 120") }?.isLocated == true
+        }
+        guard let big = blocks.ledger.blocks.last(where: { $0.command.contains("seq 1 120") }) else {
+            return check("output that scrolls gets rows", false)
+        }
+        check("output that scrolls gets rows", scrolled, "\(big.rows) rows (\(big.startRow)…\(big.endRow))")
+        check("the map can place it", blocks.ledger.position(of: big) != nil)
+        app.copyOutput(of: pane)
+        let fromRows = NSPasteboard.general.string(forType: .string) ?? ""
+        check(
+            "and its output reads back out of them", fromRows.contains("filler 1") && fromRows.contains("filler 120"),
+            "rows \(big.startRow)…\(big.endRow) got \(fromRows.components(separatedBy: "\n").count) lines: "
+                + String(fromRows.prefix(20)).debugDescription + "…" + String(fromRows.suffix(20)).debugDescription)
+
+        // A failure, which is what the ring and ⌥⌘↓ are for. In a subshell:
+        // a bare `exit 3` would take the pane with it.
+        type("sh -c 'for i in $(seq 1 60); do echo broke $i; done; exit 3'")
+        pressReturn()
+        let failed = await eventually(15) {
+            pane.drawNow()
+            return blocks.ledger.locatedFailures.contains { $0.command.contains("exit 3") }
+        }
+        check("a non-zero exit is a failure", failed, blocks.ledger.blocks.map { "\($0.command)=\($0.exit ?? -1)" }.joined(separator: " | "))
+        guard let bad = blocks.ledger.locatedFailures.last else { return }
+        check("with its exit code in its detail", bad.detail.hasPrefix("exit 3"), bad.detail)
+        check("and ⌥⌘↓ finds it", blocks.ledger.nextFailure(after: 0)?.id == bad.id)
+
+        // ⌘R types it again without running it: a destructive command is
+        // still yours to press Return on.
+        app.rerun(in: pane)
+        check(
+            "⌘R types the last command back", await eventually(5) { (pane.visibleText ?? "").contains("exit 3") },
+            "")
     }
 
     /// Islands in the strip: making one, what it does to the order, the

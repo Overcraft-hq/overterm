@@ -650,24 +650,13 @@ final class TerminalView: NSView {
         return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
     }
 
-    /// The rows `first...last` of the whole screen (scrollback included),
-    /// which is how a command block's output is read back: the block ledger
-    /// knows the rows, libghostty will hand over any rectangle of them.
-    func text(rows first: UInt64, through last: UInt64) -> String? {
-        guard let surface, last >= first else { return nil }
-        func point(_ y: UInt64, _ coord: ghostty_point_coord_e) -> ghostty_point_s {
-            ghostty_point_s(tag: GHOSTTY_POINT_SCREEN, coord: coord, x: 0, y: UInt32(clamping: y))
-        }
-        let selection = ghostty_selection_s(
-            top_left: point(first, GHOSTTY_POINT_COORD_EXACT),
-            bottom_right: point(last, GHOSTTY_POINT_COORD_EXACT),
-            rectangle: false)
-        var text = ghostty_text_s()
-        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
-        guard let bytes = text.text else { return "" }
-        return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
-    }
+    // There is no reading an arbitrary row range: `ghostty_selection_s`
+    // takes exact points, and libghostty clamps their y to the *active*
+    // screen's height before resolving them (`embedded.zig`,
+    // `Point.pin`) — so a scrollback row simply cannot be addressed, and
+    // asking for rows 27…130 of a 27-row screen reads one row twice.
+    // Whole regions are still readable (`scrollbackText`), which is how a
+    // command's output is found: by its own prompt line.
 
     /// What is selected right now, or nil if nothing is. The selection
     /// lives in libghostty — Terminus never had a reason to read it before
