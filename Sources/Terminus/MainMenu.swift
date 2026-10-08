@@ -73,6 +73,7 @@ enum MainMenu {
         let viewMenu = NSMenu(title: "View")
         command(viewMenu, "Command Palette", #selector(TerminalWindowController.showPalette(_:)), "palette.show")
         command(viewMenu, "Tab Info", #selector(TerminalWindowController.showSelectedTabInfo(_:)), "tabs.info")
+        command(viewMenu, "Agent Inbox", #selector(TerminalWindowController.toggleInbox(_:)), "inbox.show")
         command(viewMenu, "Agent Overview", #selector(TerminalWindowController.showAgentOverview(_:)), "agents.overview")
         command(
             viewMenu, "Next Failure or Tab That Needs You", #selector(TerminalWindowController.showNextAttention(_:)),

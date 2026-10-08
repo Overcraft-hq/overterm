@@ -56,6 +56,7 @@ final class E2ERunner {
         "dropFiles": { await $0.dropFilesScenario() },
         "groups": { await $0.groupsScenario() },
         "blocks": { await $0.blocksScenario() },
+        "inbox": { await $0.inboxScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -877,6 +878,71 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+    }
+
+    /// The inbox: what is waiting, the question each one is asking, and
+    /// answering it without leaving the column.
+    private func inboxScenario() async {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        await waitForPrompt()
+        let shell = app.store.selected!
+        shell.customTitle = "zsh"
+        app.newTab(in: home, agent: .claude, startAgent: false)
+        let agent = app.store.selected!
+        agent.customTitle = "api · claude"
+        await waitForPrompt()
+
+        app.toggleInbox(nil)
+        check("⌘I opens the inbox", app.inboxItem?.isCollapsed == false)
+        check("empty until something wants you", app.inbox.isEmpty && app.inbox.summary == "Nothing waiting", app.inbox.summary)
+
+        // A question on the agent's screen, exactly as Claude Code asks it.
+        // Written to a file and `cat`ed rather than typed: ten lines of
+        // synthetic typing garble under load, and what is being tested is
+        // the reading, not the typing.
+        let question = """
+            Edit file  apps/api/src/webhooks/bank.ts
+             41 -   const event = JSON.parse(body)
+             41 +   const event = verifySignature(body, headers)
+
+            Do you want to make this edit?
+            1. Yes
+            2. Yes, and don't ask again this session
+            3. No, and tell Claude what to do differently
+            """
+        try? question.write(to: out("prompt.txt"), atomically: true, encoding: .utf8)
+        type("cat \(out("prompt.txt").path)")
+        pressReturn()
+        let asked = await eventually(10) { (agent.terminal.visibleText ?? "").contains("3. No, and tell") }
+        check("the agent is asking something", asked, "")
+
+        // It only lands in the inbox once the tab says it needs you — the
+        // inbox is the attention list, not a screen scraper.
+        app.store.select(shell)
+        agent.activity.handle(.notification(title: "Claude", body: "needs your permission"), visible: false)
+        app.refreshInbox()
+        check("a waiting tab is in the inbox", app.inbox.entries.count == 1, "\(app.inbox.entries.count)")
+        check("blocked first", app.inbox.entries.first?.mark == .waiting)
+        check("and the summary counts it", app.inbox.summary == "1 waiting", app.inbox.summary)
+
+        guard let entry = app.inbox.entries.first, let prompt = entry.prompt else {
+            return check("its question was read off the screen", false, app.inbox.entries.first?.title ?? "no entry")
+        }
+        check("its question was read off the screen", prompt.question == "Do you want to make this edit?", prompt.question)
+        check("with every choice", prompt.choices.map(\.key) == ["1", "2", "3"], "\(prompt.choices.map(\.key))")
+        check("the diff above it", prompt.preview.contains { $0.contains("verifySignature") }, prompt.preview.joined(separator: " / "))
+        check("deny found by its words", prompt.deny?.key == "3", prompt.deny?.key ?? "none")
+        check("and the card names it", entry.headline.contains("wants to make this edit"), entry.headline)
+
+        // Answering types the number and Return into that pane.
+        app.answer(prompt.choices[0], in: entry.id)
+        check(
+            "answering types the choice into the agent",
+            await eventually(8) { (agent.terminal.visibleText ?? "").contains("command not found: 1") },
+            String((agent.terminal.visibleText ?? "").suffix(60)).debugDescription)
+
+        app.toggleInbox(nil)
+        check("⌘I closes it again", app.inboxItem?.isCollapsed == true)
     }
 
     /// The command ledger, against a real shell: libghostty gives no
@@ -3199,7 +3265,10 @@ final class E2ERunner {
         window.sendEvent(mouse(.leftMouseUp, clicks: 1))
         window.sendEvent(mouse(.leftMouseDown, clicks: 2))
         window.sendEvent(mouse(.leftMouseUp, clicks: 2))
-        check("a double-click still opens it outside (asking which app first)", await eventually(3) { self.window.attachedSheet != nil })
+        // Six seconds, not three: the sheet is put up after an async look
+        // at what can open the file, and under a full parallel run that
+        // has gone past three.
+        check("a double-click still opens it outside (asking which app first)", await eventually(6) { self.window.attachedSheet != nil })
         clickSheetButton("Cancel")
         let menu = sidebar.menu(for: mouse(.rightMouseDown, clicks: 1))
         check(

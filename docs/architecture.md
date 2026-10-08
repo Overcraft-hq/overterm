@@ -25,7 +25,7 @@ libghostty's own threads and git calls.
 
 - Each column is a **card** (`CardColumn`): rounded 10 pt, hairlined, clipping its content, and on a light ground casting a shadow. What shows between two cards is the window's own colour (`ChromeTheme.win`), and the gap is the split view's divider — a `GapSplitView` 10 pt thick that draws nothing. One source of truth for the spacing, and a divider you can actually grab (they were 1 pt, and the columns could not be resized).
 - A card's top reaches into the title bar, which is taller than the strip. So it refuses to drag the window and zeroes the safe-area inset SwiftUI would otherwise add, and is otherwise transparent to what it wraps — flipped, and it hands on a context menu it does not have.
-- One split (`split`, vertical, autosave `TerminusColumns.v3`): sidebar | terminal | editor | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
+- One split (`split`, vertical, autosave `TerminusColumns.v4`): sidebar | terminal | editor | inbox | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
 - The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
 - Every terminal pane carries a **38 pt header** (`PaneHeaderView`): what is running there, its island, its status, its ports, and split / split / zoom / close. The terminal gives up the room, not the pane's share of the tab. The host frames it; the window supplies it (`SplitHostView.makeHeader`), because what goes in it needs the tab and the window's actions.
 - Colours come from `ChromeTheme`, built once per window from libghostty's background and foreground and passed by value into each SwiftUI root. Three grounds a step apart — `win` (between the cards), `card` (a panel), `term` (the terminal) — then text in three weights, fills, and the status colours. A theme change needs a relaunch.
@@ -371,6 +371,28 @@ drawing, splits included.
 
 ⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
 overview its agent's **state**.
+
+## Agent Inbox (⌘I)
+
+A column of everything waiting on you, to the right of the terminal. The
+marks in the strip say *which* tab wants you; the inbox puts the question
+in front of you — what the agent is asking, the diff or command it is
+about, and its own choices as buttons. Answering types the number and
+Return into that pane.
+
+It only ever offers choices it **read off that pane's screen**
+(`Inbox/AgentPrompt`, pure): the last run of numbered lines, the sentence
+above them, and the block above that. A question it cannot parse gets
+"Open tab" and nothing else — typing a number at an agent that was asking
+something different is the one mistake this must not make. "Deny" and
+"don't ask again" are found by their words, never by their position.
+
+A tab reaches the inbox only when `TabActivity` says it needs you; the
+inbox is the attention list, not a screen scraper. It polls (1.5 s) only
+while it is open, because reading a question means reading the screen.
+
+Also the Dock badge (as before) and, while anything waits, a menu bar
+item — which goes again when nothing does.
 
 ## Command blocks and the scroll map
 

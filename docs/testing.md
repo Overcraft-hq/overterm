@@ -71,7 +71,7 @@ What makes it end-to-end without being dangerous:
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
 `marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
-`openWith`, `dropFiles`, `peek`, `groups`, `blocks`.
+`openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`.
 `terminal` also checks the bundle: its version is the `VERSION` next to
 `Terminus.app` (the run's app is the checkout's), the build a positive
 integer, the commit named — and that About Terminus shows them, opened

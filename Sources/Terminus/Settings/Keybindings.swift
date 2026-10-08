@@ -238,7 +238,10 @@ enum KeyCommands {
         .init("tabs.close", "Close (the pane, or the tab)", group: "Tabs", key: "cmd+w", ghostty: "close_surface"),
         .init("tabs.next", "Show Next Tab", group: "Tabs", key: "shift+cmd+]", ghostty: "next_tab"),
         .init("tabs.previous", "Show Previous Tab", group: "Tabs", key: "shift+cmd+[", ghostty: "previous_tab"),
-        .init("tabs.info", "Tab Info", group: "Tabs", key: "cmd+i"),
+        // ⌘I is the inbox, as the designs have it; Tab Info moves to ⌃⌘I
+        // (⌥⌘I is Ghostty's inspector, which it eats before the menu).
+        .init("tabs.info", "Tab Info", group: "Tabs", key: "ctrl+cmd+i"),
+        .init("inbox.show", "Agent Inbox", group: "Tabs", key: "cmd+i"),
         .init("tabs.nextAttention", "Next Failure or Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),

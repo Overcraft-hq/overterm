@@ -89,6 +89,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
+    /// Everything waiting on you (⌘I), as its own column on the right.
+    let inbox = InboxModel()
+    private(set) var inboxItem: NSSplitViewItem?
+    private var inboxPoll: Timer?
+    /// Shown in the menu bar only while something waits.
+    private var menuBarItem: NSStatusItem?
+
     /// What each pane has run (`CommandLedger`), kept for as long as the
     /// pane is. Keyed by the view because a pane outlives nothing else.
     private var paneBlocks: [ObjectIdentifier: PaneBlocks] = [:]
@@ -386,6 +393,27 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
         watchPullRequests()
 
+        // Everything waiting on you, to the right of the terminal and left
+        // of the changes pane: it is about the tabs, not about this one.
+        let inboxView = InboxHostingView(
+            rootView: InboxView(
+                model: inbox, theme: theme,
+                actions: InboxActions(
+                    answer: { [weak self] id, choice in self?.answer(choice, in: id) },
+                    open: { [weak self] id in self?.reveal(tabID: id) },
+                    close: { [weak self] in self?.toggleInbox(nil) })))
+        inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
+        let inboxPanel = NSViewController()
+        inboxPanel.view = inboxView
+        let inboxItem = NSSplitViewItem(
+            viewController: CardColumnController(inboxPanel, fill: theme.cardNS, theme: theme))
+        inboxItem.canCollapse = true
+        inboxItem.isCollapsed = true
+        inboxItem.minimumThickness = 360
+        inboxItem.maximumThickness = 520
+        inboxItem.holdingPriority = .defaultLow + 5
+        self.inboxItem = inboxItem
+
         // The terminal pane never gives up all its width to the panels
         // beside it (it had no minimum and could be dragged to 0).
         let terminalColumn = NSSplitViewItem(viewController: terminalPane)
@@ -393,12 +421,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
+        split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
         // (or restore) divider positions. The key changes whenever a column's
         // width means something new (v3: the cards and their 10 pt gaps), so
-        // old positions aren't misapplied.
-        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "TerminusColumns.v3" }
+        // old positions aren't misapplied (v4: the inbox is a column).
+        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "TerminusColumns.v4" }
         self.sidebarItem = sidebarItem
 
         tabBarView = tabBar
@@ -783,6 +812,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     private func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
+        updateMenuBarItem(count: store.tabs.count { $0.activity.needsAttention })
+        if inboxItem?.isCollapsed == false { refreshInbox() }
     }
 
     /// Brings up a tab a notification was about.
@@ -1917,6 +1948,87 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
 
+    // MARK: Inbox
+
+    /// ⌘I. The column is only polled while it is open — the question on an
+    /// agent's screen is read by reading the screen, which is not free.
+    @objc func toggleInbox(_ sender: Any?) {
+        guard let item = inboxItem else { return }
+        let show = item.isCollapsed
+        item.animator().isCollapsed = !show
+        if show {
+            refreshInbox()
+            inboxPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshInbox() }
+            }
+        } else {
+            inboxPoll?.invalidate()
+            inboxPoll = nil
+            focusSelectedTerminal()
+        }
+    }
+
+    func refreshInbox() {
+        inbox.refresh(
+            tabs: store.tabs, group: { [weak self] in self?.store.group(of: $0) },
+            screen: { tab in
+                // The focused pane's screen: the question is where the
+                // keyboard would go if you opened the tab.
+                tab.terminal.visibleText
+            })
+    }
+
+    /// J, K, Return and Esc, while the panel has the keyboard.
+    private func inboxKey(_ key: String) -> Bool {
+        switch key {
+        case "j": inbox.move(1)
+        case "k": inbox.move(-1)
+        case "return":
+            guard let id = inbox.highlighted,
+                let choice = inbox.entries.first(where: { $0.id == id })?.prompt?.default
+            else { return false }
+            answer(choice, in: id)
+        case "escape": toggleInbox(nil)
+        default: return false
+        }
+        return true
+    }
+
+    /// Types a choice's number and Return into the tab's agent. Return is
+    /// its own keystroke — `insertText` is a bracketed paste, so a newline
+    /// inside it would arrive as a literal.
+    func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID) {
+        guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
+        tab.terminal.insertText(choice.key)
+        tab.terminal.pressReturn()
+        refreshInbox()
+    }
+
+    /// In the menu bar while anything waits, and gone when nothing does —
+    /// an icon that is always there saying nothing is noise.
+    func updateMenuBarItem(count: Int) {
+        guard !AppEnvironment.isIsolated else { return }
+        guard count > 0 else {
+            menuBarItem.map { NSStatusBar.system.removeStatusItem($0) }
+            menuBarItem = nil
+            return
+        }
+        let item = menuBarItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        menuBarItem = item
+        item.button?.image = NSImage(
+            systemSymbolName: "tray.full", accessibilityDescription: "Terminus — tabs that need you")
+        item.button?.title = " \(count)"
+        item.button?.target = self
+        item.button?.action = #selector(showFromMenuBar(_:))
+        item.button?.toolTip = inbox.summary
+    }
+
+    @objc private func showFromMenuBar(_ sender: Any?) {
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+        if inboxItem?.isCollapsed == true { toggleInbox(nil) }
+    }
+
     @objc func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }
         if !overviewView.isHidden { return hideAgentOverview() }
@@ -2523,6 +2635,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         agentPoll?.invalidate()
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()
+        inboxPoll?.invalidate()
+        updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }
 }
