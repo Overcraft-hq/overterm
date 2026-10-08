@@ -1412,6 +1412,13 @@ final class E2ERunner {
         if let port {
             let shown = await eventually(8) { model.ports.contains { $0.port == port } }
             check("its listening port is shown", shown, "ports \(model.ports.map(\.port)) want \(port)")
+            // And the pane header's pills, which come from the same scan
+            // (every third tick of the poll that walks the selected tab).
+            let onTheTab = await eventually(12) { first.ports.contains { $0.port == port } }
+            check("and so is the tab's, for the pane header", onTheTab, "\(first.ports.map(\.port))")
+            check(
+                "which makes it a server", onTheTab && first.kind == .server,
+                "\(first.kind.rawValue)")
         }
         if let png = ProcessInfo.processInfo.environment["TERMINUS_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
             await pause(1.2)
@@ -1707,11 +1714,20 @@ final class E2ERunner {
             "⌘-click opens the file in the editor, at that line",
             await eventually(3) {
                 self.app.editor?.document.url?.lastPathComponent == "main.swift" && self.app.editor?.selectedLine == 3
-            }, "\(app.editor?.document.url?.path ?? "nil") line \(app.editor?.selectedLine ?? -1)")
+            }, "\(app.editor?.document.url?.path ?? "nothing") line \(app.editor?.selectedLine ?? -1)")
+
+        // Hovering reports the link. libghostty pushes the URL and no
+        // rectangle, so the pane header is the only place it can be said.
+        check(
+            "hovering a link reports it",
+            await eventually(5) {
+                // Reported while the pointer moves over one, so it has to
+                // keep moving for the action to come.
+                terminal.mouseMoved(with: mouse(.mouseMoved))
+                return self.app.blocks(of: terminal).hoveredLink?.contains("main.swift") == true
+            }, app.blocks(of: terminal).hoveredLink ?? "none")
     }
 
-    /// Merged worktrees are marked, and Clean Up removes exactly those —
-    /// keeping one with changes and one with a tab in it.
     private func cleanupScenario() async {
         let remote = scratch.appendingPathComponent("origin.git")
         let repo = scratch.appendingPathComponent("cleanrepo")

@@ -582,6 +582,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     tab: tab, pane: pane, store: self.store, blocks: self.blocks(of: pane), theme: theme,
                     actions: PaneHeaderActions(
                         copyOutput: { [weak self] in self?.copyOutput(of: $0) },
+                        killPort: { port in
+                            // The exact pid lsof reported. Never a pattern:
+                            // `pkill -f` once killed the shell running the
+                            // tests (CLAUDE.md).
+                            kill(port.pid, SIGTERM)
+                        },
                         rerun: { [weak self] in self?.rerun(in: $0) },
                         splitRight: { [weak self] in self?.split($0, .right) },
                         splitDown: { [weak self] in self?.split($0, .down) },

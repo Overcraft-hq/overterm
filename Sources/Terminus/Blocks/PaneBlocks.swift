@@ -11,6 +11,10 @@ import Combine
 @MainActor
 final class PaneBlocks: ObservableObject {
     @Published private(set) var ledger = CommandLedger()
+    /// The link under the pointer, if any. libghostty pushes the URL and
+    /// nothing else — no rectangle — so this is all anyone can know about
+    /// where it is, and the header is where it can be said.
+    @Published private(set) var hoveredLink: String?
     /// Whether the map is drawn right now.
     @Published private(set) var showMap = NSScroller.preferredScrollerStyle == .legacy
     private var hiding: Task<Void, Never>?
@@ -26,7 +30,9 @@ final class PaneBlocks: ObservableObject {
             flashMap()
         case .commandFinished(let exitCode, let seconds):
             ledger.finished(exitCode: exitCode, seconds: seconds)
-        case .bell, .notification, .progress, .linkHover:
+        case .linkHover(let url):
+            if hoveredLink != url { hoveredLink = url }
+        case .bell, .notification, .progress:
             break
         }
     }

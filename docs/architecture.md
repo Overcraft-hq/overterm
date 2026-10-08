@@ -372,6 +372,27 @@ drawing, splits included.
 ⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
 overview its agent's **state**.
 
+## Live ports and links
+
+A pane's header shows what anything in its process tree is listening on
+(`Info/ListeningPorts`, an `lsof`, run on every third tick of the poll
+that already walks the selected tab). A pill opens a popover with the
+process, its pid, and Open / Copy URL / Kill — the exact pid, never a
+pattern. A tab that listens is a server, which is what its icon then says
+(`TabKind`).
+
+No preview of the page, which the design draws: that is a WebView per
+pill for a thumbnail, and the process name answers the question the
+thumbnail was asking ("which of my two servers is this").
+
+Links are libghostty's: it detects and underlines them, and ⌘-click
+arrives as `GHOSTTY_ACTION_OPEN_URL`, which Terminus resolves as a file
+link first (`Editor/FileLink`) and opens in the editor at its line.
+Hovering one arrives as `GHOSTTY_ACTION_MOUSE_OVER_LINK`, which carries
+the URL and **no rectangle** — so there is nothing to anchor a popover
+to, and one placed at the pointer would fight selecting the text it is
+over. The pane header says what is under the pointer instead.
+
 ## Agent Inbox (⌘I)
 
 A column of everything waiting on you, to the right of the terminal. The

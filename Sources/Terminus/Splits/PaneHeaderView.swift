@@ -6,6 +6,8 @@ import SwiftUI
 /// happens to have the keyboard.
 struct PaneHeaderActions {
     var copyOutput: (TerminalView) -> Void
+    /// Stop whatever is listening — the exact pid, never a pattern.
+    var killPort: (ListeningPort) -> Void
     var rerun: (TerminalView) -> Void
     var splitRight: (TerminalView) -> Void
     var splitDown: (TerminalView) -> Void
@@ -51,13 +53,24 @@ struct PaneHeaderView: View {
                 GroupLabel(group: group, theme: theme)
             }
             Spacer(minLength: 4)
-            if let failure = blocks.ledger.lastFinished, failure.failed, blocks.ledger.running == nil {
+            if let link = blocks.hoveredLink {
+                // Where the pointer is, since libghostty gives no rectangle
+                // to anchor a popover to — and one placed at the pointer
+                // would fight selecting the text it is over.
+                HStack(spacing: 6) {
+                    Image(systemName: "link").font(.system(size: 10))
+                    Text(link).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.head)
+                    Text("⌘-click to open").font(.system(size: 11)).foregroundStyle(theme.text3)
+                }
+                .foregroundStyle(theme.accentText)
+                .layoutPriority(1)
+            } else if let failure = blocks.ledger.lastFinished, failure.failed, blocks.ledger.running == nil {
                 failed(failure)
             } else if isFocused {
                 status
             }
             ForEach(tab.ports) { port in
-                PortPill(port: port, theme: theme, open: { actions.openPort(port) })
+                PortPill(port: port, theme: theme, actions: actions)
             }
             HStack(spacing: 0) {
                 button("rectangle.split.2x1", "Split Right (⌘D)") { actions.splitRight(pane) }
@@ -162,17 +175,24 @@ private struct GroupLabel: View {
     }
 }
 
-/// A port something in this pane's tree is listening on. Green while it is
-/// the first one (the thing you opened the tab for), grey for the rest —
-/// a dev server's HMR port is not what you want to click.
+/// A port something in this pane's tree is listening on, and what you
+/// usually want to do about it.
+///
+/// No preview of the page, which the design shows: rendering it would
+/// mean a WebView per pill for a thumbnail. The process and its pid say
+/// which of two servers this is, which is the question the thumbnail was
+/// answering.
 private struct PortPill: View {
     let port: ListeningPort
     let theme: ChromeTheme
-    let open: () -> Void
+    let actions: PaneHeaderActions
     @State private var hovering = false
+    @State private var showing = false
 
     var body: some View {
-        Button(action: open) {
+        Button {
+            showing.toggle()
+        } label: {
             HStack(spacing: 5) {
                 Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
                 Text(verbatim: ":\(port.port)")
@@ -186,6 +206,50 @@ private struct PortPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(port.process) is listening on \(port.port) — open it")
+        .help("\(port.process) is listening on \(port.port)")
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Text(verbatim: "localhost:\(port.port)")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(theme.text)
+                    Text(verbatim: "· \(port.process) · pid \(port.pid)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.text3)
+                }
+                HStack(spacing: 6) {
+                    action("Open", filled: true) {
+                        showing = false
+                        port.url.map { NSWorkspace.shared.open($0) }
+                    }
+                    action("Copy URL") {
+                        showing = false
+                        guard let url = port.url else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    }
+                    action("Kill") {
+                        showing = false
+                        actions.killPort(port)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(width: 280)
+            .environment(\.colorScheme, theme.isDark ? .dark : .light)
+        }
+    }
+
+    private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            Text(title)
+                .font(.system(size: 12, weight: filled ? .semibold : .regular))
+                .frame(maxWidth: .infinity)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 6).fill(filled ? TabStatusStyle.working : theme.iconBg))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(filled ? Color.white : theme.text)
     }
 }
