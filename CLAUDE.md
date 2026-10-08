@@ -28,8 +28,9 @@ make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Rel
 | Path | What |
 |---|---|
 | `Sources/Terminus/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
-| `Sources/Terminus/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabActivity` (needs-you flags), `Agent`, tab context menu |
-| `Sources/Terminus/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme`, `AttentionNotifier`, split controllers |
+| `Sources/Terminus/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is), `TabActivity` (needs-you flags), `AttentionChip` ("N need you"), `Agent`, tab context menu |
+| `Sources/Terminus/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |
+| `Sources/Terminus/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme` (the chrome's colour vocabulary), `CardColumn`/`GapSplitView` (the columns as cards on the window), `AttentionNotifier`, split controllers |
 | `Sources/Terminus/Sidebar/` | Files / Worktrees / Snippets panels, `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |
 | `Sources/Terminus/Diff/` | changes pane on the right + ± badge, `DiffModel` (live counts, per-file diffs, stage/commit) |
 | `Sources/Terminus/Editor/` | editor pane beside the terminal, `EditorDocument`, gutter, `SyntaxHighlighter`; `ExternalOpener`/`OpenWith` (files in the app the user picked) |
@@ -40,7 +41,7 @@ make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
 | `Sources/Terminus/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
 | `Sources/Terminus/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
-| `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic) and `SplitHostView` (frames, dividers, dim) |
+| `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |
 | `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
 | `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |
 | `Scripts/` | GhosttyKit build, app bundling (with the build metadata About shows), icon, `bump-version.sh` |

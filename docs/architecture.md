@@ -6,15 +6,16 @@ libghostty's own threads and git calls.
 ## Window layout
 
 ```
-┌──────────── tab strip (SwiftUI, in the title bar) ─────── ± +N −M ┐
-├──────────┬──────────────────────────┬──────────────┬──────────────┤
-│ sidebar  │ terminal container       │ editor pane  │ changes pane │
-│ Files /  │ (every tab's TerminalView;│ (opens on a  │ (± badge,    │
-│ Worktrees│  only the selected one   │  file click) │  View ▸      │
-│ Snippets │  visible)                │              │  Changes or  │
-│ (⌘B)     │                          │              │  ⌥⌘D; Warp-  │
-│          │                          │              │  style cards)│
-└──────────┴──────────────────────────┴──────────────┴──────────────┘
+┌─ tab strip (SwiftUI, in the title bar) ──── 3 need you ─ ± +N −M ─┐
+│  ╭──────────╮ ╭──────────────────────────╮ ╭─────────╮ ╭────────╮ │
+│  │ sidebar  │ │ pane header  ⊞ ⊟ ⤢ ✕     │ │ editor  │ │changes │ │
+│  │ Files /  │ ├──────────────────────────┤ │ pane    │ │ pane   │ │
+│  │Worktrees │ │ terminal container       │ │(opens on│ │(± badge│ │
+│  │Sessions /│ │ (every tab's SplitHostView;│ a file │ │ View ▸ │ │
+│  │ Snippets │ │  only the selected one   │ │  click) │ │Changes │ │
+│  │ (⌘B)     │ │  visible)                │ │         │ │or ⌥⌘D) │ │
+│  ╰──────────╯ ╰──────────────────────────╯ ╰─────────╯ ╰────────╯ │
+└───────────────────────────────────────────────────────────────────┘
       + ⌘P palette: an overlay over the whole content view
       + ⌘F search: an overlay over the terminal container; a compact find
         bar in its top-right corner while a terminal search is kept
@@ -22,9 +23,13 @@ libghostty's own threads and git calls.
         card inside the terminal container, chrome drawn over them
 ```
 
-- One split (`split`, vertical, autosave `TerminusColumns.v2`): sidebar | terminal | editor | changes. Bump the key's version whenever the column set changes, or stale positions get applied to the new columns.
-- It is a `WideDividerSplitViewController` (grabbable 1 pt dividers). The terminal column keeps ≥ 240 pt.
-- Sidebar, diff panel, tab strip, palette: SwiftUI in `NSHostingView`/`NSHostingController`. Terminal, editor text, editor header: AppKit.
+- Each column is a **card** (`CardColumn`): rounded 10 pt, hairlined, clipping its content, and on a light ground casting a shadow. What shows between two cards is the window's own colour (`ChromeTheme.win`), and the gap is the split view's divider — a `GapSplitView` 10 pt thick that draws nothing. One source of truth for the spacing, and a divider you can actually grab (they were 1 pt, and the columns could not be resized).
+- A card's top reaches into the title bar, which is taller than the strip. So it refuses to drag the window and zeroes the safe-area inset SwiftUI would otherwise add, and is otherwise transparent to what it wraps — flipped, and it hands on a context menu it does not have.
+- One split (`split`, vertical, autosave `TerminusColumns.v3`): sidebar | terminal | editor | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
+- The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
+- Every terminal pane carries a **38 pt header** (`PaneHeaderView`): what is running there, its island, its status, its ports, and split / split / zoom / close. The terminal gives up the room, not the pane's share of the tab. The host frames it; the window supplies it (`SplitHostView.makeHeader`), because what goes in it needs the tab and the window's actions.
+- Colours come from `ChromeTheme`, built once per window from libghostty's background and foreground and passed by value into each SwiftUI root. Three grounds a step apart — `win` (between the cards), `card` (a panel), `term` (the terminal) — then text in three weights, fills, and the status colours. A theme change needs a relaunch.
+- Sidebar, diff panel, tab strip, pane headers, palette: SwiftUI in `NSHostingView`/`NSHostingController`. Terminal, editor text, editor header: AppKit.
 
 ## Ownership
 
