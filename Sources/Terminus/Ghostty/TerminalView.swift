@@ -650,6 +650,58 @@ final class TerminalView: NSView {
         return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
     }
 
+    /// The rows `first...last` of the whole screen (scrollback included),
+    /// which is how a command block's output is read back: the block ledger
+    /// knows the rows, libghostty will hand over any rectangle of them.
+    func text(rows first: UInt64, through last: UInt64) -> String? {
+        guard let surface, last >= first else { return nil }
+        func point(_ y: UInt64, _ coord: ghostty_point_coord_e) -> ghostty_point_s {
+            ghostty_point_s(tag: GHOSTTY_POINT_SCREEN, coord: coord, x: 0, y: UInt32(clamping: y))
+        }
+        let selection = ghostty_selection_s(
+            top_left: point(first, GHOSTTY_POINT_COORD_EXACT),
+            bottom_right: point(last, GHOSTTY_POINT_COORD_EXACT),
+            rectangle: false)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, selection, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        guard let bytes = text.text else { return "" }
+        return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
+    }
+
+    /// What is selected right now, or nil if nothing is. The selection
+    /// lives in libghostty — Terminus never had a reason to read it before
+    /// (copy goes through Ghostty's own binding).
+    var selectionText: String? {
+        guard let surface, ghostty_surface_has_selection(surface) else { return nil }
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_selection(surface, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        guard let bytes = text.text, text.text_len > 0 else { return nil }
+        return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
+    }
+
+    var hasSelection: Bool {
+        guard let surface else { return false }
+        return ghostty_surface_has_selection(surface)
+    }
+
+    /// One cell, in points. Everything that draws *over* the grid — a block's
+    /// frame, the scroll map's marks — turns a row number into a y with it.
+    var cellSize: CGSize {
+        guard let surface else { return .zero }
+        let size = ghostty_surface_size(surface)
+        let scale = window?.backingScaleFactor ?? 2
+        return CGSize(width: CGFloat(size.cell_width_px) / scale, height: CGFloat(size.cell_height_px) / scale)
+    }
+
+    /// How many rows fit on screen, which is what the viewport's height is
+    /// measured in.
+    var rowCount: Int {
+        guard let surface else { return 0 }
+        return Int(ghostty_surface_size(surface).rows)
+    }
+
     // MARK: Clipboard
 
     /// Files paste as their paths, which is what an agent prompt wants when

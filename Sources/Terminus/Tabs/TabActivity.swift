@@ -8,6 +8,12 @@ enum TerminalEvent: Equatable {
     case progress(active: Bool, failed: Bool)
     /// Shell integration: a command ended after `seconds`.
     case commandFinished(exitCode: Int?, seconds: Double)
+    /// The viewport moved in the scrollback: `total` rows exist, the top of
+    /// the view is row `offset`, and `rows` of them are on screen. Pushed by
+    /// libghostty whenever it changes; there is no way to ask for it.
+    case scrolled(total: UInt64, offset: UInt64, rows: UInt64)
+    /// The pointer entered a link, or left one (nil).
+    case linkHover(String?)
 }
 
 /// Whether a tab is busy and what it has to tell you — the tab-strip marks,
@@ -75,6 +81,11 @@ struct TabActivity: Equatable {
                 raised = ok ? .done : .failed
                 text = ok ? "Command finished" : "Command failed (exit \(exitCode ?? -1))"
             }
+        case .scrolled, .linkHover:
+            // Neither is news about the tab — they are the terminal
+            // reporting where it is, for the scroll map and the link
+            // popovers. They go past here on their way to the window.
+            return false
         }
         // A new signal means the agent moved on: a question answered, work resumed.
         if case .progress(true, _) = event, mark == .waiting { mark = .none }

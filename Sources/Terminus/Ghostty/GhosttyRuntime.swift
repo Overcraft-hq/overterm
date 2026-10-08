@@ -379,6 +379,24 @@ final class GhosttyRuntime {
             view.onEvent?(.progress(active: state != GHOSTTY_PROGRESS_STATE_REMOVE && state != GHOSTTY_PROGRESS_STATE_ERROR, failed: state == GHOSTTY_PROGRESS_STATE_ERROR))
             return true
 
+        // Where the viewport sits in the scrollback, pushed whenever it
+        // moves. There is no way to ask — this action is the only one.
+        case GHOSTTY_ACTION_SCROLLBAR:
+            guard let view else { return false }
+            let bar = action.action.scrollbar
+            view.onEvent?(.scrolled(total: bar.total, offset: bar.offset, rows: bar.len))
+            return true
+
+        // The URL under the pointer, or nil when it leaves one. The action
+        // carries no rectangle, so where it is on screen stays the pointer's
+        // last position.
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            guard let view else { return false }
+            let link = action.action.mouse_over_link
+            let url = link.url.flatMap { String(data: Data(bytes: $0, count: Int(link.len)), encoding: .utf8) }
+            view.onEvent?(.linkHover(url?.isEmpty == true ? nil : url))
+            return true
+
         case GHOSTTY_ACTION_COMMAND_FINISHED:
             guard let view else { return false }
             let finished = action.action.command_finished
