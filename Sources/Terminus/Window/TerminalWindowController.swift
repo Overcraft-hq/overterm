@@ -204,6 +204,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 worktrees: worktrees,
                 snippets: snippets,
                 sessions: sessions,
+                store: store,
                 opener: opener,
                 theme: theme,
                 actions: FileTreeActions(

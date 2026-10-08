@@ -2994,10 +2994,10 @@ final class E2ERunner {
             self.app.tree.root?.resolvingSymlinksInPath() == resolvedDir && self.app.tree.rows.map(\.entry.name) == ["folder", "plain.txt", "shot.png", "with space.md"]
         }
         check("the sidebar lists the folder", listed, app.tree.rows.map(\.entry.name).joined(separator: ", "))
-        // Panel bar 38, divider 1, header 30, list padding 4, then 22 a row:
+        // Panel bar 40, divider 1, header 34, list padding 4, then 26 a row:
         // the middle of the second, plain.txt.
-        let top: CGFloat = 38 + 1 + 30 + 4
-        let rowCentre = sidebar.convert(NSPoint(x: 60, y: top + 22 + 11), to: nil)
+        let top: CGFloat = 40 + 1 + 34 + 4
+        let rowCentre = sidebar.convert(NSPoint(x: 60, y: top + 26 + 13), to: nil)
         func mouse(_ type: NSEvent.EventType, clicks: Int) -> NSEvent {
             NSEvent.mouseEvent(
                 with: type, location: rowCentre, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

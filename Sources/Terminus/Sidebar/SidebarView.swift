@@ -78,6 +78,8 @@ struct SidebarView: View {
     @ObservedObject var worktrees: WorktreeModel
     @ObservedObject var snippets: SnippetStore
     @ObservedObject var sessions: SessionsModel
+    /// The tabs, for the island the panels are scoped to.
+    @ObservedObject var store: TabStore
     let opener: ExternalOpener
     let theme: ChromeTheme
     let actions: FileTreeActions
@@ -93,26 +95,35 @@ struct SidebarView: View {
             Divider().opacity(0.4)
             switch panel {
             case .files: files
-            case .worktrees: WorktreeListView(model: worktrees, currentRoot: tree.root, theme: theme, actions: worktreeActions)
-            case .sessions: SessionListView(model: sessions, worktrees: worktrees, theme: theme, actions: sessionActions)
-            case .snippets: SnippetListView(store: snippets, theme: theme, actions: snippetActions)
+            case .worktrees:
+                WorktreeListView(
+                    model: worktrees, currentRoot: tree.root, group: group, store: store, theme: theme,
+                    actions: worktreeActions)
+            case .sessions:
+                SessionListView(
+                    model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
+            case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
             }
         }
-        .background(theme.strip)
+        .background(theme.card)
     }
 
+    /// The island the selected tab is in: what every panel here is about.
+    private var group: TabGroup? { store.selected.flatMap { store.group(of: $0) } }
+
     private var panelBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(SidebarPanel.allCases) { item in
                 Button(action: { panel = item }) {
                     Image(systemName: item.symbol)
                         .font(.system(size: 13))
-                        .frame(width: 30, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(panel == item ? theme.selected : .clear))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 28)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(panel == item ? theme.rowSel : .clear))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(panel == item ? theme.text : theme.dimText)
+                .foregroundStyle(panel == item ? theme.text : theme.text2)
                 .help(item.title)
             }
             Spacer(minLength: 0)
@@ -123,8 +134,8 @@ struct SidebarView: View {
             .foregroundStyle(theme.dimText)
             .help("Hide Sidebar (⌘B)")
         }
-        .padding(.horizontal, 8)
-        .frame(height: 38)
+        .padding(.horizontal, 6)
+        .frame(height: 40)
     }
 
     @ViewBuilder private var files: some View {
@@ -144,32 +155,11 @@ struct SidebarView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Text(tree.root?.lastPathComponent ?? "")
-                .font(.system(size: 11, weight: .semibold))
-                .textCase(.uppercase)
-                .foregroundStyle(theme.dimText)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(tree.root?.path ?? "")
-            Spacer(minLength: 0)
-            headerButton("arrow.clockwise", help: "Reload") { tree.reload() }
-            headerButton("rectangle.compress.vertical", help: "Collapse All") { tree.collapseAll() }
+        PanelHeader(title: tree.root?.lastPathComponent ?? "Files", group: group, theme: theme, help: tree.root?.path) {
+            PanelHeaderButton(symbol: "arrow.clockwise", help: "Reload", action: { tree.reload() }, theme: theme)
+            PanelHeaderButton(
+                symbol: "rectangle.compress.vertical", help: "Collapse All", action: { tree.collapseAll() }, theme: theme)
         }
-        .padding(.horizontal, 12)
-        .frame(height: 30)
-    }
-
-    private func headerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11))
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(theme.dimText)
-        .help(help)
     }
 }
 
@@ -208,14 +198,14 @@ private struct FileRowView: View {
                 .truncationMode(.middle)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(isSelected ? theme.text : theme.dimText)
+        .foregroundStyle(isSelected ? theme.text : theme.text2)
         .opacity(row.isIgnored && !isSelected ? 0.45 : 1)
         .padding(.leading, 8 + CGFloat(row.depth) * 14)
         .padding(.trailing, 8)
-        .frame(height: 22)
+        .frame(height: 26)
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isSelected ? theme.selected : (hovering ? theme.hover : .clear))
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? theme.rowSel : (hovering ? theme.rowHover : .clear))
                 .padding(.horizontal, 4)
         )
         .contentShape(Rectangle())
@@ -299,19 +289,14 @@ private struct WorktreeListView: View {
     @ObservedObject var model: WorktreeModel
     /// The selected tab's checkout, i.e. the worktree it is in.
     let currentRoot: URL?
+    let group: TabGroup?
+    @ObservedObject var store: TabStore
     let theme: ChromeTheme
     let actions: WorktreeActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Worktrees")
-                    .font(.system(size: 11, weight: .semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(theme.dimText)
-                    .lineLimit(1)
-                    .fixedSize()
-                Spacer(minLength: 4)
+            PanelHeader(title: "Worktrees", group: group, theme: theme) {
                 if !model.cleanable.isEmpty {
                     Button(action: actions.cleanUp) {
                         HStack(spacing: 2) {
@@ -328,23 +313,13 @@ private struct WorktreeListView: View {
                     .foregroundStyle(TabStatusStyle.merged)
                     .help("Clean Up Merged Worktrees…")
                 }
-                Button(action: actions.newTask) {
-                    Image(systemName: "plus").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.dimText)
-                .help("New Task… (⇧⌘N)")
-                Button(action: { Task { await model.refresh(fetch: true) } }) {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.dimText)
-                .help("Fetch and reload")
+                PanelHeaderButton(symbol: "plus", help: "New Task… (⇧⌘N)", action: actions.newTask, theme: theme)
+                PanelHeaderButton(
+                    symbol: "arrow.clockwise", help: "Fetch and reload",
+                    action: { Task { await model.refresh(fetch: true) } }, theme: theme)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 30)
             if model.worktrees.isEmpty {
-                Text("Not in a git repository").font(.system(size: 12)).foregroundStyle(theme.dimText).padding(12)
+                Text("Not in a git repository").font(.system(size: 12)).foregroundStyle(theme.text3).padding(12)
                 Spacer()
             } else {
                 ScrollView {
@@ -353,6 +328,10 @@ private struct WorktreeListView: View {
                             WorktreeRowView(
                                 worktree: worktree,
                                 isCurrent: currentRoot?.standardizedFileURL == worktree.path.standardizedFileURL,
+                                tabs: store.tabs.filter { tab in
+                                    let directory = tab.attachedCheckout?.path ?? tab.agentDirectory ?? tab.workingDirectory
+                                    return directory.map { Worktree.containing($0, in: model.worktrees)?.path == worktree.path } ?? false
+                                },
                                 reason: model.showing.flatMap {
                                     $0.root.standardizedFileURL == worktree.path.standardizedFileURL ? $0.reason : nil
                                 },
@@ -371,6 +350,9 @@ private struct WorktreeListView: View {
 private struct WorktreeRowView: View {
     let worktree: Worktree
     let isCurrent: Bool
+    /// The tabs working in this checkout, so the row says what is going on
+    /// in it rather than only that it exists.
+    let tabs: [Tab]
     /// Why the selected tab shows this worktree, when it does.
     let reason: CheckoutReason?
     let merged: MergedWorktrees.Reason?
@@ -388,7 +370,18 @@ private struct WorktreeRowView: View {
         }
     }
 
-    var body: some View {
+    /// What its tabs are doing, in one line. A blocked agent is the thing
+    /// worth crossing the sidebar for, so it is named and coloured.
+    private var subtitle: (text: String, color: Color)? {
+        guard !tabs.isEmpty else { return nil }
+        if let blocked = tabs.first(where: { $0.activity.mark == .waiting }) {
+            return ("Agent waiting · \(blocked.title)", theme.orangeText)
+        }
+        let names = tabs.map(\.title).joined(separator: ", ")
+        return (names, tabs.contains(where: \.activity.isWorking) ? theme.text2 : theme.text3)
+    }
+
+    private var top: some View {
         HStack(spacing: 6) {
             Image(systemName: worktree.isMain ? "house" : "arrow.triangle.branch")
                 .font(.system(size: 10))
@@ -426,12 +419,26 @@ private struct WorktreeRowView: View {
                 Image(systemName: "lock.fill").font(.system(size: 9)).help("Locked")
             }
         }
-        .foregroundStyle(isCurrent ? theme.text : theme.dimText)
+        .foregroundStyle(isCurrent ? theme.text : theme.text2)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            top
+            if let subtitle {
+                Text(subtitle.text)
+                    .font(.system(size: 11))
+                    .foregroundStyle(subtitle.color)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.leading, 20)
+            }
+        }
+        .padding(.vertical, 5)
         .padding(.horizontal, 12)
-        .frame(height: 24)
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isCurrent ? theme.selected : (hovering ? theme.hover : .clear))
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isCurrent ? theme.rowSel : (hovering ? theme.rowHover : .clear))
                 .padding(.horizontal, 4)
         )
         .contentShape(Rectangle())
@@ -476,32 +483,19 @@ private struct WorktreeRowView: View {
 private struct SessionListView: View {
     @ObservedObject var model: SessionsModel
     @ObservedObject var worktrees: WorktreeModel
+    let group: TabGroup?
     let theme: ChromeTheme
     let actions: SessionActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Claude Sessions")
-                    .font(.system(size: 11, weight: .semibold))
-                    .textCase(.uppercase)
-                    .foregroundStyle(theme.dimText)
-                    .lineLimit(1)
-                    .fixedSize()
-                Spacer(minLength: 4)
+            PanelHeader(title: "Sessions", group: group, theme: theme) {
                 if model.loading { ProgressView().controlSize(.mini) }
-                Button(action: actions.refresh) {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.dimText)
-                .help("Reload")
+                PanelHeaderButton(symbol: "arrow.clockwise", help: "Reload", action: actions.refresh, theme: theme)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 30)
             if model.sessions.isEmpty {
-                Text(model.loading ? "" : "No Claude sessions here yet")
-                    .font(.system(size: 12)).foregroundStyle(theme.dimText).padding(12)
+                Text(model.loading ? "" : "No agent sessions in \(group?.name ?? "this folder") yet")
+                    .font(.system(size: 12)).foregroundStyle(theme.text3).padding(12)
                 Spacer()
             } else {
                 ScrollView {
@@ -574,25 +568,15 @@ private struct SessionRowView: View {
 
 private struct SnippetListView: View {
     @ObservedObject var store: SnippetStore
+    let group: TabGroup?
     let theme: ChromeTheme
     let actions: SnippetActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                Text("Snippets")
-                    .font(.system(size: 11, weight: .semibold))
-                    .textCase(.uppercase)
-                Spacer()
-                Button(action: { actions.edit(nil) }) {
-                    Image(systemName: "plus").font(.system(size: 11)).frame(width: 20, height: 20).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("New Snippet")
+            PanelHeader(title: "Snippets", group: group, theme: theme) {
+                PanelHeaderButton(symbol: "plus", help: "New Snippet", action: { actions.edit(nil) }, theme: theme)
             }
-            .foregroundStyle(theme.dimText)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
 
             ScrollView {
                 VStack(spacing: 0) {
