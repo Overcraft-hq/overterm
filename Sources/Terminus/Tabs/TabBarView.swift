@@ -41,15 +41,24 @@ struct TabBarView: View {
     let actions: TabBarActions
     let groupActions: TabGroupActions
 
+    /// The branch of the checkout the selected tab works in.
+    private var selectedBranch: String? {
+        guard let tab = store.selected else { return nil }
+        guard let directory = tab.attachedCheckout?.path ?? tab.agentDirectory ?? tab.workingDirectory else { return nil }
+        return Worktree.containing(directory, in: worktrees.worktrees)?.branch
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: leadingInset)
             ForEach(Array(store.focusedStrip.enumerated()), id: \.offset) { _, item in
                 switch item {
                 case .loose(let tab):
-                    TabItemView(tab: tab, store: store, theme: theme, actions: actions)
+                    TabItemView(branch: selectedBranch, tab: tab, store: store, theme: theme, actions: actions)
                 case .group(let group, let tabs):
-                    GroupIslandView(group: group, tabs: tabs, store: store, theme: theme, actions: actions, groupActions: groupActions)
+                    GroupIslandView(
+                        branch: selectedBranch, group: group, tabs: tabs, store: store, theme: theme, actions: actions,
+                        groupActions: groupActions)
                 }
             }
             if store.settingsOpen {
@@ -95,6 +104,8 @@ struct TabBarView: View {
                 .help("Terminus \(release.version) is out — Settings ▸ About")
                 .padding(.trailing, 6)
             }
+            AttentionChip(store: store, theme: theme, select: actions.select)
+                .padding(.trailing, 6)
             StashedGroupsChip(store: store, theme: theme, restore: groupActions.restore)
                 .padding(.trailing, 4)
             Button(action: actions.showOverview) {
@@ -150,6 +161,11 @@ struct TabFramesKey: PreferenceKey {
 /// One tab in the strip. Not private: the group islands draw their
 /// members with it too (Groups/TabGroupViews).
 struct TabItemView: View {
+    /// The checkout the *selected* tab is in. Only it shows a branch — it is
+    /// what you need while you are in the tab, and on the others it would
+    /// crowd out the title — so the strip resolves one and passes it down.
+    var branch: String?
+
     @ObservedObject var tab: Tab
     @ObservedObject var store: TabStore
     let theme: ChromeTheme
@@ -199,29 +215,45 @@ struct TabItemView: View {
         }
     }
 
+    /// What the tab is, in a tile, with what it wants from you stuck to its
+    /// corner. The tile gives the glyph a ground of its own, so a badge can
+    /// overlap it without landing on the title.
+    private var icon: some View {
+        let kind = tab.kind
+        return Image(systemName: tab.agent?.symbol ?? kind.symbol)
+            .font(.system(size: 11, weight: kind == .shell ? .bold : .regular))
+            .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.text2))
+            .frame(width: 20, height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
+            .overlay(alignment: .bottomTrailing) {
+                StatusBadge(activity: tab.activity, ring: isSelected ? theme.tabSel : theme.win)
+                    .offset(x: 4, y: 4)
+            }
+            .help(tab.agent?.name ?? kind.name)
+    }
+
     private var fullContent: some View {
-        HStack(spacing: 6) {
-            if let color = tab.color {
-                Circle().fill(color.color).frame(width: 8, height: 8)
-            }
-            mark
-            if tab.activity.isWorking {
-                WorkingGlyph(symbol: tab.agent?.symbol ?? "circle.fill", size: tab.agent == nil ? 6 : 10)
-            } else if let agent = tab.agent {
-                Image(systemName: agent.symbol)
-                    .font(.system(size: 10))
-                    .foregroundStyle(isSelected ? theme.text : theme.dimText)
-                    .help(agent.name)
-            }
+        HStack(spacing: 7) {
+            icon
             if isRenaming {
                 TabRenameField(tab: tab, store: store, theme: theme, onEnd: actions.renameEnded)
             } else {
                 Text(tab.title)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(isSelected ? theme.text : theme.dimText)
+                    .foregroundStyle(isSelected ? theme.text : theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // The branch only on the selected tab: it is what you need while
+            // you are in it, and on the others it would crowd out the title.
+            if isSelected, let branch {
+                Text(branch)
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .foregroundStyle(theme.text3)
+                    .layoutPriority(-1)
             }
             Button(action: { actions.close(tab) }) {
                 Image(systemName: "xmark")
@@ -230,11 +262,12 @@ struct TabItemView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
+            .foregroundStyle(theme.text3)
             .opacity(isSelected || hovering ? 1 : 0)
             .help("Close Tab (⌘W)")
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 5)
+        .padding(.trailing, 6)
     }
 
     var body: some View {
@@ -244,20 +277,28 @@ struct TabItemView: View {
         // Pinned: a fixed icon-sized square, as in Chrome. The rest share the
         // remaining width.
         .frame(
-            minWidth: tab.isPinned ? 38 : 60, idealWidth: tab.isPinned ? 38 : 200, maxWidth: tab.isPinned ? 38 : 220,
-            minHeight: 28, maxHeight: 28
+            minWidth: tab.isPinned ? 38 : 72, idealWidth: tab.isPinned ? 38 : 200, maxWidth: tab.isPinned ? 38 : 220,
+            minHeight: 30, maxHeight: 30
         )
         .fixedSize(horizontal: tab.isPinned, vertical: false)
         .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(isSelected ? theme.selected : (hovering ? theme.hover : .clear))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? theme.tabSel : (hovering ? theme.rowHover : .clear))
+                // The selected tab sits proud of the strip.
+                .shadow(color: isSelected ? theme.tabSelShadow : .clear, radius: 1.5, y: 1)
         )
         .background(
             // A coloured tab carries a faint wash of its colour, so it is
             // findable in a full strip even when not selected.
-            RoundedRectangle(cornerRadius: 7)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(tab.color?.color.opacity(isSelected ? 0.0 : 0.14) ?? .clear)
         )
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8).strokeBorder(theme.tabSelEdge, lineWidth: 0.5)
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay(alignment: .bottom) {
             if tab.activity.isWorking {
                 WorkingBar().padding(.horizontal, 6).padding(.bottom, 1)
@@ -275,7 +316,7 @@ struct TabItemView: View {
         // ⌘ shortcut in the app — ⌘B stopped hiding the sidebar.
         .overlay {
             if store.isMarked(tab) {
-                RoundedRectangle(cornerRadius: 6).strokeBorder(TabStatusStyle.signal.opacity(0.9), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 8).strokeBorder(TabStatusStyle.signal.opacity(0.9), lineWidth: 1.5)
                     .allowsHitTesting(false)
             }
         }

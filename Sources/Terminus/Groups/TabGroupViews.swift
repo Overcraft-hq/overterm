@@ -23,6 +23,8 @@ struct TabGroupActions {
 /// One island: a chip with the group's name, then its tabs, all on a tint
 /// of the group's colour so the run reads as one thing.
 struct GroupIslandView: View {
+    /// The selected tab's branch, shown only on it (`TabItemView.branch`).
+    var branch: String?
     @ObservedObject var group: TabGroup
     let tabs: [Tab]
     @ObservedObject var store: TabStore
@@ -40,16 +42,20 @@ struct GroupIslandView: View {
                 actions: groupActions, holdsSelection: holdsSelection)
             if !group.isCollapsed {
                 ForEach(tabs) { tab in
-                    TabItemView(tab: tab, store: store, theme: theme, actions: actions)
+                    TabItemView(branch: branch, tab: tab, store: store, theme: theme, actions: actions)
                 }
             }
         }
-        .padding(.horizontal, 3)
-        .padding(.vertical, 2)
+        .padding(3)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(tint.opacity(holdsSelection ? 0.16 : 0.10))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(tint.opacity(0.35), lineWidth: 1))
+            // The island you are in is the brighter one, and the only one
+            // ringed: with four islands in the strip, "which am I in" has to
+            // be answerable without reading a single name.
+            RoundedRectangle(cornerRadius: 11)
+                .fill(tint.opacity(holdsSelection ? 0.16 : 0.09))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11)
+                        .strokeBorder(holdsSelection ? tint.opacity(0.5) : .clear, lineWidth: 1))
         )
         .padding(.horizontal, 3)
     }
@@ -71,36 +77,67 @@ private struct GroupChip: View {
     private var needing: Int { tabs.filter(\.activity.needsAttention).count }
     private var working: Int { tabs.filter(\.activity.isWorking).count }
 
+    /// Filled with the group's colour while you are in it, a wash of it
+    /// otherwise — the chip is the island's handle and its label at once.
+    private var chipBackground: Color {
+        holdsSelection ? group.color.color : group.color.color.opacity(hovering ? 0.30 : 0.20)
+    }
+
+    private var chipForeground: Color {
+        // The palette is bright by construction, so an active chip takes
+        // dark text; an inactive one is the colour itself on the window.
+        holdsSelection ? Color(white: 0.08) : group.color.color
+    }
+
+    /// One segment per tab along the chip's foot, in its state's colour: a
+    /// collapsed island still says what is going on inside it.
+    private var segments: some View {
+        HStack(spacing: 2) {
+            ForEach(tabs) { tab in
+                Capsule().fill(TabStatusStyle.color(for: tab.activity, idle: theme.segIdle)).frame(height: 3)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 3)
+    }
+
+    /// Up to three of the tabs inside, overlapping, as a stack of cards —
+    /// how many, and of what sort, before you expand it.
+    private var stack: some View {
+        HStack(spacing: -5) {
+            ForEach(tabs.prefix(3)) { tab in
+                Image(systemName: tab.agent?.symbol ?? tab.kind.symbol)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(theme.text2)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(theme.stackBg).overlay(Circle().strokeBorder(theme.win, lineWidth: 1.5)))
+            }
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 5) {
-            Circle().fill(group.color.color).frame(width: 7, height: 7)
+        HStack(spacing: 6) {
             if isRenaming {
                 GroupNameField(group: group, store: store)
             } else {
                 Text(verbatim: group.name)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.text)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(chipForeground)
                     .lineLimit(1)
             }
             if group.isCollapsed {
-                Text(verbatim: "\(tabs.count)")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
-                    .foregroundStyle(theme.dimText)
-                    .padding(.horizontal, 4)
-                    .background(Capsule().fill(theme.dimText.opacity(0.18)))
+                stack
                 if needing > 0 {
                     WaitingDot(size: 6).help("\(needing) tab\(needing == 1 ? "" : "s") in \(group.name) need you")
                 } else if working > 0 {
-                    WorkingGlyph(symbol: "terminal", size: 9).help("\(working) working in \(group.name)")
+                    WorkingSpinner(size: 11).help("\(working) working in \(group.name)")
                 }
             }
         }
-        .padding(.horizontal, 7)
-        .frame(height: 22)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(hovering ? group.color.color.opacity(0.22) : .clear)
-        )
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(RoundedRectangle(cornerRadius: 8).fill(chipBackground))
+        .overlay(alignment: .bottom) { if group.isCollapsed { segments } }
         .contentShape(Rectangle())
         .onTapGesture { if !isRenaming { actions.toggleCollapsed(group) } }
         .onHover { inside in

@@ -1080,28 +1080,44 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// A scan still running: the next tick skips it (see pollAgentDirectory).
     private var agentPollInFlight = false
+    /// Ports are read every third tick: `lsof` costs far more than reading
+    /// the process table, and a server's port does not move.
+    private var agentPollTick = 0
 
     private func pollAgentDirectory() {
         // A process scan slower than the 2 s tick (a loaded machine) would
         // otherwise stack up scans on the pool, their answers out of order.
         guard !agentPollInFlight, let tab = store.selected else { return }
         agentPollInFlight = true
+        agentPollTick += 1
+        let readPorts = agentPollTick % 3 == 1
         // The focused pane's agent first, then any other pane's.
         let panes = [tab.terminal] + tab.terminals.filter { $0 !== tab.terminal }
         let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         let inspector = self.inspector
         DispatchQueue.global(qos: .utility).async {
-            let agent = Self.firstAgent(in: roots) { inspector.tree(root: $0, tag: $1) }
+            // Only the port tick needs every pane's tree; the rest of the
+            // time the scan stops at the first pane with an agent in it.
+            let agent: ProcessNode?
+            var pids: [pid_t] = []
+            if readPorts {
+                let trees = roots.map { inspector.tree(root: $0.0, tag: $0.1) }
+                agent = Self.firstAgent(in: trees)
+                pids = trees.flatMap { $0.flatMap(\.flattened) }.map(\.pid)
+            } else {
+                agent = Self.firstAgent(in: roots) { inspector.tree(root: $0, tag: $1) }
+            }
             let directory = agent?.workingDirectory
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self.agentPollInFlight = false
-                    // Only when it differs from the shell's: an agent in the
-                    // tab's own directory changes nothing.
-                    let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
-                    let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
-                    if tab.agentDirectory != following { tab.agentDirectory = following }
-                }
+            Task { @MainActor in
+                self.agentPollInFlight = false
+                // Only when it differs from the shell's: an agent in the
+                // tab's own directory changes nothing.
+                let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
+                let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
+                if tab.agentDirectory != following { tab.agentDirectory = following }
+                guard readPorts else { return }
+                let ports = await ListeningPorts.of(pids)
+                if tab.ports != ports { tab.ports = ports }
             }
         }
     }
@@ -1115,6 +1131,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
         for (root, tag) in roots {
             if let agent = tree(root, tag).flatMap(\.flattened).first(where: isAgent) { return agent }
+        }
+        return nil
+    }
+
+    /// The same, over trees already in hand — for a caller that needs every
+    /// pane's tree anyway (the port scan does) and so cannot stop early.
+    nonisolated static func firstAgent(in trees: [[ProcessNode]]) -> ProcessNode? {
+        for tree in trees {
+            if let agent = tree.flatMap(\.flattened).first(where: isAgent) { return agent }
         }
         return nil
     }
@@ -1743,6 +1768,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// ⇧⌘A: every tab as a card; again (or Esc) hides it.
+    /// ⌥⌘↓, and the "Jump to next" in the strip's "N need you" list: the
+    /// next tab after this one that wants something, wrapping. Going in tab
+    /// order rather than by urgency means pressing it repeatedly walks the
+    /// strip once instead of bouncing between two tabs.
+    @objc func showNextAttention(_ sender: Any?) {
+        let tabs = store.tabs
+        guard !tabs.isEmpty else { return }
+        let start = tabs.firstIndex { $0.id == store.selectedID }.map { $0 + 1 } ?? 0
+        let order = (0..<tabs.count).map { tabs[(start + $0) % tabs.count] }
+        guard let next = order.first(where: \.activity.needsAttention) else { return }
+        reveal(tabID: next.id)
+    }
+
     @objc func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }
         if !overviewView.isHidden { return hideAgentOverview() }

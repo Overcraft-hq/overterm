@@ -19,9 +19,22 @@ enum TabStatusStyle {
     static let failed = Color(red: 0.94, green: 0.36, blue: 0.34)
     /// GitHub's "merged" purple, so a merged worktree reads like its PR.
     static let merged = Color(red: 0.64, green: 0.47, blue: 0.96)
+
+    /// One activity as one colour, for the places that show a tab as a dot
+    /// or a segment rather than a glyph — a collapsed island's foot, the
+    /// "needs you" list. `idle` is the theme's, since nothing is not a
+    /// status colour.
+    static func color(for activity: TabActivity, idle: Color) -> Color {
+        switch activity.mark {
+        case .waiting: waiting
+        case .failed: failed
+        case .done: done
+        case .none: activity.isWorking ? working : idle
+        }
+    }
 }
 
-/// The agent's glyph while it works: signal yellow, slowly breathing.
+/// The agent's glyph while it works: slowly breathing.
 struct WorkingGlyph: View {
     let symbol: String
     var size: CGFloat = 10
@@ -34,7 +47,7 @@ struct WorkingGlyph: View {
     }
 }
 
-/// Waiting for you: a yellow dot sending out a soft ring.
+/// Waiting for you: a dot sending out a soft ring.
 struct WaitingDot: View {
     var size: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -57,6 +70,50 @@ struct ResultMark: View {
     }
 }
 
+/// A ring with a quarter of it drawn, turning: the badge a working tab
+/// wears in the corner of its icon, where a breathing glyph would be lost.
+struct WorkingSpinner: View {
+    var size: CGFloat = 12
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        LoopingStatus(kind: .spinning(size: size), animated: !reduceMotion)
+            .frame(width: size, height: size)
+            .help("Working")
+    }
+}
+
+/// What a tab wants from you, in the corner of its icon tile.
+///
+/// One badge, and the most urgent wins: being blocked outranks having
+/// failed, which outranks having finished, which outranks still working.
+/// `ring` is the ground the badge sits on, drawn around it so it reads as
+/// a sticker rather than as part of the glyph underneath.
+struct StatusBadge: View {
+    let activity: TabActivity
+    let ring: Color
+    var size: CGFloat = 12
+
+    var body: some View {
+        switch activity.mark {
+        case .waiting: filled("exclamationmark.circle.fill", TabStatusStyle.waiting)
+        case .failed: filled("xmark.circle.fill", TabStatusStyle.failed)
+        case .done: filled("checkmark.circle.fill", TabStatusStyle.done)
+        case .none:
+            if activity.isWorking {
+                WorkingSpinner(size: size).background(Circle().fill(ring).padding(-1))
+            }
+        }
+    }
+
+    private func filled(_ symbol: String, _ color: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(color)
+            .background(Circle().fill(ring).padding(1))
+    }
+}
+
 /// A thin bar sliding along the bottom of a working tab, like a page
 /// loading in Chrome — visible even on a 38 pt pinned tab.
 struct WorkingBar: View {
@@ -75,7 +132,17 @@ private struct LoopingStatus: NSViewRepresentable {
     enum Kind: Equatable {
         case breathing(symbol: String, size: CGFloat)
         case ringing(size: CGFloat)
+        case spinning(size: CGFloat)
         case sweeping
+
+        /// What this motion means, and so what colour it is: blocked on you
+        /// is warning orange, work in progress is the system blue.
+        var color: NSColor {
+            switch self {
+            case .ringing: NSColor(TabStatusStyle.waiting)
+            case .breathing, .spinning, .sweeping: NSColor(TabStatusStyle.working)
+            }
+        }
     }
 
     let kind: Kind
@@ -96,7 +163,7 @@ private final class LoopingStatusView: NSView {
     private let ring = CAShapeLayer()
     private let track = CALayer()
     private let slider = CALayer()
-    private static let signal = NSColor(TabStatusStyle.signal).cgColor
+    private let arc = CAShapeLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -119,10 +186,11 @@ private final class LoopingStatusView: NSView {
         self.kind = kind
         self.animated = animated
         layer?.sublayers?.forEach { $0.removeFromSuperlayer() }
+        let tint = kind.color.cgColor
         switch kind {
         case .breathing(let symbol, let size):
             let config = NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
-                .applying(.init(paletteColors: [NSColor(TabStatusStyle.signal)]))
+                .applying(.init(paletteColors: [kind.color]))
             image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Working")?.withSymbolConfiguration(config)
             content.contents = image
             content.contentsGravity = .resizeAspect
@@ -130,15 +198,27 @@ private final class LoopingStatusView: NSView {
             invalidateIntrinsicContentSize()
         case .ringing:
             ring.fillColor = nil
-            ring.strokeColor = Self.signal
+            ring.strokeColor = tint
             ring.lineWidth = 1.5
             content.contents = nil
-            content.backgroundColor = Self.signal
+            content.backgroundColor = tint
             if animated { layer?.addSublayer(ring) }
             layer?.addSublayer(content)
+        case .spinning:
+            // The whole ring faint, a quarter of it solid and turning.
+            ring.fillColor = nil
+            ring.strokeColor = kind.color.withAlphaComponent(0.3).cgColor
+            ring.lineWidth = 2
+            arc.fillColor = nil
+            arc.strokeColor = tint
+            arc.lineWidth = 2
+            arc.lineCap = .round
+            arc.strokeEnd = animated ? 0.25 : 0.75
+            layer?.addSublayer(ring)
+            layer?.addSublayer(arc)
         case .sweeping:
-            track.backgroundColor = NSColor(TabStatusStyle.signal).withAlphaComponent(animated ? 0.18 : 0.7).cgColor
-            slider.backgroundColor = Self.signal
+            track.backgroundColor = kind.color.withAlphaComponent(animated ? 0.18 : 0.7).cgColor
+            slider.backgroundColor = tint
             layer?.masksToBounds = true
             layer?.addSublayer(track)
             if animated { layer?.addSublayer(slider) }
@@ -163,6 +243,13 @@ private final class LoopingStatusView: NSView {
             ring.bounds = CGRect(origin: .zero, size: dot.size)
             ring.position = CGPoint(x: b.midX, y: b.midY)
             ring.path = CGPath(ellipseIn: ring.bounds, transform: nil)
+        case .spinning(let size):
+            let inset = CGRect(x: b.midX - size / 2, y: b.midY - size / 2, width: size, height: size).insetBy(dx: 1, dy: 1)
+            for shape in [ring, arc] {
+                shape.bounds = CGRect(origin: .zero, size: inset.size)
+                shape.position = CGPoint(x: b.midX, y: b.midY)
+                shape.path = CGPath(ellipseIn: shape.bounds, transform: nil)
+            }
         case .sweeping:
             layer?.cornerRadius = b.height / 2
             track.frame = b
@@ -180,7 +267,7 @@ private final class LoopingStatusView: NSView {
 
     /// (Re)adds the loop — after a size change the sweep's distance is new.
     private func restart() {
-        for layer in [content, ring, slider] { layer.removeAllAnimations() }
+        for layer in [content, ring, slider, arc] { layer.removeAllAnimations() }
         guard animated, window != nil, let kind else { return }
         switch kind {
         case .breathing:
@@ -195,6 +282,14 @@ private final class LoopingStatusView: NSView {
             group.repeatCount = .infinity
             group.isRemovedOnCompletion = false
             ring.add(group, forKey: "loop")
+        case .spinning:
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            turn.fromValue = 0
+            turn.toValue = 2 * Double.pi
+            turn.duration = 0.9
+            turn.repeatCount = .infinity
+            turn.isRemovedOnCompletion = false
+            arc.add(turn, forKey: "loop")
         case .sweeping:
             let width = bounds.width
             guard width > 0 else { return }

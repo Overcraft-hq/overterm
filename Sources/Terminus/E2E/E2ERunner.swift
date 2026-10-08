@@ -839,6 +839,34 @@ final class E2ERunner {
         check("the sidebar divider drags from 3 pt off the line", abs(sidebar.frame.width - before - 80) < 2, "\(before) → \(sidebar.frame.width)")
         let terminalWidth = app.store.selected?.terminal.frame.width ?? 0
         check("the terminal keeps its minimum", terminalWidth >= 240, "\(terminalWidth)")
+
+        // The chrome: every column is a card, and the gaps between them are
+        // the dividers rather than anything a card leaves itself.
+        let columns = app.split.splitViewItems.map(\.viewController.view)
+        check("every column is a card", columns.allSatisfy { $0 is CardColumn }, columns.map { "\(Swift.type(of: $0))" }.joined(separator: ", "))
+        let shown = app.split.splitViewItems.filter { !$0.isCollapsed }.map { $0.viewController.view.superview!.frame }
+        let gaps = zip(shown, shown.dropFirst()).map { $1.minX - $0.maxX }
+        check(
+            "and they are \(Int(GapSplitView.gap)) pt apart", gaps.allSatisfy { abs($0 - GapSplitView.gap) < 0.5 },
+            gaps.map { "\($0)" }.joined(separator: ", "))
+        let body = splitView.superview!
+        let content = window.contentView!
+        check(
+            "the cards are inset from the window on three sides",
+            body.frame.minX == GapSplitView.gap && content.frame.maxX - body.frame.maxX == GapSplitView.gap
+                && body.frame.minY == GapSplitView.gap,
+            "\(body.frame.integral) in \(content.frame.integral)")
+        // The strip is the row the traffic lights sit in, or the tabs float
+        // above or below them.
+        let close = window.standardWindowButton(.closeButton)!
+        let lights = close.convert(close.bounds, to: nil)
+        let strip = app.tabBarView?.frame.height ?? 0
+        check(
+            "the strip is as tall as the traffic lights' row",
+            abs(strip - ((window.frame.height - lights.maxY) * 2 + lights.height)) < 2,
+            "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
+        let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
+        check("a tab is 30 pt tall", heights == [30], "\(heights)")
     }
 
     /// A prepared session comes back; changes are autosaved.

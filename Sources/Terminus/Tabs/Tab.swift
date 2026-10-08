@@ -80,6 +80,16 @@ final class Tab: ObservableObject, Identifiable {
     /// shortened to the folder itself. Shells (and themes) set the title to
     /// the whole path, which fills a tab with `~/Documents/opensource/`
     /// and hides the part that tells them apart.
+    /// What this tab's processes listen on, filled by the window's poll
+    /// (`pollAgentDirectory`, for the selected tab). A tab is only scanned
+    /// once you have been in it — so a server you have never opened shows
+    /// as a shell until you do, which is the cheap half of the trade: the
+    /// scan is an `lsof`.
+    @Published var ports: [ListeningPort] = []
+
+    /// What this tab is, for the glyph in its icon tile.
+    var kind: TabKind { TabKind.of(agent: agent, title: shellTitle, hasPort: !ports.isEmpty) }
+
     var title: String { customTitle ?? Self.shortened(shellTitle) }
 
     /// The last component of a title that is nothing but a path; anything

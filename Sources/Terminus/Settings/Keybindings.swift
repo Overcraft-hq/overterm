@@ -239,6 +239,7 @@ enum KeyCommands {
         .init("tabs.next", "Show Next Tab", group: "Tabs", key: "shift+cmd+]", ghostty: "next_tab"),
         .init("tabs.previous", "Show Previous Tab", group: "Tabs", key: "shift+cmd+[", ghostty: "previous_tab"),
         .init("tabs.info", "Tab Info", group: "Tabs", key: "cmd+i"),
+        .init("tabs.nextAttention", "Next Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),
         // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty v1.3.1 binds
