@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.18.1 — 2026-10-08
+
+- window: a colour vocabulary for the chrome
+
 ## 1.18.0 — 2026-10-08
 
 - tabs: group tabs into islands in the strip
