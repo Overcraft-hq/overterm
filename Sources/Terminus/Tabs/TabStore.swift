@@ -125,6 +125,10 @@ final class TabStore: ObservableObject {
     /// The same for the islands' chips.
     var groupChipFrames: [TabGroup.ID: CGRect] = [:]
 
+    /// The island a dragged tab would land in, while it is being dragged —
+    /// so the strip can say which one will take it before you let go.
+    @Published var dropGroupID: TabGroup.ID?
+
     func group(at point: CGPoint) -> TabGroup? {
         groups.first { groupChipFrames[$0.id]?.contains(point) == true }
     }

@@ -54,6 +54,7 @@ final class E2ERunner {
         "clipboard": { await $0.clipboardScenario() },
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
+        "groups": { await $0.groupsScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -246,6 +247,14 @@ final class E2ERunner {
 
     /// A shell-safe path for typing (the scratch path has no spaces).
     private func out(_ name: String) -> URL { scratch.appendingPathComponent(name) }
+
+    /// What a scenario's scratch file holds, trimmed — the usual way a
+    /// scenario checks that something reached a shell.
+    private func contents(_ file: URL) -> String? {
+        (try? Data(contentsOf: file)).map {
+            String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
 
     // MARK: Scenarios
 
@@ -867,6 +876,100 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+    }
+
+    /// Islands in the strip: making one, what it does to the order, the
+    /// things a chip can do, and what happens to the rest of the window.
+    private func groupsScenario() async {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        await waitForPrompt()
+        let first = app.store.selected!
+        first.customTitle = "api"
+        app.newTab(in: home, agent: .claude, startAgent: false)
+        let second = app.store.selected!
+        second.customTitle = "web"
+        app.newTab(in: home, agent: nil, startAgent: false)
+        let loose = app.store.selected!
+        loose.customTitle = "loose"
+        check("three tabs", app.store.tabs.count == 3)
+
+        // ⌘-click marks a tab, and Group Selected Tabs takes the marked set.
+        app.store.select(first)
+        app.store.toggleMultiSelection(second)
+        check("⌘-click marks a tab", app.store.isMarked(second) && app.store.selectedTabs.count == 2)
+        app.groupSelectedTabs(nil)
+        guard let group = app.store.groups.first else { return check("an island", false) }
+        check("the island takes both", app.store.tabs(in: group).map(\.title) == ["api", "web"], "\(app.store.tabs(in: group).map(\.title))")
+        check("and the marks are spent", app.store.multiSelection.isEmpty)
+        check("its name is editable at once", app.store.renamingGroupID == group.id)
+        check("with its settings under it", await eventually(3) { self.app.groupPopover?.isShown == true })
+        app.groupPopover?.performClose(nil)
+        app.store.renamingGroupID = nil
+
+        // The invariant everything else depends on: one contiguous run.
+        check(
+            "a group's tabs are one run", app.store.strip.map(\.tabs.count) == [2, 1],
+            "\(app.store.strip.map { $0.tabs.map(\.title) })")
+
+        // Dragging: the island takes the tab dropped inside it, and lets it
+        // go when it is dropped past the end.
+        await eventually(3) { self.app.store.tabFrames.count == 3 && self.app.store.groupChipFrames.count == 1 }
+        guard let span = app.store.islandSpans.first?.span else { return check("the island is drawn", false) }
+        app.store.drop(loose, atPointerX: span.upperBound - 2)
+        check("a tab dropped inside an island joins it", loose.groupID == group.id, "\(loose.groupID == nil ? "none" : "joined")")
+        check("still one run", app.store.strip.map(\.tabs.count) == [3], "\(app.store.strip.map { $0.tabs.map(\.title) })")
+        await eventually(3) { self.app.store.tabFrames[loose.id] != nil }
+        app.store.drop(loose, atPointerX: 5000)
+        check("and dropped outside it leaves", loose.groupID == nil)
+
+        // ⌃⌘1 goes to the first island, expanding it if it is shut.
+        app.store.select(loose)
+        app.store.setCollapsed(group, true)
+        let item = NSMenuItem()
+        item.tag = 1
+        app.showGroup(item)
+        check("⌃⌘1 goes to the first island", app.store.selected?.groupID == group.id, app.store.selected?.title ?? "none")
+        check("expanding it on the way", !group.isCollapsed)
+
+        // Focus: only this island is in the strip, and the others' notices
+        // are held — unless an agent is blocked, which always breaks through.
+        app.toggleFocus(on: group)
+        check("focus narrows the strip to one island", app.store.focusedStrip.map(\.tabs.count) == [2], "\(app.store.focusedStrip.count)")
+        check(
+            "a blocked agent still breaks through",
+            GroupFocus.breaksThrough(tabGroup: nil, focused: group.id, mark: .waiting)
+                && !GroupFocus.breaksThrough(tabGroup: nil, focused: group.id, mark: .done))
+        app.toggleFocus(on: group)
+        check("and leaving focus brings them back", app.store.focusedStrip.count == 2, "\(app.store.focusedStrip.count)")
+
+        // Broadcast types one line into every tab of the island.
+        app.beginBroadcast(to: group)
+        check("broadcast names its targets", app.broadcast.summary == "Broadcasting to 2 tabs in \(group.name)", app.broadcast.summary)
+        app.broadcast.text = "echo grouped > \(out("broadcast").path)"
+        check("it sends", app.broadcast.send() != nil)
+        check(
+            "into every tab", await eventually(8) { contents(self.out("broadcast")) == "grouped" },
+            contents(out("broadcast")) ?? "missing")
+        app.stopBroadcast()
+
+        // Stashing takes the island out of the strip and leaves it running.
+        let running = app.store.tabs(in: group).count
+        app.stashGroup(group)
+        check(
+            "a stashed island leaves the strip", app.store.strip.map { $0.tabs.map(\.title) } == [["loose"]],
+            "\(app.store.strip.map { $0.tabs.map(\.title) })")
+        check("its tabs are still there", app.store.tabs(in: group).count == running)
+        check("and it says how long ago", TabGroup.stashedAgo(Date()) == "just now")
+        app.restoreGroup(group)
+        check(
+            "restoring brings it back", app.store.strip.map(\.tabs.count) == [2, 1],
+            "\(app.store.strip.map { $0.tabs.map(\.title) })")
+
+        // Ungrouping leaves the tabs exactly where they were.
+        let order = app.store.tabs.map(\.title)
+        app.store.ungroup(group)
+        check("ungrouping keeps the order", app.store.tabs.map(\.title) == order, "\(app.store.tabs.map(\.title))")
+        check("and the island is gone", app.store.groups.isEmpty)
     }
 
     /// A prepared session comes back; changes are autosaved.

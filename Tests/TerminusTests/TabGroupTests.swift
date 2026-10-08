@@ -292,3 +292,49 @@ final class TabGroupTests: XCTestCase {
         XCTAssertEqual(TabGroup.stashedAgo(now.addingTimeInterval(-4 * 86_400), now: now), "4 days ago")
     }
 }
+
+/// Dragging a tab into and out of an island. The rule is geometry, and the
+/// geometry is the part that can be wrong without anyone noticing until a
+/// tab silently joins the wrong group.
+@MainActor
+final class IslandDropTests: XCTestCase {
+    private func rect(_ x: CGFloat, _ width: CGFloat) -> CGRect {
+        CGRect(x: x, y: 0, width: width, height: 30)
+    }
+
+    /// An island is its chip and its tabs together — a drop on the chip is
+    /// a drop on the island.
+    func testASpanCoversTheChipAndEveryTab() {
+        let span = TabStore.span(chip: rect(10, 50), members: [rect(64, 100), rect(168, 100)])
+        XCTAssertEqual(span, 10...268)
+    }
+
+    func testAnIslandWithNothingDrawnYetHasNoSpan() {
+        XCTAssertNil(TabStore.span(chip: nil, members: []))
+    }
+
+    /// A collapsed island is its chip alone, and still takes a drop.
+    func testACollapsedIslandIsItsChip() {
+        XCTAssertEqual(TabStore.span(chip: rect(10, 50), members: []), 10...60)
+    }
+
+    func testTheIslandUnderThePointerIsTheOneContainingIt() {
+        let a = UUID(), b = UUID()
+        let spans = [(id: a, span: CGFloat(0)...CGFloat(100)), (id: b, span: CGFloat(140)...CGFloat(240))]
+        XCTAssertEqual(TabStore.island(at: 50, spans: spans), a)
+        XCTAssertEqual(TabStore.island(at: 200, spans: spans), b)
+        // Between them is where a tab leaves its island.
+        XCTAssertNil(TabStore.island(at: 120, spans: spans))
+        XCTAssertNil(TabStore.island(at: 400, spans: spans))
+    }
+
+    /// The edges belong to the island: a drop right on a chip's left edge
+    /// is a drop on it, not a miss.
+    func testTheEdgesBelongToTheIsland() {
+        let a = UUID()
+        let spans = [(id: a, span: CGFloat(10)...CGFloat(60))]
+        XCTAssertEqual(TabStore.island(at: 10, spans: spans), a)
+        XCTAssertEqual(TabStore.island(at: 60, spans: spans), a)
+        XCTAssertNil(TabStore.island(at: 9.9, spans: spans))
+    }
+}

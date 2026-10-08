@@ -250,6 +250,17 @@ enum KeyCommands {
         .init("groups.focus", "Focus on This Group", group: "Groups", key: "ctrl+cmd+f"),
         .init("groups.stash", "Stash Group", group: "Groups", key: "ctrl+cmd+s"),
         .init("groups.broadcast", "Broadcast Input to Group…", group: "Groups", key: "ctrl+cmd+b"),
+        // ⌃⌘1…9, not the ⌃1…9 the designs drew: ⌃2 and ⌃6 are real control
+        // characters a terminal has to pass through.
+        .init("groups.goto1", "Go to Group 1", group: "Groups", key: "ctrl+cmd+1"),
+        .init("groups.goto2", "Go to Group 2", group: "Groups", key: "ctrl+cmd+2"),
+        .init("groups.goto3", "Go to Group 3", group: "Groups", key: "ctrl+cmd+3"),
+        .init("groups.goto4", "Go to Group 4", group: "Groups", key: "ctrl+cmd+4"),
+        .init("groups.goto5", "Go to Group 5", group: "Groups", key: "ctrl+cmd+5"),
+        .init("groups.goto6", "Go to Group 6", group: "Groups", key: "ctrl+cmd+6"),
+        .init("groups.goto7", "Go to Group 7", group: "Groups", key: "ctrl+cmd+7"),
+        .init("groups.goto8", "Go to Group 8", group: "Groups", key: "ctrl+cmd+8"),
+        .init("groups.goto9", "Go to Group 9", group: "Groups", key: "ctrl+cmd+9"),
         // Panes
         .init("splits.right", "Split Right", group: "Panes", key: "cmd+d", ghostty: "new_split:right"),
         .init("splits.down", "Split Down", group: "Panes", key: "shift+cmd+d", ghostty: "new_split:down"),

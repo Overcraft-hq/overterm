@@ -194,6 +194,54 @@ extension TabStore {
     /// Puts the tabs back in order: pinned first, then each group's tabs in
     /// one run where its first tab is. Idempotent — the strip reports frames
     /// a moment late, and a drag must not oscillate.
+    // MARK: Dragging into and out of an island
+
+    /// The horizontal span an island occupies in the strip: its chip and
+    /// its tabs together. Pure — the drop rule is geometry and should be
+    /// readable without a strip to run it against.
+    nonisolated static func span(chip: CGRect?, members: [CGRect]) -> ClosedRange<CGFloat>? {
+        let rects = ([chip].compactMap { $0 }) + members
+        guard let first = rects.first else { return nil }
+        let low = rects.reduce(first.minX) { Swift.min($0, $1.minX) }
+        let high = rects.reduce(first.maxX) { Swift.max($0, $1.maxX) }
+        return low...Swift.max(low, high)
+    }
+
+    /// Which island a pointer at `x` is over, if any. The innermost match
+    /// would be ambiguous between neighbours, so spans never overlap: the
+    /// first containing one wins and the strip lays them out in order.
+    nonisolated static func island(at x: CGFloat, spans: [(id: TabGroup.ID, span: ClosedRange<CGFloat>)]) -> TabGroup.ID? {
+        spans.first { $0.span.contains(x) }?.id
+    }
+
+    /// Where each island is right now, in strip coordinates.
+    var islandSpans: [(id: TabGroup.ID, span: ClosedRange<CGFloat>)] {
+        groups.compactMap { group in
+            let members = tabs(in: group).compactMap { tabFrames[$0.id] }
+            guard let span = Self.span(chip: groupChipFrames[group.id], members: members) else { return nil }
+            return (group.id, span)
+        }
+    }
+
+    /// A tab dragged to `x`: it joins the island it is dropped inside, and
+    /// leaves the one it was in when it is dropped between them. Ordering
+    /// happens first and `normalize` then pulls the island's run back
+    /// together around it, so the tab keeps the place the pointer gave it.
+    func drop(_ tab: Tab, atPointerX x: CGFloat) {
+        let target = Self.island(at: x, spans: islandSpans)
+        if tab.groupID != target { tab.groupID = target }
+        dragMove(tab, toPointerX: x)
+        normalize()
+    }
+
+    /// A whole island dragged by its chip: it goes where its first tab
+    /// would, and its run follows.
+    func dragMove(_ group: TabGroup, toPointerX x: CGFloat) {
+        guard let first = tabs(in: group).first else { return }
+        dragMove(first, toPointerX: x)
+        normalize()
+    }
+
     func normalize() {
         var seen: [TabGroup.ID] = []
         var runs: [TabGroup.ID: [Tab]] = [:]

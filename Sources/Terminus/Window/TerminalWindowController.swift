@@ -36,9 +36,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private let claudeReader = ClaudeUsageReader()
     private(set) var infoPopover: NSPopover?
     private(set) var infoModel: TabInfoModel?
-    private var theme: ChromeTheme?
+    private(set) var theme: ChromeTheme?
     /// A press on a tab that may become a drag: the tab and where it began.
     private var pressedTab: (tab: Tab, x: CGFloat)?
+    /// A chip pressed in the strip: dragging it moves the whole island.
+    private var pressedGroup: (group: TabGroup, x: CGFloat)?
     // Readable (not writable) outside so the E2E scenarios can check them.
     private(set) var split = WideDividerSplitViewController()
     private(set) var sidebarItem: NSSplitViewItem?
@@ -86,6 +88,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
+
+    /// A new island's settings, under its chip (`showGroupPopover`).
+    var groupPopover: NSPopover?
 
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
@@ -1623,20 +1628,36 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 case .press, nil:
                     if self.store.renamingID == nil, let tab = self.store.tab(at: point) {
                         self.pressedTab = (tab, point.x)
+                    } else if self.store.renamingGroupID == nil, let group = self.store.group(at: point) {
+                        // A chip drags its whole island.
+                        self.pressedGroup = (group, point.x)
                     }
                     return event
                 }
             case .leftMouseDragged:
-                guard let pressed = self.pressedTab, let strip = self.tabBarView, event.window === self.window else { return event }
+                guard self.pressedTab != nil || self.pressedGroup != nil, let strip = self.tabBarView,
+                    event.window === self.window
+                else { return event }
                 var point = strip.convert(event.locationInWindow, from: nil)
                 if !strip.isFlipped { point.y = strip.bounds.height - point.y }
+                if let island = self.pressedGroup {
+                    guard abs(point.x - island.x) > 4 else { return nil }
+                    withAnimation(.easeOut(duration: 0.12)) { self.store.dragMove(island.group, toPointerX: point.x) }
+                    return nil
+                }
+                guard let pressed = self.pressedTab else { return event }
                 if self.store.draggingID == nil {
                     guard abs(point.x - pressed.x) > 4 else { return nil }
                     self.store.draggingID = pressed.tab.id
                     self.store.select(pressed.tab)
                 }
                 // Only x matters (the pointer may drift off the strip vertically).
-                withAnimation(.easeOut(duration: 0.12)) { self.store.dragMove(pressed.tab, toPointerX: point.x) }
+                // The drop decides the island too: dragging a tab into one
+                // joins it, dragging it out between two leaves.
+                withAnimation(.easeOut(duration: 0.12)) {
+                    self.store.drop(pressed.tab, atPointerX: point.x)
+                    self.store.dropGroupID = TabStore.island(at: point.x, spans: self.store.islandSpans)
+                }
                 return nil
             case .leftMouseUp:
                 // A press released without dragging is a click: select here,
@@ -1645,7 +1666,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // release through — SwiftUI saw the press and must see it end.
                 if let pressed = self.pressedTab, self.store.draggingID == nil { self.store.select(pressed.tab) }
                 self.pressedTab = nil
+                self.pressedGroup = nil
                 self.store.draggingID = nil
+                self.store.dropGroupID = nil
                 return event
             default:
                 return event

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import GhosttyKit
 
 /// What the window does with an island: the chip's menu, the Group menu and
@@ -13,8 +14,43 @@ extension TerminalWindowController {
         guard !members.isEmpty, let group = store.addToNewGroup(members) else { return }
         store.clearMultiSelection()
         // The name is editable in the chip straight away, prefilled from the
-        // git root, as the design has it.
+        // git root, as the design has it, with the rest of the group's
+        // settings under it while they are still worth deciding.
         store.renamingGroupID = group.id
+        showGroupPopover(for: group)
+    }
+
+    /// The new island's settings, under its chip. Also Group ▸ Edit Group…
+    /// and a ⌥-click on a chip, because the three decisions it holds are
+    /// the ones you revisit.
+    func showGroupPopover(for group: TabGroup, waiting: Int = 20) {
+        if waiting == 20 { groupPopover?.close() }
+        guard let strip = tabBarView, let theme else { return }
+        guard let frame = store.groupChipFrames[group.id] else {
+            // A brand-new island has no chip yet — SwiftUI lays the strip out
+            // a turn later, and a popover needs something to point at. Wait
+            // for it rather than not appearing at all, but not forever.
+            guard waiting > 0 else { return }
+            DispatchQueue.main.async { [weak self] in self?.showGroupPopover(for: group, waiting: waiting - 1) }
+            return
+        }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
+        popover.contentViewController = NSHostingController(
+            rootView: GroupPopover(
+                group: group, theme: theme,
+                folder: store.tabs(in: group).first.flatMap { $0.attachedCheckout?.path ?? $0.workingDirectory },
+                done: { [weak self] in
+                    self?.groupPopover?.close()
+                    self?.store.renamingGroupID = nil
+                    self?.focusSelectedTerminal()
+                }))
+        // Strip frames are top-left; the host is flipped, so that is its space.
+        var rect = frame
+        if !strip.isFlipped { rect.origin.y = strip.bounds.height - frame.maxY }
+        popover.show(relativeTo: rect, of: strip, preferredEdge: strip.isFlipped ? .maxY : .minY)
+        groupPopover = popover
     }
 
     /// Group ▸ Add Tab to Group ▸ <name>.
@@ -84,6 +120,7 @@ extension TerminalWindowController {
         let tabs = store.tabs(in: group)
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem("Rename Group…") { [weak self] in self?.store.renamingGroupID = group.id })
+        menu.addItem(ClosureMenuItem("Group Settings…") { [weak self] in self?.showGroupPopover(for: group) })
         let colorItem = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
         let colors = NSMenu()
         for color in TabColor.allCases {
@@ -120,6 +157,17 @@ extension TerminalWindowController {
         menu.addItem(ClosureMenuItem("Ungroup") { [weak self] in self?.store.ungroup(group) })
         menu.addItem(ClosureMenuItem("Close Group (\(tabs.count) tab\(tabs.count == 1 ? "" : "s"))") { [weak self] in self?.closeGroup(group) })
         return menu
+    }
+
+    /// ⌃⌘1…9: the nth island in the strip, counting the ones you can see —
+    /// a stashed group is not in the strip, so it is not nth.
+    @objc func showGroup(_ sender: Any?) {
+        guard let n = (sender as? NSMenuItem)?.tag, n >= 1 else { return }
+        let islands = store.groups.filter { !$0.isStashed }
+        guard islands.count >= n else { return }
+        let group = islands[n - 1]
+        if group.isCollapsed { store.setCollapsed(group, false) }
+        selectGroup(group)
     }
 
     func selectGroup(_ group: TabGroup) {

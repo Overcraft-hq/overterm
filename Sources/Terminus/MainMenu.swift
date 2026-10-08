@@ -70,6 +70,11 @@ enum MainMenu {
         command(
             viewMenu, "Next Tab That Needs You", #selector(TerminalWindowController.showNextAttention(_:)),
             "tabs.nextAttention")
+        for n in 1...9 {
+            // One selector, the group's number in the tag: nine near-identical
+            // selectors would be nine places to keep in step.
+            command(viewMenu, "Go to Group \(n)", #selector(TerminalWindowController.showGroup(_:)), "groups.goto\(n)").tag = n
+        }
         // ⇧⌘E is free in Ghostty v1.3.1 (only ⌘E and ⌃⇧E are bound); ⇧⌘↓
         // would never arrive — jump_to_prompt eats it in performKeyEquivalent.
         command(viewMenu, "Tab Peek", #selector(TerminalWindowController.toggleTabPeek(_:)), "tabs.peek")

@@ -34,6 +34,8 @@ struct GroupIslandView: View {
 
     private var tint: Color { group.color.color }
     private var holdsSelection: Bool { tabs.contains { $0.id == store.selectedID } }
+    /// The tab being dragged would land here: say so before it is dropped.
+    private var isDropTarget: Bool { store.draggingID != nil && store.dropGroupID == group.id }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -52,10 +54,12 @@ struct GroupIslandView: View {
             // ringed: with four islands in the strip, "which am I in" has to
             // be answerable without reading a single name.
             RoundedRectangle(cornerRadius: 11)
-                .fill(tint.opacity(holdsSelection ? 0.16 : 0.09))
+                .fill(tint.opacity(isDropTarget ? 0.26 : (holdsSelection ? 0.16 : 0.09)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 11)
-                        .strokeBorder(holdsSelection ? tint.opacity(0.5) : .clear, lineWidth: 1))
+                        .strokeBorder(
+                            isDropTarget ? tint : (holdsSelection ? tint.opacity(0.5) : .clear),
+                            lineWidth: isDropTarget ? 2 : 1))
         )
         .padding(.horizontal, 3)
     }
