@@ -1542,6 +1542,11 @@ final class E2ERunner {
     /// Splits: made from the menu and from Ghostty's own bindings, the
     /// keyboard moved and the layout resized by them, a divider dragged,
     /// a pane zoomed, and panes closed by exit and by ⌘W.
+    /// A pane filling its tab fills what is left under its header.
+    @MainActor private static func underHeader(_ host: SplitHostView) -> CGSize {
+        CGSize(width: host.bounds.width, height: host.bounds.height - SplitHostView.headerHeight)
+    }
+
     private func splitsScenario() async {
         await waitForPrompt()
         guard let tab = app.store.selected, let host = app.host(of: tab) else { return check("a tab", false) }
@@ -1581,7 +1586,23 @@ final class E2ERunner {
 
         below.perform(binding: "goto_split:left")
         check("goto_split moves the keyboard", await eventually(2) { self.window.firstResponder === first && tab.terminal === first })
-        check("unfocused panes are dimmed", host.subviews.filter { !($0 is TerminalView) && !$0.isHidden }.count == 2)
+        check("unfocused panes are dimmed", host.dimmedPanes == 2, "\(host.dimmedPanes)")
+
+        // Every pane wears its own header, and it is the terminal that gives
+        // up the room for it — not the pane's share of the tab.
+        let headers = tab.terminals.map { host.header(of: $0) }
+        check("every pane has a header", headers.allSatisfy { $0 != nil && !$0!.isHidden }, "\(headers.map { $0 == nil ? "none" : ($0!.isHidden ? "hidden" : "shown") })")
+        let sits = zip(tab.terminals, headers).allSatisfy { pane, header in
+            guard let header else { return false }
+            return abs(header.frame.maxY - pane.frame.minY) < 0.5 && abs(header.frame.height - SplitHostView.headerHeight) < 0.5
+                && abs(header.frame.width - pane.frame.width) < 0.5
+        }
+        check("directly above its terminal, full width", sits, zip(tab.terminals, headers).map { "\($1?.frame.integral.debugDescription ?? "none") / \($0.frame.integral)" }.joined(separator: " | "))
+        app.toggleSplitZoom(first)
+        let zoomedHeaders = await eventually(2) { tab.terminals.compactMap { host.header(of: $0) }.count { !$0.isHidden } == 1 }
+        check("a zoomed pane leaves one header", zoomedHeaders, "\(tab.terminals.compactMap { host.header(of: $0) }.count { !$0.isHidden })")
+        app.toggleSplitZoom(first)
+        _ = await eventually(2) { host.header(of: right)?.isHidden == false }
 
         let before = first.frame.width
         first.perform(binding: "resize_split:right,60")
@@ -1612,8 +1633,9 @@ final class E2ERunner {
 
         first.perform(binding: "toggle_split_zoom")
         check(
-            "zoom shows the pane alone",
-            await eventually(2) { first.frame.size == host.bounds.size && right.isHidden && below.isHidden })
+            "zoom shows the pane alone, under its header",
+            await eventually(2) { first.frame.size == Self.underHeader(host) && right.isHidden && below.isHidden },
+            "\(first.frame.size) want \(Self.underHeader(host))")
         first.perform(binding: "toggle_split_zoom")
         check("and back", await eventually(2) { !right.isHidden && !below.isHidden && first.frame.width < host.bounds.width })
 
@@ -1629,7 +1651,9 @@ final class E2ERunner {
         await eventually(2) { tab.terminal === right }
         app.closeSelectedTab(nil)
         check("⌘W closes the focused pane", await eventually(2) { tab.terminals.count == 1 } && window.attachedSheet == nil)
-        check("the last pane fills the tab again", await eventually(2) { first.frame.size == host.bounds.size })
+        check(
+            "the last pane fills the tab again", await eventually(2) { first.frame.size == Self.underHeader(host) },
+            "\(first.frame.size) want \(Self.underHeader(host))")
         check("and has the keyboard", await eventually(2) { self.window.firstResponder === first })
         // A close that arrives for a pane already gone (confirmed in a
         // sheet, an exit noticed late) must not take the tab with it.

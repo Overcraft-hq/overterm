@@ -7,6 +7,8 @@ import AppKit
 @MainActor
 final class SplitHostView: NSView {
     static let dividerThickness: CGFloat = 1
+    /// The bar across the top of every pane (`PaneHeaderView`).
+    static let headerHeight: CGFloat = 38
     /// How far from the 1 pt line a divider can still be grabbed.
     private static let grab: CGFloat = 4
 
@@ -38,9 +40,18 @@ final class SplitHostView: NSView {
         CATransaction.commit()
     }
 
+    /// Makes a pane's header. The host frames it and nothing more: what
+    /// goes in it needs the tab, its group and the window's actions, none
+    /// of which a view over TerminalViews should know about.
+    var makeHeader: ((TerminalView) -> NSView)?
+
     private var dividers: [SplitTree<TerminalView>.Divider] = []
+    private var headers: [ObjectIdentifier: NSView] = [:]
     private var dims: [ObjectIdentifier: NSView] = [:]
     private var visible = true
+    /// Scaled into a tab peek card, which draws a header of its own: ours
+    /// would be a second one, at a size nobody can read.
+    private var previewing = false
     /// Over the panes without the keyboard; Settings can change it.
     var dimColor: NSColor {
         didSet { dims.values.forEach { $0.layer?.backgroundColor = dimColor.cgColor } }
@@ -76,6 +87,10 @@ final class SplitHostView: NSView {
             dim.removeFromSuperview()
             dims[id] = nil
         }
+        for (id, header) in headers where !panes.contains(where: { ObjectIdentifier($0) == id }) {
+            header.removeFromSuperview()
+            headers[id] = nil
+        }
         applyVisibility()
         needsLayout = true
         layoutSubtreeIfNeeded()
@@ -86,7 +101,9 @@ final class SplitHostView: NSView {
     /// rendering them).
     func setVisible(_ visible: Bool) {
         self.visible = visible
+        previewing = false
         isHidden = !visible
+        if visible { needsLayout = true }
         applyVisibility()
     }
 
@@ -94,7 +111,9 @@ final class SplitHostView: NSView {
     /// panes itself, at its own cadence.
     func setPreviewing(_ previewing: Bool) {
         visible = previewing
+        self.previewing = previewing
         isHidden = !previewing
+        headers.values.forEach { $0.isHidden = previewing }
         for pane in tree?.leaves ?? [] {
             pane.setPreviewing(previewing && (zoomed == nil || pane === zoomed))
         }
@@ -110,15 +129,16 @@ final class SplitHostView: NSView {
         super.layout()
         guard let tree else { return }
         if let zoomed {
-            zoomed.frame = bounds
+            place(zoomed, in: bounds)
             dividers = []
             dims.values.forEach { $0.isHidden = true }
+            for (id, header) in headers { header.isHidden = previewing || id != ObjectIdentifier(zoomed) }
         } else {
             let (panes, dividers) = tree.layout(in: bounds, divider: Self.dividerThickness)
             self.dividers = dividers
             let dimming = panes.count > 1
             for (pane, rect) in panes {
-                pane.frame = rect
+                place(pane, in: rect)
                 let dim = dimView(for: pane)
                 dim.frame = rect
                 dim.isHidden = !dimming || pane === focused
@@ -134,6 +154,37 @@ final class SplitHostView: NSView {
         super.viewWillDraw()
         restorePeekTransform()
     }
+
+    /// The pane's header across the top of its rect, the terminal under it.
+    /// The terminal is the one that shrinks — the header is chrome, and a
+    /// pane's share of the tab should not depend on whether it has one.
+    private func place(_ pane: TerminalView, in rect: CGRect) {
+        guard let header = headerView(for: pane) else {
+            pane.frame = rect
+            return
+        }
+        header.isHidden = previewing
+        header.frame = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: Self.headerHeight)
+        pane.frame = CGRect(
+            x: rect.minX, y: rect.minY + Self.headerHeight,
+            width: rect.width, height: max(rect.height - Self.headerHeight, 0))
+    }
+
+    private func headerView(for pane: TerminalView) -> NSView? {
+        if let header = headers[ObjectIdentifier(pane)] { return header }
+        guard let header = makeHeader?(pane) else { return nil }
+        header.translatesAutoresizingMaskIntoConstraints = true
+        addSubview(header, positioned: .above, relativeTo: pane)
+        headers[ObjectIdentifier(pane)] = header
+        return header
+    }
+
+    /// How many panes are dimmed — for the E2E scenario, which cannot tell
+    /// a dim from a header by class alone.
+    var dimmedPanes: Int { dims.values.count { !$0.isHidden } }
+
+    /// A pane's header, if it has been made.
+    func header(of pane: TerminalView) -> NSView? { headers[ObjectIdentifier(pane)] }
 
     private func dimView(for pane: TerminalView) -> NSView {
         if let dim = dims[ObjectIdentifier(pane)] { return dim }

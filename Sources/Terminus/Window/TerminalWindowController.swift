@@ -521,6 +521,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tab.setSplits(tab.splits.settingRatio(ratio, at: path))
             self.refreshHost(tab)
         }
+        host.makeHeader = { [weak self, weak tab] pane in
+            guard let self, let tab, let theme = self.theme else { return NSView() }
+            return NSHostingView(
+                rootView: PaneHeaderView(
+                    tab: tab, pane: pane, store: self.store, theme: theme,
+                    actions: PaneHeaderActions(
+                        splitRight: { [weak self] in self?.split($0, .right) },
+                        splitDown: { [weak self] in self?.split($0, .down) },
+                        zoom: { [weak self] in self?.toggleSplitZoom($0) },
+                        close: { [weak self] pane in
+                            guard let self, let tab = self.tab(containing: pane) else { return }
+                            self.closePane(pane, in: tab)
+                        },
+                        openPort: { port in port.url.map { NSWorkspace.shared.open($0) } })))
+        }
         host.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(host)
         NSLayoutConstraint.activate([
