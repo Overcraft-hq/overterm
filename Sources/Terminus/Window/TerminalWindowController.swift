@@ -89,6 +89,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
+    /// What this machine has run, for the palette.
+    let history = CommandHistory()
+
     /// Handing a selection to an agent (⌘L).
     let askAgent = AskAgentModel()
     private var selectionBar: NSHostingView<SelectionBar>?
@@ -496,10 +499,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 theme: theme,
                 onChoose: { [weak self] item, run in
                     self?.hidePalette()
-                    item.perform(run)
+                    item.perform(run, self?.palette.values ?? [:])
                 },
                 onDismiss: { [weak self] in self?.hidePalette() }
             ))
+        // History is ranked against what has been typed, so its rows have
+        // to be rebuilt as you type — the rest of the sources are fixed.
+        palette.$query
+            .removeDuplicates()
+            .sink { [weak self] query in
+                guard let self, self.paletteView?.isHidden == false else { return }
+                self.palette.restock(self.paletteItems(matching: query))
+            }
+            .store(in: &cancellables)
         paletteView.translatesAutoresizingMaskIntoConstraints = false
         paletteView.isHidden = true
         content.addSubview(paletteView)
@@ -640,6 +652,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let key = ObjectIdentifier(pane)
         if let existing = paneBlocks[key] { return existing }
         let blocks = PaneBlocks()
+        blocks.onCommandFinished = { [weak self, weak pane] block in
+            self?.history.record(block, folder: pane?.workingDirectory)
+        }
         paneBlocks[key] = blocks
         return blocks
     }
@@ -2209,47 +2224,47 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Actions first, then tabs, worktrees and snippets — the order shown
     /// before typing.
-    private func paletteItems() -> [PaletteItem] {
+    private func paletteItems(matching query: String = "") -> [PaletteItem] {
         var items: [PaletteItem] = [
-            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: "⌘T", symbol: "plus") { [weak self] _ in
+            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: "⌘T", symbol: "plus") { [weak self] _, _ in
                 self?.newTab(from: self?.store.selected?.terminal)
             },
             PaletteItem(id: "a.splitRight", group: .action, title: "Split Right", subtitle: "⌘D", symbol: "rectangle.split.2x1") {
-                [weak self] _ in self?.split(nil, .right)
+                [weak self] _, _ in self?.split(nil, .right)
             },
             PaletteItem(id: "a.splitDown", group: .action, title: "Split Down", subtitle: "⇧⌘D", symbol: "rectangle.split.1x2") {
-                [weak self] _ in self?.split(nil, .down)
+                [weak self] _, _ in self?.split(nil, .down)
             },
             PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
-                [weak self] _ in self?.newTask(nil)
+                [weak self] _, _ in self?.newTask(nil)
             },
             PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
-                [weak self] _ in self?.showAgentOverview(nil)
+                [weak self] _, _ in self?.showAgentOverview(nil)
             },
             PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
-                [weak self] _ in self?.toggleTabPeek(nil)
+                [weak self] _, _ in self?.toggleTabPeek(nil)
             },
             PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
-                [weak self] _ in self?.showPullRequest(nil)
+                [weak self] _, _ in self?.showPullRequest(nil)
             },
             PaletteItem(
                 id: "a.cleanUp", group: .action, title: "Clean Up Merged Worktrees…", subtitle: "Fetch, then remove merged worktrees",
                 symbol: "sparkles"
-            ) { [weak self] _ in self?.cleanUpMergedWorktrees(nil) },
+            ) { [weak self] _, _ in self?.cleanUpMergedWorktrees(nil) },
         ]
         if store.selected?.isSplit == true {
             items += [
                 PaletteItem(id: "a.nextPane", group: .action, title: "Next Pane", subtitle: "⌘]", symbol: "arrow.right.square") {
-                    [weak self] _ in self?.focusSplit(from: nil, .next)
+                    [weak self] _, _ in self?.focusSplit(from: nil, .next)
                 },
                 PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "⇧⌘↩ — alone, full size, and back", symbol: "arrow.up.left.and.arrow.down.right") {
-                    [weak self] _ in self?.toggleSplitZoom(nil)
+                    [weak self] _, _ in self?.toggleSplitZoom(nil)
                 },
                 PaletteItem(id: "a.equalizePanes", group: .action, title: "Equalize Panes", subtitle: "⌃⌘=", symbol: "equal.square") {
-                    [weak self] _ in self?.equalizeSplits(nil)
+                    [weak self] _, _ in self?.equalizeSplits(nil)
                 },
                 PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: "⌘W", symbol: "xmark.square") {
-                    [weak self] _ in
+                    [weak self] _, _ in
                     guard let self, let tab = self.store.selected else { return }
                     self.closePane(tab.terminal, in: tab)
                 },
@@ -2257,21 +2272,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
         items += Agent.allCases.map { agent in
             PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol) {
-                [weak self] _ in self?.newAgentTab(agent)
+                [weak self] _, _ in self?.newAgentTab(agent)
             }
         }
         items += [
-            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _ in
+            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _, _ in
                 self?.toggleFileTree(nil)
             },
             PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
-                [weak self] _ in self?.toggleDiff(nil)
+                [weak self] _, _ in self?.toggleDiff(nil)
             },
-            PaletteItem(id: "a.snippet", group: .action, title: "New Snippet…", subtitle: nil, symbol: "text.badge.plus") { [weak self] _ in
+            PaletteItem(id: "a.snippet", group: .action, title: "New Snippet…", subtitle: nil, symbol: "text.badge.plus") { [weak self] _, _ in
                 self?.editSnippet(nil)
             },
             PaletteItem(id: "a.snippetsFile", group: .action, title: "Open Snippets File", subtitle: snippets.url.path, symbol: "doc.text") {
-                [weak self] _ in
+                [weak self] _, _ in
                 guard let self else { return }
                 NSWorkspace.shared.open(self.snippets.url)
             },
@@ -2280,20 +2295,54 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(
                 id: "t.\(tab.id)", group: .tab, title: tab.title, subtitle: tab.workingDirectory,
                 symbol: tab.agent?.symbol ?? (tab.isPinned ? "pin" : "terminal")
-            ) { [weak self] _ in self?.store.select(tab) }
+            ) { [weak self] _, _ in self?.store.select(tab) }
         }
         items += worktrees.worktrees.map { worktree in
             PaletteItem(
                 id: "w.\(worktree.path.path)", group: .worktree, title: worktree.displayName, subtitle: worktree.path.path,
                 symbol: worktree.isMain ? "house" : "arrow.triangle.branch"
-            ) { [weak self] _ in self?.openWorktree(worktree) }
+            ) { [weak self] _, _ in self?.openWorktree(worktree) }
         }
         items += snippets.snippets.map { snippet in
-            PaletteItem(id: "s.\(snippet.id)", group: .snippet, title: snippet.name, subtitle: snippet.command, symbol: "text.alignleft") {
-                [weak self] run in self?.useSnippet(snippet, run: run)
+            PaletteItem(
+                id: "s.\(snippet.id)", group: .snippet, title: snippet.name, subtitle: snippet.command,
+                symbol: "text.alignleft", detail: nil, failed: nil, placeholders: snippet.placeholders
+            ) { [weak self] run, values in
+                // Filled in the palette's own detail pane when it can be;
+                // the sheet is still there for a snippet run from the
+                // sidebar, where there is nowhere to type.
+                guard let self else { return }
+                if snippet.placeholders.isEmpty || !values.isEmpty {
+                    self.type(snippet.filled(with: values), run: run)
+                } else {
+                    self.useSnippet(snippet, run: run)
+                }
             }
         }
+        // History last in the unranked order — before you type, what you
+        // want is an action; once you type, ranking decides.
+        items += historyItems(matching: query)
         return items
+    }
+
+    /// The history rows for a query. Rebuilt as you type, because ranking
+    /// them *is* the feature ("this folder first", then recency).
+    private func historyItems(matching query: String) -> [PaletteItem] {
+        let folder = store.selected?.terminal.workingDirectory ?? store.selected?.workingDirectory
+        return history.ranked(query: query, folder: folder).map { entry in
+            PaletteItem(
+                id: "h.\(entry.command)", group: .history, title: entry.command, subtitle: entry.ago(),
+                symbol: "clock", detail: detail(of: entry), failed: entry.failed
+            ) { [weak self] run, _ in self?.type(entry.command, run: run) }
+        }
+    }
+
+    private func detail(of entry: HistoryEntry) -> String {
+        var parts = ["Last run \(entry.ago())"]
+        if let folder = entry.folder { parts.append("in \((folder as NSString).lastPathComponent)") }
+        if !entry.outcome.isEmpty { parts.append("· \(entry.outcome)") }
+        if entry.runs > 1 { parts.append("· \(entry.runs) times") }
+        return parts.joined(separator: " ")
     }
 
     /// What New Task does once the sheet is filled in: the worktree, then a
@@ -2325,7 +2374,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         type(snippet.command, run: run)
     }
 
-    private func type(_ command: String, run: Bool) {
+    func type(_ command: String, run: Bool) {
         guard let terminal = store.selected?.terminal else { return }
         terminal.insertText(command)
         if run { terminal.pressReturn() }

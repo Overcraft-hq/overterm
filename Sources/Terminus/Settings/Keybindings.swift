@@ -276,7 +276,10 @@ enum KeyCommands {
         .init("splits.up", "Pane Above", group: "Panes", ghostty: "goto_split:up", menu: false),
         .init("splits.below", "Pane Below", group: "Panes", ghostty: "goto_split:down", menu: false),
         // Panels
-        .init("palette.show", "Command Palette", group: "Panels", key: "cmd+p"),
+        // ⌘K as the designs have it. Ghostty binds it to clear_screen and
+        // takes it before the menu, so `terminal.clear` moves to ⇧⌘K and
+        // `ghosttyLines` then writes the unbind for it.
+        .init("palette.show", "Command Palette", group: "Panels", key: "cmd+k"),
         .init("sidebar.toggle", "Toggle Sidebar", group: "Panels", key: "cmd+b"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
         .init("search.terminal", "Search Terminal & Files", group: "Panels", ghostty: "start_search", menu: false),
@@ -288,7 +291,7 @@ enum KeyCommands {
         .init("edit.find", "Find in the Editor", group: "Editing", key: "cmd+f"),
         .init("file.save", "Save (the editor)", group: "Editing", key: "cmd+s"),
         // Terminal
-        .init("terminal.clear", "Clear the Screen", group: "Terminal", ghostty: "clear_screen", menu: false),
+        .init("terminal.clear", "Clear the Screen", group: "Terminal", key: "shift+cmd+k", ghostty: "clear_screen", menu: false),
         .init("terminal.fontBigger", "Bigger Text", group: "Terminal", ghostty: "increase_font_size:1", menu: false),
         .init("terminal.fontSmaller", "Smaller Text", group: "Terminal", ghostty: "decrease_font_size:1", menu: false),
         .init("terminal.fontReset", "Text Size Back", group: "Terminal", ghostty: "reset_font_size", menu: false),
@@ -471,14 +474,33 @@ final class Keybindings: ObservableObject {
     /// (else it would take the key first, in the terminal). A terminal
     /// command is Ghostty's: the old key is let go, the new one bound.
     var ghosttyLines: [String] {
+        // Keys a terminal command of ours deliberately holds. ⌘F is the
+        // editor's find *and* the terminal's search, by design — unbinding
+        // it for the menu would take the terminal's search away.
+        let terminalKeys = Set(
+            KeyCommands.all.filter { !$0.menu && $0.ghostty != nil }.compactMap { key(for: $0)?.ghostty })
         var lines: [String] = []
-        for command in KeyCommands.all where isChanged(command) {
+        for command in KeyCommands.all {
             let new = key(for: command)
-            if command.ghostty != nil, let old = defaultKey(command) { lines.append("keybind = \(old.ghostty)=unbind") }
+            // Ghostty lets go of its own key for an action we have moved.
+            // Asked of Ghostty directly rather than through `isChanged`:
+            // `defaultKey` prefers the key written in `KeyCommands`, so a
+            // command Terminus always wanted elsewhere never looked
+            // changed, and the unbind was never written (⌘K).
+            if let action = command.ghostty, let mine = ghosttyDefault(action), mine != new {
+                lines.append("keybind = \(mine.ghostty)=unbind")
+            }
             guard let new else { continue }
             if command.menu {
-                lines.append("keybind = \(new.ghostty)=unbind")
-            } else if let action = command.ghostty {
+                // Ghostty answers a key in performKeyEquivalent, before the
+                // menu sees it, so a key it holds is a menu item that
+                // silently does nothing. Only where it would actually hold
+                // one: a menu command that *is* a Ghostty action on
+                // Ghostty's own key already does the same thing either way.
+                if command.ghostty == nil || isChanged(command), !terminalKeys.contains(new.ghostty) {
+                    lines.append("keybind = \(new.ghostty)=unbind")
+                }
+            } else if let action = command.ghostty, isChanged(command) || ghosttyDefault(action) != new {
                 lines.append("keybind = \(new.ghostty)=\(action)")
             }
         }

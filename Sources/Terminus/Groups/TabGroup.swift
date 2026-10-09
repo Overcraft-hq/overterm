@@ -56,7 +56,7 @@ final class TabGroup: ObservableObject, Identifiable {
     }
 
     /// "Stashed 2 h ago" — coarse on purpose, and pure so it can be tested.
-    static func stashedAgo(_ then: Date, now: Date = Date()) -> String {
+    nonisolated static func stashedAgo(_ then: Date, now: Date = Date()) -> String {
         let seconds = Int(now.timeIntervalSince(then))
         switch seconds {
         case ..<60: return "just now"

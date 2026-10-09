@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// ⌘P: one search over actions, tabs, worktrees and snippets.
+/// ⌘K: one search over what you have run, your snippets, your tabs and
+/// worktrees, and the app's own actions.
 struct PaletteView: View {
     @ObservedObject var model: PaletteModel
     let theme: ChromeTheme
@@ -15,23 +16,79 @@ struct PaletteView: View {
             Color.black.opacity(0.001)
                 .onTapGesture(perform: onDismiss)
             VStack(spacing: 0) {
-                PaletteField(
-                    text: $model.query,
-                    onMove: { model.move($0) },
-                    onSubmit: { run in model.selected.map { onChoose($0, run) } },
-                    onCancel: onDismiss,
-                    textColor: NSColor(theme.text)
-                )
-                .frame(height: 40)
-                .padding(.horizontal, 14)
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(theme.text3)
+                    PaletteField(
+                        text: $model.query,
+                        onMove: { model.move($0) },
+                        onSubmit: { run in model.selected.map { onChoose($0, run) } },
+                        onCancel: onDismiss,
+                        textColor: NSColor(theme.text)
+                    )
+                    scopes
+                }
+                .frame(height: 48)
+                .padding(.horizontal, 16)
                 Divider().opacity(0.4)
-                results
+                HStack(spacing: 0) {
+                    results.frame(width: 470)
+                    if let selected = model.selected, selected.detail != nil || !selected.placeholders.isEmpty {
+                        Divider().opacity(0.4)
+                        PaletteDetail(item: selected, model: model, theme: theme)
+                    }
+                }
+                Divider().opacity(0.4)
+                footer
             }
-            .frame(width: 580)
+            .frame(width: model.selected.map { $0.detail != nil || !$0.placeholders.isEmpty } == true ? 860 : 580)
             .background(RoundedRectangle(cornerRadius: 12).fill(theme.strip))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.dimText.opacity(0.25)))
             .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
             .padding(.top, 70)
+        }
+    }
+
+    /// All / History / Snippets / Actions — narrows what is searched.
+    private var scopes: some View {
+        HStack(spacing: 4) {
+            chip("All", nil)
+            ForEach(PaletteItem.Group.scopes, id: \.self) { group in
+                chip(group == .snippet ? "Snippets" : group.rawValue, group)
+            }
+        }
+    }
+
+    private func chip(_ title: String, _ group: PaletteItem.Group?) -> some View {
+        let on = model.scope == group
+        return Button {
+            model.scope = group
+        } label: {
+            Text(title)
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .frame(height: 20)
+                .background(Capsule().fill(on ? TabStatusStyle.working : theme.iconBg))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(on ? Color.white : theme.text2)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 18) {
+            hint("↩", "run")
+            hint("⌥↩", "paste without running")
+            Spacer()
+            Text(verbatim: "⌘K").font(.system(size: 12)).foregroundStyle(theme.text3)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 34)
+    }
+
+    private func hint(_ key: String, _ what: String) -> some View {
+        HStack(spacing: 5) {
+            Text(verbatim: key).font(.system(size: 12)).foregroundStyle(theme.text)
+            Text(what).font(.system(size: 12)).foregroundStyle(theme.text3)
         }
     }
 
@@ -59,9 +116,20 @@ struct PaletteView: View {
 
     private func row(_ item: PaletteItem, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: item.symbol).frame(width: 18).foregroundStyle(theme.dimText)
+            // History shows how it went last time instead of a clock.
+            if let failed = item.failed {
+                Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                    .frame(width: 18)
+                    .foregroundStyle(failed ? TabStatusStyle.failed : TabStatusStyle.done)
+            } else {
+                Image(systemName: item.symbol).frame(width: 18).foregroundStyle(theme.text2)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.title).foregroundStyle(theme.text).lineLimit(1)
+                Text(item.title)
+                    .font(.system(size: 13, design: item.group == .history ? .monospaced : .default))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 if let subtitle = item.subtitle {
                     Text(subtitle)
                         .font(.system(size: 11, design: item.group == .snippet ? .monospaced : .default))
@@ -144,5 +212,49 @@ struct PaletteField: NSViewRepresentable {
             }
             return true
         }
+    }
+}
+
+/// What the selected thing is, beside the list: a snippet's fields to fill
+/// in, and when a command last ran and how it went.
+private struct PaletteDetail: View {
+    let item: PaletteItem
+    @ObservedObject var model: PaletteModel
+    let theme: ChromeTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(item.title)
+                .font(.system(size: 13, weight: .bold, design: item.group == .history ? .monospaced : .default))
+                .foregroundStyle(theme.text)
+                .lineLimit(2)
+            if let subtitle = item.subtitle, item.group == .snippet {
+                Text(subtitle)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(theme.text)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.term))
+            }
+            ForEach(item.placeholders, id: \.self) { name in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(name).font(.system(size: 11)).foregroundStyle(theme.text2)
+                    TextField(
+                        name, text: Binding(get: { model.values[name] ?? "" }, set: { model.values[name] = $0 })
+                    )
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, design: .monospaced))
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(theme.term))
+                }
+            }
+            Spacer(minLength: 0)
+            if let detail = item.detail {
+                Text(detail).font(.system(size: 11)).foregroundStyle(theme.text3)
+            }
+        }
+        .padding(16)
+        .frame(width: 390, alignment: .topLeading)
     }
 }

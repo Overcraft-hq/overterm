@@ -18,6 +18,8 @@ final class PaneBlocks: ObservableObject {
     /// Whether the map is drawn right now.
     @Published private(set) var showMap = NSScroller.preferredScrollerStyle == .legacy
     private var hiding: Task<Void, Never>?
+    /// Told when a command finishes, so the palette's history gets it.
+    var onCommandFinished: ((CommandBlock) -> Void)?
 
     /// How long the map stays after the last scroll, matching the feel of
     /// an overlay scrollbar.
@@ -30,6 +32,7 @@ final class PaneBlocks: ObservableObject {
             flashMap()
         case .commandFinished(let exitCode, let seconds):
             ledger.finished(exitCode: exitCode, seconds: seconds)
+            ledger.lastFinished.map { onCommandFinished?($0) }
         case .linkHover(let url):
             if hoveredLink != url { hoveredLink = url }
         case .bell, .notification, .progress:

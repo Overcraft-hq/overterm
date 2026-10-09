@@ -372,6 +372,35 @@ drawing, splits included.
 ⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
 overview its agent's **state**.
 
+## The palette (⌘K)
+
+One search over what you have run, your snippets, your tabs and
+worktrees, and the app's own actions, with scope chips to narrow it and a
+detail pane beside the list (a snippet's `{{placeholder}}`s to fill in, or
+when a command last ran and how it went).
+
+`Palette/CommandHistory` is new: Terminus had no history at all, and the
+thing you most often want to run again is the thing you ran an hour ago.
+It is fed by the command ledger — which already records every command with
+its exit, its duration and its folder — and seeded once from the shell's
+own history file so it is not empty on day one. Ranking is "this folder
+first", then recency, then how often; it is pure, because the ranking *is*
+the feature.
+
+History rows are ranked below everything else in the palette itself: a
+history row is a guess at what you meant, and an action named for what you
+typed is not (a long command containing n, c and l somewhere outranked
+"New Claude Tab" for "ncl").
+
+**⌘K is Ghostty's `clear_screen`**, and Ghostty answers keys in
+`performKeyEquivalent` before the menu sees them — so clearing moves to
+⇧⌘K and `Keybindings.ghosttyLines` writes the unbind. That unbind is not
+conditional on the user having changed anything, which is what the old
+code assumed; a key Terminus always wanted elsewhere never looked
+"changed" and the line was never written. It is still not written for a
+key a terminal command deliberately shares (⌘F is the editor's find *and*
+the terminal's search).
+
 ## Asking an agent about a selection (⌘L)
 
 What you want to tell an agent is usually on screen already — a failing

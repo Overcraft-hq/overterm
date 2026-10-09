@@ -2435,9 +2435,11 @@ final class E2ERunner {
         settings.set("appearance.fontSize", nil)
         check(
             "Reset hands it back to the Ghostty config",
+            // The overrides file stays: the keys the menu takes off Ghostty
+            // are written there too, and they are not settings.
             await eventually(4) { ghostty_surface_size(surface).cell_width_px == before }
-                && !fileText().contains("appearance.fontSize") && !FileManager.default.fileExists(atPath: Settings.ghosttyOverridesFile.path),
-            fileText())
+                && !fileText().contains("appearance.fontSize") && !overrides().contains("font-size"),
+            fileText() + " / " + overrides())
 
         // settings.json by hand: applies at once, and keeps its comments when the page changes something.
         try? "{\n  // mine\n  \"appearance.unfocusedPaneDim\": 0.6\n}\n".write(to: settings.url, atomically: true, encoding: .utf8)
@@ -2573,8 +2575,11 @@ final class E2ERunner {
         check(
             "Reset All puts the defaults back",
             await eventually(3) {
-                self.menuItem("tabs.new")?.keyEquivalent.lowercased() == "t" && self.menuItem("splits.right")?.keyEquivalent.lowercased() == "d"
-                    && !overrides().contains("keybind")
+                self.menuItem("tabs.new")?.keyEquivalent.lowercased() == "t"
+                    && self.menuItem("splits.right")?.keyEquivalent.lowercased() == "d"
+                    // Only the unbinds the defaults themselves need are
+                    // left: nothing anyone chose.
+                    && !overrides().contains("=new_tab") && !overrides().contains("=new_split")
             }, overrides())
 
         // Clicking the terminal tab uncovers it; ⌘W on the Settings tab closes only that.
@@ -2897,8 +2902,15 @@ final class E2ERunner {
 
     /// ⌘P shows, searches across kinds, and hides.
     private func paletteScenario() async {
+        // ⌘K is Ghostty's clear_screen; the palette only ever opens on it
+        // if Terminus writes the unbind.
+        check(
+            "⌘K is handed to the menu, not kept by Ghostty",
+            Keybindings.shared.ghosttyLines.contains("keybind = super+k=unbind"),
+            Keybindings.shared.ghosttyLines.filter { $0.contains("+k=") }.joined(separator: " / "))
+
         app.showPalette(nil)
-        check("⌘P shows the palette", app.paletteView?.isHidden == false)
+        check("⌘K shows the palette", app.paletteView?.isHidden == false)
         check("it lists actions and tabs", app.palette.results.contains { $0.group == .action } && app.palette.results.contains { $0.group == .tab })
         app.palette.query = "ncl"
         check("fuzzy search finds New Claude Tab", app.palette.results.first?.title == "New Claude Tab")
@@ -2906,8 +2918,50 @@ final class E2ERunner {
         check("snippets are searchable", app.palette.results.first?.group == .snippet)
         app.palette.query = "changes"
         check("the changes pane is Changes", app.palette.results.first?.title == "Changes", app.palette.results.first?.title ?? "nil")
+        // History: what this pane has run, nearest folder first.
+        app.palette.query = ""
+        app.history.record(
+            CommandBlock(id: 0, command: "pnpm --filter api build", startRow: 0, endRow: 9, exit: 2, seconds: 8),
+            folder: "/src/app")
+        app.history.record(
+            CommandBlock(id: 1, command: "pnpm --filter web build", startRow: 0, endRow: 9, exit: 0, seconds: 3),
+            folder: "/elsewhere")
+        app.palette.query = "pnpm"
+        // Not an exact count: Terminus's panes are real login shells, so
+        // what the scenarios type lands in the user's own history file,
+        // which is also seeded from.
+        let history = app.palette.results.filter { $0.group == .history }
+        check(
+            "history is searchable",
+            history.contains { $0.title.contains("--filter api") } && history.contains { $0.title.contains("--filter web") },
+            "\(history.prefix(4).map(\.title))")
+        check("a failed one is marked as failed", history.first { $0.title.contains("--filter api") }?.failed == true)
+        check(
+            "and the detail says when and how",
+            history.first { $0.title.contains("--filter api") }?.detail?.contains("Last run") == true,
+            history.first { $0.title.contains("--filter api") }?.detail ?? "none")
+
+        // Scopes narrow what is searched.
+        app.palette.scope = .history
+        check("the History scope shows only history", app.palette.results.allSatisfy { $0.group == .history })
+        app.palette.scope = .action
+        check("the Actions scope shows only actions", app.palette.results.allSatisfy { $0.group == .action })
+        app.palette.scope = nil
+
+        // A snippet with a placeholder is not ready until it is filled.
+        app.palette.query = "deploy"
+        if let snippet = app.palette.results.first(where: { $0.group == .snippet && !$0.placeholders.isEmpty }) {
+            app.palette.selectedIndex = app.palette.results.firstIndex { $0.id == snippet.id } ?? 0
+            check("a snippet's fields are offered", !snippet.placeholders.isEmpty, "\(snippet.placeholders)")
+            check("and it is not ready while they are empty", !app.palette.isReady)
+            for name in snippet.placeholders { app.palette.values[name] = "api" }
+            check("ready once they are filled", app.palette.isReady)
+        } else {
+            check("a snippet with placeholders is offered", false, "\(app.palette.results.map(\.title))")
+        }
+
         app.showPalette(nil)
-        check("⌘P again hides it", app.paletteView?.isHidden == true)
+        check("⌘K again hides it", app.paletteView?.isHidden == true)
     }
 
     /// A program reading the clipboard (OSC 52) and a paste that could run

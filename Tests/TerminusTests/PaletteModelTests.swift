@@ -5,7 +5,7 @@ import XCTest
 final class PaletteModelTests: XCTestCase {
     @MainActor
     private func item(_ title: String, _ subtitle: String? = nil, group: PaletteItem.Group = .action) -> PaletteItem {
-        PaletteItem(id: title, group: group, title: title, subtitle: subtitle, symbol: "circle", perform: { _ in })
+        PaletteItem(id: title, group: group, title: title, subtitle: subtitle, symbol: "circle", perform: { _, _ in })
     }
 
     @MainActor

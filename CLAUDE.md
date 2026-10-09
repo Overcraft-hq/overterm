@@ -46,7 +46,7 @@ make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/Blocks/` | what a pane has run: `CommandLedger` (pure — the title, `COMMAND_FINISHED` and the scrollbar assembled into commands), `ScrollMapView`, `BlockFrameView` |
 | `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |
 | `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
-| `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘P palette, session save/restore |
+| `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘K palette (`CommandHistory`: what this machine has run), session save/restore |
 | `Scripts/` | GhosttyKit build, app bundling (with the build metadata About shows), icon, `bump-version.sh` |
 | `VERSION`, `CHANGELOG.md`, `.githooks/` | the app's version, what each version changed, the hooks that keep them in step (Commits) |
 
