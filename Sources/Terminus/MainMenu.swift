@@ -61,6 +61,9 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Search Terminal & Files…", action: #selector(TerminalWindowController.findInTerminal(_:)), keyEquivalent: "")
         editMenu.addItem(.separator())
         command(
+            editMenu, "Ask an Agent About the Selection", #selector(TerminalWindowController.askAboutSelection(_:)),
+            "agents.askSelection")
+        command(
             editMenu, "Copy the Last Command's Output", #selector(TerminalWindowController.copyLastOutput(_:)),
             "terminal.copyOutput")
         command(

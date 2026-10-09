@@ -57,6 +57,7 @@ final class E2ERunner {
         "groups": { await $0.groupsScenario() },
         "blocks": { await $0.blocksScenario() },
         "inbox": { await $0.inboxScenario() },
+        "askAgent": { await $0.askAgentScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -878,6 +879,48 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+    }
+
+    /// Selecting terminal text and handing it to an agent.
+    private func askAgentScenario() async {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        await waitForPrompt()
+        guard let pane = app.store.selected?.terminal else { return check("a pane", false) }
+        app.newTab(in: home, agent: .claude, startAgent: false)
+        let agent = app.store.selected!
+        agent.customTitle = "api · claude"
+        app.store.select(app.store.tabs[0])
+        await waitForPrompt()
+
+        // Something worth selecting, from a command that failed. Short and
+        // with no path in it: synthetic typing drops characters under a
+        // full parallel run, and a temp path is sixty of them.
+        type("(echo AssertionError 401; exit 1)")
+        pressReturn()
+        check(
+            "a command failed, with something worth selecting",
+            await eventually(12) { (pane.visibleText ?? "").contains("AssertionError 401") },
+            String((pane.visibleText ?? "").suffix(60)).debugDescription)
+        pane.perform(binding: "select_all")
+        let selected = await eventually(5) { pane.selectionText?.contains("AssertionError 401") == true }
+        check("the selection can be read", selected, String((pane.selectionText ?? "none").prefix(40)).debugDescription)
+        check("and libghostty says where it is", pane.selection?.origin != .zero, "\(pane.selection?.origin ?? .zero)")
+
+        app.askAboutSelection(nil)
+        check("⌘L opens the sheet", await eventually(3) { self.window.attachedSheet != nil })
+        check("with the agent tab offered", app.askAgent.targets.contains { $0.title == "api · claude" }, "\(app.askAgent.targets.map(\.title))")
+        check("and a new tab as the fallback", app.askAgent.targets.last?.id == nil)
+        check("an existing agent chosen first", app.askAgent.chosen == agent.id)
+        check(
+            "the failed command came with it", app.askAgent.command?.exit == 1,
+            "exit \(app.askAgent.command?.exit ?? -99) of \(app.askAgent.command?.command ?? "nothing")")
+        app.askAgent.message = "Fix this failing test"
+        let prompt = app.askAgent.prompt()
+        check("the prompt leads with what you typed", prompt.hasPrefix("Fix this failing test"), String(prompt.prefix(40)).debugDescription)
+        check("then the command and its exit", prompt.contains("exit 1"), String(prompt.prefix(120)).debugDescription)
+        check("then the selection", prompt.contains("AssertionError"), "")
+        clickSheetButton("Cancel")
+        _ = await eventually(3) { self.window.attachedSheet == nil }
     }
 
     /// The inbox: what is waiting, the question each one is asking, and
@@ -1718,12 +1761,20 @@ final class E2ERunner {
 
         // Hovering reports the link. libghostty pushes the URL and no
         // rectangle, so the pane header is the only place it can be said.
+        var nudge = false
         check(
             "hovering a link reports it",
-            await eventually(5) {
-                // Reported while the pointer moves over one, so it has to
-                // keep moving for the action to come.
-                terminal.mouseMoved(with: mouse(.mouseMoved))
+            await eventually(10) {
+                // The action comes when the hovered *cell* changes, so the
+                // pointer has to actually move — polling one point reports
+                // nothing after the first time.
+                nudge.toggle()
+                let at = NSPoint(x: point.x + (nudge ? CGFloat(size.cell_width_px) / scale : 0), y: point.y)
+                terminal.mouseMoved(
+                    with: NSEvent.mouseEvent(
+                        with: .mouseMoved, location: at, modifierFlags: .command,
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: self.window.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
                 return self.app.blocks(of: terminal).hoveredLink?.contains("main.swift") == true
             }, app.blocks(of: terminal).hoveredLink ?? "none")
     }

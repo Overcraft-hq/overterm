@@ -89,6 +89,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
+    /// Handing a selection to an agent (⌘L).
+    let askAgent = AskAgentModel()
+    private var selectionBar: NSHostingView<SelectionBar>?
+
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -273,6 +277,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             searchBar.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
         ])
         self.searchBar = searchBar
+
+        // Over the selection it is about. Positioned by hand rather than
+        // constrained: where it goes is where libghostty says the
+        // selection starts.
+        let selectionBar = NSHostingView(
+            rootView: SelectionBar(
+                theme: theme,
+                actions: SelectionActions(
+                    ask: { [weak self] in self?.askAboutSelection(nil) },
+                    copy: { [weak self] in self?.copySelection(asMarkdown: false) },
+                    copyAsMarkdown: { [weak self] in self?.copySelection(asMarkdown: true) },
+                    search: { [weak self] in self?.searchTheWeb() })))
+        selectionBar.translatesAutoresizingMaskIntoConstraints = true
+        selectionBar.isHidden = true
+        container.addSubview(selectionBar)
+        self.selectionBar = selectionBar
 
         let spotlightView = NSHostingView(
             rootView: SpotlightView(
@@ -650,6 +670,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         pane.onSearchRequest = { [weak self, weak pane] needle in
             guard let self, let pane else { return }
             self.showSpotlight(for: pane, needle: needle)
+        }
+        pane.onSelectionChanged = { [weak self, weak pane] in
+            guard let self, let pane, self.store.selected?.terminals.contains(where: { $0 === pane }) == true else {
+                return
+            }
+            self.showSelectionBar(for: pane)
         }
         pane.onOpenLink = { [weak self, weak tab, weak pane] text in
             guard let self, let tab else { return false }
@@ -1953,6 +1979,110 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         window?.makeFirstResponder(pane)
     }
 
+
+    // MARK: The selection
+
+    /// The strip over a selection. Hidden the moment there is no selection
+    /// — including when the one that was there is scrolled out of sight,
+    /// which libghostty reports by giving it no position.
+    func showSelectionBar(for pane: TerminalView) {
+        guard let bar = selectionBar else { return }
+        guard let selection = pane.selection, !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            selection.origin != .zero
+        else {
+            bar.isHidden = true
+            return
+        }
+        let size = bar.fittingSize
+        let inPane = CGPoint(x: selection.origin.x, y: selection.origin.y)
+        var point = container.convert(inPane, from: pane)
+        // Above the selection, and never off the left or the top.
+        point.y -= size.height + 6
+        point.x = max(8, min(point.x, container.bounds.width - size.width - 8))
+        point.y = max(8, point.y)
+        bar.frame = CGRect(origin: point, size: size)
+        container.addSubview(bar, positioned: .above, relativeTo: nil)
+        bar.isHidden = false
+    }
+
+    func hideSelectionBar() { selectionBar?.isHidden = true }
+
+    private func copySelection(asMarkdown: Bool) {
+        guard let text = store.selected?.terminal.selectionText else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(asMarkdown ? "```\n\(text)\n```" : text, forType: .string)
+        hideSelectionBar()
+    }
+
+    private func searchTheWeb() {
+        guard let text = store.selected?.terminal.selectionText,
+            let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+            let url = URL(string: "https://duckduckgo.com/?q=\(query)")
+        else { return }
+        NSWorkspace.shared.open(url)
+        hideSelectionBar()
+    }
+
+    /// ⌘L. Without a selection there is nothing to ask about.
+    @objc func askAboutSelection(_ sender: Any?) {
+        guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
+            let text = pane.selectionText
+        else { return }
+        hideSelectionBar()
+        let folder = pane.workingDirectory ?? tab.workingDirectory
+        var targets = store.tabs.filter { $0.agent != nil && $0.id != tab.id }
+            .map { other in
+                AskAgentModel.Target(
+                    id: other.id, title: other.title,
+                    detail: other.activity.isWorking ? "busy" : "idle", color: store.group(of: other)?.color,
+                    agent: other.agent)
+            }
+        targets.append(
+            AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
+        askAgent.begin(
+            selection: text, command: blocks(of: pane).ledger.lastFinished, folder: folder, targets: targets,
+            diff: diff.root != nil)
+        guard let theme else { return }
+        presentSheet { [weak self] close in
+            AskAgentView(
+                model: self?.askAgent ?? AskAgentModel(), theme: theme,
+                send: {
+                    close()
+                    self?.sendToAgent()
+                },
+                cancel: {
+                    close()
+                    self?.askAgent.stop()
+                    self?.focusSelectedTerminal()
+                })
+        }
+    }
+
+    /// Types the prompt into the chosen agent, or into a new agent tab.
+    private func sendToAgent() {
+        let prompt = askAgent.prompt()
+        let folder = askAgent.folder
+        let chosen = askAgent.chosen
+        askAgent.stop()
+        guard !prompt.isEmpty else { return }
+        let target: Tab?
+        if let chosen {
+            target = store.tabs.first { $0.id == chosen }
+        } else {
+            if let folder {
+                newTab(in: URL(fileURLWithPath: folder), agent: .claude)
+            } else {
+                newAgentTab(.claude)
+            }
+            target = store.selected
+        }
+        guard let target else { return }
+        store.select(target)
+        // Typed, not sent: what it should do with this is yours to finish.
+        target.terminal.insertText(prompt)
+        window?.makeFirstResponder(target.terminal)
+    }
 
     // MARK: Inbox
 

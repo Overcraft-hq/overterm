@@ -347,6 +347,9 @@ final class TerminalView: NSView {
     override func mouseUp(with event: NSEvent) {
         sendMouseButton(GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, event)
         if let surface { ghostty_surface_mouse_pressure(surface, 0, 0) }
+        // After libghostty has seen the release, so the selection it
+        // reports is the finished one.
+        DispatchQueue.main.async { [weak self] in self?.onSelectionChanged?() }
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -661,14 +664,28 @@ final class TerminalView: NSView {
     /// What is selected right now, or nil if nothing is. The selection
     /// lives in libghostty — Terminus never had a reason to read it before
     /// (copy goes through Ghostty's own binding).
-    var selectionText: String? {
+    var selectionText: String? { selection?.text }
+
+    /// What is selected, and where its top-left corner is in this view.
+    ///
+    /// The position is the one thing libghostty does give a rectangle for
+    /// (`ghostty_text_s.tl_px_x/y`), and only while the selection is on
+    /// screen — scrolled out of view it reports (-1, -1), and then there
+    /// is nowhere to put a toolbar.
+    var selection: (text: String, origin: CGPoint)? {
         guard let surface, ghostty_surface_has_selection(surface) else { return nil }
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return nil }
         defer { ghostty_surface_free_text(surface, &text) }
         guard let bytes = text.text, text.text_len > 0 else { return nil }
-        return String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
+        let string = String(decoding: UnsafeRawBufferPointer(start: bytes, count: Int(text.text_len)), as: UTF8.self)
+        guard text.tl_px_x >= 0, text.tl_px_y >= 0 else { return (string, .zero) }
+        let scale = window?.backingScaleFactor ?? 2
+        return (string, CGPoint(x: text.tl_px_x / scale, y: text.tl_px_y / scale))
     }
+
+    /// Called when a drag or a click may have changed the selection.
+    var onSelectionChanged: (() -> Void)?
 
     var hasSelection: Bool {
         guard let surface else { return false }

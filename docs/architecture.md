@@ -372,6 +372,23 @@ drawing, splits included.
 ⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
 overview its agent's **state**.
 
+## Asking an agent about a selection (⌘L)
+
+What you want to tell an agent is usually on screen already — a failing
+test, a stack trace. Selecting it puts a strip over it (Ask Agent, Copy,
+Copy as Markdown, Search the Web), and ⌘L opens a sheet: which agent tab,
+what to include (the selection, the command it came out of, that
+command's exit code, the git diff), and a line about what to do.
+
+The strip can be placed because the selection is the **one** region
+libghostty reports a position for (`ghostty_text_s.tl_px_x/y`), and only
+while it is on screen — which is also the only time a strip over it would
+mean anything.
+
+What gets built is one string (`AskAgentModel.prompt`), which is the part
+worth testing; it is **typed, not sent**, so what to do with it is still
+yours to finish.
+
 ## Live ports and links
 
 A pane's header shows what anything in its process tree is listening on

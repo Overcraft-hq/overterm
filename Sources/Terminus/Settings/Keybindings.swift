@@ -284,6 +284,7 @@ enum KeyCommands {
         .init("edit.copy", "Copy", group: "Editing", key: "cmd+c", ghostty: "copy_to_clipboard"),
         .init("edit.paste", "Paste", group: "Editing", key: "cmd+v", ghostty: "paste_from_clipboard"),
         .init("edit.selectAll", "Select All", group: "Editing", key: "cmd+a", ghostty: "select_all"),
+        .init("agents.askSelection", "Ask an Agent About the Selection", group: "Editing", key: "cmd+l"),
         .init("edit.find", "Find in the Editor", group: "Editing", key: "cmd+f"),
         .init("file.save", "Save (the editor)", group: "Editing", key: "cmd+s"),
         // Terminal
