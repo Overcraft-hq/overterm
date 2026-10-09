@@ -372,6 +372,24 @@ drawing, splits included.
 ⇧⌘A agent overview stays separate: peek shows a terminal's **shape**, the
 overview its agent's **state**.
 
+## Dropping a tab onto a pane
+
+Dragging a tab out of the strip and over the panes offers five targets in
+one rectangle (`Splits/DropZone`, pure): the four edges say which way to
+split, and the middle — the big, easy one — just puts it in the tab. The
+pane is **moved**, not recreated: its pty, its scrollback, whatever is
+running in it and its command ledger all come with it, which is the only
+reason to do this rather than press ⌘D.
+
+Not "swap with this pane", which the designs draw. Swapping two tabs'
+panes is a no-op unless both are already split, and when the one being
+dragged is a whole tab it would empty it.
+
+It rides the strip's existing drag monitor rather than a real dragging
+session — the monitor already sees the whole gesture, and a session would
+mean teaching panes a new pasteboard type beside the file drops they
+already take.
+
 ## The palette (⌘K)
 
 One search over what you have run, your snippets, your tabs and

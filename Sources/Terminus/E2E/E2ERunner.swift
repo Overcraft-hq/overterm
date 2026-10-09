@@ -58,6 +58,7 @@ final class E2ERunner {
         "blocks": { await $0.blocksScenario() },
         "inbox": { await $0.inboxScenario() },
         "askAgent": { await $0.askAgentScenario() },
+        "dropSplit": { await $0.dropSplitScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -879,6 +880,43 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+    }
+
+    /// Dropping a tab onto a pane: the only way to make a split out of
+    /// something that is already running.
+    private func dropSplitScenario() async {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        await waitForPrompt()
+        let first = app.store.selected!
+        first.customTitle = "keeper"
+        app.newTab(in: home)
+        let dragged = app.store.selected!
+        dragged.customTitle = "moving"
+        await waitForPrompt()
+        let moved = dragged.terminal
+        // Something running in it, so there is a reason not to recreate it.
+        await runAndExpect("echo mine > \(out("mine").path)", file: out("mine"), content: "mine", "it has run something")
+        let ledger = app.blocks(of: moved)
+        app.store.select(first)
+        check("two tabs, one pane each", app.store.tabs.count == 2 && first.terminals.count == 1)
+
+        app.movePane(moved, from: dragged, into: first, .right)
+        check("the dragged tab is gone", app.store.tabs.count == 1, "\(app.store.tabs.map(\.title))")
+        check("its pane joined the other tab", first.terminals.count == 2, "\(first.terminals.count)")
+        check("the very same pane, not a new one", first.terminals.contains { $0 === moved })
+        check("beside the one that was there", await eventually(3) { moved.frame.minX > first.terminals[0].frame.minX })
+        check("and it has the keyboard", await eventually(2) { self.window.firstResponder === moved })
+        // The pty survived: what it had run is still its own.
+        check("what it had run came with it", app.blocks(of: moved) === ledger)
+        check(
+            "and it is still alive", await eventually(8) { (moved.visibleText ?? "").contains("echo mine") },
+            String((moved.visibleText ?? "").suffix(40)).debugDescription)
+
+        // Where a drop lands, for each zone.
+        let rect = CGRect(x: 0, y: 0, width: 400, height: 200)
+        check("the middle adds it to the tab", DropZone.at(CGPoint(x: 200, y: 100), in: rect) == .into)
+        check("the top splits up", DropZone.at(CGPoint(x: 200, y: 10), in: rect) == .up)
+        check("the left splits left", DropZone.at(CGPoint(x: 10, y: 100), in: rect) == .left)
     }
 
     /// Selecting terminal text and handing it to an agent.

@@ -41,6 +41,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var pressedTab: (tab: Tab, x: CGFloat)?
     /// A chip pressed in the strip: dragging it moves the whole island.
     private var pressedGroup: (group: TabGroup, x: CGFloat)?
+    /// A tab dragged down out of the strip, over the panes.
+    private var dropZones: NSHostingView<DropZonesView>?
+    private var dropZone: DropZone?
     // Readable (not writable) outside so the E2E scenarios can check them.
     private(set) var split = WideDividerSplitViewController()
     private(set) var sidebarItem: NSSplitViewItem?
@@ -819,6 +822,39 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// A pane no longer in the tab is left alone: a close confirmed in a
     /// sheet, or an exit noticed late, after the pane had already gone
     /// would otherwise close the tab — and the panes left in it — unasked.
+    /// Moves a running pane out of `tab` and into `target`, beside its
+    /// focused pane.
+    ///
+    /// The only way to make a split out of something already running —
+    /// ⌘D makes an empty one. The view is reparented rather than
+    /// recreated: the pty, the scrollback and whatever is in it have to
+    /// survive, which is the whole point.
+    func movePane(_ pane: TerminalView, from tab: Tab, into target: Tab, _ direction: SplitTree<TerminalView>.Direction) {
+        guard tab !== target, target.splits.contains(target.terminal) else { return }
+        let rest = tab.splits.removing(pane)
+        // Out of the old tab's tree and its host before it joins another:
+        // a view in two trees would be framed by both. Its command ledger
+        // is keyed by the pane, so that follows it on its own.
+        pane.removeFromSuperview()
+        if let rest {
+            tab.setSplits(rest)
+            refreshHost(tab)
+        } else {
+            // It was the tab's only pane, so the tab goes with it — but
+            // the pane itself lives on, so nothing is closed.
+            store.remove(tab)
+            hosts[tab.id]?.removeFromSuperview()
+            hosts[tab.id] = nil
+        }
+        wire(pane, in: target)
+        target.zoomed = nil
+        target.setSplits(target.splits.inserting(pane, at: target.terminal, direction))
+        store.select(target)
+        refreshHost(target)
+        window?.makeFirstResponder(pane)
+        peek.relayout()
+    }
+
     func removePane(_ pane: TerminalView, from tab: Tab) {
         guard tab.splits.contains(pane) else { return }
         guard tab.isSplit, let rest = tab.splits.removing(pane) else { return removeTab(tab) }
@@ -1767,6 +1803,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // Only x matters (the pointer may drift off the strip vertically).
                 // The drop decides the island too: dragging a tab into one
                 // joins it, dragging it out between two leaves.
+                // Dragged down out of the strip and over the panes: it is
+                // no longer being reordered, it is being dropped into a
+                // split.
+                if self.updateDropZones(for: pressed.tab, at: event) { return nil }
                 withAnimation(.easeOut(duration: 0.12)) {
                     self.store.drop(pressed.tab, atPointerX: point.x)
                     self.store.dropGroupID = TabStore.island(at: point.x, spans: self.store.islandSpans)
@@ -1777,7 +1817,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // not only in SwiftUI's tap gesture (which doesn't reliably
                 // see the press once drags are being taken). Always let the
                 // release through — SwiftUI saw the press and must see it end.
-                if let pressed = self.pressedTab, self.store.draggingID == nil { self.store.select(pressed.tab) }
+                if let pressed = self.pressedTab, let zone = self.dropZone, let target = self.store.selected,
+                    target !== pressed.tab
+                {
+                    self.movePane(pressed.tab.terminal, from: pressed.tab, into: target, zone.direction)
+                } else if let pressed = self.pressedTab, self.store.draggingID == nil {
+                    self.store.select(pressed.tab)
+                }
+                self.hideDropZones()
                 self.pressedTab = nil
                 self.pressedGroup = nil
                 self.store.draggingID = nil
@@ -1994,6 +2041,48 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         window?.makeFirstResponder(pane)
     }
 
+
+    // MARK: Dropping a tab onto a pane
+
+    /// While a tab is dragged below the strip, over the panes. Returns
+    /// whether the drag is now a drop rather than a reorder.
+    private func updateDropZones(for tab: Tab, at event: NSEvent) -> Bool {
+        guard let theme, let target = store.selected, target !== tab else {
+            hideDropZones()
+            return false
+        }
+        let point = container.convert(event.locationInWindow, from: nil)
+        guard container.bounds.contains(point), let host = hosts[target.id] else {
+            hideDropZones()
+            return false
+        }
+        // The pane under the pointer, in the container's own space.
+        let pane = target.terminals.first { host.convert($0.frame, to: container).contains(point) } ?? target.terminal
+        let rect = host.convert(pane.frame, to: container)
+        dropZone = DropZone.at(point, in: rect)
+        let view =
+            dropZones
+            ?? {
+                let made = NSHostingView(
+                    rootView: DropZonesView(
+                        pane: rect, active: dropZone, title: tab.title, symbol: tab.kind.symbol, pointer: point,
+                        theme: theme))
+                made.translatesAutoresizingMaskIntoConstraints = true
+                dropZones = made
+                return made
+            }()
+        view.rootView = DropZonesView(
+            pane: rect, active: dropZone, title: tab.title, symbol: tab.kind.symbol, pointer: point, theme: theme)
+        view.frame = container.bounds
+        container.addSubview(view, positioned: .above, relativeTo: nil)
+        return true
+    }
+
+    private func hideDropZones() {
+        dropZones?.removeFromSuperview()
+        dropZones = nil
+        dropZone = nil
+    }
 
     // MARK: The selection
 
