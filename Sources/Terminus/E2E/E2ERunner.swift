@@ -1199,6 +1199,50 @@ final class E2ERunner {
         app.store.ungroup(group)
         check("ungrouping keeps the order", app.store.tabs.map(\.title) == order, "\(app.store.tabs.map(\.title))")
         check("and the island is gone", app.store.groups.isEmpty)
+
+        // A new tab is not swallowed by the island the selected tab is in —
+        // a group over a checkout soon holds every tab, and inheriting it
+        // meant ⌘T, the +, the palette and the sidebar all disappeared into
+        // it (NewTabGroup).
+        guard let island = app.store.addToNewGroup([first, second], name: "work") else {
+            return check("an island again", false)
+        }
+        check("a new island binds no folder by itself", island.folder == nil)
+        app.groupPopover?.performClose(nil)
+        app.store.renamingGroupID = nil
+        app.store.select(first)
+        app.newTab(in: home)
+        check("a new tab stays out of the selected tab's island", app.store.selected?.groupID == nil)
+        check(
+            "and lands after the island's run", app.store.tabs(in: island).map(\.title) == ["api", "web"],
+            "\(app.store.tabs.map(\.title))")
+        check(
+            "the island's own + is the way in",
+            {
+                app.newTab(in: island)
+                return app.store.selected?.groupID == island.id
+            }())
+
+        // With every tab inside it, which way the strip's + goes is
+        // genuinely ambiguous: the tab opens outside and the window asks.
+        app.store.add(app.store.tabs.filter { $0.groupID != island.id }, to: island)
+        await eventually(3) { self.app.store.groupChipFrames[island.id] != nil }
+        app.store.select(first)
+        app.newTab(in: home)
+        check("with the island holding the whole strip, the tab still opens outside it", app.store.selected?.groupID == nil)
+        check("and the window asks where it belongs", await eventually(3) { self.app.newTabPopover?.isShown == true })
+        app.newTabPopover?.performClose(nil)
+        // The window keeps the popover it opened; drop it so the next check
+        // can only see one that was opened again.
+        app.newTabPopover = nil
+
+        // Answered once — here by hand, as the popover's button does — it
+        // stops asking.
+        island.takesNewTabs = true
+        app.store.select(first)
+        app.newTab(in: home)
+        check("an island told to take new tabs takes them", app.store.selected?.groupID == island.id)
+        check("without asking twice", app.newTabPopover?.isShown != true)
     }
 
     /// A prepared session comes back; changes are autosaved.

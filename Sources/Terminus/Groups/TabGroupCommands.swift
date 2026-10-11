@@ -25,8 +25,8 @@ extension TerminalWindowController {
     /// the ones you revisit.
     func showGroupPopover(for group: TabGroup, waiting: Int = 20) {
         if waiting == 20 { groupPopover?.close() }
-        guard let strip = tabBarView, let theme else { return }
-        guard let frame = store.groupChipFrames[group.id] else {
+        guard let theme else { return }
+        guard let chip = chip(of: group) else {
             // A brand-new island has no chip yet — SwiftUI lays the strip out
             // a turn later, and a popover needs something to point at. Wait
             // for it rather than not appearing at all, but not forever.
@@ -46,11 +46,53 @@ extension TerminalWindowController {
                     self?.store.renamingGroupID = nil
                     self?.focusSelectedTerminal()
                 }))
-        // Strip frames are top-left; the host is flipped, so that is its space.
+        popover.show(relativeTo: chip.rect, of: chip.strip, preferredEdge: chip.strip.isFlipped ? .maxY : .minY)
+        groupPopover = popover
+    }
+
+    /// An island's chip, as something a popover can point at. The strip
+    /// publishes frames top-left; the host is flipped, so that is its space.
+    func chip(of group: TabGroup) -> (strip: NSView, rect: CGRect)? {
+        guard let strip = tabBarView, let frame = store.groupChipFrames[group.id] else { return nil }
         var rect = frame
         if !strip.isFlipped { rect.origin.y = strip.bounds.height - frame.maxY }
-        popover.show(relativeTo: rect, of: strip, preferredEdge: strip.isFlipped ? .maxY : .minY)
-        groupPopover = popover
+        return (strip, rect)
+    }
+
+    /// The island holds every tab there is, so nothing in the strip says
+    /// whether this new tab is one of its own (`NewTabGroup.ask`). The tab
+    /// is already open, outside it; this only offers to move it in, and
+    /// records the answer so the question is asked once.
+    func askNewTabGroup(for tab: Tab, in group: TabGroup, waiting: Int = 20) {
+        guard let theme else { return }
+        guard let chip = chip(of: group) else {
+            guard waiting > 0 else { return }
+            DispatchQueue.main.async { [weak self, weak tab] in
+                guard let tab else { return }
+                self?.askNewTabGroup(for: tab, in: group, waiting: waiting - 1)
+            }
+            return
+        }
+        newTabPopover?.close()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
+        popover.contentViewController = NSHostingController(
+            rootView: NewTabPrompt(
+                group: group, theme: theme,
+                keepOut: { [weak self] in
+                    group.takesNewTabs = false
+                    self?.newTabPopover?.close()
+                    self?.focusSelectedTerminal()
+                },
+                join: { [weak self, weak tab] in
+                    group.takesNewTabs = true
+                    if let tab { self?.store.add([tab], to: group) }
+                    self?.newTabPopover?.close()
+                    self?.focusSelectedTerminal()
+                }))
+        popover.show(relativeTo: chip.rect, of: chip.strip, preferredEdge: chip.strip.isFlipped ? .maxY : .minY)
+        newTabPopover = popover
     }
 
     /// Group ▸ Add Tab to Group ▸ <name>.
@@ -181,12 +223,12 @@ extension TerminalWindowController {
         if group.isCollapsed { peekGroup(nil) }
     }
 
-    /// A new tab inside the island, after its last one.
+    /// A new tab inside the island, after its last one — the island's own
+    /// + and its menu. The one way to say "in this group" outright, so it
+    /// is the one place that doesn't ask (`NewTabGroup`).
     func newTab(in group: TabGroup) {
         guard let last = store.tabs(in: group).last else { return }
-        newTab(from: last.terminal)
-        store.selected.map { $0.groupID = group.id }
-        store.normalize()
+        newTab(from: last.terminal, joining: group.id)
     }
 
     // MARK: Closing

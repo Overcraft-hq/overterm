@@ -45,7 +45,8 @@ extension TabStore {
     func tabs(in group: TabGroup) -> [Tab] { tabs.filter { $0.groupID == group.id } }
 
     /// The group a new tab opened in `directory` should join: the one bound
-    /// to that folder, or to a folder it sits under.
+    /// to that folder, or to a folder it sits under. Only a group whose
+    /// binding was ticked is here — `TabGroup.folder` is nil otherwise.
     func group(forDirectory directory: String?) -> TabGroup? {
         guard let directory else { return nil }
         return
@@ -63,6 +64,20 @@ extension TabStore {
     /// Tabs the strip shows: everything but a stashed group's.
     var visibleTabs: [Tab] { tabs.filter { group(of: $0)?.isStashed != true } }
 
+    /// Where a new tab opened from `anchor`, in `directory`, belongs
+    /// (`NewTabGroup` holds the rule; this reads the strip for it).
+    func placementForNewTab(after anchor: Tab?, in directory: String?) -> NewTabGroup.Placement {
+        let anchorGroup = anchor?.groupID
+        return NewTabGroup.placement(
+            anchor: anchorGroup,
+            focused: focusedGroupID,
+            bound: group(forDirectory: directory)?.id,
+            takesNewTabs: group(anchorGroup)?.takesNewTabs,
+            // A pinned tab counts: it is never in a group, it is always in
+            // the strip, and it is somewhere for a loose tab to belong.
+            hasTabOutside: visibleTabs.contains { $0.groupID != anchorGroup })
+    }
+
     // MARK: Making and unmaking
 
     /// Puts `members` in a new island, in the order they are in the strip,
@@ -71,9 +86,13 @@ extension TabStore {
     func addToNewGroup(_ members: [Tab], name: String? = nil, color: TabColor? = nil, folder: String? = nil) -> TabGroup? {
         let members = ordered(members)
         guard !members.isEmpty else { return nil }
-        let folder = folder ?? commonFolder(of: members)
+        // The checkout they share names the island, but it does not bind
+        // it: "every tab opened in this folder joins" is a decision, and
+        // taken for you it is the one that swallowed every new tab. The
+        // popover offers it, unticked (GroupPopover).
+        let common = commonFolder(of: members)
         let group = TabGroup(
-            name: name ?? TabGroup.name(for: folder),
+            name: name ?? TabGroup.name(for: folder ?? common),
             color: color ?? TabGroup.color(after: groups.map(\.color)),
             folder: folder)
         groups.append(group)

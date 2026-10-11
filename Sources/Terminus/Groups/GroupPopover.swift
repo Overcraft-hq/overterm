@@ -2,11 +2,12 @@ import SwiftUI
 
 /// The sheet that comes up with a new island, under its chip.
 ///
-/// A group is three decisions and they are all easy to get wrong later:
-/// its colour (the thing you actually navigate by), whether new tabs
-/// opened in its folder join it, and whether it comes back on launch. Made
-/// at the moment the island appears, they are three clicks; found
-/// afterwards in a context menu, they are three clicks you never make.
+/// A group is a handful of decisions and they are all easy to get wrong
+/// later: its colour (the thing you actually navigate by), whether new
+/// tabs join it — from the group, or from its folder — and whether it
+/// comes back on launch. Made at the moment the island appears, they are
+/// four clicks; found afterwards in a context menu, they are four clicks
+/// you never make.
 ///
 /// The name is edited in the chip itself, not here — the island is already
 /// in the strip and renaming it in place is the thing you can see.
@@ -58,6 +59,11 @@ struct GroupPopover: View {
                     }
                 }
             }
+            Toggle(isOn: takesNewTabs) {
+                Text("New tabs opened from this group join it")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.text)
+            }
             Toggle(isOn: $group.restoresOnLaunch) {
                 Text("Restore the group's tabs and splits on launch")
                     .font(.system(size: 12))
@@ -82,5 +88,12 @@ struct GroupPopover: View {
     /// *is* the binding (`TabStore.group(forDirectory:)` reads it).
     private func binding(for folder: String) -> Binding<Bool> {
         Binding(get: { group.folder != nil }, set: { group.folder = $0 ? folder : nil })
+    }
+
+    /// `takesNewTabs` is three-state — nil is "never asked" — and a
+    /// checkbox is two. Ticking or clearing it is an answer either way,
+    /// which is the point: the strip then stops asking (`NewTabGroup`).
+    private var takesNewTabs: Binding<Bool> {
+        Binding(get: { group.takesNewTabs == true }, set: { group.takesNewTabs = $0 })
     }
 }

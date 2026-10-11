@@ -59,12 +59,17 @@ final class TabStore: ObservableObject {
     /// Invariant: pinned tabs come first. Index of the first unpinned tab.
     private var pinnedCount: Int { tabs.prefix { $0.isPinned }.count }
 
-    /// Chrome's rule: a new tab goes right after the current one — or, from a
-    /// pinned tab, first among the unpinned ones. It joins the anchor's
-    /// island, as Chrome's does, so a group doesn't gain a hole.
-    func insert(_ tab: Tab, after anchor: Tab?) {
+    /// Chrome's rule for the position: a new tab goes right after the current
+    /// one — or, from a pinned tab, first among the unpinned ones.
+    ///
+    /// Which island it joins is `joining`, decided by `NewTabGroup` and
+    /// never inherited from the anchor: once an island held every tab, an
+    /// inherited group swallowed every new tab silently. A tab that joins
+    /// nothing is inserted after the anchor all the same and `normalize`
+    /// then slides it past the anchor's island, which keeps its run whole.
+    func insert(_ tab: Tab, after anchor: Tab?, joining group: TabGroup.ID? = nil) {
+        if let group { tab.groupID = group }
         if let anchor, let i = index(of: anchor) {
-            if tab.groupID == nil, !anchor.isPinned { tab.groupID = anchor.groupID }
             tabs.insert(tab, at: max(i + 1, pinnedCount))
         } else {
             tabs.append(tab)

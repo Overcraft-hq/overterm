@@ -22,14 +22,20 @@ final class TabGroup: ObservableObject, Identifiable {
     @Published var isStashed: Bool
     /// When it was stashed, for "Stashed 2 h ago".
     @Published var stashedAt: Date?
-    /// New tabs opened in this folder join the group.
+    /// New tabs opened in this folder join the group. Nil — the default —
+    /// is no binding at all (`TabStore.group(forDirectory:)`).
     @Published var folder: String?
     /// Reopen this group's tabs and splits on launch.
     @Published var restoresOnLaunch: Bool
+    /// Whether a tab opened from one of this group's tabs joins it. Nil
+    /// means nobody has said: the island was never the whole strip, so the
+    /// question never had to be asked (`NewTabGroup`).
+    @Published var takesNewTabs: Bool?
 
     init(
         id: UUID = UUID(), name: String, color: TabColor = .blue, isCollapsed: Bool = false,
-        isStashed: Bool = false, stashedAt: Date? = nil, folder: String? = nil, restoresOnLaunch: Bool = true
+        isStashed: Bool = false, stashedAt: Date? = nil, folder: String? = nil, restoresOnLaunch: Bool = true,
+        takesNewTabs: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -39,6 +45,7 @@ final class TabGroup: ObservableObject, Identifiable {
         self.stashedAt = stashedAt
         self.folder = folder
         self.restoresOnLaunch = restoresOnLaunch
+        self.takesNewTabs = takesNewTabs
     }
 
     /// What a new group is called: the folder's name, else "Group".

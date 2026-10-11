@@ -46,6 +46,20 @@ struct GroupIslandView: View {
                 ForEach(tabs) { tab in
                     TabItemView(branch: branch, tab: tab, store: store, theme: theme, actions: actions)
                 }
+                // The island's own +. The strip's + opens a loose tab now
+                // (NewTabGroup), so "another one in here" needs a button of
+                // its own — and this is the one place that says it outright.
+                Button {
+                    groupActions.newTab(group)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 20, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(tint)
+                .help("New Tab in \(group.name)")
             }
         }
         .padding(3)

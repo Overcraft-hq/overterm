@@ -77,6 +77,35 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 `close_surface_cb` (shell exited, or Ghostty's ⌘W) → `closeTab` (pinned tabs
 ignore it unless the process actually exited).
 
+## Tab groups (islands)
+
+A group is a name, a colour and a set of tabs (`Sources/Terminus/Groups/`).
+It owns nothing: the tabs stay in `TabStore.tabs`, each carrying its group's
+id, and the store keeps two invariants — pinned tabs first and never grouped,
+and **a group's tabs are one contiguous run** — so everything that walks the
+tabs (the session, closing, tab peek, the agent overview) stays unaware that
+groups exist. `TabStore+Groups` restores both in `normalize()` after every
+operation.
+
+**Which island a new tab joins** is one pure rule, `NewTabGroup.placement`,
+and every way of opening a tab asks it (`TerminalWindowController.addTab`).
+Chrome's rule — inherit the island of the tab you opened from — was wrong
+here: a group is usually a checkout, so it ends up holding every tab, and
+from then on ⌘T, the strip's +, the palette and the sidebar all dropped
+their tab into it with no way out but a drag. So a tab joins only where the
+intent is unmistakable:
+
+| | |
+|---|---|
+| the strip is focused on an island (⌃⌘F) | it joins — a loose tab would open out of sight |
+| the tab's directory is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
+| the island was asked and said yes (`TabGroup.takesNewTabs`) | it joins |
+| the island holds every tab in the strip | the tab opens **loose** and the window asks under the chip (`NewTabPrompt`); the answer is the island's, so it is asked once |
+| anything else | loose — inserted after the anchor, which `normalize` then slides past the anchor's island |
+
+Saying "in this island" outright is the island's own `+` and its chip menu
+(`newTab(in:)`), which pass the group and never ask.
+
 ## Splits
 
 A tab is a `SplitTree<TerminalView>` (`Sources/Terminus/Splits/`): a

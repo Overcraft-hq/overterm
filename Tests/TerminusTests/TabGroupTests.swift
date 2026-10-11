@@ -91,14 +91,53 @@ final class TabGroupTests: XCTestCase {
 
     // MARK: New tabs
 
-    func testANewTabJoinsTheAnchorsIsland() {
+    func testANewTabDoesNotJoinTheAnchorsIsland() {
+        let a = tab("a"), b = tab("b")
+        store.addToNewGroup([a], name: "work")
+        let fresh = Tab(terminal: TerminalView())
+        fresh.customTitle = "new"
+        store.insert(fresh, after: a)
+        XCTAssertNil(fresh.groupID, "an island is joined on purpose, never by inheritance (NewTabGroup)")
+        XCTAssertEqual(islands(store.strip), ["[work: a]", "new", "b"], "and it lands after the island's run")
+        XCTAssertEqual(order, ["a", "new", "b"])
+    }
+
+    func testANewTabJoinsTheIslandItIsOpenedIn() {
         let a = tab("a")
         let group = store.addToNewGroup([a], name: "work")!
         let fresh = Tab(terminal: TerminalView())
         fresh.customTitle = "new"
-        store.insert(fresh, after: a)
-        XCTAssertEqual(fresh.groupID, group.id, "a tab opened from a grouped tab stays in the group")
+        store.insert(fresh, after: a, joining: group.id)
+        XCTAssertEqual(fresh.groupID, group.id)
         XCTAssertEqual(islands(store.strip), ["[work: a,new]"])
+    }
+
+    func testThePlacementOfANewTabReadsTheStrip() {
+        let a = tab("a"), b = tab("b")
+        let group = store.addToNewGroup([a], name: "work")!
+        XCTAssertEqual(store.placementForNewTab(after: a, in: nil), .loose, "b is outside the island")
+        store.add([b], to: group)
+        XCTAssertEqual(
+            store.placementForNewTab(after: a, in: nil), .ask(group.id),
+            "with the island holding every tab, there is nothing to read the intent from")
+        group.takesNewTabs = true
+        XCTAssertEqual(store.placementForNewTab(after: a, in: nil), .join(group.id))
+    }
+
+    func testABoundFolderTakesATabOpenedUnderIt() {
+        let a = tab("a")
+        tab("b")
+        let group = store.addToNewGroup([a], name: "work")!
+        group.folder = "/tmp/repo"
+        XCTAssertEqual(store.placementForNewTab(after: nil, in: "/tmp/repo/src"), .join(group.id))
+        XCTAssertEqual(store.placementForNewTab(after: nil, in: "/tmp/repository"), .loose, "a prefix is not a parent")
+        XCTAssertEqual(store.placementForNewTab(after: nil, in: nil), .loose)
+    }
+
+    func testANewGroupDoesNotBindItsFolder() {
+        let a = tab("a")
+        let group = store.addToNewGroup([a], name: nil)!
+        XCTAssertNil(group.folder, "binding every tab opened in the folder is a decision, not a default")
     }
 
     func testATabOpenedFromALooseTabStaysLoose() {

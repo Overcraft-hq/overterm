@@ -33,6 +33,9 @@ struct SessionState: Codable, Equatable {
         var folder: String?
         /// Off: the group's tabs are not reopened on the next launch.
         var restoresOnLaunch: Bool
+        /// Whether tabs opened from the group join it — absent while the
+        /// question has never come up (NewTabGroup).
+        var takesNewTabs: Bool?
     }
 
     /// A split tab's layout: each pane's directory, each split's shape.

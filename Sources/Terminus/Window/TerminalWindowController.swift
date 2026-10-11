@@ -112,6 +112,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// A new island's settings, under its chip (`showGroupPopover`).
     var groupPopover: NSPopover?
+    /// "Does this tab belong in the island?", when nothing in the strip
+    /// answers it (`askNewTabGroup`).
+    var newTabPopover: NSPopover?
 
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
@@ -571,8 +574,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Tabs
 
-    /// Opens a tab after `source`'s, starting in its directory at its font size.
-    func newTab(from source: TerminalView?) {
+    /// Opens a tab after `source`'s, starting in its directory at its font
+    /// size. `joining`: the island it is meant for — the island's own + and
+    /// its menu say so; everything else leaves it to `NewTabGroup`.
+    func newTab(from source: TerminalView?, joining group: TabGroup.ID? = nil) {
         let inherited = source?.inheritedSettings()
         // The tab's own OSC 7 directory first: libghostty's inherited pwd can
         // lag it under load, and the new tab then opened in ~.
@@ -580,10 +585,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Settings ▸ General: new tabs in the current tab's folder, or home.
         let directory = Settings.shared.newTabDirectory == .home ? nil : known ?? inherited?.workingDirectory
         let terminal = TerminalView(workingDirectory: directory, fontSize: inherited?.fontSize)
-        addTab(terminal, after: tab(containing: source))
+        addTab(
+            terminal, after: tab(containing: source), in: directory,
+            joining: group.map { .join($0) })
     }
 
-    private func addTab(_ terminal: TerminalView, agent: Agent? = nil, after anchor: Tab?) {
+    /// `in directory`: where the tab starts, for a group bound to that
+    /// folder. `joining`: settled already (an island's own +, a restored
+    /// session); nil leaves the island to `NewTabGroup`.
+    private func addTab(
+        _ terminal: TerminalView, agent: Agent? = nil, after anchor: Tab?, in directory: String? = nil,
+        joining placement: NewTabGroup.Placement? = nil
+    ) {
         let tab = Tab(terminal: terminal, agent: agent)
         wire(terminal, in: tab)
 
@@ -643,8 +656,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         ])
         hosts[tab.id] = host
         refreshHost(tab)
-        store.insert(tab, after: anchor)
+        let placement = placement ?? store.placementForNewTab(after: anchor, in: directory)
+        // `.ask` opens the tab outside the island and asks afterwards: the
+        // tab is what you pressed + for, and a question you can ignore
+        // should never stand between you and a prompt.
+        store.insert(tab, after: anchor, joining: { if case .join(let id) = placement { id } else { nil } }())
         peek.relayout()
+        if case .ask(let id) = placement, let group = store.group(id) { askNewTabGroup(for: tab, in: group) }
     }
 
     /// Connects one pane to its tab and the window. The tab's title and
@@ -875,7 +893,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
-        addTab(terminal, agent: agent, after: store.selected)
+        addTab(terminal, agent: agent, after: store.selected, in: directory.path)
     }
 
     // MARK: Attention
@@ -1037,7 +1055,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 : ordered.map {
                     .init(
                         name: $0.name, color: $0.color.rawValue, isCollapsed: $0.isCollapsed, isStashed: $0.isStashed,
-                        folder: $0.folder, restoresOnLaunch: $0.restoresOnLaunch)
+                        folder: $0.folder, restoresOnLaunch: $0.restoresOnLaunch, takesNewTabs: $0.takesNewTabs)
                 })
     }
 
@@ -1071,7 +1089,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             TabGroup(
                 name: $0.name, color: TabColor(rawValue: $0.color) ?? .blue, isCollapsed: $0.isCollapsed,
                 isStashed: $0.isStashed, stashedAt: $0.isStashed ? Date() : nil, folder: $0.folder,
-                restoresOnLaunch: $0.restoresOnLaunch)
+                restoresOnLaunch: $0.restoresOnLaunch, takesNewTabs: $0.takesNewTabs)
         }
         store.groups = groups
         for saved in state.tabs {
@@ -1092,7 +1110,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 ?? TerminalView(
                     workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" },
                     restoring: Scrollback.file(named: saved.scrollback))
-            addTab(terminal, agent: saved.agent, after: store.tabs.last)
+            // The island is the one the session saved — never a decision
+            // taken again at launch (NewTabGroup would ask).
+            let island = saved.group.flatMap { groups.indices.contains($0) ? groups[$0].id : nil }
+            addTab(
+                terminal, agent: saved.agent, after: store.tabs.last,
+                joining: island.map { .join($0) } ?? .loose)
             guard let tab = store.tabs.last else { continue }
             if let layout, made.count > 1 {
                 made.dropFirst().forEach { wire($0, in: tab) }
@@ -1112,7 +1135,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil
             }
             if saved.isPinned { store.setPinned(tab, true) }
-            if let i = saved.group, groups.indices.contains(i) { tab.groupID = groups[i].id }
         }
         store.normalize()
         if let i = state.selectedIndex, store.tabs.indices.contains(i) { store.select(index: i) }
