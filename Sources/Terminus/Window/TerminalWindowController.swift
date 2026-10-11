@@ -1055,7 +1055,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 : ordered.map {
                     .init(
                         name: $0.name, color: $0.color.rawValue, isCollapsed: $0.isCollapsed, isStashed: $0.isStashed,
-                        folder: $0.folder, restoresOnLaunch: $0.restoresOnLaunch, takesNewTabs: $0.takesNewTabs)
+                        boundFolder: $0.folder, restoresOnLaunch: $0.restoresOnLaunch,
+                        takesNewTabs: $0.takesNewTabs)
                 })
     }
 
@@ -1088,7 +1089,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let groups: [TabGroup] = (state.groups ?? []).map {
             TabGroup(
                 name: $0.name, color: TabColor(rawValue: $0.color) ?? .blue, isCollapsed: $0.isCollapsed,
-                isStashed: $0.isStashed, stashedAt: $0.isStashed ? Date() : nil, folder: $0.folder,
+                isStashed: $0.isStashed, stashedAt: $0.isStashed ? Date() : nil, folder: $0.boundFolder,
                 restoresOnLaunch: $0.restoresOnLaunch, takesNewTabs: $0.takesNewTabs)
         }
         store.groups = groups

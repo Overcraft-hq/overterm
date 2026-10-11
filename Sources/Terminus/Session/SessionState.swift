@@ -30,7 +30,15 @@ struct SessionState: Codable, Equatable {
         var color: String
         var isCollapsed: Bool
         var isStashed: Bool
-        var folder: String?
+        /// New tabs opened under this folder join the group, ticked in the
+        /// group popover.
+        ///
+        /// Not `folder`, which is what sessions written before the binding
+        /// was a decision called it: back then every new island bound its
+        /// checkout by itself, so reading that key would hand every one of
+        /// them a binding nobody ticked — the bug this rule exists to fix.
+        /// Under a name those files don't have, they come back unbound.
+        var boundFolder: String?
         /// Off: the group's tabs are not reopened on the next launch.
         var restoresOnLaunch: Bool
         /// Whether tabs opened from the group join it — absent while the

@@ -31,6 +31,21 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(SessionState.load(from: url)?.tabs.count, 1)
     }
 
+    func testAnIslandFromBeforeTheBindingWasADecisionComesBackUnbound() throws {
+        // Every island used to bind its checkout by itself, and the binding
+        // now decides where new tabs go: read back, those files would hand
+        // every old group the binding this rule exists to undo.
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let tab = #"{"workingDirectory":"/repo","isPinned":false,"group":0}"#
+        let island = #"{"name":"klaim","color":"purple","isCollapsed":false,"isStashed":false,"folder":"/repo","restoresOnLaunch":true}"#
+        try Data(#"{"selectedIndex":0,"tabs":[\#(tab)],"groups":[\#(island)]}"#.utf8).write(to: url)
+        let loaded = SessionState.load(from: url)
+        XCTAssertEqual(loaded?.groups?.count, 1)
+        XCTAssertNil(loaded?.groups?.first?.boundFolder)
+        XCTAssertNil(loaded?.groups?.first?.takesNewTabs)
+        XCTAssertEqual(loaded?.tabs.first?.group, 0, "the island itself still comes back")
+    }
+
     func testASplitTabsLayoutRoundTrips() throws {
         final class Pane {
             let directory: String?
