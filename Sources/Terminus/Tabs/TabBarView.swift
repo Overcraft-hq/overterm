@@ -14,8 +14,6 @@ struct TabBarActions {
     var toggleDiff: () -> Void
     /// The PR chip: the right pane on the checkout's pull request.
     var showPullRequest: () -> Void
-    /// Every tab as a card (⇧⌘A).
-    var showOverview: () -> Void
     /// The update chip: Settings ▸ About.
     var showUpdate: () -> Void
     /// The Settings tab: show it, close it.
@@ -108,13 +106,6 @@ struct TabBarView: View {
                 .padding(.trailing, 6)
             StashedGroupsChip(store: store, theme: theme, restore: groupActions.restore)
                 .padding(.trailing, 4)
-            Button(action: actions.showOverview) {
-                Image(systemName: "square.grid.2x2").font(.system(size: 12)).frame(width: 26, height: 24).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .help("Agent Overview (⇧⌘A)")
-            .padding(.trailing, 4)
             if let pr = diff.branch.flatMap({ worktrees.pullRequests[$0] }) {
                 PullRequestChip(pr: pr, theme: theme, action: actions.showPullRequest)
                     .padding(.trailing, 6)

@@ -195,7 +195,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTask: { [weak self] in self?.newTask(nil) },
                     toggleDiff: { [weak self] in self?.toggleDiffFromBadge() },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
-                    showOverview: { [weak self] in self?.showAgentOverview(nil) },
                     showUpdate: { [weak self] in self?.openSettings(.about) },
                     showSettings: { [weak self] in self?.showSettingsPage() },
                     closeSettings: { [weak self] in self?.closeSettings() },
