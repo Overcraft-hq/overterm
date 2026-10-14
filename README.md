@@ -1,8 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.png">
-    <img alt="overterm" src="docs/assets/banner-dark.png" width="640">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-on-dark.png">
+    <img alt="overterm" src="docs/assets/banner-on-light.png" width="640">
   </picture>
 </p>
 
