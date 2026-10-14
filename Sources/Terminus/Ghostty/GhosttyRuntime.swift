@@ -15,9 +15,29 @@ final class GhosttyRuntime {
     /// Process-wide libghostty init. Must run before anything else touches the
     /// library, so main.swift calls it first.
     nonisolated static func initialize() -> Bool {
+        useOurOwnResources()
         let ok = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS
         initialized.withLock { $0 = ok }
         return ok
+    }
+
+    /// libghostty's resources — the themes, the shell integration scripts,
+    /// terminfo — come from `GHOSTTY_RESOURCES_DIR` when it is set, and
+    /// every Ghostty-family terminal exports it to what it runs. Started
+    /// from a terminal inside Ghostty, Terminus inherited *Ghostty's* copy:
+    /// another build's shell integration, and `theme = "<name>"` looking for
+    /// themes in Ghostty.app — so a theme we bundle was never found, and
+    /// one Settings had just set quietly did nothing. Ours, always: they are
+    /// the ones this libghostty was built with.
+    ///
+    /// Launched from the Dock there is no such variable and libghostty finds
+    /// our bundle itself, by the terminfo beside it; this makes the two the
+    /// same.
+    private nonisolated static func useOurOwnResources() {
+        guard let resources = Bundle.main.resourceURL?.appendingPathComponent("ghostty", isDirectory: true),
+            FileManager.default.fileExists(atPath: resources.appendingPathComponent("themes").path)
+        else { return }
+        setenv("GHOSTTY_RESOURCES_DIR", resources.path, 1)
     }
 
     /// Whether `initialize()` ran. Without it there is no app and every
