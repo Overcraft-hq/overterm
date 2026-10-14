@@ -58,6 +58,13 @@ if [[ ! -d "$GHOSTTY_RES" ]]; then
   exit 1
 fi
 cp -R "$GHOSTTY_RES/." "$CONTENTS/Resources/"
+# The editor's syntax queries (EditorLanguage looks for them here).
+QUERIES="$ROOT/Frameworks/TreeSitterQueries"
+if [[ ! -d "$QUERIES" ]]; then
+  echo "error: $QUERIES missing — run: make treesitter" >&2
+  exit 1
+fi
+cp -R "$QUERIES" "$CONTENTS/Resources/TreeSitterQueries"
 cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 # Settings ▸ About shows this version's entry; View Latest Changelog, all of it.
 cp "$ROOT/CHANGELOG.md" "$CONTENTS/Resources/CHANGELOG.md"

@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.31.1 — 2026-10-14
+
+- build: tree-sitter and the editor's grammars, pinned with Helix's queries
+
 ## 1.31.0 — 2026-10-14
 
 - build: the app is Overterm
