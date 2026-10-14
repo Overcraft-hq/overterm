@@ -584,6 +584,37 @@ final class E2ERunner {
             check("dd deletes a line", !textView.string.hasPrefix("# Title"), textView.string)
             _ = vim.handle(VimKey("u"))
             check("u undoes it", textView.string.hasPrefix("# Title"), textView.string)
+            // Mid-insert, to another file and back: the insert's undo group
+            // ends in its own file (ended in the next one, undo here raised).
+            _ = vim.handle(VimKey("i"))
+            textView.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+            app.openInEditor(main)
+            _ = await eventually(2) { editor.document.url == main }
+            check(
+                // Once the run loop has turned: typing outside an event opens
+                // the undo manager's own per-event group, closed at its end.
+                "switching files mid-insert leaves no undo group open",
+                await eventually(2) { editor.buffers.allSatisfy { $0.undo.groupingLevel == 0 } },
+                editor.buffers.map { "\($0.name)=\($0.undo.groupingLevel)" }.joined(separator: " ") + " vim=\(editor.vim?.mode == .insert ? "insert" : "other")")
+            app.openInEditor(readme)
+            _ = await eventually(2) { editor.document.url == readme }
+            editor.active?.undo.undo()
+            check("…and undo back in it takes the insert away", textView.string.hasPrefix("# Title"), textView.string)
+        }
+        // Vim's normal mode doesn't take the editor's shortcuts: ⇧⎋ still
+        // toggles the zoom. Handed to the editor's key handler, not posted.
+        if let shiftEscape = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.shift], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53)
+        {
+            let zoomed = app.isEditorZoomed
+            check("in vim's normal mode, ⇧⎋ is still the zoom", editor.codeTextView(textView, handleKey: shiftEscape, equivalent: false) && app.isEditorZoomed != zoomed)
+            app.setEditorZoomed(true)
+            app.toggleFileTree(nil)
+            check("hiding the sidebar keeps the zoom", app.isEditorZoomed && window.firstResponder === textView)
+            app.toggleFileTree(nil)
+            app.setEditorZoomed(false)
         }
         Settings.shared.set("editor.vimMode", nil)
         check("vim mode stops", await eventually(2) { editor.vim == nil && !textView.blockCursor })

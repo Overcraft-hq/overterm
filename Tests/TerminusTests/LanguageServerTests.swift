@@ -371,6 +371,30 @@ final class LanguageServerTests: XCTestCase {
         return Fake(server: server, log: log, file: dir.appendingPathComponent("main.go"))
     }
 
+    /// Two windows share a server: one closing the file keeps it open for
+    /// the other, and its versions keep rising whoever counts lower.
+    @MainActor
+    func testTwoEditorsShareADocument() async throws {
+        let fake = try fake()
+        let server = fake.server
+        try server.start()
+        _ = try await server.waitUntilReady()
+        server.didOpen(fake.file, languageID: "go", version: 5, text: "package a\n")
+        server.didOpen(fake.file, languageID: "go", version: 1, text: "package b\n")
+        server.didClose(fake.file)
+        server.didChange(fake.file, version: 2, text: "package c\n")
+        try await Self.eventually { fake.logText.contains("package c") }
+        var log = fake.logText
+        XCTAssertEqual(log.components(separatedBy: "textDocument/didOpen").count - 1, 1, log)
+        XCTAssertFalse(log.contains("textDocument/didClose"), "the other editor still has it: \(log)")
+        XCTAssertTrue(log.contains("change 6 [{\"text\": \"package b\\n\"}]"), log)
+        XCTAssertTrue(log.contains("change 7 [{\"text\": \"package c\\n\"}]"), log)
+        server.didClose(fake.file)
+        try await Self.eventually { fake.logText.contains("textDocument/didClose") }
+        log = fake.logText
+        XCTAssertEqual(log.components(separatedBy: "textDocument/didClose").count - 1, 1, log)
+    }
+
     @MainActor
     func testAWholeSession() async throws {
         let fake = try fake()

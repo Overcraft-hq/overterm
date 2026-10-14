@@ -2922,8 +2922,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let show = sidebarItem.isCollapsed
         sidebarItem.animator().isCollapsed = !show
         AppEnvironment.defaults.set(show, forKey: Self.sidebarVisibleKey)
-        // Collapsing can strand keyboard focus in the hidden panel.
-        if !show { focusSelectedTerminal() }
+        // Collapsing can strand keyboard focus in the hidden panel — it goes
+        // to the editor while that fills the window, not to the terminal
+        // (which would end the zoom).
+        if !show { isEditorZoomed ? editor?.focus() : focusSelectedTerminal() }
     }
 
     @objc func togglePinTab(_ sender: Any?) {

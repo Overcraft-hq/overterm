@@ -190,6 +190,12 @@ final class LanguageServers {
         return server
     }
 
+    /// The server already running for this file, if any — never starts one.
+    func existingServer(for url: URL) -> LanguageServer? {
+        guard let spec = Self.spec(for: url) else { return nil }
+        return servers["\(spec.id)\u{0}\(Self.root(for: url, markers: spec.rootMarkers).path)"]
+    }
+
     /// Counts a failure; whether one more try is allowed.
     private func fail(_ spec: Spec) -> Bool {
         failures[spec.id, default: 0] += 1

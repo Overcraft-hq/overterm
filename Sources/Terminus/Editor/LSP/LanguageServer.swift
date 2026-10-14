@@ -150,6 +150,9 @@ final class LanguageServer: @unchecked Sendable {
         var languageID: String
         var version: Int
         var text: String
+        /// Editors with it open: two windows share a server, and one closing
+        /// its tab mustn't close the document under the other.
+        var owners = 1
     }
 
     init(name: String, command: Command, root: URL) {
@@ -369,27 +372,37 @@ final class LanguageServer: @unchecked Sendable {
 
     // MARK: - Documents
 
+    /// Opened again by another editor: one more owner, and its text as a
+    /// change — the server knows the document once.
     func didOpen(_ url: URL, languageID: String, version: Int, text: String) {
+        let alreadyOpen = lock.withLock { () -> Bool in
+            guard documents[url] != nil else { return false }
+            documents[url]?.owners += 1
+            return true
+        }
+        if alreadyOpen { return didChange(url, version: version, text: text) }
         let document = OpenDocument(languageID: languageID, version: version, text: text)
         guard let capabilities = track(url, document) else { return }
         sendDidOpen(url, document, capabilities)
     }
 
     /// The whole new text — also to an incremental server, as one change
-    /// without a range, which the protocol allows.
+    /// without a range, which the protocol allows. The version sent is the
+    /// server's own count, always rising: editors in two windows count
+    /// their own, and a lower one would be ignored.
     func didChange(_ url: URL, version: Int, text: String) {
-        let opened: (LSP.Capabilities?, Bool) = lock.withLock {
-            guard var document = documents[url] else { return (nil, false) }
-            document.version = version
+        let opened: (LSP.Capabilities?, Int)? = lock.withLock {
+            guard var document = documents[url] else { return nil }
+            document.version = max(document.version + 1, version)
             document.text = text
             documents[url] = document
-            return (_state == .running ? _capabilities : nil, true)
+            return (_state == .running ? _capabilities : nil, document.version)
         }
-        guard opened.1, let capabilities = opened.0, capabilities.textDocumentSync != 0 else { return }
+        guard let opened, let capabilities = opened.0, capabilities.textDocumentSync != 0 else { return }
         notify(
             "textDocument/didChange",
             [
-                "textDocument": ["uri": .string(LSP.uri(for: url)), "version": .int(version)],
+                "textDocument": ["uri": .string(LSP.uri(for: url)), "version": .int(opened.1)],
                 "contentChanges": [["text": .string(text)]],
             ])
     }
@@ -405,10 +418,16 @@ final class LanguageServer: @unchecked Sendable {
         notify("textDocument/didSave", .object(params))
     }
 
+    /// The last owner closing it closes it on the server.
     func didClose(_ url: URL) {
         let capabilities: Capabilities? = lock.withLock {
-            guard documents.removeValue(forKey: url) != nil, _state == .running else { return nil }
-            return _capabilities
+            guard let document = documents[url] else { return nil }
+            if document.owners > 1 {
+                documents[url]?.owners -= 1
+                return nil
+            }
+            documents.removeValue(forKey: url)
+            return _state == .running ? _capabilities : nil
         }
         guard let capabilities, capabilities.openClose else { return }
         notify("textDocument/didClose", ["textDocument": ["uri": .string(LSP.uri(for: url))]])

@@ -13,8 +13,11 @@ extension EditorViewController {
     /// them off, or the language has none on this machine.
     func server(for buffer: EditorBuffer) -> LanguageServer? {
         guard Settings.shared.editorLanguageServers, let url = buffer.url, buffer.document.unavailable == nil else { return nil }
+        if let cached = buffer.server, cached.state == .running || cached.state == .starting { return cached }
+        // None yet, or it died: the registry restarts it (once) or gives up.
         Self.routeDiagnostics()
-        return LanguageServers.shared.server(for: url)
+        buffer.server = LanguageServers.shared.server(for: url)
+        return buffer.server
     }
 
     func serverName(for buffer: EditorBuffer) -> String? {
@@ -82,7 +85,7 @@ extension EditorViewController {
     func bufferWillClose(_ buffer: EditorBuffer) {
         guard buffer.serverOpen, let url = buffer.url else { return }
         buffer.serverOpen = false
-        server(for: buffer)?.didClose(url)
+        LanguageServers.shared.existingServer(for: url)?.didClose(url)
     }
 
     func bufferDidReload(_ buffer: EditorBuffer) {
@@ -98,7 +101,9 @@ extension EditorViewController {
         let work = DispatchWorkItem { [weak self, weak buffer] in
             MainActor.assumeIsolated {
                 guard let self, let buffer else { return }
-                self.sendChange(buffer)
+                // Every file with edits: the timer is shared, and a newer edit
+                // elsewhere cancelled this one's send.
+                self.buffers.forEach(self.sendChange)
                 if buffer === self.active { self.loadSymbols(buffer) { [weak self] _ in self?.updateBreadcrumb() } }
             }
         }
@@ -106,14 +111,16 @@ extension EditorViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
-    /// Before a request: the server must have the text the position is in.
+    /// Before a request: the server must have the text the position is in —
+    /// and the other files' edits the cancelled timer was holding.
     func flushServerChange(_ buffer: EditorBuffer) {
         pendingServerChange?.cancel()
         pendingServerChange = nil
         sendChange(buffer)
+        buffers.forEach(sendChange)
     }
 
-    private func sendChange(_ buffer: EditorBuffer) {
+    func sendChange(_ buffer: EditorBuffer) {
         guard buffer.serverOpen, buffer.serverVersion != buffer.version, let url = buffer.url, let server = server(for: buffer) else { return }
         buffer.serverVersion = buffer.version
         server.didChange(url, version: buffer.serverVersion, text: buffer.storage.string)
@@ -130,6 +137,9 @@ extension EditorViewController {
             if Settings.shared.editorLanguageServers {
                 if !buffer.serverOpen { openOnServer(buffer) }
             } else {
+                // Closed on the server too: turned back on, it is opened anew,
+                // not opened twice.
+                if buffer.serverOpen, let url = buffer.url { LanguageServers.shared.existingServer(for: url)?.didClose(url) }
                 buffer.serverOpen = false
                 buffer.diagnostics = []
             }
@@ -157,6 +167,15 @@ extension EditorViewController {
     func range(of range: LSP.Range) -> NSRange {
         let start = offset(of: range.start)
         return NSRange(location: start, length: max(0, offset(of: range.end) - start))
+    }
+
+    /// The same in `buffer`'s text — which may not be the one showing.
+    func range(of range: LSP.Range, in buffer: EditorBuffer) -> NSRange {
+        if buffer === active { return self.range(of: range) }
+        let starts = LineIndex.starts(of: buffer.storage.string as NSString)
+        let start = Self.offset(of: range.start, starts: starts, length: buffer.storage.length)
+        let end = max(start, Self.offset(of: range.end, starts: starts, length: buffer.storage.length))
+        return NSRange(location: start, length: end - start)
     }
 
     static func offset(of position: LSP.Position, starts: [Int], length: Int) -> Int {

@@ -44,6 +44,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     // Shared with the extensions.
     var completion: CompletionState?
+    /// Counts completion requests, for telling a stale answer apart.
+    var completionRequests = 0
     lazy var completionPopup: CompletionPopup = {
         let popup = CompletionPopup(theme: theme)
         popup.onChoose = { [weak self] index in self?.acceptCompletion(at: index) }
@@ -243,7 +245,14 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         guard buffers.indices.contains(index), let layout = textView.layoutManager else { return }
         if recordHistory { recordPosition() }
         hideTransientUI()
+        // The text view's typing in progress belongs to the file it was in:
+        // carried over, it extended an undo action in the other file.
+        textView.breakUndoCoalescing()
         if let current = active {
+            // Vim's open transaction (an insert, say) ends in the file it was
+            // in: ended after the switch, it closed the next file's undo group
+            // and left this one's open — undo there then raised.
+            vim?.reset()
             current.selection = textView.selectedRanges.map(\.rangeValue)
             current.scroll = scrollView.contentView.bounds.origin
         }
@@ -310,6 +319,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     private func removeBuffer(at index: Int) {
         let buffer = buffers[index]
+        if buffer === active {
+            vim?.reset()
+            textView.breakUndoCoalescing()
+        }
         bufferWillClose(buffer)
         buffer.document.close()
         buffers.remove(at: index)
@@ -752,7 +765,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
         if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
-            formatDocument { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
+            formatDocument(buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
             return
         }
         do {

@@ -19,6 +19,12 @@ struct CompletionState {
 
     /// Where the word being completed starts.
     var anchor: Int
+    /// The caret when the server was asked: its edits are about that text.
+    var requestedAt: Int
+    /// The file asked about — an answer for another is dropped.
+    weak var buffer: EditorBuffer?
+    /// The server said the list isn't all: typing on asks again.
+    var incomplete = false
     var candidates: [Candidate]
     /// Indices into `candidates`, as the list shows them.
     var shown: [Int] = []
@@ -31,24 +37,25 @@ extension EditorViewController: CodeTextViewHost {
 
     func codeTextView(_ view: CodeTextView, handleKey event: NSEvent, equivalent: Bool) -> Bool {
         if !equivalent, completionPopup.isVisible, handleCompletionKey(event) { return true }
+        let combo = KeyCombo(pressed: event)
+        // Before the menu only ⌘ keys: the rest come back through keyDown,
+        // and answering them twice would run them twice.
+        if equivalent, combo?.command != true { return false }
+        // The editor's shortcuts before vim: they all carry a modifier or are
+        // function keys, which vim's normal mode would swallow (⇧⎋ is the
+        // keyboard's only way out of zoom).
+        if let combo, let command = KeyCommands.all.first(where: { $0.editor && Keybindings.shared.key(for: $0) == combo }) {
+            return perform(command.id)
+        }
+        if !equivalent, combo == KeyCombo(key: "escape"), hover != nil {
+            hideTransientUI()
+            return true
+        }
         if !equivalent, let vim, let key = Self.vimKey(event), vim.handle(key) {
             updateVimChrome()
             return true
         }
-        guard let combo = KeyCombo(pressed: event) else { return false }
-        // Before the menu only ⌘ keys: the rest come back through keyDown,
-        // and answering them twice would run them twice.
-        if equivalent, !combo.command { return false }
-        guard let command = KeyCommands.all.first(where: { $0.editor && Keybindings.shared.key(for: $0) == combo }) else {
-            if !equivalent, combo == KeyCombo(key: "escape") {
-                if hover != nil || completionPopup.isVisible {
-                    hideTransientUI()
-                    return true
-                }
-            }
-            return false
-        }
-        return perform(command.id)
+        return false
     }
 
     /// Runs an editor command; false when it doesn't apply here (so the key
@@ -214,8 +221,11 @@ extension EditorViewController: CodeTextViewHost {
 
     private func didType(_ text: String) {
         guard let buffer = active, textView.selectedRanges.count == 1 else { return dismissCompletion() }
-        if completion != nil {
+        if let state = completion {
             if text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }) {
+                // An incomplete list is the server's first answer, not its
+                // last: ask again for the longer word (the list stays meanwhile).
+                if state.incomplete, server(for: buffer) != nil { return triggerCompletion(manual: true) }
                 return refilterCompletion()
             }
             dismissCompletion()
@@ -245,23 +255,32 @@ extension EditorViewController: CodeTextViewHost {
         guard let buffer = active, textView.selectedRanges.count == 1, textView.selectedRange().length == 0 else { return }
         let caret = textView.selectedRange().location
         let anchor = wordStart(before: caret)
-        let generation = (completion?.generation ?? 0) + 1
+        // Never reused, not even after a dismissal: an answer to an older
+        // request (another file's, maybe) must not land on this one.
+        completionRequests += 1
+        let generation = completionRequests
         let words = CompletionMatch.bufferWords(in: textView.string as NSString, near: caret).prefix(2000).map { word in
             CompletionState.Candidate(
                 label: word, filterText: word, insertText: word, isSnippet: false, badge: "abc", badgeColor: theme.hint, detail: "",
                 edit: nil, additionalEdits: [], sortText: word, fromServer: false)
         }
-        completion = CompletionState(anchor: anchor, candidates: Array(words), generation: generation)
+        // Asking again for the same word: the server's last list stays up
+        // until its new one arrives, so the list doesn't flicker to words.
+        let kept = completion.flatMap { $0.buffer === buffer && $0.anchor == anchor ? $0.candidates.filter(\.fromServer) : nil } ?? []
+        completion = CompletionState(anchor: anchor, requestedAt: caret, buffer: buffer, candidates: kept + Array(words), generation: generation)
         refilterCompletion(manual: manual)
         guard let server = server(for: buffer), let url = buffer.url else { return }
         flushServerChange(buffer)
         let position = lspPosition(of: caret)
         Task { [weak self] in
             let list = try? await server.completion(url, at: position, trigger: character)
-            guard let self, let list, self.completion?.generation == generation else { return }
+            guard let self, let list, self.completion?.generation == generation, self.completion?.buffer === buffer,
+                buffer === self.active
+            else { return }
             let items = list.items.prefix(1500).map { self.candidate(from: $0) }
             let words = self.completion?.candidates.filter { !$0.fromServer } ?? []
             self.completion?.candidates = items + words
+            self.completion?.incomplete = list.isIncomplete
             self.refilterCompletion(manual: true)
         }
     }
@@ -344,14 +363,21 @@ extension EditorViewController: CodeTextViewHost {
         dismissCompletion()
         let caret = textView.selectedRange().location
         var start = state.anchor
-        if let edit = candidate.edit { start = min(offset(of: edit.range.start), caret) }
+        var end = caret
+        if let edit = candidate.edit {
+            // The server's range is in the text it saw: what was typed since
+            // (at the caret, inside the range) moves its end along.
+            start = min(offset(of: edit.range.start), caret)
+            end = max(caret, offset(of: edit.range.end) + (caret - state.requestedAt))
+            end = min(end, (textView.string as NSString).length)
+        }
         let (text, cursor) = candidate.isSnippet ? Self.expandSnippet(candidate.insertText) : (candidate.insertText, nil)
-        var changes = [(range: NSRange(location: start, length: caret - start), text: text)]
+        var changes = [(range: NSRange(location: start, length: end - start), text: text)]
         var shift = 0
         for extra in candidate.additionalEdits {
             let range = range(of: extra.range)
             // Auto-imports land above the word; keep them off it.
-            guard NSMaxRange(range) <= start || range.location >= caret else { continue }
+            guard NSMaxRange(range) <= start || range.location >= end else { continue }
             changes.append((range: range, text: extra.newText))
             if NSMaxRange(range) <= start { shift += (extra.newText as NSString).length - range.length }
         }
@@ -557,16 +583,14 @@ extension EditorViewController: VimBuffer {
         textView.apply([(range: range, text: string)], selecting: nil)
     }
 
-    func beginUndoGroup() {
-        textView.breakUndoCoalescing()
-        active?.undo.beginUndoGrouping()
-    }
+    /// Vim's transactions are not undo groups held open: the undo manager
+    /// groups by event, and closes the top group when each key's event ends —
+    /// vim's, from an insert, leaving its own open (and undo then raised).
+    /// One key's command is one event, so one group already; an insert's
+    /// typing coalesces into one step, cut at its start and end here.
+    func beginUndoGroup() { textView.breakUndoCoalescing() }
 
-    func endUndoGroup() {
-        textView.breakUndoCoalescing()
-        guard let undo = active?.undo, undo.groupingLevel > 0 else { return }
-        undo.endUndoGrouping()
-    }
+    func endUndoGroup() { textView.breakUndoCoalescing() }
 
     func undo() { active?.undo.undo() }
     func redo() { active?.undo.redo() }

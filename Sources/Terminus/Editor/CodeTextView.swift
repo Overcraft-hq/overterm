@@ -362,6 +362,7 @@ final class CodeTextView: NSTextView {
     // MARK: Mouse
 
     private var hoverTimer: Timer?
+    private var showsLinkCursor = false
     private var trackingArea: NSTrackingArea?
 
     override func updateTrackingAreas() {
@@ -378,7 +379,13 @@ final class CodeTextView: NSTextView {
         let point = convert(event.locationInWindow, from: nil)
         let index = characterIndex(at: point)
         // ⌘ held: the word under the mouse reads as a link, as in Zed.
-        if event.modifierFlags.contains(.command), index != nil { NSCursor.pointingHand.set() }
+        if event.modifierFlags.contains(.command), index != nil {
+            NSCursor.pointingHand.set()
+            showsLinkCursor = true
+        } else if showsLinkCursor {
+            NSCursor.iBeam.set()
+            showsLinkCursor = false
+        }
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }

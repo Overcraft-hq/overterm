@@ -178,7 +178,8 @@ extension EditorViewController {
                 } else {
                     let symbols = found.map {
                         EditorSymbol(
-                            name: $0.name, kind: Self.symbolKindName($0.kind), range: self.range(of: $0.range), selection: self.range(of: $0.selectionRange),
+                            name: $0.name, kind: Self.symbolKindName($0.kind), range: self.range(of: $0.range, in: buffer),
+                            selection: self.range(of: $0.selectionRange, in: buffer),
                             depth: $0.depth)
                     }
                     if buffer === self.active { self.currentSymbols = symbols }
@@ -413,8 +414,12 @@ extension EditorViewController {
 
     // MARK: Formatting
 
-    func formatDocument(_ done: @escaping () -> Void) {
-        guard let buffer = active, let server = server(for: buffer), let url = buffer.url, server.capabilities?.formatting != false else {
+    /// Formats `buffer` (the file showing, by default) with its server's
+    /// formatter — the one being saved, under format on save, even when it
+    /// isn't the one on screen.
+    func formatDocument(_ target: EditorBuffer? = nil, _ done: @escaping () -> Void) {
+        guard let buffer = target ?? active, let server = server(for: buffer), let url = buffer.url, server.capabilities?.formatting != false
+        else {
             return done()
         }
         flushServerChange(buffer)
@@ -422,10 +427,25 @@ extension EditorViewController {
         Task { [weak self] in
             defer { done() }
             guard let edits = try? await server.formatting(url, tabSize: buffer.indentWidth, insertSpaces: !buffer.usesTabs),
-                let self, !edits.isEmpty, buffer.version == version, buffer === self.active
+                let self, !edits.isEmpty, buffer.version == version
             else { return }
-            let caret = self.textView.selectedRange()
-            self.textView.apply(edits.map { (range: self.range(of: $0.range), text: $0.newText) }, selecting: [caret])
+            if buffer === self.active {
+                let caret = self.textView.selectedRange()
+                self.textView.apply(edits.map { (range: self.range(of: $0.range), text: $0.newText) }, selecting: [caret])
+            } else {
+                // Not on screen: straight into its storage, last edit first.
+                let storage = buffer.storage
+                let starts = LineIndex.starts(of: storage.string as NSString)
+                let ranges = edits.map { edit -> (NSRange, String) in
+                    let start = Self.offset(of: edit.range.start, starts: starts, length: storage.length)
+                    let end = max(start, Self.offset(of: edit.range.end, starts: starts, length: storage.length))
+                    return (NSRange(location: start, length: end - start), edit.newText)
+                }
+                storage.beginEditing()
+                for (range, text) in ranges.sorted(by: { $0.0.location > $1.0.location }) { storage.replaceCharacters(in: range, with: text) }
+                storage.endEditing()
+                buffer.document.markEdited()
+            }
         }
     }
 

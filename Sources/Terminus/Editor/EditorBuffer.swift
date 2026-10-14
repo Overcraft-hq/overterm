@@ -33,6 +33,9 @@ final class EditorBuffer {
     /// The version a language server last heard.
     var serverVersion = 0
     var serverOpen = false
+    /// The server found for it, kept: looking one up walks the folders up
+    /// for its root, and the status bar asks on every caret move.
+    var server: LanguageServer?
 
     var url: URL? { document.url }
     var name: String { document.name }
