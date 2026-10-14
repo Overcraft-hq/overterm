@@ -1,14 +1,16 @@
 import AppKit
 
 /// The split view controller for the window's columns, over a
-/// `GapSplitView`: the dividers are the 10 pt gaps between the cards, and
-/// they draw nothing.
+/// `GapSplitView`: the dividers measure and draw nothing, because the gap
+/// between two cards belongs to the cards (`CardColumn.gap`).
 ///
-/// The gap is also what makes them grabbable. They used to be 1 pt, drawn,
-/// and only that single point responded — which in practice meant "the
-/// columns can't be resized" — so the draggable area was widened by hand.
-/// A 10 pt divider needs no such help.
+/// Nothing of a divider is left to grab, then, so the draggable area is
+/// widened by hand — over the gap, where there is nothing else to click.
 final class WideDividerSplitViewController: NSSplitViewController {
+    /// How far either side of the divider still resizes the columns. Half
+    /// the gap: the grab band is the gap, and never reaches a card.
+    private static let grabSlop: CGFloat = CardColumn.gap / 2
+
     /// After the panes change size — a divider dragged, a pane collapsed or
     /// opened, by the app or by hand.
     var onResize: (() -> Void)?
@@ -27,5 +29,14 @@ final class WideDividerSplitViewController: NSSplitViewController {
     override func splitViewDidResizeSubviews(_ notification: Notification) {
         super.splitViewDidResizeSubviews(notification)
         onResize?()
+    }
+
+    override func splitView(
+        _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect,
+        ofDividerAt dividerIndex: Int
+    ) -> NSRect {
+        let rect = super.splitView(
+            splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
+        return splitView.isVertical ? rect.insetBy(dx: -Self.grabSlop, dy: 0) : rect.insetBy(dx: 0, dy: -Self.grabSlop)
     }
 }

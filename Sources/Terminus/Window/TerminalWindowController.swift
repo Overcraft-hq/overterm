@@ -475,12 +475,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tabBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             tabBar.heightAnchor.constraint(equalToConstant: TabStripHostingView<AnyView>.height),
             // The cards sit flush under the strip and 10 pt in from the
-            // window's other three edges — the same gap the dividers leave
-            // between them.
+            // window's other three edges — the gap they leave between
+            // themselves. Sideways each card already keeps half of it, so
+            // the window only owes the other half.
             body.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
-            body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: GapSplitView.gap),
-            body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -GapSplitView.gap),
-            body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -GapSplitView.gap),
+            body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: CardColumn.gap / 2),
+            body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -CardColumn.gap / 2),
+            body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
         ])
 
         // The Settings tab's page covers the body, under the tab strip.

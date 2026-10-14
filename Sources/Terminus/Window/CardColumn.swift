@@ -1,17 +1,19 @@
 import AppKit
 
-/// The gap between the cards.
+/// The split view the cards sit in: no divider at all, drawn or measured.
 ///
-/// The columns are drawn as cards floating on the window, so what reads as
-/// the space between two of them is simply the window showing through —
-/// which is exactly what a split view divider is, once it is wide enough
-/// and draws nothing. Making the divider the gap (rather than insetting
-/// every card) keeps one source of truth for the spacing and gives the
-/// dividers a 10 pt grab area for free; before this they were 1 pt, drawn
-/// and barely grabbable.
+/// The gap between two cards is the window showing through, and each card
+/// holds its own half of it (`CardColumn.gap`). A wide divider was the
+/// obvious way to make that gap — one number, and a grab area for free —
+/// but a divider is measured even for a collapsed item: with the editor,
+/// the changes pane and the inbox all shut, the window lost 30 pt down its
+/// right side, and a pane closed *between* two open ones doubled the gap
+/// there. A card's own margin is only spent when the card is on screen.
+///
+/// A zero-width divider is still draggable: the controller widens it to a
+/// grab band (`WideDividerSplitViewController`), which is what that class
+/// did before the cards and does again.
 final class GapSplitView: NSSplitView {
-    static let gap: CGFloat = 10
-
     override init(frame: NSRect) {
         super.init(frame: frame)
         // Columns side by side. NSSplitView's own default is horizontal;
@@ -24,7 +26,7 @@ final class GapSplitView: NSSplitView {
         fatalError("init(coder:) is not supported")
     }
 
-    override var dividerThickness: CGFloat { Self.gap }
+    override var dividerThickness: CGFloat { 0 }
     override var dividerColor: NSColor { .clear }
     override func drawDivider(in rect: NSRect) {}
 }
@@ -40,6 +42,12 @@ final class GapSplitView: NSSplitView {
 /// undo it.
 final class CardColumn: NSView {
     static let cornerRadius: CGFloat = 10
+    /// The window showing through between two cards. Each card keeps half
+    /// of it on each side, so the gap is the same whoever its neighbour is
+    /// — and a card that isn't on screen costs nothing (`GapSplitView`).
+    static let gap: CGFloat = 10
+    /// Half the gap, which is what one card keeps on each side.
+    static let margin: CGFloat = gap / 2
 
     private let content: NSView
     private let ground = CALayer()
@@ -67,8 +75,8 @@ final class CardColumn: NSView {
         addSubview(content)
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: topAnchor),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.margin),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.margin),
             content.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
@@ -101,7 +109,7 @@ final class CardColumn: NSView {
 
     override func layout() {
         super.layout()
-        ground.frame = bounds
+        ground.frame = bounds.insetBy(dx: Self.margin, dy: 0)
         guard let layer = content.layer else { return }
         layer.cornerRadius = Self.cornerRadius
         layer.masksToBounds = true

@@ -853,22 +853,45 @@ final class E2ERunner {
         let terminalWidth = app.store.selected?.terminal.frame.width ?? 0
         check("the terminal keeps its minimum", terminalWidth >= 240, "\(terminalWidth)")
 
-        // The chrome: every column is a card, and the gaps between them are
-        // the dividers rather than anything a card leaves itself.
+        // The chrome: every column is a card, and the gaps are measured
+        // where they are seen — between the cards themselves, with the
+        // shut columns (editor, changes, inbox) costing nothing. A divider
+        // wide enough to be the gap was measured for those too, and took
+        // 30 pt off the right of the window.
         let columns = app.split.splitViewItems.map(\.viewController.view)
         check("every column is a card", columns.allSatisfy { $0 is CardColumn }, columns.map { "\(Swift.type(of: $0))" }.joined(separator: ", "))
-        let shown = app.split.splitViewItems.filter { !$0.isCollapsed }.map { $0.viewController.view.superview!.frame }
-        let gaps = zip(shown, shown.dropFirst()).map { $1.minX - $0.maxX }
-        check(
-            "and they are \(Int(GapSplitView.gap)) pt apart", gaps.allSatisfy { abs($0 - GapSplitView.gap) < 0.5 },
-            gaps.map { "\($0)" }.joined(separator: ", "))
         let body = splitView.superview!
         let content = window.contentView!
+        func cards() -> [CGRect] {
+            app.split.splitViewItems.filter { !$0.isCollapsed }
+                .map { $0.viewController.view.superview!.frame.insetBy(dx: CardColumn.margin, dy: 0) }
+        }
+        func gaps(_ shown: [CGRect]) -> [CGFloat] { zip(shown, shown.dropFirst()).map { $1.minX - $0.maxX } }
+        let shown = cards()
+        check(
+            "and they are \(Int(CardColumn.gap)) pt apart", gaps(shown).allSatisfy { abs($0 - CardColumn.gap) < 0.5 },
+            gaps(shown).map { "\($0)" }.joined(separator: ", "))
         check(
             "the cards are inset from the window on three sides",
-            body.frame.minX == GapSplitView.gap && content.frame.maxX - body.frame.maxX == GapSplitView.gap
-                && body.frame.minY == GapSplitView.gap,
-            "\(body.frame.integral) in \(content.frame.integral)")
+            body.frame.minX + (shown.first?.minX ?? 0) == CardColumn.gap
+                && content.frame.maxX - (body.frame.minX + (shown.last?.maxX ?? 0)) == CardColumn.gap
+                && body.frame.minY == CardColumn.gap,
+            "\(shown.map { $0.integral }) in body \(body.frame.integral) of \(content.frame.integral)")
+
+        // The changes pane opens with the editor still shut between it and
+        // the terminal — the case a measured divider made worst: two of
+        // them, 20 pt, in the middle of the window.
+        app.toggleDiff(nil)
+        // Uncollapsing is published before the pane is laid out; its frame
+        // is .null until then, and .null insets to infinity.
+        await eventually(3) { (self.app.diffItem?.viewController.view.superview?.frame.width ?? 0) > 1 }
+        let opened = cards()
+        check("a column opening beyond a shut one keeps the gap", gaps(opened).allSatisfy { abs($0 - CardColumn.gap) < 0.5 }, gaps(opened).map { "\($0)" }.joined(separator: ", "))
+        check(
+            "and the window's inset is unchanged",
+            content.frame.maxX - (body.frame.minX + (opened.last?.maxX ?? 0)) == CardColumn.gap,
+            "\(opened.map { $0.integral })")
+        app.toggleDiff(nil)
         // The strip is the row the traffic lights sit in, or the tabs float
         // above or below them.
         let close = window.standardWindowButton(.closeButton)!
