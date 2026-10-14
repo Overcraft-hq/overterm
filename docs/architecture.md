@@ -98,13 +98,20 @@ intent is unmistakable:
 | | |
 |---|---|
 | the strip is focused on an island (⌃⌘F) | it joins — a loose tab would open out of sight |
-| the tab's directory is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
+| **a folder** was opened (the sidebar, a worktree row, Finder, the `terminus` command) and it is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
 | the island was asked and said yes (`TabGroup.takesNewTabs`) | it joins |
 | the island holds every tab in the strip | the tab opens **loose** and the window asks under the chip (`NewTabPrompt`); the answer is the island's, so it is asked once |
 | anything else | loose — inserted after the anchor, which `normalize` then slides past the anchor's island |
 
 Saying "in this island" outright is the island's own `+` and its chip menu
 (`newTab(in:)`), which pass the group and never ask.
+
+The binding is read only for an opening that **names** a folder
+(`NewTabGroup.Opening.folder`), never for ⌘T, the strip's `+` or the palette
+(`.here`). Those inherit their directory from the tab you are in, which
+inside a bound island is always the island's own folder — so reading the
+binding there sent every ⌘T straight back into the group, which is the thing
+this rule exists to undo.
 
 ## Splits
 

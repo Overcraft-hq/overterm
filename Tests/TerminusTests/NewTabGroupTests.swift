@@ -10,11 +10,12 @@ final class NewTabGroupTests: XCTestCase {
     private let other = UUID()
 
     private func placement(
-        anchor: UUID? = nil, focused: UUID? = nil, bound: UUID? = nil, takesNewTabs: Bool? = nil,
-        hasTabOutside: Bool = true
+        _ opening: NewTabGroup.Opening = .here, anchor: UUID? = nil, focused: UUID? = nil, bound: UUID? = nil,
+        takesNewTabs: Bool? = nil, hasTabOutside: Bool = true
     ) -> NewTabGroup.Placement {
         NewTabGroup.placement(
-            anchor: anchor, focused: focused, bound: bound, takesNewTabs: takesNewTabs, hasTabOutside: hasTabOutside)
+            opening: opening, anchor: anchor, focused: focused, bound: bound, takesNewTabs: takesNewTabs,
+            hasTabOutside: hasTabOutside)
     }
 
     func testATabFromALooseTabIsLoose() {
@@ -34,15 +35,23 @@ final class NewTabGroupTests: XCTestCase {
         XCTAssertEqual(placement(anchor: nil, focused: other, hasTabOutside: true), .join(other))
     }
 
-    func testATickedFolderJoins() {
-        XCTAssertEqual(placement(anchor: nil, bound: island), .join(island))
-        XCTAssertEqual(placement(anchor: other, bound: island), .join(island))
+    func testATickedFolderJoinsWhenTheFolderIsWhatWasOpened() {
+        XCTAssertEqual(placement(.folder, anchor: nil, bound: island), .join(island))
+        XCTAssertEqual(placement(.folder, anchor: other, bound: island), .join(island))
+    }
+
+    func testATickedFolderDoesNotCatchANewTabWhereYouAlreadyAre() {
+        // ⌘T inside a bound island inherits the island's own folder, so
+        // reading the binding here put every ⌘T straight back in the group.
+        XCTAssertEqual(placement(.here, anchor: island, bound: island, hasTabOutside: true), .loose)
+        XCTAssertEqual(placement(.here, anchor: island, bound: island, hasTabOutside: false), .ask(island))
+        XCTAssertEqual(placement(.here, anchor: nil, bound: island), .loose)
     }
 
     func testAnIslandToldNotToTakeTabsOverridesItsOwnFolder() {
-        XCTAssertEqual(placement(anchor: island, bound: island, takesNewTabs: false), .loose)
+        XCTAssertEqual(placement(.folder, anchor: island, bound: island, takesNewTabs: false), .loose)
         XCTAssertEqual(
-            placement(anchor: island, bound: other, takesNewTabs: false), .join(other),
+            placement(.folder, anchor: island, bound: other, takesNewTabs: false), .join(other),
             "the answer was about this island, not the one the folder is bound to")
     }
 

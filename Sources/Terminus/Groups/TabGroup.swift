@@ -22,8 +22,9 @@ final class TabGroup: ObservableObject, Identifiable {
     @Published var isStashed: Bool
     /// When it was stashed, for "Stashed 2 h ago".
     @Published var stashedAt: Date?
-    /// New tabs opened in this folder join the group. Nil — the default —
-    /// is no binding at all (`TabStore.group(forDirectory:)`).
+    /// Opening this folder — from the sidebar, Finder, the `terminus`
+    /// command — opens its tab in this group. Nil, the default, is no
+    /// binding at all, and ⌘T never reads it (`NewTabGroup.Opening`).
     @Published var folder: String?
     /// Reopen this group's tabs and splits on launch.
     @Published var restoresOnLaunch: Bool

@@ -586,16 +586,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let directory = Settings.shared.newTabDirectory == .home ? nil : known ?? inherited?.workingDirectory
         let terminal = TerminalView(workingDirectory: directory, fontSize: inherited?.fontSize)
         addTab(
-            terminal, after: tab(containing: source), in: directory,
+            terminal, .here, after: tab(containing: source), in: directory,
             joining: group.map { .join($0) })
     }
 
-    /// `in directory`: where the tab starts, for a group bound to that
-    /// folder. `joining`: settled already (an island's own +, a restored
-    /// session); nil leaves the island to `NewTabGroup`.
+    /// `opening`: whether a folder was asked for or just another tab
+    /// (`NewTabGroup.Opening`). `in directory`: where the tab starts, for a
+    /// group bound to that folder. `joining`: settled already (an island's
+    /// own +, a restored session); nil leaves the island to `NewTabGroup`.
     private func addTab(
-        _ terminal: TerminalView, agent: Agent? = nil, after anchor: Tab?, in directory: String? = nil,
-        joining placement: NewTabGroup.Placement? = nil
+        _ terminal: TerminalView, _ opening: NewTabGroup.Opening = .here, agent: Agent? = nil, after anchor: Tab?,
+        in directory: String? = nil, joining placement: NewTabGroup.Placement? = nil
     ) {
         let tab = Tab(terminal: terminal, agent: agent)
         wire(terminal, in: tab)
@@ -656,7 +657,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         ])
         hosts[tab.id] = host
         refreshHost(tab)
-        let placement = placement ?? store.placementForNewTab(after: anchor, in: directory)
+        let placement = placement ?? store.placementForNewTab(opening, after: anchor, in: directory)
         // `.ask` opens the tab outside the island and asks afterwards: the
         // tab is what you pressed + for, and a question you can ignore
         // should never stand between you and a prompt.
@@ -893,7 +894,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
-        addTab(terminal, agent: agent, after: store.selected, in: directory.path)
+        addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
     }
 
     // MARK: Attention
@@ -1116,7 +1117,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             let island = saved.group.flatMap { groups.indices.contains($0) ? groups[$0].id : nil }
             addTab(
                 terminal, agent: saved.agent, after: store.tabs.last,
-                joining: island.map { .join($0) } ?? .loose)
+                joining: island.map { NewTabGroup.Placement.join($0) } ?? .loose)
             guard let tab = store.tabs.last else { continue }
             if let layout, made.count > 1 {
                 made.dropFirst().forEach { wire($0, in: tab) }

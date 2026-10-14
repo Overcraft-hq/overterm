@@ -13,6 +13,18 @@ import Foundation
 /// island's own + (or its menu), the folder someone bound to it, an island
 /// the strip is focused on, or a group that was asked and said yes.
 enum NewTabGroup {
+    /// What was asked for — the folder binding answers one of these and not
+    /// the other.
+    enum Opening {
+        /// Another tab where you already are: ⌘T, the strip's +, the
+        /// palette, "New Tab to the Right".
+        case here
+        /// A folder: the sidebar, a worktree row, Finder, the `terminus`
+        /// command. This is the one "tabs opened in this folder join the
+        /// group" is about.
+        case folder
+    }
+
     enum Placement: Equatable {
         /// Outside every island. Inserted after the anchor, which the
         /// store's contiguous-run invariant then lands after its island.
@@ -26,6 +38,7 @@ enum NewTabGroup {
     }
 
     /// - Parameters:
+    ///   - opening: what was asked for (see `Opening`).
     ///   - anchor: the island of the tab the new one opens from.
     ///   - focused: the island the strip is narrowed to (⌃⌘F), if any.
     ///   - bound: an island whose folder the new tab's directory is under,
@@ -33,7 +46,7 @@ enum NewTabGroup {
     ///   - takesNewTabs: what `anchor`'s island answered, if it was asked.
     ///   - hasTabOutside: some tab in the strip is not in `anchor`'s island.
     static func placement(
-        anchor: UUID?, focused: UUID?, bound: UUID?, takesNewTabs: Bool?, hasTabOutside: Bool
+        opening: Opening, anchor: UUID?, focused: UUID?, bound: UUID?, takesNewTabs: Bool?, hasTabOutside: Bool
     ) -> Placement {
         // Focus shows one island and nothing else, so a loose tab would
         // open out of sight. Not a guess: the only honest answer.
@@ -41,7 +54,13 @@ enum NewTabGroup {
         // A folder someone ticked is the most specific thing anyone has
         // said about where a tab belongs — unless that same island has
         // since been told not to take new tabs.
-        if let bound, !(bound == anchor && takesNewTabs == false) { return .join(bound) }
+        //
+        // Only for an opening that names a folder, though. ⌘T doesn't open
+        // a folder, it opens another tab where you are; its directory is
+        // inherited, and inside a bound island that is always the island's
+        // own folder — so reading the binding here put every ⌘T straight
+        // back in the group, which is the whole thing this rule undoes.
+        if case .folder = opening, let bound, !(bound == anchor && takesNewTabs == false) { return .join(bound) }
         guard let anchor else { return .loose }
         if let takesNewTabs { return takesNewTabs ? .join(anchor) : .loose }
         return hasTabOutside ? .loose : .ask(anchor)

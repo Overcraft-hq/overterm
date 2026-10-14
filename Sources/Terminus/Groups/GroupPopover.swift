@@ -48,7 +48,7 @@ struct GroupPopover: View {
             if let folder, !folder.isEmpty {
                 Toggle(isOn: binding(for: folder)) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("New tabs opened in this folder join the group")
+                        Text("Opening this folder opens a tab in the group")
                             .font(.system(size: 12))
                             .foregroundStyle(theme.text)
                         Text(verbatim: folderName)

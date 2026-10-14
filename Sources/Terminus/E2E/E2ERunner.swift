@@ -1203,7 +1203,8 @@ final class E2ERunner {
         // A new tab is not swallowed by the island the selected tab is in —
         // a group over a checkout soon holds every tab, and inheriting it
         // meant ⌘T, the +, the palette and the sidebar all disappeared into
-        // it (NewTabGroup).
+        // it (NewTabGroup). `newTab(from:)` is what the strip's + and ⌘T
+        // call, so these go through it and not the directory path.
         guard let island = app.store.addToNewGroup([first, second], name: "work") else {
             return check("an island again", false)
         }
@@ -1211,8 +1212,8 @@ final class E2ERunner {
         app.groupPopover?.performClose(nil)
         app.store.renamingGroupID = nil
         app.store.select(first)
-        app.newTab(in: home)
-        check("a new tab stays out of the selected tab's island", app.store.selected?.groupID == nil)
+        app.newTab(from: first.terminal)
+        check("⌘T stays out of the selected tab's island", app.store.selected?.groupID == nil)
         check(
             "and lands after the island's run", app.store.tabs(in: island).map(\.title) == ["api", "web"],
             "\(app.store.tabs.map(\.title))")
@@ -1223,12 +1224,24 @@ final class E2ERunner {
                 return app.store.selected?.groupID == island.id
             }())
 
+        // Bound to the folder its tabs are in — the box in the group popover.
+        // ⌘T inside it inherits that very folder, which is what put every new
+        // tab back in the group: the binding is about opening a folder, not
+        // about opening another tab where you already are.
+        island.folder = home.path
+        app.store.select(first)
+        app.newTab(from: first.terminal)
+        check("a folder-bound island still doesn't catch ⌘T", app.store.selected?.groupID == nil, island.folder ?? "unbound")
+        app.newTab(in: home)
+        check("but it does catch a tab opened for that folder", app.store.selected?.groupID == island.id)
+        island.folder = nil
+
         // With every tab inside it, which way the strip's + goes is
         // genuinely ambiguous: the tab opens outside and the window asks.
         app.store.add(app.store.tabs.filter { $0.groupID != island.id }, to: island)
         await eventually(3) { self.app.store.groupChipFrames[island.id] != nil }
         app.store.select(first)
-        app.newTab(in: home)
+        app.newTab(from: first.terminal)
         check("with the island holding the whole strip, the tab still opens outside it", app.store.selected?.groupID == nil)
         check("and the window asks where it belongs", await eventually(3) { self.app.newTabPopover?.isShown == true })
         app.newTabPopover?.performClose(nil)
@@ -1240,7 +1253,7 @@ final class E2ERunner {
         // stops asking.
         island.takesNewTabs = true
         app.store.select(first)
-        app.newTab(in: home)
+        app.newTab(from: first.terminal)
         check("an island told to take new tabs takes them", app.store.selected?.groupID == island.id)
         check("without asking twice", app.newTabPopover?.isShown != true)
     }

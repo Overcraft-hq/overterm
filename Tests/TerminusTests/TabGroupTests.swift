@@ -115,13 +115,13 @@ final class TabGroupTests: XCTestCase {
     func testThePlacementOfANewTabReadsTheStrip() {
         let a = tab("a"), b = tab("b")
         let group = store.addToNewGroup([a], name: "work")!
-        XCTAssertEqual(store.placementForNewTab(after: a, in: nil), .loose, "b is outside the island")
+        XCTAssertEqual(store.placementForNewTab(.here, after: a, in: nil), .loose, "b is outside the island")
         store.add([b], to: group)
         XCTAssertEqual(
-            store.placementForNewTab(after: a, in: nil), .ask(group.id),
+            store.placementForNewTab(.here, after: a, in: nil), .ask(group.id),
             "with the island holding every tab, there is nothing to read the intent from")
         group.takesNewTabs = true
-        XCTAssertEqual(store.placementForNewTab(after: a, in: nil), .join(group.id))
+        XCTAssertEqual(store.placementForNewTab(.here, after: a, in: nil), .join(group.id))
     }
 
     func testABoundFolderTakesATabOpenedUnderIt() {
@@ -129,9 +129,13 @@ final class TabGroupTests: XCTestCase {
         tab("b")
         let group = store.addToNewGroup([a], name: "work")!
         group.folder = "/tmp/repo"
-        XCTAssertEqual(store.placementForNewTab(after: nil, in: "/tmp/repo/src"), .join(group.id))
-        XCTAssertEqual(store.placementForNewTab(after: nil, in: "/tmp/repository"), .loose, "a prefix is not a parent")
-        XCTAssertEqual(store.placementForNewTab(after: nil, in: nil), .loose)
+        XCTAssertEqual(store.placementForNewTab(.folder, after: nil, in: "/tmp/repo/src"), .join(group.id))
+        XCTAssertEqual(
+            store.placementForNewTab(.folder, after: nil, in: "/tmp/repository"), .loose, "a prefix is not a parent")
+        XCTAssertEqual(store.placementForNewTab(.folder, after: nil, in: nil), .loose)
+        XCTAssertEqual(
+            store.placementForNewTab(.here, after: a, in: "/tmp/repo"), .loose,
+            "⌘T in the island's own folder is not someone opening that folder")
     }
 
     func testANewGroupDoesNotBindItsFolder() {

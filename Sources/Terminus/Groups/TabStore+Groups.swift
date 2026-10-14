@@ -66,9 +66,12 @@ extension TabStore {
 
     /// Where a new tab opened from `anchor`, in `directory`, belongs
     /// (`NewTabGroup` holds the rule; this reads the strip for it).
-    func placementForNewTab(after anchor: Tab?, in directory: String?) -> NewTabGroup.Placement {
+    func placementForNewTab(
+        _ opening: NewTabGroup.Opening, after anchor: Tab?, in directory: String?
+    ) -> NewTabGroup.Placement {
         let anchorGroup = anchor?.groupID
         return NewTabGroup.placement(
+            opening: opening,
             anchor: anchorGroup,
             focused: focusedGroupID,
             bound: group(forDirectory: directory)?.id,
