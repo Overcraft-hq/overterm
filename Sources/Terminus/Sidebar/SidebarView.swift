@@ -578,13 +578,28 @@ private struct SnippetListView: View {
                 PanelHeaderButton(symbol: "plus", help: "New Snippet", action: { actions.edit(nil) }, theme: theme)
             }
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(store.snippets) { snippet in
-                        SnippetRowView(snippet: snippet, theme: theme, actions: actions, onDelete: { store.delete(snippet) })
-                    }
+            if store.snippets.isEmpty {
+                // The list is empty on a first run: say what a snippet is,
+                // rather than leave the panel blank.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No snippets yet").font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text("A command you keep running, saved by name. \u{007B}\u{007B}value\u{007D}\u{007D} in one is asked for when you use it.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.bottom, 4)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                Spacer()
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(store.snippets) { snippet in
+                            SnippetRowView(snippet: snippet, theme: theme, actions: actions, onDelete: { store.delete(snippet) })
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
             }
         }
     }

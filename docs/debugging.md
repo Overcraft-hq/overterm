@@ -89,7 +89,7 @@ in `deinit`.
 | Reset | How |
 |---|---|
 | Tabs | delete `~/Library/Application Support/Terminus/session.json` |
-| Snippets | delete `…/Terminus/snippets.json` (starters come back) |
+| Snippets | delete `…/Terminus/snippets.json` (the list starts empty) |
 | Divider positions | `defaults delete io.github.terminus-app.terminus "NSSplitView Subview Frames TerminusColumns.v2"` |
 | Panels shown | `defaults delete io.github.terminus-app.terminus sidebarVisible` / `diffVisible` / `sidebarPanel` |
 | The app files open in (asked again next time) | `defaults delete io.github.terminus-app.terminus openWithApp` |

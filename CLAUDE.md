@@ -18,6 +18,8 @@ make install                 # …and copy it to /Applications, re-signed with
                              # $SIGN_IDENTITY (env or untracked local.mk) if set;
                              # a stable identity keeps privacy grants (mic)
 make icon                    # Resources/AppIcon.svg → AppIcon.icns
+make themes                  # Resources/themes: the themes Ghostty v1.3.1
+                             # doesn't ship (Scripts/fetch-themes.sh; checked in)
 make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Release
                              # workflow, run by hand: VERSION's tag, its CHANGELOG
                              # entry as notes, the DMG attached
@@ -39,6 +41,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
 | `Sources/Terminus/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
 | `Sources/Terminus/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
+| `Sources/Terminus/Themes/` | Settings ▸ Themes: `TerminalTheme` (a Ghostty theme file, parsed), `ThemeCatalog` (the bundled ones and the user's), `ThemePreview` (a theme drawn as a little window), the gallery |
 | `Sources/Terminus/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
 | `Sources/Terminus/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
 | `Sources/Terminus/AskAgent/` | ⌘L: the strip over a selection, and the sheet that hands it to an agent with the command it came from |
@@ -72,8 +75,14 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **No `lazy.compactMap(…).first` over live state** (process trees, files): on a collection it runs the transform twice for the element it returns and force-unwraps the second answer — an agent exiting in between crashed the app. Loop and read once (`firstAgent(in:tree:)`).
 - **Never `pkill -f <pattern>` in tests** — it once killed the shell running them. Kill the exact pids you found.
 - **Typing text then running it**: `insertText` is a bracketed paste, so a trailing newline is literal. Use `pressReturn()`.
-- Keep features built-in (Claude, Codex, the snippet starters); no plugin slots.
+- Keep features built-in (Claude, Codex); no plugin slots.
 - **Tests are part of the change**: unit/integration in `Tests/TerminusTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
+- **A theme is a file, not code**: Ghostty resolves `theme = "<name>"` in
+  `Contents/Resources/ghostty/themes` (its own 463, plus `Resources/themes`
+  beside them) and `~/.config/ghostty/themes`. Settings ▸ Themes reads the
+  same files to draw each one — adding a theme is `Scripts/fetch-themes.sh`,
+  never a palette in Swift. `appearance.theme` keeps its key under the new
+  page: it is in people's settings.json.
 - **A new setting is a `SettingsSchema` entry** (key, section, kind, default): the page, validation and search follow. A new shortcut is a `KeyCommands` entry — and, for a menu item, `MainMenu.command(…, id)`. Never read UserDefaults for a setting.
 - **Isolated runs** (`TERMINUS_E2E`, `TERMINUS_DUMP_LAYOUT`) go through `AppEnvironment` for every piece of persistent state; new state must too, or tests will write into the user's real app.
 

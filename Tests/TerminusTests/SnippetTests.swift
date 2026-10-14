@@ -14,22 +14,41 @@ final class SnippetTests: XCTestCase {
     }
 
     @MainActor
-    func testFirstRunSeedsStartersAndChangesPersist() throws {
+    func testFirstRunIsEmptyAndChangesPersist() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-snip-\(UUID().uuidString)/snippets.json")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
         let store = SnippetStore(url: url)
-        XCTAssertEqual(store.snippets, SnippetStore.starters)
-        var edited = store.snippets[0]
-        edited.command = "mise run build"
-        store.upsert(edited)
-        store.delete(store.snippets[1])
+        XCTAssertTrue(store.snippets.isEmpty)
+        // Nothing written before there is something to write.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         store.upsert(Snippet(name: "New", command: "echo hi"))
 
         let reopened = SnippetStore(url: url)
-        XCTAssertEqual(reopened.snippets.map(\.command).first, "mise run build")
-        XCTAssertEqual(reopened.snippets.count, SnippetStore.starters.count)
-        XCTAssertEqual(reopened.snippets.last?.name, "New")
+        XCTAssertEqual(reopened.snippets.map(\.name), ["New"])
+    }
+
+    /// The five commands a first run used to be planted with went on showing
+    /// up in everyone's list; they are dropped from the file now, and only
+    /// the ones nobody touched.
+    @MainActor
+    func testThePlantedSnippetsAreDroppedButEditedOnesStay() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("terminus-snip-\(UUID().uuidString)/snippets.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let saved = [
+            Snippet(name: "Validate everything", command: "mise run validate"),
+            Snippet(name: "Worktrees", command: "git worktree list"),
+            // The same name, a command of the user's own.
+            Snippet(name: "Rollout status", command: "kubectl rollout status deploy/api"),
+            Snippet(name: "Mine", command: "make test"),
+        ]
+        try JSONEncoder().encode(saved).write(to: url)
+
+        let store = SnippetStore(url: url)
+        XCTAssertEqual(store.snippets.map(\.name), ["Rollout status", "Mine"])
+        // Written back, so they don't come again.
+        XCTAssertEqual(SnippetStore(url: url).snippets.map(\.name), ["Rollout status", "Mine"])
     }
 
     @MainActor

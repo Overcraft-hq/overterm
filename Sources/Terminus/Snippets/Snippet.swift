@@ -49,22 +49,33 @@ final class SnippetStore: ObservableObject {
         AppEnvironment.supportDirectory.appendingPathComponent("snippets.json")
     }
 
-    /// A first run starts with a few everyday commands.
-    static let starters: [Snippet] = [
-        Snippet(name: "Validate everything", command: "mise run validate"),
-        Snippet(name: "Deploy a service", command: "infra/scripts/deploy.sh release {{service}}"),
-        Snippet(name: "Rollout status", command: "infra/scripts/deploy.sh status"),
-        Snippet(name: "Open a PR", command: "gh pr create --fill --draft"),
-        Snippet(name: "Worktrees", command: "git worktree list"),
+    /// What a first run used to be planted with, up to v1.31.1: five
+    /// invented commands — someone else's deploy script, a task runner this
+    /// repository doesn't have. They are dropped from the file the next time
+    /// it is read, matched name *and* command, so one you edited or wrote
+    /// yourself stays. The list starts empty now.
+    private static let planted: Set<[String]> = [
+        ["Validate everything", "mise run validate"],
+        ["Deploy a service", "infra/scripts/deploy.sh release {{service}}"],
+        ["Rollout status", "infra/scripts/deploy.sh status"],
+        ["Open a PR", "gh pr create --fill --draft"],
+        ["Worktrees", "git worktree list"],
     ]
+
+    /// `snippets` without the planted ones. Pure, so what it spares is tested.
+    static func withoutPlanted(_ snippets: [Snippet]) -> [Snippet] {
+        snippets.filter { !planted.contains([$0.name, $0.command]) }
+    }
 
     init(url: URL = defaultURL) {
         self.url = url
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode([Snippet].self, from: data) {
-            snippets = saved
+            snippets = Self.withoutPlanted(saved)
+            // Only when it dropped something: a save on every launch would
+            // rewrite a file the user may be editing by hand.
+            if snippets.count != saved.count { save() }
         } else if !FileManager.default.fileExists(atPath: url.path) {
-            snippets = Self.starters
-            save()
+            // Nothing written until there is a snippet to write.
         } else {
             // Unreadable: set aside, so the next save doesn't write over what
             // was in it; the list starts empty.
