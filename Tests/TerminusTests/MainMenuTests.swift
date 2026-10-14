@@ -8,8 +8,7 @@ import XCTest
 /// alone — these walk the real menu.
 @MainActor
 final class MainMenuTests: XCTestCase {
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
         // MainMenu.build() sets NSApp.windowsMenu; without an application
         // object that is a nil force-unwrap. Making it does not run a loop.
         _ = NSApplication.shared

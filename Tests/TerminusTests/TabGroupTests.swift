@@ -8,8 +8,7 @@ import XCTest
 final class TabGroupTests: XCTestCase {
     private var store = TabStore()
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
         store = TabStore()
     }
 
