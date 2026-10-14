@@ -13,7 +13,7 @@ final class UpdatesTests: XCTestCase {
 
     func testLatestReleaseParses() throws {
         let data = Data(
-            #"{"tag_name":"v1.15.0","html_url":"https://github.com/terminus-app/terminus/releases/tag/v1.15.0","assets":[{"name":"notes.txt"},{"name":"Terminus-1.15.0.dmg"}]}"#
+            #"{"tag_name":"v1.15.0","html_url":"https://github.com/Overcraft-hq/overterm/releases/tag/v1.15.0","assets":[{"name":"notes.txt"},{"name":"Terminus-1.15.0.dmg"}]}"#
                 .utf8)
         let release = try UpdateChecker.parse(latest: data)
         XCTAssertEqual(release.version, "1.15.0")

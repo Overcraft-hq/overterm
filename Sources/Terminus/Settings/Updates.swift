@@ -8,7 +8,7 @@ final class UpdateChecker: ObservableObject {
     static let shared = UpdateChecker()
 
     /// Where releases are published (the Release workflow).
-    static let repository = "terminus-app/terminus"
+    static let repository = "Overcraft-hq/overterm"
 
     struct Release: Equatable {
         let version: String

@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 1.30.5 — 2026-10-14
+
+- build: the repository moved to Overcraft-hq/overterm
+
 ## 1.30.4 — 2026-10-14
 
 - window: a shut column no longer eats 10 pt of the window

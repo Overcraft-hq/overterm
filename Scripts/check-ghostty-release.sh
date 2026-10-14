@@ -10,7 +10,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO="${REPO:-terminus-app/terminus}"
+REPO="${REPO:-Overcraft-hq/overterm}"
 UPSTREAM="ghostty-org/ghostty"
 
 pinned="${PINNED_REF:-$(sed -n 's/^GHOSTTY_REF="\(.*\)"/\1/p' "$ROOT/Scripts/build-ghosttykit.sh")}"

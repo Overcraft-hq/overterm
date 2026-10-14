@@ -109,7 +109,7 @@ theme, keybinds) applies as-is.
 ## Install
 
 **Without Xcode: the release DMG.** Download `Terminus-<version>.dmg` from
-[Releases](https://github.com/terminus-app/terminus/releases), open it and
+[Releases](https://github.com/Overcraft-hq/overterm/releases), open it and
 drag **Terminus** to **Applications** (Apple Silicon, macOS 13+). It is signed
 ad hoc and not notarized, so macOS stops the first open: right-click → **Open**
 (macOS 15 and later: System Settings → Privacy & Security → **Open Anyway**),

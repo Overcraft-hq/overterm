@@ -333,7 +333,7 @@ new key bound to the action. Keys are written by position on a US layout
 (`KeyCombo(event:)` reads key codes): AppKit shows ⌘, as ⌘Ö on a Turkish
 Q, and it is still `cmd+,`.
 
-About: `UpdateChecker` asks `gh api repos/terminus-app/terminus/releases/latest`
+About: `UpdateChecker` asks `gh api repos/Overcraft-hq/overterm/releases/latest`
 (private: the user's gh login), compares SemVer with CFBundleShortVersionString,
 downloads the DMG with `gh release download`; once a day at launch when
 allowed, a title-bar chip when newer (it opens Settings ▸ About).
