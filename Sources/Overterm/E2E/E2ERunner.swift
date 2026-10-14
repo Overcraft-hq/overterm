@@ -3118,8 +3118,11 @@ final class E2ERunner {
         check("it lists actions and tabs", app.palette.results.contains { $0.group == .action } && app.palette.results.contains { $0.group == .tab })
         app.palette.query = "ncl"
         check("fuzzy search finds New Claude Tab", app.palette.results.first?.title == "New Claude Tab")
+        // A first run has no snippets; the palette searches the ones you save.
+        app.snippets.upsert(Snippet(name: "Validate everything", command: "mise run validate"))
+        app.snippets.upsert(Snippet(name: "Deploy a service", command: "infra/deploy.sh release {{service}}"))
         app.palette.query = "validate"
-        check("snippets are searchable", app.palette.results.first?.group == .snippet)
+        check("snippets are searchable", app.palette.results.first?.group == .snippet, "\(app.palette.results.map(\.title))")
         app.palette.query = "changes"
         check("the changes pane is Changes", app.palette.results.first?.title == "Changes", app.palette.results.first?.title ?? "nil")
         // History: what this pane has run, nearest folder first.

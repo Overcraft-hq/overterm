@@ -58,7 +58,14 @@ final class Settings: ObservableObject {
         if let legacy { Self.migrate(from: legacy, to: url) }
         load()
         if watch {
-            watcher = DirectoryWatcher(root: url.deletingLastPathComponent(), latency: 0.2) { [weak self] _ in self?.reloadIfChanged() }
+            // FSEvents follows a directory that exists. Until the app had
+            // written something of its own there was none, and a
+            // settings.json put there by hand went unnoticed until the next
+            // launch — which used to be hidden by the snippets file being
+            // written on a first run.
+            let directory = url.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            watcher = DirectoryWatcher(root: directory, latency: 0.2) { [weak self] _ in self?.reloadIfChanged() }
         }
     }
 
