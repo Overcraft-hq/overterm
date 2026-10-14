@@ -22,13 +22,16 @@ final class KeybindingsTests: XCTestCase {
     /// A menu command's key must not also be a Ghostty action's, or
     /// whichever Ghostty binds wins and the menu item is dead.
     func testNoMenuCommandSharesAKeyWithATerminalCommand() {
+        // The editor's keys are their own scope: they act only while it has
+        // the keyboard, before the menu (CodeTextView.performKeyEquivalent).
         var byKey: [String: String] = [:]
         for command in KeyCommands.all {
             guard let key = command.defaultKey else { continue }
-            if let other = byKey[key] {
+            let scoped = (command.editor ? "editor " : "") + key
+            if let other = byKey[scoped] {
                 XCTFail("\(command.id) and \(other) are both on \(key)")
             }
-            byKey[key] = command.id
+            byKey[scoped] = command.id
         }
     }
 

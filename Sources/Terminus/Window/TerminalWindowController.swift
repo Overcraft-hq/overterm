@@ -87,6 +87,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Opens files in the app picked for them (the file tree, the editor's ↗).
     let opener = ExternalOpener()
     private(set) var editorItem: NSSplitViewItem?
+    /// The terminal's column: collapsed only while the editor is zoomed.
+    private var terminalColumn: NSSplitViewItem?
+    /// While the editor is zoomed: each other column's state before it.
+    private var editorZoomRestore: [(item: NSSplitViewItem, collapsed: Bool)]?
     private(set) var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
@@ -154,8 +158,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             .dropFirst()
             .sink { [weak self] _ in
                 // Another terminal tab chosen (⌘T, ⇧⌘], a click): it comes
-                // out from under the Settings tab.
+                // out from under the Settings tab — and from under a zoomed
+                // editor.
                 self?.hideSettingsPage(focus: false)
+                self?.setEditorZoomed(false)
             }
             .store(in: &cancellables)
         store.$selectedID
@@ -383,6 +389,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         editorItem.minimumThickness = 280
         editorItem.holdingPriority = .defaultLow + 5
         editor.onClose = { [weak self] in self?.closeEditor() }
+        editor.onToggleZoom = { [weak self] in
+            guard let self else { return }
+            self.setEditorZoomed(self.editorZoomRestore == nil)
+        }
+        editor.workspaceRoot = { [weak self] in self?.diff.root ?? self?.tree.root }
         self.editor = editor
         self.editorItem = editorItem
 
@@ -447,6 +458,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // beside it (it had no minimum and could be dragged to 0).
         let terminalColumn = NSSplitViewItem(viewController: terminalPane)
         terminalColumn.minimumThickness = 240
+        self.terminalColumn = terminalColumn
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
@@ -1214,6 +1226,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Shows or hides the find bar, above the terminals (a new tab's view is
     /// added later).
     private func showSearchBar(_ visible: Bool) {
+        if visible { setEditorZoomed(false) }
         guard let searchBar else { return }
         searchBar.isHidden = !visible
         if visible, let container = searchBar.superview {
@@ -1231,6 +1244,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// The ⌘F overlay for `terminal`, searching it and its tab's checkout.
     func showSpotlight(for terminal: TerminalView, needle: String?) {
         guard let spotlightView else { return }
+        // It searches the terminal, which a zoomed editor hides.
+        setEditorZoomed(false)
         spotlight.open(root: diff.root ?? tree.root, terminal: terminal, needle: needle)
         spotlightView.isHidden = false
         spotlightView.superview?.addSubview(spotlightView, positioned: .above, relativeTo: nil)
@@ -1564,18 +1579,50 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// unsaved-changes question about the file already open).
     func openInEditor(_ url: URL, line: Int? = nil) {
         guard let editor, let editorItem else { return }
-        editor.open(url) { opened in
+        editor.open(url) { [weak self] opened in
             guard opened else { return }
             if editorItem.isCollapsed { editorItem.animator().isCollapsed = false }
+            // As asked for: a file opens filling the window (⇧⎋ gives it back).
+            if Settings.shared.editorOpenZoomed { self?.setEditorZoomed(true) }
             if let line { editor.go(toLine: line) }
             editor.focus()
         }
     }
 
     private func closeEditor() {
+        setEditorZoomed(false)
         editorItem?.animator().isCollapsed = true
         focusSelectedTerminal()
     }
+
+    /// The editor in place of the terminal: the terminal, inbox and changes
+    /// columns shut, and open again as they were when the zoom ends (⇧⎋, the
+    /// header's ⤢, a tab chosen, the terminal searched or given the keyboard,
+    /// the editor closed). The terminal's column can only shut meanwhile.
+    /// Instant, as Zed's: an animated collapse finishing after a quick
+    /// un-zoom (a search started right after a file opened) hid the
+    /// terminal's column again, and the keyboard had nowhere to go.
+    func setEditorZoomed(_ zoomed: Bool) {
+        guard let editor, let editorItem, let terminalColumn, zoomed == (editorZoomRestore == nil) else { return }
+        // The sidebar stays: files are opened from it, and a click there
+        // shouldn't make it vanish under the pointer.
+        let others = [terminalColumn, inboxItem, diffItem].compactMap { $0 }
+        if zoomed {
+            editorZoomRestore = others.map { ($0, $0.isCollapsed) }
+            terminalColumn.canCollapse = true
+            if editorItem.isCollapsed { editorItem.isCollapsed = false }
+            for item in others { item.isCollapsed = true }
+        } else {
+            let restore = editorZoomRestore ?? []
+            editorZoomRestore = nil
+            for (item, collapsed) in restore { item.isCollapsed = collapsed }
+            terminalColumn.canCollapse = false
+        }
+        split.splitView.layoutSubtreeIfNeeded()
+        editor.isZoomed = zoomed
+    }
+
+    var isEditorZoomed: Bool { editorZoomRestore != nil }
 
     /// A file in the app picked for files — asking which first, if none is
     /// yet (or it is gone). The file tree's double-click and "Open in …".
@@ -2626,7 +2673,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 guard let self else { return }
                 if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
                 if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
-                if keys.contains("editor.fontSize") { self.editor?.applyFontSize() }
+                let editorKeys = keys.filter { $0.hasPrefix("editor.") }
+                if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
             .store(in: &cancellables)
     }
@@ -2711,10 +2759,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     func closeTabsWithoutAsking(_ tabs: [Tab]) { tabs.forEach { removeTab($0) } }
 
     /// The editor's file, when it has unsaved changes.
-    var unsavedEditorFile: String? {
-        guard let editor, editor.document.isDirty else { return nil }
-        return editor.document.name
-    }
+    var unsavedEditorFile: String? { editor?.unsavedNames.first }
 
     func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
         guard let tab = tab(containing: view), let i = store.index(of: tab) else { return }
@@ -2748,6 +2793,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     func focusSelectedTerminal() {
         guard let terminal = store.selected?.terminal else { return }
+        setEditorZoomed(false)
         window?.makeFirstResponder(terminal)
     }
 
@@ -2891,9 +2937,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Closing the window closes every tab: always confirmed.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if let editor, editor.document.isDirty {
+        if let editor, let name = editor.unsavedNames.first {
             let alert = NSAlert()
-            alert.messageText = "“\(editor.document.name)” has unsaved changes."
+            let others = editor.unsavedNames.count - 1
+            alert.messageText = others > 0 ? "“\(name)” and \(others) more have unsaved changes." : "“\(name)” has unsaved changes."
             alert.informativeText = "Save it (⌘S) first, or close the window and lose them."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Close Anyway")

@@ -9,6 +9,7 @@ macOS terminal for agent-driven work — Swift/AppKit around libghostty
 ```
 mise trust && mise install   # pinned Zig (only needed to build GhosttyKit)
 make ghosttykit              # Frameworks/GhosttyKit.xcframework + GhosttyResources (once; ~2 min)
+make treesitter              # Frameworks/TreeSitterKit.xcframework + the editor's queries (once; ~1 min)
 make hooks                   # .githooks: VERSION bump check, v<VERSION> tags (once per clone)
 make test                    # unit + integration tests (~3 s)
 make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
@@ -33,7 +34,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Terminus/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme` (the chrome's colour vocabulary), `CardColumn`/`GapSplitView` (the columns as cards on the window), `AttentionNotifier`, split controllers |
 | `Sources/Terminus/Sidebar/` | Files / Worktrees / Snippets panels, `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |
 | `Sources/Terminus/Diff/` | changes pane on the right + ± badge, `DiffModel` (live counts, per-file diffs, stage/commit) |
-| `Sources/Terminus/Editor/` | editor pane beside the terminal, `EditorDocument`, gutter, `SyntaxHighlighter`; `ExternalOpener`/`OpenWith` (files in the app the user picked) |
+| `Sources/Terminus/Editor/` | the editor pane, Zed's way — docs/architecture.md, Editor: `EditorViewController` (+Editing, +Navigation, +Intelligence), `EditorBuffer` (one open file), `CodeTextView`, `EditorGutter`, `EditCommands` (pure), `Syntax/` (tree-sitter, Helix queries, One Dark), `LSP/` (language servers), `Vim/` (pure); `SyntaxHighlighter` is the changes pane's; `ExternalOpener`/`OpenWith` (files in the app the user picked) |
 | `Sources/Terminus/Git/` | `Git.run` (libdispatch-backed), porcelain / numstat / unified-diff parsers, `Worktree` |
 | `Sources/Terminus/Tasks/` | New Task: worktree + branch + agent |
 | `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
@@ -59,8 +60,10 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **The same goes for Apple completion handlers** (UserNotifications, and any API that answers on its own queue): a closure written in a `@MainActor` type is main-actor-isolated, and Swift 6 traps when the system calls it elsewhere — `EXC_BREAKPOINT` in `dispatch_assert_queue`. It took the app down at an agent's notification (`AttentionNotifier.authorized`). Build such closures in a `nonisolated` function, or use the `async` variant.
 - **Clipboard confirmations complete *confirmed*** — the text, or `""` to refuse (`ClipboardConfirmation.reply`). Completed unconfirmed, libghostty asks again at once: that looped until the stack overflowed, crashing the app on any OSC 52 read.
 - **Git goes through `Git.run`** — a GCD thread per call, never a blocked Swift-concurrency thread (the cooperative pool starves; signalbox froze that way).
+- **Tree-sitter and the grammars are pinned as a set with Helix's queries** (`Scripts/build-treesitter.sh`): each grammar at the revision that Helix release pins. Later query patterns win (Helix 25.07+). A query that doesn't compile leaves its language plain — `SyntaxDocumentTests` compiles every one.
+- **Never walk up directories comparing paths with "/"**: `/`'s `deletingLastPathComponent` is `/../`, so the loop never ends — one took 51 GB and the machine down. Stop on `pathComponents.count <= 1`, and bound the loop.
 - **Ghostty is pinned to v1.3.1** (`Scripts/build-ghosttykit.sh`, SHA-checked) with Zig 0.15.2 (`mise.toml`): Ghostty main needs Xcode 26. Bump both together; check `ghostty.h` for API changes. A weekly workflow (`ghostty-release-check`, the repo's only one — macOS CI is too expensive) opens an issue with the steps when Ghostty tags a newer release.
-- **Views don't clip by default since macOS 14.** A subview drawing past its bounds (the editor gutter did) paints over neighbours — set `clipsToBounds` where content is taller than the view.
+- **Views don't clip by default since macOS 14.** A subview drawing past its bounds paints over neighbours — the editor gutter did, and the editor's status bar filling its whole dirty rect blanked the pane above it. Set `clipsToBounds` where content may be taller than the view, and fill `dirtyRect.intersection(bounds)`.
 - **The tab strip lives in the title bar**, which swallows right-clicks before SwiftUI sees them. Context menus there go through the window's local event monitor (`installTabRightClick`), not `.contextMenu`.
 - **The window's split dividers measure nothing**; the 10 pt gap between the cards belongs to the cards (`CardColumn.gap`), because a divider is measured even for a collapsed item — as a 10 pt one, it left 30 pt dead down the right of the window. `WideDividerSplitViewController` widens the divider to a grab band over the gap. Autosave key `TerminusColumns.v4` — bump the version whenever the column set changes, or stale positions are applied to new columns.
 - **Closing always asks** by default (tab, window, app); only a shell's own `exit` closes silently. Keep "Always" the default — it was asked for. Settings ▸ General can make it "only when something is running" (`needsCloseConfirmation`); any new close path goes through that.

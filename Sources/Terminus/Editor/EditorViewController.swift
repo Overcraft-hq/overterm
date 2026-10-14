@@ -1,32 +1,73 @@
 import AppKit
 import Combine
-import SwiftUI
 
-/// The code editor pane beside the terminal: a header (name, unsaved dot,
-/// open elsewhere, close) over a plain-text editor with line numbers.
+/// The code editor pane beside the terminal, Zed's way: a tab per open file,
+/// tree-sitter colours, a gutter with numbers, git changes and problems,
+/// completions and go-to from language servers, Zed's keys and (if asked)
+/// vim. One text view; each file is an EditorBuffer it swaps in.
 @MainActor
-final class EditorViewController: NSViewController, NSTextViewDelegate {
-    let document = EditorDocument()
+final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextStorageDelegate {
     /// Asked to hide the pane (after any unsaved-changes question).
     var onClose: (() -> Void)?
+    /// Asked to fill the window with the editor, or give the terminal back.
+    var onToggleZoom: (() -> Void)?
+    /// Where Go to File looks: the window's checkout.
+    var workspaceRoot: (() -> URL?)?
 
-    private let theme: ChromeTheme
-    private let background: NSColor
-    private let foreground: NSColor
+    let chrome: ChromeTheme
+    let theme: EditorTheme
     /// The header's ↗: the file in the app picked for files.
-    private let opener: ExternalOpener
-    private var textView: NSTextView!
-    private var ruler: LineNumberRuler!
-    private var messageLabel: NSTextField!
-    private var scrollView: NSScrollView!
-    private var language: SyntaxHighlighter.Language?
-    private var cancellables: Set<AnyCancellable> = []
-    private var pendingHighlight: DispatchWorkItem?
+    let opener: ExternalOpener
 
-    init(theme: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener) {
-        self.theme = theme
-        self.background = background
-        self.foreground = foreground
+    private(set) var buffers: [EditorBuffer] = []
+    private(set) var activeIndex = -1
+    var active: EditorBuffer? { buffers.indices.contains(activeIndex) ? buffers[activeIndex] : nil }
+    /// Stands in while nothing is open, so `document` is never nil.
+    private let emptyDocument = EditorDocument()
+    /// The file showing — E2E, the window's close questions.
+    var document: EditorDocument { active?.document ?? emptyDocument }
+    var unsavedNames: [String] { buffers.filter(\.document.isDirty).map(\.name) }
+
+    private(set) var textView: CodeTextView!
+    private(set) var gutter: EditorGutter!
+    private(set) var scrollView: NSScrollView!
+    private var header: EditorHeaderView!
+    private var breadcrumb: EditorBreadcrumbView!
+    private(set) var statusBar: EditorStatusBar!
+    private var messageLabel: NSTextField!
+    private var lineHeight: EditorLineHeight!
+    private var cancellables: Set<AnyCancellable> = []
+    private var documentObservers: Set<AnyCancellable> = []
+    private var flushScheduled = false
+    /// While a buffer is being swapped in, its storage events aren't edits.
+    private var swapping = false
+
+    // Shared with the extensions.
+    var completion: CompletionState?
+    lazy var completionPopup: CompletionPopup = {
+        let popup = CompletionPopup(theme: theme)
+        popup.onChoose = { [weak self] index in self?.acceptCompletion(at: index) }
+        return popup
+    }()
+    var picker: EditorPicker?
+    var hover: NSPopover?
+    var vim: VimEngine?
+    /// ⌘D's whole-word mode, kept between presses.
+    var occurrenceWholeWord = false
+    var settingSelection = false
+    var history = NavigationHistory()
+    var isZoomed = false {
+        didSet { header?.setZoomed(isZoomed) }
+    }
+    var pendingSelectionWork: DispatchWorkItem?
+    var pendingGitWork: DispatchWorkItem?
+    var pendingServerChange: DispatchWorkItem?
+    /// The innermost symbol around the caret, from the language server.
+    var currentSymbols: [EditorSymbol] = []
+
+    init(theme chrome: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener) {
+        self.chrome = chrome
+        self.theme = EditorTheme(background: background)
         self.opener = opener
         super.init(nibName: nil, bundle: nil)
     }
@@ -35,68 +76,73 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         fatalError("init(coder:) is not supported")
     }
 
+    // MARK: Views
+
     override func loadView() {
         let root = NSView()
-        let header = EditorHeaderView(
-            background: theme.stripNS, text: foreground,
-            onReveal: { [weak self] in
-                guard let self, let url = self.document.url else { return }
-                self.opener.open(url)
-            },
-            revealMenu: { [weak self] in
-                guard let self, let url = self.document.url else { return nil }
-                return self.opener.menu(for: url)
-            },
-            onClose: { [weak self] in self?.requestClose() })
-        document.$url.combineLatest(document.$isDirty)
-            .receive(on: DispatchQueue.main)
-            .sink { url, dirty in header.update(name: url?.lastPathComponent ?? "", path: url?.path ?? "", dirty: dirty) }
-            .store(in: &cancellables)
-        // The emitted value: @Published sends before the property changes.
+        let header = EditorHeaderView(background: chrome.stripNS, text: theme.text, accent: theme.info)
+        header.onSelect = { [weak self] in self?.activate($0) }
+        header.onCloseTab = { [weak self] in self?.closeBuffer(at: $0) }
+        header.onZoom = { [weak self] in self?.onToggleZoom?() }
+        header.onReveal = { [weak self] in
+            guard let self, let url = self.active?.url else { return }
+            self.opener.open(url)
+        }
+        header.revealMenu = { [weak self] in
+            guard let self, let url = self.active?.url else { return nil }
+            return self.opener.menu(for: url)
+        }
+        header.onClose = { [weak self] in self?.requestClose() }
         opener.$current
             .sink { header.setRevealTitle(OpenWith.openTitle($0)) }
             .store(in: &cancellables)
 
-        // TextKit 1 on purpose: the line-number ruler walks the layout
-        // manager's line fragments.
-        let storage = NSTextStorage()
+        let font = Self.font
+        lineHeight = EditorLineHeight(font: font, multiple: Settings.shared.editorLineHeight)
+        // TextKit 1 on purpose: the gutter walks the layout manager's line
+        // fragments, and the line height is its delegate's.
         let layout = NSLayoutManager()
         // Only what is on screen gets laid out: a 4 MB file took 1.8 s to open
-        // with the whole of it laid out first. The ruler draws the visible
-        // fragments only, so it is unaffected.
+        // with the whole of it laid out first.
         layout.allowsNonContiguousLayout = true
-        storage.addLayoutManager(layout)
-        // Unbounded width: no wrapping. (A 0-wide container lays out nothing —
-        // the gutter numbered empty lines.)
+        layout.delegate = lineHeight
+        emptyStorage.addLayoutManager(layout)
         let container = NSTextContainer(size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = false
+        container.lineFragmentPadding = 4
         layout.addTextContainer(container)
-        let textView = NSTextView(frame: .zero, textContainer: container)
+        let textView = CodeTextView(frame: .zero, textContainer: container)
+        textView.host = self
+        textView.theme = theme
         textView.isRichText = false
+        textView.importsGraphics = false
         textView.allowsUndo = true
         textView.usesFindBar = true
         textView.isIncrementalSearchingEnabled = true
         for off in [
             \NSTextView.isAutomaticQuoteSubstitutionEnabled, \.isAutomaticDashSubstitutionEnabled,
             \.isAutomaticTextReplacementEnabled, \.isAutomaticSpellingCorrectionEnabled, \.isContinuousSpellCheckingEnabled,
-            \.isAutomaticLinkDetectionEnabled,
+            \.isGrammarCheckingEnabled, \.isAutomaticLinkDetectionEnabled, \.isAutomaticDataDetectionEnabled,
+            \.isAutomaticTextCompletionEnabled, \.smartInsertDeleteEnabled,
         ] {
+            // Grammar checking was left on: it underlined prose in red.
             textView[keyPath: off] = false
         }
-        textView.font = Self.font
-        textView.textColor = foreground
-        textView.backgroundColor = background
-        textView.insertionPointColor = foreground
-        textView.textContainerInset = NSSize(width: 6, height: 8)
-        // No wrapping: code scrolls sideways.
+        textView.font = font
+        textView.textColor = theme.text
+        textView.backgroundColor = theme.background
+        textView.insertionPointColor = theme.info
+        textView.selectedTextAttributes = [.backgroundColor: theme.selection]
+        textView.textContainerInset = NSSize(width: 8, height: 10)
         textView.isHorizontallyResizable = true
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        // No .width autoresizing: a sideways-scrolling text view sizes itself
-        // to its text; tracking the clip view's width left it scrolled into
-        // the middle of the document.
+        // No .width autoresizing while code scrolls sideways: a sideways-
+        // scrolling text view sizes itself to its text; tracking the clip
+        // view's width left it scrolled into the middle of the document.
         textView.autoresizingMask = []
         textView.delegate = self
+        textView.setAccessibilityIdentifier("editorText")
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
@@ -104,20 +150,31 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = background
-        let ruler = LineNumberRuler(textView: textView)
-        ruler.textColor = foreground.withAlphaComponent(0.4)
-        ruler.gutterColor = background
-        scrollView.verticalRulerView = ruler
+        scrollView.backgroundColor = theme.background
+        let gutter = EditorGutter(textView: textView)
+        gutter.theme = theme
+        scrollView.verticalRulerView = gutter
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = true
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.publisher(for: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+            .sink { [weak self] _ in self?.didScroll() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: NSView.frameDidChangeNotification, object: scrollView)
+            .sink { [weak self] _ in self?.didScroll() }
+            .store(in: &cancellables)
+
+        let breadcrumb = EditorBreadcrumbView(background: theme.background, text: theme.text)
+        breadcrumb.onClick = { [weak self] in self?.goToSymbol() }
+        let statusBar = EditorStatusBar(background: chrome.stripNS, text: theme.text)
+        statusBar.onProblems = { [weak self] in self?.goToProblem(forward: true) }
 
         let message = NSTextField(labelWithString: "")
-        message.textColor = foreground.withAlphaComponent(0.6)
+        message.textColor = theme.text.withAlphaComponent(0.6)
         message.alignment = .center
         message.isHidden = true
 
-        for view in [header, scrollView, message] as [NSView] {
+        for view in [header, breadcrumb, scrollView, statusBar, message] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -125,56 +182,195 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
             header.topAnchor.constraint(equalTo: root.topAnchor),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 32),
-            scrollView.topAnchor.constraint(equalTo: header.bottomAnchor),
+            header.heightAnchor.constraint(equalToConstant: 34),
+            breadcrumb.topAnchor.constraint(equalTo: header.bottomAnchor),
+            breadcrumb.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            breadcrumb.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            breadcrumb.heightAnchor.constraint(equalToConstant: 26),
+            scrollView.topAnchor.constraint(equalTo: breadcrumb.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            statusBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            statusBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            statusBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            statusBar.heightAnchor.constraint(equalToConstant: 24),
             message.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
             message.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
             message.widthAnchor.constraint(lessThanOrEqualTo: scrollView.widthAnchor, constant: -32),
         ])
         self.textView = textView
-        self.ruler = ruler
+        self.gutter = gutter
         self.scrollView = scrollView
+        self.header = header
+        self.breadcrumb = breadcrumb
+        self.statusBar = statusBar
         self.messageLabel = message
         view = root
+        header.setZoomed(isZoomed)
+        observeDiagnostics()
+        applySettings()
+        refreshChrome()
     }
 
-    // MARK: Documents
+    /// The storage the layout manager holds while no file is open.
+    private let emptyStorage = NSTextStorage()
 
-    /// Opens `url`, asking first if the current file has unsaved edits.
+    // MARK: Opening and closing files
+
+    /// Opens `url` in a tab of its own, or shows the tab it has.
     func open(_ url: URL, then done: @escaping (Bool) -> Void = { _ in }) {
-        guard url != document.url else {
+        _ = view
+        let key = url.standardizedFileURL.resolvingSymlinksInPath()
+        if let index = buffers.firstIndex(where: { $0.url?.standardizedFileURL.resolvingSymlinksInPath() == key }) {
+            activate(index)
             done(true)
             return
         }
-        confirmDiscard { [weak self] proceed in
+        let buffer = EditorBuffer()
+        buffer.storage.delegate = self
+        buffer.load(url, attributes: baseAttributes)
+        // A new tab goes after the one showing, as Zed's.
+        let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
+        buffers.insert(buffer, at: index)
+        activate(index, recordHistory: true)
+        bufferDidOpen(buffer)
+        done(true)
+    }
+
+    /// Shows the buffer at `index`, keeping where you were in the last one.
+    func activate(_ index: Int, recordHistory: Bool = false) {
+        guard buffers.indices.contains(index), let layout = textView.layoutManager else { return }
+        if recordHistory { recordPosition() }
+        hideTransientUI()
+        if let current = active {
+            current.selection = textView.selectedRanges.map(\.rangeValue)
+            current.scroll = scrollView.contentView.bounds.origin
+        }
+        activeIndex = index
+        let buffer = buffers[index]
+        swapping = true
+        layout.replaceTextStorage(buffer.storage)
+        swapping = false
+        applyWrap()
+        let unavailable = buffer.document.unavailable
+        messageLabel.stringValue = unavailable ?? ""
+        messageLabel.isHidden = unavailable == nil
+        scrollView.isHidden = unavailable != nil
+        textView.indentWidth = buffer.usesTabs ? Settings.shared.editorTabSize : buffer.indentWidth
+        textView.tabWidth = Settings.shared.editorTabSize
+        gutter.textDidChange()
+        textView.minSize = scrollView.contentSize
+        textView.sizeToFit()
+        let length = buffer.storage.length
+        let selection = buffer.selection.map { NSRange(location: min($0.location, length), length: min($0.length, length - min($0.location, length))) }
+        settingSelection = true
+        textView.selectedRanges = selection.map { NSValue(range: $0) }
+        settingSelection = false
+        if let scroll = buffer.scroll {
+            scrollView.contentView.scroll(to: scroll)
+        } else {
+            // The ruler floats over the clip view (macOS 14+), which makes
+            // room with a content inset as wide as the gutter: the top-left is
+            // minus that inset. Scrolled to .zero, the gutter covered the
+            // first characters of every line.
+            let insets = scrollView.contentView.contentInsets
+            scrollView.contentView.scroll(to: NSPoint(x: -insets.left, y: -insets.top))
+        }
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        textView.diagnostics = buffer.diagnostics
+        updateProblemLines()
+        gutter.gitMarks = buffer.gitMarks
+        observeDocument(buffer)
+        vim?.reset()
+        updateVimChrome()
+        paintVisible()
+        refreshChrome()
+        selectionDidChange()
+    }
+
+    private func observeDocument(_ buffer: EditorBuffer) {
+        documentObservers = []
+        buffer.document.$isDirty.combineLatest(buffer.document.$url)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in self?.refreshChrome() }
+            .store(in: &documentObservers)
+    }
+
+    /// Closes the file at `index`, asking first if it has unsaved edits.
+    func closeBuffer(at index: Int, then done: @escaping (Bool) -> Void = { _ in }) {
+        guard buffers.indices.contains(index) else { return done(true) }
+        if index != activeIndex { activate(index) }
+        confirmDiscard(buffers[index]) { [weak self] proceed in
             guard proceed, let self else { return done(false) }
-            self.load(url)
+            self.removeBuffer(at: index)
             done(true)
+        }
+    }
+
+    private func removeBuffer(at index: Int) {
+        let buffer = buffers[index]
+        bufferWillClose(buffer)
+        buffer.document.close()
+        buffers.remove(at: index)
+        if buffers.isEmpty {
+            activeIndex = -1
+            swapping = true
+            textView.layoutManager?.replaceTextStorage(emptyStorage)
+            swapping = false
+            hideTransientUI()
+            refreshChrome()
+            onClose?()
+            return
+        }
+        activeIndex = -1
+        activate(min(index, buffers.count - 1))
+    }
+
+    /// The header's ✕: every file, asking about each with edits.
+    func requestClose() {
+        closeAll { [weak self] closed in
+            if closed { self?.onClose?() }
+        }
+    }
+
+    private func closeAll(_ done: @escaping (Bool) -> Void) {
+        guard let last = buffers.indices.last else { return done(true) }
+        closeBuffer(at: last) { [weak self] closed in
+            guard closed, let self else { return done(false) }
+            self.buffers.isEmpty ? done(true) : self.closeAll(done)
         }
     }
 
     /// Selects line `line` (1-based) and scrolls it to the middle.
-    func go(toLine line: Int) {
+    func go(toLine line: Int, column: Int = 1) {
         _ = view
         let text = textView.string as NSString
         let starts = LineIndex.starts(of: text)
         guard line >= 1, line <= starts.count else { return }
         let start = starts[line - 1]
         let end = line < starts.count ? starts[line] - 1 : text.length
-        let range = NSRange(location: start, length: max(0, end - start))
+        let range: NSRange
+        if column > 1 {
+            range = NSRange(location: min(start + column - 1, end), length: 0)
+        } else {
+            range = NSRange(location: start, length: max(0, end - start))
+        }
+        reveal(range)
+    }
+
+    /// Selects `range` and centres it on screen.
+    func reveal(_ range: NSRange, flash: Bool = true) {
         textView.setSelectedRange(range)
         textView.scrollRangeToVisible(range)
-        // Centre it rather than leave it on the bottom edge.
-        if let rect = textView.layoutManager.map({ $0.boundingRect(forGlyphRange: $0.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: textView.textContainer!) }) {
+        if let layout = textView.layoutManager, let container = textView.textContainer {
+            let rect = layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container)
             let visible = scrollView.contentView.bounds
-            let y = max(0, rect.midY - visible.height / 2)
+            let y = max(-scrollView.contentView.contentInsets.top, rect.midY - visible.height / 2)
             scrollView.contentView.scroll(to: NSPoint(x: visible.minX, y: y))
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
-        textView.showFindIndicator(for: range)
+        if flash, range.length > 0 { textView.showFindIndicator(for: range) }
     }
 
     /// The selected line (1-based), for tests.
@@ -185,104 +381,386 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         return LineIndex.line(of: textView.selectedRange().location, in: LineIndex.starts(of: textView.string as NSString))
     }
 
-    private func load(_ url: URL) {
-        _ = view
-        document.load(url)
-        if let reason = document.unavailable {
-            textView.string = ""
-            messageLabel.stringValue = reason
-        }
-        messageLabel.isHidden = document.unavailable == nil
-        scrollView.isHidden = document.unavailable != nil
-        textView.string = document.text
-        language = SyntaxHighlighter.language(for: url)
-        highlight(loading: true)
-        textView.undoManager?.removeAllActions()
-        textView.setSelectedRange(NSRange(location: 0, length: 0))
-        // At least as big as the visible area, so a click below the last line
-        // still lands in the text view; then show the top-left corner.
-        ruler.textDidChange()
-        textView.minSize = scrollView.contentSize
-        textView.sizeToFit()
-        // The ruler floats over the clip view (macOS 14+), which makes room
-        // with a content inset as wide as the gutter: the top-left is minus
-        // that inset. Scrolled to .zero, the gutter covered the first
-        // characters of every line — six in a file of 70 000 lines.
-        let insets = scrollView.contentView.contentInsets
-        scrollView.contentView.scroll(to: NSPoint(x: -insets.left, y: -insets.top))
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-    }
-
-    /// An agent may have rewritten the file: pick that up unless you have
+    /// An agent may have rewritten a file: pick that up unless you have
     /// edits of your own.
     func reloadIfChangedOnDisk() {
-        guard let url = document.url, document.changedOnDisk, !document.isDirty else { return }
-        let selection = textView.selectedRange()
-        load(url)
-        textView.setSelectedRange(NSRange(location: min(selection.location, (textView.string as NSString).length), length: 0))
-        textView.scrollRangeToVisible(textView.selectedRange())
+        for buffer in buffers {
+            guard let url = buffer.url, buffer.document.changedOnDisk, !buffer.document.isDirty else { continue }
+            let isActive = buffer === active
+            let selection = isActive ? textView.selectedRange() : buffer.selection.first ?? NSRange(location: 0, length: 0)
+            buffer.document.load(url)
+            buffer.setText(buffer.document.text, attributes: baseAttributes)
+            buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
+            bufferDidReload(buffer)
+            if isActive {
+                textView.setSelectedRange(buffer.selection[0])
+                gutter.textDidChange()
+                paintVisible()
+            }
+        }
     }
 
     func focus() {
         view.window?.makeFirstResponder(textView)
     }
 
-    func textDidChange(_ notification: Notification) {
-        document.markEdited()
-        ruler.textDidChange()
-        // Coalesce a burst of typing into one pass.
-        pendingHighlight?.cancel()
-        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.highlight() } }
-        pendingHighlight = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    // MARK: Text and its colours
+
+    /// Settings ▸ Editor's family and size.
+    static var font: NSFont {
+        let size = CGFloat(Settings.shared.editorFontSize)
+        let family = Settings.shared.editorFontFamily
+        if !family.isEmpty, let font = NSFont(name: family, size: size) { return font }
+        return .monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    // MARK: Highlighting
+    var baseAttributes: [NSAttributedString.Key: Any] {
+        let font = textView?.font ?? Self.font
+        let paragraph = NSMutableParagraphStyle()
+        let space = ("m" as NSString).size(withAttributes: [.font: font]).width
+        paragraph.defaultTabInterval = space * CGFloat(Settings.shared.editorTabSize)
+        paragraph.tabStops = []
+        return [.font: font, .foregroundColor: theme.text, .paragraphStyle: paragraph]
+    }
 
-    /// Settings ▸ Editor's size.
-    private static var font: NSFont { .monospacedSystemFont(ofSize: CGFloat(Settings.shared.editorFontSize), weight: .regular) }
-
-    /// The size changed in Settings: the open file takes it.
-    func applyFontSize() {
+    /// Settings changed: the editor takes whichever were its.
+    func applySettings(_ keys: Set<String>? = nil) {
         guard isViewLoaded else { return }
-        textView.font = Self.font
-        highlight(loading: true)
-        ruler.textDidChange()
+        let font = Self.font
+        let fontChanged = textView.font != font || lineHeight.multiple != Settings.shared.editorLineHeight
+        textView.font = font
+        lineHeight.font = font
+        lineHeight.multiple = Settings.shared.editorLineHeight
+        textView.showsIndentGuides = Settings.shared.editorIndentGuides
+        gutter.relativeNumbers = Settings.shared.editorRelativeLineNumbers
+        if Settings.shared.editorVimMode, vim == nil {
+            startVim()
+        } else if !Settings.shared.editorVimMode, vim != nil {
+            stopVim()
+        }
+        if fontChanged || keys?.contains("editor.tabSize") == true {
+            let attributes = baseAttributes
+            for buffer in buffers {
+                buffer.storage.beginEditing()
+                buffer.storage.setAttributes(attributes, range: NSRange(location: 0, length: buffer.storage.length))
+                buffer.storage.endEditing()
+                buffer.painted = IndexSet()
+            }
+            textView.typingAttributes = attributes
+            textView.layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage?.length ?? 0), actualCharacterRange: nil)
+            gutter.updateThickness()
+            paintVisible()
+        }
+        applyWrap()
+        if keys?.contains("editor.languageServers") == true { languageServersSettingChanged() }
+        if keys?.contains("editor.gitGutter") == true { buffers.forEach { refreshGitBase($0) } }
+        gutter.needsDisplay = true
     }
 
-    /// Re-colours the whole document. Attributes only — never the text —
-    /// so undo is untouched.
-    /// Past SyntaxHighlighter.maxLength there are no colours to update, and
-    /// re-setting the base attributes over the whole text on every pause in
-    /// typing made it all lay out again (165 ms a pause in a 4 MB file): it is
-    /// done once, as the file loads.
-    private func highlight(loading: Bool = false) {
-        guard let storage = textView.textStorage else { return }
-        guard loading || storage.length <= SyntaxHighlighter.maxLength else { return }
-        let full = NSRange(location: 0, length: storage.length)
-        let font = Self.font
-        let italic = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
-        storage.beginEditing()
-        storage.setAttributes([.foregroundColor: foreground, .font: font], range: full)
-        if let language, storage.length <= SyntaxHighlighter.maxLength {
-            for (range, kind) in SyntaxHighlighter.tokens(in: storage.string, language: language) where NSMaxRange(range) <= storage.length {
-                storage.addAttribute(.foregroundColor, value: SyntaxPalette.color(kind, text: foreground), range: range)
-                if kind == .comment { storage.addAttribute(.font, value: italic, range: range) }
+    /// The size changed in Settings (the window's old entry point).
+    func applyFontSize() { applySettings(["editor.fontSize"]) }
+
+    /// Wraps long lines at the pane's edge, or lets code scroll sideways.
+    func applyWrap() {
+        guard let container = textView.textContainer else { return }
+        let wrap: Bool
+        switch Settings.shared.editorSoftWrap {
+        case "always": wrap = true
+        case "none": wrap = false
+        default:
+            let ext = active?.url?.pathExtension.lowercased() ?? ""
+            wrap = active?.language?.id == "markdown" || ["txt", "text", "rst", "adoc", "org", ""].contains(ext)
+        }
+        let wrapping = active?.wrapOverride ?? wrap
+        guard container.widthTracksTextView != wrapping || textView.isHorizontallyResizable == wrapping else { return }
+        if wrapping {
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+            container.widthTracksTextView = true
+            textView.frame.size.width = scrollView.contentSize.width
+            container.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+            scrollView.hasHorizontalScroller = false
+        } else {
+            container.widthTracksTextView = false
+            container.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask = []
+            scrollView.hasHorizontalScroller = true
+        }
+        textView.sizeToFit()
+        gutter.needsDisplay = true
+    }
+
+    nonisolated func textStorage(
+        _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        guard editedMask.contains(.editedCharacters) else { return }
+        // Storages are only edited on the main thread: the text view's.
+        nonisolated(unsafe) let storage = textStorage
+        MainActor.assumeIsolated {
+            guard !swapping, let buffer = buffers.first(where: { $0.storage === storage }) else { return }
+            buffer.noteEdit(location: editedRange.location, oldLength: editedRange.length - delta, newLength: editedRange.length)
+            scheduleFlush()
+        }
+    }
+
+    /// The parser hears of a burst of edits once, after the run loop pass
+    /// that made them, and the screen's colours follow.
+    private func scheduleFlush() {
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.flushScheduled = false
+                for buffer in self.buffers { buffer.flushEdits() }
+                self.paintVisible()
             }
         }
-        storage.endEditing()
-        textView.typingAttributes = [.foregroundColor: foreground, .font: font]
     }
+
+    func textDidChange(_ notification: Notification) {
+        guard let buffer = active else { return }
+        buffer.document.markEdited()
+        gutter.textDidChange()
+        bufferDidChange(buffer)
+        scheduleGitMarks(buffer)
+    }
+
+    /// The characters on screen, and a screen's worth either side: scrolling
+    /// a little finds them coloured already.
+    private var paintRange: NSRange {
+        guard let layout = textView.layoutManager, let container = textView.textContainer else { return NSRange(location: 0, length: 0) }
+        let visible = layout.characterRange(forGlyphRange: layout.glyphRange(forBoundingRect: textView.visibleRect, in: container), actualGlyphRange: nil)
+        let text = textView.string as NSString
+        let margin = max(visible.length, 2000)
+        let start = max(0, visible.location - margin)
+        let end = min(text.length, NSMaxRange(visible) + margin)
+        let lines = text.lineRange(for: NSRange(location: start, length: end - start))
+        return lines
+    }
+
+    func didScroll() {
+        gutter.needsDisplay = true
+        paintVisible()
+    }
+
+    /// Asks for the colours of what is on screen, unless it has them.
+    func paintVisible() {
+        guard let buffer = active, let syntax = buffer.syntax, isViewLoaded else { return }
+        let range = paintRange
+        guard range.length > 0, !buffer.painted.contains(integersIn: range.location..<NSMaxRange(range)) else { return }
+        let version = buffer.version
+        syntax.highlights(in: range) { [weak self, weak buffer] parsed, spans in
+            MainActor.assumeIsolated {
+                // Spans for an older text land in the wrong places: a newer
+                // request is already queued behind the edit that made it.
+                guard let self, let buffer, parsed == buffer.version, version == buffer.version else { return }
+                self.paint(spans, over: range, in: buffer)
+            }
+        }
+    }
+
+    private func paint(_ spans: [SyntaxDocument.Span], over range: NSRange, in buffer: EditorBuffer) {
+        // Don't recolour under an IME's composition: it owns those attributes.
+        if buffer === active, textView.hasMarkedText() { return }
+        let storage = buffer.storage
+        guard NSMaxRange(range) <= storage.length else { return }
+        let base = baseAttributes
+        let font = base[.font] as? NSFont ?? Self.font
+        let manager = NSFontManager.shared
+        let bold = manager.convert(font, toHaveTrait: .boldFontMask)
+        let italic = manager.convert(font, toHaveTrait: .italicFontMask)
+        let boldItalic = manager.convert(bold, toHaveTrait: .italicFontMask)
+        var styles: [String: EditorTheme.Style?] = [:]
+        let selection = textView.selectedRanges
+        storage.beginEditing()
+        storage.setAttributes(base, range: range)
+        for span in spans {
+            let clipped = NSIntersectionRange(span.range, range)
+            guard clipped.length > 0 else { continue }
+            let style: EditorTheme.Style?
+            if let cached = styles[span.capture] {
+                style = cached
+            } else {
+                style = theme.style(for: span.capture)
+                styles[span.capture] = style
+            }
+            guard let style else { continue }
+            storage.addAttribute(.foregroundColor, value: style.color, range: clipped)
+            if style.bold || style.italic {
+                storage.addAttribute(.font, value: style.bold && style.italic ? boldItalic : style.bold ? bold : italic, range: clipped)
+            }
+            if style.underline { storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: clipped) }
+            if style.strikethrough { storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: clipped) }
+        }
+        storage.endEditing()
+        buffer.painted.insert(integersIn: range.location..<NSMaxRange(range))
+        if buffer === active {
+            // Recolouring mustn't move the caret or the selection.
+            if textView.selectedRanges != selection { textView.selectedRanges = selection }
+            textView.typingAttributes = base
+        }
+    }
+
+    // MARK: Chrome
+
+    func refreshChrome() {
+        guard isViewLoaded else { return }
+        header.update(
+            buffers.map { .init(name: $0.name, path: $0.url?.path ?? "", dirty: $0.document.isDirty) }, active: activeIndex)
+        updateBreadcrumb()
+        updateStatus()
+    }
+
+    func updateBreadcrumb() {
+        guard let url = active?.url else { return breadcrumb.update(path: [], symbol: nil) }
+        var parts: [String]
+        if let root = workspaceRoot?() ?? Self.gitRoot(of: url), url.path.hasPrefix(root.path + "/") {
+            parts = [root.lastPathComponent] + url.path.dropFirst(root.path.count + 1).split(separator: "/").map(String.init)
+        } else {
+            parts = url.pathComponents.suffix(3).map { $0 }
+        }
+        if parts.count > 6 { parts = [parts[0], "…"] + parts.suffix(4) }
+        breadcrumb.update(path: parts, symbol: symbolAtCaret()?.name)
+    }
+
+    func updateStatus() {
+        guard isViewLoaded else { return }
+        guard let buffer = active else {
+            statusBar.update(line: 0, column: 0, selected: 0, cursors: 0)
+            statusBar.update(indent: "", language: "", server: nil)
+            statusBar.update(errors: 0, warnings: 0)
+            return
+        }
+        let text = textView.string as NSString
+        let caret = min(textView.selectedRange().location, text.length)
+        let line = LineIndex.line(of: caret, in: gutter.lineStarts)
+        let lineStart = gutter.lineStarts[max(0, min(line - 1, gutter.lineStarts.count - 1))]
+        // The column as a person counts it: characters, a tab as its width.
+        var column = 1
+        var i = lineStart
+        while i < caret {
+            let range = text.rangeOfComposedCharacterSequence(at: i)
+            column += text.character(at: i) == 0x09 ? Settings.shared.editorTabSize : 1
+            i = NSMaxRange(range)
+        }
+        let selected = textView.selectedRanges.reduce(0) { $0 + $1.rangeValue.length }
+        statusBar.update(line: line, column: column, selected: selected, cursors: textView.selectedRanges.count)
+        statusBar.update(
+            indent: buffer.usesTabs ? "Tabs" : "Spaces: \(buffer.indentWidth)", language: buffer.language?.name ?? "Plain Text",
+            server: serverName(for: buffer))
+        let errors = buffer.diagnostics.filter { $0.severity == .error }.count
+        let warnings = buffer.diagnostics.filter { $0.severity == .warning }.count
+        statusBar.update(errors: errors, warnings: warnings)
+    }
+
+    func updateProblemLines() {
+        guard let buffer = active else { return }
+        var lines: [Int: EditorDiagnostic.Severity] = [:]
+        let starts = gutter.lineStarts
+        for diagnostic in buffer.diagnostics {
+            let line = LineIndex.line(of: diagnostic.range.location, in: starts) - 1
+            lines[line] = min(lines[line] ?? .hint, diagnostic.severity)
+        }
+        gutter.problemLines = lines
+    }
+
+    // MARK: Selection
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        if !settingSelection, vim?.isSettingSelection == false { vim?.selectionDidChange() }
+        occurrenceWholeWord = occurrenceWholeWord && textView.selectedRanges.count > 1
+        selectionDidChange()
+    }
+
+    func selectionDidChange() {
+        guard isViewLoaded else { return }
+        updateStatus()
+        updateCompletionForSelection()
+        gutter.needsDisplay = true
+        // Brackets, matching words and the breadcrumb wait for the caret to rest.
+        pendingSelectionWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.updateBracketPair()
+                self.updateWordHighlights()
+                self.updateBreadcrumb()
+            }
+        }
+        pendingSelectionWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: work)
+    }
+
+    private func updateBracketPair() {
+        let text = textView.string as NSString
+        let selection = textView.selectedRange()
+        guard selection.length == 0, textView.selectedRanges.count == 1,
+            let match = EditCommands.matchingBracket(at: selection.location, in: text)
+        else { return textView.bracketPair = [] }
+        textView.bracketPair = [NSRange(location: match.bracket, length: 1), NSRange(location: match.partner, length: 1)]
+    }
+
+    /// The word at the caret, everywhere on screen — Zed's shading.
+    private func updateWordHighlights() {
+        let text = textView.string as NSString
+        let selection = textView.selectedRange()
+        guard selection.length == 0, textView.selectedRanges.count == 1, text.length > 0,
+            let word = Self.wordRange(at: selection.location, in: text), word.length >= 2
+        else { return textView.wordHighlights = [] }
+        let needle = text.substring(with: word)
+        let range = paintRange
+        var found: [NSRange] = []
+        var search = range
+        while found.count < 200 {
+            let hit = text.range(of: needle, options: [.literal], range: search)
+            guard hit.location != NSNotFound else { break }
+            let before = hit.location > 0 ? text.character(at: hit.location - 1) : 0x20
+            let after = NSMaxRange(hit) < text.length ? text.character(at: NSMaxRange(hit)) : 0x20
+            if !Self.isWordUnit(before), !Self.isWordUnit(after), hit != word { found.append(hit) }
+            search = NSRange(location: NSMaxRange(hit), length: NSMaxRange(range) - NSMaxRange(hit))
+            if search.length <= 0 { break }
+        }
+        textView.wordHighlights = found.isEmpty ? [] : found + [word]
+    }
+
+    static func isWordUnit(_ c: unichar) -> Bool {
+        c == 0x5F || (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) || c > 0x7F
+    }
+
+    /// The identifier at (or just before) `index`.
+    static func wordRange(at index: Int, in text: NSString) -> NSRange? {
+        var start = min(index, text.length)
+        var end = start
+        while start > 0, isWordUnit(text.character(at: start - 1)) { start -= 1 }
+        while end < text.length, isWordUnit(text.character(at: end)) { end += 1 }
+        return end > start ? NSRange(location: start, length: end - start) : nil
+    }
+
+    // MARK: Undo
+
+    func undoManager(for view: NSTextView) -> UndoManager? { active?.undo }
+
+    // MARK: Saving
 
     @objc func saveDocument(_ sender: Any?) {
-        save(overwriting: false)
+        guard let buffer = active else { return }
+        save(buffer, overwriting: false)
     }
 
-    private func save(overwriting: Bool) {
+    func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
+        if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
+            formatDocument { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
+            return
+        }
         do {
-            try document.save(textView.string, overwriting: overwriting)
+            try buffer.document.save(buffer.storage.string, overwriting: overwriting)
+            bufferDidSave(buffer)
+            refreshGitBase(buffer)
         } catch is EditorDocument.ChangedOnDisk {
-            confirmOverwrite()
+            confirmOverwrite(buffer)
         } catch {
             view.window.map { NSAlert(error: error).beginSheetModal(for: $0) }
         }
@@ -290,34 +768,25 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// Something else wrote the file while it had edits here. Cancel first:
     /// Return keeps both — theirs on disk, yours in the editor.
-    private func confirmOverwrite() {
+    private func confirmOverwrite(_ buffer: EditorBuffer) {
         guard let window = view.window else { return }
         let alert = NSAlert()
-        alert.messageText = "“\(document.name)” changed on disk"
+        alert.messageText = "“\(buffer.name)” changed on disk"
         alert.informativeText = "Something else saved it since you opened it — an agent, most likely. Saving replaces those changes with yours."
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Save Anyway").keyEquivalent = ""
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertSecondButtonReturn else { return }
-            self?.save(overwriting: true)
-        }
-    }
-
-    private func requestClose() {
-        confirmDiscard { [weak self] proceed in
-            guard proceed, let self else { return }
-            self.document.close()
-            self.textView.string = ""
-            self.onClose?()
+            self?.save(buffer, overwriting: true, formatted: true)
         }
     }
 
     /// Unsaved edits: Save, Don't Save, or Cancel. `proceed` is false only
     /// for Cancel (or a failed save).
-    private func confirmDiscard(_ proceed: @escaping (Bool) -> Void) {
-        guard document.isDirty, let window = view.window else { return proceed(true) }
+    private func confirmDiscard(_ buffer: EditorBuffer, _ proceed: @escaping (Bool) -> Void) {
+        guard buffer.document.isDirty, let window = view.window else { return proceed(true) }
         let alert = NSAlert()
-        alert.messageText = "Save changes to “\(document.name)”?"
+        alert.messageText = "Save changes to “\(buffer.name)”?"
         alert.informativeText = "Your changes will be lost if you don’t save them."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
@@ -326,8 +795,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
             guard let self else { return }
             switch response {
             case .alertFirstButtonReturn:
-                self.saveDocument(nil)
-                proceed(!self.document.isDirty)
+                self.save(buffer, overwriting: false, formatted: true)
+                proceed(!buffer.document.isDirty)
             case .alertThirdButtonReturn:
                 proceed(true)
             default:
@@ -335,114 +804,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
             }
         }
     }
-}
 
-/// Name (centred, with an unsaved dot), open-in-app and close. AppKit: a
-/// SwiftUI header in this pane, created while the pane was collapsed,
-/// never drew.
-private final class EditorHeaderView: NSView {
-    private let title = NSTextField(labelWithString: "")
-    private let dot = NSView()
-    private let reveal = MenuButton()
-    private let onReveal: () -> Void
-    private let onClose: () -> Void
-    private let background: NSColor
-
-    override func draw(_ dirtyRect: NSRect) {
-        background.setFill()
-        dirtyRect.fill()
-    }
-
-    /// `revealMenu`: Open With, on a right-click on ↗.
-    init(
-        background: NSColor, text: NSColor, onReveal: @escaping () -> Void, revealMenu: @escaping () -> NSMenu?,
-        onClose: @escaping () -> Void
-    ) {
-        self.onReveal = onReveal
-        self.onClose = onClose
-        self.background = background
-        super.init(frame: .zero)
-
-        title.font = .systemFont(ofSize: 12)
-        title.textColor = text
-        title.lineBreakMode = .byTruncatingMiddle
-        title.alignment = .center
-        dot.wantsLayer = true
-        dot.layer?.backgroundColor = text.cgColor
-        dot.layer?.cornerRadius = 3
-        dot.isHidden = true
-        dot.toolTip = "Unsaved — ⌘S"
-
-        Self.style(reveal, "arrow.up.forward.app", tip: OpenWith.openTitle(nil), color: text, target: self, action: #selector(revealFile))
-        reveal.identifier = NSUserInterfaceItemIdentifier("openExternally")
-        reveal.menuProvider = revealMenu
-        let close = Self.style(NSButton(), "xmark", tip: "Close Editor", color: text, target: self, action: #selector(close))
-        for view in [title, dot, reveal, close] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        NSLayoutConstraint.activate([
-            close.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            close.centerYAnchor.constraint(equalTo: centerYAnchor),
-            close.widthAnchor.constraint(equalToConstant: 22),
-            reveal.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -4),
-            reveal.centerYAnchor.constraint(equalTo: centerYAnchor),
-            reveal.widthAnchor.constraint(equalToConstant: 22),
-            title.centerXAnchor.constraint(equalTo: centerXAnchor),
-            title.centerYAnchor.constraint(equalTo: centerYAnchor),
-            title.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 24),
-            title.trailingAnchor.constraint(lessThanOrEqualTo: reveal.leadingAnchor, constant: -8),
-            dot.widthAnchor.constraint(equalToConstant: 6),
-            dot.heightAnchor.constraint(equalToConstant: 6),
-            dot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            dot.trailingAnchor.constraint(equalTo: title.leadingAnchor, constant: -6),
-        ])
-        title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    func update(name: String, path: String, dirty: Bool) {
-        title.stringValue = name
-        title.toolTip = path
-        dot.isHidden = !dirty
-    }
-
-    /// "Open in Zed", or "Open With…" while no app is picked.
-    func setRevealTitle(_ tip: String) {
-        reveal.toolTip = tip
-        reveal.setAccessibilityLabel(tip)
-    }
-
-    @discardableResult
-    private static func style<Button: NSButton>(
-        _ button: Button, _ symbol: String, tip: String, color: NSColor, target: AnyObject, action: Selector
-    ) -> Button {
-        button.image =
-            NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium)) ?? NSImage()
-        button.imagePosition = .imageOnly
-        button.title = ""
-        button.target = target
-        button.action = action
-        button.isBordered = false
-        button.contentTintColor = color.withAlphaComponent(0.7)
-        button.toolTip = tip
-        return button
-    }
-
-    @objc private func revealFile() { onReveal() }
-    @objc private func close() { onClose() }
-}
-
-/// A button with a menu on right-click (NSView asks `menu(for:)`), built
-/// when asked: Open With depends on the file and on the app in use.
-private final class MenuButton: NSButton {
-    var menuProvider: (() -> NSMenu?)?
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        menuProvider?() ?? super.menu(for: event)
+    func hideTransientUI() {
+        dismissCompletion()
+        hover?.close()
+        hover = nil
+        picker?.dismiss()
     }
 }

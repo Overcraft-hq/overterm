@@ -736,6 +736,57 @@ with a trailing space; the pane gets the keyboard.
   (`FileTreeDrag`, SwiftUI `onDrag`); click, double-click and the row's menu
   are unchanged.
 
+## Editor
+
+The pane beside the terminal is meant to save the trip to Zed: Zed's colours,
+keys, pickers and language servers, over an `NSTextView` (TextKit 1) — IME,
+undo, accessibility and find come with it, and none of what makes Zed feel
+like Zed needs a GPU renderer.
+
+- **Files** are `EditorBuffer`s: a text storage each (the layout manager
+  swaps it in), an undo manager, a syntax tree, the selection and scroll to
+  come back to, problems and git marks. A file opens in a tab after the one
+  showing; ⌘W in the editor closes a tab (asking about edits), not the
+  terminal.
+- **Zoom**: by default (Settings ▸ Editor) a file opens with the terminal,
+  inbox and changes columns shut; ⇧⎋, the header's ⤢, choosing a tab,
+  searching the terminal or giving it the keyboard brings them back as they
+  were. Instant, not animated: an animated collapse finishing after a quick
+  un-zoom hid the terminal again.
+- **Colours** (`Syntax/`): tree-sitter with Helix's queries, and the grammar
+  revisions that Helix release pins (`Scripts/build-treesitter.sh`), so the
+  queries compile. `SyntaxDocument` parses on its own queue, in UTF-16 (a
+  byte offset is twice an `NSRange` location); edits in one run-loop pass
+  merge into one tree edit (`SyntaxEdit`). Injections are parsed as their
+  language over just their ranges of the document: markdown's inline text,
+  a fence's language, HTML's script. Only what is on screen (and a screen
+  either side) is coloured, after each parse and on scroll; spans for an
+  older text are dropped. Later patterns win, as Helix 25.07's queries
+  expect. The palette is Zed's One Dark / One Light (`EditorTheme`), picked by
+  the terminal's background; a capture takes its nearest named ancestor.
+- **Line height** is a layout-manager delegate (`EditorLineHeight`), not a
+  paragraph style, so the extra space is shared above and below the text.
+- **Keys**: the editor's commands are `KeyCommands` with `editor: true` —
+  Zed's (VS Code keymap) defaults, a scope of their own. `CodeTextView` takes
+  them in `performKeyEquivalent` (⌘ keys, before the menu: ⌘D is Add Next
+  Match here and Split Right in the terminal) and in `keyDown` (the rest:
+  ⌥↑, F12, ⌃G). They are never menu key equivalents: ⌥↑ there would be taken
+  from the terminal too. Order in `keyDown`: the completion list, vim, the
+  shortcuts. The editing itself (auto-indent, pairs, comments, moving and
+  duplicating lines, ⌘D) is `EditCommands`: pure, text and selections in, one
+  undoable change out.
+- **Language servers** (`LSP/`): one per language and project root, started
+  on a file's first open, found on Homebrew/Go/Cargo paths, through `xcrun`,
+  or among the servers Zed downloaded. Full-text sync, debounced, flushed
+  before any request; UTF-16 positions. Diagnostics, completion (with the
+  file's own words, `CompletionMatch`), hover, definition, references,
+  symbols, formatting. Nothing launches in tests or isolated runs unless
+  `discoveryOverride` hands in a fake.
+- **Vim** (`Vim/`, Settings ▸ Editor): a pure engine over a `VimBuffer`, which
+  the pane is; Zed's choices — yanks go to the clipboard.
+- **Git gutter**: the file at HEAD (`git show HEAD:./name`), diffed by line
+  (`LineDiff`) off the main thread a moment after typing stops.
+
 ## Opening files in another app
 
 A file leaves Overterm — the file tree's double-click, its menu's **Open in
