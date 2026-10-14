@@ -170,9 +170,21 @@ enum SettingsSchema {
             help: "Draws text a little bolder, as some prefer on light backgrounds.", kind: .toggle, defaultValue: nil,
             ghostty: "font-thicken"),
         SettingSpec(
-            key: "appearance.theme", section: .appearance, group: "Colours", title: "Theme",
+            key: "appearance.theme", section: .themes, group: "Colours", title: "Theme",
             help: "The terminal changes at once; the tab strip and sidebar take the new colours on the next launch.",
             kind: .dynamicChoice(.themes), defaultValue: nil, ghostty: "theme"),
+        SettingSpec(
+            key: "appearance.followSystemAppearance", section: .themes, group: "Colours",
+            title: "Follow macOS between a light and a dark theme",
+            help: "Ghostty switches as the system does — no relaunch, and no reading a dark theme in daylight.",
+            // All three write the one `theme` option (Settings.themeLines);
+            // naming it here is also what tells the window to rewrite the
+            // overrides file when one of them changes.
+            kind: .toggle, defaultValue: nil, ghostty: "theme"),
+        SettingSpec(
+            key: "appearance.themeLight", section: .themes, group: "Colours", title: "Light theme",
+            help: "Used while macOS is light, and only while the setting above is on.", kind: .dynamicChoice(.themes),
+            defaultValue: nil, ghostty: "theme", requires: "appearance.followSystemAppearance"),
         SettingSpec(
             key: "appearance.windowPadding", section: .appearance, group: "Window", title: "Padding around the text",
             kind: .integer(0...40, step: 2, unit: "pt"), defaultValue: nil, ghostty: "window-padding"),

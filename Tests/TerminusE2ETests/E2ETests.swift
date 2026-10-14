@@ -80,6 +80,7 @@ final class E2ETests: XCTestCase {
     func testOpenFromFinder() throws { try run("openFromFinder") }
     func testSessions() throws { try run("sessions") }
     func testSettings() throws { try run("settings") }
+    func testThemes() throws { try run("themes") }
     func testUpdates() throws { try run("updates") }
     func testPerformance() throws { try run("performance") }
     func testBigFiles() throws { try run("bigFiles") }

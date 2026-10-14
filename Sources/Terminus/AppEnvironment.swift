@@ -61,6 +61,24 @@ enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
     }()
 
+    /// The themes bundled with the app: Ghostty's own, and the rest of
+    /// iTerm2-Color-Schemes beside them (Scripts/fetch-themes.sh). Ghostty
+    /// resolves `theme = "<name>"` here itself; Settings ▸ Themes reads the
+    /// files to draw each one.
+    static var bundledThemesDirectory: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("ghostty/themes", isDirectory: true)
+    }
+
+    /// The user's own themes, where Ghostty looks for them too. Nil in an
+    /// isolated run: a scenario must not depend on what the user has put there.
+    static var userThemesDirectory: URL? {
+        guard !isIsolated else { return nil }
+        if let config = env["XDG_CONFIG_HOME"], !config.isEmpty {
+            return URL(fileURLWithPath: config, isDirectory: true).appendingPathComponent("ghostty/themes", isDirectory: true)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/ghostty/themes", isDirectory: true)
+    }
+
     private static let isolatedSuite = "\(bundleIdentifier).isolated"
 
     /// UserDefaults.standard, or a throwaway suite for an isolated run.

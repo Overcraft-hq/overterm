@@ -58,6 +58,11 @@ if [[ ! -d "$GHOSTTY_RES" ]]; then
   exit 1
 fi
 cp -R "$GHOSTTY_RES/." "$CONTENTS/Resources/"
+# Beside Ghostty's own themes, where `theme = "<name>"` finds them and
+# Settings ▸ Themes reads them (Scripts/fetch-themes.sh).
+cp "$ROOT"/Resources/themes/* "$CONTENTS/Resources/ghostty/themes/"
+rm -f "$CONTENTS/Resources/ghostty/themes/LICENSE" "$CONTENTS/Resources/ghostty/themes/README.md"
+cp "$ROOT/Resources/themes/LICENSE" "$CONTENTS/Resources/THEMES-LICENSE"
 cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 # Settings ▸ About shows this version's entry; View Latest Changelog, all of it.
 cp "$ROOT/CHANGELOG.md" "$CONTENTS/Resources/CHANGELOG.md"

@@ -3,7 +3,7 @@ APP := Overterm.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit icon build test e2e app dmg run install clean hooks
+.PHONY: ghosttykit icon themes build test e2e app dmg run install clean hooks
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -12,6 +12,10 @@ ghosttykit:
 ## icon: regenerate Resources/AppIcon.icns from Resources/AppIcon.svg
 icon:
 	./Scripts/make-icon.sh
+
+## themes: refresh Resources/themes — the themes our pinned Ghostty doesn't ship
+themes:
+	./Scripts/fetch-themes.sh
 
 ## build: compile the release binary via SPM
 build:

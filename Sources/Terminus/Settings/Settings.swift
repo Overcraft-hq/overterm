@@ -231,6 +231,16 @@ final class Settings: ObservableObject {
         }
     }
 
+    /// Whether the terminal follows macOS between two themes.
+    var followsSystemAppearance: Bool { bool("appearance.followSystemAppearance") }
+
+    /// The theme in force for an appearance: the pair's half while it
+    /// follows macOS, else the one theme. Empty when Settings sets none and
+    /// the user's own Ghostty config decides.
+    func themeName(dark: Bool) -> String {
+        followsSystemAppearance && !dark ? string("appearance.themeLight") : string("appearance.theme")
+    }
+
     /// How much the panes without the keyboard are dimmed, 0…0.7.
     var unfocusedPaneDim: Double { number("appearance.unfocusedPaneDim") ?? 0.35 }
     var editorFontSize: Double { number("editor.fontSize") ?? 13 }
@@ -247,19 +257,33 @@ final class Settings: ObservableObject {
 
     nonisolated static func ghosttyOverrides(values: [String: SettingValue], keybindings: [String] = []) -> String {
         var lines = ["# Written by Terminus ▸ Settings (settings.json). Loaded after your Ghostty config; edits here are overwritten."]
+        lines += themeLines(values: values)
         for spec in SettingsSchema.all {
-            guard let option = spec.ghostty, let value = values[spec.key] else { continue }
+            guard let option = spec.ghostty, option != "theme", let value = values[spec.key] else { continue }
             lines += ghosttyLines(option: option, value: value)
         }
         lines += keybindings
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// `theme` takes one name, or a pair Ghostty switches between as macOS
+    /// does — `light:A,dark:B`. The pair can't be quoted (the comma and the
+    /// colon are the syntax), and doesn't need to be: Ghostty reads the rest
+    /// of the line, so a name with spaces in it arrives whole.
+    nonisolated static func themeLines(values: [String: SettingValue]) -> [String] {
+        let dark = values["appearance.theme"]?.string ?? ""
+        let light = values["appearance.themeLight"]?.string ?? ""
+        if values["appearance.followSystemAppearance"]?.bool == true, !dark.isEmpty, !light.isEmpty {
+            return ["theme = light:\(light),dark:\(dark)"]
+        }
+        guard !dark.isEmpty else { return [] }
+        return ["theme = \"\(dark)\""]
+    }
+
     nonisolated static func ghosttyLines(option: String, value: SettingValue) -> [String] {
         switch (option, value) {
         // A family, not a list: one line resets Ghostty's fallback list to it.
         case ("font-family", .string(let family)) where !family.isEmpty: ["font-family = \"\(family)\""]
-        case ("theme", .string(let theme)) where !theme.isEmpty: ["theme = \"\(theme)\""]
         case ("window-padding", _): value.number.map { ["window-padding-x = \(Int($0))", "window-padding-y = \(Int($0))"] } ?? []
         case ("scrollback-limit", _): value.number.map { ["scrollback-limit = \(Int($0) * 1_000_000)"] } ?? []
         case (_, .bool(let flag)): ["\(option) = \(flag)"]

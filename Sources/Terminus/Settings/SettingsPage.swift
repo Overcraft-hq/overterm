@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Settings' sections, as in the list on the page's left.
 enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
-    case general, appearance, terminal, agents, editor, notifications, shortcuts, about
+    case general, appearance, themes, terminal, agents, editor, notifications, shortcuts, about
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
+        case .themes: "Themes"
         case .terminal: "Terminal"
         case .agents: "Agents"
         case .editor: "Editor"
@@ -25,6 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: "gearshape"
         case .appearance: "paintbrush"
+        case .themes: "paintpalette"
         case .terminal: "terminal"
         case .agents: "sparkle"
         case .editor: "doc.text"
@@ -58,6 +60,11 @@ final class SettingsPageModel: ObservableObject {
     @Published var mode: Mode = .ui
     /// The JSON view's text, as typed; nil until the view opens.
     @Published var draft: String?
+    /// Themes: the gallery's own search and filter, and — when a theme
+    /// follows macOS — which of the two a pick goes to.
+    @Published var themeSearch = ""
+    @Published var themeAppearance: ThemeCatalog.Appearance = .all
+    @Published var themeSlot: ThemeSlot = .dark
 
     var sections: [SettingsSection] { SettingsSection.allCases.filter { $0.matches(search) } }
 
@@ -169,7 +176,9 @@ struct SettingsPageView: View {
                     }
                     .padding(.horizontal, 32)
                     .padding(.bottom, 32)
-                    .frame(maxWidth: 760, alignment: .leading)
+                    // The themes gallery wants the window; a column of
+                    // controls is unreadable that wide.
+                    .frame(maxWidth: model.section == .themes ? 1240 : 760, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -197,6 +206,8 @@ struct SettingsPageView: View {
         case .about:
             SpecRows(section: .about, model: model, settings: settings, theme: theme)
             AboutSettings(updates: .shared, theme: theme)
+        case .themes:
+            ThemesSettings(model: model, settings: settings, catalog: .shared, theme: theme)
         default:
             SpecRows(section: model.section, model: model, settings: settings, theme: theme)
             if model.section == .appearance || model.section == .terminal { GhosttyNote(theme: theme) }

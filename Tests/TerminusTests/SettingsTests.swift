@@ -186,7 +186,17 @@ final class SettingsTests: XCTestCase {
     func testEverySettingHasAValidDefault() {
         for spec in SettingsSchema.all {
             if let value = spec.defaultValue { XCTAssertNil(spec.problem(with: value), spec.key) }
-            XCTAssertTrue(spec.key.hasPrefix(spec.section == .about ? "updates." : spec.section.rawValue + "."), spec.key)
+            // A key says which page shows it — except on Themes, which was
+            // carved out of Appearance and shows the `appearance.` keys that
+            // named the theme before it had a page of its own. Renaming them
+            // would empty the settings.json of everyone who has one.
+            let prefix =
+                switch spec.section {
+                case .about: "updates."
+                case .themes: "appearance."
+                default: spec.section.rawValue + "."
+                }
+            XCTAssertTrue(spec.key.hasPrefix(prefix), spec.key)
         }
         XCTAssertEqual(Set(SettingsSchema.all.map(\.key)).count, SettingsSchema.all.count, "keys are unique")
         for key in SettingsSchema.legacyKeys.values { XCTAssertNotNil(SettingsSchema.byKey[key], key) }
@@ -198,5 +208,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(SettingsSection.shortcuts.matches("split"))
         XCTAssertTrue(SettingsSection.general.matches("general.confirmClose"), "by its key, as the JSON has it")
         XCTAssertFalse(SettingsSection.agents.matches("cursor"))
+        XCTAssertTrue(SettingsSection.themes.matches("theme"), "the gallery's own page")
+        XCTAssertFalse(SettingsSection.appearance.matches("theme"), "which Appearance no longer holds")
     }
 }

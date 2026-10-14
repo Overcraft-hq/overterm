@@ -79,6 +79,39 @@ final class GhosttyRuntime {
                 if let app = GhosttyRuntime.shared.app { ghostty_app_keyboard_changed(app) }
             }
         }
+        // macOS switching between light and dark: the half of a
+        // `theme = light:…,dark:…` in force changes with it. The system
+        // tells every app through a distributed notification; NSApp's
+        // effectiveAppearance is read when it arrives.
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { GhosttyRuntime.shared.setColorScheme() }
+        }
+    }
+
+    /// Which way macOS is dressed, as libghostty counts it.
+    var colorScheme: ghostty_color_scheme_e {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+    }
+
+    /// Posted when it changes; each open surface takes the new one.
+    static let colorSchemeChanged = Notification.Name("ColorSchemeChanged")
+
+    /// Tells libghostty which way macOS is dressed. It assumes light until
+    /// told, so a theme written as a light/dark pair came out light in the
+    /// dark — and so does the `light:`/`dark:` in the user's own Ghostty
+    /// config. The app takes it for the surfaces still to come; the ones
+    /// already open are told one by one (`TerminalView`), as Ghostty's own
+    /// app does.
+    ///
+    /// After the app is up, never during `ghostty_app_new`: the library is
+    /// not ready for it there and the process dies without a word.
+    func setColorScheme() {
+        guard let app else { return }
+        ghostty_app_set_color_scheme(app, colorScheme)
+        NotificationCenter.default.post(name: Self.colorSchemeChanged, object: nil)
     }
 
     /// The C callbacks. Built in a nonisolated context on purpose: a closure
@@ -194,8 +227,20 @@ final class GhosttyRuntime {
 
     /// The terminal theme's background and foreground, so the chrome around
     /// the terminal can match it.
-    var backgroundColor: NSColor { color("background") ?? .windowBackgroundColor }
-    var foregroundColor: NSColor { color("foreground") ?? .labelColor }
+    var backgroundColor: NSColor { themeInForce?.background.nsColor ?? color("background") ?? .windowBackgroundColor }
+    var foregroundColor: NSColor { themeInForce?.foreground.nsColor ?? color("foreground") ?? .labelColor }
+
+    /// A single theme is resolved into the config and `color` reads it
+    /// there. A pair (`theme = light:…,dark:…`) is not: libghostty resolves
+    /// it per surface, and the config keeps the light half whatever macOS
+    /// says — which would dress the window in daylight colours around a
+    /// dark terminal. So for a pair, the theme file is read.
+    private var themeInForce: TerminalTheme? {
+        guard Settings.shared.followsSystemAppearance else { return nil }
+        let name = Settings.shared.themeName(dark: colorScheme == GHOSTTY_COLOR_SCHEME_DARK)
+        guard !name.isEmpty else { return nil }
+        return ThemeCatalog.read(name)
+    }
 
     private func color(_ key: String) -> NSColor? {
         guard let config else { return nil }

@@ -48,6 +48,7 @@ final class E2ERunner {
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
         "settings": { await $0.settingsScenario() },
+        "themes": { await $0.themesScenario() },
         "updates": { await $0.updatesScenario() },
         "performance": { await $0.performanceScenario() },
         "bigFiles": { await $0.bigFilesScenario() },
@@ -1358,9 +1359,10 @@ final class E2ERunner {
         await runAndExpect("git branch --show-current > \(out("br").path)", file: out("br"), content: "feat/e2e-task", "its shell is on the new branch")
     }
 
-    /// Snippets: starters seeded; Run types and executes; placeholders ask.
+    /// Snippets: a first run is empty; Run types and executes; placeholders ask.
     private func snippetsScenario() async {
-        check("first run seeds the starters", app.snippets.snippets.first?.command == "mise run validate")
+        check("a first run has no snippets", app.snippets.snippets.isEmpty, "\(app.snippets.snippets.map(\.name))")
+        check("and nothing is written for them", !FileManager.default.fileExists(atPath: app.snippets.url.path))
         await settledPrompt()
         app.useSnippet(Snippet(name: "e2e", command: "echo snippet-ran > \(out("snip").path)"), run: true)
         let ran = await eventually { (try? String(contentsOf: self.out("snip"), encoding: .utf8)) == "snippet-ran\n" }
@@ -2531,6 +2533,72 @@ final class E2ERunner {
         }
     }
 
+    /// Settings ▸ Themes: the gallery. Every theme on this Mac — the ones
+    /// Ghostty ships, the ones we bundle beside them, the user's own — each
+    /// read from its file so it can be drawn rather than named. Picking one
+    /// reaches the terminals that are already open, and a pair of them
+    /// follows macOS between light and dark.
+    private func themesScenario() async {
+        let settings = Settings.shared
+        let catalog = ThemeCatalog.shared
+        await settledPrompt()
+        func overrides() -> String { (try? String(contentsOf: Settings.ghosttyOverridesFile, encoding: .utf8)) ?? "" }
+        /// The terminal's background as the theme file writes it.
+        func background() -> String {
+            let colour = GhosttyRuntime.shared.backgroundColor.usingColorSpace(.sRGB) ?? .black
+            return String(
+                format: "#%02x%02x%02x", Int((colour.redComponent * 255).rounded()), Int((colour.greenComponent * 255).rounded()),
+                Int((colour.blueComponent * 255).rounded()))
+        }
+
+        (NSApp.delegate as? AppDelegate)?.showSettings(nil)
+        app.settingsPage.show(.themes)
+        check("Themes is a page of its own", app.settingsPage.section == .themes)
+
+        catalog.load()
+        check("the catalogue reads them off disk", await eventually(5) { catalog.isLoaded }, "\(catalog.entries.count)")
+        check("Ghostty's own are there", catalog.theme(named: "Dracula") != nil)
+        check("and the ones we fetched beside them", catalog.theme(named: "Claude Dark") != nil, "\(catalog.entries.count) themes")
+        check("all of them", catalog.entries.count >= 473, "\(catalog.entries.count)")
+        // Drawn from the file, which is what makes 473 previews free.
+        let claude = catalog.theme(named: "Claude Dark")
+        check("each with its colours", claude?.background == ThemeColor("#262624") && claude?.isDark == true, "\(claude?.background as Any)")
+
+        let dark = ThemeCatalog.filter(catalog.entries, search: "", appearance: .dark).count
+        let light = ThemeCatalog.filter(catalog.entries, search: "", appearance: .light).count
+        check("dark and light split the lot", dark > 200 && light > 50 && dark + light == catalog.entries.count, "\(dark) dark, \(light) light")
+        check(
+            "and the search is by name",
+            ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", appearance: .light).map(\.id) == ["Claude Light"],
+            "\(ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", appearance: .light).map(\.id))")
+
+        // Picking one is the only way to judge it: it applies at once.
+        settings.set("appearance.theme", .string("Claude Dark"))
+        check("picking one writes the Ghostty override", await eventually(3) { overrides().contains("theme = \"Claude Dark\"") }, overrides())
+        check("and the open terminals take it", await eventually(3) { background() == "#262624" }, background())
+
+        // The pair: one line, which Ghostty switches between as macOS does.
+        app.settingsPage.themeSlot = .light
+        settings.set("appearance.themeLight", .string("Claude Light"))
+        settings.set("appearance.followSystemAppearance", .bool(true))
+        check(
+            "a light theme beside it is one line", await eventually(3) { overrides().contains("theme = light:Claude Light,dark:Claude Dark") },
+            overrides())
+        // libghostty resolves a pair per surface, not into the config, so
+        // the chrome reads the theme file itself; this is what the window
+        // around the terminal will be dressed in.
+        let systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        check(
+            "and the half for this appearance is the one the chrome takes",
+            await eventually(3) { background() == (systemIsDark ? "#262624" : "#faf9f5") }, "\(background()), system dark: \(systemIsDark)")
+
+        // Unset: back to whatever the user's own Ghostty config says.
+        settings.set("appearance.followSystemAppearance", nil)
+        settings.set("appearance.themeLight", nil)
+        settings.set("appearance.theme", nil)
+        check("and unset leaves your own Ghostty config in charge", await eventually(3) { !overrides().contains("theme") }, overrides())
+    }
+
     /// Settings (⌘,): a tab, as Warp's; settings.json behind it, as VS
     /// Code's — the page and the file edited by hand both apply at once, the
     /// file keeps what a person wrote, and one that doesn't parse is never
@@ -2550,7 +2618,7 @@ final class E2ERunner {
         check("⌘, opens the Settings tab", app.store.settingsOpen && app.store.settingsShowing && app.settingsView?.isHidden == false)
         check("the terminal tab under it isn't drawn selected, but still is", app.store.selectedID == tab.id)
         app.settingsPage.search = "theme"
-        check("its search finds Appearance by a setting in it", app.settingsPage.sections == [.appearance], "\(app.settingsPage.sections)")
+        check("its search finds Themes by a setting in it", app.settingsPage.sections == [.themes], "\(app.settingsPage.sections)")
         app.settingsPage.search = "split"
         check("and Keyboard Shortcuts by a command", app.settingsPage.sections.contains(.shortcuts), "\(app.settingsPage.sections)")
         app.settingsPage.search = ""

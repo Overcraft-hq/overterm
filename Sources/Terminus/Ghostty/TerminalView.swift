@@ -155,8 +155,19 @@ final class TerminalView: NSView {
             GhosttyRuntime.logger.error("ghostty_surface_new failed")
         } else {
             SurfaceProcesses.shared.register(self)
+            applyColorScheme()
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(applyColorScheme), name: GhosttyRuntime.colorSchemeChanged, object: nil)
         }
         updateTrackingAreas()
+    }
+
+    /// Which half of a `light:…,dark:…` theme this surface shows. A
+    /// surface keeps its own colour scheme, so it is told even though the
+    /// app has been (`GhosttyRuntime.setColorScheme`).
+    @objc private func applyColorScheme() {
+        guard let surface else { return }
+        ghostty_surface_set_color_scheme(surface, GhosttyRuntime.shared.colorScheme)
     }
 
     required init?(coder: NSCoder) {

@@ -71,7 +71,8 @@ What makes it end-to-end without being dangerous:
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
 `marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
-`openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`, `askAgent`, `dropSplit`.
+`openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`, `askAgent`,
+`dropSplit`, `settings`, `themes`.
 `terminal` also checks the bundle: its version is the `VERSION` next to
 `Overterm.app` (the run's app is the checkout's), the build a positive
 integer, the commit named — and that About Overterm shows them, opened

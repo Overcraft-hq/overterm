@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         } else {
             controller.newTab(from: nil)
         }
+        GhosttyRuntime.shared.setColorScheme()
         controller.autosaveSession()
         controller.showWindow(nil)
         UpdateChecker.shared.checkIfDue()
