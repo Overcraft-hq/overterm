@@ -23,11 +23,11 @@ build:
 
 ## test: run the unit tests (E2E scenarios are skipped)
 test:
-	swift test --skip TerminusE2ETests
+	swift test --skip OvertermE2ETests
 
 ## e2e: build the app, then run every end-to-end scenario in it (opens windows briefly)
 e2e: app
-	TERMINUS_E2E_TESTS=1 swift test --filter TerminusE2ETests
+	OVERTERM_E2E_TESTS=1 swift test --filter OvertermE2ETests
 
 ## app: assemble and ad-hoc sign $(APP)
 app:

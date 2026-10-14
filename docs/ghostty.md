@@ -15,7 +15,7 @@ module map; ~135 MB, gitignored) and `Frameworks/GhosttyResources`
 copies into `Contents/Resources`. libghostty finds its resources by climbing
 from the executable to `Contents/Resources` with `terminfo/78/xterm-ghostty`
 as the sentinel — so only a bundled app gets `TERM=xterm-ghostty` and shell
-integration; a bare `.build/debug/Terminus` falls back to `xterm-256color`.
+integration; a bare `.build/debug/Overterm` falls back to `xterm-256color`.
 
 Pinned to **v1.3.1 / Zig 0.15.2** because Ghostty main needs Xcode 26 and the
 macOS 26 SDK (this machine: Xcode 16.4). The pin is the macOS *app's*

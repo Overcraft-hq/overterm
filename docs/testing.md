@@ -10,7 +10,7 @@ make e2e    # end-to-end: every scenario in the real, built app (~15 s, opens wi
 Both must run **outside the Bash tool's sandbox** (they spawn git, FSEvents,
 and for E2E the app itself).
 
-## Unit / integration — `Tests/TerminusTests`
+## Unit / integration — `Tests/OvertermTests`
 
 Pure logic and anything that can run without a window: parsers (worktree,
 status, numstat, name-status, branch log, unified diff), `FileTreeModel`,
@@ -44,12 +44,12 @@ pty, same object. Don't initialize the runtime in unit tests.
 Async models supersede older refreshes by design; wait for them to settle
 (`eventually { … }`) rather than asserting right after one call.
 
-## End-to-end — `Sources/Terminus/E2E/E2ERunner.swift` + `Tests/TerminusE2ETests`
+## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
-`TERMINUS_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
+`OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
 scenario inside the app and prints `E2E PASS|FAIL <check>` lines, then
 `E2E DONE <failures>`, exiting with the failure count. The XCTest target
-launches one process per scenario (skipped unless `TERMINUS_E2E_TESTS=1`,
+launches one process per scenario (skipped unless `OVERTERM_E2E_TESTS=1`,
 which `make e2e` sets) and turns FAIL lines into test failures.
 
 What makes it end-to-end without being dangerous:
@@ -59,7 +59,7 @@ What makes it end-to-end without being dangerous:
   → `interpretKeyEvents` → libghostty → pty); drags are posted to the app's
   own queue. Never CGEvent/osascript — those reach whatever has focus.
 - **Isolated state** (`AppEnvironment`): its own defaults suite (wiped at
-  launch), a temp support dir (or `TERMINUS_SUPPORT_DIR` for a prepared
+  launch), a temp support dir (or `OVERTERM_SUPPORT_DIR` for a prepared
   session), notifications counted not posted, no split autosave, never
   activated (it stays behind your windows), and Claude Code's transcripts an
   empty projects directory of its own until a scenario points
@@ -77,12 +77,12 @@ Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `Overterm.app` (the run's app is the checkout's), the build a positive
 integer, the commit named — and that About Overterm shows them, opened
 through its menu item, without bringing the app forward.
-`marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
+`marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
 
 ```sh
-make app && TERMINUS_E2E=diff ./Overterm.app/Contents/MacOS/Overterm 2>/dev/null | grep ^E2E
+make app && OVERTERM_E2E=diff ./Overterm.app/Contents/MacOS/Overterm 2>/dev/null | grep ^E2E
 ```
 
 ### Typing into a shell
@@ -171,6 +171,6 @@ closing without asking, the no-HEAD diff all have one).
 
 ## Looking at the UI
 
-`TERMINUS_DUMP_LAYOUT` / `TERMINUS_DUMP_PNG` (docs/debugging.md) print the
+`OVERTERM_DUMP_LAYOUT` / `OVERTERM_DUMP_PNG` (docs/debugging.md) print the
 view tree and capture the real window — use them when a check isn't enough
 to see what's wrong.

@@ -4,10 +4,10 @@ set -euo pipefail
 
 APP_NAME="Overterm"
 # The SPM target, which keeps the old name (Package.swift).
-PRODUCT="Terminus"
+PRODUCT="Overterm"
 # Where the settings, the session and the privacy grants live. It is not
 # the app's name and never was; renaming it would open a new, empty app.
-BUNDLE_ID="io.github.terminus-app.terminus"
+BUNDLE_ID="io.github.overcraft-hq.overterm"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -88,9 +88,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>${BUILD}</string>
     <!-- About Overterm's credits (AboutPanel): the commit built, and when.
          The keys keep the old name; the About panel reads them by it. -->
-    <key>TerminusCommit</key>
+    <key>OvertermCommit</key>
     <string>${COMMIT}</string>
-    <key>TerminusBuildDate</key>
+    <key>OvertermBuildDate</key>
     <string>${BUILD_DATE}</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>

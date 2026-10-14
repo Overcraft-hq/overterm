@@ -53,7 +53,7 @@ To bump:
 1. \`Scripts/build-ghosttykit.sh\`: \`GHOSTTY_REF="$latest"\`, \`GHOSTTY_SHA="$sha"\`
 2. \`mise.toml\`: \`zig = "${zig:-?}"\` if it changed, then \`mise install\`
 3. \`make ghosttykit\` — then diff \`Frameworks/GhosttyKit.xcframework/*/Headers/ghostty.h\` against the old one for API changes
-4. \`make test && make e2e\`; glance at the Ghostty keybind table in docs/ghostty.md (new default bindings can swallow Terminus shortcuts)
+4. \`make test && make e2e\`; glance at the Ghostty keybind table in docs/ghostty.md (new default bindings can swallow Overterm shortcuts)
 5. \`make install\`, use it for a bit, commit
 
 _Opened by the weekly Ghostty release check._

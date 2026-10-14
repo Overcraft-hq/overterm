@@ -29,27 +29,27 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 
 | Path | What |
 |---|---|
-| `Sources/Terminus/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
-| `Sources/Terminus/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is), `TabActivity` (needs-you flags), `AttentionChip` ("N need you"), `Agent`, tab context menu |
-| `Sources/Terminus/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `NewTabGroup` (which island a new tab joins), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |
-| `Sources/Terminus/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme` (the chrome's colour vocabulary), `CardColumn`/`GapSplitView` (the columns as cards on the window), `AttentionNotifier`, split controllers |
-| `Sources/Terminus/Sidebar/` | Files / Worktrees / Snippets panels, `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |
-| `Sources/Terminus/Diff/` | changes pane on the right + ± badge, `DiffModel` (live counts, per-file diffs, stage/commit) |
-| `Sources/Terminus/Editor/` | editor pane beside the terminal, `EditorDocument`, gutter, `SyntaxHighlighter`; `ExternalOpener`/`OpenWith` (files in the app the user picked) |
-| `Sources/Terminus/Git/` | `Git.run` (libdispatch-backed), porcelain / numstat / unified-diff parsers, `Worktree` |
-| `Sources/Terminus/Tasks/` | New Task: worktree + branch + agent |
-| `Sources/Terminus/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
-| `Sources/Terminus/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
-| `Sources/Terminus/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
-| `Sources/Terminus/Themes/` | Settings ▸ Themes: `TerminalTheme` (a Ghostty theme file, parsed), `ThemeCatalog` (the bundled ones and the user's), `ThemePreview` (a theme drawn as a little window), the gallery |
-| `Sources/Terminus/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
-| `Sources/Terminus/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
-| `Sources/Terminus/AskAgent/` | ⌘L: the strip over a selection, and the sheet that hands it to an agent with the command it came from |
-| `Sources/Terminus/Inbox/` | ⌘I: `AgentPrompt` (pure — reads an agent's question and its choices off the screen), `InboxModel`, `InboxView` |
-| `Sources/Terminus/Blocks/` | what a pane has run: `CommandLedger` (pure — the title, `COMMAND_FINISHED` and the scrollbar assembled into commands), `ScrollMapView`, `BlockFrameView` |
-| `Sources/Terminus/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |
-| `Sources/Terminus/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
-| `Sources/Terminus/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘K palette (`CommandHistory`: what this machine has run), session save/restore |
+| `Sources/Overterm/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
+| `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is), `TabActivity` (needs-you flags), `AttentionChip` ("N need you"), `Agent`, tab context menu |
+| `Sources/Overterm/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `NewTabGroup` (which island a new tab joins), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |
+| `Sources/Overterm/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme` (the chrome's colour vocabulary), `CardColumn`/`GapSplitView` (the columns as cards on the window), `AttentionNotifier`, split controllers |
+| `Sources/Overterm/Sidebar/` | Files / Worktrees / Snippets panels, `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |
+| `Sources/Overterm/Diff/` | changes pane on the right + ± badge, `DiffModel` (live counts, per-file diffs, stage/commit) |
+| `Sources/Overterm/Editor/` | editor pane beside the terminal, `EditorDocument`, gutter, `SyntaxHighlighter`; `ExternalOpener`/`OpenWith` (files in the app the user picked) |
+| `Sources/Overterm/Git/` | `Git.run` (libdispatch-backed), porcelain / numstat / unified-diff parsers, `Worktree` |
+| `Sources/Overterm/Tasks/` | New Task: worktree + branch + agent |
+| `Sources/Overterm/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
+| `Sources/Overterm/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
+| `Sources/Overterm/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
+| `Sources/Overterm/Themes/` | Settings ▸ Themes: `TerminalTheme` (a Ghostty theme file, parsed), `ThemeCatalog` (the bundled ones and the user's), `ThemePreview` (a theme drawn as a little window), the gallery |
+| `Sources/Overterm/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
+| `Sources/Overterm/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
+| `Sources/Overterm/AskAgent/` | ⌘L: the strip over a selection, and the sheet that hands it to an agent with the command it came from |
+| `Sources/Overterm/Inbox/` | ⌘I: `AgentPrompt` (pure — reads an agent's question and its choices off the screen), `InboxModel`, `InboxView` |
+| `Sources/Overterm/Blocks/` | what a pane has run: `CommandLedger` (pure — the title, `COMMAND_FINISHED` and the scrollbar assembled into commands), `ScrollMapView`, `BlockFrameView` |
+| `Sources/Overterm/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |
+| `Sources/Overterm/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
+| `Sources/Overterm/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘K palette (`CommandHistory`: what this machine has run), session save/restore |
 | `Scripts/` | GhosttyKit build, app bundling (with the build metadata About shows), icon, `bump-version.sh` |
 | `VERSION`, `CHANGELOG.md`, `.githooks/` | the app's version, what each version changed, the hooks that keep them in step (Commits) |
 
@@ -65,7 +65,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Ghostty is pinned to v1.3.1** (`Scripts/build-ghosttykit.sh`, SHA-checked) with Zig 0.15.2 (`mise.toml`): Ghostty main needs Xcode 26. Bump both together; check `ghostty.h` for API changes. A weekly workflow (`ghostty-release-check`, the repo's only one — macOS CI is too expensive) opens an issue with the steps when Ghostty tags a newer release.
 - **Views don't clip by default since macOS 14.** A subview drawing past its bounds (the editor gutter did) paints over neighbours — set `clipsToBounds` where content is taller than the view.
 - **The tab strip lives in the title bar**, which swallows right-clicks before SwiftUI sees them. Context menus there go through the window's local event monitor (`installTabRightClick`), not `.contextMenu`.
-- **The window's split dividers measure nothing**; the 10 pt gap between the cards belongs to the cards (`CardColumn.gap`), because a divider is measured even for a collapsed item — as a 10 pt one, it left 30 pt dead down the right of the window. `WideDividerSplitViewController` widens the divider to a grab band over the gap. Autosave key `TerminusColumns.v4` — bump the version whenever the column set changes, or stale positions are applied to new columns.
+- **The window's split dividers measure nothing**; the 10 pt gap between the cards belongs to the cards (`CardColumn.gap`), because a divider is measured even for a collapsed item — as a 10 pt one, it left 30 pt dead down the right of the window. `WideDividerSplitViewController` widens the divider to a grab band over the gap. Autosave key `OvertermColumns.v4` — bump the version whenever the column set changes, or stale positions are applied to new columns.
 - **Closing always asks** by default (tab, window, app); only a shell's own `exit` closes silently. Keep "Always" the default — it was asked for. Settings ▸ General can make it "only when something is running" (`needsCloseConfirmation`); any new close path goes through that.
 - **`@Published` emits before the property changes.** In a Combine sink, use the emitted values; reading the object back gives the old value (bit twice: selection, and attach). A new subscriber also gets the current value at once — `dropFirst()` when only a change should act (the find bar's rebinding on every terminal focus took the keyboard back, so Esc never closed it).
 - **A new tab never inherits the selected tab's island.** Which group it joins is `NewTabGroup.placement` and nothing else decides (docs/architecture.md, Tab groups): a group is usually a checkout, so it soon holds every tab, and inheriting it swallowed every new tab silently. A new way of opening a tab goes through `addTab`, which asks the rule.
@@ -76,7 +76,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Never `pkill -f <pattern>` in tests** — it once killed the shell running them. Kill the exact pids you found.
 - **Typing text then running it**: `insertText` is a bracketed paste, so a trailing newline is literal. Use `pressReturn()`.
 - Keep features built-in (Claude, Codex); no plugin slots.
-- **Tests are part of the change**: unit/integration in `Tests/TerminusTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
+- **Tests are part of the change**: unit/integration in `Tests/OvertermTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
 - **A theme is a file, not code**: Ghostty resolves `theme = "<name>"` in
   `Contents/Resources/ghostty/themes` (its own 463, plus `Resources/themes`
   beside them) and `~/.config/ghostty/themes`. Settings ▸ Themes reads the
