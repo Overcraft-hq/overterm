@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Assemble Terminus.app from the SPM release build and ad-hoc sign it.
+# Assemble Overterm.app from the SPM release build and ad-hoc sign it.
 set -euo pipefail
 
-APP_NAME="Terminus"
+APP_NAME="Overterm"
+# The SPM target, which keeps the old name (Package.swift).
+PRODUCT="Terminus"
+# Where the settings, the session and the privacy grants live. It is not
+# the app's name and never was; renaming it would open a new, empty app.
 BUNDLE_ID="io.github.terminus-app.terminus"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# What About Terminus shows (docs/architecture.md, Build metadata): the
+# What About Overterm shows (docs/architecture.md, Build metadata): the
 # version from VERSION, the commit count as the build number (monotonic on
 # main), the commit — "-dirty" with uncommitted changes — and the day.
 # VERSION and BUILD in the environment override; without git, build 1 and
@@ -29,12 +33,12 @@ else
   COMMIT="unknown"
 fi
 BUILD_DATE="$(date +%Y-%m-%d)"
-echo "==> Terminus $VERSION ($BUILD), commit $COMMIT, $BUILD_DATE"
+echo "==> Overterm $VERSION ($BUILD), commit $COMMIT, $BUILD_DATE"
 
 echo "==> swift build -c release"
 swift build -c release
 
-BIN_PATH="$(swift build -c release --show-bin-path)/${APP_NAME}"
+BIN_PATH="$(swift build -c release --show-bin-path)/${PRODUCT}"
 if [[ ! -x "$BIN_PATH" ]]; then
   echo "error: built binary not found at $BIN_PATH" >&2
   exit 1
@@ -77,7 +81,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>${VERSION}</string>
     <key>CFBundleVersion</key>
     <string>${BUILD}</string>
-    <!-- About Terminus's credits (AboutPanel): the commit built, and when. -->
+    <!-- About Overterm's credits (AboutPanel): the commit built, and when.
+         The keys keep the old name; the About panel reads them by it. -->
     <key>TerminusCommit</key>
     <string>${COMMIT}</string>
     <key>TerminusBuildDate</key>
@@ -91,8 +96,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Terminus</string>
-    <!-- macOS charges what a program in the terminal asks for to Terminus,
+    <string>Overterm</string>
+    <!-- macOS charges what a program in the terminal asks for to Overterm,
          and without a reason here refuses it without asking: Claude Code's
          /voice got no microphone. Worded as Ghostty's. -->
     <key>NSMicrophoneUsageDescription</key>
@@ -143,7 +148,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <array>
         <dict>
             <key>NSMenuItem</key>
-            <dict><key>default</key><string>New Terminus Tab Here</string></dict>
+            <dict><key>default</key><string>New Overterm Tab Here</string></dict>
             <key>NSMessage</key>
             <string>newTabHere</string>
             <key>NSPortName</key>

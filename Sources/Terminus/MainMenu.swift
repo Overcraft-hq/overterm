@@ -15,17 +15,17 @@ enum MainMenu {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         // The standard panel, with the commit it was built from (AboutPanel).
-        appMenu.addItem(withTitle: "About Terminus", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About Overterm", action: #selector(AppDelegate.showAbout(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         command(appMenu, "View Latest Changelog", #selector(AppDelegate.showChangelog(_:)), "app.changelog")
         appMenu.addItem(withTitle: "Check for Updates…", action: #selector(AppDelegate.checkForUpdates(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         command(appMenu, "Settings…", #selector(AppDelegate.showSettings(_:)), "app.settings")
         appMenu.addItem(.separator())
-        command(appMenu, "Hide Terminus", #selector(NSApplication.hide(_:)), "app.hide")
+        command(appMenu, "Hide Overterm", #selector(NSApplication.hide(_:)), "app.hide")
         command(appMenu, "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "app.hideOthers")
         appMenu.addItem(.separator())
-        command(appMenu, "Quit Terminus", #selector(NSApplication.terminate(_:)), "app.quit")
+        command(appMenu, "Quit Overterm", #selector(NSApplication.terminate(_:)), "app.quit")
         appItem.submenu = appMenu
         main.addItem(appItem)
 

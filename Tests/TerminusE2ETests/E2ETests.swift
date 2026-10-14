@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-/// End-to-end: launches the built Terminus.app once per scenario
+/// End-to-end: launches the built Overterm.app once per scenario
 /// (TERMINUS_E2E=<name>, see Sources/Terminus/E2E/E2ERunner.swift) and
 /// fails with whatever checks the app reported failing.
 ///
@@ -12,7 +12,7 @@ import XCTest
 final class E2ETests: XCTestCase {
     private static let app = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        .appendingPathComponent("Terminus.app/Contents/MacOS/Terminus")
+        .appendingPathComponent("Overterm.app/Contents/MacOS/Overterm")
 
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["TERMINUS_E2E_TESTS"] == "1", "E2E is opt-in: make e2e")

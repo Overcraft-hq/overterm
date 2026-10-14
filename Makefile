@@ -1,4 +1,4 @@
-APP := Terminus.app
+APP := Overterm.app
 
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
@@ -29,7 +29,7 @@ e2e: app
 app:
 	./Scripts/make-app.sh
 
-## dmg: pack the built $(APP) as dist/Terminus-$(VERSION).dmg (VERSION as for make app)
+## dmg: pack the built $(APP) as dist/Overterm-$(VERSION).dmg (VERSION as for make app)
 dmg:
 	./Scripts/make-dmg.sh
 
@@ -47,7 +47,7 @@ ifneq ($(strip $(SIGN_IDENTITY)),)
 	@# (the microphone); one identity keeps them. No timestamp: no network.
 	codesign --force --deep --timestamp=none --sign "$(SIGN_IDENTITY)" /Applications/$(APP)
 endif
-	@# So Finder's Open With and the "New Terminus Tab Here" service see it now.
+	@# So Finder's Open With and the "New Overterm Tab Here" service see it now.
 	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/$(APP)
 	/System/Library/CoreServices/pbs -update
 	@echo "==> installed /Applications/$(APP)"

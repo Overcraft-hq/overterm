@@ -143,6 +143,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             ).winNS
         window.tabbingMode = .disallowed
         window.center()
+        // The old name, kept: it is where macOS has the window's size.
         window.setFrameAutosaveName("TerminusMainWindow")
         super.init(window: window)
         window.delegate = self
@@ -2280,7 +2281,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let item = menuBarItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         menuBarItem = item
         item.button?.image = NSImage(
-            systemSymbolName: "tray.full", accessibilityDescription: "Terminus — tabs that need you")
+            systemSymbolName: "tray.full", accessibilityDescription: "Overterm — tabs that need you")
         item.button?.title = " \(count)"
         item.button?.target = self
         item.button?.action = #selector(showFromMenuBar(_:))

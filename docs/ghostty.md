@@ -32,7 +32,7 @@ Ghostty's own macOS app is the reference for how libghostty wants to be fed —
 `vendor/ghostty/macos/Sources/Ghostty/` after a build:
 
 - `Surface View/SurfaceView_AppKit.swift` — key path (`performKeyEquivalent` →
-  `keyDown` → `interpretKeyEvents` → `NSTextInputClient`), mouse, IME. Terminus
+  `keyDown` → `interpretKeyEvents` → `NSTextInputClient`), mouse, IME. Overterm
   ports it rather than simplifying it: translation mods, reusing the original
   NSEvent for Korean IME, the `lastPerformKeyEvent` round-trip for ⌘/⌃ keys.
 - `Ghostty.App.swift` — runtime callbacks, action handling.
@@ -60,15 +60,15 @@ A Ghostty binding is consumed in `performKeyEquivalent` before the menu sees
 the key. If the action is then unhandled, the key does **nothing**. Checked
 against v1.3.1 defaults:
 
-| Key | Ghostty action | Terminus |
+| Key | Ghostty action | Overterm |
 |---|---|---|
-| ⌘T / ⌘W / ⌥⌘W | new_tab / close_surface / close_tab | handled → Terminus tabs |
+| ⌘T / ⌘W / ⌥⌘W | new_tab / close_surface / close_tab | handled → Overterm tabs |
 | ⇧⌘W, ⌥⇧⌘W | close_window, close_all_windows | handled → window close |
-| ⇧⌘P | toggle_command_palette | handled → Terminus palette |
+| ⇧⌘P | toggle_command_palette | handled → Overterm palette |
 | ⌘K | clear_screen | Ghostty's (so the palette is ⌘P) |
 | ⌘N | new_window | unhandled (one window) |
 | ⌘D, ⇧⌘D | new_split | unhandled (no splits yet) |
-| ⌘P, ⌘B, ⌥⌘C/X/D, ⇧⌘N, ⌘S | — | free; Terminus menu items |
+| ⌘P, ⌘B, ⌥⌘C/X/D, ⇧⌘N, ⌘S | — | free; Overterm menu items |
 
 When adding a shortcut, grep `Config.zig` first. The user's own
 `~/Library/Application Support/com.mitchellh.ghostty/config` (or
@@ -84,7 +84,7 @@ the window asks in a sheet: for the selected tab only, one sheet at a time —
 anything else is refused at once — and only a click hands anything over
 (Return answers Deny, Esc answers Cancel). Both answers complete the request
 *confirmed*, with the text or `""`: completed unconfirmed, libghostty asks
-again at once, and Terminus once looped that way until the stack overflowed.
+again at once, and Overterm once looped that way until the stack overflowed.
 A write with `confirm = true` (`clipboard-write = ask`) is still dropped.
 
 The macOS "selection clipboard" is a private named pasteboard. An isolated

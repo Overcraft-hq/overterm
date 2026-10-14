@@ -1,6 +1,6 @@
 # Release: run it by hand (Actions → Release → Run workflow) on the commit
 # to ship. The version is VERSION's; the notes are its CHANGELOG.md entry
-# (Scripts/release-notes.sh). It tests, builds Terminus.app, packs it in a
+# (Scripts/release-notes.sh). It tests, builds Overterm.app, packs it in a
 # DMG, and publishes release v<version> with the DMG attached — on the tag
 # the post-commit hook made, once pushed, or a new one on this commit.
 #
@@ -72,13 +72,13 @@ jobs:
       - name: Unit tests
         run: make test
 
-      - name: Build Terminus.app and the DMG
+      - name: Build Overterm.app and the DMG
         run: make app dmg
 
       - name: Publish the release
         run: |
-          dmg="dist/Terminus-$VERSION.dmg"
+          dmg="dist/Overterm-$VERSION.dmg"
           Scripts/release-notes.sh "$VERSION" "$dmg" > notes.md
           flags=(--target "$GITHUB_SHA")
           if [[ "${{ inputs.prerelease }}" == "true" ]]; then flags+=(--prerelease); fi
-          gh release create "v$VERSION" "$dmg" --title "Terminus $VERSION" --notes-file notes.md "${flags[@]}"
+          gh release create "v$VERSION" "$dmg" --title "Overterm $VERSION" --notes-file notes.md "${flags[@]}"

@@ -46,7 +46,7 @@ Async models supersede older refreshes by design; wait for them to settle
 
 ## End-to-end — `Sources/Terminus/E2E/E2ERunner.swift` + `Tests/TerminusE2ETests`
 
-`TERMINUS_E2E=<scenario> ./Terminus.app/Contents/MacOS/Terminus` runs one
+`TERMINUS_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
 scenario inside the app and prints `E2E PASS|FAIL <check>` lines, then
 `E2E DONE <failures>`, exiting with the failure count. The XCTest target
 launches one process per scenario (skipped unless `TERMINUS_E2E_TESTS=1`,
@@ -73,15 +73,15 @@ Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
 `openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`, `askAgent`, `dropSplit`.
 `terminal` also checks the bundle: its version is the `VERSION` next to
-`Terminus.app` (the run's app is the checkout's), the build a positive
-integer, the commit named — and that About Terminus shows them, opened
+`Overterm.app` (the run's app is the checkout's), the build a positive
+integer, the commit named — and that About Overterm shows them, opened
 through its menu item, without bringing the app forward.
 `marks` leaves one tab in each activity state; with `TERMINUS_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
 
 ```sh
-make app && TERMINUS_E2E=diff ./Terminus.app/Contents/MacOS/Terminus 2>/dev/null | grep ^E2E
+make app && TERMINUS_E2E=diff ./Overterm.app/Contents/MacOS/Overterm 2>/dev/null | grep ^E2E
 ```
 
 ### Typing into a shell

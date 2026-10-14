@@ -99,7 +99,7 @@ struct TabBarView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(TabStatusStyle.signal)
-                .help("Terminus \(release.version) is out — Settings ▸ About")
+                .help("Overterm \(release.version) is out — Settings ▸ About")
                 .padding(.trailing, 6)
             }
             AttentionChip(store: store, theme: theme, select: actions.select)

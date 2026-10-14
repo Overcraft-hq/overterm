@@ -1,4 +1,4 @@
-# Terminus
+# Overterm
 
 macOS terminal for agent-driven work — Swift/AppKit around libghostty
 (`GhosttyKit`), built for several worktrees at once, each with an agent
@@ -13,12 +13,12 @@ make hooks                   # .githooks: VERSION bump check, v<VERSION> tags (o
 make test                    # unit + integration tests (~3 s)
 make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
                              # both: run OUTSIDE the Bash sandbox — docs/testing.md
-make app                     # Terminus.app in the repo
+make app                     # Overterm.app in the repo
 make install                 # …and copy it to /Applications, re-signed with
                              # $SIGN_IDENTITY (env or untracked local.mk) if set;
                              # a stable identity keeps privacy grants (mic)
 make icon                    # Resources/AppIcon.svg → AppIcon.icns
-make app dmg                 # dist/Terminus-<VERSION>.dmg; a release is the Release
+make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Release
                              # workflow, run by hand: VERSION's tag, its CHANGELOG
                              # entry as notes, the DMG attached
 ```
@@ -81,7 +81,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 
 `area: what changed` subject (areas: `terminal`, `tabs`, `sidebar`, `diff`, `editor`, `git`, `agents`, `session`, `palette`, `snippets`, `window`, `keys`, `build`, `docs`…), body says why. One fix per commit. No `Co-Authored-By` trailer. Run `swift format --in-place --recursive Sources Tests`, `make test` and `make e2e` before committing.
 
-**Versioning.** `VERSION` is the app's version (SemVer), `CHANGELOG.md` what each version changed; About Terminus shows it with the commit (docs/architecture.md, Build metadata).
+**Versioning.** `VERSION` is the app's version (SemVer), `CHANGELOG.md` what each version changed; About Overterm shows it with the commit (docs/architecture.md, Build metadata).
 
 - A commit that changes the app bumps VERSION in the same commit. "Changes the app": anything under `Sources/`, `Resources/` or `Scripts/`, or `Package.swift`, the `Makefile` or `mise.toml`.
 - **MAJOR**: incompatible — a saved-state format older versions can't read (session.json, snippets.json…), or a removed feature or shortcut.

@@ -32,6 +32,9 @@ enum AppEnvironment {
             return FileManager.default.temporaryDirectory.appendingPathComponent("terminus-isolated-\(UUID().uuidString)", isDirectory: true)
         }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            // Named before the app was, and left that way: the session,
+            // the snippets and the command history live in it, and a new
+            // name would open the app on an empty one.
             .appendingPathComponent("Terminus", isDirectory: true)
     }()
 

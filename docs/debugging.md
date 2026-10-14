@@ -10,7 +10,7 @@ diagnostic mode instead — it only acts on its own window:
 make app
 TERMINUS_DUMP_LAYOUT=$PWD/README.md \
 TERMINUS_DUMP_PNG=/tmp/terminus.png \
-  ./Terminus.app/Contents/MacOS/Terminus
+  ./Overterm.app/Contents/MacOS/Overterm
 ```
 
 It starts a fresh window (no session restore, no autosave, divider positions
@@ -39,7 +39,7 @@ More switches, combinable:
 | `TERMINUS_DUMP_PEEK=1` | open Tab Peek (making tabs if needed) before the dump, and print where each host's layer actually lands — how the peek's transform was got right |
 | `TERMINUS_DUMP_GROUPS=1` | make an island of two tabs before the dump, and print the strip's islands with the tab and chip frames the context-click monitor needs |
 
-Run it from the **bundle** (`Terminus.app/Contents/MacOS/Terminus`): a bare
+Run it from the **bundle** (`Overterm.app/Contents/MacOS/Overterm`): a bare
 `.build/debug/Terminus` crashes in `UNUserNotificationCenter` ("bundleProxy
 ForCurrentProcess is nil") and lacks terminfo/shell integration.
 

@@ -283,8 +283,8 @@ final class E2ERunner {
 
     /// The version, from the bundle (Scripts/make-app.sh): VERSION of the
     /// checkout it was built in — the run's app is that checkout's
-    /// Terminus.app — the commit count as the build, the commit. About
-    /// Terminus shows them.
+    /// Overterm.app — the commit count as the build, the commit. About
+    /// Overterm shows them.
     private func versionChecks() {
         let info = Bundle.main.infoDictionary ?? [:]
         let file = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("VERSION")
@@ -298,8 +298,8 @@ final class E2ERunner {
 
         // The menu item, as the menu bar sends it: the standard panel, with
         // the commit as its credits.
-        guard let about = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title == "About Terminus" }), let action = about.action
-        else { return check("the app menu has About Terminus", false) }
+        guard let about = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title == "About Overterm" }), let action = about.action
+        else { return check("the app menu has About Overterm", false) }
         let before = Set(NSApp.windows.map(ObjectIdentifier.init))
         NSApp.sendAction(action, to: about.target, from: about)
         let panel = NSApp.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
@@ -310,7 +310,7 @@ final class E2ERunner {
             view.subviews.forEach(walk)
         }
         panel?.contentView.map(walk)
-        check("About Terminus shows the version and build", texts.contains { $0.contains("\(shown) (\(build))") }, "\(texts)")
+        check("About Overterm shows the version and build", texts.contains { $0.contains("\(shown) (\(build))") }, "\(texts)")
         check("…and the commit it was built from", texts.contains { $0.hasPrefix("commit \(commit) · ") }, "\(texts)")
         check("…without bringing the app forward", !NSApp.isActive)
         panel?.close()
@@ -2389,7 +2389,7 @@ final class E2ERunner {
         await runAndExpect("echo $0 > \(out("shell").path)", file: out("shell"), content: "-zsh", "as a login zsh")
     }
 
-    /// Finder's Open With and "New Terminus Tab Here": a folder becomes a
+    /// Finder's Open With and "New Overterm Tab Here": a folder becomes a
     /// tab; a file opens in the editor, in the tab already in its checkout.
     private func openFromFinderScenario() async {
         let repo = scratch.appendingPathComponent("finderrepo")
@@ -2425,7 +2425,7 @@ final class E2ERunner {
         pasteboard.writeObjects([other as NSURL])
         var error: NSString = ""
         (NSApp.delegate as? AppDelegate)?.newTabHere(pasteboard, userData: nil, error: &error)
-        check("New Terminus Tab Here opens one there", app.store.selected?.workingDirectory == other.path, error as String)
+        check("New Overterm Tab Here opens one there", app.store.selected?.workingDirectory == other.path, error as String)
         pasteboard.releaseGlobally()
     }
 
@@ -2739,10 +2739,10 @@ final class E2ERunner {
             if mode == "none":
                 sys.stderr.write("gh: Not Found (HTTP 404)\n"); sys.exit(1)
             print(json.dumps({"tag_name": "v99.0.0", "html_url": "https://example.invalid/v99.0.0",
-                              "assets": [{"name": "Terminus-99.0.0.dmg"}]}))
+                              "assets": [{"name": "Overterm-99.0.0.dmg"}]}))
         elif args[:2] == ["release", "download"]:
             folder = args[args.index("-D") + 1]
-            open(os.path.join(folder, "Terminus-99.0.0.dmg"), "w").write("dmg")
+            open(os.path.join(folder, "Overterm-99.0.0.dmg"), "w").write("dmg")
         else:
             sys.stderr.write("fake gh: unexpected %s\n" % args); sys.exit(2)
         """#.write(to: gh, atomically: true, encoding: .utf8)
@@ -2772,8 +2772,8 @@ final class E2ERunner {
             await updates.download(release, into: downloads)
             check(
                 "Download fetches its DMG",
-                updates.state == .downloaded(downloads.appendingPathComponent("Terminus-99.0.0.dmg"))
-                    && FileManager.default.fileExists(atPath: downloads.appendingPathComponent("Terminus-99.0.0.dmg").path), "\(updates.state)")
+                updates.state == .downloaded(downloads.appendingPathComponent("Overterm-99.0.0.dmg"))
+                    && FileManager.default.fileExists(atPath: downloads.appendingPathComponent("Overterm-99.0.0.dmg").path), "\(updates.state)")
         }
 
         try? "none".write(to: mode, atomically: true, encoding: .utf8)
@@ -2788,7 +2788,7 @@ final class E2ERunner {
         app.closeSettings()
     }
 
-    /// How heavy Terminus is to live in: idle with ten tabs (two split),
+    /// How heavy Overterm is to live in: idle with ten tabs (two split),
     /// then a flood of output. Measures this process's CPU time, its memory
     /// footprint, and the longest the main thread went without running a
     /// 50 ms timer — what you'd feel as a hitch.
@@ -3021,7 +3021,7 @@ final class E2ERunner {
     /// ⌘P shows, searches across kinds, and hides.
     private func paletteScenario() async {
         // ⌘K is Ghostty's clear_screen; the palette only ever opens on it
-        // if Terminus writes the unbind.
+        // if Overterm writes the unbind.
         check(
             "⌘K is handed to the menu, not kept by Ghostty",
             Keybindings.shared.ghosttyLines.contains("keybind = super+k=unbind"),
@@ -3045,7 +3045,7 @@ final class E2ERunner {
             CommandBlock(id: 1, command: "pnpm --filter web build", startRow: 0, endRow: 9, exit: 0, seconds: 3),
             folder: "/elsewhere")
         app.palette.query = "pnpm"
-        // Not an exact count: Terminus's panes are real login shells, so
+        // Not an exact count: Overterm's panes are real login shells, so
         // what the scenarios type lands in the user's own history file,
         // which is also seeded from.
         let history = app.palette.results.filter { $0.group == .history }
@@ -3209,7 +3209,7 @@ final class E2ERunner {
         open(sys.argv[1], "wb").write(reply)
         """#
 
-    /// Opening a file outside Terminus (the file tree's double-click, the
+    /// Opening a file outside Overterm (the file tree's double-click, the
     /// editor's ↗): the first time a sheet asks which app, the answer is
     /// remembered and later opens go straight there; Open With switches it;
     /// an app that is gone is asked about again. Nothing is launched — an

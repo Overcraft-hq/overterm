@@ -225,11 +225,11 @@ struct KeyCommand: Identifiable, Sendable {
 enum KeyCommands {
     static let all: [KeyCommand] = [
         // Terminus
-        .init("app.settings", "Settings", group: "Terminus", key: "cmd+,", ghostty: "open_config"),
-        .init("app.changelog", "View Latest Changelog", group: "Terminus", key: "alt+cmd+o"),
-        .init("app.hide", "Hide Terminus", group: "Terminus", key: "cmd+h"),
-        .init("app.hideOthers", "Hide Others", group: "Terminus", key: "alt+cmd+h"),
-        .init("app.quit", "Quit Terminus", group: "Terminus", key: "cmd+q", ghostty: "quit"),
+        .init("app.settings", "Settings", group: "Overterm", key: "cmd+,", ghostty: "open_config"),
+        .init("app.changelog", "View Latest Changelog", group: "Overterm", key: "alt+cmd+o"),
+        .init("app.hide", "Hide Overterm", group: "Overterm", key: "cmd+h"),
+        .init("app.hideOthers", "Hide Others", group: "Overterm", key: "alt+cmd+h"),
+        .init("app.quit", "Quit Overterm", group: "Overterm", key: "cmd+q", ghostty: "quit"),
         // Tabs
         .init("tabs.new", "New Tab", group: "Tabs", key: "cmd+t", ghostty: "new_tab"),
         .init("tabs.newClaude", "New Claude Tab", group: "Tabs", key: "alt+cmd+c"),
@@ -307,7 +307,7 @@ enum KeyCommands {
     ]
 
     static let byID: [String: KeyCommand] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    static let groups = ["Terminus", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window"]
+    static let groups = ["Overterm", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window"]
 }
 
 /// keybindings.json, VS Code's way: a list of { "key", "command" }, each

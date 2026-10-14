@@ -65,9 +65,9 @@ libghostty → `GhosttyRuntime.perform(target:action:)` → the surface's
 | Ghostty action | Goes to |
 |---|---|
 | `SET_TITLE`, `PWD` | tab title, tab cwd (→ tree, worktrees, diff follow) |
-| `NEW_TAB`, `CLOSE_TAB`, `GOTO_TAB`, `MOVE_TAB` | the window's tab operations (the user's Ghostty keybinds drive Terminus tabs) |
+| `NEW_TAB`, `CLOSE_TAB`, `GOTO_TAB`, `MOVE_TAB` | the window's tab operations (the user's Ghostty keybinds drive Overterm tabs) |
 | `CLOSE_WINDOW`, `CLOSE_ALL_WINDOWS` | window close (with confirmation) |
-| `TOGGLE_COMMAND_PALETTE` | Terminus palette |
+| `TOGGLE_COMMAND_PALETTE` | Overterm palette |
 | `START_SEARCH` | the ⌘F overlay (with Ghostty's needle, if any) |
 | `END_SEARCH`, `SEARCH_TOTAL`, `SEARCH_SELECTED` | `TerminalSearch` → the overlay's terminal row and the compact bar's `3/12` |
 | `RING_BELL`, `DESKTOP_NOTIFICATION`, `PROGRESS_REPORT`, `COMMAND_FINISHED` | `TabActivity`: `isWorking` + a ranked mark (waiting > failed > done) → tab strip (breathing glyph + sliding bar / ringing yellow dot / green check / red mark), notification, Dock badge |
@@ -435,7 +435,7 @@ worktrees, and the app's own actions, with scope chips to narrow it and a
 detail pane beside the list (a snippet's `{{placeholder}}`s to fill in, or
 when a command last ran and how it went).
 
-`Palette/CommandHistory` is new: Terminus had no history at all, and the
+`Palette/CommandHistory` is new: Overterm had no history at all, and the
 thing you most often want to run again is the thing you ran an hour ago.
 It is fed by the command ledger — which already records every command with
 its exit, its duration and its folder — and seeded once from the shell's
@@ -452,7 +452,7 @@ typed is not (a long command containing n, c and l somewhere outranked
 `performKeyEquivalent` before the menu sees them — so clearing moves to
 ⇧⌘K and `Keybindings.ghosttyLines` writes the unbind. That unbind is not
 conditional on the user having changed anything, which is what the old
-code assumed; a key Terminus always wanted elsewhere never looked
+code assumed; a key Overterm always wanted elsewhere never looked
 "changed" and the line was never written. It is still not written for a
 key a terminal command deliberately shares (⌘F is the editor's find *and*
 the terminal's search).
@@ -488,7 +488,7 @@ pill for a thumbnail, and the process name answers the question the
 thumbnail was asking ("which of my two servers is this").
 
 Links are libghostty's: it detects and underlines them, and ⌘-click
-arrives as `GHOSTTY_ACTION_OPEN_URL`, which Terminus resolves as a file
+arrives as `GHOSTTY_ACTION_OPEN_URL`, which Overterm resolves as a file
 link first (`Editor/FileLink`) and opens in the editor at its line.
 Hovering one arrives as `GHOSTTY_ACTION_MOUSE_OVER_LINK`, which carries
 the URL and **no rectangle** — so there is nothing to anchor a popover
@@ -641,7 +641,7 @@ on by default (checked against 2.1.280).
 
 `Info.plist` (`Scripts/make-app.sh`) declares folders and text/source/any
 files at `LSHandlerRank` Alternate — listed under Open With, never the default
-— and an `NSServices` entry, "New Terminus Tab Here" (`NSRequiredContext`
+— and an `NSServices` entry, "New Overterm Tab Here" (`NSRequiredContext`
 makes it on by default). `AppDelegate.application(_:open:)` and
 `AppDelegate.newTabHere` (the service; `NSApp.servicesProvider = self`) both
 call `TerminalWindowController.open(_:)`. `make install` runs `lsregister -f`
@@ -650,11 +650,11 @@ get files listed; the explicit text types did.
 
 ## Microphone and other privacy prompts
 
-macOS charges what a program in the terminal asks for to Terminus, the app
+macOS charges what a program in the terminal asks for to Overterm, the app
 it runs in. `Info.plist` therefore carries `NSMicrophoneUsageDescription`,
 `NSSpeechRecognitionUsageDescription` and `NSAudioCaptureUsageDescription`
 (Ghostty's wording): without them macOS refused the microphone without asking
-— Claude Code's `/voice` got silence, and Terminus never appeared in System
+— Claude Code's `/voice` got silence, and Overterm never appeared in System
 Settings ▸ Privacy & Security ▸ Microphone. Now the first request asks; the
 setting is there to change it. The `terminal` scenario checks the keys.
 An ad-hoc signed build is a new app to macOS each time, so the answer would
@@ -664,7 +664,7 @@ one identity keeps the grant (README, Build).
 
 ## Build metadata
 
-`Scripts/make-app.sh` writes what About Terminus shows into `Info.plist`:
+`Scripts/make-app.sh` writes what About Overterm shows into `Info.plist`:
 
 | Key | From |
 |---|---|
@@ -676,7 +676,7 @@ one identity keeps the grant (README, Build).
 `VERSION` and `BUILD` in the environment override the first two. Without git
 (a copy of the tree, no repository) the build is 1 and the commit `unknown`.
 
-About Terminus (`AppDelegate.showAbout` → `AboutPanel.show`) is the standard
+About Overterm (`AppDelegate.showAbout` → `AboutPanel.show`) is the standard
 panel, which prints "Version 1.10.0 (103)" from the first two keys itself,
 with credits from the other two: `commit 7e68283 · 26 Sep 2026`
 (`AboutPanel.credits`, pure: English in any locale, what is missing left out,
@@ -738,7 +738,7 @@ with a trailing space; the pane gets the keyboard.
 
 ## Opening files in another app
 
-A file leaves Terminus — the file tree's double-click, its menu's **Open in
+A file leaves Overterm — the file tree's double-click, its menu's **Open in
 <App>**, the editor header's ↗ — in the app the user picked, not the macOS
 default for its type (that was Antigravity for `.md`, Xcode for
 `Package.swift`, Ghostty for `.sh`). `ExternalOpener` (`Sources/Terminus/Editor/`):
@@ -757,7 +757,7 @@ default for its type (that was Antigravity for `.md`, Xcode for
   ids from the apps' Info.plist: VS Code, Cursor, Windsurf, Antigravity, Zed,
   Xcode, Sublime Text, Nova, BBEdit, JetBrains IDEs), then the system default
   marked "(default)", then by name whatever `urlsForApplications(toOpen:)`
-  returns. One entry per bundle id; Terminus itself (it claims text files for
+  returns. One entry per bundle id; Overterm itself (it claims text files for
   Finder) never.
 - An isolated run's `AppCatalog` is `IsolatedApps`: its scenario installs
   stand-in apps and it records what it would have opened — an E2E run never

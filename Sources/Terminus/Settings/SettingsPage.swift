@@ -689,7 +689,7 @@ private struct AboutSettings: View {
             HStack(spacing: 14) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: "Terminus \(updates.currentVersion)").font(.title3.weight(.semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: "Overterm \(updates.currentVersion)").font(.title3.weight(.semibold)).foregroundStyle(theme.text)
                     Text(verbatim: "Build \(build)").foregroundStyle(theme.dimText)
                     if let credits = AboutPanel.credits(for: .main) { Text(verbatim: credits).font(.caption).foregroundStyle(theme.dimText) }
                 }
@@ -714,7 +714,7 @@ private struct AboutSettings: View {
         case .checking: ProgressView().controlSize(.small)
         case .upToDate: Label("Up to date", systemImage: "checkmark.circle").foregroundStyle(theme.dimText)
         case .available(let release):
-            Text(verbatim: "Terminus \(release.version) is available — you have \(updates.currentVersion).").foregroundStyle(.orange)
+            Text(verbatim: "Overterm \(release.version) is available — you have \(updates.currentVersion).").foregroundStyle(.orange)
             HStack(spacing: 8) {
                 Button("Download & Open") { Task { await updates.download(release) } }.fixedSize()
                 if let url = release.url { Button("Release Page") { NSWorkspace.shared.open(url) }.fixedSize() }
@@ -742,7 +742,7 @@ final class ChangelogWindowController: NSWindowController {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered,
             defer: false)
-        window.title = "Terminus Changelog"
+        window.title = "Overterm Changelog"
         window.contentViewController = NSHostingController(rootView: ChangelogView(text: Changelog.bundled ?? "No changelog in this build."))
         super.init(window: window)
     }
