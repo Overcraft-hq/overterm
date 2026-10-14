@@ -1177,6 +1177,24 @@ final class E2ERunner {
         // ⌃⌘1 goes to the first island, expanding it if it is shut.
         app.store.select(loose)
         app.store.setCollapsed(group, true)
+
+        // Hovering a collapsed chip peeks inside it: the island's terminals
+        // as a row of live cards. Only those are scaled, so every other host
+        // has to be occluded while they are up — the selected tab's fills
+        // the container and drew its text straight across the cards.
+        // The selected tab is on screen when you reach for the chip; this
+        // window never comes forward, so say so by hand.
+        app.host(of: loose)?.setVisible(true)
+        app.peekGroup(group)
+        check(
+            "peeking a collapsed island shows its tabs",
+            app.store.tabs(in: group).allSatisfy { app.host(of: $0)?.isHidden == false },
+            "\(app.store.tabs(in: group).map { app.host(of: $0)?.isHidden ?? true })")
+        check("and nothing else is left drawing", app.host(of: loose)?.isHidden == true)
+        app.peekGroup(nil)
+        check(
+            "leaving the chip brings the tab back",
+            await eventually(2) { self.app.host(of: loose)?.isHidden == false })
         let item = NSMenuItem()
         item.tag = 1
         app.showGroup(item)

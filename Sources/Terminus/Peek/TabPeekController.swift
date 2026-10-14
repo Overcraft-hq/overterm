@@ -197,7 +197,14 @@ final class TabPeekController {
             }
             let first = groupPeek == nil
             groupPeek = tabs.map(\.id)
-            for tab in tabs { owner?.host(of: tab)?.setVisible(true) }
+            // Only the island's hosts are scaled into cards, so every other
+            // one has to go: the selected tab's host fills the container and
+            // would otherwise keep drawing at full size — its text across
+            // the cards, the cards' own text inside them, both at once.
+            let shown = Set(tabs.map(\.id))
+            for tab in owner?.store.tabs ?? [] {
+                owner?.host(of: tab)?.setVisible(shown.contains(tab.id))
+            }
             applyGroupPeek(animated: first)
         } else {
             guard groupPeek != nil else { return }
