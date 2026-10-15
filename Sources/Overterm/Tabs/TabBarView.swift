@@ -14,6 +14,8 @@ struct TabBarActions {
     var toggleDiff: () -> Void
     /// The PR chip: the right pane on the checkout's pull request.
     var showPullRequest: () -> Void
+    /// The gauge: the right pane on what the agents have spent.
+    var showUsage: () -> Void
     /// The update chip: Settings ▸ About.
     var showUpdate: () -> Void
     /// The Settings tab: show it, close it.
@@ -33,6 +35,7 @@ struct TabBarView: View {
     @ObservedObject var worktrees: WorktreeModel
     /// A newer release, as a chip.
     @ObservedObject var updates: UpdateChecker
+    @ObservedObject var usage: UsageModel
     @ObservedObject var theme: ChromeTheme
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
@@ -112,7 +115,9 @@ struct TabBarView: View {
             }
             if let badge = diff.badge {
                 DiffBadge(badge: badge, theme: theme, action: actions.toggleDiff)
+                    .padding(.trailing, 6)
             }
+            UsageChip(model: usage, theme: theme, action: actions.showUsage)
         }
         .padding(.trailing, 8)
         .frame(maxHeight: .infinity)

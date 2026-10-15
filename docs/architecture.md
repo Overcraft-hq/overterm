@@ -637,6 +637,37 @@ Claude Code needs no configuration for tab flags: with `TERM_PROGRAM=ghostty`
 its default notification channel is OSC 777 and its progress bar (OSC 9;4) is
 on by default (checked against 2.1.280).
 
+## Usage
+
+What is left of each agent's quota, and what the work would have cost, in
+the right pane beside Changes and Pull Request (⌥⌘U, or the gauge at the
+right of the strip). Nothing is asked over the network: both agents write
+their own numbers down.
+
+| | Where it comes from |
+|---|---|
+| Claude's windows | `~/.claude.json` → `cachedUsageUtilization`: `five_hour`, `seven_day`, and whatever code-named allowance is live beside them (one of them is a real $250). Claude Code caches the API's answer there and refreshes it only while it runs, so `fetchedAtMs` is shown as an age. The newer `limits` array wins when it is there. These are **account-wide** — the same file's breakdown counts chat and the desktop app — which is why the pane says "Claude", not "Claude Code". |
+| Codex's windows | the last `event_msg`/`token_count` in the newest `~/.codex/sessions/**/rollout-*.jsonl`: `rate_limits` with `used_percent`, `window_minutes` and `resets_at`, plus `plan_type`. Which window is which is read off the minutes — "primary" is the weekly one early in a session. |
+| What it cost | the tokens in those same logs, priced by `ModelPricing` (list prices, the two cache TTLs apart, an unknown model left unpriced rather than free). |
+
+`UsageTailScanner` reads a log **backwards** in 256 KB steps and stops at the
+first line with usage older than the window — a day costs about 0.1 MB a
+file, where reading forwards would cost the 643 MB those transcripts come
+to. It is safe because the lines that carry usage are written in order;
+other lines are not, by up to five hours, so only those may stop the walk.
+A scan is kept against the file's size and modification date.
+
+Three ways to count the same tokens twice, all of them avoided and all of
+them tested: Claude repeats a reply once per content block (deduped by
+`message.id`), a Task agent's tokens are in `…/<session>/subagents/*.jsonl`
+and nowhere else (walked as well), and Codex's `total_token_usage` is a
+running total for the session with `cached_input_tokens` *inside*
+`input_tokens` (so the per-turn `last_token_usage` is what counts, cached
+part taken out and charged at the cache rate).
+
+`UsageModel` reads in two tiers: the meters whenever the app is in front
+(for the strip's gauge), the walk over the logs only while the pane shows.
+
 ## Opening from Finder
 
 `Info.plist` (`Scripts/make-app.sh`) declares folders and text/source/any

@@ -152,6 +152,15 @@ enum SettingsSchema {
                 .init(value: "always", label: "Always"), .init(value: "whenRunning", label: "Only when something is running"),
             ]), defaultValue: .string("always")),
         SettingSpec(
+            key: "general.usageChip", section: .general, group: "Usage", title: "Show the quota gauge in the tab strip",
+            help: "What is left of the tightest limit any agent reports, at the right of the strip.", kind: .toggle,
+            defaultValue: .bool(true)),
+        SettingSpec(
+            key: "general.usageCost", section: .general, group: "Usage", title: "Work out what it would have cost",
+            help:
+                "Prices the tokens in the agents' own logs at list API rates. An estimate of what the work would cost on the API — not your bill.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
             key: "general.tabPeekGesture", section: .general, group: "Tab Peek", title: "Peek at every tab with",
             help:
                 "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Esc and ⇧⌘E work whatever this says.",

@@ -95,6 +95,14 @@ down) scales every tab into a card.
   shell gets quoted paths, Claude Code gets `@`-mentions and images it can
   read. Nothing runs until you press Return.
 
+### What the agents are costing you
+
+<kbd>⌥⌘U</kbd>, or the gauge at the right of the strip: what is left of
+Claude's five-hour and weekly windows and of Codex's, with the countdown to
+each reset, and what the day's tokens would cost at list prices. Both are
+read from the files the agents write on this Mac — nothing is asked over
+the network, and nothing needs a key.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started
