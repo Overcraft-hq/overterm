@@ -15,7 +15,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var workspaceRoot: (() -> URL?)?
 
     let chrome: ChromeTheme
-    let theme: EditorTheme
+    private(set) var theme: EditorTheme
     /// The header's ↗: the file in the app picked for files.
     let opener: ExternalOpener
 
@@ -511,6 +511,41 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     /// The size changed in Settings (the window's old entry point).
     func applyFontSize() { applySettings(["editor.fontSize"]) }
+
+    /// The pane is painted from the terminal's colours as well, so a theme
+    /// picked in Settings ▸ Themes reaches it where it stands — the text
+    /// and its syntax, the gutter, the header, the breadcrumb, the status
+    /// bar — as the chrome around it does (`ChromeTheme`, which is the same
+    /// object and has already been recomputed). What is made on demand (a
+    /// completion list, a problems popover) is made from the new colours
+    /// the next time it is asked for.
+    func applyTerminalColors() {
+        guard isViewLoaded else { return }
+        theme = EditorTheme(background: GhosttyRuntime.shared.backgroundColor)
+        textView.theme = theme
+        textView.backgroundColor = theme.background
+        textView.textColor = theme.text
+        textView.insertionPointColor = theme.info
+        textView.selectedTextAttributes = [.backgroundColor: theme.selection]
+        scrollView.backgroundColor = theme.background
+        gutter.theme = theme
+        header.recolor(background: chrome.stripNS, text: theme.text, accent: theme.info)
+        breadcrumb.recolor(background: theme.background, text: theme.text)
+        statusBar.recolor(background: chrome.stripNS, text: theme.text)
+        preview.theme = theme
+        messageLabel.textColor = theme.text.withAlphaComponent(0.6)
+        // The syntax colours are the theme's: every buffer is painted again.
+        let attributes = baseAttributes
+        for buffer in buffers {
+            buffer.storage.beginEditing()
+            buffer.storage.setAttributes(attributes, range: NSRange(location: 0, length: buffer.storage.length))
+            buffer.storage.endEditing()
+            buffer.painted = IndexSet()
+        }
+        textView.typingAttributes = attributes
+        paintVisible()
+        gutter.needsDisplay = true
+    }
 
     /// Wraps long lines at the pane's edge, or lets code scroll sideways.
     func applyWrap() {

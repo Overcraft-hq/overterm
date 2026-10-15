@@ -260,7 +260,17 @@ enum MarkdownRenderer {
 @MainActor
 final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
     private let textView: NSTextView
-    private let theme: EditorTheme
+    /// Settable: the terminal's theme can change while a preview is open
+    /// (`EditorViewController.applyTerminalColors`), and the rendering
+    /// carries its colours.
+    var theme: EditorTheme {
+        didSet {
+            backgroundColor = theme.background
+            textView.backgroundColor = theme.background
+            show(lastMarkdown)
+        }
+    }
+    private var lastMarkdown = ""
     /// A link to a file beside this one (`CLAUDE.md`, `docs/x.md#part`).
     var onOpenFile: ((URL) -> Void)?
     var baseURL: URL?
@@ -303,6 +313,7 @@ final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
 
     /// Renders `markdown`, keeping where you had scrolled to.
     func show(_ markdown: String) {
+        lastMarkdown = markdown
         let origin = contentView.bounds.origin
         textView.textStorage?.setAttributedString(MarkdownRenderer.render(markdown, theme: theme))
         contentView.scroll(to: origin)

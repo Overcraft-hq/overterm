@@ -2834,7 +2834,16 @@ final class E2ERunner {
         check("a light theme turns the chrome light", await eventually(3) { self.app.theme?.isDark == false })
         check("and the window with it", app.window?.backgroundColor == app.theme?.winNS)
         check("the title bar too", app.window?.appearance?.name == .aqua, "\(app.window?.appearance?.name as Any)")
+        // The editor keeps its own vocabulary for the same colours.
+        let file = out("themed.swift")
+        try? "let hello = \"hi\"\n".write(to: file, atomically: true, encoding: .utf8)
+        app.openInEditor(file)
+        check("a file opens in the editor", await eventually(3) { self.app.editor?.document.url == file })
+        check("painted light with everything else", app.editor?.theme.isDark == false, "\(app.editor?.theme.isDark as Any)")
         settings.set("appearance.theme", .string("Claude Dark"))
+        check(
+            "and it follows the theme where it stands", await eventually(3) { self.app.editor?.theme.isDark == true },
+            "\(app.editor?.theme.background as Any)")
         check("and back", await eventually(3) { self.app.theme?.isDark == true })
 
         // As it is done: the page closed, the terminal in hand, a theme
