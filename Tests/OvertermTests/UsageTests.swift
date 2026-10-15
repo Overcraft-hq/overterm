@@ -35,14 +35,24 @@ final class UsageMeterTests: XCTestCase {
         XCTAssertEqual(UsageMeter(name: "x", usedPercent: 1, resetsAt: now.addingTimeInterval(200_000)).resets(now), "resets in 2 d 7 h")
     }
 
-    func testTheChipShowsTheTightestWindowThatStillCounts() {
+    /// The strip shows the window you are working in, even when a weekly
+    /// one is further along: that is the number you can do something
+    /// about this afternoon.
+    func testTheChipShowsTheSessionYouAreIn() {
         var snapshot = UsageSnapshot(provider: .claude)
         snapshot.meters = [
-            UsageMeter(name: "5-hour", usedPercent: 99, resetsAt: now.addingTimeInterval(-1)),  // rolled over
-            UsageMeter(name: "Weekly", usedPercent: 28, resetsAt: now.addingTimeInterval(86_400)),
-            UsageMeter(name: "Weekly · Opus", usedPercent: 64, resetsAt: now.addingTimeInterval(86_400)),
+            UsageMeter(name: "Session", usedPercent: 9, resetsAt: now.addingTimeInterval(3600), isSession: true),
+            UsageMeter(name: "Week (all models)", usedPercent: 34, resetsAt: now.addingTimeInterval(86_400)),
         ]
-        XCTAssertEqual(snapshot.tightest(now)?.name, "Weekly · Opus")
+        XCTAssertEqual(snapshot.chipMeter(now)?.name, "Session")
+
+        // No session window reported: the fullest of what there is.
+        snapshot.meters = [
+            UsageMeter(name: "Session", usedPercent: 99, resetsAt: now.addingTimeInterval(-1), isSession: true),  // rolled over
+            UsageMeter(name: "Week (all models)", usedPercent: 28, resetsAt: now.addingTimeInterval(86_400)),
+            UsageMeter(name: "Week (Opus)", usedPercent: 64, resetsAt: now.addingTimeInterval(86_400)),
+        ]
+        XCTAssertEqual(snapshot.chipMeter(now)?.name, "Week (Opus)")
     }
 
     func testMoneyAndAge() {
@@ -136,7 +146,7 @@ final class ClaudeUsageSourceTests: XCTestCase {
 
     func testTheWindowsItKnowsComeFirstAndTheOddOnesAreNotDropped() {
         let meters = ClaudeUsageSource.windows(in: utilization)
-        XCTAssertEqual(meters.map(\.name), ["5-hour", "Weekly", "Iguana Necktie"])
+        XCTAssertEqual(meters.map(\.name), ["Session", "Week (all models)", "Iguana Necktie"])
         XCTAssertEqual(meters[0].usedPercent, 90)
         XCTAssertEqual(meters[0].resetsAt?.timeIntervalSince1970, 1_792_062_600)
         XCTAssertEqual(meters[2].limitDollars, 250)
@@ -144,17 +154,24 @@ final class ClaudeUsageSourceTests: XCTestCase {
     }
 
     /// The file has grown a `limits` array; when it is there it is the
-    /// truth, and the named keys beside it are the old shape.
-    func testTheLimitsArrayWinsWhenItIsThere() {
+    /// truth, and the named keys beside it are the old shape. `is_active`
+    /// there marks the window that is *biting*, not the ones that exist —
+    /// reading it as "show this" left the session at 90% on screen and
+    /// dropped the weekly one at 28%.
+    func testTheLimitsArrayWinsAndEveryWindowInItIsShown() {
         var newer = utilization
         newer["limits"] = [
-            ["kind": "five_hour", "percent": 12.0, "resets_at": "2026-10-15T11:10:00Z", "is_active": true],
-            ["kind": "weekly_limit", "percent": 50.0, "resets_at": "2026-10-22T02:00:00Z"],
-            ["kind": "retired", "percent": 99.0, "is_active": false],
+            ["kind": "session", "group": "session", "percent": 90.0, "resets_at": "2026-10-15T11:10:00.812478+00:00", "is_active": true],
+            ["kind": "weekly_all", "group": "weekly", "percent": 28.0, "resets_at": "2026-10-22T02:00:00Z", "is_active": false],
+            [
+                "kind": "weekly_scoped", "group": "weekly", "percent": 0.0, "resets_at": "2026-10-22T02:00:00+00:00",
+                "is_active": false, "scope": ["model": ["id": NSNull(), "display_name": "Fable"]],
+            ],
         ]
         let meters = ClaudeUsageSource.windows(in: newer)
-        XCTAssertEqual(meters.map(\.name), ["5-hour", "Weekly"])
-        XCTAssertEqual(meters[0].usedPercent, 12)
+        XCTAssertEqual(meters.map(\.name), ["Session", "Week (all models)", "Week (Fable)"])
+        XCTAssertEqual(meters[0].usedPercent, 90)
+        XCTAssertEqual(meters[1].usedPercent, 28)
     }
 
     func testAReplyLineIsReadWithItsCacheSplit() throws {

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Tokens, as every provider counts them.
 struct UsageTokens: Equatable, Sendable {
@@ -27,6 +28,10 @@ struct UsageMeter: Equatable, Sendable, Identifiable {
     /// 0…100, as the provider reports it.
     let usedPercent: Double
     let resetsAt: Date?
+    /// The window you are inside right now — Claude's session, Codex's
+    /// five hours. It is the one worth a glance in the strip: the weekly
+    /// one moves slowly and you can do nothing about it today.
+    var isSession = false
     /// Set only where the provider gives money rather than a percentage.
     var usedDollars: Double?
     var limitDollars: Double?
@@ -125,8 +130,12 @@ struct UsageSnapshot: Equatable, Sendable, Identifiable {
 
     var id: String { provider.rawValue }
 
+    /// Who is being counted. The two the app starts are read properly;
+    /// the rest are here because they are on a lot of Macs and a pane
+    /// that pretended they weren't would be lying by omission — they
+    /// keep their usage on their own servers, and the row says so.
     enum Provider: String, Sendable, CaseIterable {
-        case claude, codex
+        case claude, codex, cursor, copilot, gemini, antigravity
 
         var name: String {
             switch self {
@@ -134,21 +143,75 @@ struct UsageSnapshot: Equatable, Sendable, Identifiable {
             // not just Claude Code: the name has to be the account's.
             case .claude: "Claude"
             case .codex: "Codex"
+            case .cursor: "Cursor"
+            case .copilot: "GitHub Copilot"
+            case .gemini: "Gemini"
+            case .antigravity: "Antigravity"
             }
         }
 
-        /// The agent whose colour and glyph it borrows in the pane.
-        var agent: Agent {
+        /// Its glyph in the pane. The two agents keep the ones their tabs
+        /// already wear, so the same thing looks the same everywhere.
+        var symbol: String {
             switch self {
-            case .claude: .claude
-            case .codex: .codex
+            case .claude: Agent.claude.symbol
+            case .codex: Agent.codex.symbol
+            case .cursor: "cursorarrow"
+            case .copilot: "cpu"
+            case .gemini: "diamond"
+            case .antigravity: "arrow.up.forward"
             }
+        }
+
+        /// Its colour, near enough its own brand's to tell the rows apart
+        /// at a glance without borrowing anybody's logo.
+        var tint: Color {
+            switch self {
+            case .claude: Color(red: 0.85, green: 0.47, blue: 0.34)
+            case .codex: Color(red: 0.06, green: 0.64, blue: 0.50)
+            case .cursor: Color(red: 0.35, green: 0.56, blue: 0.98)
+            case .copilot: Color(red: 0.61, green: 0.45, blue: 0.93)
+            case .gemini: Color(red: 0.27, green: 0.60, blue: 0.95)
+            case .antigravity: Color(red: 0.93, green: 0.64, blue: 0.24)
+            }
+        }
+
+        /// Where to look to know it is on this Mac. Nil for the two that
+        /// are found by their own logs (`isPresent`), and for all of them
+        /// in an isolated run — a scenario must not depend on what the
+        /// person running it happens to have installed.
+        var home: URL? {
+            guard !AppEnvironment.isIsolated else { return nil }
+            let directory: String?
+            switch self {
+            case .claude, .codex: directory = nil
+            case .cursor: directory = ".cursor"
+            case .copilot: directory = ".copilot"
+            case .gemini: directory = ".gemini"
+            case .antigravity: directory = ".antigravity"
+            }
+            return directory.map { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent($0) }
+        }
+
+        /// Why there are no numbers for it, for the ones there are none for.
+        var elsewhere: String {
+            "Keeps its usage on its own servers — nothing to read on this Mac."
         }
     }
 
-    /// The meter closest to its limit — what the chip in the strip shows.
-    func tightest(_ now: Date = Date()) -> UsageMeter? {
-        meters.filter { !$0.isSpent(now) }.max { $0.usedPercent < $1.usedPercent }
+    /// Every window ended after these figures were written down: they say
+    /// nothing about the ones running now, and only the agent itself can
+    /// refresh them.
+    func isStale(_ now: Date = Date()) -> Bool {
+        !meters.isEmpty && meters.allSatisfy { $0.isSpent(now) }
+    }
+
+    /// What the chip in the strip shows: the window you are in. Only
+    /// when a provider reports no session window does the tightest of the
+    /// others stand in for it.
+    func chipMeter(_ now: Date = Date()) -> UsageMeter? {
+        let live = meters.filter { !$0.isSpent(now) }
+        return live.first(where: \.isSession) ?? live.max { $0.usedPercent < $1.usedPercent }
     }
 }
 

@@ -156,6 +156,11 @@ enum SettingsSchema {
             help: "What is left of the tightest limit any agent reports, at the right of the strip.", kind: .toggle,
             defaultValue: .bool(true)),
         SettingSpec(
+            key: "general.usageAsk", section: .general, group: "Usage", title: "Ask the agents for fresh numbers",
+            help:
+                "Runs the agent's own usage command every ten minutes while Overterm is in front, so the pane says what that command says. Off, it shows the last figures the agent wrote down and how old they are.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
             key: "general.usageCost", section: .general, group: "Usage", title: "Work out what it would have cost",
             help:
                 "Prices the tokens in the agents' own logs at list API rates. An estimate of what the work would cost on the API — not your bill.",

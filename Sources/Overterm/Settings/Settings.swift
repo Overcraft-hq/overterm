@@ -240,6 +240,9 @@ final class Settings: ObservableObject {
 
     /// The quota gauge at the right of the tab strip.
     var usageChip: Bool { bool("general.usageChip") }
+    /// Whether the usage pane runs the agents' own usage command to keep
+    /// its numbers current.
+    var usageAsk: Bool { bool("general.usageAsk") }
     /// Whether the usage pane puts a price on the tokens it counts.
     var usageCost: Bool { bool("general.usageCost") }
 

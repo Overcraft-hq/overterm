@@ -4,9 +4,11 @@ import SwiftUI
 /// end of the title bar. A click opens the usage pane, where the changes
 /// open.
 ///
-/// It shows nothing at all until a provider has written down a limit —
-/// the strip is where the tabs live and an empty chip would just take
-/// their width.
+/// It is there as soon as an agent has written a limit down, even when
+/// every window it knows about has rolled over: then it shows the gauge
+/// and a dash, which is the truth — the figures are from before the
+/// window started again. Nothing at all only when there is no agent on
+/// this Mac, or when Settings ▸ General puts it away.
 struct UsageChip: View {
     @ObservedObject var model: UsageModel
     @ObservedObject var theme: ChromeTheme
@@ -16,14 +18,15 @@ struct UsageChip: View {
     @State private var hovering = false
 
     var body: some View {
-        if settings.usageChip, let (snapshot, meter) = model.tightest() {
+        if settings.usageChip, model.isAvailable {
+            let shown = model.chipMeter()
             Button(action: action) {
                 HStack(spacing: 5) {
                     Image(systemName: "gauge.with.needle")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(colour(meter))
-                    Text(verbatim: meter.reading())
-                        .foregroundStyle(theme.text)
+                        .foregroundStyle(shown.map { colour($0.meter) } ?? theme.dimText)
+                    Text(verbatim: shown?.meter.reading() ?? "—")
+                        .foregroundStyle(shown == nil ? theme.dimText : theme.text)
                 }
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .padding(.horizontal, 8)
@@ -33,7 +36,9 @@ struct UsageChip: View {
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
-            .help("\(snapshot.provider.name) · \(meter.name) \(meter.reading()), \(meter.resets()) — Usage (⌥⌘U)")
+            .help(
+                shown.map { "\($0.snapshot.provider.name) · \($0.meter.name) \($0.meter.reading()), \($0.meter.resets()) — Usage (⌥⌘U)" }
+                    ?? "Usage (⌥⌘U) — every window the agents reported has started again since")
         }
     }
 

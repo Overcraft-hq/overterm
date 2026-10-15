@@ -48,12 +48,19 @@ enum ClaudeUsageSource {
     /// that goes quietly out of date.
     static func windows(in utilization: [String: Any]) -> [UsageMeter] {
         if let limits = utilization["limits"] as? [[String: Any]], !limits.isEmpty {
+            // `is_active` marks the one that is biting, not the ones that
+            // exist: taking it as "show this" left a window at 90% and
+            // dropped the weekly one at 28%.
             return limits.compactMap { limit in
                 guard let percent = (limit["percent"] ?? limit["utilization"]) as? Double else { return nil }
-                guard (limit["is_active"] as? Bool) ?? true else { return nil }
                 let kind = (limit["kind"] as? String) ?? (limit["group"] as? String) ?? "Limit"
+                // A window for one model says so: "weekly_scoped" with a
+                // scope of Fable is "Weekly · Fable".
+                let scope = (limit["scope"] as? [String: Any])?["model"] as? [String: Any]
+                let model = scope?["display_name"] as? String
                 return UsageMeter(
-                    name: label(for: kind), usedPercent: percent, resetsAt: resets(limit["resets_at"]),
+                    name: model.map { "\(label(for: kind)) (\($0))" } ?? label(for: kind), usedPercent: percent,
+                    resetsAt: resets(limit["resets_at"]), isSession: isSession(kind),
                     usedDollars: limit["used_dollars"] as? Double, limitDollars: limit["limit_dollars"] as? Double)
             }
         }
@@ -67,6 +74,7 @@ enum ClaudeUsageSource {
                     order(of: key),
                     UsageMeter(
                         name: label(for: key), usedPercent: percent, resetsAt: resets(window["resets_at"]),
+                        isSession: isSession(key),
                         usedDollars: (window["used_dollars"] ?? window["used_credits"]) as? Double,
                         limitDollars: (window["limit_dollars"] ?? window["monthly_limit"]) as? Double)
                 ))
@@ -85,12 +93,20 @@ enum ClaudeUsageSource {
         }
     }
 
+    /// The window you are working in now, whatever it has been called.
+    private static func isSession(_ kind: String) -> Bool {
+        ["session", "five_hour", "five_hour_limit"].contains(kind)
+    }
+
+    /// The words Claude Code's own `/usage` uses, so the two can be read
+    /// side by side without translating.
     private static func label(for key: String) -> String {
         switch key {
-        case "five_hour", "five_hour_limit": "5-hour"
-        case "seven_day", "weekly_limit": "Weekly"
-        case "seven_day_opus": "Weekly · Opus"
-        case "seven_day_sonnet": "Weekly · Sonnet"
+        case "five_hour", "five_hour_limit", "session": "Session"
+        case "seven_day", "weekly_limit", "weekly_all", "weekly": "Week (all models)"
+        case "weekly_scoped": "Week"
+        case "seven_day_opus": "Week (Opus)"
+        case "seven_day_sonnet": "Week (Sonnet)"
         case "extra_usage": "Extra usage"
         default:
             // A code name nobody outside Anthropic can read ("iguana_necktie")
@@ -185,6 +201,22 @@ enum ClaudeUsageSource {
             }
         }
         return UsageSpend.of(byModel)
+    }
+
+    /// How old the figures may be before the agent is asked again. Its
+    /// own `/usage` is a request to the service; every ten minutes is what
+    /// openusage settles on too, and nobody needs a percentage to the
+    /// second.
+    static let staleAfter: TimeInterval = 600
+
+    /// Asks Claude for fresh figures when what it last wrote down has
+    /// aged, by running the command a person would run. Blocking; call
+    /// off the main thread.
+    static func refresh(asking: Bool, force: Bool = false, now: Date = Date()) {
+        guard asking || force else { return }
+        let age = meters().asOf.map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+        guard force || age > staleAfter else { return }
+        AgentUsageCommand.askClaude()
     }
 
     /// Everything the pane shows for Claude.

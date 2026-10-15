@@ -36,10 +36,12 @@ final class UsageModel: ObservableObject {
     /// Whether anything was found on this Mac to track at all.
     var isAvailable: Bool { !providers.isEmpty }
 
-    /// The meter nearest its limit, over every provider — the chip.
-    func tightest(_ now: Date = Date()) -> (snapshot: UsageSnapshot, meter: UsageMeter)? {
-        providers.compactMap { snapshot in snapshot.tightest(now).map { (snapshot, $0) } }
-            .max { $0.1.usedPercent < $1.1.usedPercent }
+    /// What the strip's gauge shows: the session window that is fullest,
+    /// over every provider.
+    func chipMeter(_ now: Date = Date()) -> (snapshot: UsageSnapshot, meter: UsageMeter)? {
+        let found = providers.compactMap { snapshot in snapshot.chipMeter(now).map { (snapshot: snapshot, meter: $0) } }
+        return found.filter(\.meter.isSession).max { $0.meter.usedPercent < $1.meter.usedPercent }
+            ?? found.max { $0.meter.usedPercent < $1.meter.usedPercent }
     }
 
     func start() {
@@ -61,7 +63,10 @@ final class UsageModel: ObservableObject {
     }
 
     /// Re-reads: the meters always, the spend only while the pane shows.
-    func refresh() {
+    /// The agents' own usage command runs first — every ten minutes, and
+    /// at once when the ↻ button asks (`force`) — so the pane can never
+    /// say something `/usage` doesn't.
+    func refresh(force: Bool = false) {
         guard !reading else {
             again = true
             return
@@ -71,13 +76,26 @@ final class UsageModel: ObservableObject {
         let scope = scope
         let scanner = scanner
         let withCost = visible && Settings.shared.usageCost
+        let asking = Settings.shared.usageAsk
         Task { [weak self] in
             let read = await withCheckedContinuation { (continuation: CheckedContinuation<[UsageSnapshot], Never>) in
                 DispatchQueue.global(qos: .utility).async {
-                    let found = [
+                    // The agent's own command, so the pane and `/usage`
+                    // cannot disagree; it writes its answer where the
+                    // structured figures are read from.
+                    ClaudeUsageSource.refresh(asking: asking, force: force)
+                    var found = [
                         ClaudeUsageSource.snapshot(scope: scope, scanner: scanner, cost: withCost),
                         CodexUsageSource.snapshot(scope: scope, scanner: scanner, cost: withCost),
                     ].compactMap { $0 }
+                    // The rest are listed when they are installed, with
+                    // what can honestly be said about them: their numbers
+                    // are on their own servers, behind a login we don't
+                    // have and won't ask for.
+                    found += UsageSnapshot.Provider.allCases.compactMap { provider -> UsageSnapshot? in
+                        guard let home = provider.home, FileManager.default.fileExists(atPath: home.path) else { return nil }
+                        return UsageSnapshot(provider: provider, note: provider.elsewhere)
+                    }
                     continuation.resume(returning: found)
                 }
             }

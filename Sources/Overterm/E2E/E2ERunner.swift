@@ -1100,10 +1100,13 @@ final class E2ERunner {
             "and they are \(Int(CardColumn.gap)) pt apart", gaps(shown).allSatisfy { abs($0 - CardColumn.gap) < 0.5 },
             gaps(shown).map { "\($0)" }.joined(separator: ", "))
         check(
-            "the cards are inset from the window on three sides",
+            "the cards are inset from the window on every side",
             body.frame.minX + (shown.first?.minX ?? 0) == CardColumn.gap
                 && content.frame.maxX - (body.frame.minX + (shown.last?.maxX ?? 0)) == CardColumn.gap
-                && body.frame.minY == CardColumn.gap,
+                && body.frame.minY == CardColumn.gap
+                // Under the strip as well, since the strip became a panel:
+                // the terminal ran straight into it.
+                && abs(content.frame.maxY - body.frame.maxY - (app.tabBarView?.frame.height ?? 0) - CardColumn.gap) < 0.5,
             "\(shown.map { $0.integral }) in body \(body.frame.integral) of \(content.frame.integral)")
 
         // The changes pane opens with the editor still shut between it and
@@ -1132,14 +1135,17 @@ final class E2ERunner {
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
 
-        // The strip fills the title bar and has to behave like one: a
-        // double-click on it zooms the window. A background painted in
-        // front of the drag area swallowed the click — the title bar
-        // stopped dragging and double-clicking it stopped zooming.
+        // The strip fills the title bar and has to behave like one: its
+        // empty space drags the window and a double-click there zooms it.
+        // Both have been lost twice — once to a colour painted in front of
+        // the drag area, once to the scroll view the tabs now live in —
+        // so this checks the space itself, whatever is on top of it.
         let inStrip = NSPoint(x: window.frame.width * 0.55, y: lights.midY)
-        let dragged = window.contentView?.superview?.hitTest(inStrip)
-        check("the strip's empty space is the window's drag area", dragged is WindowDragView, "\(String(describing: dragged))")
-        if let dragged,
+        let onTop = window.contentView?.superview?.hitTest(inStrip)
+        check(
+            "the strip's empty space moves the window",
+            onTop is WindowDragView || onTop?.mouseDownCanMoveWindow == true, "\(String(describing: onTop))")
+        if let dragged = Self.find(WindowDragView.self, in: window.contentView) { _ in true },
             let doubleClick = NSEvent.mouseEvent(
                 with: .leftMouseDown, location: inStrip, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1)
@@ -1148,6 +1154,8 @@ final class E2ERunner {
             dragged.mouseDown(with: doubleClick)
             check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
             if window.isZoomed != zoomed { window.performZoom(nil) }
+        } else {
+            check("the strip has a drag area at all", false)
         }
     }
 
@@ -2818,8 +2826,13 @@ final class E2ERunner {
 
         // Nothing is walked while the pane is shut.
         app.usage.refresh()
-        check("the gauge reads the limits without the pane", await eventually(5) { self.app.usage.tightest() != nil })
-        check("and the tightest window is the one it shows", app.usage.tightest()?.meter.reading() == "88%", "\(app.usage.tightest()?.meter as Any)")
+        check("the gauge reads the limits without the pane", await eventually(5) { self.app.usage.chipMeter() != nil })
+        // The window you are in, not the weekly one that moves slowly:
+        // the strip is a glance, and 88% of this session is the news.
+        check(
+            "and it shows the session you are in", app.usage.chipMeter()?.meter.reading() == "88%",
+            "\(app.usage.chipMeter()?.meter as Any)")
+        check("which is a session window", app.usage.chipMeter()?.meter.isSession == true)
         check("with nothing counted yet", app.usage.providers.allSatisfy { $0.spend.tokens.total == 0 })
 
         guard let item = menuItem("View", "Usage") else { return check("View ▸ Usage exists", false) }
@@ -2829,7 +2842,9 @@ final class E2ERunner {
 
         check("both agents are found", await eventually(6) { self.app.usage.providers.map(\.provider) == [.claude, .codex] }, "\(app.usage.providers.map(\.provider))")
         let claudeUsage = app.usage.providers.first { $0.provider == .claude }
-        check("Claude's windows are read", claudeUsage?.meters.map(\.name) == ["5-hour", "Weekly"], "\(claudeUsage?.meters.map(\.name) as Any)")
+        check(
+            "Claude's windows are read", claudeUsage?.meters.map(\.name) == ["Session", "Week (all models)"],
+            "\(claudeUsage?.meters.map(\.name) as Any)")
         check("with its percentage", claudeUsage?.meters.first?.usedPercent == 42)
         // 1 M in and 1 M out of Opus 5 is $5 + $25, and the repeated line
         // must not make it $60.
@@ -2839,6 +2854,7 @@ final class E2ERunner {
         let codex = app.usage.providers.first { $0.provider == .codex }
         check("Codex's plan comes off its rollout", codex?.plan == "plus")
         check("its windows too", codex?.meters.map(\.name).sorted() == ["5-hour", "Weekly"], "\(codex?.meters.map(\.name) as Any)")
+        check("and the five-hour one is the session", codex?.meters.first { $0.isSession }?.name == "5-hour")
         check("and the turn's own tokens, not the session's running total", codex?.spend.tokens.total == 600, "\(codex?.spend.tokens as Any)")
 
         app.toggleDiff(nil)

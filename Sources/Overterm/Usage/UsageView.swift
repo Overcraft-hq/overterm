@@ -38,12 +38,12 @@ struct UsageView: View {
             Text("Usage").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
             if model.isRefreshing { ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12) }
             Spacer(minLength: 0)
-            Button(action: { model.refresh() }) {
+            Button(action: { model.refresh(force: true) }) {
                 Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .medium))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
-            .help("Read it again")
+            .help("Ask the agents again")
             Button(action: onClose) {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
             }
@@ -84,9 +84,10 @@ struct UsageView: View {
     private func card(_ snapshot: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: snapshot.provider.agent.symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(theme.accentText)
+                Image(systemName: snapshot.provider.symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(snapshot.provider.tint)
+                    .frame(width: 16)
                 Text(verbatim: snapshot.provider.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
                 if let plan = snapshot.plan {
                     Text(verbatim: plan.capitalized)
@@ -106,6 +107,16 @@ struct UsageView: View {
             }
             ForEach(snapshot.meters) { meter in
                 bar(meter)
+            }
+            if snapshot.isStale(), let asOf = snapshot.metersAsOf {
+                Text(
+                    verbatim: snapshot.provider == .claude
+                        ? "Every window above ended after Claude wrote these down \(UsageFormat.age(asOf)). It only writes them when it asks — /usage in Claude Code refreshes them."
+                        : "Written \(UsageFormat.age(asOf)); every window above has started again since."
+                )
+                .font(.system(size: 10))
+                .foregroundStyle(theme.text3)
+                .fixedSize(horizontal: false, vertical: true)
             }
             if let note = snapshot.note {
                 Text(verbatim: note).font(.system(size: 10)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
@@ -162,6 +173,9 @@ struct UsageView: View {
                 Text(verbatim: "\(TabInfoView.tokens(spend.tokens.total)) tokens")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(theme.text2)
+                Text(verbatim: "· everything on this Mac")
+                    .font(.system(size: 10))
+                    .foregroundStyle(theme.text3)
                 Spacer(minLength: 0)
                 if !spend.models.isEmpty {
                     Text(verbatim: spend.models.map(ModelPricing.shortName).joined(separator: ", "))

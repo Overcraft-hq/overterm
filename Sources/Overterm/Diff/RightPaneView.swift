@@ -52,7 +52,7 @@ struct RightPaneView: View {
                 }
                 tab(.usage) {
                     Text("Usage")
-                    if let meter = usage.model.tightest()?.meter {
+                    if let meter = usage.model.chipMeter()?.meter {
                         Text(verbatim: meter.reading()).foregroundStyle(theme.dimText)
                     }
                 }

@@ -78,7 +78,9 @@ enum CodexUsageSource {
                 meters.append(
                     UsageMeter(
                         name: name(forWindow: minutes), usedPercent: percent,
-                        resetsAt: resets > 0 ? Date(timeIntervalSince1970: Double(resets)) : nil))
+                        resetsAt: resets > 0 ? Date(timeIntervalSince1970: Double(resets)) : nil,
+                        // Anything up to a day is the window you are in.
+                        isSession: minutes <= 300))
             }
             from = start + usedPercentKey.count
         }
