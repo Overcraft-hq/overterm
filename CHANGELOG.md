@@ -7,13 +7,18 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
-## 2.6.0 — 2026-10-15
+## 2.7.0 — 2026-10-15
 
 - browser: a browser beside the terminal — per tab, with its own tabs, the page's console, and an MCP server for agents
-
-## 2.5.2 — 2026-10-15
-
 - git: a git call no longer kills the app once WebKit is loaded
+
+## 2.6.1 — 2026-10-15
+
+- window: the tab strip is a panel, in the sidebar's colour
+
+## 2.6.0 — 2026-10-15
+
+- editor: the pane follows the terminal's theme too
 
 ## 2.5.1 — 2026-10-15
 

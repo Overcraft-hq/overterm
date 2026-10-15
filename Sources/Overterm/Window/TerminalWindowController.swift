@@ -2774,6 +2774,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             host.dividerColor = Self.paneDivider
             host.dimColor = Self.paneDim
         }
+        // The editor is painted from the terminal's colours too, and has
+        // its own vocabulary for them (EditorTheme).
+        editor?.applyTerminalColors()
     }
 
     /// The overrides file from both files; Ghostty reloads only when it changed.

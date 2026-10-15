@@ -21,14 +21,15 @@ final class EditorHeaderView: NSView {
         didSet { reveal.menuProvider = revealMenu }
     }
 
-    private let background: NSColor
-    private let text: NSColor
-    private let accent: NSColor
+    private var background: NSColor
+    private var text: NSColor
+    private var accent: NSColor
     private let tabs = NSStackView()
     private let scroll = NSScrollView()
     private let zoom = NSButton()
     private let preview = NSButton()
     private let reveal = MenuButton()
+    private let close = NSButton()
     private var items: [Item] = []
     private var active = -1
 
@@ -70,7 +71,7 @@ final class EditorHeaderView: NSView {
         zoom.identifier = NSUserInterfaceItemIdentifier("zoomEditor")
         Self.style(reveal, "arrow.up.forward.app", tip: OpenWith.openTitle(nil), color: text, target: self, action: #selector(revealFile))
         reveal.identifier = NSUserInterfaceItemIdentifier("openExternally")
-        let close = Self.style(NSButton(), "xmark", tip: "Close Editor", color: text, target: self, action: #selector(closeEditor))
+        Self.style(close, "xmark", tip: "Close Editor", color: text, target: self, action: #selector(closeEditor))
         close.identifier = NSUserInterfaceItemIdentifier("closeEditor")
         for view in [scroll, preview, zoom, reveal, close] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -105,6 +106,23 @@ final class EditorHeaderView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// The terminal's theme changed while the pane was open
+    /// (`EditorViewController.applyTerminalColors`).
+    func recolor(background: NSColor, text: NSColor, accent: NSColor) {
+        self.background = background
+        self.text = text
+        self.accent = accent
+        for button in [zoom, preview, reveal as NSButton] {
+            button.contentTintColor = text.withAlphaComponent(0.7)
+        }
+        close.contentTintColor = text.withAlphaComponent(0.7)
+        // The tabs carry the colours they were built with.
+        let (items, active) = (self.items, self.active)
+        self.items = []
+        update(items, active: active)
+        needsDisplay = true
     }
 
     func update(_ items: [Item], active: Int) {
@@ -293,8 +311,8 @@ final class MenuButton: NSButton {
 @MainActor
 final class EditorBreadcrumbView: NSView {
     private let label = NSTextField(labelWithString: "")
-    private let background: NSColor
-    private let text: NSColor
+    private var background: NSColor
+    private var text: NSColor
     var onClick: (() -> Void)?
 
     init(background: NSColor, text: NSColor) {
@@ -324,7 +342,22 @@ final class EditorBreadcrumbView: NSView {
         dirtyRect.intersection(bounds).fill()
     }
 
+    /// The terminal's theme changed under the pane
+    /// (`EditorViewController.applyTerminalColors`): the line is written
+    /// again, since its colours are in the attributed string.
+    func recolor(background: NSColor, text: NSColor) {
+        self.background = background
+        self.text = text
+        update(path: lastPath, symbol: lastSymbol)
+        needsDisplay = true
+    }
+
+    private var lastPath: [String] = []
+    private var lastSymbol: String?
+
     func update(path: [String], symbol: String?) {
+        lastPath = path
+        lastSymbol = symbol
         let out = NSMutableAttributedString()
         let dim: [NSAttributedString.Key: Any] = [.foregroundColor: text.withAlphaComponent(0.5), .font: NSFont.systemFont(ofSize: 11.5)]
         let strong: [NSAttributedString.Key: Any] = [.foregroundColor: text.withAlphaComponent(0.85), .font: NSFont.systemFont(ofSize: 11.5)]
@@ -352,8 +385,8 @@ final class EditorStatusBar: NSView {
     private let indent = NSTextField(labelWithString: "")
     private let language = NSTextField(labelWithString: "")
     private let server = NSTextField(labelWithString: "")
-    private let background: NSColor
-    private let text: NSColor
+    private var background: NSColor
+    private var text: NSColor
     var onProblems: (() -> Void)?
 
     init(background: NSColor, text: NSColor) {
@@ -373,6 +406,7 @@ final class EditorStatusBar: NSView {
             label.textColor = text.withAlphaComponent(0.6)
             label.lineBreakMode = .byTruncatingTail
         }
+        recolorLabels()
         mode.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
         position.identifier = NSUserInterfaceItemIdentifier("editorPosition")
         mode.identifier = NSUserInterfaceItemIdentifier("editorMode")
@@ -397,6 +431,21 @@ final class EditorStatusBar: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// The terminal's theme changed under the pane.
+    func recolor(background: NSColor, text: NSColor) {
+        self.background = background
+        self.text = text
+        recolorLabels()
+        needsDisplay = true
+    }
+
+    private func recolorLabels() {
+        for label in [mode, position, indent, language, server] {
+            label.textColor = text.withAlphaComponent(0.6)
+        }
+        problems.contentTintColor = text.withAlphaComponent(0.7)
     }
 
     override func draw(_ dirtyRect: NSRect) {
