@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.6.2 — 2026-10-15
+
+- window: the strip's drag area in front of its colour again
+
 ## 2.6.1 — 2026-10-15
 
 - window: the tab strip is a panel, in the sidebar's colour

@@ -116,11 +116,15 @@ struct TabBarView: View {
         }
         .padding(.trailing, 8)
         .frame(maxHeight: .infinity)
+        // The drag area in front of the colour, not behind it: a later
+        // `.background` goes further back, and a Color takes the clicks of
+        // anything under it — the title bar stopped dragging, and
+        // double-clicking it stopped zooming the window.
+        .background(WindowDragArea())
         // The strip is a panel like the sidebar, and reads as one: the
         // title bar would otherwise be the window's own ground, a step
         // darker than every panel under it.
         .background(theme.card)
-        .background(WindowDragArea())
         .coordinateSpace(name: TabFramesKey.space)
         .onPreferenceChange(TabFramesKey.self) { frames in
             MainActor.assumeIsolated { store.tabFrames = frames }

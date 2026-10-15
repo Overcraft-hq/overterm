@@ -1130,6 +1130,24 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+
+        // The strip fills the title bar and has to behave like one: a
+        // double-click on it zooms the window. A background painted in
+        // front of the drag area swallowed the click — the title bar
+        // stopped dragging and double-clicking it stopped zooming.
+        let inStrip = NSPoint(x: window.frame.width * 0.55, y: lights.midY)
+        let dragged = window.contentView?.superview?.hitTest(inStrip)
+        check("the strip's empty space is the window's drag area", dragged is WindowDragView, "\(String(describing: dragged))")
+        if let dragged,
+            let doubleClick = NSEvent.mouseEvent(
+                with: .leftMouseDown, location: inStrip, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1)
+        {
+            let zoomed = window.isZoomed
+            dragged.mouseDown(with: doubleClick)
+            check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
+            if window.isZoomed != zoomed { window.performZoom(nil) }
+        }
     }
 
     /// Dropping a tab onto a pane: the only way to make a split out of
