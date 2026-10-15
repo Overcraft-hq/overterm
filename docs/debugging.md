@@ -8,18 +8,18 @@ diagnostic mode instead — it only acts on its own window:
 
 ```sh
 make app
-TERMINUS_DUMP_LAYOUT=$PWD/README.md \
-TERMINUS_DUMP_PNG=/tmp/terminus.png \
+OVERTERM_DUMP_LAYOUT=$PWD/README.md \
+OVERTERM_DUMP_PNG=/tmp/overterm.png \
   ./Overterm.app/Contents/MacOS/Overterm
 ```
 
 It starts a fresh window (no session restore, no autosave, divider positions
 neither restored nor saved), opens the file in the editor after 1 s (an empty
-`TERMINUS_DUMP_LAYOUT=` opens none), and after another 1.5 s:
+`OVERTERM_DUMP_LAYOUT=` opens none), and after another 1.5 s:
 
 1. prints the view tree with frames (and `HIDDEN`) plus each outer split
    item's width to stderr;
-2. with `TERMINUS_DUMP_PNG`, writes a capture of the **composited window**
+2. with `OVERTERM_DUMP_PNG`, writes a capture of the **composited window**
    (`CGWindowListCreateImage` of its own window — no Screen Recording
    permission needed). `cacheDisplay(in:to:)` is useless here: it misses
    layer-backed content (the editor text, AppKit headers) and draws a fake
@@ -32,15 +32,15 @@ More switches, combinable:
 
 | Variable | Does |
 |---|---|
-| `TERMINUS_DUMP_CWD=<dir>` | start the tab there (e.g. a scratch git repo) |
-| `TERMINUS_DUMP_DIFF=1` | open the changes pane |
-| `TERMINUS_DUMP_RENAME=1` | select the tab and start renaming it (as the UI does); 0.5 s later print whether it is still renaming and who has the keyboard |
-| `TERMINUS_DUMP_CLOSE=<s>` | after `<s>` seconds, run Close Tab; print whether the confirmation sheet came up, its text, and the tab count; dismiss it |
-| `TERMINUS_DUMP_PEEK=1` | open Tab Peek (making tabs if needed) before the dump, and print where each host's layer actually lands — how the peek's transform was got right |
-| `TERMINUS_DUMP_GROUPS=1` | make an island of two tabs before the dump, and print the strip's islands with the tab and chip frames the context-click monitor needs |
+| `OVERTERM_DUMP_CWD=<dir>` | start the tab there (e.g. a scratch git repo) |
+| `OVERTERM_DUMP_DIFF=1` | open the changes pane |
+| `OVERTERM_DUMP_RENAME=1` | select the tab and start renaming it (as the UI does); 0.5 s later print whether it is still renaming and who has the keyboard |
+| `OVERTERM_DUMP_CLOSE=<s>` | after `<s>` seconds, run Close Tab; print whether the confirmation sheet came up, its text, and the tab count; dismiss it |
+| `OVERTERM_DUMP_PEEK=1` | open Tab Peek (making tabs if needed) before the dump, and print where each host's layer actually lands — how the peek's transform was got right |
+| `OVERTERM_DUMP_GROUPS=1` | make an island of two tabs before the dump, and print the strip's islands with the tab and chip frames the context-click monitor needs |
 
 Run it from the **bundle** (`Overterm.app/Contents/MacOS/Overterm`): a bare
-`.build/debug/Terminus` crashes in `UNUserNotificationCenter` ("bundleProxy
+`.build/debug/Overterm` crashes in `UNUserNotificationCenter` ("bundleProxy
 ForCurrentProcess is nil") and lacks terminfo/shell integration.
 
 Extend `dumpLayoutIfRequested()` in `TerminalWindowController` when a new
@@ -52,7 +52,7 @@ layout question comes up, rather than asking the user for screenshots first.
   backtrace:
   ```sh
   printf 'process launch\nthread backtrace all\nkill\n' > /tmp/lldb.cmds
-  lldb -b -s /tmp/lldb.cmds .build/debug/Terminus
+  lldb -b -s /tmp/lldb.cmds .build/debug/Overterm
   ```
   (needs to run outside the Bash tool's sandbox).
 - libghostty's embedded crash reporter writes
@@ -62,7 +62,7 @@ layout question comes up, rather than asking the user for screenshots first.
 ## Logs
 
 ```sh
-log stream --level debug --predicate 'subsystem == "io.github.terminus-app.terminus" OR subsystem == "com.mitchellh.ghostty"'
+log stream --level debug --predicate 'subsystem == "io.github.overcraft-hq.overterm" OR subsystem == "com.mitchellh.ghostty"'
 ```
 
 libghostty logs config diagnostics, the resources dir it found ("ghostty
@@ -88,11 +88,11 @@ in `deinit`.
 
 | Reset | How |
 |---|---|
-| Tabs | delete `~/Library/Application Support/Terminus/session.json` |
-| Snippets | delete `…/Terminus/snippets.json` (starters come back) |
-| Divider positions | `defaults delete io.github.terminus-app.terminus "NSSplitView Subview Frames TerminusColumns.v2"` |
-| Panels shown | `defaults delete io.github.terminus-app.terminus sidebarVisible` / `diffVisible` / `sidebarPanel` |
-| The app files open in (asked again next time) | `defaults delete io.github.terminus-app.terminus openWithApp` |
+| Tabs | delete `~/Library/Application Support/Overterm/session.json` |
+| Snippets | delete `…/Overterm/snippets.json` (the list starts empty) |
+| Divider positions | `defaults delete io.github.overcraft-hq.overterm "NSSplitView Subview Frames OvertermColumns.v4"` |
+| Panels shown | `defaults delete io.github.overcraft-hq.overterm sidebarVisible` / `diffVisible` / `sidebarPanel` |
+| The app files open in (asked again next time) | `defaults delete io.github.overcraft-hq.overterm openWithApp` |
 
 ## Things that looked like bugs elsewhere
 
@@ -108,7 +108,7 @@ in `deinit`.
 | `git check-ignore -z` fails | `-z` only works with `--stdin`; parse lines. |
 | App not in Launchpad | `make install` (the build lands in the repo). |
 | The microphone is asked for again after every update | The install is ad hoc, a new app to macOS each time: set `SIGN_IDENTITY` (README, Build). |
-| Tab rename ends as soon as it starts | Something took first responder after it began — re-selecting the tab used to (focus → terminal). `TERMINUS_DUMP_RENAME` checks it. |
+| Tab rename ends as soon as it starts | Something took first responder after it began — re-selecting the tab used to (focus → terminal). `OVERTERM_DUMP_RENAME` checks it. |
 | Diff empty in a fresh repo | No HEAD yet: diff against the empty tree (`DiffModel.emptyTree`); `restore --staged` needs HEAD, use `rm --cached --force`. |
 | Idle shell reported as running | Shell integration hasn't reported the prompt yet (first seconds after launch). |
 | The app aborts with `Swift/FlatMap.swift: Unexpectedly found nil` while an agent starts or exits | `lazy.compactMap(…).first` read a pane's process tree twice and force-unwrapped the second read, by which time the agent was gone. Read live state once, in a loop (`TerminalWindowController.firstAgent`). |

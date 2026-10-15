@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A commit that changes VERSION gets an annotated tag v<VERSION> ("Terminus
+# A commit that changes VERSION gets an annotated tag v<VERSION> ("Overterm
 # <VERSION>"), unless that tag exists. Enabled by `make hooks`. Tags stay
 # local: push one with `git push origin v<VERSION>`.
 set -euo pipefail
@@ -20,9 +20,9 @@ tag="v$version"
 if existing="$(git rev-parse -q --verify "refs/tags/$tag^{commit}")"; then
   if [[ "$existing" != "$(git rev-parse HEAD)" ]]; then
     echo "post-commit: $tag already tags ${existing:0:7}; left there. To move it here:" >&2
-    echo "    git tag -f -a $tag -m \"Terminus $version\"" >&2
+    echo "    git tag -f -a $tag -m \"Overterm $version\"" >&2
   fi
   exit 0
 fi
-git tag -a "$tag" -m "Terminus $version"
+git tag -a "$tag" -m "Overterm $version"
 echo "Tagged $tag (local; to publish: git push origin $tag)"

@@ -27,7 +27,7 @@ libghostty's own threads and git calls.
 
   The gap was the divider first — one number, and a grab area for free — but **a divider is measured even for a collapsed item**: with the editor, the changes pane and the inbox all shut, 30 pt of window went dead down the right-hand side, and a shut column *between* two open ones doubled the gap there. A card's own margin is only spent when the card is on screen. The `layout` E2E scenario measures both.
 - A card's top reaches into the title bar, which is taller than the strip. So it refuses to drag the window and zeroes the safe-area inset SwiftUI would otherwise add, and is otherwise transparent to what it wraps — flipped, and it hands on a context menu it does not have.
-- One split (`split`, vertical, autosave `TerminusColumns.v4`): sidebar | terminal | editor | inbox | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
+- One split (`split`, vertical, autosave `OvertermColumns.v4`): sidebar | terminal | editor | inbox | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
 - The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
 - Every terminal pane carries a **38 pt header** (`PaneHeaderView`): what is running there, its island, its status, its ports, and split / split / zoom / close. The terminal gives up the room, not the pane's share of the tab. The host frames it; the window supplies it (`SplitHostView.makeHeader`), because what goes in it needs the tab and the window's actions.
 - Colours come from `ChromeTheme`, built once per window from libghostty's background and foreground and passed by value into each SwiftUI root. Three grounds a step apart — `win` (between the cards), `card` (a panel), `term` (the terminal) — then text in three weights, fills, and the status colours. A theme change needs a relaunch.
@@ -44,7 +44,7 @@ libghostty's own threads and git calls.
 | `FileTreeModel` | tree of the selected tab's checkout; lazy listings, FSEvents invalidation, gitignore dimming |
 | `WorktreeModel` | `git worktree list` of that repository |
 | `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs and why each file changed (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
-| `SnippetStore` | `~/Library/Application Support/Terminus/snippets.json` |
+| `SnippetStore` | `~/Library/Application Support/Overterm/snippets.json` |
 | `PaletteModel` | ⌘P query and ranking |
 | `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |
 | `EditorViewController` + `EditorDocument` | the file open in the editor pane |
@@ -81,7 +81,7 @@ ignore it unless the process actually exited).
 
 ## Tab groups (islands)
 
-A group is a name, a colour and a set of tabs (`Sources/Terminus/Groups/`).
+A group is a name, a colour and a set of tabs (`Sources/Overterm/Groups/`).
 It owns nothing: the tabs stay in `TabStore.tabs`, each carrying its group's
 id, and the store keeps two invariants — pinned tabs first and never grouped,
 and **a group's tabs are one contiguous run** — so everything that walks the
@@ -100,7 +100,7 @@ intent is unmistakable:
 | | |
 |---|---|
 | the strip is focused on an island (⌃⌘F) | it joins — a loose tab would open out of sight |
-| **a folder** was opened (the sidebar, a worktree row, Finder, the `terminus` command) and it is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
+| **a folder** was opened (the sidebar, a worktree row, Finder, the `overterm` command) and it is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
 | the island was asked and said yes (`TabGroup.takesNewTabs`) | it joins |
 | the island holds every tab in the strip | the tab opens **loose** and the window asks under the chip (`NewTabPrompt`); the answer is the island's, so it is asked once |
 | anything else | loose — inserted after the anchor, which `normalize` then slides past the anchor's island |
@@ -117,7 +117,7 @@ this rule exists to undo.
 
 ## Splits
 
-A tab is a `SplitTree<TerminalView>` (`Sources/Terminus/Splits/`): a
+A tab is a `SplitTree<TerminalView>` (`Sources/Overterm/Splits/`): a
 binary tree, panes at the leaves, each split an axis and a ratio. The tree is
 pure (insert, remove, spatial neighbours, resize, equalize — unit-tested with
 plain objects); `SplitHostView`, one per tab, lays it out: panes by frame,
@@ -137,7 +137,7 @@ tracking loop, `acceptsFirstMouse`), unfocused panes under a dim.
 
 ## Merged worktrees
 
-`MergedWorktrees` (`Sources/Terminus/Git/`) decides which linked worktrees
+`MergedWorktrees` (`Sources/Overterm/Git/`) decides which linked worktrees
 are done with; `WorktreeModel.merged` holds it, refreshed with the list.
 A branch is merged when
 
@@ -163,7 +163,7 @@ agent works), uncommitted changes, locked. It runs
 
 ## Changes pane
 
-The fourth column (`Sources/Terminus/Diff/`): `DiffModel` for the selected
+The fourth column (`Sources/Overterm/Diff/`): `DiffModel` for the selected
 tab's checkout, `DiffPanelView` its Warp-style cards. A switch under its
 header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`):
 
@@ -249,7 +249,7 @@ every one in full — and in Branch the commits that touched it
 (`BranchLog.byFile`). Nothing when there is nothing to say. The card shows
 `DiffModel.why(for:)` as it is; `reasons` is read only while the pane is open.
 
-- **Which transcripts** (`ClaudeEditsReader`, `Sources/Terminus/Info/ClaudeEdits.swift`):
+- **Which transcripts** (`ClaudeEditsReader`, `Sources/Overterm/Info/ClaudeEdits.swift`):
   the sessions started in the checkout or below it, found by folder name as
   the Sessions panel finds them (`ClaudeSessions.transcripts`; both spellings
   of a path under a symlink, `/var` and `/private/var` — Claude Code names
@@ -285,7 +285,7 @@ every one in full — and in Branch the commits that touched it
 
 ## Settings (⌘,)
 
-A tab, as Warp's; files behind it, as VS Code's (`Sources/Terminus/Settings/`).
+A tab, as Warp's; files behind it, as VS Code's (`Sources/Overterm/Settings/`).
 
 **The tab.** `TabStore.settingsOpen` / `settingsShowing` put a Settings tab
 after the terminal tabs (`SettingsTabItem` in the strip). It is a page, not
@@ -295,7 +295,7 @@ and the terminal tab under it stays `selectedID` — so nothing that assumes
 ⇧⌘]) uncovers it; ⌘W while it shows closes only it (`closeSelectedTab`).
 Ghostty's `open_config` (its ⌘,) opens it too.
 
-**settings.json.** `Settings` reads `Application Support/Terminus/settings.json`
+**settings.json.** `Settings` reads `Application Support/Overterm/settings.json`
 (isolated runs: their own). Only what differs from the defaults is in it —
 `SettingsSchema` holds every setting: key, section, group, title, kind,
 default, and for Ghostty's options the option it writes. The page's rows
@@ -342,7 +342,7 @@ Changelog (⌥⌘O).
 
 ## Agent overview (⇧⌘A)
 
-Every tab as a card over the window (`Sources/Terminus/Agents/`), refreshed
+Every tab as a card over the window (`Sources/Overterm/Agents/`), refreshed
 every 2 s while shown, waiting-for-you first, then failed, working, done,
 idle agents, plain shells. Per card: the tab's `TabActivity` (and the
 notification text), the agent — the tab's own, or one found running in any
@@ -356,7 +356,7 @@ A card selects its tab; Esc (the host takes the keyboard) closes.
 
 ## Tab peek (⇧⌘E, three fingers down)
 
-Every tab's terminal at once, live (`Sources/Terminus/Peek/`). Three fingers
+Every tab's terminal at once, live (`Sources/Overterm/Peek/`). Three fingers
 down the trackpad opens it a stage at a time: first a row of previews under
 the tab strip with the selected terminal pushed down below it, then — if the
 fingers carry on — a grid. A card is the tab's **real** terminal, so it keeps
@@ -576,7 +576,7 @@ a shell).
 
 ## Pull requests
 
-Everything GitHub goes through the user's own `gh` (`Sources/Terminus/GitHub/`;
+Everything GitHub goes through the user's own `gh` (`Sources/Overterm/GitHub/`;
 `GitHub.executable` looks in Homebrew's paths — a GUI app's PATH has none).
 
 - `WorktreeModel.pullRequests`: one `gh pr list --state all --json …` per
@@ -602,7 +602,7 @@ Everything GitHub goes through the user's own `gh` (`Sources/Terminus/GitHub/`;
 
 ## Search (⌘F)
 
-`SpotlightModel` (`Sources/Terminus/Search/`), rows in this order:
+`SpotlightModel` (`Sources/Overterm/Search/`), rows in this order:
 
 | Row | Source | Return |
 |---|---|---|
@@ -615,12 +615,12 @@ ends the terminal search too; only choosing the terminal row keeps it.
 
 ## Tab Info (⌘I, or Show Info… on a tab)
 
-A popover per tab, live while open (`TabInfoModel`, `Sources/Terminus/Info/`):
+A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 
 | Section | Source |
 |---|---|
 | Location | tab cwd → checkout, branch, worktree-of, changed files (git) |
-| Running | `ProcessInspector`: everything under the tab's `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), plus anything tagged `TERMINUS_TAB_ID` that left the tree. CPU% from task-time deltas (Mach ticks → ns), resident memory. Links via sysctl KERN_PROC — proc_pidinfo refuses root's `login`. |
+| Running | `ProcessInspector`: everything under the tab's `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), plus anything tagged `OVERTERM_TAB_ID` that left the tree. CPU% from task-time deltas (Mach ticks → ns), resident memory. Links via sysctl KERN_PROC — proc_pidinfo refuses root's `login`. |
 | Listening | `lsof` on the tab's pids, every 3 s; Open → localhost |
 | Claude session | `ClaudeUsageReader` on `~/.claude/projects/<cwd as ->/<session>.jsonl`: streamed, incremental, ends-of-line byte search, replies de-duplicated by id |
 | Disk | `DiskUsage` of the checkout only, cancellable, cached 60 s |
@@ -670,8 +670,8 @@ one identity keeps the grant (README, Build).
 |---|---|
 | `CFBundleShortVersionString` | `VERSION` — SemVer, bumped by each commit that changes the app (CLAUDE.md, Commits) |
 | `CFBundleVersion` | `git rev-list --count HEAD`: the build number, growing with every commit on main |
-| `TerminusCommit` | `git rev-parse --short HEAD`, plus `-dirty` when `git status --porcelain` lists anything |
-| `TerminusBuildDate` | the day it was built, `YYYY-MM-DD` |
+| `OvertermCommit` | `git rev-parse --short HEAD`, plus `-dirty` when `git status --porcelain` lists anything |
+| `OvertermBuildDate` | the day it was built, `YYYY-MM-DD` |
 
 `VERSION` and `BUILD` in the environment override the first two. Without git
 (a copy of the tree, no repository) the build is 1 and the commit `unknown`.
@@ -690,7 +690,7 @@ annotated tag `v<version>`, made by the post-commit hook (`.githooks`,
 ## Dropping onto a terminal
 
 Every pane (`TerminalView`) is a drag destination for file URLs, file
-promises and text (`Sources/Terminus/Ghostty/TerminalDrop.swift`). A drop is
+promises and text (`Sources/Overterm/Ghostty/TerminalDrop.swift`). A drop is
 a paste (`insertText`), never Return: the references separated by spaces,
 with a trailing space; the pane gets the keyboard.
 
@@ -698,7 +698,7 @@ with a trailing space; the pane gets the keyboard.
   (Finder, the Desktop, the sidebar — reference URLs resolved to paths);
   else file promises (Photos, Safari, the screenshot thumbnail), received
   into a folder of their own under `AppEnvironment.dropsDirectory`
-  (~/Library/Caches/io.github.terminus-app.terminus/Drops; an isolated run's own);
+  (~/Library/Caches/io.github.overcraft-hq.overterm/Drops; an isolated run's own);
   else web URLs, else text, both inserted as they are, less line breaks at
   either end.
 - **What goes in** (`TerminalDrop.insertion`, pure) depends on what has the
@@ -794,7 +794,7 @@ like Zed needs a GPU renderer.
 A file leaves Overterm — the file tree's double-click, its menu's **Open in
 <App>**, the editor header's ↗ — in the app the user picked, not the macOS
 default for its type (that was Antigravity for `.md`, Xcode for
-`Package.swift`, Ghostty for `.sh`). `ExternalOpener` (`Sources/Terminus/Editor/`):
+`Package.swift`, Ghostty for `.sh`). `ExternalOpener` (`Sources/Overterm/Editor/`):
 
 - The pick is remembered as a bundle id (`openWithApp` in
   `AppEnvironment.defaults`) and opened with
@@ -823,15 +823,15 @@ opener (the browser).
 
 | What | Where |
 |---|---|
-| Tabs (cwd, name, colour, pin, agent) + selection | `~/Library/Application Support/Terminus/session.json` (1 s debounced + on quit) |
-| Shell panes' text (last 2000 lines, plain) | `…/Terminus/scrollback/<uuid>.txt`, named in session.json; written once, at quit or window close |
-| Snippets | `…/Terminus/snippets.json` |
+| Tabs (cwd, name, colour, pin, agent) + selection | `~/Library/Application Support/Overterm/session.json` (1 s debounced + on quit) |
+| Shell panes' text (last 2000 lines, plain) | `…/Overterm/scrollback/<uuid>.txt`, named in session.json; written once, at quit or window close |
+| Snippets | `…/Overterm/snippets.json` |
 | Sidebar/changes visible, sidebar panel, changes scope | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`, `diffScope`) |
 | The app files open in | `UserDefaults` (`openWithApp`, a bundle id) |
-| Files dropped as promises (Photos, Safari) | `~/Library/Caches/io.github.terminus-app.terminus/Drops/<uuid>/` (`AppEnvironment.dropsDirectory`) |
-| Divider positions | `UserDefaults` split autosave (`TerminusColumns.v2`) |
+| Files dropped as promises (Photos, Safari) | `~/Library/Caches/io.github.overcraft-hq.overterm/Drops/<uuid>/` (`AppEnvironment.dropsDirectory`) |
+| Divider positions | `UserDefaults` split autosave (`OvertermColumns.v4`) |
 
-Bundle id `io.github.terminus-app.terminus`.
+Bundle id `io.github.overcraft-hq.overterm`.
 
 ### Scrollback restore
 

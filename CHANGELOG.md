@@ -7,25 +7,37 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
-## 1.32.3 — 2026-10-15
+## 2.1.0 — 2026-10-15
 
+- editor: Zed's editor in the pane — tree-sitter colours, tabs, zoom, language servers, Zed's keys, vim
+- build: tree-sitter and the editor's grammars, pinned with Helix's queries
+- editor: review fixes — vim undo across keys, stale completions, shared language-server documents
+- editor: files open beside the terminal again, and ⌘P is left alone
 - keys: ⌘F is the terminal's search again
 
-## 1.32.2 — 2026-10-15
+## 2.0.1 — 2026-10-14
 
-- editor: files open beside the terminal again, and ⌘P is left alone
+- settings: a file written by hand before any of ours is noticed
 
-## 1.32.1 — 2026-10-14
+## 2.0.0 — 2026-10-14
 
-- editor: review fixes — vim undo across keys, stale completions, shared language-server documents
+- build: the app is Overterm, inside as well as out
 
 ## 1.32.0 — 2026-10-14
 
-- editor: Zed's editor in the pane — tree-sitter colours, tabs, zoom, language servers, Zed's keys, vim
+- themes: a gallery in Settings
+
+## 1.31.3 — 2026-10-14
+
+- terminal: our own Ghostty resources, not an installed Ghostty's
+
+## 1.31.2 — 2026-10-14
+
+- snippets: a first run starts with none
 
 ## 1.31.1 — 2026-10-14
 
-- build: tree-sitter and the editor's grammars, pinned with Helix's queries
+- peek: a collapsed island's peek no longer draws over the terminal
 
 ## 1.31.0 — 2026-10-14
 

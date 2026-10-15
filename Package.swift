@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Terminus",
+    name: "Overterm",
     platforms: [
         .macOS(.v13)
     ],
@@ -20,9 +20,9 @@ let package = Package(
             path: "Frameworks/TreeSitterKit.xcframework"
         ),
         .executableTarget(
-            name: "Terminus",
+            name: "Overterm",
             dependencies: ["GhosttyKit", "TreeSitterKit"],
-            path: "Sources/Terminus",
+            path: "Sources/Overterm",
             linkerSettings: [
                 // libghostty's C++ deps (glslang, spirv-cross, simdutf) and the
                 // system frameworks its Zig code links against.
@@ -36,14 +36,14 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "TerminusTests",
-            dependencies: ["Terminus"],
-            path: "Tests/TerminusTests"
+            name: "OvertermTests",
+            dependencies: ["Overterm"],
+            path: "Tests/OvertermTests"
         ),
         // Launches the built app per scenario; opt-in (make e2e).
         .testTarget(
-            name: "TerminusE2ETests",
-            path: "Tests/TerminusE2ETests"
+            name: "OvertermE2ETests",
+            path: "Tests/OvertermE2ETests"
         ),
     ]
 )

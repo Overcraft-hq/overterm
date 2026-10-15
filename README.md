@@ -1,8 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.png">
-    <img alt="overterm" src="docs/assets/banner-dark.png" width="640">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-on-dark.png">
+    <img alt="overterm" src="docs/assets/banner-on-light.png" width="640">
   </picture>
 </p>
 
@@ -163,12 +162,19 @@ The defaults; every one of them is rebindable in Settings ▸ Keyboard Shortcuts
 
 ⌘, opens a tab, not a window. Every section switches between controls and the
 JSON behind it — `settings.json` and `keybindings.json` in
-`~/Library/Application Support/Terminus/`, VS Code's two files, editable by
+`~/Library/Application Support/Overterm/`, VS Code's two files, editable by
 hand (only what you changed is in them, comments are fine, and a hand edit
-applies at once). General, Appearance, Terminal (over your Ghostty config,
-applied to open terminals immediately), Agents, Editor, Notifications,
+applies at once). General, Appearance, **Themes**, Terminal (over your Ghostty
+config, applied to open terminals immediately), Agents, Editor, Notifications,
 Keyboard Shortcuts, and About — the version, what's new, and updates from
 GitHub releases.
+
+**Themes** is a gallery, not a menu of names: 473 of them — the ones Ghostty
+ships, ten more beside them, and anything in your own
+`~/.config/ghostty/themes`, marked *Yours* — each drawn as a little window in
+its own colours. Search it, split it into dark and light, and pick: the
+terminal changes as you do. "Follow macOS between a light and a dark theme"
+keeps one of each and switches with the system.
 
 ## Build
 
@@ -235,7 +241,7 @@ post-commit hook adds the tag. Tags stay local until you push them.
 ## Under the hood
 
 Ghostty is pinned to v1.3.1 (`Scripts/build-ghosttykit.sh`); state lives in
-`~/Library/Application Support/Terminus/` — `session.json`, `snippets.json`,
+`~/Library/Application Support/Overterm/` — `session.json`, `snippets.json`,
 `history.json`, the saved scrollback.
 
 More in `docs/`: [architecture](docs/architecture.md),

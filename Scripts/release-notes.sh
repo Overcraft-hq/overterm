@@ -19,16 +19,16 @@ if [[ -z "$entry" ]]; then
 fi
 
 cat <<NOTES
-## Terminus ${VERSION}
+## Overterm ${VERSION}
 
 ${entry}
 
 ### Install
 
-1. Open \`Terminus-${VERSION}.dmg\` and drag **Terminus** to **Applications**.
+1. Open \`Overterm-${VERSION}.dmg\` and drag **Overterm** to **Applications**.
 2. The app isn't notarized. The first time, open it with right-click → **Open**
    (on macOS 15: System Settings → Privacy & Security → **Open Anyway**), or run
-   \`xattr -dr com.apple.quarantine /Applications/Terminus.app\`.
+   \`xattr -dr com.apple.quarantine /Applications/Overterm.app\`.
 
 Apple Silicon, macOS 13 or later. Your \`~/.config/ghostty/config\` applies as-is.
 NOTES
