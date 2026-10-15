@@ -90,7 +90,12 @@ final class ChromeTheme: ObservableObject {
     // The names the chrome used before it had a vocabulary. Each is one of
     // the tokens above; call sites move over as their views are redrawn.
 
-    /// The tab strip's ground. The strip sits on the window.
+    /// The window's ground under the name the tab strip gave it. The strip
+    /// is a panel now (`card`), reading as one piece with the sidebar it
+    /// runs into; what is still painted in this darker ground is what
+    /// floats over the window — the palette, the switcher, Tab Info — and
+    /// the panes that frame their own content (the changes pane, the
+    /// editor's header and status bar).
     var strip: Color { win }
     var stripNS: NSColor { winNS }
     var selected: Color { tabSel }

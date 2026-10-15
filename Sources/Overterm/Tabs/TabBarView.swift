@@ -116,6 +116,10 @@ struct TabBarView: View {
         }
         .padding(.trailing, 8)
         .frame(maxHeight: .infinity)
+        // The strip is a panel like the sidebar, and reads as one: the
+        // title bar would otherwise be the window's own ground, a step
+        // darker than every panel under it.
+        .background(theme.card)
         .background(WindowDragArea())
         .coordinateSpace(name: TabFramesKey.space)
         .onPreferenceChange(TabFramesKey.self) { frames in
