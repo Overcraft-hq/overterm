@@ -126,13 +126,18 @@ struct KeyCombo: Hashable, Sendable {
     /// Turkish Q, where AppKit shows it as ⌘Ö. Nil for a key we can't name
     /// or one with no ⌘/⌃/⌥ (a plain letter isn't a shortcut).
     init?(event: NSEvent) {
+        self.init(pressed: event)
+        let isFunctionKey = key.hasPrefix("f") && key.count > 1
+        guard command || control || option || isFunctionKey else { return nil }
+    }
+
+    /// Any key pressed, shortcut or not: the editor's ⇧⎋ has only a shift.
+    init?(pressed event: NSEvent) {
         guard let key = Self.keyCodes[Int(event.keyCode)] else { return nil }
         let flags = event.modifierFlags
         self.init(
             control: flags.contains(.control), option: flags.contains(.option), shift: flags.contains(.shift),
             command: flags.contains(.command), key: key)
-        let isFunctionKey = key.hasPrefix("f") && key.count > 1
-        guard command || control || option || isFunctionKey else { return nil }
     }
 
     /// From a Ghostty trigger (the defaults, as its config has them).
@@ -206,14 +211,22 @@ struct KeyCommand: Identifiable, Sendable {
     let ghostty: String?
     /// A menu item carries it (NSMenuItem.identifier == id).
     let menu: Bool
+    /// Only while the editor has the keyboard, as Zed's `Editor` context:
+    /// the editor takes the key before the menu and the terminal never sees
+    /// it, so ⌘D can select the next match there and split a pane here.
+    let editor: Bool
 
-    init(_ id: String, _ title: String, group: String, key: String? = nil, ghostty: String? = nil, menu: Bool = true) {
+    init(
+        _ id: String, _ title: String, group: String, key: String? = nil, ghostty: String? = nil, menu: Bool = true,
+        editor: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.group = group
         self.defaultKey = key
         self.ghostty = ghostty
-        self.menu = menu
+        self.menu = editor ? false : menu
+        self.editor = editor
     }
 
     func matches(_ query: String) -> Bool {
@@ -304,10 +317,40 @@ enum KeyCommands {
         // Window
         .init("window.close", "Close Window", group: "Window", key: "shift+cmd+w", ghostty: "close_window"),
         .init("window.minimize", "Minimize", group: "Window", key: "cmd+m"),
+        // Editor — Zed's keys (its VS Code keymap), only while editing.
+        .init("editor.goToLine", "Go to Line…", group: "Editor", key: "ctrl+g", editor: true),
+        .init("editor.goToSymbol", "Go to Symbol in File…", group: "Editor", key: "shift+cmd+o", editor: true),
+        .init("editor.goToDefinition", "Go to Definition", group: "Editor", key: "f12", editor: true),
+        .init("editor.findReferences", "Find All References", group: "Editor", key: "shift+f12", editor: true),
+        .init("editor.goBack", "Go Back", group: "Editor", key: "ctrl+-", editor: true),
+        .init("editor.goForward", "Go Forward", group: "Editor", key: "ctrl+shift+-", editor: true),
+        .init("editor.nextProblem", "Next Problem", group: "Editor", key: "f8", editor: true),
+        .init("editor.previousProblem", "Previous Problem", group: "Editor", key: "shift+f8", editor: true),
+        .init("editor.showHover", "Show Hover", group: "Editor", key: "alt+f1", editor: true),
+        .init("editor.complete", "Show Completions", group: "Editor", key: "ctrl+space", editor: true),
+        .init("editor.format", "Format Document", group: "Editor", key: "shift+alt+f", editor: true),
+        .init("editor.toggleComment", "Toggle Line Comment", group: "Editor", key: "cmd+/", editor: true),
+        .init("editor.moveLineUp", "Move Line Up", group: "Editor", key: "alt+up", editor: true),
+        .init("editor.moveLineDown", "Move Line Down", group: "Editor", key: "alt+down", editor: true),
+        .init("editor.duplicateLineUp", "Duplicate Line Up", group: "Editor", key: "shift+alt+up", editor: true),
+        .init("editor.duplicateLineDown", "Duplicate Line Down", group: "Editor", key: "shift+alt+down", editor: true),
+        .init("editor.deleteLine", "Delete Line", group: "Editor", key: "shift+cmd+k", editor: true),
+        .init("editor.insertLineBelow", "Insert Line Below", group: "Editor", key: "cmd+enter", editor: true),
+        .init("editor.insertLineAbove", "Insert Line Above", group: "Editor", key: "shift+cmd+enter", editor: true),
+        .init("editor.selectNext", "Add Next Match to Selection", group: "Editor", key: "cmd+d", editor: true),
+        .init("editor.selectAll", "Select All Matches", group: "Editor", key: "shift+cmd+l", editor: true),
+        .init("editor.joinLines", "Join Lines", group: "Editor", key: "ctrl+j", editor: true),
+        .init("editor.indent", "Indent", group: "Editor", key: "cmd+]", editor: true),
+        .init("editor.outdent", "Outdent", group: "Editor", key: "cmd+[", editor: true),
+        .init("editor.toggleSoftWrap", "Toggle Soft Wrap", group: "Editor", key: "alt+z", editor: true),
+        .init("editor.toggleZoom", "Zoom Editor", group: "Editor", key: "shift+escape", editor: true),
+        .init("editor.closeFile", "Close File", group: "Editor", key: "cmd+w", editor: true),
+        .init("editor.nextFile", "Next File", group: "Editor", key: "alt+cmd+right", editor: true),
+        .init("editor.previousFile", "Previous File", group: "Editor", key: "alt+cmd+left", editor: true),
     ]
 
     static let byID: [String: KeyCommand] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    static let groups = ["Overterm", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window"]
+    static let groups = ["Overterm", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window", "Editor"]
 }
 
 /// keybindings.json, VS Code's way: a list of { "key", "command" }, each
@@ -348,8 +391,17 @@ final class Keybindings: ObservableObject {
 
     func defaultKey(_ command: KeyCommand) -> KeyCombo? {
         if let text = command.defaultKey { return KeyCombo(text) }
-        return command.ghostty.flatMap(ghosttyDefault)
+        guard let action = command.ghostty else { return nil }
+        return ghosttyDefault(action) ?? Self.performableDefaults[action].flatMap(KeyCombo.init)
     }
+
+    /// Ghostty's defaults for the actions it binds as "performable", which
+    /// `ghostty_config_trigger` doesn't report (v1.3.1, src/config/Config.zig).
+    /// Not knowing ⌘F was the terminal's search, the menu's Find… had Ghostty
+    /// let go of it — and ⌘F did nothing in the terminal.
+    static let performableDefaults: [String: String] = [
+        "start_search": "cmd+f", "search_selection": "cmd+e", "end_search": "shift+cmd+f",
+    ]
 
     /// The key that does it now: the file's last word on it, else the default.
     func key(for command: KeyCommand) -> KeyCombo? {
@@ -372,7 +424,8 @@ final class Keybindings: ObservableObject {
     func conflicts(for command: KeyCommand) -> [KeyCommand] {
         guard let key = key(for: command) else { return [] }
         return KeyCommands.all.filter { other in
-            other.id != command.id && self.key(for: other) == key && (isChanged(command) || isChanged(other))
+            other.id != command.id && other.editor == command.editor && self.key(for: other) == key
+                && (isChanged(command) || isChanged(other))
         }
     }
 

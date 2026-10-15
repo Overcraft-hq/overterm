@@ -72,6 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
+        // shutdown/exit to each language server, so none outlives the app.
+        LanguageServers.shared.stopAll()
     }
 
     /// Overterm ▸ Settings… (⌘,): the Settings tab.

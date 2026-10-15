@@ -3,11 +3,16 @@ APP := Overterm.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit icon themes build test e2e app dmg run install clean hooks
+.PHONY: ghosttykit treesitter icon themes build test e2e app dmg run install clean hooks
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
 	./Scripts/build-ghosttykit.sh
+
+## treesitter: build Frameworks/TreeSitterKit.xcframework and the editor's
+## highlight queries (Frameworks/TreeSitterQueries) from the pinned grammars
+treesitter:
+	./Scripts/build-treesitter.sh
 
 ## icon: regenerate Resources/AppIcon.icns from Resources/AppIcon.svg
 icon:

@@ -256,8 +256,54 @@ enum SettingsSchema {
 
     private static let editor: [SettingSpec] = [
         SettingSpec(
+            key: "editor.fontFamily", section: .editor, group: "Text", title: "Font", help: "Empty: the system's monospaced font.",
+            kind: .dynamicChoice(.monospacedFonts), defaultValue: .string("")),
+        SettingSpec(
             key: "editor.fontSize", section: .editor, group: "Text", title: "Font size", kind: .integer(9...28, step: 1, unit: "pt"),
-            defaultValue: .int(13))
+            defaultValue: .int(13)),
+        SettingSpec(
+            key: "editor.lineHeight", section: .editor, group: "Text", title: "Line height",
+            kind: .choice([
+                .init(value: "compact", label: "Compact"), .init(value: "standard", label: "Standard"),
+                .init(value: "comfortable", label: "Comfortable — Zed's"),
+            ]), defaultValue: .string("comfortable")),
+        SettingSpec(
+            key: "editor.softWrap", section: .editor, group: "Text", title: "Wrap long lines",
+            kind: .choice([
+                .init(value: "none", label: "Never — scroll sideways"), .init(value: "prose", label: "In Markdown and text files"),
+                .init(value: "always", label: "Always"),
+            ]), defaultValue: .string("prose")),
+        SettingSpec(
+            key: "editor.tabSize", section: .editor, group: "Text", title: "Tab width",
+            help: "A file's own indentation wins: one indented with 2 spaces keeps 2.", kind: .integer(1...16, step: 1, unit: "columns"),
+            defaultValue: .int(4)),
+        SettingSpec(
+            key: "editor.indentGuides", section: .editor, group: "Text", title: "Indent guides", kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "editor.openZoomed", section: .editor, group: "Window", title: "Open files zoomed",
+            help: "Off: a file opens beside the terminal, and ⇧⎋ or the header's ⤢ zooms it. On: the editor takes the terminal's place (the sidebar stays).",
+            kind: .toggle, defaultValue: .bool(false)),
+        SettingSpec(
+            key: "editor.gitGutter", section: .editor, group: "Window", title: "Mark lines changed since the last commit",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "editor.languageServers", section: .editor, group: "Code intelligence", title: "Use language servers",
+            help:
+                "Completions, problems, hover and go to definition from gopls, rust-analyzer, sourcekit-lsp, clangd, vtsls, basedpyright… — on your PATH or the ones Zed downloaded.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "editor.completions", section: .editor, group: "Code intelligence", title: "Show completions as you type",
+            help: "⌃Space shows them either way.", kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "editor.formatOnSave", section: .editor, group: "Code intelligence", title: "Format on save",
+            help: "With the language server's formatter.", kind: .toggle, defaultValue: .bool(false),
+            requires: "editor.languageServers"),
+        SettingSpec(
+            key: "editor.vimMode", section: .editor, group: "Vim", title: "Vim mode", help: "As Zed's: yanks go to the clipboard.",
+            kind: .toggle, defaultValue: .bool(false)),
+        SettingSpec(
+            key: "editor.relativeLineNumbers", section: .editor, group: "Vim", title: "Relative line numbers", kind: .toggle,
+            defaultValue: .bool(false)),
     ]
 
     private static let notifications: [SettingSpec] = [

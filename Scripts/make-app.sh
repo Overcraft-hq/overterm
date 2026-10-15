@@ -63,6 +63,13 @@ cp -R "$GHOSTTY_RES/." "$CONTENTS/Resources/"
 cp "$ROOT"/Resources/themes/* "$CONTENTS/Resources/ghostty/themes/"
 rm -f "$CONTENTS/Resources/ghostty/themes/LICENSE" "$CONTENTS/Resources/ghostty/themes/README.md"
 cp "$ROOT/Resources/themes/LICENSE" "$CONTENTS/Resources/THEMES-LICENSE"
+# The editor's syntax queries (EditorLanguage looks for them here).
+QUERIES="$ROOT/Frameworks/TreeSitterQueries"
+if [[ ! -d "$QUERIES" ]]; then
+  echo "error: $QUERIES missing — run: make treesitter" >&2
+  exit 1
+fi
+cp -R "$QUERIES" "$CONTENTS/Resources/TreeSitterQueries"
 cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 # Settings ▸ About shows this version's entry; View Latest Changelog, all of it.
 cp "$ROOT/CHANGELOG.md" "$CONTENTS/Resources/CHANGELOG.md"

@@ -7,6 +7,14 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.1.0 — 2026-10-15
+
+- editor: Zed's editor in the pane — tree-sitter colours, tabs, zoom, language servers, Zed's keys, vim
+- build: tree-sitter and the editor's grammars, pinned with Helix's queries
+- editor: review fixes — vim undo across keys, stale completions, shared language-server documents
+- editor: files open beside the terminal again, and ⌘P is left alone
+- keys: ⌘F is the terminal's search again
+
 ## 2.0.1 — 2026-10-14
 
 - settings: a file written by hand before any of ours is noticed

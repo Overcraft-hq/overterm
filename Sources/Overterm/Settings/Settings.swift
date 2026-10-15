@@ -251,6 +251,25 @@ final class Settings: ObservableObject {
     /// How much the panes without the keyboard are dimmed, 0…0.7.
     var unfocusedPaneDim: Double { number("appearance.unfocusedPaneDim") ?? 0.35 }
     var editorFontSize: Double { number("editor.fontSize") ?? 13 }
+    var editorFontFamily: String { string("editor.fontFamily") }
+    /// Times the font's own height.
+    var editorLineHeight: CGFloat {
+        switch string("editor.lineHeight") {
+        case "compact": 1.2
+        case "standard": 1.4
+        default: 1.618
+        }
+    }
+    var editorSoftWrap: String { string("editor.softWrap") }
+    var editorTabSize: Int { Int(number("editor.tabSize") ?? 4) }
+    var editorIndentGuides: Bool { bool("editor.indentGuides") }
+    var editorOpenZoomed: Bool { bool("editor.openZoomed") }
+    var editorGitGutter: Bool { bool("editor.gitGutter") }
+    var editorLanguageServers: Bool { bool("editor.languageServers") }
+    var editorCompletions: Bool { bool("editor.completions") }
+    var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
+    var editorVimMode: Bool { bool("editor.vimMode") }
+    var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
 
     // MARK: Ghostty overrides
 

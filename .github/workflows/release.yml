@@ -58,16 +58,18 @@ jobs:
 
       - uses: jdx/mise-action@v4  # Zig, pinned in mise.toml
 
-      - name: Restore GhosttyKit
-        id: ghosttykit
+      # Frameworks/ holds both prebuilt libraries: GhosttyKit, and TreeSitterKit
+      # with the editor's queries. One cache, keyed on both build scripts.
+      - name: Restore GhosttyKit and TreeSitterKit
+        id: frameworks
         uses: actions/cache@v6
         with:
           path: Frameworks
-          key: ghosttykit-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      - name: Build GhosttyKit
-        if: steps.ghosttykit.outputs.cache-hit != 'true'
-        run: make ghosttykit
+      - name: Build GhosttyKit and TreeSitterKit
+        if: steps.frameworks.outputs.cache-hit != 'true'
+        run: make ghosttykit treesitter
 
       - name: Unit tests
         run: make test

@@ -21,6 +21,7 @@ final class E2ERunner {
         "pin": { await $0.pin() },
         "close": { await $0.close() },
         "editor": { await $0.editorScenario() },
+        "editorZed": { await $0.editorZedScenario() },
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
         "why": { await $0.whyScenario() },
@@ -444,12 +445,15 @@ final class E2ERunner {
         check("the text is in the text view", textView?.string.hasPrefix("let greeting") == true)
         check("the text is laid out (not a 0-wide container)", (textView?.frame.width ?? 0) > 100, "\(textView?.frame.width ?? 0)")
         check("the header names the file", await eventually(2) { Self.find(NSTextField.self, in: editor.view) { $0.stringValue == "hello.swift" } != nil })
-        let colored = textView?.textStorage.map { storage -> Bool in
-            let kw = storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-            let plain = storage.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor
-            return kw != nil && kw != plain
+        // Colours come from tree-sitter, off the main thread: a moment later.
+        let colored = await eventually(3) {
+            textView?.textStorage.map { storage -> Bool in
+                let kw = storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+                let plain = storage.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor
+                return kw != nil && kw != plain
+            } == true
         }
-        check("syntax colours apply", colored == true)
+        check("syntax colours apply", colored)
 
         textView?.setSelectedRange(NSRange(location: (textView?.string as NSString?)?.length ?? 0, length: 0))
         textView?.insertText("let added = 1\n", replacementRange: textView?.selectedRange() ?? NSRange())
@@ -478,6 +482,148 @@ final class E2ERunner {
         try? Data([0, 1, 2, 3]).write(to: bin)
         app.openInEditor(bin)
         check("a binary file is refused, with a reason", await eventually(2) { editor.document.unavailable == "Binary file." })
+    }
+
+    /// The editor as Zed's: zoomed, tabs, tree-sitter (markdown too), Zed's
+    /// editing commands, pickers, a language server's problems and
+    /// completions (the fake one LanguageServerTests uses), the git gutter, vim.
+    private func editorZedScenario() async {
+        let repo = scratch.appendingPathComponent("zed")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        let main = repo.appendingPathComponent("main.go")
+        try? "package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n".write(to: main, atomically: true, encoding: .utf8)
+        _ = try? await Git.run(["init", "-q"], in: repo)
+        _ = try? await Git.run(["-c", "user.email=e2e@x", "-c", "user.name=e2e", "add", "."], in: repo)
+        _ = try? await Git.run(["-c", "user.email=e2e@x", "-c", "user.name=e2e", "commit", "-qm", "init"], in: repo)
+        let readme = repo.appendingPathComponent("README.md")
+        try? "# Title\n\nSome **bold** text.\n".write(to: readme, atomically: true, encoding: .utf8)
+
+        // The fake server, for Go only: the problems, completions, symbols.
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../Tests/OvertermTests/Fixtures/fake-lsp.py").standardizedFileURL
+        let serverLog = scratch.appendingPathComponent("fake-lsp.log")
+        LanguageServers.shared.discoveryOverride = { spec in
+            spec.id == "go" ? LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [script.path, serverLog.path]) : nil
+        }
+        defer { LanguageServers.shared.discoveryOverride = nil }
+
+        app.openInEditor(main)
+        guard let editor = app.editor, let textView = editor.textView else { return check("editor exists", false) }
+        check("a file opens beside the terminal, not zoomed", !app.isEditorZoomed && app.editorItem?.isCollapsed == false)
+        editor.perform("editor.toggleZoom")
+        check("⇧⎋ zooms it", await eventually(3) { self.app.isEditorZoomed && editor.isZoomed })
+        editor.perform("editor.toggleZoom")
+        check("…and gives the terminal back", await eventually(3) { !self.app.isEditorZoomed })
+
+        // Problems from the language server: a squiggle, the gutter, the status bar.
+        check(
+            "the language server's problems show", await eventually(8) { editor.active?.diagnostics.first?.message == "unused" },
+            (try? String(contentsOf: serverLog, encoding: .utf8)) ?? "no server log")
+        check("…drawn under the text", textView.diagnostics.count == 1)
+        check(
+            "…counted in the status bar",
+            Self.find(NSButton.self, in: editor.view) { $0.identifier?.rawValue == "editorProblems" }?.accessibilityLabel() == "0 errors, 1 warnings")
+
+        // Zed's editing commands.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        editor.perform("editor.toggleComment")
+        check("⌘/ comments the line", textView.string.hasPrefix("// package main"), textView.string)
+        editor.perform("editor.toggleComment")
+        check("…and back", textView.string.hasPrefix("package main"))
+        editor.perform("editor.duplicateLineDown")
+        check("⇧⌥↓ duplicates it", textView.string.hasPrefix("package main\npackage main\n"))
+        editor.perform("editor.deleteLine")
+        check("⇧⌘K deletes it", textView.string.hasPrefix("package main\n\nfunc"))
+        // At a line's end (before a word it wouldn't, as in Zed).
+        let lineEnd = NSMaxRange((textView.string as NSString).range(of: "println(\"hi\")"))
+        textView.setSelectedRange(NSRange(location: lineEnd, length: 0))
+        // As typing sends it: no replacement range.
+        textView.insertText("(", replacementRange: NSRange(location: NSNotFound, length: 0))
+        check("( closes itself", textView.string.contains("println(\"hi\")()\n"), textView.string)
+        check("…with the caret between", textView.selectedRange().location == lineEnd + 1)
+        check("the gutter marks the line changed since the commit", await eventually(3) { editor.gutter.gitMarks.contains { $0.kind == .modified } })
+        editor.active?.undo.undo()
+        check("undo takes it back", !textView.string.contains("()\n"), textView.string)
+
+        // Pickers.
+        editor.perform("editor.goToLine")
+        check("⌃G opens Go to Line", editor.picker?.identifier?.rawValue == "goToLine")
+        editor.picker?.dismiss()
+        editor.perform("editor.goToSymbol")
+        check(
+            "⇧⌘O lists the server's symbols",
+            await eventually(5) { (Self.find(NSTableView.self, in: editor.picker) { _ in true }?.numberOfRows ?? 0) >= 2 })
+        editor.picker?.dismiss()
+
+        // Completions: the server's and the file's words.
+        textView.setSelectedRange(NSRange(location: (textView.string as NSString).range(of: "println").location, length: 0))
+        editor.triggerCompletion(manual: true)
+        check("⌃Space asks the server", await eventually(5) { editor.completion?.candidates.contains { $0.label == "Println" } == true })
+        editor.dismissCompletion()
+
+        // A second file is a second tab; markdown is coloured inline too.
+        app.openInEditor(readme)
+        check("another file is another tab", await eventually(3) { editor.buffers.count == 2 && editor.document.url == readme })
+        let bold = await eventually(3) {
+            guard let storage = textView.textStorage, storage.length > 15 else { return false }
+            let font = storage.attribute(.font, at: (storage.string as NSString).range(of: "**bold**").location + 2, effectiveRange: nil) as? NSFont
+            return font.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } == true
+        }
+        check("markdown's **bold** is bold (the inline grammar is injected)", bold)
+        check("markdown wraps long lines", textView.textContainer?.widthTracksTextView == true)
+        editor.perform("editor.previousFile")
+        check("⌥⌘← goes to the other tab", editor.document.url == main)
+        editor.saveDocument(nil)
+        editor.perform("editor.closeFile")
+        check("⌘W closes a tab, not the terminal", await eventually(2) { editor.buffers.count == 1 && editor.document.url == readme })
+
+        // Vim, when asked for.
+        Settings.shared.set("editor.vimMode", .bool(true))
+        check("vim mode starts", await eventually(2) { editor.vim != nil && textView.blockCursor })
+        if let vim = editor.vim {
+            editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+            vim.reset()
+            for key in ["d", "d"] { _ = vim.handle(VimKey(key)) }
+            check("dd deletes a line", !textView.string.hasPrefix("# Title"), textView.string)
+            _ = vim.handle(VimKey("u"))
+            check("u undoes it", textView.string.hasPrefix("# Title"), textView.string)
+            // Mid-insert, to another file and back: the insert's undo group
+            // ends in its own file (ended in the next one, undo here raised).
+            _ = vim.handle(VimKey("i"))
+            textView.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
+            app.openInEditor(main)
+            _ = await eventually(2) { editor.document.url == main }
+            check(
+                // Once the run loop has turned: typing outside an event opens
+                // the undo manager's own per-event group, closed at its end.
+                "switching files mid-insert leaves no undo group open",
+                await eventually(2) { editor.buffers.allSatisfy { $0.undo.groupingLevel == 0 } },
+                editor.buffers.map { "\($0.name)=\($0.undo.groupingLevel)" }.joined(separator: " ") + " vim=\(editor.vim?.mode == .insert ? "insert" : "other")")
+            app.openInEditor(readme)
+            _ = await eventually(2) { editor.document.url == readme }
+            editor.active?.undo.undo()
+            check("…and undo back in it takes the insert away", textView.string.hasPrefix("# Title"), textView.string)
+        }
+        // Vim's normal mode doesn't take the editor's shortcuts: ⇧⎋ still
+        // toggles the zoom. Handed to the editor's key handler, not posted.
+        if let shiftEscape = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.shift], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53)
+        {
+            let zoomed = app.isEditorZoomed
+            check("in vim's normal mode, ⇧⎋ is still the zoom", editor.codeTextView(textView, handleKey: shiftEscape, equivalent: false) && app.isEditorZoomed != zoomed)
+            app.setEditorZoomed(true)
+            app.toggleFileTree(nil)
+            check("hiding the sidebar keeps the zoom", app.isEditorZoomed && window.firstResponder === textView)
+            app.toggleFileTree(nil)
+            app.setEditorZoomed(false)
+        }
+        Settings.shared.set("editor.vimMode", nil)
+        check("vim mode stops", await eventually(2) { editor.vim == nil && !textView.blockCursor })
+        editor.saveDocument(nil)
+        editor.requestClose()
+        check("closing the editor closes its tabs", await eventually(2) { editor.buffers.isEmpty && self.app.editorItem?.isCollapsed == true })
     }
 
     /// Badge counts, pane with cards, stage, commit — in a repo with no commit yet.
