@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
+        // Before any pane: a pane learns the browser's MCP address as it is made.
+        BrowserBridge.shared.start()
 
         let controller = TerminalWindowController()
         // An isolated run (E2E, layout dump) reads and writes its own support
@@ -74,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
         // shutdown/exit to each language server, so none outlives the app.
         LanguageServers.shared.stopAll()
+        BrowserBridge.shared.stop()
     }
 
     /// Overterm ▸ Settings… (⌘,): the Settings tab.

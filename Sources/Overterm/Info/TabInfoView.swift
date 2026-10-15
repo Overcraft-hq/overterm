@@ -5,6 +5,8 @@ import SwiftUI
 struct TabInfoView: View {
     @ObservedObject var model: TabInfoModel
     @ObservedObject var theme: ChromeTheme
+    /// A port's Open: the window's browser when Settings ▸ Browser says so.
+    var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -102,7 +104,7 @@ struct TabInfoView: View {
                         Spacer()
                         if let url = port.url {
                             Button {
-                                NSWorkspace.shared.open(url)
+                                openURL(url)
                             } label: {
                                 Label("Open", systemImage: "arrow.up.forward.app")
                             }

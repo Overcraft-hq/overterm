@@ -88,9 +88,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let opener = ExternalOpener()
     private(set) var editorItem: NSSplitViewItem?
     /// The terminal's column: collapsed only while the editor is zoomed.
-    private var terminalColumn: NSSplitViewItem?
+    private(set) var terminalColumn: NSSplitViewItem?
+    /// The browser column: the selected tab's browser (Browser/).
+    private(set) var browser: BrowserViewController?
+    private(set) var browserItem: NSSplitViewItem?
+    /// Each tab's browser (its pages), made when first used.
+    var browserWorkspaces: [UUID: BrowserWorkspace] = [:]
+    /// A restored tab's pages, loaded when its browser is first shown.
+    var pendingBrowserPages: [UUID: (urls: [URL], active: Int)] = [:]
+    var browserObservers: Set<AnyCancellable> = []
+    /// Which column fills the window, and how the others were.
+    private var columnZoom: (column: ZoomedColumn, restore: [(item: NSSplitViewItem, collapsed: Bool)])?
     /// While the editor is zoomed: each other column's state before it.
-    private var editorZoomRestore: [(item: NSSplitViewItem, collapsed: Bool)]?
     private(set) var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
@@ -400,7 +409,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         editor.onClose = { [weak self] in self?.closeEditor() }
         editor.onToggleZoom = { [weak self] in
             guard let self else { return }
-            self.setEditorZoomed(self.editorZoomRestore == nil)
+            self.setEditorZoomed(!self.isEditorZoomed)
         }
         editor.workspaceRoot = { [weak self] in self?.diff.root ?? self?.tree.root }
         self.editor = editor
@@ -471,13 +480,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
+        let browser = BrowserViewController(chrome: theme, background: runtime.backgroundColor)
+        let browserItem = NSSplitViewItem(viewController: CardColumnController(browser, fill: .terminal, theme: theme))
+        browserItem.canCollapse = true
+        browserItem.isCollapsed = true
+        browserItem.minimumThickness = 420
+        browserItem.holdingPriority = .defaultLow + 5
+        self.browser = browser
+        self.browserItem = browserItem
+        split.addSplitViewItem(browserItem)
+        wireBrowser()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
         // (or restore) divider positions. The key changes whenever a column's
         // width means something new (v3: the cards and their 10 pt gaps), so
         // old positions aren't misapplied (v4: the inbox is a column).
-        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "OvertermColumns.v4" }
+        if !AppEnvironment.isIsolated { split.splitView.autosaveName = "OvertermColumns.v5" }
         self.sidebarItem = sidebarItem
 
         tabBarView = tabBar
@@ -665,7 +684,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                             guard let self, let tab = self.tab(containing: pane) else { return }
                             self.closePane(pane, in: tab)
                         },
-                        openPort: { port in port.url.map { NSWorkspace.shared.open($0) } })))
+                        openPort: { [weak self, weak tab] port in
+                            guard let url = port.url else { return }
+                            self?.openLink(url, for: tab)
+                        })))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(host)
@@ -737,8 +759,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         pane.onOpenLink = { [weak self, weak tab, weak pane] text in
             guard let self, let tab else { return false }
             let directories = [pane?.workingDirectory, tab.workingDirectory, self.diff.root?.path].compactMap { $0 }
-            guard let link = FileLink.resolve(text, in: directories) else { return false }
-            self.openInEditor(link.url, line: link.line)
+            if let link = FileLink.resolve(text, in: directories) {
+                self.openInEditor(link.url, line: link.line)
+                return true
+            }
+            // A web link: here when Settings ▸ Browser says so.
+            guard let url = URL(string: text), BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks) else { return false }
+            self.openInBrowser(url, for: tab)
             return true
         }
         pane.onEvent = { [weak self, weak tab, weak pane] event in
@@ -964,7 +991,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             focusSelectedTerminal()
             return
         }
-        guard let command = Agent.claudeResume(session: session.id, arguments: Settings.shared.claudeArguments) else { return }
+        guard let command = Agent.claudeResume(session: session.id, arguments: Settings.shared.arguments(for: .claude)) else { return }
         newTab(in: URL(fileURLWithPath: session.directory), agent: .claude, startAgent: start, command: command)
     }
 
@@ -1068,7 +1095,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         : nil,
                     focusedPane: tab.isSplit ? tab.terminals.firstIndex { $0 === tab.terminal } : nil,
                     scrollback: tab.isSplit ? nil : scrollback[ObjectIdentifier(tab.terminal)],
-                    group: tab.groupID.flatMap { indexOf[$0] })
+                    group: tab.groupID.flatMap { indexOf[$0] },
+                    browserURL: browserPages(of: tab).map { $0.urls[$0.active].absoluteString },
+                    browserPages: browserPages(of: tab)?.urls.map(\.absoluteString),
+                    browserPage: browserPages(of: tab)?.active)
             },
             selectedIndex: store.selectedIndex,
             groups: ordered.isEmpty
@@ -1157,6 +1187,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 FileManager.default.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil
             }
             if saved.isPinned { store.setPinned(tab, true) }
+            // Every page; a file from before the browser had tabs, its one.
+            let pages = (saved.browserPages ?? saved.browserURL.map { [$0] } ?? []).compactMap(URL.init(string:))
+            if !pages.isEmpty { pendingBrowserPages[tab.id] = (pages, min(saved.browserPage ?? 0, pages.count - 1)) }
         }
         store.normalize()
         if let i = state.selectedIndex, store.tabs.indices.contains(i) { store.select(index: i) }
@@ -1233,7 +1266,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Shows or hides the find bar, above the terminals (a new tab's view is
     /// added later).
     private func showSearchBar(_ visible: Bool) {
-        if visible { setEditorZoomed(false) }
+        if visible { setZoomed(nil) }
         guard let searchBar else { return }
         searchBar.isHidden = !visible
         if visible, let container = searchBar.superview {
@@ -1251,8 +1284,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// The ⌘F overlay for `terminal`, searching it and its tab's checkout.
     func showSpotlight(for terminal: TerminalView, needle: String?) {
         guard let spotlightView else { return }
-        // It searches the terminal, which a zoomed editor hides.
-        setEditorZoomed(false)
+        // It searches the terminal, which a zoomed column hides.
+        setZoomed(nil)
         spotlight.open(root: diff.root ?? tree.root, terminal: terminal, needle: needle)
         spotlightView.isHidden = false
         spotlightView.superview?.addSubview(spotlightView, positioned: .above, relativeTo: nil)
@@ -1610,26 +1643,39 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// un-zoom (a search started right after a file opened) hid the
     /// terminal's column again, and the keyboard had nowhere to go.
     func setEditorZoomed(_ zoomed: Bool) {
-        guard let editor, let editorItem, let terminalColumn, zoomed == (editorZoomRestore == nil) else { return }
-        // The sidebar stays: files are opened from it, and a click there
-        // shouldn't make it vanish under the pointer.
-        let others = [terminalColumn, inboxItem, diffItem].compactMap { $0 }
         if zoomed {
-            editorZoomRestore = others.map { ($0, $0.isCollapsed) }
-            terminalColumn.canCollapse = true
-            if editorItem.isCollapsed { editorItem.isCollapsed = false }
-            for item in others { item.isCollapsed = true }
-        } else {
-            let restore = editorZoomRestore ?? []
-            editorZoomRestore = nil
-            for (item, collapsed) in restore { item.isCollapsed = collapsed }
-            terminalColumn.canCollapse = false
+            setZoomed(.editor)
+        } else if columnZoom?.column == .editor {
+            setZoomed(nil)
         }
-        split.splitView.layoutSubtreeIfNeeded()
-        editor.isZoomed = zoomed
     }
 
-    var isEditorZoomed: Bool { editorZoomRestore != nil }
+    /// `column` alone with the sidebar (nil: every column as it was). One
+    /// at a time: zooming the browser first gives the editor's back.
+    func setZoomed(_ column: ZoomedColumn?) {
+        guard let terminalColumn, columnZoom?.column != column else { return }
+        if let current = columnZoom {
+            columnZoom = nil
+            for (item, collapsed) in current.restore { item.isCollapsed = collapsed }
+            terminalColumn.canCollapse = false
+        }
+        if let column, let target = column == .editor ? editorItem : browserItem {
+            // The sidebar stays: files are opened from it, and a click there
+            // shouldn't make it vanish under the pointer.
+            let others = [terminalColumn, editorItem, browserItem, inboxItem, diffItem].compactMap { $0 }.filter { $0 !== target }
+            columnZoom = (column, others.map { ($0, $0.isCollapsed) })
+            terminalColumn.canCollapse = true
+            if target.isCollapsed { target.isCollapsed = false }
+            for item in others { item.isCollapsed = true }
+        }
+        split.splitView.layoutSubtreeIfNeeded()
+        editor?.isZoomed = columnZoom?.column == .editor
+        browser?.setZoomed(columnZoom?.column == .browser)
+    }
+
+    var zoomedColumn: ZoomedColumn? { columnZoom?.column }
+
+    var isEditorZoomed: Bool { columnZoom?.column == .editor }
 
     /// A file in the app picked for files — asking which first, if none is
     /// yet (or it is gone). The file tree's double-click and "Open in …".
@@ -1975,7 +2021,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Its contents are painted in the terminal's colours; its controls
         // must match, or a light-mode button sits black on dark.
         popover.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
-        popover.contentViewController = NSHostingController(rootView: TabInfoView(model: model, theme: theme))
+        popover.contentViewController = NSHostingController(
+            rootView: TabInfoView(
+                model: model, theme: theme,
+                openURL: { [weak self, weak tab] url in
+                    self?.infoPopover?.close()
+                    self?.openLink(url, for: tab)
+                }))
         popover.delegate = self
         // Strip frames are top-left; the host is flipped, so that is its space.
         var rect = frame
@@ -2214,18 +2266,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         else { return }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
-        var targets = store.tabs.filter { $0.agent != nil && $0.id != tab.id }
-            .map { other in
-                AskAgentModel.Target(
-                    id: other.id, title: other.title,
-                    detail: other.activity.isWorking ? "busy" : "idle", color: store.group(of: other)?.color,
-                    agent: other.agent)
-            }
+        presentAskAgent(
+            text: text, command: blocks(of: pane).ledger.lastFinished, folder: folder,
+            targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
+    }
+
+    /// The Ask Agent sheet over `text`: to one of `targets` (agent tabs, in
+    /// that order) or a new agent tab in `folder`.
+    func presentAskAgent(text: String, command: CommandBlock?, folder: String?, targets agents: [Tab]) {
+        var targets = agents.map { other in
+            AskAgentModel.Target(
+                id: other.id, title: other.title,
+                detail: other.activity.isWorking ? "busy" : "idle", color: store.group(of: other)?.color,
+                agent: other.agent)
+        }
         targets.append(
             AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
-        askAgent.begin(
-            selection: text, command: blocks(of: pane).ledger.lastFinished, folder: folder, targets: targets,
-            diff: diff.root != nil)
+        askAgent.begin(selection: text, command: command, folder: folder, targets: targets, diff: diff.root != nil)
         guard let theme else { return }
         presentSheet { [weak self] close in
             AskAgentView(
@@ -2688,6 +2745,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 guard let self else { return }
                 if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
                 if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
+                if keys.contains(where: { $0.hasPrefix("browser.") }) { self.browserSettingsChanged() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
@@ -2770,6 +2828,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func removeTab(_ tab: Tab) {
+        forgetBrowser(of: tab)
         AttentionNotifier.withdraw(tab: tab)
         focus.forget(tab.id)
         broadcast.forget(tab)
@@ -2832,7 +2891,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     func focusSelectedTerminal() {
         guard let terminal = store.selected?.terminal else { return }
-        setEditorZoomed(false)
+        setZoomed(nil)
         window?.makeFirstResponder(terminal)
     }
 
@@ -3032,6 +3091,10 @@ extension TerminalWindowController: NSMenuItemValidation {
     /// View ▸ Changes is ticked while the pane shows. Everything else it
     /// handles stays enabled, as without validation.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleBrowser(_:)) {
+            menuItem.state = browserItem?.isCollapsed == false ? .on : .off
+            return Settings.shared.browserEnabled
+        }
         if menuItem.action == #selector(toggleDiff(_:)) {
             menuItem.state = diffItem?.isCollapsed == false ? .on : .off
         }

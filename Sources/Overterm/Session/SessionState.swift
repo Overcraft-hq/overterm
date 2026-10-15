@@ -22,6 +22,13 @@ struct SessionState: Codable, Equatable {
         /// The island it belonged to — an index into `groups` (absent in
         /// older session files, and for a tab in no group).
         var group: Int?
+        /// The page its browser showed (absent in older session files, and
+        /// for a tab without one).
+        var browserURL: String? = nil
+        /// Every page of its browser, and which showed (absent before the
+        /// browser had tabs: `browserURL` was its one page).
+        var browserPages: [String]? = nil
+        var browserPage: Int? = nil
     }
 
     /// An island, enough to put it back (Groups/TabGroup).

@@ -132,6 +132,14 @@ final class TerminalView: NSView {
             free(tagValue)
         }
         var env = [ghostty_env_var_s(key: tagKey, value: tagValue)]
+        // The browser's MCP config for an agent started here (BrowserBridge).
+        let mcpKey = strdup(BrowserBridge.configVariable)
+        let mcpValue = BrowserBridge.shared.configPath(forPane: processTag).map { strdup($0) }
+        defer {
+            free(mcpKey)
+            mcpValue.map { free($0) }
+        }
+        if let mcpValue { env.append(ghostty_env_var_s(key: mcpKey, value: mcpValue)) }
         // A restored pane runs the launcher (named after the shell) instead.
         let launcher = restoring.flatMap { _ in Scrollback.launcher() }
         let commandC = launcher.map { strdup($0) }
@@ -192,6 +200,7 @@ final class TerminalView: NSView {
     /// Frees the surface, which also ends its pty. Call before dropping the
     /// view; libghostty holds a raw pointer to it until then.
     func close() {
+        BrowserBridge.shared.removeConfig(forPane: processTag)
         guard let surface else { return }
         self.surface = nil
         ghostty_surface_free(surface)

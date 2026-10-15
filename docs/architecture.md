@@ -796,6 +796,40 @@ like Zed needs a GPU renderer.
 - **Git gutter**: the file at HEAD (`git show HEAD:./name`), diffed by line
   (`LineDiff`) off the main thread a moment after typing stops.
 
+## Browser
+
+A browser beside the terminal (⇧⌘B, View ▸ Browser; off entirely with
+Settings ▸ Browser), so a dev server's page, its console and an agent
+driving it are in the same window as the code.
+
+- **WebKit, the system's**: a WKWebView per page — nothing bundled. Web
+  Inspector is the toolbar's 🔨 (or a right-click). Cookies and storage
+  persist and are shared by every page (an isolated run uses a
+  non-persistent store).
+- **Per terminal tab**: each tab has a `BrowserWorkspace`, its pages as the
+  browser's own tabs (strip under the toolbar; ⌘T ⌘W ⌘L ⌘R ⌘[ ⌘] ⌃⇥ ⌘1…9
+  while the browser has the keyboard; target=_blank and window.open open a
+  page, with WebKit's configuration so the opener keeps its handle). The
+  column shows the selected tab's; a background tab's pages are parked in
+  an off-screen window, so they keep running and an agent can still use
+  them. The session keeps every page's address (not file: pages).
+- **Links**: ⌘-click in the terminal, Tab Info's and a pane's ports open
+  here or in your browser by `BrowserLinks.Policy` — localhost and private
+  addresses here by default. The empty column offers the tab's ports.
+- **Console**: an injected script reports console calls, uncaught errors
+  and rejections; the strip at the bottom counts errors and opens the log.
+- **Reload on save** (off by default): an editor save, or the checkout's
+  files changing under an agent, reloads a local page.
+- **Agents** (`BrowserBridge`, `BrowserMCP`): an MCP server (streamable
+  HTTP, JSON answers) on 127.0.0.1, a random port and a bearer token, one
+  path per pane — `/mcp/<the pane's OVERTERM_TAB_ID>` — so an agent reaches
+  its own tab's browser. Each pane gets `OVERTERM_MCP_CONFIG`, a Claude Code
+  config file (0600) written for it, and Overterm starts `claude` with
+  `--mcp-config "$OVERTERM_MCP_CONFIG"`. Tools: navigate, snapshot (text and
+  the controls, each with a ref), click, type, screenshot, console,
+  evaluate, back, reload, and the tabs (list, new, select, close). Ask
+  Agent (✦) sends a page's address, errors and a screenshot the ⌘L way.
+
 ## Opening files in another app
 
 A file leaves Overterm — the file tree's double-click, its menu's **Open in

@@ -295,6 +295,7 @@ enum KeyCommands {
         .init("palette.show", "Command Palette", group: "Panels", key: "cmd+k"),
         .init("sidebar.toggle", "Toggle Sidebar", group: "Panels", key: "cmd+b"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
+        .init("browser.toggle", "Browser", group: "Panels", key: "shift+cmd+b"),
         .init("search.terminal", "Search Terminal & Files", group: "Panels", ghostty: "start_search", menu: false),
         // Editing
         .init("edit.copy", "Copy", group: "Editing", key: "cmd+c", ghostty: "copy_to_clipboard"),

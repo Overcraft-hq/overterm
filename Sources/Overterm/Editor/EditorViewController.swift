@@ -11,6 +11,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var onClose: (() -> Void)?
     /// Asked to fill the window with the editor, or give the terminal back.
     var onToggleZoom: (() -> Void)?
+    /// A file was saved (the browser's reload on save).
+    var onSaved: (() -> Void)?
     /// Where Go to File looks: the window's checkout.
     var workspaceRoot: (() -> URL?)?
 
@@ -845,6 +847,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         do {
             try buffer.document.save(buffer.storage.string, overwriting: overwriting)
             bufferDidSave(buffer)
+            onSaved?()
             refreshGitBase(buffer)
         } catch is EditorDocument.ChangedOnDisk {
             confirmOverwrite(buffer)

@@ -23,6 +23,7 @@ final class E2ERunner {
         "editor": { await $0.editorScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
+        "browser": { await $0.browserScenario() },
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
         "why": { await $0.whyScenario() },
@@ -483,6 +484,123 @@ final class E2ERunner {
         try? Data([0, 1, 2, 3]).write(to: bin)
         app.openInEditor(bin)
         check("a binary file is refused, with a reason", await eventually(2) { editor.document.unavailable == "Binary file." })
+    }
+
+    /// The browser column, a page's console, and the MCP door an agent in
+    /// the tab uses — over real HTTP, as Claude Code would.
+    private func browserScenario() async {
+        let page = scratch.appendingPathComponent("page.html")
+        try? """
+        <html><head><title>Demo</title></head><body>
+        <h1>Hello</h1>
+        <button id="b" onclick="this.textContent='Clicked'; console.log('clicked')">Click me</button>
+        <input id="q" placeholder="Search">
+        <a id="pop" href="second.html" target="_blank">Open the second page</a>
+        <script>console.error('boom on load')</script>
+        </body></html>
+        """.write(to: page, atomically: true, encoding: .utf8)
+        try? "<html><head><title>Second</title></head><body><h1>Second page</h1></body></html>"
+            .write(to: scratch.appendingPathComponent("second.html"), atomically: true, encoding: .utf8)
+        check("the bridge listens", await eventually(5) { BrowserBridge.shared.port != nil })
+        // A tab made now has the bridge's address in its environment.
+        app.newTab(nil)
+        guard let tab = app.store.selected, let port = BrowserBridge.shared.port else { return check("a tab", false) }
+        let tag = tab.terminal.processTag
+        let config = AppEnvironment.supportDirectory.appendingPathComponent("mcp/\(tag).json")
+        let configText = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
+        check("the pane gets its MCP config", configText.contains("127.0.0.1:\(port)/mcp/\(tag)") && configText.contains("Bearer"), configText)
+        check("Claude is started with it", Settings.shared.arguments(for: .claude).contains("--mcp-config \"$OVERTERM_MCP_CONFIG\""))
+
+        app.toggleBrowser(nil)
+        check("⇧⌘B shows the browser", await eventually(2) { self.app.browserItem?.isCollapsed == false })
+        app.openInBrowser(page, for: tab)
+        guard let workspace = app.browserWorkspaces[tab.id], let session = workspace.active else { return check("the tab has a browser", false) }
+        check("it loads the page", await eventually(5) { session.url?.lastPathComponent == "page.html" && !session.isLoading && session.title == "Demo" })
+        check("…and hears its console", await eventually(3) { session.errorCount >= 1 && session.console.contains { $0.message.contains("boom on load") } })
+        check("the address bar shows it", app.browser?.address.stringValue.hasSuffix("page.html") == true)
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+            app.browser?.toggleConsole()
+            await pause(0.4)
+            app.captureWindow(to: png + "-browser.png")
+            app.browser?.toggleConsole()
+        }
+
+        // MCP, over HTTP with the token, as an agent in that pane would.
+        let endpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(tag)")!
+        func post(_ body: [String: Any], token: String = BrowserBridge.shared.token) async -> (Int, [String: Any]?) {
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            guard let (data, response) = try? await URLSession.shared.data(for: request) else { return (0, nil) }
+            return ((response as? HTTPURLResponse)?.statusCode ?? 0, try? JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        func tool(_ name: String, _ arguments: [String: Any] = [:]) async -> [String: Any]? {
+            let (_, answer) = await post(["jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": ["name": name, "arguments": arguments]])
+            return (answer?["result"] as? [String: Any])
+        }
+        func text(_ result: [String: Any]?) -> String { ((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "" }
+
+        let (status, initialized) = await post(["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18"]])
+        check("MCP initialize answers", status == 200 && ((initialized?["result"] as? [String: Any])?["serverInfo"] as? [String: Any])?["name"] as? String == "overterm-browser", "\(status)")
+        let (rejected, _) = await post(["jsonrpc": "2.0", "id": 2, "method": "tools/list"], token: "wrong")
+        check("a wrong token is turned away", rejected == 401, "\(rejected)")
+        let snapshot = text(await tool("browser_snapshot"))
+        check("browser_snapshot reads the page and its controls", snapshot.contains("Hello") && snapshot.contains("“Click me”"), snapshot)
+        let ref =
+            snapshot.components(separatedBy: "\n").first { $0.contains("“Click me”") }?.components(separatedBy: "[").dropFirst().first?
+            .components(separatedBy: "]").first ?? ""
+        let afterClick = text(await tool("browser_click", ["ref": ref]))
+        check("browser_click clicks it", afterClick.contains("Clicked"), "ref \(ref): \(afterClick.prefix(300))")
+        let field =
+            afterClick.components(separatedBy: "\n").first { $0.contains("input[text]") || $0.contains("Search") }?
+            .components(separatedBy: "[").dropFirst().first?.components(separatedBy: "]").first ?? ""
+        _ = await tool("browser_type", ["ref": field, "text": "hello"])
+        let value = text(await tool("browser_evaluate", ["script": "document.getElementById('q').value"]))
+        check("browser_type types into a field", value == "hello", "ref \(field): \(value)")
+        let console = text(await tool("browser_console"))
+        check("browser_console has the page's log", console.contains("[log] clicked") && console.contains("boom on load"), console)
+        let shot = ((await tool("browser_screenshot"))?["content"] as? [[String: Any]])?.first
+        check("browser_screenshot is a PNG", shot?["mimeType"] as? String == "image/png" && ((shot?["data"] as? String)?.count ?? 0) > 1000)
+
+        // The browser's own tabs: a target=_blank link opens one, the
+        // agent can list, pick and close them, ⌘T makes one.
+        let page1 = text(await tool("browser_snapshot"))
+        let link =
+            page1.components(separatedBy: "\n").first { $0.contains("Open the second page") }?
+            .components(separatedBy: "[").dropFirst().first?.components(separatedBy: "]").first ?? ""
+        _ = await tool("browser_click", ["ref": link])
+        check(
+            "a target=_blank link opens a tab",
+            await eventually(5) {
+                workspace.pages.count == 2 && workspace.activeIndex == 1 && workspace.active?.title == "Second"
+            }, "\(workspace.pages.map(\.title))")
+        check("…shown in the strip", app.browser?.strip.titles == ["Demo", "Second"], "\(app.browser?.strip.titles ?? [])")
+        let tabs = text(await tool("browser_tabs"))
+        check("browser_tabs lists them", tabs.contains("[0] Demo") && tabs.contains("* [1] Second"), tabs)
+        let back = text(await tool("browser_tab_select", ["index": 0]))
+        check("browser_tab_select goes to one", workspace.activeIndex == 0 && back.contains("Page: Demo"), String(back.prefix(80)))
+        _ = await tool("browser_tab_close", ["index": 1])
+        check("browser_tab_close closes one", workspace.pages.count == 1)
+        app.browser?.newPage()
+        check("⌘T makes a tab", workspace.pages.count == 2 && workspace.activeIndex == 1)
+        app.browser?.closePage(1)
+        check("⌘W closes it", workspace.pages.count == 1 && workspace.active === session)
+
+        // Zoomed, alone with the sidebar; and the editor's zoom gives way.
+        app.setZoomed(.browser)
+        check("the browser can fill the window", app.zoomedColumn == .browser && app.terminalColumn?.isCollapsed == true)
+        app.setZoomed(nil)
+        check("…and give it back", app.zoomedColumn == nil && app.terminalColumn?.isCollapsed == false)
+
+        // Off in Settings: no column, no pages, links go to your browser.
+        Settings.shared.set("browser.enabled", .bool(false))
+        check("Settings can turn it off", await eventually(2) { self.app.browserItem?.isCollapsed == true && self.app.browserWorkspaces.isEmpty })
+        check("…and then links aren't taken", !BrowserLinks.opensInside(URL(string: "http://localhost:3000")!, policy: Settings.shared.browserLinks))
+        check("…nor is Claude given the browser", !Settings.shared.arguments(for: .claude).contains("--mcp-config"))
+        Settings.shared.set("browser.enabled", nil)
     }
 
     /// The file tree's New File…, Rename… and Move to Trash…, each through

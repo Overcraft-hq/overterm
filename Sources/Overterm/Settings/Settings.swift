@@ -233,7 +233,12 @@ final class Settings: ObservableObject {
     /// Added to an agent's command wherever it starts or resumes.
     func arguments(for agent: Agent) -> String {
         switch agent {
-        case .claude: claudeArguments
+        case .claude:
+            // The tab's browser, for Claude Code — the pane being made has the
+            // file (TerminalView sets the variable; BrowserBridge writes it).
+            BrowserBridge.shared.isServing
+                ? (claudeArguments + " --mcp-config \"$\(BrowserBridge.configVariable)\"").trimmingCharacters(in: .whitespaces)
+                : claudeArguments
         case .codex: codexArguments
         }
     }
@@ -270,6 +275,10 @@ final class Settings: ObservableObject {
     var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
     var editorVimMode: Bool { bool("editor.vimMode") }
     var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
+    var browserEnabled: Bool { bool("browser.enabled") }
+    var browserLinks: BrowserLinks.Policy { browserEnabled ? BrowserLinks.Policy(rawValue: string("browser.openLinks")) ?? .local : .none }
+    var browserReloadOnSave: Bool { browserEnabled && bool("browser.reloadOnSave") }
+    var browserAgentControl: Bool { browserEnabled && bool("browser.agentControl") }
 
     // MARK: Ghostty overrides
 
