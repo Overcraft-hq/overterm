@@ -52,6 +52,7 @@ final class E2ERunner {
         "sessions": { await $0.sessionsScenario() },
         "settings": { await $0.settingsScenario() },
         "themes": { await $0.themesScenario() },
+        "usage": { await $0.usageScenario() },
         "updates": { await $0.updatesScenario() },
         "performance": { await $0.performanceScenario() },
         "bigFiles": { await $0.bigFilesScenario() },
@@ -1217,10 +1218,13 @@ final class E2ERunner {
             "and they are \(Int(CardColumn.gap)) pt apart", gaps(shown).allSatisfy { abs($0 - CardColumn.gap) < 0.5 },
             gaps(shown).map { "\($0)" }.joined(separator: ", "))
         check(
-            "the cards are inset from the window on three sides",
+            "the cards are inset from the window on every side",
             body.frame.minX + (shown.first?.minX ?? 0) == CardColumn.gap
                 && content.frame.maxX - (body.frame.minX + (shown.last?.maxX ?? 0)) == CardColumn.gap
-                && body.frame.minY == CardColumn.gap,
+                && body.frame.minY == CardColumn.gap
+                // Under the strip as well, since the strip became a panel:
+                // the terminal ran straight into it.
+                && abs(content.frame.maxY - body.frame.maxY - (app.tabBarView?.frame.height ?? 0) - CardColumn.gap) < 0.5,
             "\(shown.map { $0.integral }) in body \(body.frame.integral) of \(content.frame.integral)")
 
         // The changes pane opens with the editor still shut between it and
@@ -1248,6 +1252,29 @@ final class E2ERunner {
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
         check("a tab is 30 pt tall", heights == [30], "\(heights)")
+
+        // The strip fills the title bar and has to behave like one: its
+        // empty space drags the window and a double-click there zooms it.
+        // Both have been lost twice — once to a colour painted in front of
+        // the drag area, once to the scroll view the tabs now live in —
+        // so this checks the space itself, whatever is on top of it.
+        let inStrip = NSPoint(x: window.frame.width * 0.55, y: lights.midY)
+        let onTop = window.contentView?.superview?.hitTest(inStrip)
+        check(
+            "the strip's empty space moves the window",
+            onTop is WindowDragView || onTop?.mouseDownCanMoveWindow == true, "\(String(describing: onTop))")
+        if let dragged = Self.find(WindowDragView.self, in: window.contentView) { _ in true },
+            let doubleClick = NSEvent.mouseEvent(
+                with: .leftMouseDown, location: inStrip, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1)
+        {
+            let zoomed = window.isZoomed
+            dragged.mouseDown(with: doubleClick)
+            check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
+            if window.isZoomed != zoomed { window.performZoom(nil) }
+        } else {
+            check("the strip has a drag area at all", false)
+        }
     }
 
     /// Dropping a tab onto a pane: the only way to make a split out of
@@ -2875,6 +2902,81 @@ final class E2ERunner {
         {
             kill(node.pid, SIGTERM)
         }
+    }
+
+    /// Usage: what the agents say is left, and what their logs say it
+    /// cost. Both are read off files they write themselves — here, files
+    /// this scenario writes into its own directories (AppEnvironment keeps
+    /// an isolated run away from the real ones).
+    private func usageScenario() async {
+        let claude = AppEnvironment.claudeConfigFile
+        let projects = ClaudeUsageReader.projectsDirectory
+        let folder = projects.appendingPathComponent("-tmp-usage")
+        let rollouts = AppEnvironment.codexSessionsDirectory.appendingPathComponent("2026/10/15")
+        for directory in [folder, rollouts] {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        check("an isolated run reads its own files, not yours", !claude.path.hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path + "/.claude"))
+
+        // Claude: the limits it caches, and an hour of replies.
+        let inFiveHours = Date().addingTimeInterval(5 * 3600)
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let claudeJSON = """
+            {"cachedUsageUtilization":{"fetchedAtMs":\(Int(Date().timeIntervalSince1970 * 1000)),"utilization":{            "five_hour":{"utilization":42,"resets_at":"\(iso.string(from: inFiveHours))"},            "seven_day":{"utilization":7,"resets_at":"\(iso.string(from: inFiveHours.addingTimeInterval(86_400)))"},            "seven_day_opus":null}}}
+            """
+        try? claudeJSON.write(to: claude, atomically: true, encoding: .utf8)
+        let stamp = iso.string(from: Date().addingTimeInterval(-600))
+        let reply =
+            #"{"type":"assistant","timestamp":"\#(stamp)","message":{"id":"msg_e2e","model":"claude-opus-5","usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#
+        // Written twice, as Claude Code writes a reply once per content
+        // block: counted once, or every number here is doubled.
+        try? (reply + "\n" + reply + "\n").write(to: folder.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+
+        // Codex: one turn, with the server's own limits on it.
+        let resets = Int(Date().addingTimeInterval(3600).timeIntervalSince1970)
+        let event = #"""
+            {"timestamp":"\#(stamp)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":0,"output_tokens":100,"total_tokens":600},"last_token_usage":{"input_tokens":500,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":100,"total_tokens":600}},"rate_limits":{"primary":{"used_percent":88.0,"window_minutes":300,"resets_at":\#(resets)},"secondary":{"used_percent":9.0,"window_minutes":10080,"resets_at":\#(resets)},"plan_type":"plus"}}}
+            """#
+        let header = #"{"timestamp":"\#(stamp)","type":"session_meta","payload":{"model":"gpt-5.6-sol","cwd":"/tmp"}}"#
+        try? (header + "\n" + event + "\n").write(
+            to: rollouts.appendingPathComponent("rollout-2026-10-15T10-00-00-e2e.jsonl"), atomically: true, encoding: .utf8)
+
+        // Nothing is walked while the pane is shut.
+        app.usage.refresh()
+        check("the gauge reads the limits without the pane", await eventually(5) { self.app.usage.chipMeter() != nil })
+        // The window you are in, not the weekly one that moves slowly:
+        // the strip is a glance, and 88% of this session is the news.
+        check(
+            "and it shows the session you are in", app.usage.chipMeter()?.meter.reading() == "88%",
+            "\(app.usage.chipMeter()?.meter as Any)")
+        check("which is a session window", app.usage.chipMeter()?.meter.isSession == true)
+        check("with nothing counted yet", app.usage.providers.allSatisfy { $0.spend.tokens.total == 0 })
+
+        guard let item = menuItem("View", "Usage") else { return check("View ▸ Usage exists", false) }
+        check("View ▸ Usage is ⌥⌘U", item.keyEquivalent == "u" && item.keyEquivalentModifierMask == [.command, .option])
+        check("it opens the pane where the changes open", perform(item) && app.diffItem?.isCollapsed == false && app.rightPane.mode == .usage)
+        check("and the model is told it is showing", app.usage.visible)
+
+        check("both agents are found", await eventually(6) { self.app.usage.providers.map(\.provider) == [.claude, .codex] }, "\(app.usage.providers.map(\.provider))")
+        let claudeUsage = app.usage.providers.first { $0.provider == .claude }
+        check(
+            "Claude's windows are read", claudeUsage?.meters.map(\.name) == ["Session", "Week (all models)"],
+            "\(claudeUsage?.meters.map(\.name) as Any)")
+        check("with its percentage", claudeUsage?.meters.first?.usedPercent == 42)
+        // 1 M in and 1 M out of Opus 5 is $5 + $25, and the repeated line
+        // must not make it $60.
+        check(
+            "and a day's spend at list prices", await eventually(6) { (self.app.usage.providers.first { $0.provider == .claude }?.spend.dollars ?? 0) == 30 },
+            "\(claudeUsage?.spend as Any)")
+        let codex = app.usage.providers.first { $0.provider == .codex }
+        check("Codex's plan comes off its rollout", codex?.plan == "plus")
+        check("its windows too", codex?.meters.map(\.name).sorted() == ["5-hour", "Weekly"], "\(codex?.meters.map(\.name) as Any)")
+        check("and the five-hour one is the session", codex?.meters.first { $0.isSession }?.name == "5-hour")
+        check("and the turn's own tokens, not the session's running total", codex?.spend.tokens.total == 600, "\(codex?.spend.tokens as Any)")
+
+        app.toggleDiff(nil)
+        check("closing the pane stops the walking", !app.usage.visible && app.diffItem?.isCollapsed == true)
     }
 
     /// Settings ▸ Themes: the gallery. Every theme on this Mac — the ones

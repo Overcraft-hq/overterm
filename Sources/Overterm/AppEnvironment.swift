@@ -86,6 +86,24 @@ enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/ghostty/themes", isDirectory: true)
     }
 
+    /// Claude Code's own state file, where it caches what the API told it
+    /// about your limits (Settings ▸ Usage reads it; nobody writes it).
+    /// An isolated run points at its own, so a scenario never reads the
+    /// developer's real quota.
+    static var claudeConfigFile: URL {
+        if isIsolated { return supportDirectory.appendingPathComponent("claude.json") }
+        if let dir = env["CLAUDE_CONFIG_DIR"] { return URL(fileURLWithPath: dir).appendingPathComponent(".claude.json") }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+    }
+
+    /// Codex's rollouts: ~/.codex/sessions, or $CODEX_HOME/sessions. Every
+    /// turn ends with the quota the server reported.
+    static var codexSessionsDirectory: URL {
+        if isIsolated { return supportDirectory.appendingPathComponent("codex-sessions", isDirectory: true) }
+        if let dir = env["CODEX_HOME"] { return URL(fileURLWithPath: dir).appendingPathComponent("sessions", isDirectory: true) }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions", isDirectory: true)
+    }
+
     private static let isolatedSuite = "\(bundleIdentifier).isolated"
 
     /// UserDefaults.standard, or a throwaway suite for an isolated run.

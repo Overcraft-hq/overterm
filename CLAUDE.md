@@ -43,6 +43,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Overterm/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
 | `Sources/Overterm/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
 | `Sources/Overterm/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
+| `Sources/Overterm/Usage/` | what the agents have spent: `UsageTailScanner` (logs read backwards, bounded by the window), `ClaudeUsageSource` / `CodexUsageSource` (quota meters off the files each agent writes), `ModelPricing`, the pane and the strip's gauge |
 | `Sources/Overterm/Themes/` | Settings ▸ Themes: `TerminalTheme` (a Ghostty theme file, parsed), `ThemeCatalog` (the bundled ones and the user's), `ThemePreview` (a theme drawn as a little window), the gallery |
 | `Sources/Overterm/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
 | `Sources/Overterm/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
@@ -91,6 +92,17 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Typing text then running it**: `insertText` is a bracketed paste, so a trailing newline is literal. Use `pressReturn()`.
 - Keep features built-in (Claude, Codex); no plugin slots.
 - **Tests are part of the change**: unit/integration in `Tests/OvertermTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
+- **Nobody is asked about usage over the network.** Both agents write their
+  own quota to disk — Claude caches the API's answer in `~/.claude.json`,
+  Codex puts the server's `rate_limits` in every rollout's `token_count` —
+  and the money is their logs at list prices, labelled an estimate. Those
+  numbers go stale (eight hours is normal) and a window whose `resets_at`
+  has passed says nothing about the one running now: show the age, show
+  "rolled over", never a stale percentage as if it were current.
+- **Agent logs are read backwards** (`UsageTailScanner`): 643 MB of
+  transcripts, most of it written today, so a day costs 0.1 MB a file this
+  way and everything forwards. Only a line that carries usage may stop the
+  walk — attachments are written out of order by hours.
 - **A theme is a file, not code**: Ghostty resolves `theme = "<name>"` in
   `Contents/Resources/ghostty/themes` (its own 463, plus `Resources/themes`
   beside them) and `~/.config/ghostty/themes`. Settings ▸ Themes reads the
