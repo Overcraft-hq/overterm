@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.5.2 — 2026-10-15
+
+- git: a git call no longer kills the app once WebKit is loaded
+
 ## 2.5.1 — 2026-10-15
 
 - window: the title bar is dressed by the theme, not by macOS
