@@ -85,36 +85,51 @@ final class ThemeCatalog: ObservableObject {
         return entries.sorted { $0.theme.name.localizedCaseInsensitiveCompare($1.theme.name) == .orderedAscending }
     }
 
+    /// The ten to open on. Ghostty's catalogue is 473 themes deep, which is
+    /// a wall, not a choice; these are the ones people name, a light one
+    /// for every two dark, in the order they are shown.
+    nonisolated static let popular = [
+        "Catppuccin Mocha", "TokyoNight Night", "Dracula", "Gruvbox Dark", "Nord",
+        "Rose Pine", "Everforest Dark Hard", "Claude Dark", "Catppuccin Latte", "One Half Light",
+    ]
+
     /// What the gallery shows: themes whose name matches, of the asked-for
-    /// lightness. Pure, so the filtering is tested without any files.
-    nonisolated static func filter(_ entries: [Entry], search: String, appearance: Appearance) -> [Entry] {
+    /// kind. Pure, so the filtering is tested without any files.
+    nonisolated static func filter(_ entries: [Entry], search: String, showing: Showing) -> [Entry] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return entries.filter { entry in
-            guard appearance.accepts(entry.theme) else { return false }
+        let found = entries.filter { entry in
+            guard showing.accepts(entry.theme) else { return false }
             guard !query.isEmpty else { return true }
             return entry.theme.name.lowercased().contains(query)
         }
+        guard showing == .popular else { return found }
+        // Shown as the list names them, not alphabetically: the first card
+        // is the one most people would have picked.
+        return found.sorted { popular.firstIndex(of: $0.theme.name) ?? 0 < popular.firstIndex(of: $1.theme.name) ?? 0 }
     }
 
-    /// The gallery's dark / light filter.
-    enum Appearance: String, CaseIterable, Identifiable, Sendable {
-        case all, dark, light
+    /// Which themes the gallery is showing: the ten to start from, or the
+    /// whole catalogue, dark, light or both.
+    enum Showing: String, CaseIterable, Identifiable, Sendable {
+        case popular, dark, light, all
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .all: "All"
+            case .popular: "Popular"
             case .dark: "Dark"
             case .light: "Light"
+            case .all: "All"
             }
         }
 
         func accepts(_ theme: TerminalTheme) -> Bool {
             switch self {
-            case .all: true
+            case .popular: ThemeCatalog.popular.contains(theme.name)
             case .dark: theme.isDark
             case .light: !theme.isDark
+            case .all: true
             }
         }
     }

@@ -2790,18 +2790,30 @@ final class E2ERunner {
         let claude = catalog.theme(named: "Claude Dark")
         check("each with its colours", claude?.background == ThemeColor("#262624") && claude?.isDark == true, "\(claude?.background as Any)")
 
-        let dark = ThemeCatalog.filter(catalog.entries, search: "", appearance: .dark).count
-        let light = ThemeCatalog.filter(catalog.entries, search: "", appearance: .light).count
+        // The gallery opens on ten of them; the catalogue is a click away.
+        check("it opens on the popular ten", app.settingsPage.themeShowing == .popular)
+        let ten = ThemeCatalog.filter(catalog.entries, search: "", showing: .popular)
+        check("which are ten, and all there", ten.count == 10, "\(ten.map(\.id))")
+        check("in the order the list names them", ten.map(\.id) == ThemeCatalog.popular, "\(ten.map(\.id))")
+        let dark = ThemeCatalog.filter(catalog.entries, search: "", showing: .dark).count
+        let light = ThemeCatalog.filter(catalog.entries, search: "", showing: .light).count
         check("dark and light split the lot", dark > 200 && light > 50 && dark + light == catalog.entries.count, "\(dark) dark, \(light) light")
         check(
             "and the search is by name",
-            ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", appearance: .light).map(\.id) == ["Claude Light"],
-            "\(ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", appearance: .light).map(\.id))")
+            ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", showing: .light).map(\.id) == ["Claude Light"],
+            "\(ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", showing: .light).map(\.id))")
 
         // Picking one is the only way to judge it: it applies at once.
         settings.set("appearance.theme", .string("Claude Dark"))
         check("picking one writes the Ghostty override", await eventually(3) { overrides().contains("theme = \"Claude Dark\"") }, overrides())
         check("and the open terminals take it", await eventually(3) { background() == "#262624" }, background())
+        // Not just the config: a surface keeps the one it was made with
+        // until it is handed another, so a theme used to show up only in
+        // the next tab.
+        check(
+            "the surfaces already open are handed the new config",
+            await eventually(3) { app.store.tabs.allSatisfy { $0.terminals.allSatisfy { $0.appliedConfigs > 0 } } },
+            "\(app.store.tabs.flatMap(\.terminals).map(\.appliedConfigs))")
 
         // The pair: one line, which Ghostty switches between as macOS does.
         app.settingsPage.themeSlot = .light

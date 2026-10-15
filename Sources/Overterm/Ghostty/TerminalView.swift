@@ -158,8 +158,23 @@ final class TerminalView: NSView {
             applyColorScheme()
             NotificationCenter.default.addObserver(
                 self, selector: #selector(applyColorScheme), name: GhosttyRuntime.colorSchemeChanged, object: nil)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(applyConfig), name: GhosttyRuntime.configReloaded, object: nil)
         }
         updateTrackingAreas()
+    }
+
+    /// How many times a reloaded config has reached this surface. The E2E
+    /// run asserts a theme picked in Settings got here, which nothing on
+    /// the screen can be asked about.
+    private(set) var appliedConfigs = 0
+
+    /// The font, the colours, the padding as they are now: a surface keeps
+    /// the config it was made with until it is given another.
+    @objc private func applyConfig() {
+        guard let surface else { return }
+        GhosttyRuntime.shared.updateConfig(of: surface)
+        appliedConfigs += 1
     }
 
     /// Which half of a `light:…,dark:…` theme this surface shows. A

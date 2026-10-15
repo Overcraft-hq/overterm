@@ -63,7 +63,7 @@ final class SettingsPageModel: ObservableObject {
     /// Themes: the gallery's own search and filter, and — when a theme
     /// follows macOS — which of the two a pick goes to.
     @Published var themeSearch = ""
-    @Published var themeAppearance: ThemeCatalog.Appearance = .all
+    @Published var themeShowing: ThemeCatalog.Showing = .popular
     @Published var themeSlot: ThemeSlot = .dark
 
     var sections: [SettingsSection] { SettingsSection.allCases.filter { $0.matches(search) } }

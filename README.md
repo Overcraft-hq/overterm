@@ -169,12 +169,12 @@ config, applied to open terminals immediately), Agents, Editor, Notifications,
 Keyboard Shortcuts, and About — the version, what's new, and updates from
 GitHub releases.
 
-**Themes** is a gallery, not a menu of names: 473 of them — the ones Ghostty
-ships, ten more beside them, and anything in your own
-`~/.config/ghostty/themes`, marked *Yours* — each drawn as a little window in
-its own colours. Search it, split it into dark and light, and pick: the
-terminal changes as you do. "Follow macOS between a light and a dark theme"
-keeps one of each and switches with the system.
+**Themes** is a gallery, not a menu of names: each one drawn as a little
+window in its own colours. It opens on ten — the ones people name — and
+**All** is the whole catalogue of 473: Ghostty's own, ten more bundled beside
+them, and anything in your `~/.config/ghostty/themes`, marked *Yours*. Pick
+one and the terminals you have open change as you do. "Follow macOS between a
+light and a dark theme" keeps one of each and switches with the system.
 
 ## Build
 

@@ -81,11 +81,23 @@ final class ThemeCatalogTests: XCTestCase {
 
     func testFilterByNameAndLightness() {
         let all = entries([("Dracula", true, .builtIn), ("Alabaster", false, .builtIn), ("My Dark", true, .user)])
-        XCTAssertEqual(ThemeCatalog.filter(all, search: "", appearance: .all).count, 3)
-        XCTAssertEqual(ThemeCatalog.filter(all, search: "", appearance: .light).map(\.id), ["Alabaster"])
-        XCTAssertEqual(ThemeCatalog.filter(all, search: "dark", appearance: .all).map(\.id), ["My Dark"])
-        XCTAssertEqual(ThemeCatalog.filter(all, search: "  DRAC ", appearance: .dark).map(\.id), ["Dracula"])
-        XCTAssertTrue(ThemeCatalog.filter(all, search: "dracula", appearance: .light).isEmpty)
+        XCTAssertEqual(ThemeCatalog.filter(all, search: "", showing: .all).count, 3)
+        XCTAssertEqual(ThemeCatalog.filter(all, search: "", showing: .light).map(\.id), ["Alabaster"])
+        XCTAssertEqual(ThemeCatalog.filter(all, search: "dark", showing: .all).map(\.id), ["My Dark"])
+        XCTAssertEqual(ThemeCatalog.filter(all, search: "  DRAC ", showing: .dark).map(\.id), ["Dracula"])
+        XCTAssertTrue(ThemeCatalog.filter(all, search: "dracula", showing: .light).isEmpty)
+    }
+
+    /// The gallery opens on ten, not on 473.
+    func testThePopularTenAreShownInTheirOwnOrder() {
+        let entries = (ThemeCatalog.popular.reversed() + ["Something Else"]).map { name -> ThemeCatalog.Entry in
+            ThemeCatalog.Entry(theme: TerminalTheme.parse("background = #101010\nforeground = #eeeeee", name: name)!, source: .builtIn)
+        }
+        let shown = ThemeCatalog.filter(entries, search: "", showing: .popular)
+        XCTAssertEqual(shown.map(\.id), ThemeCatalog.popular, "the list's own order, not the alphabet")
+        XCTAssertEqual(ThemeCatalog.filter(entries, search: "dracula", showing: .popular).map(\.id), ["Dracula"])
+        XCTAssertTrue(ThemeCatalog.filter(entries, search: "something", showing: .popular).isEmpty, "not one of the ten")
+        XCTAssertEqual(ThemeCatalog.popular.count, 10)
     }
 
     /// The user's own themes come after the bundled ones, and a name in both

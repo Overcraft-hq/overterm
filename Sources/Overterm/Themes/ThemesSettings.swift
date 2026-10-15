@@ -42,7 +42,7 @@ struct ThemesSettings: View {
     private var chosen: String { settings.value(slot.key)?.string ?? "" }
 
     private var shown: [ThemeCatalog.Entry] {
-        ThemeCatalog.filter(catalog.entries, search: model.themeSearch, appearance: model.themeAppearance)
+        ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: model.themeShowing)
     }
 
     var body: some View {
@@ -164,8 +164,8 @@ struct ThemesSettings: View {
             .padding(.horizontal, 9)
             .frame(width: 240, height: 26)
             .background(RoundedRectangle(cornerRadius: 7).fill(theme.rowSel))
-            Picker("", selection: $model.themeAppearance) {
-                ForEach(ThemeCatalog.Appearance.allCases) { Text($0.title).tag($0) }
+            Picker("", selection: $model.themeShowing) {
+                ForEach(ThemeCatalog.Showing.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             .fixedSize()
@@ -179,7 +179,8 @@ struct ThemesSettings: View {
     }
 
     private var searchPlaceholder: String {
-        catalog.isLoaded ? "Search \(catalog.entries.count) themes" : "Search themes"
+        guard catalog.isLoaded else { return "Search themes" }
+        return model.themeShowing == .popular ? "Search the ten" : "Search \(catalog.entries.count) themes"
     }
 
     private var gallery: some View {
@@ -194,6 +195,21 @@ struct ThemesSettings: View {
         .overlay(alignment: .top) {
             if !catalog.isLoaded {
                 ProgressView().controlSize(.small).padding(.top, 40)
+            } else if shown.isEmpty {
+                // Nothing among the ten is the usual way to meet the other
+                // 463: say how many there are and open them in one click.
+                let elsewhere = ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: .all).count
+                VStack(spacing: 8) {
+                    Text(verbatim: model.themeSearch.isEmpty ? "Nothing here" : "No match among the ten")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.text2)
+                    if elsewhere > 0 {
+                        Button("Search all \(catalog.entries.count) themes (\(elsewhere))") {
+                            withAnimation(.easeInOut(duration: 0.25)) { model.themeShowing = .all }
+                        }
+                    }
+                }
+                .padding(.top, 40)
             }
         }
     }

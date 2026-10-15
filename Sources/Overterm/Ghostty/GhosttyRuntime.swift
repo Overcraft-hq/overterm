@@ -99,6 +99,15 @@ final class GhosttyRuntime {
     /// Posted when it changes; each open surface takes the new one.
     static let colorSchemeChanged = Notification.Name("ColorSchemeChanged")
 
+    /// Posted after the config is re-read, for the surfaces already open.
+    static let configReloaded = Notification.Name("ConfigReloaded")
+
+    /// Hands the config in force to one surface (`TerminalView`).
+    func updateConfig(of surface: ghostty_surface_t) {
+        guard let config else { return }
+        ghostty_surface_update_config(surface, config)
+    }
+
     /// Tells libghostty which way macOS is dressed. It assumes light until
     /// told, so a theme written as a light/dark pair came out light in the
     /// dark — and so does the `light:`/`dark:` in the user's own Ghostty
@@ -188,6 +197,10 @@ final class GhosttyRuntime {
         ghostty_app_update_config(app, fresh)
         if let old = config { ghostty_config_free(old) }
         config = fresh
+        // The app's config is what a *new* surface is built from; the ones
+        // already open each hold their own and have to be handed it, or a
+        // theme picked in Settings showed up only in the next tab.
+        NotificationCenter.default.post(name: Self.configReloaded, object: nil)
         // The user's own config may have changed its keybinds too.
         if let old = baseConfig { ghostty_config_free(old) }
         baseConfig = Self.makeConfig(overrides: false)
