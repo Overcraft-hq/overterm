@@ -508,9 +508,11 @@ final class E2ERunner {
 
         app.openInEditor(main)
         guard let editor = app.editor, let textView = editor.textView else { return check("editor exists", false) }
-        check("a file opens zoomed: the editor fills the window", await eventually(3) { self.app.isEditorZoomed && editor.isZoomed })
+        check("a file opens beside the terminal, not zoomed", !app.isEditorZoomed && app.editorItem?.isCollapsed == false)
         editor.perform("editor.toggleZoom")
-        check("⇧⎋ gives the terminal back", await eventually(3) { !self.app.isEditorZoomed })
+        check("⇧⎋ zooms it", await eventually(3) { self.app.isEditorZoomed && editor.isZoomed })
+        editor.perform("editor.toggleZoom")
+        check("…and gives the terminal back", await eventually(3) { !self.app.isEditorZoomed })
 
         // Problems from the language server: a squiggle, the gutter, the status bar.
         check(

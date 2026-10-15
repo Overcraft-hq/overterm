@@ -748,8 +748,9 @@ like Zed needs a GPU renderer.
   come back to, problems and git marks. A file opens in a tab after the one
   showing; ⌘W in the editor closes a tab (asking about edits), not the
   terminal.
-- **Zoom**: by default (Settings ▸ Editor) a file opens with the terminal,
-  inbox and changes columns shut; ⇧⎋, the header's ⤢, choosing a tab,
+- **Zoom**: a file opens beside the terminal; ⇧⎋ or the header's ⤢ shuts
+  the terminal, inbox and changes columns (Settings ▸ Editor can open every
+  file that way). ⇧⎋ or ⤢ again, choosing a tab,
   searching the terminal or giving it the keyboard brings them back as they
   were. Instant, not animated: an animated collapse finishing after a quick
   un-zoom hid the terminal again.
@@ -771,7 +772,8 @@ like Zed needs a GPU renderer.
   them in `performKeyEquivalent` (⌘ keys, before the menu: ⌘D is Add Next
   Match here and Split Right in the terminal) and in `keyDown` (the rest:
   ⌥↑, F12, ⌃G). They are never menu key equivalents: ⌥↑ there would be taken
-  from the terminal too. Order in `keyDown`: the completion list, vim, the
+  from the terminal too. ⌘F is left as it was: the editor's find bar (the
+  menu's Find…) there, the terminal's search overlay in the terminal. Order in `keyDown`: the completion list, vim, the
   shortcuts. The editing itself (auto-indent, pairs, comments, moving and
   duplicating lines, ⌘D) is `EditCommands`: pure, text and selections in, one
   undoable change out.

@@ -231,56 +231,6 @@ extension EditorViewController {
         return currentSymbols.filter { NSLocationInRange(caret, $0.range) || NSMaxRange($0.range) == caret }.max { $0.depth < $1.depth }
     }
 
-    private static var fileListCache: [URL: [String]] = [:]
-
-    /// ⌘P: every file of the checkout, by fuzzy name.
-    func goToFile() {
-        guard let root = workspaceRoot?() ?? active?.url.flatMap(Self.gitRoot(of:)) ?? active?.url?.deletingLastPathComponent() else { return }
-        var files = Self.fileListCache[root] ?? []
-        let picker = EditorPicker(
-            placeholder: "Go to file", theme: theme, showsList: true,
-            provider: { query in
-                Self.rankFiles(files, query: query).map { path, matched in
-                    let name = (path as NSString).lastPathComponent
-                    let offset = (path as NSString).length - (name as NSString).length
-                    return EditorListItem(
-                        title: name, detail: (path as NSString).deletingLastPathComponent,
-                        matched: matched.compactMap { $0 >= offset ? $0 - offset : nil })
-                }
-            },
-            choose: { [weak self] row, text in
-                let ranked = Self.rankFiles(files, query: text)
-                guard let self, ranked.indices.contains(row) else { return }
-                self.show(root.appendingPathComponent(ranked[row].0), selecting: { nil })
-            })
-        picker.identifier = NSUserInterfaceItemIdentifier("goToFile")
-        showPicker(picker)
-        Task { [weak picker] in
-            guard
-                let output = try? await Git.run(
-                    ["ls-files", "--cached", "--others", "--exclude-standard"], in: root, outputLimit: 32 * 1024 * 1024)
-            else { return }
-            files = output.split(separator: "\n").map(String.init)
-            Self.fileListCache[root] = files
-            picker?.reload()
-        }
-    }
-
-    static func rankFiles(_ files: [String], query: String) -> [(String, [Int])] {
-        let query = query.replacingOccurrences(of: " ", with: "")
-        guard !query.isEmpty else { return files.prefix(100).map { ($0, []) } }
-        var ranked: [(String, Int, [Int])] = []
-        for path in files {
-            guard let match = CompletionMatch.score(candidate: path, query: query) else { continue }
-            // The name matching counts most, as it does in Zed.
-            let name = (path as NSString).lastPathComponent
-            let bonus = CompletionMatch.score(candidate: name, query: query).map { $0.score + 50 } ?? 0
-            ranked.append((path, match.score + bonus - path.count / 8, match.matched))
-        }
-        ranked.sort { $0.1 > $1.1 }
-        return ranked.prefix(100).map { ($0.0, $0.2) }
-    }
-
     static func gitRoot(of url: URL) -> URL? {
         var dir = url.standardizedFileURL.deletingLastPathComponent()
         // Bounded and stopping at "/" (whose parent is "/../", not "/").

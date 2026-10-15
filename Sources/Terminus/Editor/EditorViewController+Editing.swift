@@ -68,7 +68,6 @@ extension EditorViewController: CodeTextViewHost {
         let text = textView.string as NSString
         let selections = textView.selectedRanges.map(\.rangeValue)
         switch id {
-        case "editor.goToFile": goToFile()
         case "editor.goToLine": goToLine()
         case "editor.goToSymbol": goToSymbol()
         case "editor.goToDefinition": goToDefinition(at: textView.selectedRange().location)

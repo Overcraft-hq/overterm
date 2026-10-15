@@ -269,8 +269,8 @@ enum SettingsSchema {
             key: "editor.indentGuides", section: .editor, group: "Text", title: "Indent guides", kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.openZoomed", section: .editor, group: "Window", title: "Open files zoomed",
-            help: "The editor takes the terminal's place (the sidebar stays); ⇧⎋ or the header's ⤢ gives the terminal back.", kind: .toggle,
-            defaultValue: .bool(true)),
+            help: "Off: a file opens beside the terminal, and ⇧⎋ or the header's ⤢ zooms it. On: the editor takes the terminal's place (the sidebar stays).",
+            kind: .toggle, defaultValue: .bool(false)),
         SettingSpec(
             key: "editor.gitGutter", section: .editor, group: "Window", title: "Mark lines changed since the last commit",
             kind: .toggle, defaultValue: .bool(true)),

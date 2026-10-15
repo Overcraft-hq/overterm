@@ -318,7 +318,6 @@ enum KeyCommands {
         .init("window.close", "Close Window", group: "Window", key: "shift+cmd+w", ghostty: "close_window"),
         .init("window.minimize", "Minimize", group: "Window", key: "cmd+m"),
         // Editor — Zed's keys (its VS Code keymap), only while editing.
-        .init("editor.goToFile", "Go to File…", group: "Editor", key: "cmd+p", editor: true),
         .init("editor.goToLine", "Go to Line…", group: "Editor", key: "ctrl+g", editor: true),
         .init("editor.goToSymbol", "Go to Symbol in File…", group: "Editor", key: "shift+cmd+o", editor: true),
         .init("editor.goToDefinition", "Go to Definition", group: "Editor", key: "f12", editor: true),
