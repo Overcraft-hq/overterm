@@ -30,13 +30,18 @@ struct PaletteView: View {
                 .frame(height: 48)
                 .padding(.horizontal, 16)
                 Divider().opacity(0.4)
-                HStack(spacing: 0) {
-                    results.frame(width: 470)
+                // One height for the list and the detail beside it: the
+                // detail's spacer has no height of its own, and unbounded it
+                // stretched the card down the whole window with the list
+                // floating in the middle of it.
+                HStack(alignment: .top, spacing: 0) {
+                    results.frame(width: 470).frame(maxHeight: .infinity, alignment: .top)
                     if let selected = model.selected, selected.detail != nil || !selected.placeholders.isEmpty {
                         Divider().opacity(0.4)
                         PaletteDetail(item: selected, model: model, theme: theme)
                     }
                 }
+                .frame(height: Self.bodyHeight)
                 Divider().opacity(0.4)
                 footer
             }
@@ -47,6 +52,8 @@ struct PaletteView: View {
             .padding(.top, 70)
         }
     }
+
+    static let bodyHeight: CGFloat = 372
 
     /// All / History / Snippets / Actions — narrows what is searched.
     private var scopes: some View {

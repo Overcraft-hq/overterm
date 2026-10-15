@@ -3294,6 +3294,10 @@ final class E2ERunner {
         // what the scenarios type lands in the user's own history file,
         // which is also seeded from.
         let history = app.palette.results.filter { $0.group == .history }
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+            await pause(0.5)
+            app.captureWindow(to: png)
+        }
         check(
             "history is searchable",
             history.contains { $0.title.contains("--filter api") } && history.contains { $0.title.contains("--filter web") },
