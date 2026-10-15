@@ -104,6 +104,9 @@ extension EditorViewController: CodeTextViewHost {
             buffer.wrapOverride = !(textView.textContainer?.widthTracksTextView ?? false)
             applyWrap()
         case "editor.toggleZoom": onToggleZoom?()
+        case "editor.markdownPreview":
+            guard buffer.language?.id == "markdown" else { return false }
+            toggleMarkdownPreview()
         case "editor.closeFile": closeBuffer(at: activeIndex)
         case "editor.nextFile": activate((activeIndex + 1) % buffers.count)
         case "editor.previousFile": activate((activeIndex - 1 + buffers.count) % buffers.count)

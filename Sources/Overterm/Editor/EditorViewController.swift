@@ -34,6 +34,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private var header: EditorHeaderView!
     private var breadcrumb: EditorBreadcrumbView!
     private(set) var statusBar: EditorStatusBar!
+    private(set) var preview: MarkdownPreviewView!
+    private var pendingPreview: DispatchWorkItem?
     private var messageLabel: NSTextField!
     private var lineHeight: EditorLineHeight!
     private var cancellables: Set<AnyCancellable> = []
@@ -86,6 +88,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         header.onSelect = { [weak self] in self?.activate($0) }
         header.onCloseTab = { [weak self] in self?.closeBuffer(at: $0) }
         header.onZoom = { [weak self] in self?.onToggleZoom?() }
+        header.onPreview = { [weak self] in self?.toggleMarkdownPreview() }
         header.onReveal = { [weak self] in
             guard let self, let url = self.active?.url else { return }
             self.opener.open(url)
@@ -171,12 +174,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         let statusBar = EditorStatusBar(background: chrome.stripNS, text: theme.text)
         statusBar.onProblems = { [weak self] in self?.goToProblem(forward: true) }
 
+        let preview = MarkdownPreviewView(theme: theme)
+        preview.isHidden = true
+        preview.onOpenFile = { [weak self] url in self?.open(url) }
+
         let message = NSTextField(labelWithString: "")
         message.textColor = theme.text.withAlphaComponent(0.6)
         message.alignment = .center
         message.isHidden = true
 
-        for view in [header, breadcrumb, scrollView, statusBar, message] as [NSView] {
+        for view in [header, breadcrumb, scrollView, preview, statusBar, message] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -193,6 +200,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            preview.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            preview.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            preview.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            preview.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
             statusBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -207,6 +218,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         self.header = header
         self.breadcrumb = breadcrumb
         self.statusBar = statusBar
+        self.preview = preview
         self.messageLabel = message
         view = root
         header.setZoomed(isZoomed)
@@ -266,6 +278,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         messageLabel.stringValue = unavailable ?? ""
         messageLabel.isHidden = unavailable == nil
         scrollView.isHidden = unavailable != nil
+        updatePreview()
         textView.indentWidth = buffer.usesTabs ? Settings.shared.editorTabSize : buffer.indentWidth
         textView.tabWidth = Settings.shared.editorTabSize
         gutter.textDidChange()
@@ -332,6 +345,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             textView.layoutManager?.replaceTextStorage(emptyStorage)
             swapping = false
             hideTransientUI()
+            updatePreview()
             refreshChrome()
             onClose?()
             return
@@ -409,6 +423,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
                 textView.setSelectedRange(buffer.selection[0])
                 gutter.textDidChange()
                 paintVisible()
+                updatePreview()
             }
         }
     }
@@ -535,6 +550,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     func textDidChange(_ notification: Notification) {
         guard let buffer = active else { return }
+        if buffer.showsPreview { schedulePreview() }
         buffer.document.markEdited()
         gutter.textDidChange()
         bufferDidChange(buffer)
@@ -615,6 +631,40 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             if textView.selectedRanges != selection { textView.selectedRanges = selection }
             textView.typingAttributes = base
         }
+    }
+
+    // MARK: Markdown preview
+
+    /// ⇧⌘V or the header's eye: the file rendered, or its text again.
+    func toggleMarkdownPreview() {
+        guard let buffer = active, buffer.language?.id == "markdown" else { return }
+        buffer.showsPreview.toggle()
+        updatePreview()
+        if !buffer.showsPreview { focus() }
+    }
+
+    /// The preview over the text for a markdown file that asks for it;
+    /// the header's eye on every markdown file.
+    func updatePreview() {
+        guard isViewLoaded else { return }
+        let buffer = active
+        let isMarkdown = buffer?.language?.id == "markdown" && buffer?.document.unavailable == nil
+        let showing = isMarkdown && buffer?.showsPreview == true
+        header.setPreview(available: isMarkdown, showing: showing)
+        preview.isHidden = !showing
+        scrollView.isHidden = showing || buffer?.document.unavailable != nil
+        guard showing, let buffer else { return }
+        preview.baseURL = buffer.url
+        preview.show(buffer.storage.string)
+    }
+
+    /// Typing while it shows (an agent rewriting the file, say): the
+    /// rendering follows a moment later.
+    private func schedulePreview() {
+        pendingPreview?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.updatePreview() } }
+        pendingPreview = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
     // MARK: Chrome

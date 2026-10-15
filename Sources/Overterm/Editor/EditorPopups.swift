@@ -124,12 +124,12 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         fatalError("init(coder:) is not supported")
     }
 
-    static func blend(_ a: NSColor, _ b: NSColor, _ amount: CGFloat) -> NSColor {
+    nonisolated static func blend(_ a: NSColor, _ b: NSColor, _ amount: CGFloat) -> NSColor {
         (a.usingColorSpace(.sRGB) ?? a).blended(withFraction: amount, of: b.usingColorSpace(.sRGB) ?? b) ?? a
     }
 
     /// A popup's surface: the editor's background, a step towards the text.
-    static func surface(_ theme: EditorTheme) -> NSColor { blend(theme.background, theme.text, theme.isDark ? 0.09 : 0.03) }
+    nonisolated static func surface(_ theme: EditorTheme) -> NSColor { blend(theme.background, theme.text, theme.isDark ? 0.09 : 0.03) }
 
     // MARK: Clicking away
 

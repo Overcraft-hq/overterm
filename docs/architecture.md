@@ -786,6 +786,13 @@ like Zed needs a GPU renderer.
   `discoveryOverride` hands in a fake.
 - **Vim** (`Vim/`, Settings ▸ Editor): a pure engine over a `VimBuffer`, which
   the pane is; Zed's choices — yanks go to the clipboard.
+- **Markdown preview** (⇧⌘V, the header's eye on a markdown file): the
+  file rendered by Foundation's own parser (`AttributedString(markdown:)`,
+  full syntax — no web view, no bundled script) into TextKit 1 blocks
+  (`MarkdownRenderer`): code and quotes on a surface, tables as
+  `NSTextTable`s. A block needs a width (`setContentWidth` 100 %), or it is
+  as narrow as it can be. It follows the file as it changes; a relative
+  link opens in the editor.
 - **Git gutter**: the file at HEAD (`git show HEAD:./name`), diffed by line
   (`LineDiff`) off the main thread a moment after typing stops.
 

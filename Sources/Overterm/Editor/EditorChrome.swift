@@ -14,6 +14,7 @@ final class EditorHeaderView: NSView {
     var onSelect: ((Int) -> Void)?
     var onCloseTab: ((Int) -> Void)?
     var onZoom: (() -> Void)?
+    var onPreview: (() -> Void)?
     var onReveal: (() -> Void)?
     var onClose: (() -> Void)?
     var revealMenu: (() -> NSMenu?)? {
@@ -26,6 +27,7 @@ final class EditorHeaderView: NSView {
     private let tabs = NSStackView()
     private let scroll = NSScrollView()
     private let zoom = NSButton()
+    private let preview = NSButton()
     private let reveal = MenuButton()
     private var items: [Item] = []
     private var active = -1
@@ -61,13 +63,16 @@ final class EditorHeaderView: NSView {
         scroll.horizontalScrollElasticity = .allowed
         scroll.verticalScrollElasticity = .none
 
+        Self.style(preview, "eye", tip: "Preview Markdown — ⇧⌘V", color: text, target: self, action: #selector(togglePreview))
+        preview.identifier = NSUserInterfaceItemIdentifier("markdownPreviewButton")
+        preview.isHidden = true
         Self.style(zoom, "arrow.up.left.and.arrow.down.right", tip: "Zoom Editor — ⇧⎋", color: text, target: self, action: #selector(zoomEditor))
         zoom.identifier = NSUserInterfaceItemIdentifier("zoomEditor")
         Self.style(reveal, "arrow.up.forward.app", tip: OpenWith.openTitle(nil), color: text, target: self, action: #selector(revealFile))
         reveal.identifier = NSUserInterfaceItemIdentifier("openExternally")
         let close = Self.style(NSButton(), "xmark", tip: "Close Editor", color: text, target: self, action: #selector(closeEditor))
         close.identifier = NSUserInterfaceItemIdentifier("closeEditor")
-        for view in [scroll, zoom, reveal, close] as [NSView] {
+        for view in [scroll, preview, zoom, reveal, close] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -75,7 +80,10 @@ final class EditorHeaderView: NSView {
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-            scroll.trailingAnchor.constraint(equalTo: zoom.leadingAnchor, constant: -6),
+            scroll.trailingAnchor.constraint(equalTo: preview.leadingAnchor, constant: -6),
+            preview.trailingAnchor.constraint(equalTo: zoom.leadingAnchor, constant: -2),
+            preview.centerYAnchor.constraint(equalTo: centerYAnchor),
+            preview.widthAnchor.constraint(equalToConstant: 22),
             document.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
             document.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
             document.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor),
@@ -153,6 +161,16 @@ final class EditorHeaderView: NSView {
         return button
     }
 
+    /// Markdown files only: the eye shows it rendered, the brackets go back.
+    func setPreview(available: Bool, showing: Bool) {
+        preview.isHidden = !available
+        let symbol = showing ? "chevron.left.forwardslash.chevron.right" : "eye"
+        preview.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
+        preview.toolTip = showing ? "Back to the Markdown — ⇧⌘V" : "Preview Markdown — ⇧⌘V"
+        preview.setAccessibilityLabel(preview.toolTip)
+    }
+
+    @objc private func togglePreview() { onPreview?() }
     @objc private func zoomEditor() { onZoom?() }
     @objc private func revealFile() { onReveal?() }
     @objc private func closeEditor() { onClose?() }

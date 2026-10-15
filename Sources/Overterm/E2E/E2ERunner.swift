@@ -496,7 +496,9 @@ final class E2ERunner {
         _ = try? await Git.run(["-c", "user.email=e2e@x", "-c", "user.name=e2e", "add", "."], in: repo)
         _ = try? await Git.run(["-c", "user.email=e2e@x", "-c", "user.name=e2e", "commit", "-qm", "init"], in: repo)
         let readme = repo.appendingPathComponent("README.md")
-        try? "# Title\n\nSome **bold** text.\n".write(to: readme, atomically: true, encoding: .utf8)
+        try?
+            "# Title\n\nSome **bold** text.\n\n## Setup\n\n- install with `mise install`\n- see [the guide](docs/guide.md)\n\n```bash\nmise run dev   # everything\n```\n\n> Note: a quote.\n\n| URL | What |\n|---|---|\n| :3000 | Platform |\n| :3001 | Games |\n"
+            .write(to: readme, atomically: true, encoding: .utf8)
 
         // The fake server, for Go only: the problems, completions, symbols.
         let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -581,6 +583,22 @@ final class E2ERunner {
         }
         check("markdown's **bold** is bold (the inline grammar is injected)", bold)
         check("markdown wraps long lines", textView.textContainer?.widthTracksTextView == true)
+        // Markdown can be read rendered: the eye in the header, or ⇧⌘V.
+        check(
+            "a markdown file offers a preview",
+            Self.find(NSButton.self, in: editor.view) { $0.identifier?.rawValue == "markdownPreviewButton" }?.isHidden == false)
+        editor.perform("editor.markdownPreview")
+        check(
+            "⇧⌘V shows it rendered — headings without their #, the table without its pipes",
+            editor.preview.isHidden == false && editor.scrollView.isHidden
+                && editor.preview.renderedText.string.hasPrefix("Title") && !editor.preview.renderedText.string.contains("|"),
+            editor.preview.renderedText.string)
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+            await pause(0.3)
+            app.captureWindow(to: png + "-md.png")
+        }
+        editor.perform("editor.markdownPreview")
+        check("…and ⇧⌘V again is the text", editor.preview.isHidden && !editor.scrollView.isHidden)
         editor.perform("editor.previousFile")
         check("⌥⌘← goes to the other tab", editor.document.url == main)
         editor.saveDocument(nil)
@@ -603,12 +621,10 @@ final class E2ERunner {
             textView.insertText("x", replacementRange: NSRange(location: NSNotFound, length: 0))
             app.openInEditor(main)
             _ = await eventually(2) { editor.document.url == main }
-            check(
-                // Once the run loop has turned: typing outside an event opens
-                // the undo manager's own per-event group, closed at its end.
-                "switching files mid-insert leaves no undo group open",
-                await eventually(2) { editor.buffers.allSatisfy { $0.undo.groupingLevel == 0 } },
-                editor.buffers.map { "\($0.name)=\($0.undo.groupingLevel)" }.joined(separator: " ") + " vim=\(editor.vim?.mode == .insert ? "insert" : "other")")
+            // Vim holds no undo group across keys (the undo manager's own
+            // per-event group, which typing outside an event leaves to the
+            // run loop, is not vim's); undo back in the file must not raise.
+            check("switching files mid-insert leaves vim no undo group open", vim.openGroups == 0, "\(vim.openGroups)")
             app.openInEditor(readme)
             _ = await eventually(2) { editor.document.url == readme }
             editor.active?.undo.undo()
