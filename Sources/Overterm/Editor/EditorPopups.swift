@@ -41,27 +41,33 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         self.preview = preview
         super.init(frame: .zero)
         identifier = NSUserInterfaceItemIdentifier("editorPicker")
+        // Lifted off the text, as Zed's: a lighter surface, a clear edge
+        // and a shadow — on the editor's own colour it read as part of it.
         wantsLayer = true
-        layer?.cornerRadius = 8
+        layer?.cornerRadius = 10
         layer?.borderWidth = 1
-        layer?.borderColor = theme.text.withAlphaComponent(0.14).cgColor
-        layer?.backgroundColor = Self.blend(theme.background, theme.text, 0.05).cgColor
-        shadow = NSShadow()
-        shadow?.shadowBlurRadius = 16
-        shadow?.shadowColor = NSColor.black.withAlphaComponent(0.4)
+        layer?.borderColor = theme.text.withAlphaComponent(0.2).cgColor
+        layer?.backgroundColor = Self.surface(theme).cgColor
+        layer?.masksToBounds = false
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.45
+        layer?.shadowRadius = 18
+        layer?.shadowOffset = CGSize(width: 0, height: -6)
 
-        field.placeholderString = placeholder
+        field.placeholderAttributedString = NSAttributedString(
+            string: placeholder, attributes: [.foregroundColor: theme.text.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: 14)])
         field.stringValue = initial
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 13)
+        field.font = .systemFont(ofSize: 14)
         field.textColor = theme.text
         field.delegate = self
         field.identifier = NSUserInterfaceItemIdentifier("editorPickerField")
         self.hint.stringValue = hint
         self.hint.font = .systemFont(ofSize: 11)
-        self.hint.textColor = theme.text.withAlphaComponent(0.45)
+        self.hint.textColor = theme.text.withAlphaComponent(0.5)
+        self.hint.isHidden = hint.isEmpty
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
         table.addTableColumn(column)
@@ -71,6 +77,7 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         table.backgroundColor = .clear
         table.style = .plain
         table.selectionHighlightStyle = .regular
+        table.backgroundColor = .clear
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -82,7 +89,9 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         scroll.autohidesScrollers = true
         scroll.isHidden = !showsList
         let separator = NSBox()
-        separator.boxType = .separator
+        separator.boxType = .custom
+        separator.borderWidth = 0
+        separator.fillColor = theme.text.withAlphaComponent(0.1)
         separator.isHidden = !showsList
 
         for view in [field, self.hint, separator, scroll] as [NSView] {
@@ -91,19 +100,21 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         }
         heightConstraint = scroll.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
-            field.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            self.hint.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 4),
+            field.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            self.hint.topAnchor.constraint(equalTo: field.bottomAnchor, constant: hint.isEmpty ? 0 : 4),
             self.hint.leadingAnchor.constraint(equalTo: field.leadingAnchor),
             self.hint.trailingAnchor.constraint(equalTo: field.trailingAnchor),
-            separator.topAnchor.constraint(equalTo: self.hint.bottomAnchor, constant: 6),
+            self.hint.heightAnchor.constraint(equalToConstant: hint.isEmpty ? 0 : 14),
+            separator.topAnchor.constraint(equalTo: self.hint.bottomAnchor, constant: 10),
             separator.leadingAnchor.constraint(equalTo: leadingAnchor),
             separator.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: 4),
-            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            separator.heightAnchor.constraint(equalToConstant: 1),
+            scroll.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: 6),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: showsList ? -6 : -12),
             heightConstraint,
         ])
         refresh()
@@ -113,8 +124,32 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         fatalError("init(coder:) is not supported")
     }
 
-    private static func blend(_ a: NSColor, _ b: NSColor, _ amount: CGFloat) -> NSColor {
+    static func blend(_ a: NSColor, _ b: NSColor, _ amount: CGFloat) -> NSColor {
         (a.usingColorSpace(.sRGB) ?? a).blended(withFraction: amount, of: b.usingColorSpace(.sRGB) ?? b) ?? a
+    }
+
+    /// A popup's surface: the editor's background, a step towards the text.
+    static func surface(_ theme: EditorTheme) -> NSColor { blend(theme.background, theme.text, theme.isDark ? 0.09 : 0.03) }
+
+    // MARK: Clicking away
+
+    private var clickMonitor: Any?
+
+    /// A click anywhere outside closes it, as Zed's do — the field losing
+    /// the keyboard alone didn't, when the click landed on text.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
+        guard window != nil else { return }
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window === self.window, self.superview != nil else { return }
+                let point = self.convert(event.locationInWindow, from: nil)
+                if !self.bounds.contains(point) { self.dismiss() }
+            }
+            return event
+        }
     }
 
     func focus() {
@@ -189,6 +224,30 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         EditorListRow(item: items[row], theme: theme)
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { EditorListRowView(theme: theme) }
+}
+
+/// A list row's selection in the theme's colour, its text as it is — the
+/// system's highlight turned it white with grey text on it.
+final class EditorListRowView: NSTableRowView {
+    private let theme: EditorTheme
+
+    init(theme: EditorTheme) {
+        self.theme = theme
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        theme.selection.setFill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 1), xRadius: 5, yRadius: 5).fill()
     }
 }
 
@@ -267,8 +326,7 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         content.layer?.cornerRadius = 6
         content.layer?.borderWidth = 1
         content.layer?.borderColor = theme.text.withAlphaComponent(0.14).cgColor
-        let bg = (theme.background.usingColorSpace(.sRGB) ?? theme.background).blended(withFraction: 0.06, of: theme.text) ?? theme.background
-        content.layer?.backgroundColor = bg.cgColor
+        content.layer?.backgroundColor = EditorPicker.surface(theme).cgColor
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("item"))
         table.addTableColumn(column)
         table.headerView = nil
@@ -357,6 +415,8 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         EditorListRow(item: items[row], theme: theme, font: .monospacedSystemFont(ofSize: 12, weight: .regular))
     }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { EditorListRowView(theme: theme) }
 }
 
 /// What a language server says about the symbol under the mouse (and any

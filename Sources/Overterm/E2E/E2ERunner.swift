@@ -553,6 +553,16 @@ final class E2ERunner {
         check(
             "⇧⌘O lists the server's symbols",
             await eventually(5) { (Self.find(NSTableView.self, in: editor.picker) { _ in true }?.numberOfRows ?? 0) >= 2 })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] { app.captureWindow(to: png) }
+        // A click on the text, outside it, closes it (it stayed open).
+        let outside = textView.convert(NSPoint(x: textView.visibleRect.minX + 20, y: textView.visibleRect.maxY - 20), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            NSApp.sendEvent(
+                NSEvent.mouseEvent(
+                    with: type, location: outside, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+        }
+        check("a click outside the picker closes it", await eventually(2) { editor.picker == nil })
         editor.picker?.dismiss()
 
         // Completions: the server's and the file's words.

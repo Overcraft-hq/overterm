@@ -22,12 +22,17 @@ extension EditorViewController {
 
     func serverName(for buffer: EditorBuffer) -> String? {
         guard buffer.serverOpen, let server = server(for: buffer) else { return nil }
-        let name = server.command.executable.lastPathComponent.replacingOccurrences(of: ".js", with: "")
+        var name = server.command.executable.lastPathComponent
         // node runs the JavaScript servers: name the script, not node.
-        if name == "node", let script = server.command.arguments.first {
-            return (script as NSString).lastPathComponent.replacingOccurrences(of: ".js", with: "")
-        }
-        return name
+        if name == "node", let script = server.command.arguments.first { name = (script as NSString).lastPathComponent }
+        return Self.displayName(ofServer: name)
+    }
+
+    /// "gopls", not "gopls_0.23.0_go_1.27.0" (Zed's download) or "vtsls.js".
+    static func displayName(ofServer file: String) -> String {
+        var name = file.hasSuffix(".js") ? String(file.dropLast(3)) : file
+        if let version = name.range(of: #"[_-]v?[0-9]"#, options: .regularExpression) { name = String(name[..<version.lowerBound]) }
+        return name.isEmpty ? file : name
     }
 
     private static var routing = false

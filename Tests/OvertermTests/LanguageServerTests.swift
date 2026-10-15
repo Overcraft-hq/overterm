@@ -334,6 +334,14 @@ final class LanguageServerTests: XCTestCase {
     }
 
     @MainActor
+    func testServerNamesWithoutVersions() {
+        XCTAssertEqual(EditorViewController.displayName(ofServer: "gopls_0.23.0_go_1.27.0"), "gopls")
+        XCTAssertEqual(EditorViewController.displayName(ofServer: "vtsls.js"), "vtsls")
+        XCTAssertEqual(EditorViewController.displayName(ofServer: "rust-analyzer"), "rust-analyzer")
+        XCTAssertEqual(EditorViewController.displayName(ofServer: "basedpyright-langserver"), "basedpyright-langserver")
+    }
+
+    @MainActor
     func testATestProcessNeverLaunchesRealServers() {
         XCTAssertFalse(LanguageServers.mayLaunchRealServers)
         XCTAssertNil(LanguageServers().server(for: URL(fileURLWithPath: "/tmp/x/main.go")))
