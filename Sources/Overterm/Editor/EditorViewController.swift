@@ -330,7 +330,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         }
     }
 
-    private func removeBuffer(at index: Int) {
+    func removeBuffer(at index: Int) {
         let buffer = buffers[index]
         if buffer === active {
             vim?.reset()
@@ -352,6 +352,30 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         }
         activeIndex = -1
         activate(min(index, buffers.count - 1))
+    }
+
+    /// A file (or a folder holding files) open here was renamed: its tabs
+    /// follow it, edits and all.
+    func filesMoved(from old: URL, to new: URL) {
+        let oldPath = old.standardizedFileURL.path
+        for buffer in buffers {
+            guard let url = buffer.url?.standardizedFileURL, url.path == oldPath || url.path.hasPrefix(oldPath + "/") else { continue }
+            bufferWillClose(buffer)
+            buffer.document.moved(to: URL(fileURLWithPath: new.standardizedFileURL.path + url.path.dropFirst(oldPath.count)))
+            bufferDidOpen(buffer)
+        }
+        refreshChrome()
+    }
+
+    /// Files gone (moved to the Trash): their tabs close, whatever they held.
+    func filesRemoved(at removed: URL) {
+        let path = removed.standardizedFileURL.path
+        while let index = buffers.firstIndex(where: {
+            guard let url = $0.url?.standardizedFileURL.path else { return false }
+            return url == path || url.hasPrefix(path + "/")
+        }) {
+            removeBuffer(at: index)
+        }
     }
 
     /// The header's ✕: every file, asking about each with edits.

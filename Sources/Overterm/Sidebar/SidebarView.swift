@@ -15,6 +15,13 @@ struct FileTreeActions {
     /// The path as the selected tab's shell would write it (relative to its
     /// cwd when inside it).
     var relativePath: (URL) -> String
+    /// A new file or folder in this folder, asking for its name.
+    var newFile: (URL) -> Void = { _ in }
+    var newFolder: (URL) -> Void = { _ in }
+    /// Asks for a new name.
+    var rename: (URL) -> Void = { _ in }
+    /// Moves it to the Trash, after asking.
+    var trash: (URL) -> Void = { _ in }
 }
 
 /// What the worktree list asks the window to do.
@@ -236,6 +243,11 @@ private struct FileRowView: View {
 
     @ViewBuilder private var menu: some View {
         let url = row.entry.url
+        // Into a folder, or beside a file.
+        let folder = row.entry.isDirectory ? url : url.deletingLastPathComponent()
+        Button("New File…") { actions.newFile(folder) }
+        Button("New Folder…") { actions.newFolder(folder) }
+        Divider()
         Button("Insert Path in Terminal") { actions.insertPath(url) }
         if row.entry.isDirectory {
             Button("New Tab Here") { actions.newTab(url) }
@@ -248,6 +260,11 @@ private struct FileRowView: View {
         Divider()
         Button("Copy Path") { copy(url.path) }
         Button("Copy Relative Path") { copy(actions.relativePath(url)) }
+        // Through every symlink — /private/tmp for /tmp, a worktree's target.
+        Button("Copy Real Path") { copy(url.resolvingSymlinksInPath().path) }
+        Divider()
+        Button("Rename…") { actions.rename(url) }
+        Button("Move to Trash…") { actions.trash(url) }
     }
 
     private func copy(_ string: String) {

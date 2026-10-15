@@ -18,6 +18,12 @@ final class EditorDocument: ObservableObject {
 
     var name: String { url?.lastPathComponent ?? "" }
 
+    /// The file was renamed (the sidebar's Rename…): the same file, so its
+    /// text and edits stay, under its new name.
+    func moved(to newURL: URL) {
+        url = newURL
+    }
+
     func load(_ url: URL) {
         self.url = url
         isDirty = false

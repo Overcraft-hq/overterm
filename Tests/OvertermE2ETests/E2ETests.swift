@@ -55,6 +55,7 @@ final class E2ETests: XCTestCase {
     func testClose() throws { try run("close") }
     func testEditor() throws { try run("editor") }
     func testEditorZed() throws { try run("editorZed") }
+    func testFileActions() throws { try run("fileActions") }
     func testDiff() throws { try run("diff") }
     func testBranchDiff() throws { try run("branchDiff") }
     func testWhy() throws { try run("why") }

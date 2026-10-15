@@ -60,3 +60,14 @@ final class MarkdownRendererTests: XCTestCase {
         XCTAssertFalse(text.string.contains("|"))
     }
 }
+
+final class FileNameTests: XCTestCase {
+    func testNamesThatCantBeUsed() {
+        let dir = FileManager.default.temporaryDirectory
+        XCTAssertEqual(TerminalWindowController.nameProblem("  ", at: dir.appendingPathComponent("x")), "A name, please.")
+        XCTAssertNotNil(TerminalWindowController.nameProblem("../escape.txt", at: dir.appendingPathComponent("../escape.txt")))
+        XCTAssertNotNil(TerminalWindowController.nameProblem("/etc/hosts", at: URL(fileURLWithPath: "/etc/hosts")))
+        XCTAssertNotNil(TerminalWindowController.nameProblem("tmp", at: URL(fileURLWithPath: "/tmp")), "already there")
+        XCTAssertNil(TerminalWindowController.nameProblem("pkg/new.go", at: dir.appendingPathComponent(UUID().uuidString)))
+    }
+}

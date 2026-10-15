@@ -22,6 +22,7 @@ final class E2ERunner {
         "close": { await $0.close() },
         "editor": { await $0.editorScenario() },
         "editorZed": { await $0.editorZedScenario() },
+        "fileActions": { await $0.fileActionsScenario() },
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
         "why": { await $0.whyScenario() },
@@ -482,6 +483,59 @@ final class E2ERunner {
         try? Data([0, 1, 2, 3]).write(to: bin)
         app.openInEditor(bin)
         check("a binary file is refused, with a reason", await eventually(2) { editor.document.unavailable == "Binary file." })
+    }
+
+    /// The file tree's New File…, Rename… and Move to Trash…, each through
+    /// its sheet, with the editor following.
+    private func fileActionsScenario() async {
+        let dir = scratch.appendingPathComponent("files")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func answer(_ name: String, _ button: String) async -> Bool {
+            guard await eventually(2, { self.window.attachedSheet != nil }),
+                let field = Self.find(NSTextField.self, in: window.attachedSheet?.contentView, where: { $0.identifier?.rawValue == "fileNameField" })
+            else { return false }
+            field.stringValue = name
+            return clickSheetButton(button)
+        }
+        app.createItem(in: dir, folder: false)
+        check("New File… asks for a name", await answer("notes.md", "Create"))
+        let notes = dir.appendingPathComponent("notes.md")
+        check(
+            "…creates it and opens it in the editor",
+            await eventually(2) {
+                FileManager.default.fileExists(atPath: notes.path) && self.app.editor?.document.url?.lastPathComponent == "notes.md"
+            })
+        app.createItem(in: dir, folder: false)
+        check("a name that is taken is refused", await answer("notes.md", "Create"))
+        check("…and asked again, saying why", await eventually(2) { self.sheetTexts().contains { $0.contains("already there") } }, "\(sheetTexts())")
+        _ = clickSheetButton("Cancel")
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        app.createItem(in: dir, folder: true)
+        check("New Folder… makes a folder", await answer("docs", "Create"))
+        var isDirectory: ObjCBool = false
+        check(
+            "…there",
+            await eventually(2) {
+                FileManager.default.fileExists(atPath: dir.appendingPathComponent("docs").path, isDirectory: &isDirectory) && isDirectory.boolValue
+            })
+
+        app.renameItem(notes)
+        check("Rename… asks for the new name", await answer("README.md", "Rename"))
+        let readme = dir.appendingPathComponent("README.md")
+        check(
+            "…renames it, and its tab follows",
+            await eventually(2) {
+                FileManager.default.fileExists(atPath: readme.path) && !FileManager.default.fileExists(atPath: notes.path)
+                    && self.app.editor?.document.url?.lastPathComponent == "README.md"
+            }, app.editor?.document.url?.path ?? "nothing open")
+
+        app.trashItem(readme)
+        check("Move to Trash… asks first", await eventually(2) { self.window.attachedSheet != nil && self.clickSheetButton("Move to Trash") })
+        check(
+            "…then it is gone, and so is its tab",
+            await eventually(3) {
+                !FileManager.default.fileExists(atPath: readme.path) && self.app.editor?.buffers.contains { $0.url?.lastPathComponent == "README.md" } != true
+            })
     }
 
     /// The editor as Zed's: zoomed, tabs, tree-sitter (markdown too), Zed's

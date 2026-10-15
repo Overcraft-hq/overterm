@@ -247,7 +247,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     openInEditor: { [weak self] in self?.openInEditor($0) },
                     openExternally: { [weak self] in self?.openExternally($0) },
                     newTab: { [weak self] in self?.newTab(in: $0) },
-                    relativePath: { [weak self] in self?.relativePath($0) ?? $0.path }
+                    relativePath: { [weak self] in self?.relativePath($0) ?? $0.path },
+                    newFile: { [weak self] in self?.createItem(in: $0, folder: false) },
+                    newFolder: { [weak self] in self?.createItem(in: $0, folder: true) },
+                    rename: { [weak self] in self?.renameItem($0) },
+                    trash: { [weak self] in self?.trashItem($0) }
                 ),
                 worktreeActions: WorktreeActions(
                     open: { [weak self] in self?.openWorktree($0) },
