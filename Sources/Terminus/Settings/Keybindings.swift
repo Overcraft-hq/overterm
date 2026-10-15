@@ -391,8 +391,17 @@ final class Keybindings: ObservableObject {
 
     func defaultKey(_ command: KeyCommand) -> KeyCombo? {
         if let text = command.defaultKey { return KeyCombo(text) }
-        return command.ghostty.flatMap(ghosttyDefault)
+        guard let action = command.ghostty else { return nil }
+        return ghosttyDefault(action) ?? Self.performableDefaults[action].flatMap(KeyCombo.init)
     }
+
+    /// Ghostty's defaults for the actions it binds as "performable", which
+    /// `ghostty_config_trigger` doesn't report (v1.3.1, src/config/Config.zig).
+    /// Not knowing ⌘F was the terminal's search, the menu's Find… had Ghostty
+    /// let go of it — and ⌘F did nothing in the terminal.
+    static let performableDefaults: [String: String] = [
+        "start_search": "cmd+f", "search_selection": "cmd+e", "end_search": "shift+cmd+f",
+    ]
 
     /// The key that does it now: the file's last word on it, else the default.
     func key(for command: KeyCommand) -> KeyCombo? {

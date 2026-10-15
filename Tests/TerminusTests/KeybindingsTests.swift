@@ -60,6 +60,19 @@ final class KeybindingsTests: XCTestCase {
         XCTAssertFalse(search?.menu == true)
     }
 
+    /// Ghostty doesn't report the key of a "performable" binding (⌘F,
+    /// start_search): ⌘F must still stay the terminal's, not be unbound for
+    /// the editor's Find….
+    @MainActor
+    func testTheTerminalKeepsCmdFWhenGhosttyDoesntReportIt() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let keys = Keybindings(url: dir.appendingPathComponent("keybindings.json"), ghosttyDefault: { _ in nil }, watch: false)
+        XCTAssertFalse(keys.ghosttyLines.contains("keybind = super+f=unbind"), "\(keys.ghosttyLines)")
+        XCTAssertEqual(keys.key(for: KeyCommands.byID["search.terminal"]!)?.text, "cmd+f")
+    }
+
     /// Every key parses — one that does not would silently never bind.
     func testEveryDefaultKeyParses() {
         for command in KeyCommands.all {
