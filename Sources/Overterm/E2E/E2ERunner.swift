@@ -2821,6 +2821,10 @@ final class E2ERunner {
             "the window itself takes the theme's colours", await eventually(3) { self.app.window?.backgroundColor == self.app.theme?.winNS },
             "\(app.window?.backgroundColor as Any) vs \(app.theme?.winNS as Any)")
         check("and the chrome is dressed as dark", app.theme?.isDark == true)
+        // The title bar's material is AppKit's to paint, in the window's
+        // appearance: left to the system's, a dark terminal wore a white
+        // header all through a light-mode afternoon.
+        check("the title bar is told which it is", app.window?.appearance?.name == .darkAqua, "\(app.window?.appearance?.name as Any)")
         check(
             "the cards are repainted with it",
             app.split.splitViewItems.compactMap { $0.viewController.view as? CardColumn }.count >= 2
@@ -2829,6 +2833,7 @@ final class E2ERunner {
         settings.set("appearance.theme", .string("Claude Light"))
         check("a light theme turns the chrome light", await eventually(3) { self.app.theme?.isDark == false })
         check("and the window with it", app.window?.backgroundColor == app.theme?.winNS)
+        check("the title bar too", app.window?.appearance?.name == .aqua, "\(app.window?.appearance?.name as Any)")
         settings.set("appearance.theme", .string("Claude Dark"))
         check("and back", await eventually(3) { self.app.theme?.isDark == true })
 

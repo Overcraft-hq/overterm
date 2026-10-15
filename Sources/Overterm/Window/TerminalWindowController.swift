@@ -145,6 +145,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 background: GhosttyRuntime.shared.backgroundColor,
                 foreground: GhosttyRuntime.shared.foregroundColor
             ).winNS
+        // The title bar is the one thing AppKit paints itself (the unified
+        // toolbar's material under a transparent title bar), and it paints
+        // it in the window's appearance — the system's, unless told. A dark
+        // terminal under a daylight-white header was the result.
+        window.appearance = NSAppearance(named: GhosttyRuntime.shared.backgroundColor.brightnessComponent < 0.5 ? .darkAqua : .aqua)
         window.tabbingMode = .disallowed
         window.center()
         // The old name, kept: it is where macOS has the window's size.
@@ -2703,6 +2708,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         guard let theme else { return }
         theme.apply(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
         window?.backgroundColor = theme.winNS
+        window?.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
         for item in split.splitViewItems {
             (item.viewController.view as? CardColumn)?.repaint()
         }
