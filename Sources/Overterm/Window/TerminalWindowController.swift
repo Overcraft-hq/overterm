@@ -506,11 +506,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tabBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             tabBar.heightAnchor.constraint(equalToConstant: TabStripHostingView<AnyView>.height),
-            // The cards sit flush under the strip and 10 pt in from the
-            // window's other three edges — the gap they leave between
-            // themselves. Sideways each card already keeps half of it, so
-            // the window only owes the other half.
-            body.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            // The cards keep the same 10 pt from the window on all four
+            // sides as they keep from each other — under the strip too,
+            // which is a panel of its own now and would otherwise run
+            // straight into the terminal. Sideways each card already keeps
+            // half of it, so the window only owes the other half.
+            body.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: CardColumn.gap),
             body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: CardColumn.gap / 2),
             body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -CardColumn.gap / 2),
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
