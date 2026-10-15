@@ -6,7 +6,7 @@ import SwiftUI
 /// a reply box per thread.
 struct PullRequestView: View {
     @ObservedObject var model: PullRequestModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onClose: () -> Void
     /// A thread's file, at its line, in the editor.
     let onOpenFile: (String, Int?) -> Void

@@ -4,7 +4,7 @@ import SwiftUI
 /// Tab Info: where the tab is, and what it is running.
 struct TabInfoView: View {
     @ObservedObject var model: TabInfoModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -228,7 +228,7 @@ struct TabInfoView: View {
 private struct ProcessRow: View {
     let node: ProcessNode
     let depth: Int
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         HStack(spacing: 4) {

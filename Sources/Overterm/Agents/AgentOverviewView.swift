@@ -5,7 +5,7 @@ import SwiftUI
 struct AgentOverviewView: View {
     @ObservedObject var model: AgentOverviewModel
     @ObservedObject var worktrees: WorktreeModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onChoose: (Tab.ID) -> Void
     let onDismiss: () -> Void
 
@@ -61,7 +61,7 @@ struct AgentOverviewView: View {
 private struct AgentCard: View {
     let card: AgentOverviewModel.Card
     let pullRequest: PullRequestSummary?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     @State private var hovering = false
 
     var body: some View {

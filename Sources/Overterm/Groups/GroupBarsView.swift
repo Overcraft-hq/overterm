@@ -7,7 +7,7 @@ struct GroupBarsView: View {
     @ObservedObject var broadcast: BroadcastModel
     @ObservedObject var focus: GroupFocus
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onSend: () -> Void
     let onStopBroadcast: () -> Void
     let onLeaveFocus: () -> Void
@@ -97,7 +97,7 @@ struct GroupBarsView: View {
 /// out of the way, with what is still running in them.
 struct StashedGroupsChip: View {
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let restore: (TabGroup) -> Void
     @State private var showing = false
 
@@ -129,7 +129,7 @@ struct StashedGroupsChip: View {
 
 private struct StashedGroupsList: View {
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let restore: (TabGroup) -> Void
 
     var body: some View {

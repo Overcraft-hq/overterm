@@ -33,7 +33,7 @@ struct TabBarView: View {
     @ObservedObject var worktrees: WorktreeModel
     /// A newer release, as a chip.
     @ObservedObject var updates: UpdateChecker
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
     let actions: TabBarActions
@@ -159,7 +159,7 @@ struct TabItemView: View {
 
     @ObservedObject var tab: Tab
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: TabBarActions
     @State private var hovering = false
 
@@ -331,7 +331,7 @@ struct TabItemView: View {
 /// The Settings tab in the strip: a gear and its name, closable as any tab.
 private struct SettingsTabItem: View {
     let selected: Bool
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
@@ -368,7 +368,7 @@ private struct SettingsTabItem: View {
 private struct TabRenameField: View {
     @ObservedObject var tab: Tab
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onEnd: () -> Void
     @State private var draft = ""
     @FocusState private var focused: Bool
@@ -417,7 +417,7 @@ private struct WindowDragArea: NSViewRepresentable {
 /// plain ±. A click opens the changes pane on the scope it counts.
 private struct DiffBadge: View {
     let badge: DiffModel.Badge
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let action: () -> Void
     @State private var hovering = false
 
@@ -462,7 +462,7 @@ private struct DiffBadge: View {
 /// colour, CI at a glance.
 private struct PullRequestChip: View {
     let pr: PullRequestSummary
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let action: () -> Void
     @State private var hovering = false
 

@@ -3,7 +3,7 @@ import SwiftUI
 /// The ⌘F overlay, over the terminal: a query and grouped results.
 struct SpotlightView: View {
     @ObservedObject var model: SpotlightModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onChoose: (SpotlightModel.Row) -> Void
     let onDismiss: () -> Void
 

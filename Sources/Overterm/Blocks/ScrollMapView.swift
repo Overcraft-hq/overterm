@@ -14,7 +14,7 @@ import SwiftUI
 /// overlay for the same reason.
 struct ScrollMapView: View {
     @ObservedObject var blocks: PaneBlocks
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     /// Scroll the pane by this many rows (positive is down).
     let scroll: (Int) -> Void
 

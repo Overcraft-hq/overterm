@@ -12,7 +12,7 @@ struct InboxActions {
 /// The column of everything waiting on you.
 struct InboxView: View {
     @ObservedObject var model: InboxModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: InboxActions
 
     var body: some View {
@@ -61,7 +61,7 @@ struct InboxView: View {
 private struct InboxCard: View {
     let entry: InboxModel.Entry
     let highlighted: Bool
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: InboxActions
 
     private var glyph: (String, Color) {

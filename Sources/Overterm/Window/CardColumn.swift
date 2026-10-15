@@ -49,26 +49,37 @@ final class CardColumn: NSView {
     /// Half the gap, which is what one card keeps on each side.
     static let margin: CGFloat = gap / 2
 
+    /// Which of the theme's grounds a card is painted in. Held rather than
+    /// the colour itself, so a card can be repainted when the terminal
+    /// theme changes (`repaint`).
+    enum Fill {
+        /// A panel: the sidebar, the changes pane, the inbox.
+        case panel
+        /// The terminal's own background: the terminal column, the editor.
+        case terminal
+
+        @MainActor func color(_ theme: ChromeTheme) -> NSColor {
+            switch self {
+            case .panel: theme.cardNS
+            case .terminal: theme.termNS
+            }
+        }
+    }
+
     private let content: NSView
     private let ground = CALayer()
-    private let edge: NSColor
+    private let fill: Fill
+    private let theme: ChromeTheme
 
-    init(content: NSView, fill: NSColor, theme: ChromeTheme) {
+    init(content: NSView, fill: Fill, theme: ChromeTheme) {
         self.content = content
-        edge = theme.borderNS
+        self.fill = fill
+        self.theme = theme
         super.init(frame: .zero)
         wantsLayer = true
-        ground.backgroundColor = fill.cgColor
         ground.cornerRadius = Self.cornerRadius
-        if !theme.isDark {
-            // The hairline alone separates a card from a dark window; on a
-            // light one it needs the lift too.
-            ground.shadowColor = NSColor.black.cgColor
-            ground.shadowOpacity = 0.10
-            ground.shadowRadius = 6
-            ground.shadowOffset = CGSize(width: 0, height: -2)
-        }
         layer?.addSublayer(ground)
+        repaint()
 
         content.wantsLayer = true
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -107,6 +118,23 @@ final class CardColumn: NSView {
         super.menu(for: event) ?? content.menu(for: event)
     }
 
+    /// What the card is painted in now — the E2E run reads it to check a
+    /// theme change reached the layers.
+    var groundColor: NSColor? { ground.backgroundColor.map { NSColor(cgColor: $0) ?? .clear } }
+
+    /// Takes the colours the theme holds now — the terminal's theme can be
+    /// changed while the window is open (Settings ▸ Themes).
+    func repaint() {
+        ground.backgroundColor = fill.color(theme).cgColor
+        // The hairline alone separates a card from a dark window; on a
+        // light one it needs the lift too.
+        ground.shadowOpacity = theme.isDark ? 0 : 0.10
+        ground.shadowColor = NSColor.black.cgColor
+        ground.shadowRadius = 6
+        ground.shadowOffset = CGSize(width: 0, height: -2)
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
         ground.frame = bounds.insetBy(dx: Self.margin, dy: 0)
@@ -114,7 +142,7 @@ final class CardColumn: NSView {
         layer.cornerRadius = Self.cornerRadius
         layer.masksToBounds = true
         layer.borderWidth = 1
-        layer.borderColor = edge.cgColor
+        layer.borderColor = theme.borderNS.cgColor
     }
 }
 
@@ -122,10 +150,10 @@ final class CardColumn: NSView {
 /// view's item measures the card and the controller keeps its own view.
 final class CardColumnController: NSViewController {
     private let child: NSViewController
-    private let fill: NSColor
+    private let fill: CardColumn.Fill
     private let theme: ChromeTheme
 
-    init(_ child: NSViewController, fill: NSColor, theme: ChromeTheme) {
+    init(_ child: NSViewController, fill: CardColumn.Fill, theme: ChromeTheme) {
         self.child = child
         self.fill = fill
         self.theme = theme

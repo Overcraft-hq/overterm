@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.5.0 — 2026-10-15
+
+- themes: the chrome follows the terminal's theme without a relaunch
+
 ## 2.4.0 — 2026-10-15
 
 - themes: picking one reaches the terminals already open

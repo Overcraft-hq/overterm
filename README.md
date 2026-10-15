@@ -173,7 +173,8 @@ GitHub releases.
 window in its own colours. It opens on ten — the ones people name — and
 **All** is the whole catalogue of 473: Ghostty's own, ten more bundled beside
 them, and anything in your `~/.config/ghostty/themes`, marked *Yours*. Pick
-one and the terminals you have open change as you do. "Follow macOS between a
+one and the terminals you have open change as you do — the strip, the
+sidebar and the panes with them. "Follow macOS between a
 light and a dark theme" keeps one of each and switches with the system.
 
 ## Build

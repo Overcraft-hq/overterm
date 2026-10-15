@@ -35,7 +35,7 @@ struct ThemesSettings: View {
     @ObservedObject var model: SettingsPageModel
     @ObservedObject var settings: Settings
     @ObservedObject var catalog: ThemeCatalog
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     private var followsSystem: Bool { settings.value("appearance.followSystemAppearance")?.bool ?? false }
     private var slot: ThemeSlot { followsSystem ? model.themeSlot : .dark }
@@ -78,7 +78,7 @@ struct ThemesSettings: View {
             Text(
                 followsSystem
                     ? "Ghostty switches as the system does. Pick a slot above, then a theme below."
-                    : "The terminal changes as you pick. The tab strip and the sidebar take the new colours when Overterm next opens."
+                    : "The terminal changes as you pick, and the window around it with it."
             )
             .font(.system(size: 11))
             .foregroundStyle(theme.text3)
@@ -221,7 +221,7 @@ private struct ThemeCard: View {
     let entry: ThemeCatalog.Entry
     let isSelected: Bool
     let index: Int
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let pick: () -> Void
 
     @State private var hovering = false

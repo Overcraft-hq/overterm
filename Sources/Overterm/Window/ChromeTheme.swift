@@ -11,75 +11,79 @@ import SwiftUI
 /// background. Everything else is text, a hairline, or a tint over one
 /// of the three.
 ///
-/// A value type, built once per window and passed into each SwiftUI root
-/// — there is no live rebuild, so a terminal theme change needs a
-/// relaunch.
-struct ChromeTheme {
+/// One object per window, handed to every SwiftUI root and kept: a theme
+/// picked in Settings changes the colours in place and the chrome follows
+/// without a relaunch (`TerminalWindowController.applyTerminalColors`).
+/// The views observe it; the AppKit pieces (the window's own background,
+/// the cards' fills, the dividers) are repainted by hand, since a layer
+/// colour is nobody's binding.
+@MainActor
+final class ChromeTheme: ObservableObject {
     /// Whether the terminal theme is dark — AppKit chrome (popovers, their
     /// buttons) takes the matching appearance.
-    let isDark: Bool
+    private(set) var isDark: Bool = false
 
     // MARK: Grounds
 
     /// The window itself: what shows in the gaps between the cards.
-    let win: Color
-    let winNS: NSColor
+    private(set) var win: Color = Color.clear
+    private(set) var winNS: NSColor = NSColor.clear
     /// The hairline just inside the window's rounded edge.
-    let winEdge: Color
+    private(set) var winEdge: Color = Color.clear
     /// A panel card — the sidebar, the changes pane, a popover's body.
-    let card: Color
-    let cardNS: NSColor
+    private(set) var card: Color = Color.clear
+    private(set) var cardNS: NSColor = NSColor.clear
     /// The terminal's own background, and so a terminal card's fill.
-    let term: Color
-    let termNS: NSColor
+    private(set) var term: Color = Color.clear
+    private(set) var termNS: NSColor = NSColor.clear
     /// The hairline around a card, and between a card's header and body.
-    let border: Color
-    let borderNS: NSColor
+    private(set) var border: Color = Color.clear
+    private(set) var borderNS: NSColor = NSColor.clear
     /// What a card drops onto the window. Clear in a dark theme, where
     /// the hairline carries the separation on its own.
-    let cardShadow: Color
+    private(set) var cardShadow: Color = Color.clear
 
     // MARK: Text
 
     /// Body text.
-    let text: Color
+    private(set) var text: Color = Color.clear
     /// The text colour for AppKit (and SyntaxPalette, which fades it for comments).
-    let textNS: NSColor
+    private(set) var textNS: NSColor = NSColor.clear
     /// Secondary text: a label beside the thing it names.
-    let text2: Color
+    private(set) var text2: Color = Color.clear
     /// Tertiary text: metadata you read only when you look for it.
-    let text3: Color
+    private(set) var text3: Color = Color.clear
 
     // MARK: Fills
 
     /// The tile behind a small glyph (a tab's kind icon).
-    let iconBg: Color
+    private(set) var iconBg: Color = Color.clear
     /// A selected row in a list.
-    let rowSel: Color
+    private(set) var rowSel: Color = Color.clear
     /// A hovered row in a list.
-    let rowHover: Color
+    private(set) var rowHover: Color = Color.clear
     /// The selected tab, which sits proud of the strip.
-    let tabSel: Color
+    private(set) var tabSel: Color = Color.clear
     /// Its hairline and its drop shadow.
-    let tabSelEdge: Color
-    let tabSelShadow: Color
+    private(set) var tabSelEdge: Color = Color.clear
+    private(set) var tabSelShadow: Color = Color.clear
     /// A menu's body and its edge — translucent, over anything.
-    let menu: Color
-    let menuEdge: Color
+    private(set) var menu: Color = Color.clear
+    private(set) var menuEdge: Color = Color.clear
     /// The chip stack on a collapsed group, and an idle segment in its
     /// progress strip.
-    let stackBg: Color
-    let segIdle: Color
+    private(set) var stackBg: Color = Color.clear
+    private(set) var segIdle: Color = Color.clear
 
     // MARK: Status
 
     /// Behind "N need you".
-    let attnBg: Color
+    private(set) var attnBg: Color = Color.clear
     /// Status text, legible on `win` in both themes — the status *fills*
     /// stay the same hue in both (`TabStatusStyle`), only text shifts.
-    let orangeText: Color
-    let greenText: Color
-    let accentText: Color
+    private(set) var orangeText: Color = Color.clear
+    private(set) var greenText: Color = Color.clear
+    private(set) var accentText: Color = Color.clear
 
     // MARK: Compatibility
     //
@@ -93,8 +97,25 @@ struct ChromeTheme {
     var hover: Color { rowHover }
     var dimText: Color { text2 }
 
-    @MainActor
     init(background: NSColor, foreground: NSColor) {
+        apply(background: background, foreground: foreground)
+    }
+
+    /// The two colours everything here is derived from, kept so the same
+    /// pair can be recognised and ignored.
+    private var source: (background: NSColor, foreground: NSColor)?
+
+    /// Recomputes every colour from a terminal theme's two. One signal for
+    /// the lot: they only ever change together.
+    ///
+    /// The same pair changes nothing and says nothing — the config is
+    /// reloaded for reasons that have nothing to do with colour (a
+    /// keybinding, the font), and a view redrawn for no reason can take
+    /// the keyboard away from the terminal.
+    func apply(background: NSColor, foreground: NSColor) {
+        if let source, source.background == background, source.foreground == foreground { return }
+        source = (background, foreground)
+        objectWillChange.send()
         let bg = background.usingColorSpace(.sRGB) ?? background
         let fg = foreground.usingColorSpace(.sRGB) ?? foreground
         let isDark = bg.brightnessComponent < 0.5

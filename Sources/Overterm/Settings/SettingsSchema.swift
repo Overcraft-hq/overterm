@@ -171,7 +171,7 @@ enum SettingsSchema {
             ghostty: "font-thicken"),
         SettingSpec(
             key: "appearance.theme", section: .themes, group: "Colours", title: "Theme",
-            help: "The terminal changes at once; the tab strip and sidebar take the new colours on the next launch.",
+            help: "The terminal and everything around it change at once.",
             kind: .dynamicChoice(.themes), defaultValue: nil, ghostty: "theme"),
         SettingSpec(
             key: "appearance.followSystemAppearance", section: .themes, group: "Colours",

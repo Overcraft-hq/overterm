@@ -13,7 +13,7 @@ import SwiftUI
 /// in the strip and renaming it in place is the thing you can see.
 struct GroupPopover: View {
     @ObservedObject var group: TabGroup
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     /// Where the group's tabs are, offered as the folder to bind to.
     let folder: String?
     let done: () -> Void

@@ -9,7 +9,7 @@ import SwiftUI
 /// asking, and Group Settings can change its mind.
 struct NewTabPrompt: View {
     @ObservedObject var group: TabGroup
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let keepOut: () -> Void
     let join: () -> Void
 

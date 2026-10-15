@@ -5,7 +5,7 @@ import SwiftUI
 /// worktrees, and the app's own actions.
 struct PaletteView: View {
     @ObservedObject var model: PaletteModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     /// (item, run) — the window closes the palette and performs it.
     let onChoose: (PaletteItem, Bool) -> Void
     let onDismiss: () -> Void
@@ -227,7 +227,7 @@ struct PaletteField: NSViewRepresentable {
 private struct PaletteDetail: View {
     let item: PaletteItem
     @ObservedObject var model: PaletteModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

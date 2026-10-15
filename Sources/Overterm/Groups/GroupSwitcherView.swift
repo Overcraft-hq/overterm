@@ -7,7 +7,7 @@ import SwiftUI
 /// eats it before the menu sees it (docs/ghostty.md), hence ⌃⌘G.
 struct GroupSwitcherView: View {
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onChoose: (TabGroup) -> Void
     let onChooseTab: (Tab) -> Void
     let onMoveHere: (TabGroup) -> Void
@@ -113,7 +113,7 @@ struct GroupSwitcherView: View {
 private struct GroupRow: View {
     @ObservedObject var group: TabGroup
     let tabs: [Tab]
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let isHighlighted: Bool
 
     var body: some View {
@@ -141,7 +141,7 @@ private struct GroupRow: View {
 
 private struct TabStateGlyph: View {
     @ObservedObject var tab: Tab
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         switch tab.activity.mark {

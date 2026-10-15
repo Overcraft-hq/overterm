@@ -15,7 +15,7 @@ struct DropZonesView: View {
     let title: String
     let symbol: String
     let pointer: CGPoint
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         ZStack(alignment: .topLeading) {

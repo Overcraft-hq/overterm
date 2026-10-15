@@ -16,7 +16,7 @@ struct RightPaneView: View {
     @ObservedObject var pane: RightPane
     @ObservedObject var diff: DiffModel
     @ObservedObject var worktrees: WorktreeModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let changes: DiffPanelView
     let pullRequest: PullRequestView
 

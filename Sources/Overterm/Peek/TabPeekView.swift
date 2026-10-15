@@ -29,7 +29,7 @@ final class TabPeekModel: ObservableObject {
 
 struct TabPeekView: View {
     @ObservedObject var model: TabPeekModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onChoose: (Tab.ID) -> Void
     let onClose: (Tab.ID) -> Void
     let onDismiss: () -> Void
@@ -72,7 +72,7 @@ struct TabPeekView: View {
 private struct TabPeekCard: View {
     let card: TabPeek.Card
     let entry: TabPeekModel.Entry?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let isHighlighted: Bool
     let onChoose: () -> Void
     let onClose: () -> Void

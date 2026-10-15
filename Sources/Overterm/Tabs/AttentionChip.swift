@@ -9,7 +9,7 @@ import SwiftUI
 /// "what is outstanding", next to the Dock badge's.
 struct AttentionChip: View {
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let select: (Tab) -> Void
     @State private var showing = false
 
@@ -52,7 +52,7 @@ struct AttentionChip: View {
 private struct AttentionList: View {
     let tabs: [Tab]
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let select: (Tab) -> Void
 
     var body: some View {
@@ -83,7 +83,7 @@ private struct AttentionList: View {
 private struct AttentionRow: View {
     @ObservedObject var tab: Tab
     let group: TabGroup?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let select: () -> Void
     @State private var hovering = false
 

@@ -70,6 +70,14 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **The tab strip lives in the title bar**, which swallows right-clicks before SwiftUI sees them. Context menus there go through the window's local event monitor (`installTabRightClick`), not `.contextMenu`.
 - **The window's split dividers measure nothing**; the 10 pt gap between the cards belongs to the cards (`CardColumn.gap`), because a divider is measured even for a collapsed item — as a 10 pt one, it left 30 pt dead down the right of the window. `WideDividerSplitViewController` widens the divider to a grab band over the gap. Autosave key `OvertermColumns.v4` — bump the version whenever the column set changes, or stale positions are applied to new columns.
 - **Closing always asks** by default (tab, window, app); only a shell's own `exit` closes silently. Keep "Always" the default — it was asked for. Settings ▸ General can make it "only when something is running" (`needsCloseConfirmation`); any new close path goes through that.
+- **`ChromeTheme` is one object per window, and the views observe it**: a
+  theme picked in Settings ▸ Themes recomputes it in place and the chrome
+  follows without a relaunch (`applyTerminalColors` repaints the layers
+  nobody binds — the window, the cards, the pane dividers). It says nothing
+  when the two colours it derives from are unchanged: the config is reloaded
+  for reasons that have nothing to do with colour, and redrawing every
+  SwiftUI root for nothing took the keyboard off the terminal (every
+  scenario that types broke).
 - **`@Published` emits before the property changes.** In a Combine sink, use the emitted values; reading the object back gives the old value (bit twice: selection, and attach). A new subscriber also gets the current value at once — `dropFirst()` when only a change should act (the find bar's rebinding on every terminal focus took the keyboard back, so Esc never closed it).
 - **A new tab never inherits the selected tab's island.** Which group it joins is `NewTabGroup.placement` and nothing else decides (docs/architecture.md, Tab groups): a group is usually a checkout, so it soon holds every tab, and inheriting it swallowed every new tab silently. A new way of opening a tab goes through `addTab`, which asks the rule.
 - **`tab.terminal` is the focused pane**, not "the tab's terminal". Anything about the whole tab (closing, its processes, busy checks) must go over `tab.terminals`, or it silently ignores the other panes of a split. Find a pane's tab with `tab(containing:)`.

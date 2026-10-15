@@ -9,7 +9,7 @@ import SwiftUI
 /// it changed.
 struct DiffPanelView: View {
     @ObservedObject var model: DiffModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onClose: () -> Void
     /// Undo an attachment: back to following the agent / shell.
     let onDetach: () -> Void
@@ -290,7 +290,7 @@ private struct FileCard: View {
     let collapsed: Bool
     /// Stage and Discard: only for uncommitted changes.
     let editable: Bool
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let palette: DiffPalette
     let why: FileWhy
     let onToggleWhy: () -> Void
@@ -427,7 +427,7 @@ private struct FileCard: View {
 /// Nothing when there is nothing to say.
 private struct WhyStrip: View {
     let why: FileWhy
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onToggle: () -> Void
     /// Commits listed at most; the rest are counted.
     private static let maxCommits = 3
@@ -471,7 +471,7 @@ private struct ReasonRow: View {
     let open: Bool
     /// Reasons not shown until opened.
     let more: Int
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -517,7 +517,7 @@ private struct CommitList: View {
     /// There are more than those listed.
     let more: Bool
     let open: Set<String>
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onToggle: (String) -> Void
 
     var body: some View {
@@ -545,7 +545,7 @@ private struct CommitList: View {
 private struct CommitRow: View {
     let commit: BranchCommit
     let open: Bool
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onToggle: () -> Void
     /// A huge commit's file list is cut here.
     private static let maxFiles = 20
@@ -595,7 +595,7 @@ private struct DiffLineView: View, Equatable {
     let line: DiffLine
     let style: DiffLineStyle
     let palette: DiffPalette
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     /// The palette and theme are the app's for its life: a line is drawn
     /// again only when its text or style changes, not on every refresh.
@@ -655,7 +655,7 @@ private struct DiffLineView: View, Equatable {
 /// or, with nothing staged, everything.
 private struct CommitComposer: View {
     @ObservedObject var model: DiffModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let onDone: () -> Void
     @State private var message = ""
     @State private var committing = false

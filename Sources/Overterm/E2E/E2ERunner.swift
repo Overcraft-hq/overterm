@@ -2815,6 +2815,36 @@ final class E2ERunner {
             await eventually(3) { app.store.tabs.allSatisfy { $0.terminals.allSatisfy { $0.appliedConfigs > 0 } } },
             "\(app.store.tabs.flatMap(\.terminals).map(\.appliedConfigs))")
 
+        // The chrome is drawn from the terminal's theme, and used to wait
+        // for the next launch to say so.
+        check(
+            "the window itself takes the theme's colours", await eventually(3) { self.app.window?.backgroundColor == self.app.theme?.winNS },
+            "\(app.window?.backgroundColor as Any) vs \(app.theme?.winNS as Any)")
+        check("and the chrome is dressed as dark", app.theme?.isDark == true)
+        check(
+            "the cards are repainted with it",
+            app.split.splitViewItems.compactMap { $0.viewController.view as? CardColumn }.count >= 2
+                && app.sidebarCardFill == app.theme?.cardNS, "\(app.sidebarCardFill as Any)")
+        // A light theme is the other way round, and the chrome follows it.
+        settings.set("appearance.theme", .string("Claude Light"))
+        check("a light theme turns the chrome light", await eventually(3) { self.app.theme?.isDark == false })
+        check("and the window with it", app.window?.backgroundColor == app.theme?.winNS)
+        settings.set("appearance.theme", .string("Claude Dark"))
+        check("and back", await eventually(3) { self.app.theme?.isDark == true })
+
+        // As it is done: the page closed, the terminal in hand, a theme
+        // changed from the palette or a hand-edited settings.json. Every
+        // view around the terminal is redrawn — and must not take the
+        // keyboard off it, which a SwiftUI root rebuilt under a text field
+        // has done before.
+        app.closeSettings()
+        settings.set("appearance.theme", .string("Claude Light"))
+        check("a theme set while the page is closed still arrives", await eventually(3) { self.app.theme?.isDark == false })
+        await runAndExpect(
+            "echo themed > \(out("themed").path)", file: out("themed"), content: "themed",
+            "and the keyboard is still the terminal's")
+        settings.set("appearance.theme", .string("Claude Dark"))
+
         // The pair: one line, which Ghostty switches between as macOS does.
         app.settingsPage.themeSlot = .light
         settings.set("appearance.themeLight", .string("Claude Light"))

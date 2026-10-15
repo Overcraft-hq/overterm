@@ -29,7 +29,7 @@ struct PaneHeaderView: View {
     @ObservedObject var store: TabStore
     /// What this pane has run — the failure it is showing, if any.
     @ObservedObject var blocks: PaneBlocks
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: PaneHeaderActions
 
     private var isFocused: Bool { tab.terminal === pane }
@@ -165,7 +165,7 @@ struct PaneHeaderView: View {
 /// header: the group is an object of its own, not part of the tab.
 private struct GroupLabel: View {
     @ObservedObject var group: TabGroup
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         Text(verbatim: group.name)
@@ -184,7 +184,7 @@ private struct GroupLabel: View {
 /// answering.
 private struct PortPill: View {
     let port: ListeningPort
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: PaneHeaderActions
     @State private var hovering = false
     @State private var showing = false

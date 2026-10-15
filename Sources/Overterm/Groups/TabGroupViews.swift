@@ -28,7 +28,7 @@ struct GroupIslandView: View {
     @ObservedObject var group: TabGroup
     let tabs: [Tab]
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: TabBarActions
     let groupActions: TabGroupActions
 
@@ -85,7 +85,7 @@ private struct GroupChip: View {
     @ObservedObject var group: TabGroup
     let tabs: [Tab]
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: TabGroupActions
     let holdsSelection: Bool
     @State private var hovering = false

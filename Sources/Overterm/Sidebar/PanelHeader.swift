@@ -12,7 +12,7 @@ struct PanelHeader<Trailing: View>: View {
     let title: String
     /// The island the panel is about, if the selected tab is in one.
     let group: TabGroup?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     /// What the title points at, for the tooltip — a path, usually.
     var help: String?
     @ViewBuilder var trailing: Trailing
@@ -40,7 +40,7 @@ struct PanelHeader<Trailing: View>: View {
 /// recolour reaches the header.
 private struct GroupTag: View {
     @ObservedObject var group: TabGroup
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         HStack(spacing: 4) {
@@ -59,7 +59,7 @@ struct PanelHeaderButton: View {
     let symbol: String
     let help: String
     let action: () -> Void
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         Button(action: action) {

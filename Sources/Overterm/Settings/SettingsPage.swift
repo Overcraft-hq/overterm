@@ -101,7 +101,7 @@ struct SettingsPageView: View {
     @ObservedObject var model: SettingsPageModel
     @ObservedObject var settings: Settings
     @ObservedObject var keybindings: Keybindings
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -220,7 +220,7 @@ private struct SpecRows: View {
     let section: SettingsSection
     @ObservedObject var model: SettingsPageModel
     @ObservedObject var settings: Settings
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         let specs = SettingsSchema.specs(in: section).filter { $0.matches(model.search) || section.title.lowercased().contains(model.search.lowercased()) }
@@ -243,7 +243,7 @@ private struct SettingRow: View {
     let spec: SettingSpec
     @ObservedObject var model: SettingsPageModel
     @ObservedObject var settings: Settings
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     private var enabled: Bool { spec.requires.map { settings.bool($0) } ?? true }
 
@@ -382,7 +382,7 @@ private struct SettingTextField: View {
 
 /// Where Appearance and Terminal's values go, and what Ghostty says about them.
 private struct GhosttyNote: View {
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -414,7 +414,7 @@ private struct SettingsJSONView: View {
     @ObservedObject var model: SettingsPageModel
     @ObservedObject var settings: Settings
     @ObservedObject var keybindings: Keybindings
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     private var isKeybindings: Bool { model.section == .shortcuts }
     private var saved: String { isKeybindings ? keybindings.fileText : settings.fileText }
@@ -480,7 +480,7 @@ private struct SettingsJSONView: View {
 /// and dashes as you type — wrong for JSON).
 private struct JSONTextView: NSViewRepresentable {
     @Binding var text: String
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -524,7 +524,7 @@ private struct JSONTextView: NSViewRepresentable {
 
 private struct ShortcutsSettings: View {
     @ObservedObject var keybindings: Keybindings
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     @Binding var filter: String
     @State private var recording: String?
 
@@ -565,7 +565,7 @@ private struct ShortcutsSettings: View {
 private struct ShortcutRow: View {
     let command: KeyCommand
     @ObservedObject var keybindings: Keybindings
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     @Binding var recording: String?
 
     var body: some View {
@@ -690,7 +690,7 @@ final class KeyRecorderView: NSView {
 
 private struct AboutSettings: View {
     @ObservedObject var updates: UpdateChecker
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
 
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "" }
     private var whatsNew: [String] { Changelog.bundled.map { Changelog.entry(for: updates.currentVersion, in: $0) } ?? [] }

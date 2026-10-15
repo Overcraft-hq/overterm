@@ -88,7 +88,7 @@ struct SidebarView: View {
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: FileTreeActions
     let worktreeActions: WorktreeActions
     let snippetActions: SnippetActions
@@ -184,7 +184,7 @@ private struct FileRowView: View {
     @ObservedObject var tree: FileTreeModel
     /// Observed for "Open in <the app picked>".
     @ObservedObject var opener: ExternalOpener
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: FileTreeActions
     @State private var hovering = false
 
@@ -308,7 +308,7 @@ private struct WorktreeListView: View {
     let currentRoot: URL?
     let group: TabGroup?
     @ObservedObject var store: TabStore
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: WorktreeActions
 
     var body: some View {
@@ -374,7 +374,7 @@ private struct WorktreeRowView: View {
     let reason: CheckoutReason?
     let merged: MergedWorktrees.Reason?
     let pullRequest: PullRequestSummary?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: WorktreeActions
     @State private var hovering = false
 
@@ -501,7 +501,7 @@ private struct SessionListView: View {
     @ObservedObject var model: SessionsModel
     @ObservedObject var worktrees: WorktreeModel
     let group: TabGroup?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: SessionActions
 
     var body: some View {
@@ -537,7 +537,7 @@ private struct SessionRowView: View {
     let session: ClaudeSession
     let running: Bool
     let worktree: Worktree?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: SessionActions
     @State private var hovering = false
 
@@ -586,7 +586,7 @@ private struct SessionRowView: View {
 private struct SnippetListView: View {
     @ObservedObject var store: SnippetStore
     let group: TabGroup?
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: SnippetActions
 
     var body: some View {
@@ -624,7 +624,7 @@ private struct SnippetListView: View {
 
 private struct SnippetRowView: View {
     let snippet: Snippet
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: SnippetActions
     let onDelete: () -> Void
     @State private var hovering = false

@@ -66,8 +66,14 @@ final class SplitHostView: NSView {
         didSet { dims.values.forEach { $0.layer?.backgroundColor = dimColor.cgColor } }
     }
 
+    /// Between the panes, where the terminal's background shows through.
+    var dividerColor: NSColor {
+        didSet { layer?.backgroundColor = dividerColor.cgColor }
+    }
+
     init(dividerColor: NSColor, dimColor: NSColor) {
         self.dimColor = dimColor
+        self.dividerColor = dividerColor
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = dividerColor.cgColor

@@ -277,7 +277,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(
-            viewController: CardColumnController(sidebar, fill: theme.cardNS, theme: theme))
+            viewController: CardColumnController(sidebar, fill: .panel, theme: theme))
         sidebarItem.canCollapse = true
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 520
@@ -285,7 +285,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Shown on first launch; after that, as the user left it.
         sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
         let terminalPane = NSViewController()
-        terminalPane.view = CardColumn(content: container, fill: theme.termNS, theme: theme)
+        terminalPane.view = CardColumn(content: container, fill: .terminal, theme: theme)
 
         let searchBar = NSHostingView(rootView: AnyView(EmptyView()))
         searchBar.translatesAutoresizingMaskIntoConstraints = false
@@ -387,7 +387,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let editor = EditorViewController(
             theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor, opener: opener)
         let editorItem = NSSplitViewItem(
-            viewController: CardColumnController(editor, fill: theme.termNS, theme: theme))
+            viewController: CardColumnController(editor, fill: .terminal, theme: theme))
         editorItem.canCollapse = true
         editorItem.isCollapsed = true
         editorItem.minimumThickness = 280
@@ -420,7 +420,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
-            viewController: CardColumnController(diffPanel, fill: theme.cardNS, theme: theme))
+            viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
         diffItem.canCollapse = true
         diffItem.minimumThickness = 320
         diffItem.holdingPriority = .defaultLow + 5
@@ -450,7 +450,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let inboxPanel = NSViewController()
         inboxPanel.view = inboxView
         let inboxItem = NSSplitViewItem(
-            viewController: CardColumnController(inboxPanel, fill: theme.cardNS, theme: theme))
+            viewController: CardColumnController(inboxPanel, fill: .panel, theme: theme))
         inboxItem.canCollapse = true
         inboxItem.isCollapsed = true
         inboxItem.minimumThickness = 360
@@ -618,9 +618,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let tab = Tab(terminal: terminal, agent: agent)
         wire(terminal, in: tab)
 
-        let host = SplitHostView(
-            dividerColor: GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.18),
-            dimColor: Self.paneDim)
+        let host = SplitHostView(dividerColor: Self.paneDivider, dimColor: Self.paneDim)
         host.onRatioChange = { [weak self, weak tab] path, ratio in
             guard let self, let tab else { return }
             tab.setSplits(tab.splits.settingRatio(ratio, at: path))
@@ -2648,6 +2646,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
     static var paneDim: NSColor { GhosttyRuntime.shared.backgroundColor.withAlphaComponent(Settings.shared.unfocusedPaneDim) }
+    /// Between a tab's panes: the terminal's own text, nearly all the way
+    /// out of the way.
+    static var paneDivider: NSColor { GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.18) }
 
     /// Settings take effect as they change — from the Settings tab, or
     /// settings.json / keybindings.json edited by hand: Ghostty's options
@@ -2672,6 +2673,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         keybindings.changes
             .sink { Keybindings.shared.apply(to: NSApp.mainMenu) }
             .store(in: &cancellables)
+        NotificationCenter.default.addObserver(
+            forName: GhosttyRuntime.configReloaded, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyTerminalColors() }
+        }
         settings.changes
             .sink { [weak self] keys in
                 guard let self else { return }
@@ -2681,6 +2687,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
             .store(in: &cancellables)
+    }
+
+    /// The sidebar card's fill, for the E2E run.
+    var sidebarCardFill: NSColor? {
+        (sidebarItem?.viewController.view as? CardColumn)?.groundColor
+    }
+
+    /// A terminal theme picked in Settings changes every colour around the
+    /// terminal too (`ChromeTheme`). The views hold the theme object and
+    /// redraw themselves; the layers are nobody's binding, so the window,
+    /// the cards and the dividers are repainted here.
+    private func applyTerminalColors() {
+        let runtime = GhosttyRuntime.shared
+        guard let theme else { return }
+        theme.apply(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
+        window?.backgroundColor = theme.winNS
+        for item in split.splitViewItems {
+            (item.viewController.view as? CardColumn)?.repaint()
+        }
+        for host in hosts.values {
+            host.dividerColor = Self.paneDivider
+            host.dimColor = Self.paneDim
+        }
     }
 
     /// The overrides file from both files; Ghostty reloads only when it changed.

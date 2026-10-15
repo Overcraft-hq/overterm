@@ -6,7 +6,7 @@ import SwiftUI
 /// text, back to the terminal keeping the highlights), as in Ghostty.
 struct TerminalSearchBar: View {
     @ObservedObject var search: TerminalSearch
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     /// Give the keyboard back to the terminal.
     let onDismiss: () -> Void
 

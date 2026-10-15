@@ -16,7 +16,7 @@ struct SelectionActions {
 /// it is on screen, which is also the only time a toolbar over it would
 /// make sense.
 struct SelectionBar: View {
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let actions: SelectionActions
 
     var body: some View {
@@ -64,7 +64,7 @@ struct SelectionBar: View {
 /// Where the selection goes, what goes with it, and what to say about it.
 struct AskAgentView: View {
     @ObservedObject var model: AskAgentModel
-    let theme: ChromeTheme
+    @ObservedObject var theme: ChromeTheme
     let send: () -> Void
     let cancel: () -> Void
 
