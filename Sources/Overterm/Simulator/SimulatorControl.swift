@@ -51,12 +51,13 @@ enum SimulatorControl {
         _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: configuration)
     }
 
-    /// The device's own screen, straight out of CoreSimulator — no window,
-    /// no screen recording. A PNG, and slow enough (half a second) to be
-    /// the fallback and not the mirror.
+    /// The device's own screen, straight out of CoreSimulator — no window
+    /// and no screen recording. A BMP: `simctl` spends most of a PNG's
+    /// 0.6 s encoding it, and this pane throws the pixels away anyway
+    /// (SimulatorMirror cuts the frame down with ImageIO).
     static func screenshot(_ udid: String) async -> Data? {
-        let file = scratch.appendingPathComponent("overterm-sim-\(udid).png")
-        guard (try? await Git.run(xcrun, ["simctl", "io", udid, "screenshot", "--type", "png", file.path], in: scratch, timeout: 20)) != nil
+        let file = scratch.appendingPathComponent("overterm-sim-\(udid).bmp")
+        guard (try? await Git.run(xcrun, ["simctl", "io", udid, "screenshot", "--type", "bmp", file.path], in: scratch, timeout: 20)) != nil
         else { return nil }
         defer { try? FileManager.default.removeItem(at: file) }
         return try? Data(contentsOf: file)

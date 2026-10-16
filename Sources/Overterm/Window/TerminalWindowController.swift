@@ -231,7 +231,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     closeSettings: { [weak self] in self?.closeSettings() },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) },
-                    toggleBrowser: { [weak self] in self?.toggleBrowser(nil) }
+                    toggleBrowser: { [weak self] in self?.toggleBrowser(nil) },
+                    toggleSimulator: { [weak self] in self?.toggleSimulator(nil) }
                 ),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },

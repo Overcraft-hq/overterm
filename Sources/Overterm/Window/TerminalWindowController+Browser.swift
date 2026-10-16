@@ -19,11 +19,9 @@ extension TerminalWindowController {
             self.setZoomed(self.zoomedColumn == .browser ? nil : .browser)
         }
         browser.onAskAgent = { [weak self] page in self?.askAboutPage(page) }
-        browser.onShowSimulator = { [weak self] in self?.showSimulator() }
-        if let column = browserColumn {
-            column.simulator.onShowBrowser = { [weak self] in self?.browserColumn?.show(.web) }
-            column.simulator.onClose = { [weak self] in self?.closeBrowser() }
-            column.simulator.onToggleZoom = { [weak self] in
+        if let simulator = browserColumn?.simulator {
+            simulator.onClose = { [weak self] in self?.closeBrowser() }
+            simulator.onToggleZoom = { [weak self] in
                 guard let self else { return }
                 self.setZoomed(self.zoomedColumn == .browser ? nil : .browser)
             }
@@ -72,7 +70,9 @@ extension TerminalWindowController {
 
     @objc func toggleBrowser(_ sender: Any?) {
         guard let browserItem, Settings.shared.browserEnabled else { return }
-        if browserItem.isCollapsed {
+        // Open on the simulator, the globe takes the column back rather
+        // than shutting it.
+        if browserItem.isCollapsed || browserColumn?.mode != .web {
             browserColumn?.show(.web)
             showBrowserColumn()
             if browser?.workspace?.active == nil { browser?.focusAddress() }
@@ -81,8 +81,17 @@ extension TerminalWindowController {
         }
     }
 
-    /// The browser toolbar's ▢: the column keeps its place and shows the
-    /// simulator instead — mirrored only while it is up.
+    /// The title bar's phone, beside the globe: the same column, showing
+    /// the simulator — read only while it is up.
+    @objc func toggleSimulator(_ sender: Any?) {
+        guard let browserItem, Settings.shared.browserEnabled else { return }
+        if browserItem.isCollapsed || browserColumn?.mode != .simulator {
+            showSimulator()
+        } else {
+            closeBrowser()
+        }
+    }
+
     func showSimulator() {
         guard Settings.shared.browserEnabled else { return }
         browserColumn?.show(.simulator)
@@ -93,6 +102,7 @@ extension TerminalWindowController {
         guard let browserItem else { return }
         if browserItem.isCollapsed { browserItem.animator().isCollapsed = false }
         browserButton.isOpen = true
+        browserButton.isSimulator = browserColumn?.mode == .simulator
         browserColumn?.setColumnOpen(true)
         if let tab = store.selected, pendingBrowserPages[tab.id] != nil { _ = browserWorkspace(for: tab) }
         showSelectedBrowser()
@@ -102,6 +112,7 @@ extension TerminalWindowController {
         if zoomedColumn == .browser { setZoomed(nil) }
         browserItem?.animator().isCollapsed = true
         browserButton.isOpen = false
+        browserButton.isSimulator = false
         browserColumn?.setColumnOpen(false)
         focusSelectedTerminal()
     }

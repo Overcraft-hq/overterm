@@ -1,18 +1,17 @@
 import AppKit
 import Combine
 
-/// The simulator, in the browser's column: the device Simulator.app is
-/// running, mirrored beside the terminal so you watch the app an agent is
-/// building without a window in front of everything.
+/// The simulator in the browser's column: the booted device's own screen,
+/// read out of CoreSimulator (`SimulatorMirror`) so it is here whether
+/// Simulator.app is showing it or not.
 ///
-/// Looking, not touching — taps still go to Simulator.app itself (the
-/// toolbar's ↗, or a double-click on the picture, brings it forward).
+/// Looking, not touching: a frame is a picture, and nothing types into it.
+/// The toolbar's ↗ — or a double-click on the picture — brings Simulator.app
+/// forward, which is where taps go.
 @MainActor
 final class SimulatorViewController: NSViewController {
     var onClose: (() -> Void)?
     var onToggleZoom: (() -> Void)?
-    /// The column's other half.
-    var onShowBrowser: (() -> Void)?
 
     let chrome: ChromeTheme
     let theme: EditorTheme
@@ -31,7 +30,7 @@ final class SimulatorViewController: NSViewController {
     private(set) var devices: [SimulatorDevice] = []
     private(set) var selected: SimulatorDevice?
     private(set) var isActive = false
-    /// What the picture is coming from — the E2E scenario reads it.
+    /// Where the picture is coming from — the E2E scenario reads it.
     var mirrorStatus: SimulatorMirror.Status { mirror.status }
     private var observers: Set<AnyCancellable> = []
     private var poll: Timer?
@@ -55,12 +54,10 @@ final class SimulatorViewController: NSViewController {
             EditorHeaderView.style(button, symbol, tip: tip, color: text, target: self, action: action, size: 12)
             button.identifier = NSUserInterfaceItemIdentifier(id)
         }
-        let web = NSButton()
-        button(web, "globe", "Browser", #selector(showBrowser), id: "simulatorBrowser")
-        let reconnect = NSButton()
-        button(reconnect, "arrow.clockwise", "Look Again", #selector(reconnect(_:)), id: "simulatorReconnect")
+        let again = NSButton()
+        button(again, "arrow.clockwise", "Look Again", #selector(lookAgain), id: "simulatorReconnect")
         let forward = NSButton()
-        button(forward, "arrow.up.forward.app", "Open Simulator", #selector(openSimulator), id: "simulatorOpen")
+        button(forward, "arrow.up.forward.app", "Open Simulator — taps go there", #selector(openSimulator), id: "simulatorOpen")
         button(zoomButton, "arrow.up.left.and.arrow.down.right", "Zoom Simulator", #selector(toggleZoom), id: "simulatorZoom")
         let close = NSButton()
         button(close, "xmark", "Close", #selector(closeColumn), id: "simulatorClose")
@@ -79,7 +76,7 @@ final class SimulatorViewController: NSViewController {
         noteLabel.lineBreakMode = .byTruncatingTail
         noteAction.isBordered = false
         noteAction.target = self
-        noteAction.action = #selector(takeNoteAction)
+        noteAction.action = #selector(openSimulator)
         noteAction.identifier = NSUserInterfaceItemIdentifier("simulatorNoteAction")
 
         emptyLabel.font = .systemFont(ofSize: 12)
@@ -88,7 +85,7 @@ final class SimulatorViewController: NSViewController {
         emptyLabel.maximumNumberOfLines = 3
         emptyAction.isBordered = false
         emptyAction.target = self
-        emptyAction.action = #selector(takeEmptyAction)
+        emptyAction.action = #selector(bootSelected)
         emptyAction.identifier = NSUserInterfaceItemIdentifier("simulatorEmptyAction")
         empty.orientation = .vertical
         empty.alignment = .centerX
@@ -97,7 +94,7 @@ final class SimulatorViewController: NSViewController {
 
         display.onOpenSimulator = { [weak self] in self?.openSimulator() }
 
-        for view in [deviceButton, web, reconnect, forward, zoomButton, close] as [NSView] {
+        for view in [deviceButton, again, forward, zoomButton, close] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             toolbar.addSubview(view)
         }
@@ -117,9 +114,8 @@ final class SimulatorViewController: NSViewController {
             toolbar.heightAnchor.constraint(equalToConstant: 38),
             deviceButton.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 10),
             deviceButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
-            deviceButton.trailingAnchor.constraint(lessThanOrEqualTo: web.leadingAnchor, constant: -6),
-            web.trailingAnchor.constraint(equalTo: reconnect.leadingAnchor, constant: -2),
-            reconnect.trailingAnchor.constraint(equalTo: forward.leadingAnchor, constant: -2),
+            deviceButton.trailingAnchor.constraint(lessThanOrEqualTo: again.leadingAnchor, constant: -6),
+            again.trailingAnchor.constraint(equalTo: forward.leadingAnchor, constant: -2),
             forward.trailingAnchor.constraint(equalTo: zoomButton.leadingAnchor, constant: -2),
             zoomButton.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -2),
             close.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -8),
@@ -140,13 +136,14 @@ final class SimulatorViewController: NSViewController {
             noteAction.trailingAnchor.constraint(equalTo: noteBar.trailingAnchor, constant: -10),
             noteAction.centerYAnchor.constraint(equalTo: noteBar.centerYAnchor),
         ])
-        for view in [web, reconnect, forward, zoomButton, close] {
+        for view in [again, forward, zoomButton, close] {
             view.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor).isActive = true
             view.widthAnchor.constraint(equalToConstant: 24).isActive = true
         }
         view = root
 
         mirror.onFrame = { [weak self] contents, size in self?.display.show(contents, size: size) }
+        display.maxPixels = { [weak self] pixels in self?.mirror.maxPixels = pixels }
         mirror.$status
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in self?.showStatus(status) }
@@ -156,14 +153,15 @@ final class SimulatorViewController: NSViewController {
 
     // MARK: Showing and hiding
 
-    /// The column is showing the simulator: find the devices and mirror.
-    /// Nothing is read while it isn't — the picture costs a stream.
+    /// The column is showing the simulator: find the devices and read the
+    /// booted one's screen. Nothing is read while it isn't showing — a
+    /// frame is a `simctl` call, and they would go on for ever.
     func activate() {
         guard !isActive else { return }
         isActive = true
         reloadDevices()
         // Devices are booted and shut down outside Overterm; the picker
-        // notices, and a simulator that comes up is mirrored.
+        // notices, and a simulator that comes up is shown.
         poll = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.reloadDevices() }
         }
@@ -193,25 +191,20 @@ final class SimulatorViewController: NSViewController {
             self.devices = found
             let keep = self.selected.flatMap { current in found.first { $0.udid == current.udid } }
             // Whatever is booted, else what the picker was left on.
-            self.choose(found.first { $0.isBooted } ?? keep ?? found.first, start: true)
+            self.choose(found.first { $0.isBooted } ?? keep ?? found.first)
         }
     }
 
-    private func choose(_ device: SimulatorDevice?, start: Bool) {
+    private func choose(_ device: SimulatorDevice?) {
         selected = device
         setDeviceTitle(device?.label ?? "No simulator")
-        guard let device else {
+        guard let device, device.isBooted else {
             mirror.stop()
             display.clear()
             return showEmpty(devices.isEmpty ? .noXcode : .nothingBooted)
         }
-        guard device.isBooted else {
-            mirror.stop()
-            display.clear()
-            return showEmpty(.nothingBooted)
-        }
         showEmpty(nil)
-        if start { mirror.start(device) }
+        mirror.start(device)
     }
 
     private func setDeviceTitle(_ title: String) {
@@ -238,14 +231,19 @@ final class SimulatorViewController: NSViewController {
 
     @objc private func selectDevice(_ sender: NSMenuItem) {
         guard let udid = sender.representedObject as? String, let device = devices.first(where: { $0.udid == udid }) else { return }
-        guard device.isBooted else {
-            // A device that isn't up is booted first — Simulator.app shows
-            // it, and the mirror picks it up on the next sweep.
-            choose(device, start: false)
-            Task { await SimulatorControl.openSimulator(device: device) }
-            return
+        choose(device)
+        // A device that isn't up is booted — without Simulator.app, which
+        // this pane doesn't need.
+        guard !device.isBooted else { return }
+        boot(device)
+    }
+
+    private func boot(_ device: SimulatorDevice) {
+        note("Booting \(device.name)…", action: nil)
+        Task { [weak self] in
+            await SimulatorControl.boot(device.udid)
+            self?.reloadDevices()
         }
-        choose(device, start: true)
     }
 
     // MARK: What the pane says
@@ -267,7 +265,7 @@ final class SimulatorViewController: NSViewController {
         case .nothingBooted:
             emptyLabel.stringValue = "No simulator is running."
             emptyAction.isHidden = false
-            style(emptyAction, "Open Simulator")
+            style(emptyAction, "Boot \(selected?.name ?? "one")")
         case nil:
             break
         }
@@ -275,26 +273,16 @@ final class SimulatorViewController: NSViewController {
 
     private func showStatus(_ status: SimulatorMirror.Status) {
         switch status {
-        case .live, .stopped:
-            noteLabel.stringValue = ""
-            noteAction.isHidden = true
-            noteHeight.constant = 0
-        case .connecting:
-            note("Looking for the simulator…", action: nil)
-        case .polling(.denied):
-            note(
-                SimulatorMirror.isAllowedToRecord
-                    ? "Screen Recording was allowed — restart Overterm for the live picture. A frame every half second until then."
-                    : "Without Screen Recording it is a frame every half second, not the live screen.",
-                action: "Allow…")
-        case .polling(.noWindow):
-            note("Simulator.app isn't showing this device: a frame every half second.", action: "Open Simulator")
+        case .showing, .stopped:
+            note(nil, action: nil)
+        case .waiting:
+            note("Waiting for the simulator's screen…", action: "Open Simulator")
         }
     }
 
-    private func note(_ text: String, action: String?) {
-        noteLabel.stringValue = text
-        noteHeight.constant = 24
+    private func note(_ text: String?, action: String?) {
+        noteLabel.stringValue = text ?? ""
+        noteHeight.constant = text == nil ? 0 : 24
         noteAction.isHidden = action == nil
         if let action { style(noteAction, action) }
     }
@@ -306,47 +294,35 @@ final class SimulatorViewController: NSViewController {
 
     // MARK: Actions
 
-    @objc private func takeNoteAction() {
-        if case .polling(.denied) = mirror.status {
-            SimulatorMirror.requestRecording()
-            return
-        }
-        openSimulator()
+    @objc private func bootSelected() {
+        guard let device = selected ?? devices.first else { return }
+        boot(device)
     }
 
-    @objc private func takeEmptyAction() {
-        switch emptyState {
-        case .nothingBooted:
-            let device = selected ?? devices.first
-            Task { [weak self] in
-                await SimulatorControl.openSimulator(device: device)
-                self?.reloadDevices()
-            }
-        default: break
-        }
-    }
-
+    /// Simulator.app, in front: the picture here is a picture, and taps
+    /// belong to the simulator's own window.
     @objc private func openSimulator() {
         Task { [weak self] in
             await SimulatorControl.openSimulator(device: self?.selected, activate: true)
-            self?.mirror.reconnect()
         }
     }
 
-    @objc private func reconnect(_ sender: Any?) {
+    @objc private func lookAgain() {
         mirror.reconnect()
         reloadDevices()
     }
 
-    @objc private func showBrowser() { onShowBrowser?() }
     @objc private func toggleZoom() { onToggleZoom?() }
     @objc private func closeColumn() { onClose?() }
 }
 
-/// The picture: a layer holding the stream's frames, kept to the device's
-/// own proportions in the middle of the pane.
+/// The picture: a layer holding the frames, kept to the device's own
+/// proportions in the middle of the pane.
 final class SimulatorDisplayView: NSView {
     var onOpenSimulator: (() -> Void)?
+    /// The pane's longest side in pixels, as it changes — the frames are
+    /// cut down to it and no further.
+    var maxPixels: ((Int) -> Void)?
     private let content = CALayer()
     private var natural: CGSize = .zero
 
@@ -365,7 +341,7 @@ final class SimulatorDisplayView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    /// A frame — an IOSurface from the stream, a CGImage from a screenshot.
+    /// A frame — a CGImage of the device's screen.
     func show(_ contents: Any, size: CGSize) {
         let resized = size != natural
         natural = size
@@ -384,6 +360,10 @@ final class SimulatorDisplayView: NSView {
     override func layout() {
         super.layout()
         place()
+        // A tall pane deserves a tall frame: the device's screen is cut down
+        // to what this can show, measured in pixels.
+        let scale = window?.backingScaleFactor ?? 2
+        maxPixels?(max(320, Int(max(bounds.width, bounds.height) * scale)))
     }
 
     override func mouseDown(with event: NSEvent) {

@@ -27,6 +27,8 @@ struct TabBarActions {
     var setPinned: (Tab, Bool) -> Void
     /// The globe: the browser column, shown or hidden.
     var toggleBrowser: () -> Void = {}
+    /// The phone beside it: the same column, showing the simulator.
+    var toggleSimulator: () -> Void = {}
 }
 
 /// What the title bar's globe shows: whether there is a browser (Settings
@@ -34,7 +36,10 @@ struct TabBarActions {
 @MainActor
 final class BrowserButtonState: ObservableObject {
     @Published var isEnabled = true
+    /// The column is open — on the browser, or on the simulator.
     @Published var isOpen = false
+    /// What it is open on: the simulator rather than the browser.
+    @Published var isSimulator = false
 }
 
 /// Chrome-style tab strip, living in the window's title bar.
@@ -172,7 +177,9 @@ struct TabBarView: View {
                     .padding(.trailing, 6)
             }
             if browser.isEnabled {
-                BrowserButton(isOpen: browser.isOpen, theme: theme, action: actions.toggleBrowser)
+                BrowserButton(isOpen: browser.isOpen && !browser.isSimulator, theme: theme, action: actions.toggleBrowser)
+                    .padding(.trailing, 4)
+                SimulatorButton(isOpen: browser.isOpen && browser.isSimulator, theme: theme, action: actions.toggleSimulator)
                     .padding(.trailing, 6)
             }
             if let badge = diff.badge {
@@ -541,6 +548,30 @@ private struct BrowserButton: View {
         .onHover { hovering = $0 }
         .help(isOpen ? "Hide the browser (⇧⌘B)" : "Browser (⇧⌘B)")
         .accessibilityIdentifier("browserButton")
+    }
+}
+
+/// The simulator's switch, beside the browser's: the same column, showing
+/// the booted simulator's screen. Lit while that is what it shows.
+private struct SimulatorButton: View {
+    let isOpen: Bool
+    @ObservedObject var theme: ChromeTheme
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "iphone").font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isOpen ? theme.text : theme.text2)
+                .padding(.horizontal, 7)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(isOpen ? "Hide the simulator" : "Simulator")
+        .accessibilityIdentifier("simulatorButton")
     }
 }
 

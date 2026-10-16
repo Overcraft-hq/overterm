@@ -691,10 +691,9 @@ setting is there to change it. The `terminal` scenario checks the keys.
 An ad-hoc signed build is a new app to macOS each time, so the answer would
 not survive a reinstall; `make install` re-signs the installed copy with
 `SIGN_IDENTITY` (environment or the untracked `local.mk`) when it is set, and
-one identity keeps the grant (README, Build). **Screen Recording** is the
-same story: the simulator's live mirror asks for it, and an ad-hoc build
-asks again after every reinstall — the pane falls back to the device's
-framebuffer meanwhile, so it is never blank.
+one identity keeps the grant (README, Build). The simulator pane asks for
+nothing: it reads the device's own framebuffer rather than the Mac's screen,
+so no Screen Recording grant is involved (Simulator).
 
 ## Build metadata
 
@@ -866,40 +865,36 @@ driving it are in the same window as the code.
 
 ## Simulator
 
-The browser's column shows one of two things, and the toolbar's 📱 switches
-it: the tab's browser, or the iOS simulator that is running
-(`BrowserColumnController`; a sixth column would have cost every window the
-width and `OvertermColumns`' saved positions). Looking, not touching — taps
-still belong to Simulator.app, which the toolbar's ↗ (or a double-click on
-the picture) brings forward.
+The browser's column shows one of two things, and the title bar has a
+button for each: the globe for the tab's browser, the phone beside it for
+the iOS simulator (`BrowserColumnController`; a sixth column would have
+cost every window the width and `OvertermColumns`' saved positions). Either
+button, pressed while the column already shows it, closes the column.
 
 - **The devices** are `simctl list devices --json`, parsed by
   `SimulatorList` (booted first, then the newest runtime, a runtime's own
-  devices together). The picker boots a device that is shut down, by opening
-  Simulator.app on it. `simctl` runs through `Git.run` — a GCD thread, never
-  the main one.
-- **The picture, two ways** (`SimulatorMirror`), because neither covers
-  everything:
-  - **ScreenCaptureKit** mirrors Simulator.app's own window at 30 fps, even
-    occluded or on another Space: `SCContentFilter(desktopIndependentWindow:)`
-    on the window whose title carries the device's name, and each frame's
-    IOSurface goes straight into a layer (no pixel copy). It wants the Screen
-    Recording grant, and macOS hands a new grant to the *next* launch — so the
-    first answer is always "ask, then fall back", and the pane says so.
-  - **`simctl io screenshot`** reads the device's framebuffer through
-    CoreSimulator: no grant, no window, but half a second a frame (a PNG,
-    1206 × 2622 on a phone, cut down to the pane with ImageIO before it
-    reaches the layer). The fallback, and the only picture when the grant is
-    refused or Simulator.app isn't showing the device.
-- **Only while it shows**: the stream starts when the column is opened on the
-  simulator and stops when the column is collapsed or the browser takes it
-  back — the same rule the inbox and the usage pane keep. The device list is
+  devices together). The picker boots a device that is shut down — with
+  `simctl boot`, not Simulator.app, which this pane does not need. `simctl`
+  runs through `Git.run`: a GCD thread, never the main one.
+- **The picture** is `simctl io <device> screenshot`, the device's
+  framebuffer straight out of CoreSimulator (`SimulatorMirror`). Nothing of
+  the Mac's screen is captured, so there is no Screen Recording grant to ask
+  for and Simulator.app need not be running at all. The price is the frame
+  rate: a shot is 0.25 s as a BMP against 0.62 s as a PNG — `simctl` spends
+  most of a PNG encoding it, and the pixels are thrown away here anyway —
+  so three or four frames a second, and the pane says "waiting" until the
+  first one lands.
+- A phone's framebuffer is 1206 × 2622. ImageIO cuts each frame down to
+  what the pane can show (40 ms, off the main thread) before it reaches the
+  layer, so the 12 MB never goes near the window server. The pane's own size
+  in pixels is what it is cut to, re-read on every layout.
+- **Looking, not touching**: a frame is a picture, and nothing types into
+  it. Taps belong to Simulator.app, which the toolbar's ↗ and a double-click
+  on the picture bring forward.
+- **Only while it shows**: the reading starts when the column is opened on
+  the simulator and stops when the column is collapsed or the browser takes
+  it back — the rule the inbox and the usage pane keep. The device list is
   re-read every 3 s while it is up, so a simulator booted elsewhere appears.
-- ScreenCaptureKit answers on its own queue, so the frames arrive in
-  `SimulatorFrameOutput` — a class of its own, never a method written inside
-  a `@MainActor` type (which traps there), with the IOSurface retained over
-  the one hop to the main actor so the stream can't recycle it under the
-  layer.
 
 ## Opening files in another app
 

@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.10.1 — 2026-10-16
+
+- simulator: the device's own framebuffer, and a phone in the title bar
+
 ## 2.10.0 — 2026-10-16
 
 - browser: the simulator in the column, beside the browser

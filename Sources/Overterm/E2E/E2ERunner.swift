@@ -1299,47 +1299,48 @@ final class E2ERunner {
 
     /// Dropping a tab onto a pane: the only way to make a split out of
     /// something that is already running.
-    /// The simulator in the browser's column: the toolbar's iphone puts it
-    /// there, the globe brings the browser back, and closing the column
-    /// stops the mirror — whatever this Mac has booted (or hasn't).
+    /// The simulator in the browser's column: the title bar's phone puts
+    /// it there, the globe gives the column back, and closing it stops the
+    /// reading — whatever this Mac has booted (or hasn't).
     private func simulatorScenario() async {
         app.toggleBrowser(nil)
         await pause(0.4)
         guard let column = app.browserColumn else { return check("the window has a browser column", false) }
-        check("the column opens on the browser", column.mode == .web && !column.browser.view.isHidden)
-        check("…with nothing mirrored", !column.simulator.isActive)
+        check("the globe opens the column on the browser", column.mode == .web && !column.browser.view.isHidden)
+        check("…and the phone beside it is unlit", app.browserButton.isOpen && !app.browserButton.isSimulator)
+        check("…with nothing read", !column.simulator.isActive)
 
-        app.showSimulator()
+        app.toggleSimulator(nil)
         await pause(0.4)
         let simulator = column.simulator
         check(
-            "the iphone button shows the simulator instead",
+            "the phone shows the simulator in the same column",
             column.mode == .simulator && column.browser.view.isHidden && !simulator.view.isHidden)
+        check("…and lights in the title bar", app.browserButton.isOpen && app.browserButton.isSimulator)
         check("…and it looks for the devices", simulator.isActive)
         // Xcode is on the machines this runs on, but a booted simulator is
         // nobody's promise: both answers are right, each with its own face.
         let listed = await eventually(20) { !simulator.devices.isEmpty }
         if listed, let booted = simulator.devices.first(where: \.isBooted) {
             check("the picker is on the booted device", simulator.selected?.udid == booted.udid, simulator.selected?.label ?? "none")
-            func hasPicture() -> Bool {
-                if case .polling = simulator.mirrorStatus { return true }
-                return simulator.mirrorStatus == .live
-            }
-            check("…and a picture is coming", await eventually(25) { hasPicture() }, "\(simulator.mirrorStatus)")
+            check("…and its screen arrives", await eventually(25) { simulator.mirrorStatus == .showing }, "\(simulator.mirrorStatus)")
         } else {
-            check("nothing booted: the mirror stays off", simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
+            check("nothing booted: nothing is read", simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
         }
 
-        app.closeBrowser()
-        await pause(0.5)
-        check("the column shut stops the mirror", !simulator.isActive && simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
+        app.toggleBrowser(nil)
+        await pause(0.4)
+        check(
+            "the globe gives the column back to the browser",
+            column.mode == .web && !simulator.isActive && simulator.mirrorStatus == .stopped && !app.browserButton.isSimulator)
 
-        app.showSimulator()
+        app.toggleSimulator(nil)
         await pause(0.3)
-        column.show(.web)
-        check("the globe gives the column back to the browser", column.mode == .web && !column.browser.view.isHidden && !simulator.isActive)
-        app.closeBrowser()
-        await pause(0.3)
+        app.toggleSimulator(nil)
+        await pause(0.5)
+        check(
+            "the phone again shuts the column, and the reading with it",
+            app.browserItem?.isCollapsed == true && !simulator.isActive && simulator.mirrorStatus == .stopped)
     }
 
     private func dropSplitScenario() async {
