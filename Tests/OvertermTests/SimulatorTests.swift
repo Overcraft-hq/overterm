@@ -1,3 +1,4 @@
+import AppKit
 import ImageIO
 import XCTest
 
@@ -56,6 +57,42 @@ final class SimulatorTests: XCTestCase {
         XCTAssertEqual(max(image.width, image.height), 600)
         XCTAssertEqual(Double(image.width) / Double(image.height), 1206.0 / 2622.0, accuracy: 0.01, "the phone's proportions stay")
         XCTAssertNil(SimulatorMirror.image(Data("not a png".utf8), maxPixels: 600))
+    }
+
+    /// From Xcode 27 (CoreSimulator 1155.4) the guest drops the input this
+    /// sends — the bytes arrive and nothing happens — so the pane says so
+    /// instead of letting you tap at a picture. Numeric comparison: 1155.10
+    /// is newer than 1155.4, which a string comparison has backwards.
+    @MainActor
+    func testWhichCoreSimulatorsStillTakeTheInput() {
+        XCTAssertFalse(SimulatorHost.suppressesLegacyInput("1051.17.7"), "Xcode 26 takes it")
+        XCTAssertFalse(SimulatorHost.suppressesLegacyInput("1155.3"))
+        XCTAssertTrue(SimulatorHost.suppressesLegacyInput("1155.4"))
+        XCTAssertTrue(SimulatorHost.suppressesLegacyInput("1155.10"), "newer than 1155.4, not older")
+        XCTAssertTrue(SimulatorHost.suppressesLegacyInput("1200.1"))
+        XCTAssertFalse(SimulatorHost.suppressesLegacyInput(nil), "nothing loaded: nothing to say")
+    }
+
+    /// Where a click in the pane lands on the device. The picture is
+    /// centred in the pane with the device's proportions, and AppKit's
+    /// origin is the bottom left while the device's is the top left.
+    @MainActor
+    func testAClickMapsToAPointOnTheDevice() {
+        let picture = CGRect(x: 50, y: 20, width: 200, height: 400)
+        let topLeft = SimulatorDisplayView.ratio(of: CGPoint(x: 50, y: 420), in: picture, flipped: false)
+        XCTAssertEqual(topLeft?.x ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(topLeft?.y ?? -1, 0, accuracy: 0.001)
+        let middle = SimulatorDisplayView.ratio(of: CGPoint(x: 150, y: 220), in: picture, flipped: false)
+        XCTAssertEqual(middle?.x ?? -1, 0.5, accuracy: 0.001)
+        XCTAssertEqual(middle?.y ?? -1, 0.5, accuracy: 0.001)
+        let bottomRight = SimulatorDisplayView.ratio(of: CGPoint(x: 250, y: 20), in: picture, flipped: false)
+        XCTAssertEqual(bottomRight?.x ?? -1, 1, accuracy: 0.001)
+        XCTAssertEqual(bottomRight?.y ?? -1, 1, accuracy: 0.001)
+        // A flipped view counts down from the top itself.
+        let flipped = SimulatorDisplayView.ratio(of: CGPoint(x: 150, y: 20), in: picture, flipped: true)
+        XCTAssertEqual(flipped?.y ?? -1, 0, accuracy: 0.001)
+        XCTAssertNil(SimulatorDisplayView.ratio(of: CGPoint(x: 10, y: 220), in: picture, flipped: false), "beside the picture")
+        XCTAssertNil(SimulatorDisplayView.ratio(of: CGPoint(x: 150, y: 220), in: .zero, flipped: false), "no picture yet")
     }
 
     private func makePNG(width: Int, height: Int) -> Data? {

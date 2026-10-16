@@ -143,7 +143,9 @@ final class SimulatorViewController: NSViewController {
         view = root
 
         mirror.onFrame = { [weak self] contents, size in self?.display.show(contents, size: size) }
+        mirror.onDamage = { [weak self] in self?.display.refresh() }
         display.maxPixels = { [weak self] pixels in self?.mirror.maxPixels = pixels }
+        display.input = { [weak self] in self?.mirror.input }
         mirror.$status
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in self?.showStatus(status) }
@@ -273,11 +275,18 @@ final class SimulatorViewController: NSViewController {
 
     private func showStatus(_ status: SimulatorMirror.Status) {
         switch status {
-        case .showing, .stopped:
+        case .stopped:
             note(nil, action: nil)
+        case .live:
+            // Live, but a guest that drops the taps would leave you
+            // clicking at a picture and wondering.
+            note(SimulatorHost.acceptsInput ? nil : "This Xcode's simulator ignores taps from other apps.", action: nil)
+        case .polling:
+            note("Xcode's simulator frameworks aren't here: a screenshot every half second, and no taps.", action: "Open Simulator")
         case .waiting:
             note("Waiting for the simulator's screen…", action: "Open Simulator")
         }
+        view.window?.invalidateCursorRects(for: display)
     }
 
     private func note(_ text: String?, action: String?) {
@@ -316,15 +325,21 @@ final class SimulatorViewController: NSViewController {
     @objc private func closeColumn() { onClose?() }
 }
 
-/// The picture: a layer holding the frames, kept to the device's own
-/// proportions in the middle of the pane.
+/// The picture: a layer holding the device's own surface (or a polled
+/// frame), kept to the device's proportions in the middle of the pane —
+/// and, when the simulator takes input, where clicks and keys go.
 final class SimulatorDisplayView: NSView {
     var onOpenSimulator: (() -> Void)?
-    /// The pane's longest side in pixels, as it changes — the frames are
-    /// cut down to it and no further.
+    /// The pane's longest side in pixels, as it changes — polled frames
+    /// are cut down to it and no further.
     var maxPixels: ((Int) -> Void)?
+    /// Where a tap goes, while there is a live simulator to take it.
+    var input: (() -> SimulatorInput?)?
     private let content = CALayer()
     private var natural: CGSize = .zero
+    /// The frame a drag started in, so the whole gesture is measured
+    /// against one geometry even if the pane is resized under it.
+    private var dragging = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -341,7 +356,7 @@ final class SimulatorDisplayView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    /// A frame — a CGImage of the device's screen.
+    /// A frame — the device's IOSurface, or a CGImage of a screenshot.
     func show(_ contents: Any, size: CGSize) {
         let resized = size != natural
         natural = size
@@ -352,6 +367,27 @@ final class SimulatorDisplayView: NSView {
         if resized { place() }
     }
 
+    /// The device drew into the surface the layer already holds: show it
+    /// again. `setContentsChanged` is how a layer is told that — the API
+    /// CoreAnimation has had since surfaces were first put in layers — and
+    /// where it is missing, putting the surface back does the same for the
+    /// price of a little more work.
+    func refresh() {
+        guard content.contents != nil else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if content.responds(to: Self.contentsChanged) {
+            content.perform(Self.contentsChanged)
+        } else {
+            let contents = content.contents
+            content.contents = nil
+            content.contents = contents
+        }
+        CATransaction.commit()
+    }
+
+    private static let contentsChanged = Selector(("setContentsChanged"))
+
     func clear() {
         content.contents = nil
         natural = .zero
@@ -360,15 +396,109 @@ final class SimulatorDisplayView: NSView {
     override func layout() {
         super.layout()
         place()
-        // A tall pane deserves a tall frame: the device's screen is cut down
-        // to what this can show, measured in pixels.
+        // A tall pane deserves a tall frame: a polled screenshot is cut
+        // down to what this can show, measured in pixels.
         let scale = window?.backingScaleFactor ?? 2
         maxPixels?(max(320, Int(max(bounds.width, bounds.height) * scale)))
     }
 
+    // MARK: Touching it
+
+    /// Where a point in the pane lands on the device: a ratio from the
+    /// device's top left, or nil for a click beside the picture. Pure, so
+    /// the mapping is a test and not a thing to find out by tapping.
+    static func ratio(of point: CGPoint, in picture: CGRect, flipped: Bool) -> CGPoint? {
+        // Inclusive of the far edges, which `CGRect.contains` is not: the
+        // right-hand and top rows of pixels are the device's too.
+        guard picture.width > 0, picture.height > 0,
+            point.x >= picture.minX, point.x <= picture.maxX, point.y >= picture.minY, point.y <= picture.maxY
+        else { return nil }
+        let x = (point.x - picture.minX) / picture.width
+        let y = (point.y - picture.minY) / picture.height
+        return CGPoint(x: x, y: flipped ? y : 1 - y)
+    }
+
+    private func ratio(for event: NSEvent) -> CGPoint? {
+        Self.ratio(of: convert(event.locationInWindow, from: nil), in: content.frame, flipped: isFlipped)
+    }
+
+    override var acceptsFirstResponder: Bool { input?() != nil }
+
+    /// A click in the pane is a tap on the device, and takes the keyboard
+    /// so what you type next goes there too.
     override func mouseDown(with event: NSEvent) {
-        // Taps belong to Simulator.app: a double-click goes there.
-        if event.clickCount == 2 { onOpenSimulator?() }
+        if event.clickCount == 2 && input?() == nil {
+            onOpenSimulator?()
+            return
+        }
+        guard let input = input?(), let point = ratio(for: event) else { return }
+        window?.makeFirstResponder(self)
+        dragging = true
+        input.touchDown(at: point)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard dragging, let input = input?(), let point = ratio(for: event) else { return }
+        input.touchMoved(to: point)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard dragging, let input = input?() else { return }
+        dragging = false
+        // A finger lifted outside the picture still lifted: the last point
+        // inside it is where, so a swipe off the edge ends rather than
+        // sticking.
+        input.touchUp(at: ratio(for: event) ?? lastInside(event))
+    }
+
+    private func lastInside(_ event: NSEvent) -> CGPoint {
+        let point = convert(event.locationInWindow, from: nil)
+        let clamped = CGPoint(
+            x: min(max(point.x, content.frame.minX), content.frame.maxX),
+            y: min(max(point.y, content.frame.minY), content.frame.maxY))
+        return Self.ratio(of: clamped, in: content.frame, flipped: isFlipped) ?? CGPoint(x: 0.5, y: 0.5)
+    }
+
+    /// The wheel as a finger: iOS has no scroll, so a scroll here is a
+    /// swipe that begins, follows the wheel and ends when it stops.
+    override func scrollWheel(with event: NSEvent) {
+        guard let input = input?(), let point = ratio(for: event) else { return }
+        if !scrolling {
+            scrolling = true
+            scrollPoint = point
+            input.touchDown(at: point)
+        }
+        // The wheel's units are points of the pane; the device's screen is
+        // the picture's height.
+        scrollPoint.y -= event.scrollingDeltaY / max(content.frame.height, 1)
+        scrollPoint.x += event.scrollingDeltaX / max(content.frame.width, 1)
+        scrollPoint.y = min(max(scrollPoint.y, 0), 1)
+        scrollPoint.x = min(max(scrollPoint.x, 0), 1)
+        input.touchMoved(to: scrollPoint)
+        scrollEnd?.cancel()
+        let end = DispatchWorkItem { [weak self] in
+            guard let self, self.scrolling else { return }
+            self.scrolling = false
+            self.input?()?.touchUp(at: self.scrollPoint)
+        }
+        scrollEnd = end
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09, execute: end)
+    }
+
+    private var scrolling = false
+    private var scrollPoint = CGPoint(x: 0.5, y: 0.5)
+    private var scrollEnd: DispatchWorkItem?
+
+    // MARK: Typing into it
+
+    override func keyDown(with event: NSEvent) {
+        guard let input = input?() else { return super.keyDown(with: event) }
+        input.key(.down, code: event.keyCode)
+    }
+
+    override func keyUp(with event: NSEvent) {
+        guard let input = input?() else { return super.keyUp(with: event) }
+        input.key(.up, code: event.keyCode)
     }
 
     private func place() {

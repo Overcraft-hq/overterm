@@ -1323,7 +1323,15 @@ final class E2ERunner {
         let listed = await eventually(20) { !simulator.devices.isEmpty }
         if listed, let booted = simulator.devices.first(where: \.isBooted) {
             check("the picker is on the booted device", simulator.selected?.udid == booted.udid, simulator.selected?.label ?? "none")
-            check("…and its screen arrives", await eventually(25) { simulator.mirrorStatus == .showing }, "\(simulator.mirrorStatus)")
+            // Xcode's own frameworks make it live and touchable; without
+            // them the pane falls back to screenshots. Both are a picture.
+            let arrived = await eventually(25) { simulator.mirrorStatus == .live || simulator.mirrorStatus == .polling }
+            check("…and its screen arrives", arrived, "\(simulator.mirrorStatus)")
+            check("…live, over Xcode's own frameworks", simulator.mirrorStatus == .live, "\(simulator.mirrorStatus) — screenshots instead")
+            if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+                await pause(1.0)
+                app.captureWindow(to: png + "-simulator.png")
+            }
         } else {
             check("nothing booted: nothing is read", simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
         }

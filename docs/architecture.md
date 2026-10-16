@@ -871,30 +871,51 @@ the iOS simulator (`BrowserColumnController`; a sixth column would have
 cost every window the width and `OvertermColumns`' saved positions). Either
 button, pressed while the column already shows it, closes the column.
 
+It is the simulator, not a picture of one: the device's screen is live and
+clicks, drags, the wheel and the keyboard go to it.
+
+- **Xcode's own frameworks do it** (`SimulatorHost`). There is no public
+  API — `simctl` boots a device and takes screenshots, and that is all —
+  so, like every tool that puts a simulator in its own window (Radon IDE,
+  idb), Overterm loads `CoreSimulator` and this Mac's Xcode's
+  `SimulatorKit` at runtime and uses what Simulator.app uses. Nothing is
+  bundled, nothing is linked at build time (a missing class is a `nil`
+  here, not a launch failure), and every step is failable.
+- **The picture** is the device's own `IOSurface`
+  (`SimDisplayIOSurfaceRenderable.framebufferSurface`), put in a layer as
+  it is: no capture, no copy, no encoding, and no Screen Recording grant,
+  because nothing of the Mac's screen is read. CoreSimulator says when it
+  has drawn (`registerCallbackWithUUID:damageRectanglesCallback:`) and the
+  layer is told to look again (`setContentsChanged`); a rotation or resize
+  arrives as a new surface.
+- **The input** is SimulatorKit's own event builders —
+  `IndigoHIDMessageForMouseNSEvent` and
+  `IndigoHIDMessageForKeyboardArbitrary`, the C functions Simulator.app's
+  window calls when you click in it — carried to the device by
+  `SimDeviceLegacyHIDClient`. So the wire format is never written here,
+  only asked for. A click is a touch at a ratio of the screen (0…1 from
+  the top left, `SimulatorDisplayView.ratio`), a drag is down/moved/up, the
+  wheel is a swipe that ends when it stops, and `NSEvent.keyCode` is
+  already the code the keyboard builder wants.
+- **From Xcode 27** (CoreSimulator 1155.4) the guest drops this input for
+  the whole boot: the bytes arrive, correctly, and nothing happens (idb hit
+  it first). `SimulatorHost.suppressesLegacyInput` is that rule, compared
+  numerically, and the pane says so rather than leaving you tapping at a
+  picture.
+- **The fallback** is `simctl io <device> screenshot`: no Xcode frameworks
+  (or an Xcode that moved them) means a BMP three or four times a second,
+  cut down to the pane with ImageIO off the main thread — a picture, not a
+  simulator you can use, but never a blank pane. `SimulatorMirror` chooses,
+  and the pane says which it got.
 - **The devices** are `simctl list devices --json`, parsed by
   `SimulatorList` (booted first, then the newest runtime, a runtime's own
   devices together). The picker boots a device that is shut down — with
   `simctl boot`, not Simulator.app, which this pane does not need. `simctl`
   runs through `Git.run`: a GCD thread, never the main one.
-- **The picture** is `simctl io <device> screenshot`, the device's
-  framebuffer straight out of CoreSimulator (`SimulatorMirror`). Nothing of
-  the Mac's screen is captured, so there is no Screen Recording grant to ask
-  for and Simulator.app need not be running at all. The price is the frame
-  rate: a shot is 0.25 s as a BMP against 0.62 s as a PNG — `simctl` spends
-  most of a PNG encoding it, and the pixels are thrown away here anyway —
-  so three or four frames a second, and the pane says "waiting" until the
-  first one lands.
-- A phone's framebuffer is 1206 × 2622. ImageIO cuts each frame down to
-  what the pane can show (40 ms, off the main thread) before it reaches the
-  layer, so the 12 MB never goes near the window server. The pane's own size
-  in pixels is what it is cut to, re-read on every layout.
-- **Looking, not touching**: a frame is a picture, and nothing types into
-  it. Taps belong to Simulator.app, which the toolbar's ↗ and a double-click
-  on the picture bring forward.
-- **Only while it shows**: the reading starts when the column is opened on
-  the simulator and stops when the column is collapsed or the browser takes
-  it back — the rule the inbox and the usage pane keep. The device list is
-  re-read every 3 s while it is up, so a simulator booted elsewhere appears.
+- **Only while it shows**: the surface and its callbacks go when the column
+  is collapsed or the browser takes it back — the rule the inbox and the
+  usage pane keep. The device list is re-read every 3 s while it is up, so
+  a simulator booted elsewhere appears.
 
 ## Opening files in another app
 
