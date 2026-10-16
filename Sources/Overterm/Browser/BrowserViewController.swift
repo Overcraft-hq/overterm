@@ -424,7 +424,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
     /// Safari's Web Inspector for the page: the private hook WebKit's own
     /// right-click "Inspect Element" uses; without it, that right-click is
     /// the way in.
-    @objc private func showInspector() {
+    @objc func showInspector() {
         guard let web = session?.webView else { return }
         let selector = NSSelectorFromString("_inspector")
         if web.responds(to: selector), let inspector = web.perform(selector)?.takeUnretainedValue() as? NSObject {

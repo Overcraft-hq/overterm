@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.9.1 — 2026-10-16
+
+- browser: the hammer opens the Web Inspector
+
 ## 2.9.0 — 2026-10-16
 
 - browser: a browser beside the terminal — per tab, with its own tabs, the page's console, and an MCP server for agents

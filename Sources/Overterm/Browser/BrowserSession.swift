@@ -46,6 +46,12 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         let configuration = given ?? WKWebViewConfiguration()
         if given == nil { configuration.websiteDataStore = Self.dataStore }
         configuration.preferences.isElementFullscreenEnabled = true
+        // The hammer opens the Web Inspector through WebKit's own
+        // `_inspector`, which does nothing at all until developer extras
+        // are on: `isInspectable` below only buys the right-click Inspect
+        // Element. Measured — with this, `show` connects and the inspector
+        // comes up; without it even `connect` is ignored.
+        configuration.preferences.setValue(true, forKey: "developerExtrasEnabled")
         // A page of its own's console: a fresh controller even for a popup,
         // whose configuration carries its opener's.
         let controller = WKUserContentController()

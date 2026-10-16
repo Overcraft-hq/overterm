@@ -518,6 +518,23 @@ final class E2ERunner {
         guard let workspace = app.browserWorkspaces[tab.id], let session = workspace.active else { return check("the tab has a browser", false) }
         check("it loads the page", await eventually(5) { session.url?.lastPathComponent == "page.html" && !session.isLoading && session.title == "Demo" })
         check("…and hears its console", await eventually(3) { session.errorCount >= 1 && session.console.contains { $0.message.contains("boom on load") } })
+
+        // The hammer: WebKit's own Web Inspector. It opens through a
+        // private hook that does nothing at all unless developer extras
+        // are switched on in the configuration — the button looked dead
+        // for exactly that reason, and nothing here would have said so.
+        app.browser?.showInspector()
+        check(
+            "the hammer opens the Web Inspector",
+            await eventually(5) { (session.webView.value(forKey: "_isBeingInspected") as? Bool) == true },
+            "\(session.webView.value(forKey: "_isBeingInspected") as Any)")
+        // Shut again: an inspector window left open would sit over
+        // everything the rest of this scenario does.
+        if let inspector = session.webView.perform(NSSelectorFromString("_inspector"))?.takeUnretainedValue() as? NSObject,
+            inspector.responds(to: NSSelectorFromString("close"))
+        {
+            inspector.perform(NSSelectorFromString("close"))
+        }
         check("the address bar shows it", app.browser?.address.stringValue.hasSuffix("page.html") == true)
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             app.browser?.toggleConsole()
