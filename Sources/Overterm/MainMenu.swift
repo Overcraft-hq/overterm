@@ -99,6 +99,8 @@ enum MainMenu {
         command(viewMenu, "Toggle Sidebar", #selector(TerminalWindowController.toggleFileTree(_:)), "sidebar.toggle")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
+        // Ticked while the column shows; off with Settings ▸ Browser.
+        command(viewMenu, "Browser", #selector(TerminalWindowController.toggleBrowser(_:)), "browser.toggle")
         viewMenu.addItem(withTitle: "Pull Request", action: #selector(TerminalWindowController.showPullRequest(_:)), keyEquivalent: "")
         command(viewMenu, "Usage", #selector(TerminalWindowController.showUsage(_:)), "usage.show")
         // Ghostty's own defaults, so they also work while the editor has the keyboard.

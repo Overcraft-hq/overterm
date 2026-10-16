@@ -124,7 +124,7 @@ struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
-    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + notifications + updates
+    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -318,6 +318,28 @@ enum SettingsSchema {
         SettingSpec(
             key: "editor.relativeLineNumbers", section: .editor, group: "Vim", title: "Relative line numbers", kind: .toggle,
             defaultValue: .bool(false)),
+    ]
+
+    private static let browser: [SettingSpec] = [
+        SettingSpec(
+            key: "browser.enabled", section: .browser, group: "Browser", title: "A browser beside the terminal",
+            help: "Each tab has its own — the page its dev server serves, say. Off: no browser column, and links open in your own browser.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "browser.openLinks", section: .browser, group: "Browser", title: "Links clicked in the terminal open",
+            kind: .choice([
+                .init(value: "local", label: "Here when they are on this machine (localhost), else in your browser"),
+                .init(value: "all", label: "Here, always"), .init(value: "none", label: "In your browser, always"),
+            ]), defaultValue: .string("local"), requires: "browser.enabled"),
+        SettingSpec(
+            key: "browser.reloadOnSave", section: .browser, group: "Browser", title: "Reload the page when a file is saved",
+            help: "For a server without hot reload: a save in the editor, or an agent's edit in the checkout.", kind: .toggle,
+            defaultValue: .bool(false), requires: "browser.enabled"),
+        SettingSpec(
+            key: "browser.agentControl", section: .browser, group: "Agents", title: "Agents can use the browser",
+            help:
+                "Claude Code started from Overterm gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
+            kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

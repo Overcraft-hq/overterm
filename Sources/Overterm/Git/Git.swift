@@ -61,18 +61,31 @@ enum Git {
         let running = RunningProcess()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                queue.addOperation {
-                    continuation.resume(
-                        with: Result {
-                            try runBlocking(
-                                tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit,
-                                running: running)
-                        })
-                }
+                enqueue(tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit, running: running, continuation)
             }
         } onCancel: {
             running.cancel()
         }
+    }
+
+    /// The operation is a plain `@Sendable () -> Void`, spelled out: left to
+    /// inference, the block given to `addOperation` was typed `@MainActor`
+    /// (its mangled name says so), and running it on the Git queue failed
+    /// the main-actor check. Swift's lenient mode had let that pass; once
+    /// WebKit was loaded (the browser), the check was enforced and every git
+    /// call killed the app (dispatch_assert_queue — CLAUDE.md).
+    private nonisolated static func enqueue(
+        _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>, timeout: TimeInterval?, outputLimit: Int?,
+        running: RunningProcess, _ continuation: CheckedContinuation<String, Error>
+    ) {
+        let work: @Sendable () -> Void = {
+            continuation.resume(
+                with: Result {
+                    try runBlocking(
+                        tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit, running: running)
+                })
+        }
+        queue.addOperation(work)
     }
 
     /// Foundation raises an Objective-C exception — the app dies — launching

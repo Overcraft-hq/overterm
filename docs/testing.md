@@ -72,7 +72,8 @@ Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
 `marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
 `openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`, `askAgent`,
-`dropSplit`, `settings`, `themes`, `fileActions` (the file tree's New File…, Rename…,
+`dropSplit`, `settings`, `themes`, `browser` (the browser column, its tabs, a page's console,
+and the MCP server over real HTTP as an agent would use it), `fileActions` (the file tree's New File…, Rename…,
 Move to Trash…, through their sheets), `editorZed` (the editor as Zed's: zoom, tabs,
 tree-sitter, editing commands, pickers, vim, and a language server —
 `Tests/OvertermTests/Fixtures/fake-lsp.py`, through `LanguageServers.discoveryOverride`).
