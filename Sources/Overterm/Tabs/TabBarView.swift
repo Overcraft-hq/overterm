@@ -14,6 +14,8 @@ struct TabBarActions {
     var toggleDiff: () -> Void
     /// The PR chip: the right pane on the checkout's pull request.
     var showPullRequest: () -> Void
+    /// The gauge: the right pane on what the agents have spent.
+    var showUsage: () -> Void
     /// The update chip: Settings ▸ About.
     var showUpdate: () -> Void
     /// The Settings tab: show it, close it.
@@ -43,6 +45,7 @@ struct TabBarView: View {
     @ObservedObject var worktrees: WorktreeModel
     /// A newer release, as a chip.
     @ObservedObject var updates: UpdateChecker
+    @ObservedObject var usage: UsageModel
     @ObservedObject var theme: ChromeTheme
     /// The globe beside the ± badge.
     @ObservedObject var browser: BrowserButtonState
@@ -61,6 +64,45 @@ struct TabBarView: View {
     var body: some View {
         HStack(spacing: 0) {
             Color.clear.frame(width: leadingInset)
+            // The tabs scroll in what is left over. Laid out plainly, a
+            // strip of eight tabs is wider than the window and SwiftUI
+            // overflows it both ways: tabs ended up under the traffic
+            // lights and the chips at the right were pushed off the edge.
+            ScrollView(.horizontal) {
+                tabs
+            }
+            .scrollIndicators(.hidden)
+            // No ground of its own: the strip's colour shows through, and
+            // the empty space to the right of the tabs still drags the
+            // window as the title bar should.
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            chips
+        }
+        .padding(.trailing, 8)
+        .frame(maxHeight: .infinity)
+        // The drag area in front of the colour, not behind it: a later
+        // `.background` goes further back, and a Color takes the clicks of
+        // anything under it — the title bar stopped dragging, and
+        // double-clicking it stopped zooming the window.
+        .background(WindowDragArea())
+        // The strip is a panel like the sidebar, and reads as one: the
+        // title bar would otherwise be the window's own ground, a step
+        // darker than every panel under it.
+        .background(theme.card)
+        .coordinateSpace(name: TabFramesKey.space)
+        .onPreferenceChange(TabFramesKey.self) { frames in
+            MainActor.assumeIsolated { store.tabFrames = frames }
+        }
+        .onPreferenceChange(GroupChipFramesKey.self) { frames in
+            MainActor.assumeIsolated { store.groupChipFrames = frames }
+        }
+    }
+
+    /// The tabs themselves, as wide as they want to be; the scroll view
+    /// around them decides what is on screen.
+    private var tabs: some View {
+        HStack(spacing: 0) {
             ForEach(Array(store.focusedStrip.enumerated()), id: \.offset) { _, item in
                 switch item {
                 case .loose(let tab):
@@ -74,6 +116,14 @@ struct TabBarView: View {
             if store.settingsOpen {
                 SettingsTabItem(selected: store.settingsShowing, theme: theme, select: actions.showSettings, close: actions.closeSettings)
             }
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    /// What sits at the right end, whatever the tabs do: these keep their
+    /// width and the tabs scroll behind them.
+    private var chips: some View {
+        HStack(spacing: 0) {
             // Click: a plain tab. The arrow: an agent tab.
             Menu {
                 Button("New Tab") { actions.newTab() }
@@ -99,7 +149,6 @@ struct TabBarView: View {
             .foregroundStyle(theme.dimText)
             .help("New Tab (⌘T) — arrow for Claude / Codex")
             .padding(.leading, 6)
-            Spacer(minLength: 0)
             if let release = updates.available {
                 Button(action: actions.showUpdate) {
                     Label("Update \(release.version)", systemImage: "arrow.down.circle.fill")
@@ -128,22 +177,12 @@ struct TabBarView: View {
             }
             if let badge = diff.badge {
                 DiffBadge(badge: badge, theme: theme, action: actions.toggleDiff)
+                    .padding(.trailing, 6)
             }
+            UsageChip(model: usage, theme: theme, action: actions.showUsage)
         }
-        .padding(.trailing, 8)
+        .fixedSize()
         .frame(maxHeight: .infinity)
-        // The strip is a panel like the sidebar, and reads as one: the
-        // title bar would otherwise be the window's own ground, a step
-        // darker than every panel under it.
-        .background(theme.card)
-        .background(WindowDragArea())
-        .coordinateSpace(name: TabFramesKey.space)
-        .onPreferenceChange(TabFramesKey.self) { frames in
-            MainActor.assumeIsolated { store.tabFrames = frames }
-        }
-        .onPreferenceChange(GroupChipFramesKey.self) { frames in
-            MainActor.assumeIsolated { store.groupChipFrames = frames }
-        }
     }
 }
 

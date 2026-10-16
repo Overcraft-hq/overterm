@@ -4,14 +4,15 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest
+        case changes, pullRequest, usage
     }
 
     @Published var mode: Mode = .changes
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
-/// branch's), or its pull request — a switch at the top chooses.
+/// branch's), its pull request, or what the agents have spent — a switch
+/// at the top chooses.
 struct RightPaneView: View {
     @ObservedObject var pane: RightPane
     @ObservedObject var diff: DiffModel
@@ -19,6 +20,7 @@ struct RightPaneView: View {
     @ObservedObject var theme: ChromeTheme
     let changes: DiffPanelView
     let pullRequest: PullRequestView
+    let usage: UsageView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -48,6 +50,12 @@ struct RightPaneView: View {
                         CIGlyph(overall: pr.checks.overall).font(.system(size: 9))
                     }
                 }
+                tab(.usage) {
+                    Text("Usage")
+                    if let meter = usage.model.chipMeter()?.meter {
+                        Text(verbatim: meter.reading()).foregroundStyle(theme.dimText)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -55,6 +63,7 @@ struct RightPaneView: View {
             switch pane.mode {
             case .changes: changes
             case .pullRequest: pullRequest
+            case .usage: usage
             }
         }
         .background(theme.strip)

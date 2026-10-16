@@ -84,6 +84,7 @@ final class E2ETests: XCTestCase {
     func testSessions() throws { try run("sessions") }
     func testSettings() throws { try run("settings") }
     func testThemes() throws { try run("themes") }
+    func testUsage() throws { try run("usage") }
     func testUpdates() throws { try run("updates") }
     func testPerformance() throws { try run("performance") }
     func testBigFiles() throws { try run("bigFiles") }

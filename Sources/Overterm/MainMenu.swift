@@ -102,6 +102,7 @@ enum MainMenu {
         // Ticked while the column shows; off with Settings ▸ Browser.
         command(viewMenu, "Browser", #selector(TerminalWindowController.toggleBrowser(_:)), "browser.toggle")
         viewMenu.addItem(withTitle: "Pull Request", action: #selector(TerminalWindowController.showPullRequest(_:)), keyEquivalent: "")
+        command(viewMenu, "Usage", #selector(TerminalWindowController.showUsage(_:)), "usage.show")
         // Ghostty's own defaults, so they also work while the editor has the keyboard.
         viewMenu.addItem(.separator())
         command(viewMenu, "Split Right", #selector(TerminalWindowController.splitRight(_:)), "splits.right")

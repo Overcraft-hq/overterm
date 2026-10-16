@@ -114,6 +114,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let askAgent = AskAgentModel()
     private var selectionBar: NSHostingView<SelectionBar>?
 
+    /// What the agents have spent and what is left of their quotas, in the
+    /// right pane and on the strip's gauge.
+    let usage = UsageModel()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -203,6 +206,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 diff: diff,
                 worktrees: worktrees,
                 updates: .shared,
+                usage: usage,
                 theme: theme,
                 browser: browserButton,
                 leadingInset: 78,
@@ -219,6 +223,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTask: { [weak self] in self?.newTask(nil) },
                     toggleDiff: { [weak self] in self?.toggleDiffFromBadge() },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
+                    showUsage: { [weak self] in self?.showUsage(nil) },
                     showUpdate: { [weak self] in self?.openSettings(.about) },
                     showSettings: { [weak self] in self?.showSettingsPage() },
                     closeSettings: { [weak self] in self?.closeSettings() },
@@ -435,7 +440,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     onOpenFile: { [weak self] path, line in
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path), line: line)
-                    })))
+                    }),
+                usage: UsageView(
+                    model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -452,6 +459,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.onResize = { [weak self] in
             guard let self, let item = self.diffItem, !item.isCollapsed, !self.diff.panelVisible else { return }
             self.diff.panelVisible = true
+            // Dragged open on the usage or the pull request: that model has
+            // to be told it is showing, or the pane stays blank.
+            self.updateRightPaneVisibility()
         }
         watchPullRequests()
 
@@ -519,11 +529,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tabBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             tabBar.heightAnchor.constraint(equalToConstant: TabStripHostingView<AnyView>.height),
-            // The cards sit flush under the strip and 10 pt in from the
-            // window's other three edges — the gap they leave between
-            // themselves. Sideways each card already keeps half of it, so
-            // the window only owes the other half.
-            body.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            // The cards keep the same 10 pt from the window on all four
+            // sides as they keep from each other — under the strip too,
+            // which is a panel of its own now and would otherwise run
+            // straight into the terminal. Sideways each card already keeps
+            // half of it, so the window only owes the other half.
+            body.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: CardColumn.gap),
             body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: CardColumn.gap / 2),
             body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -CardColumn.gap / 2),
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
@@ -2975,7 +2986,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         diff.panelVisible = show
         diffItem.animator().isCollapsed = !show
         AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
-        updatePullRequestVisibility()
+        updateRightPaneVisibility()
         if !show { focusSelectedTerminal() }
     }
 
@@ -2995,7 +3006,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func showPullRequest(_ sender: Any?) {
         rightPane.mode = .pullRequest
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
-        updatePullRequestVisibility()
+        updateRightPaneVisibility()
+    }
+
+    /// The right pane, on what the agents have spent (⌥⌘U, the gauge in
+    /// the strip, View ▸ Usage).
+    @objc func showUsage(_ sender: Any?) {
+        rightPane.mode = .usage
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
     }
 
     // MARK: Pull requests
@@ -3008,8 +3027,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             .sink { [weak self] root, branch in self?.pullRequest.show(root: root, branch: branch) }
             .store(in: &cancellables)
         rightPane.$mode
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.updatePullRequestVisibility() } }
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateRightPaneVisibility() } }
             .store(in: &cancellables)
+        // The gauge in the strip wants the agents' limits whether or not
+        // the pane is open; the walk over their logs waits for the pane.
+        usage.start()
         pullRequestPoll = Timer.scheduledTimer(withTimeInterval: WorktreeModel.pullRequestMaxAge, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, NSApp.isActive || AppEnvironment.isIsolated else { return }
@@ -3018,8 +3040,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func updatePullRequestVisibility() {
-        pullRequest.visible = diffItem?.isCollapsed == false && rightPane.mode == .pullRequest
+    /// Which of the right pane's three is actually on screen. Each model
+    /// reads only while it is: the pull request asks `gh`, usage walks the
+    /// agents' logs.
+    private func updateRightPaneVisibility() {
+        let shown = diffItem?.isCollapsed == false
+        pullRequest.visible = shown && rightPane.mode == .pullRequest
+        usage.visible = shown && rightPane.mode == .usage
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -3086,6 +3113,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         peek.close()
         saveFinalSession()
         agentPoll?.invalidate()
+        usage.stop()
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
