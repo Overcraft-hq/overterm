@@ -28,6 +28,8 @@ libghostty's own threads and git calls.
   The gap was the divider first — one number, and a grab area for free — but **a divider is measured even for a collapsed item**: with the editor, the changes pane and the inbox all shut, 30 pt of window went dead down the right-hand side, and a shut column *between* two open ones doubled the gap there. A card's own margin is only spent when the card is on screen. The `layout` E2E scenario measures both.
 - A card's top reaches into the title bar, which is taller than the strip. So it refuses to drag the window and zeroes the safe-area inset SwiftUI would otherwise add, and is otherwise transparent to what it wraps — flipped, and it hands on a context menu it does not have.
 - One split (`split`, vertical, autosave `OvertermColumns.v4`): sidebar | terminal | editor | inbox | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
+- **The right of the window is one slot** (`RightSlot`, `TerminalWindowController+Browser`): the browser column (the simulator with it) and the pane the changes, the pull request and the usage share. Opening one takes the slot from the other and remembers it (`displacedSlot`); closing it gives the slot back. Open together, the browser sat between the terminal and the pane with all four columns too narrow to work in. A pane that only stepped aside is not a choice to close it — `setRightPaneShown(_:remember:)` writes the "changes pane is open" default for your own ⌥⌘D, not for the browser's.
+- **The strip's empty space is the drag area, whatever is over it** (`TabStripHostingView.hitTest`). It is the title bar: it has to move the window, and zoom it when double-clicked. The tabs scroll, and the scroll view's clip view answered for the space beside them — `mouseDownCanMoveWindow` moves the window, but AppKit zooms no window for a background drag, so double-clicking the title bar quietly stopped zooming. Such an answer is handed to `WindowDragView`, which does both. The `layout` scenario checks the view that answers, in three places along the strip, and that that view zooms: "something draggable is under there" passed through the whole regression.
 - The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
 - Every terminal pane carries a **38 pt header** (`PaneHeaderView`): what is running there, its island, its status, its ports, and split / split / zoom / close. The terminal gives up the room, not the pane's share of the tab. The host frames it; the window supplies it (`SplitHostView.makeHeader`), because what goes in it needs the tab and the window's actions.
 - Colours come from `ChromeTheme`, one object per window built from libghostty's background and foreground and held by every SwiftUI root. Three grounds a step apart — `win` (between the cards), `card` (a panel), `term` (the terminal) — then text in three weights, fills, and the status colours. A theme picked in Settings ▸ Themes reloads the config, and `TerminalWindowController.applyTerminalColors` recomputes the object: the views observe it, and the layers nobody binds (the window's background, the cards' fills, the pane dividers) are repainted by hand.
@@ -908,8 +910,12 @@ clicks, drags, the wheel and the keyboard go to it.
 - **From Xcode 27** (CoreSimulator 1155.4) the guest drops this input for
   the whole boot: the bytes arrive, correctly, and nothing happens (idb hit
   it first). `SimulatorHost.suppressesLegacyInput` is that rule, compared
-  numerically, and the pane says so rather than leaving you tapping at a
-  picture.
+  numerically. Whether the device takes anything at all is one answer,
+  `SimulatorViewController.takesInput` — this Xcode builds the events and
+  its CoreSimulator still carries them — and the Home button, the cursor
+  and the note that offers Simulator.app all follow it, rather than
+  leaving you tapping at a picture. A live picture is not the same thing:
+  the screen can arrive from a device that refuses the HID client.
 - **The fallback** is `simctl io <device> screenshot`: no Xcode frameworks
   (or an Xcode that moved them) means a BMP three or four times a second,
   cut down to the pane with ImageIO off the main thread — a picture, not a

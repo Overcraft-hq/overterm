@@ -6,6 +6,16 @@ enum ZoomedColumn: Equatable {
     case editor, browser
 }
 
+/// The two things that open on the right of the window: the browser column
+/// (the simulator with it) and the pane the changes, the pull request and
+/// the usage share. They are one slot — open together they pushed the
+/// browser into the middle of the window and left all four columns too
+/// narrow to work in — so one opening closes the other, and closing it
+/// gives the slot back.
+enum RightSlot: Equatable {
+    case browser, pane
+}
+
 /// The browser column: each terminal tab's own browser (its pages), shown
 /// while that tab is selected; links and ports routed into it; agents
 /// given it (BrowserBridge).
@@ -100,6 +110,7 @@ extension TerminalWindowController {
 
     private func showBrowserColumn() {
         guard let browserItem else { return }
+        takeRightSlot(.browser)
         if browserItem.isCollapsed { browserItem.animator().isCollapsed = false }
         browserButton.isOpen = true
         browserButton.isSimulator = browserColumn?.mode == .simulator
@@ -109,12 +120,43 @@ extension TerminalWindowController {
     }
 
     func closeBrowser() {
+        hideBrowserColumn()
+        focusSelectedTerminal()
+        restoreRightSlot(after: .browser)
+    }
+
+    /// The column goes, without saying what takes its place.
+    private func hideBrowserColumn() {
         if zoomedColumn == .browser { setZoomed(nil) }
         browserItem?.animator().isCollapsed = true
         browserButton.isOpen = false
         browserButton.isSimulator = false
         browserColumn?.setColumnOpen(false)
-        focusSelectedTerminal()
+    }
+
+    /// Clears the right-hand slot for `slot`, remembering who had it.
+    func takeRightSlot(_ slot: RightSlot) {
+        switch slot {
+        case .browser:
+            guard diffItem?.isCollapsed == false else { return }
+            setRightPaneShown(false, remember: false)
+            displacedSlot = .pane
+        case .pane:
+            guard browserItem?.isCollapsed == false else { return }
+            hideBrowserColumn()
+            displacedSlot = .browser
+        }
+    }
+
+    /// `slot` has closed: what it took the slot from comes back.
+    func restoreRightSlot(after slot: RightSlot) {
+        let displaced = displacedSlot
+        displacedSlot = nil
+        switch (slot, displaced) {
+        case (.browser, .pane): setRightPaneShown(true, remember: false)
+        case (.pane, .browser): showBrowserColumn()
+        default: break
+        }
     }
 
     /// Opens `url` in `tab`'s browser — in the page showing, or a new one —

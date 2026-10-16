@@ -103,6 +103,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let browserButton = BrowserButtonState()
     /// Which column fills the window, and how the others were.
     private var columnZoom: (column: ZoomedColumn, restore: [(item: NSSplitViewItem, collapsed: Bool)])?
+    /// Which of the two right-hand panes gave up the slot to the other, so
+    /// it comes back when that one closes (`RightSlot`).
+    var displacedSlot: RightSlot?
     /// While the editor is zoomed: each other column's state before it.
     private(set) var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
@@ -2989,12 +2992,26 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func toggleDiff(_ sender: Any?) {
         guard let diffItem else { return }
         let show = diffItem.isCollapsed
+        // The right-hand slot is one place: the browser steps aside for it
+        // (RightSlot), and gets the slot back when the pane closes.
+        if show { takeRightSlot(.pane) }
+        setRightPaneShown(show, remember: true)
+        if !show {
+            focusSelectedTerminal()
+            restoreRightSlot(after: .pane)
+        }
+    }
+
+    /// Opens or closes the right-hand pane itself. `remember` is for a
+    /// choice of yours, which the next launch keeps; giving the slot to the
+    /// browser is not one.
+    func setRightPaneShown(_ show: Bool, remember: Bool) {
+        guard let diffItem else { return }
         // First: closing, the content goes before the pane animates shut.
         diff.panelVisible = show
         diffItem.animator().isCollapsed = !show
-        AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
+        if remember { AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey) }
         updateRightPaneVisibility()
-        if !show { focusSelectedTerminal() }
     }
 
     /// The ± badge in the title bar: opens the changes pane on what the

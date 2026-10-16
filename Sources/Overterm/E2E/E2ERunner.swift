@@ -621,6 +621,34 @@ final class E2ERunner {
         app.setZoomed(nil)
         check("…and give it back", app.zoomedColumn == nil && app.terminalColumn?.isCollapsed == false)
 
+        // The right of the window is one slot (RightSlot): the browser and
+        // the pane the changes, the pull request and the usage share take
+        // turns in it. Open together, the browser sat in the middle of the
+        // window and every column was too narrow to work in.
+        app.toggleDiff(nil)
+        check(
+            "the changes pane takes the browser's place",
+            await eventually(2) { self.app.diffItem?.isCollapsed == false && self.app.browserItem?.isCollapsed == true },
+            "diff \(app.diffItem?.isCollapsed as Any), browser \(app.browserItem?.isCollapsed as Any)")
+        check("…and the title bar's globe goes out with it", !app.browserButton.isOpen)
+        app.showUsage(nil)
+        check(
+            "usage opens in that same slot", app.rightPane.mode == .usage && app.browserItem?.isCollapsed == true,
+            "\(app.rightPane.mode)")
+        app.toggleBrowser(nil)
+        check(
+            "the globe takes the slot back",
+            await eventually(2) { self.app.browserItem?.isCollapsed == false && self.app.diffItem?.isCollapsed == true }
+                && app.browserButton.isOpen)
+        app.toggleDiff(nil)
+        check(
+            "…and the pane takes it again",
+            await eventually(2) { self.app.diffItem?.isCollapsed == false && self.app.browserItem?.isCollapsed == true })
+        app.toggleDiff(nil)
+        check(
+            "closing the pane gives the browser back what it took",
+            await eventually(2) { self.app.browserItem?.isCollapsed == false && self.app.diffItem?.isCollapsed == true })
+
         // Off in Settings: no column, no pages, links go to your browser.
         Settings.shared.set("browser.enabled", .bool(false))
         check("Settings can turn it off", await eventually(2) { self.app.browserItem?.isCollapsed == true && self.app.browserWorkspaces.isEmpty })
@@ -1281,25 +1309,37 @@ final class E2ERunner {
 
         // The strip fills the title bar and has to behave like one: its
         // empty space drags the window and a double-click there zooms it.
-        // Both have been lost twice — once to a colour painted in front of
-        // the drag area, once to the scroll view the tabs now live in —
-        // so this checks the space itself, whatever is on top of it.
-        let inStrip = NSPoint(x: window.frame.width * 0.55, y: lights.midY)
-        let onTop = window.contentView?.superview?.hitTest(inStrip)
-        check(
-            "the strip's empty space moves the window",
-            onTop is WindowDragView || onTop?.mouseDownCanMoveWindow == true, "\(String(describing: onTop))")
-        if let dragged = Self.find(WindowDragView.self, in: window.contentView) { _ in true },
+        // Both have been lost three times — to a colour painted in front
+        // of the drag area, to the scroll view the tabs now live in, and
+        // to that scroll view again. The second half is the one that hides:
+        // the clip view moves the window on a drag, so "something
+        // draggable answers" passed while double-clicking did nothing —
+        // AppKit zooms no window for a background drag. So: the view that
+        // answers for the empty strip must be the drag area itself, in
+        // several places along it, and that view must zoom the window.
+        // (The click can't be sent at the window here — the run is never
+        // activated, and AppKit holds a mouse-down for an inactive app.)
+        var dragArea: WindowDragView?
+        for fraction in [0.35, 0.55, 0.75] {
+            let point = NSPoint(x: window.frame.width * fraction, y: lights.midY)
+            let onTop = window.contentView?.superview?.hitTest(point)
+            dragArea = dragArea ?? onTop as? WindowDragView
+            check(
+                "the strip's empty space \(Int(fraction * 100))% along moves the window and zooms it", onTop is WindowDragView,
+                "\(String(describing: onTop)) — canMove=\(onTop?.mouseDownCanMoveWindow ?? false)")
+        }
+        if let dragged = dragArea,
             let doubleClick = NSEvent.mouseEvent(
-                with: .leftMouseDown, location: inStrip, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1)
+                with: .leftMouseDown, location: NSPoint(x: window.frame.width * 0.55, y: lights.midY), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                clickCount: 2, pressure: 1)
         {
             let zoomed = window.isZoomed
             dragged.mouseDown(with: doubleClick)
             check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
             if window.isZoomed != zoomed { window.performZoom(nil) }
         } else {
-            check("the strip has a drag area at all", false)
+            check("the strip's empty space is the drag area at all", false)
         }
     }
 
@@ -1334,13 +1374,18 @@ final class E2ERunner {
             let arrived = await eventually(25) { simulator.mirrorStatus == .live || simulator.mirrorStatus == .polling }
             check("…and its screen arrives", arrived, "\(simulator.mirrorStatus)")
             check("…live, over Xcode's own frameworks", simulator.mirrorStatus == .live, "\(simulator.mirrorStatus) — screenshots instead")
-            // The device's own Home button, pressed the way a person does.
+            // The device's own Home button, pressed the way a person does
+            // — live when the device takes input, and grey when it doesn't
+            // (an Xcode that drops the taps, or a guest that refuses the
+            // HID client), which is not the same thing as a live picture.
+            note("takes input: \(simulator.takesInput), CoreSimulator \(SimulatorHost.coreSimulatorVersion ?? "?")")
             let home = Self.find(NSButton.self, in: app.window?.contentView) { $0.identifier?.rawValue == "simulatorHome" }
             if let home {
                 check(
-                    "the pane has a Home button, live for a live device", home.isEnabled == (simulator.mirrorStatus == .live),
-                    "enabled: \(home.isEnabled), \(simulator.mirrorStatus)")
-                home.performClick(nil)
+                    "the pane's Home button is live exactly when the device takes input",
+                    await eventually(3) { home.isEnabled == simulator.takesInput },
+                    "enabled: \(home.isEnabled), takes input: \(simulator.takesInput)")
+                if simulator.takesInput { home.performClick(nil) }
             } else {
                 check("the pane has a Home button", false)
             }

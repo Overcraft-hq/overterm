@@ -33,6 +33,11 @@ final class SimulatorViewController: NSViewController {
     private(set) var isActive = false
     /// Where the picture is coming from — the E2E scenario reads it.
     var mirrorStatus: SimulatorMirror.Status { mirror.status }
+    /// Whether the device is taking what is done to the picture: this
+    /// Xcode builds the events (`SimulatorInput`) and its CoreSimulator
+    /// still carries them to the guest. The Home button and the cursor
+    /// follow this, and so does the note that says why there are no taps.
+    var takesInput: Bool { mirror.input?.hasButtons == true && SimulatorHost.acceptsInput }
     private var observers: Set<AnyCancellable> = []
     private var poll: Timer?
 
@@ -284,7 +289,7 @@ final class SimulatorViewController: NSViewController {
         case .live:
             // Live, but a guest that drops the taps would leave you
             // clicking at a picture and wondering.
-            note(SimulatorHost.acceptsInput ? nil : "This Xcode's simulator ignores taps from other apps.", action: nil)
+            note(takesInput ? nil : "This simulator ignores taps from other apps.", action: takesInput ? nil : "Open Simulator")
         case .polling:
             note("Xcode's simulator frameworks aren't here: a screenshot every half second, and no taps.", action: "Open Simulator")
         case .waiting:
@@ -292,7 +297,7 @@ final class SimulatorViewController: NSViewController {
         }
         // Home is the device's own button: there to press while the
         // simulator is taking input, grey while it is a picture.
-        homeButton.isEnabled = mirror.input?.hasButtons == true && SimulatorHost.acceptsInput
+        homeButton.isEnabled = takesInput
         view.window?.invalidateCursorRects(for: display)
     }
 
