@@ -95,6 +95,28 @@ final class SimulatorTests: XCTestCase {
         XCTAssertNil(SimulatorDisplayView.ratio(of: CGPoint(x: 150, y: 220), in: .zero, flipped: false), "no picture yet")
     }
 
+    /// The device in the pane: its screen centred with its own
+    /// proportions, a body around it, and corners as round as the device's
+    /// — a phone's, not an iPad's.
+    @MainActor
+    func testTheDeviceIsLaidOutWithItsBody() throws {
+        let pane = CGRect(x: 0, y: 0, width: 420, height: 900)
+        let phone = try XCTUnwrap(SimulatorDisplayView.layout(natural: CGSize(width: 1206, height: 2622), in: pane))
+        XCTAssertEqual(phone.screen.midX, pane.midX, accuracy: 1, "centred")
+        XCTAssertEqual(phone.screen.midY, pane.midY, accuracy: 1)
+        XCTAssertEqual(phone.screen.width / phone.screen.height, 1206.0 / 2622.0, accuracy: 0.01, "the device's proportions")
+        XCTAssertTrue(phone.body.contains(phone.screen), "the body is around the screen")
+        XCTAssertTrue(pane.contains(phone.body), "and the body is in the pane")
+        XCTAssertEqual(phone.radius / phone.screen.width, 0.135, accuracy: 0.01, "a phone's corners")
+
+        let pad = try XCTUnwrap(SimulatorDisplayView.layout(natural: CGSize(width: 1640, height: 2360), in: pane))
+        XCTAssertEqual(pad.radius / pad.screen.width, 0.045, accuracy: 0.01, "an iPad's barely")
+        XCTAssertNil(SimulatorDisplayView.layout(natural: .zero, in: pane), "nothing to lay out yet")
+        XCTAssertNil(
+            SimulatorDisplayView.layout(natural: CGSize(width: 1206, height: 2622), in: CGRect(x: 0, y: 0, width: 10, height: 10)),
+            "a pane too small for a body")
+    }
+
     private func makePNG(width: Int, height: Int) -> Data? {
         guard
             let context = CGContext(

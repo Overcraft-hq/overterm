@@ -22,6 +22,7 @@ final class SimulatorViewController: NSViewController {
     private let noteLabel = NSTextField(labelWithString: "")
     private let noteAction = NSButton()
     private var noteHeight: NSLayoutConstraint!
+    private let homeButton = NSButton()
     private let empty = NSStackView()
     private let emptyLabel = NSTextField(labelWithString: "")
     private let emptyAction = NSButton()
@@ -54,6 +55,8 @@ final class SimulatorViewController: NSViewController {
             EditorHeaderView.style(button, symbol, tip: tip, color: text, target: self, action: action, size: 12)
             button.identifier = NSUserInterfaceItemIdentifier(id)
         }
+        button(homeButton, "house", "Home", #selector(pressHome), id: "simulatorHome")
+        homeButton.isEnabled = false
         let again = NSButton()
         button(again, "arrow.clockwise", "Look Again", #selector(lookAgain), id: "simulatorReconnect")
         let forward = NSButton()
@@ -94,7 +97,7 @@ final class SimulatorViewController: NSViewController {
 
         display.onOpenSimulator = { [weak self] in self?.openSimulator() }
 
-        for view in [deviceButton, again, forward, zoomButton, close] as [NSView] {
+        for view in [deviceButton, homeButton, again, forward, zoomButton, close] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             toolbar.addSubview(view)
         }
@@ -114,7 +117,8 @@ final class SimulatorViewController: NSViewController {
             toolbar.heightAnchor.constraint(equalToConstant: 38),
             deviceButton.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: 10),
             deviceButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
-            deviceButton.trailingAnchor.constraint(lessThanOrEqualTo: again.leadingAnchor, constant: -6),
+            deviceButton.trailingAnchor.constraint(lessThanOrEqualTo: homeButton.leadingAnchor, constant: -6),
+            homeButton.trailingAnchor.constraint(equalTo: again.leadingAnchor, constant: -2),
             again.trailingAnchor.constraint(equalTo: forward.leadingAnchor, constant: -2),
             forward.trailingAnchor.constraint(equalTo: zoomButton.leadingAnchor, constant: -2),
             zoomButton.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -2),
@@ -136,7 +140,7 @@ final class SimulatorViewController: NSViewController {
             noteAction.trailingAnchor.constraint(equalTo: noteBar.trailingAnchor, constant: -10),
             noteAction.centerYAnchor.constraint(equalTo: noteBar.centerYAnchor),
         ])
-        for view in [again, forward, zoomButton, close] {
+        for view in [homeButton, again, forward, zoomButton, close] {
             view.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor).isActive = true
             view.widthAnchor.constraint(equalToConstant: 24).isActive = true
         }
@@ -286,6 +290,9 @@ final class SimulatorViewController: NSViewController {
         case .waiting:
             note("Waiting for the simulator's screen…", action: "Open Simulator")
         }
+        // Home is the device's own button: there to press while the
+        // simulator is taking input, grey while it is a picture.
+        homeButton.isEnabled = mirror.input?.hasButtons == true && SimulatorHost.acceptsInput
         view.window?.invalidateCursorRects(for: display)
     }
 
@@ -316,6 +323,12 @@ final class SimulatorViewController: NSViewController {
         }
     }
 
+    /// The device's Home button — the one Simulator.app has in its Device
+    /// menu, and older ones drew under the screen.
+    @objc private func pressHome() {
+        mirror.input?.press(.home)
+    }
+
     @objc private func lookAgain() {
         mirror.reconnect()
         reloadDevices()
@@ -336,6 +349,8 @@ final class SimulatorDisplayView: NSView {
     /// Where a tap goes, while there is a live simulator to take it.
     var input: (() -> SimulatorInput?)?
     private let content = CALayer()
+    /// The device's body around the screen, as Simulator.app draws one.
+    private let body = CALayer()
     private var natural: CGSize = .zero
     /// The frame a drag started in, so the whole gesture is measured
     /// against one geometry even if the pane is resized under it.
@@ -349,6 +364,15 @@ final class SimulatorDisplayView: NSView {
         clipsToBounds = true
         content.contentsGravity = .resizeAspect
         content.masksToBounds = true
+        body.backgroundColor = NSColor(white: 0.07, alpha: 1).cgColor
+        body.borderColor = NSColor(white: 0.32, alpha: 1).cgColor
+        body.borderWidth = 1
+        body.shadowColor = NSColor.black.cgColor
+        body.shadowOpacity = 0.35
+        body.shadowRadius = 10
+        body.shadowOffset = CGSize(width: 0, height: -2)
+        body.isHidden = true
+        layer?.addSublayer(body)
         layer?.addSublayer(content)
     }
 
@@ -363,6 +387,7 @@ final class SimulatorDisplayView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         content.contents = contents
+        body.isHidden = false
         CATransaction.commit()
         if resized { place() }
     }
@@ -390,6 +415,7 @@ final class SimulatorDisplayView: NSView {
 
     func clear() {
         content.contents = nil
+        body.isHidden = true
         natural = .zero
     }
 
@@ -501,19 +527,41 @@ final class SimulatorDisplayView: NSView {
         input.key(.up, code: event.keyCode)
     }
 
+    /// Where the device sits in the pane: its screen, the body around it
+    /// and how round the corners are. Pure, so the geometry is a test and
+    /// not something to find out by looking.
+    ///
+    /// The corners are the device's own: a phone's are famously round
+    /// (iPhone 17 Pro: 55 pt on a 402 pt screen), an iPad's barely, and
+    /// the proportions say which this is without a table of models to keep
+    /// up to date.
+    static func layout(natural: CGSize, in bounds: CGRect, thickness: CGFloat = 10) -> (screen: CGRect, body: CGRect, radius: CGFloat)? {
+        guard natural.width > 0, natural.height > 0, bounds.width > thickness * 3, bounds.height > thickness * 3 else { return nil }
+        let room = bounds.insetBy(dx: thickness + 2, dy: thickness + 2)
+        let scale = min(room.width / natural.width, room.height / natural.height)
+        let size = CGSize(width: (natural.width * scale).rounded(), height: (natural.height * scale).rounded())
+        let screen = CGRect(
+            x: (bounds.midX - size.width / 2).rounded(), y: (bounds.midY - size.height / 2).rounded(),
+            width: size.width, height: size.height)
+        let tall = natural.height / natural.width
+        let fraction: CGFloat = tall > 1.8 || tall < 0.55 ? 0.135 : 0.045
+        return (screen, screen.insetBy(dx: -thickness, dy: -thickness), (size.width * fraction).rounded())
+    }
+
     private func place() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         content.contentsScale = window?.backingScaleFactor ?? 2
-        guard natural.width > 0, natural.height > 0, bounds.width > 0, bounds.height > 0 else {
+        guard let layout = Self.layout(natural: natural, in: bounds) else {
             content.frame = bounds
+            body.isHidden = true
             return
         }
-        let scale = min(bounds.width / natural.width, bounds.height / natural.height)
-        let size = CGSize(width: natural.width * scale, height: natural.height * scale)
-        content.frame = CGRect(
-            x: ((bounds.width - size.width) / 2).rounded(), y: ((bounds.height - size.height) / 2).rounded(),
-            width: size.width.rounded(), height: size.height.rounded())
+        content.frame = layout.screen
+        content.cornerRadius = layout.radius
+        body.frame = layout.body
+        body.cornerRadius = layout.radius + 10
+        body.isHidden = content.contents == nil
     }
 }

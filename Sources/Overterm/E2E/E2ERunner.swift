@@ -1328,6 +1328,16 @@ final class E2ERunner {
             let arrived = await eventually(25) { simulator.mirrorStatus == .live || simulator.mirrorStatus == .polling }
             check("…and its screen arrives", arrived, "\(simulator.mirrorStatus)")
             check("…live, over Xcode's own frameworks", simulator.mirrorStatus == .live, "\(simulator.mirrorStatus) — screenshots instead")
+            // The device's own Home button, pressed the way a person does.
+            let home = Self.find(NSButton.self, in: app.window?.contentView) { $0.identifier?.rawValue == "simulatorHome" }
+            if let home {
+                check(
+                    "the pane has a Home button, live for a live device", home.isEnabled == (simulator.mirrorStatus == .live),
+                    "enabled: \(home.isEnabled), \(simulator.mirrorStatus)")
+                home.performClick(nil)
+            } else {
+                check("the pane has a Home button", false)
+            }
             if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
                 await pause(1.0)
                 app.captureWindow(to: png + "-simulator.png")

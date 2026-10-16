@@ -897,6 +897,14 @@ clicks, drags, the wheel and the keyboard go to it.
   the top left, `SimulatorDisplayView.ratio`), a drag is down/moved/up, the
   wheel is a swipe that ends when it stops, and `NSEvent.keyCode` is
   already the code the keyboard builder wants.
+- **It looks like a device**: the screen is drawn with the device's own
+  corner rounding inside a body, the way Simulator.app draws one — a
+  phone's corners are famously round (iPhone 17 Pro: 55 pt on a 402 pt
+  screen), an iPad's barely, and the proportions say which it is without a
+  table of models to keep up to date (`SimulatorDisplayView.layout`, pure).
+  The toolbar's 🏠 is the device's own Home button
+  (`ButtonEventSourceHomeButton` to the hardware service), which works on a
+  device whose body hasn't had one since the iPhone X.
 - **From Xcode 27** (CoreSimulator 1155.4) the guest drops this input for
   the whole boot: the bytes arrive, correctly, and nothing happens (idb hit
   it first). `SimulatorHost.suppressesLegacyInput` is that rule, compared

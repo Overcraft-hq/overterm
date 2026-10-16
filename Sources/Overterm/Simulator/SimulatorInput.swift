@@ -17,6 +17,20 @@ final class SimulatorInput {
         case down = 1, up = 2
     }
 
+    /// A button of the device's own body. The numbers are Indigo's
+    /// `ButtonEventSource` values — a vocabulary idb published and this
+    /// checked against a booted device (home takes it back to the home
+    /// screen, from any app and on a device whose body has no home button).
+    enum Button: Int32 {
+        case home = 0x0
+        case lock = 0x1
+        case side = 0xbb8
+        case siri = 0x40_0002
+    }
+
+    /// The service a sourced button is addressed to (`ButtonEventTargetHardware`).
+    private static let hardware: Int32 = 0x33
+
     /// What a drag's middle is to AppKit, and so to the builder.
     private static let dragged: UInt = 6
 
@@ -28,12 +42,16 @@ final class SimulatorInput {
     private let queue = DispatchQueue(label: "overterm.simulator-input")
     private let mouse: MouseBuilder
     private let keyboard: KeyboardBuilder
+    /// Nil on an Xcode without the sourced-button builder: everything else
+    /// still works, and the pane's Home goes grey rather than silent.
+    private let hardwareButton: ButtonBuilder?
 
     private typealias MouseBuilder =
         @convention(c) (
             UnsafeMutablePointer<CGPoint>?, UnsafeMutablePointer<CGPoint>?, UInt32, UInt, CGSize, UInt32
         ) -> UnsafeMutableRawPointer?
     private typealias KeyboardBuilder = @convention(c) (Int32, Int32) -> UnsafeMutableRawPointer?
+    private typealias ButtonBuilder = @convention(c) (Int32, Int32, Int32) -> UnsafeMutableRawPointer?
 
     /// Nil unless this Xcode has the class and both builders.
     init?(device: NSObject) {
@@ -48,6 +66,7 @@ final class SimulatorInput {
         self.device = device
         self.mouse = unsafeBitCast(mouse, to: MouseBuilder.self)
         self.keyboard = unsafeBitCast(keyboard, to: KeyboardBuilder.self)
+        hardwareButton = SimulatorHost.symbol("IndigoHIDMessageForButton").map { unsafeBitCast($0, to: ButtonBuilder.self) }
     }
 
     // MARK: Touch
@@ -88,6 +107,22 @@ final class SimulatorInput {
     /// what the builder takes.
     func key(_ direction: Direction, code: UInt16) {
         guard direction == .up || isUsable, let message = keyboard(Int32(code), direction.rawValue) else { return }
+        send(message)
+    }
+
+    // MARK: The device's own buttons
+
+    var hasButtons: Bool { hardwareButton != nil }
+
+    /// Pressed and let go — Home, the one the pane has a button for.
+    func press(_ button: Button) {
+        guard isUsable else { return }
+        self.button(.down, button)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in self?.button(.up, button) }
+    }
+
+    func button(_ direction: Direction, _ button: Button) {
+        guard let hardwareButton, let message = hardwareButton(button.rawValue, direction.rawValue, Self.hardware) else { return }
         send(message)
     }
 
