@@ -180,9 +180,14 @@ final class E2ERunner {
     /// reply — swallowing keys typed in that window, which is wider under
     /// load. If the output still doesn't come, the command is typed once
     /// more; these commands only write a file, so a second run is harmless.
-    private func runAndExpect(_ command: String, file: URL, content: String, _ name: String) async {
+    /// Types `command`, waits for `file` to say `content` — or, with no
+    /// content asked for, for the file to be there at all (what a command
+    /// that writes its own measurement into it leaves).
+    private func runAndExpect(_ command: String, file: URL, content: String?, _ name: String) async {
         let ok = await run(command) {
-            (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == content
+            guard let written = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return false }
+            return content.map { written == $0 } ?? !written.isEmpty
         }
         check(name, ok, "\(file.lastPathComponent) = \((try? String(contentsOf: file, encoding: .utf8)) ?? "missing")")
     }
@@ -3504,9 +3509,21 @@ final class E2ERunner {
         ]
         for (name, command, megabytes) in runs {
             stalls.reset()
-            let begin = Date()
-            await runAndExpect("\(command); echo done > \(out("flow").path)", file: out("flow"), content: "done", name)
-            let seconds = Date().timeIntervalSince(begin)
+            // The shell times itself, as it would in any other terminal:
+            // typing the command and noticing the file it writes costs the
+            // better part of a second here, and that is this harness's, not
+            // the terminal's. What is left is what the other terminal's
+            // `time` would have printed.
+            await runAndExpect(
+                "zmodload zsh/datetime; t=$EPOCHREALTIME; \(command); print $((EPOCHREALTIME-t)) > \(out("flow").path)",
+                file: out("flow"), content: nil, name)
+            let seconds = Double((try? String(contentsOf: out("flow"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
+            guard seconds > 0 else {
+                // The command never ran (the harness retypes after 8 s and
+                // can lose a race): a lost measurement, not a slow one.
+                note("\(name): no measurement — the command was lost, not slow")
+                continue
+            }
             note(
                 String(
                     format: "%@ in %.2f s (%.1f MB/s) at %@ cells, worst stall %.0f ms", name, seconds, megabytes / seconds, grid,
