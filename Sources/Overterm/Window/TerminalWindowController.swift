@@ -91,6 +91,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var terminalColumn: NSSplitViewItem?
     /// The browser column: the selected tab's browser (Browser/).
     private(set) var browser: BrowserViewController?
+    /// The browser column: the browser, or the simulator in its place.
+    private(set) var browserColumn: BrowserColumnController?
     private(set) var browserItem: NSSplitViewItem?
     /// Each tab's browser (its pages), made when first used.
     var browserWorkspaces: [UUID: BrowserWorkspace] = [:]
@@ -495,12 +497,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
         let browser = BrowserViewController(chrome: theme, background: runtime.backgroundColor)
-        let browserItem = NSSplitViewItem(viewController: CardColumnController(browser, fill: .terminal, theme: theme))
+        let browserColumn = BrowserColumnController(
+            browser: browser, simulator: SimulatorViewController(chrome: theme, background: runtime.backgroundColor))
+        let browserItem = NSSplitViewItem(viewController: CardColumnController(browserColumn, fill: .terminal, theme: theme))
         browserItem.canCollapse = true
         browserItem.isCollapsed = true
         browserItem.minimumThickness = 420
         browserItem.holdingPriority = .defaultLow + 5
         self.browser = browser
+        self.browserColumn = browserColumn
         self.browserItem = browserItem
         split.addSplitViewItem(browserItem)
         wireBrowser()
@@ -1686,6 +1691,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.splitView.layoutSubtreeIfNeeded()
         editor?.isZoomed = columnZoom?.column == .editor
         browser?.setZoomed(columnZoom?.column == .browser)
+        browserColumn?.simulator.setZoomed(columnZoom?.column == .browser)
     }
 
     var zoomedColumn: ZoomedColumn? { columnZoom?.column }

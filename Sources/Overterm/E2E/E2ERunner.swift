@@ -64,6 +64,7 @@ final class E2ERunner {
         "inbox": { await $0.inboxScenario() },
         "askAgent": { await $0.askAgentScenario() },
         "dropSplit": { await $0.dropSplitScenario() },
+        "simulator": { await $0.simulatorScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -1298,6 +1299,49 @@ final class E2ERunner {
 
     /// Dropping a tab onto a pane: the only way to make a split out of
     /// something that is already running.
+    /// The simulator in the browser's column: the toolbar's iphone puts it
+    /// there, the globe brings the browser back, and closing the column
+    /// stops the mirror — whatever this Mac has booted (or hasn't).
+    private func simulatorScenario() async {
+        app.toggleBrowser(nil)
+        await pause(0.4)
+        guard let column = app.browserColumn else { return check("the window has a browser column", false) }
+        check("the column opens on the browser", column.mode == .web && !column.browser.view.isHidden)
+        check("…with nothing mirrored", !column.simulator.isActive)
+
+        app.showSimulator()
+        await pause(0.4)
+        let simulator = column.simulator
+        check(
+            "the iphone button shows the simulator instead",
+            column.mode == .simulator && column.browser.view.isHidden && !simulator.view.isHidden)
+        check("…and it looks for the devices", simulator.isActive)
+        // Xcode is on the machines this runs on, but a booted simulator is
+        // nobody's promise: both answers are right, each with its own face.
+        let listed = await eventually(20) { !simulator.devices.isEmpty }
+        if listed, let booted = simulator.devices.first(where: \.isBooted) {
+            check("the picker is on the booted device", simulator.selected?.udid == booted.udid, simulator.selected?.label ?? "none")
+            func hasPicture() -> Bool {
+                if case .polling = simulator.mirrorStatus { return true }
+                return simulator.mirrorStatus == .live
+            }
+            check("…and a picture is coming", await eventually(25) { hasPicture() }, "\(simulator.mirrorStatus)")
+        } else {
+            check("nothing booted: the mirror stays off", simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
+        }
+
+        app.closeBrowser()
+        await pause(0.5)
+        check("the column shut stops the mirror", !simulator.isActive && simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
+
+        app.showSimulator()
+        await pause(0.3)
+        column.show(.web)
+        check("the globe gives the column back to the browser", column.mode == .web && !column.browser.view.isHidden && !simulator.isActive)
+        app.closeBrowser()
+        await pause(0.3)
+    }
+
     private func dropSplitScenario() async {
         let home = FileManager.default.homeDirectoryForCurrentUser
         await waitForPrompt()

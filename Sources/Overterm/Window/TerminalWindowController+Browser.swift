@@ -19,6 +19,15 @@ extension TerminalWindowController {
             self.setZoomed(self.zoomedColumn == .browser ? nil : .browser)
         }
         browser.onAskAgent = { [weak self] page in self?.askAboutPage(page) }
+        browser.onShowSimulator = { [weak self] in self?.showSimulator() }
+        if let column = browserColumn {
+            column.simulator.onShowBrowser = { [weak self] in self?.browserColumn?.show(.web) }
+            column.simulator.onClose = { [weak self] in self?.closeBrowser() }
+            column.simulator.onToggleZoom = { [weak self] in
+                guard let self else { return }
+                self.setZoomed(self.zoomedColumn == .browser ? nil : .browser)
+            }
+        }
         browser.onOpenExternally = { NSWorkspace.shared.open($0) }
         browser.makeWorkspace = { [weak self] in
             guard let self, let tab = self.store.selected else { return nil }
@@ -64,6 +73,7 @@ extension TerminalWindowController {
     @objc func toggleBrowser(_ sender: Any?) {
         guard let browserItem, Settings.shared.browserEnabled else { return }
         if browserItem.isCollapsed {
+            browserColumn?.show(.web)
             showBrowserColumn()
             if browser?.workspace?.active == nil { browser?.focusAddress() }
         } else {
@@ -71,10 +81,19 @@ extension TerminalWindowController {
         }
     }
 
+    /// The browser toolbar's ▢: the column keeps its place and shows the
+    /// simulator instead — mirrored only while it is up.
+    func showSimulator() {
+        guard Settings.shared.browserEnabled else { return }
+        browserColumn?.show(.simulator)
+        showBrowserColumn()
+    }
+
     private func showBrowserColumn() {
         guard let browserItem else { return }
         if browserItem.isCollapsed { browserItem.animator().isCollapsed = false }
         browserButton.isOpen = true
+        browserColumn?.setColumnOpen(true)
         if let tab = store.selected, pendingBrowserPages[tab.id] != nil { _ = browserWorkspace(for: tab) }
         showSelectedBrowser()
     }
@@ -83,6 +102,7 @@ extension TerminalWindowController {
         if zoomedColumn == .browser { setZoomed(nil) }
         browserItem?.animator().isCollapsed = true
         browserButton.isOpen = false
+        browserColumn?.setColumnOpen(false)
         focusSelectedTerminal()
     }
 
@@ -98,7 +118,11 @@ extension TerminalWindowController {
         } else {
             workspace.newPage(url)
         }
-        if tab.id == store.selectedID { showBrowserColumn() }
+        if tab.id == store.selectedID {
+            // A page to look at: the column comes back from the simulator.
+            browserColumn?.show(.web)
+            showBrowserColumn()
+        }
     }
 
     /// A link from Tab Info or a pane header's port: here or the system's,
@@ -161,7 +185,10 @@ extension TerminalWindowController {
             let workspace = browserWorkspace(for: tab)
         else { return nil }
         if tab.id == store.selectedID {
-            if browserItem?.isCollapsed == true { showBrowserColumn() }
+            if browserItem?.isCollapsed == true {
+                browserColumn?.show(.web)
+                showBrowserColumn()
+            }
             if browser?.workspace !== workspace { showSelectedBrowser() }
         }
         return workspace

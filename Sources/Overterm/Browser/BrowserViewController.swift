@@ -13,6 +13,8 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
     /// "Ask an Agent About This Page".
     var onAskAgent: ((BrowserSession) -> Void)?
     var onOpenExternally: ((URL) -> Void)?
+    /// The column's other half: the simulator.
+    var onShowSimulator: (() -> Void)?
     /// The selected tab's browser, made if it has none (the empty state's
     /// buttons, the address bar, ⌘T).
     var makeWorkspace: (() -> BrowserWorkspace?)?
@@ -74,6 +76,8 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
         button(inspect, "hammer", "Web Inspector", #selector(showInspector), id: "browserInspector")
         let external = NSButton()
         button(external, "safari", "Open in Your Browser", #selector(openExternally), id: "browserExternal")
+        let simulator = NSButton()
+        button(simulator, "iphone", "Simulator", #selector(showSimulator), id: "browserSimulator")
         button(zoomButton, "arrow.up.left.and.arrow.down.right", "Zoom Browser", #selector(toggleZoom), id: "browserZoom")
         let close = NSButton()
         button(close, "xmark", "Close Browser", #selector(closeBrowser), id: "closeBrowser")
@@ -98,7 +102,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
             field.addSubview(view)
         }
 
-        let views: [NSView] = [back, forward, reload, field, ask, inspect, external, zoomButton, close]
+        let views: [NSView] = [back, forward, reload, field, ask, inspect, external, simulator, zoomButton, close]
         for view in views {
             view.translatesAutoresizingMaskIntoConstraints = false
             toolbar.addSubview(view)
@@ -159,7 +163,8 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
             progressWidth,
             ask.trailingAnchor.constraint(equalTo: inspect.leadingAnchor, constant: -2),
             inspect.trailingAnchor.constraint(equalTo: external.leadingAnchor, constant: -2),
-            external.trailingAnchor.constraint(equalTo: zoomButton.leadingAnchor, constant: -2),
+            external.trailingAnchor.constraint(equalTo: simulator.leadingAnchor, constant: -2),
+            simulator.trailingAnchor.constraint(equalTo: zoomButton.leadingAnchor, constant: -2),
             zoomButton.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -2),
             close.trailingAnchor.constraint(equalTo: toolbar.trailingAnchor, constant: -8),
             self.strip.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
@@ -186,7 +191,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
             clear.trailingAnchor.constraint(equalTo: strip.trailingAnchor, constant: -10),
             clear.centerYAnchor.constraint(equalTo: strip.centerYAnchor),
         ])
-        for view in [back, forward, reload, ask, inspect, external, zoomButton, close] {
+        for view in [back, forward, reload, ask, inspect, external, simulator, zoomButton, close] {
             view.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor).isActive = true
             view.widthAnchor.constraint(equalToConstant: 24).isActive = true
         }
@@ -413,6 +418,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
     @objc private func goForward() { session?.goForward() }
     @objc private func reloadOrStop() { session?.isLoading == true ? session?.stop() : session?.reload() }
     @objc private func askAgent() { session.map { onAskAgent?($0) } }
+    @objc private func showSimulator() { onShowSimulator?() }
     @objc private func toggleZoom() { onToggleZoom?() }
     @objc private func closeBrowser() { onClose?() }
 
