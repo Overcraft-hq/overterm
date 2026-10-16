@@ -65,6 +65,7 @@ final class E2ERunner {
         "askAgent": { await $0.askAgentScenario() },
         "dropSplit": { await $0.dropSplitScenario() },
         "simulator": { await $0.simulatorScenario() },
+        "throughput": { await $0.throughputScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -3462,6 +3463,59 @@ final class E2ERunner {
     /// then a flood of output. Measures this process's CPU time, its memory
     /// footprint, and the longest the main thread went without running a
     /// 50 ms timer — what you'd feel as a hitch.
+    /// Throughput, as the terminal benchmarks measure it: how fast the pty
+    /// is drained, in one window with one tab — what another terminal is
+    /// opened to do, so the numbers can be put beside each other. The
+    /// `performance` scenario runs the same three with ten tabs open, which
+    /// is the more honest number for this app and the less comparable one.
+    private func throughputScenario() async {
+        await settledPrompt()
+        await pause(1)
+        let stalls = StallMeter()
+        await measureThroughput(stalls)
+        stalls.stop()
+    }
+
+    /// The three floods every terminal benchmark runs, and what they cost.
+    /// Notes, not thresholds: the numbers are the machine's as much as the
+    /// app's, and a loaded Mac would fail a limit that means nothing. What
+    /// is checked is that the window still answers while they pour in.
+    private func measureThroughput(_ stalls: StallMeter) async {
+        let plain = scratch.appendingPathComponent("plain.txt")
+        let line = String(String(repeating: "lorem ipsum dolor sit amet consectetur ", count: 2).prefix(78)) + "\n"
+        try? Data(String(repeating: line, count: 10 * 1024 * 1024 / line.utf8.count).utf8).write(to: plain)
+        let colourful = scratch.appendingPathComponent("ansi.txt")
+        var sgr = ""
+        for i in 0..<12000 {
+            for cell in 0..<20 { sgr += "\u{1B}[38;5;\((i + cell) % 256);48;5;\((i * 3 + cell) % 256)mlorem" }
+            sgr += "\u{1B}[0m\n"
+        }
+        try? Data(sgr.utf8).write(to: colourful)
+        // The grid is the work: a wider pane has more cells to draw, and a
+        // number without it can't be compared with another terminal's.
+        var grid = "?"
+        if let pane = app.store.selected?.terminal {
+            grid = "\(Int(pane.bounds.width / max(pane.cellSize.width, 1)))×\(pane.rowCount)"
+        }
+        let runs: [(String, String, Double)] = [
+            ("300 000 lines", "seq 1 300000", 300_000 * 7 / 1_048_576.0),
+            ("10 MB of plain text", "cat \(plain.path)", Double((try? Data(contentsOf: plain).count) ?? 0) / 1_048_576),
+            ("5 MB of coloured cells", "cat \(colourful.path)", Double((try? Data(contentsOf: colourful).count) ?? 0) / 1_048_576),
+        ]
+        for (name, command, megabytes) in runs {
+            stalls.reset()
+            let begin = Date()
+            await runAndExpect("\(command); echo done > \(out("flow").path)", file: out("flow"), content: "done", name)
+            let seconds = Date().timeIntervalSince(begin)
+            note(
+                String(
+                    format: "%@ in %.2f s (%.1f MB/s) at %@ cells, worst stall %.0f ms", name, seconds, megabytes / seconds, grid,
+                    stalls.worst * 1000))
+            check("the window answers while \(name) floods it (< 400 ms)", stalls.worst < 0.4, String(format: "%.0f ms", stalls.worst * 1000))
+            try? FileManager.default.removeItem(at: out("flow"))
+        }
+    }
+
     private func performanceScenario() async {
         await settledPrompt()
         for i in 0..<9 {
@@ -3578,6 +3632,14 @@ final class E2ERunner {
         let floodStall = stalls.worst
         note(String(format: "flood: 300 000 lines in %.1f s, worst main-thread stall %.0f ms", flood, floodStall * 1000))
         check("the window stays responsive while output floods (< 250 ms)", floodStall < 0.25, String(format: "%.0f ms", floodStall * 1000))
+
+        // Throughput, as the terminal benchmarks measure it: how fast the
+        // pty is drained. Two shapes, because they cost differently — plain
+        // ASCII lines, and cells carrying colour (vtebench's "dense cells").
+        // The numbers are notes, not checks: they are the machine's as much
+        // as the app's, and a loaded Mac would fail a threshold that means
+        // nothing. What is checked is that the window still answers.
+        await measureThroughput(stalls)
         stalls.stop()
     }
 
