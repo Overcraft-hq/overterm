@@ -97,6 +97,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// A restored tab's pages, loaded when its browser is first shown.
     var pendingBrowserPages: [UUID: (urls: [URL], active: Int)] = [:]
     var browserObservers: Set<AnyCancellable> = []
+    /// The title bar's globe.
+    let browserButton = BrowserButtonState()
     /// Which column fills the window, and how the others were.
     private var columnZoom: (column: ZoomedColumn, restore: [(item: NSSplitViewItem, collapsed: Bool)])?
     /// While the editor is zoomed: each other column's state before it.
@@ -202,6 +204,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 worktrees: worktrees,
                 updates: .shared,
                 theme: theme,
+                browser: browserButton,
                 leadingInset: 78,
                 actions: TabBarActions(
                     select: { [weak self] tab in
@@ -220,7 +223,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     showSettings: { [weak self] in self?.showSettingsPage() },
                     closeSettings: { [weak self] in self?.closeSettings() },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
-                    setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) }
+                    setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) },
+                    toggleBrowser: { [weak self] in self?.toggleBrowser(nil) }
                 ),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },

@@ -513,6 +513,7 @@ final class E2ERunner {
 
         app.toggleBrowser(nil)
         check("⇧⌘B shows the browser", await eventually(2) { self.app.browserItem?.isCollapsed == false })
+        check("…and lights the title bar's Browser button", app.browserButton.isEnabled && app.browserButton.isOpen)
         app.openInBrowser(page, for: tab)
         guard let workspace = app.browserWorkspaces[tab.id], let session = workspace.active else { return check("the tab has a browser", false) }
         check("it loads the page", await eventually(5) { session.url?.lastPathComponent == "page.html" && !session.isLoading && session.title == "Demo" })
@@ -598,6 +599,7 @@ final class E2ERunner {
         // Off in Settings: no column, no pages, links go to your browser.
         Settings.shared.set("browser.enabled", .bool(false))
         check("Settings can turn it off", await eventually(2) { self.app.browserItem?.isCollapsed == true && self.app.browserWorkspaces.isEmpty })
+        check("…and the title bar's button goes", !app.browserButton.isEnabled && !app.browserButton.isOpen)
         check("…and then links aren't taken", !BrowserLinks.opensInside(URL(string: "http://localhost:3000")!, policy: Settings.shared.browserLinks))
         check("…nor is Claude given the browser", !Settings.shared.arguments(for: .claude).contains("--mcp-config"))
         Settings.shared.set("browser.enabled", nil)

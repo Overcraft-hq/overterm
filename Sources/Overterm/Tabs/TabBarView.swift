@@ -23,6 +23,16 @@ struct TabBarActions {
     /// to the terminal.
     var renameEnded: () -> Void
     var setPinned: (Tab, Bool) -> Void
+    /// The globe: the browser column, shown or hidden.
+    var toggleBrowser: () -> Void = {}
+}
+
+/// What the title bar's globe shows: whether there is a browser (Settings
+/// ▸ Browser) and whether its column is open.
+@MainActor
+final class BrowserButtonState: ObservableObject {
+    @Published var isEnabled = true
+    @Published var isOpen = false
 }
 
 /// Chrome-style tab strip, living in the window's title bar.
@@ -34,6 +44,8 @@ struct TabBarView: View {
     /// A newer release, as a chip.
     @ObservedObject var updates: UpdateChecker
     @ObservedObject var theme: ChromeTheme
+    /// The globe beside the ± badge.
+    @ObservedObject var browser: BrowserButtonState
     /// Room for the traffic lights on the left.
     let leadingInset: CGFloat
     let actions: TabBarActions
@@ -108,6 +120,10 @@ struct TabBarView: View {
                 .padding(.trailing, 4)
             if let pr = diff.branch.flatMap({ worktrees.pullRequests[$0] }) {
                 PullRequestChip(pr: pr, theme: theme, action: actions.showPullRequest)
+                    .padding(.trailing, 6)
+            }
+            if browser.isEnabled {
+                BrowserButton(isOpen: browser.isOpen, theme: theme, action: actions.toggleBrowser)
                     .padding(.trailing, 6)
             }
             if let badge = diff.badge {
@@ -459,6 +475,33 @@ private struct DiffBadge: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
+    }
+}
+
+/// The browser column's switch in the title bar, beside the ± badge: lit
+/// while the column is open.
+private struct BrowserButton: View {
+    let isOpen: Bool
+    @ObservedObject var theme: ChromeTheme
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "globe").font(.system(size: 12, weight: .medium))
+                Text("Browser").font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(isOpen ? theme.text : theme.text2)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(isOpen ? "Hide the browser (⇧⌘B)" : "Browser (⇧⌘B)")
+        .accessibilityIdentifier("browserButton")
     }
 }
 

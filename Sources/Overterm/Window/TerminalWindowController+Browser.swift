@@ -12,6 +12,7 @@ enum ZoomedColumn: Equatable {
 extension TerminalWindowController {
     func wireBrowser() {
         guard let browser else { return }
+        browserButton.isEnabled = Settings.shared.browserEnabled
         browser.onClose = { [weak self] in self?.closeBrowser() }
         browser.onToggleZoom = { [weak self] in
             guard let self else { return }
@@ -73,6 +74,7 @@ extension TerminalWindowController {
     private func showBrowserColumn() {
         guard let browserItem else { return }
         if browserItem.isCollapsed { browserItem.animator().isCollapsed = false }
+        browserButton.isOpen = true
         if let tab = store.selected, pendingBrowserPages[tab.id] != nil { _ = browserWorkspace(for: tab) }
         showSelectedBrowser()
     }
@@ -80,6 +82,7 @@ extension TerminalWindowController {
     func closeBrowser() {
         if zoomedColumn == .browser { setZoomed(nil) }
         browserItem?.animator().isCollapsed = true
+        browserButton.isOpen = false
         focusSelectedTerminal()
     }
 
@@ -129,6 +132,7 @@ extension TerminalWindowController {
         } else {
             BrowserBridge.shared.stop()
         }
+        browserButton.isEnabled = Settings.shared.browserEnabled
         guard !Settings.shared.browserEnabled else { return }
         // Off: the column goes, and every tab's pages with it.
         if browserItem?.isCollapsed == false { closeBrowser() }
