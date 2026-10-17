@@ -64,6 +64,7 @@ final class E2ERunner {
         "inbox": { await $0.inboxScenario() },
         "askAgent": { await $0.askAgentScenario() },
         "dropSplit": { await $0.dropSplitScenario() },
+        "overgit": { await $0.overgitScenario() },
         "simulator": { await $0.simulatorScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
@@ -1916,6 +1917,113 @@ final class E2ERunner {
         check("no real notification from an isolated run", NSApp.isActive || AttentionNotifier.suppressed >= 1)
     }
 
+    /// Overgit: the git panel in the sidebar — a real repository with a
+    /// merge, a branch, a stash, a tag, a remote and a linked worktree in
+    /// it, read the way a person opening the panel reads it.
+    private func overgitScenario() async {
+        let repo = scratch.appendingPathComponent("overgitrepo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? "one\n".write(to: repo.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? await git(["add", "-A"], in: repo)
+        try? await git(["commit", "-q", "-m", "Add a"], in: repo)
+        try? await git(["tag", "-a", "v1.0", "-m", "The first"], in: repo)
+        try? await git(["remote", "add", "origin", "https://example.com/overgit.git"], in: repo)
+        try? await git(["checkout", "-q", "-b", "feature/x"], in: repo)
+        try? "two\n".write(to: repo.appendingPathComponent("b.txt"), atomically: true, encoding: .utf8)
+        try? await git(["add", "-A"], in: repo)
+        try? await git(["commit", "-q", "-m", "Add b"], in: repo)
+        try? await git(["checkout", "-q", "main"], in: repo)
+        try? await git(["merge", "-q", "--no-ff", "feature/x", "-m", "Merge feature/x"], in: repo)
+        try? "stashed\n".write(to: repo.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? await git(["stash", "push", "-q", "-m", "work in progress"], in: repo)
+        let worktree = repo.appendingPathComponent(".worktrees/side")
+        try? await git(["worktree", "add", "-q", "-b", "side", worktree.path], in: repo)
+
+        app.newTab(in: repo)
+        await eventually { self.app.diff.branch == "main" }
+
+        // Shut, it reads nothing: the sidebar starts on Files.
+        check("a panel that is not on screen reads no git", app.overgit.commits.isEmpty, "\(app.overgit.commits.count) commits")
+
+        guard let item = menuItem("View", "Overgit") else { return check("View ▸ Overgit exists", false) }
+        perform(item)
+        check("View ▸ Overgit opens the sidebar on the git panel", app.sidebarPanel.panel == .git && app.sidebarItem?.isCollapsed == false)
+        check("and the menu item is ticked while it is", item.state == .on)
+        check("it reads the repository", await eventually(10) { self.app.overgit.isRepository && !self.app.overgit.commits.isEmpty })
+        check(
+            "the history is the whole branch, newest first",
+            app.overgit.commits.map(\.subject) == ["Merge feature/x", "Add b", "Add a"],
+            app.overgit.commits.map(\.subject).joined(separator: ","))
+        check("the merge keeps both parents", app.overgit.commits.first?.parents.count == 2)
+        check("HEAD rides the newest commit", app.overgit.commits.first?.refs.contains { $0.isHead && $0.name == "main" } == true)
+        check("the tag rides the oldest", app.overgit.commits.last?.refs.contains { $0.kind == .tag && $0.name == "v1.0" } == true)
+        check(
+            "the graph gives the branch a lane of its own", app.overgit.gutterLanes == 2,
+            "\(app.overgit.gutterLanes) lanes")
+        check(
+            "the branches are listed", Set(app.overgit.branches.filter { !$0.isRemote }.map(\.name)) == ["main", "feature/x", "side"],
+            app.overgit.branches.map(\.name).joined(separator: ","))
+        check("the worktrees are the panel's now", await eventually { self.app.worktrees.worktrees.count == 2 })
+
+        // Tags, stashes and remotes are shut by default, and a shut
+        // section asks git nothing.
+        check(
+            "a shut section is empty",
+            app.overgit.tags.isEmpty && app.overgit.stashes.isEmpty && app.overgit.remotes.isEmpty)
+        app.overgit.toggle(.stashes)
+        app.overgit.toggle(.tags)
+        app.overgit.toggle(.remotes)
+        check("opening one reads it", await eventually(10) { self.app.overgit.stashes.count == 1 && self.app.overgit.tags.count == 1 })
+        check("the stash says what it is", app.overgit.stashes.first?.subject.contains("work in progress") == true)
+        check("the tag is there", app.overgit.tags.first?.name == "v1.0")
+        check("so is the remote", app.overgit.remotes.first?.host == "example.com", "\(app.overgit.remotes.map(\.name))")
+        check("and the choice is remembered", AppEnvironment.defaults.stringArray(forKey: "overgitSections")?.contains("tags") == true)
+
+        // A commit opens in the right-hand pane, which the browser shares.
+        app.toggleBrowser(nil)
+        check("the browser is open to begin with", app.browserItem?.isCollapsed == false)
+        if let commit = app.overgit.commits.first {
+            app.showCommit(commit)
+            check("picking a commit marks it", app.overgit.selected == commit.sha)
+            check("and puts the right-hand pane on it", app.rightPane.mode == .commit && app.diffItem?.isCollapsed == false)
+            check("the browser steps aside rather than being squeezed", app.browserItem?.isCollapsed == true)
+            check(
+                "the commit's own message arrives",
+                await eventually(10) { self.app.commitDetail.detail?.commit.subject == "Merge feature/x" },
+                "\(String(describing: app.commitDetail.phase))")
+            check(
+                "with what the merge brought in",
+                app.commitDetail.detail?.files.map(\.path) == ["b.txt"],
+                "\(app.commitDetail.detail?.files.map(\.path) ?? [])")
+            check(
+                "and that file's diff, read from the commit",
+                await eventually(10) {
+                    self.app.commitDetail.diffs["b.txt"]?.lines.filter { $0.kind == .added }.map(\.text) == ["two"]
+                })
+        }
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+        if let older = app.overgit.commits.last {
+            app.showCommit(older)
+            check(
+                "picking another reads that one", await eventually(10) { self.app.commitDetail.detail?.commit.subject == "Add a" },
+                "\(String(describing: app.commitDetail.detail?.commit.subject))")
+        }
+
+        // A folder that is no repository says so rather than showing seven
+        // empty sections.
+        let plain = scratch.appendingPathComponent("notarepo")
+        try? FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        app.newTab(in: plain)
+        check("outside a repository the panel says so", await eventually(10) { !self.app.overgit.isRepository })
+        check(
+            "and the commit goes with the checkout it was in",
+            await eventually(10) { self.app.commitDetail.sha == nil && self.app.commitDetail.detail == nil })
+    }
+
     /// One tab in each state, for looking at: OVERTERM_DUMP_PNG=<png>
     /// captures the window once they are set.
     private func marks() async {
@@ -2470,7 +2578,7 @@ final class E2ERunner {
             "and say why", app.worktrees.merged["goneMerged"] == .upstreamGone && app.worktrees.merged["merged"] == .mergedInto("origin/main"))
 
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
-            AppEnvironment.defaults.set(SidebarPanel.worktrees.rawValue, forKey: "sidebarPanel")
+            AppEnvironment.defaults.set(SidebarPanel.git.rawValue, forKey: SidebarModel.panelKey)
             await pause(0.8)
             app.captureWindow(to: png)
         }
@@ -3001,7 +3109,7 @@ final class E2ERunner {
             "labelled with its own worktree",
             app.sessions.sessions.first.flatMap { Worktree.containing($0.directory, in: self.app.worktrees.worktrees) }?.branch == "feat/s")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
-            AppEnvironment.defaults.set(SidebarPanel.sessions.rawValue, forKey: "sidebarPanel")
+            AppEnvironment.defaults.set(SidebarPanel.sessions.rawValue, forKey: SidebarModel.panelKey)
             await pause(1)
             app.captureWindow(to: png)
         }

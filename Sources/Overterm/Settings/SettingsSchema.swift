@@ -166,6 +166,14 @@ enum SettingsSchema {
                 "Prices the tokens in the agents' own logs at list API rates. An estimate of what the work would cost on the API — not your bill.",
             kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
+            key: "general.overgitCommits", section: .general, group: "Overgit", title: "Commits the panel reads",
+            help: "How far back the history and its graph go. More is a longer read on a repository with a long history.",
+            kind: .integer(50...2000, step: 50, unit: "commits"), defaultValue: .int(300)),
+        SettingSpec(
+            key: "general.overgitAllRefs", section: .general, group: "Overgit", title: "Graph every branch, not just this one",
+            help: "Shows the commits of every branch and tag in the repository, so branches that have not been merged appear.",
+            kind: .toggle, defaultValue: .bool(false)),
+        SettingSpec(
             key: "general.tabPeekGesture", section: .general, group: "Tab Peek", title: "Peek at every tab with",
             help:
                 "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Esc and ⇧⌘E work whatever this says.",

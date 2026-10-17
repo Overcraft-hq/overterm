@@ -251,6 +251,11 @@ final class Settings: ObservableObject {
     /// Whether the usage pane puts a price on the tokens it counts.
     var usageCost: Bool { bool("general.usageCost") }
 
+    /// How many commits Overgit's history and graph read.
+    var overgitCommits: Int { Int(number("general.overgitCommits") ?? 300) }
+    /// Whether that history is every branch's or only the one checked out.
+    var overgitAllRefs: Bool { bool("general.overgitAllRefs") }
+
     /// Whether the terminal follows macOS between two themes.
     var followsSystemAppearance: Bool { bool("appearance.followSystemAppearance") }
 

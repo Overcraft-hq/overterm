@@ -62,27 +62,55 @@ struct SessionActions {
 
 /// What the sidebar can show, one at a time — Warp-style icon tabs.
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, worktrees, sessions, snippets
+    case files, git, sessions, snippets
 
     var id: String { rawValue }
 
+    /// What the stored choice means. `worktrees` had an icon of its own
+    /// until Overgit took it in; somebody who left the sidebar there finds
+    /// their worktrees where they went, not an empty panel.
+    init(stored: String?) {
+        switch stored {
+        case "worktrees": self = .git
+        default: self = stored.flatMap(SidebarPanel.init(rawValue:)) ?? .files
+        }
+    }
+
+    /// The fallback glyph. Overgit draws its own mark (`icon`).
     var symbol: String {
         switch self {
         case .files: "doc.on.doc"
-        case .worktrees: "arrow.triangle.branch"
+        case .git: "arrow.triangle.branch"
         case .sessions: "bubble.left.and.text.bubble.right"
         case .snippets: "text.alignleft"
         }
     }
 
-    var title: String { rawValue.capitalized }
+    @ViewBuilder var icon: some View {
+        switch self {
+        case .git: OvergitMark().frame(width: 15, height: 15)
+        default: Image(systemName: symbol).font(.system(size: 13))
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .git: "Overgit"
+        default: rawValue.capitalized
+        }
+    }
 }
 
 /// The left panel: an icon bar choosing Files, Worktrees or Snippets, and
 /// the chosen one at full height.
 struct SidebarView: View {
+    @ObservedObject var sidebar: SidebarModel
     @ObservedObject var tree: FileTreeModel
     @ObservedObject var worktrees: WorktreeModel
+    @ObservedObject var overgit: OvergitModel
+    /// The working tree's numbers, which Overgit's overview reads rather
+    /// than asking git for them a second time.
+    @ObservedObject var diff: DiffModel
     @ObservedObject var snippets: SnippetStore
     @ObservedObject var sessions: SessionsModel
     /// The tabs, for the island the panels are scoped to.
@@ -91,21 +119,21 @@ struct SidebarView: View {
     @ObservedObject var theme: ChromeTheme
     let actions: FileTreeActions
     let worktreeActions: WorktreeActions
+    let overgitActions: OvergitActions
     let snippetActions: SnippetActions
     let sessionActions: SessionActions
     let onClose: () -> Void
-    @AppStorage("sidebarPanel", store: AppEnvironment.defaults) private var panel: SidebarPanel = .files
 
     var body: some View {
         VStack(spacing: 0) {
             panelBar
             Divider().opacity(0.4)
-            switch panel {
+            switch sidebar.panel {
             case .files: files
-            case .worktrees:
-                WorktreeListView(
-                    model: worktrees, currentRoot: tree.root, group: group, store: store, theme: theme,
-                    actions: worktreeActions)
+            case .git:
+                OvergitView(
+                    model: overgit, diff: diff, worktrees: worktrees, store: store, currentRoot: tree.root, group: group,
+                    theme: theme, actions: overgitActions, worktreeActions: worktreeActions)
             case .sessions:
                 SessionListView(
                     model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
@@ -121,16 +149,15 @@ struct SidebarView: View {
     private var panelBar: some View {
         HStack(spacing: 2) {
             ForEach(SidebarPanel.allCases) { item in
-                Button(action: { panel = item }) {
-                    Image(systemName: item.symbol)
-                        .font(.system(size: 13))
+                Button(action: { sidebar.panel = item }) {
+                    item.icon
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(panel == item ? theme.rowSel : .clear))
+                        .background(RoundedRectangle(cornerRadius: 6).fill(sidebar.panel == item ? theme.rowSel : .clear))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(panel == item ? theme.text : theme.text2)
+                .foregroundStyle(sidebar.panel == item ? theme.text : theme.text2)
                 .help(item.title)
             }
             Spacer(minLength: 0)
@@ -302,69 +329,9 @@ private struct OpenWithItems: View {
     }
 }
 
-private struct WorktreeListView: View {
-    @ObservedObject var model: WorktreeModel
-    /// The selected tab's checkout, i.e. the worktree it is in.
-    let currentRoot: URL?
-    let group: TabGroup?
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let actions: WorktreeActions
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            PanelHeader(title: "Worktrees", group: group, theme: theme) {
-                if !model.cleanable.isEmpty {
-                    Button(action: actions.cleanUp) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "arrow.triangle.merge").font(.system(size: 9))
-                            Text(verbatim: "\(model.cleanable.count)").font(.system(size: 10, weight: .medium))
-                        }
-                        .fixedSize()
-                        .padding(.horizontal, 5)
-                        .frame(height: 18)
-                        .background(Capsule().fill(TabStatusStyle.merged.opacity(0.18)))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(TabStatusStyle.merged)
-                    .help("Clean Up Merged Worktrees…")
-                }
-                PanelHeaderButton(symbol: "plus", help: "New Task… (⇧⌘N)", action: actions.newTask, theme: theme)
-                PanelHeaderButton(
-                    symbol: "arrow.clockwise", help: "Fetch and reload",
-                    action: { Task { await model.refresh(fetch: true) } }, theme: theme)
-            }
-            if model.worktrees.isEmpty {
-                Text("Not in a git repository").font(.system(size: 12)).foregroundStyle(theme.text3).padding(12)
-                Spacer()
-            } else {
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(model.worktrees) { worktree in
-                            WorktreeRowView(
-                                worktree: worktree,
-                                isCurrent: currentRoot?.standardizedFileURL == worktree.path.standardizedFileURL,
-                                tabs: store.tabs.filter { tab in
-                                    let directory = tab.attachedCheckout?.path ?? tab.agentDirectory ?? tab.workingDirectory
-                                    return directory.map { Worktree.containing($0, in: model.worktrees)?.path == worktree.path } ?? false
-                                },
-                                reason: model.showing.flatMap {
-                                    $0.root.standardizedFileURL == worktree.path.standardizedFileURL ? $0.reason : nil
-                                },
-                                merged: worktree.branch.flatMap { model.merged[$0] },
-                                pullRequest: worktree.branch.flatMap { model.pullRequests[$0] },
-                                theme: theme, actions: actions)
-                        }
-                    }
-                    .padding(.bottom, 4)
-                }
-            }
-        }
-    }
-}
-
-private struct WorktreeRowView: View {
+/// One worktree, in Overgit's Worktrees section: the branch, what is
+/// happening in it, and everything you can do to it.
+struct WorktreeRowView: View {
     let worktree: Worktree
     let isCurrent: Bool
     /// The tabs working in this checkout, so the row says what is going on

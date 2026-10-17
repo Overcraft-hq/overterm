@@ -96,6 +96,7 @@ final class E2ETests: XCTestCase {
     func testInbox() throws { try run("inbox") }
     func testAskAgent() throws { try run("askAgent") }
     func testDropSplit() throws { try run("dropSplit") }
+    func testOvergit() throws { try run("overgit") }
     func testSimulator() throws { try run("simulator") }
     func testThroughput() throws { try run("throughput") }
 

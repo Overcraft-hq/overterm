@@ -294,6 +294,7 @@ enum KeyCommands {
         // `ghosttyLines` then writes the unbind for it.
         .init("palette.show", "Command Palette", group: "Panels", key: "cmd+k"),
         .init("sidebar.toggle", "Toggle Sidebar", group: "Panels", key: "cmd+b"),
+        .init("overgit.show", "Overgit", group: "Panels", key: "alt+cmd+g"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
         .init("browser.toggle", "Browser", group: "Panels", key: "shift+cmd+b"),
         .init("usage.show", "Usage", group: "Panels", key: "alt+cmd+u"),

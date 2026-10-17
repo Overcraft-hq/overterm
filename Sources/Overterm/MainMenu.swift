@@ -97,6 +97,8 @@ enum MainMenu {
         command(viewMenu, "Broadcast Input to Group…", #selector(TerminalWindowController.broadcastToGroup(_:)), "groups.broadcast")
         viewMenu.addItem(.separator())
         command(viewMenu, "Toggle Sidebar", #selector(TerminalWindowController.toggleFileTree(_:)), "sidebar.toggle")
+        // Ticked while the sidebar is on it.
+        command(viewMenu, "Overgit", #selector(TerminalWindowController.showOvergit(_:)), "overgit.show")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
         // Ticked while the column shows; off with Settings ▸ Browser.

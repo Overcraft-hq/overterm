@@ -4,23 +4,27 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage
+        case changes, pullRequest, usage, commit
     }
 
     @Published var mode: Mode = .changes
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
-/// branch's), its pull request, or what the agents have spent — a switch
-/// at the top chooses.
+/// branch's), its pull request, what the agents have spent, or the commit
+/// picked in Overgit — a switch at the top chooses. Commit shows only
+/// once one has been picked: a tab that can say nothing is in the way.
 struct RightPaneView: View {
     @ObservedObject var pane: RightPane
     @ObservedObject var diff: DiffModel
     @ObservedObject var worktrees: WorktreeModel
+    /// Observed so the Commit tab appears the moment one is picked.
+    @ObservedObject var detail: CommitDetailModel
     @ObservedObject var theme: ChromeTheme
     let changes: DiffPanelView
     let pullRequest: PullRequestView
     let usage: UsageView
+    let commit: CommitDetailView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -56,6 +60,14 @@ struct RightPaneView: View {
                         Text(verbatim: meter.reading()).foregroundStyle(theme.dimText)
                     }
                 }
+                if let sha = commit.model.shortSHA {
+                    // The sha alone: a fourth word here and the first three
+                    // tabs truncate to "Chang…" and "Pull Req…".
+                    tab(.commit, help: "The commit picked in Overgit") {
+                        Image(systemName: "point.3.filled.connected.trianglepath.dotted").font(.system(size: 10))
+                        Text(verbatim: sha).font(.system(size: 11, design: .monospaced))
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -64,6 +76,7 @@ struct RightPaneView: View {
             case .changes: changes
             case .pullRequest: pullRequest
             case .usage: usage
+            case .commit: commit
             }
         }
         .background(theme.strip)
@@ -72,7 +85,7 @@ struct RightPaneView: View {
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
     }
 
-    private func tab<Label: View>(_ mode: RightPane.Mode, @ViewBuilder label: () -> Label) -> some View {
+    private func tab<Label: View>(_ mode: RightPane.Mode, help: String? = nil, @ViewBuilder label: () -> Label) -> some View {
         Button {
             pane.mode = mode
         } label: {
@@ -85,5 +98,6 @@ struct RightPaneView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(help ?? "")
     }
 }

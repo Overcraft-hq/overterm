@@ -8,12 +8,12 @@ libghostty's own threads and git calls.
 ```
 ┌─ tab strip (SwiftUI, in the title bar) ──── 3 need you ─ ± +N −M ─┐
 │  ╭──────────╮ ╭──────────────────────────╮ ╭─────────╮ ╭────────╮ │
-│  │ sidebar  │ │ pane header  ⊞ ⊟ ⤢ ✕     │ │ editor  │ │changes │ │
+│  │ sidebar  │ │ pane header  ⊞ ⊟ ⤢ ✕     │ │ editor  │ │ right  │ │
 │  │ Files /  │ ├──────────────────────────┤ │ pane    │ │ pane   │ │
-│  │Worktrees │ │ terminal container       │ │(opens on│ │(± badge│ │
-│  │Sessions /│ │ (every tab's SplitHostView;│ a file │ │ View ▸ │ │
-│  │ Snippets │ │  only the selected one   │ │  click) │ │Changes │ │
-│  │ (⌘B)     │ │  visible)                │ │         │ │or ⌥⌘D) │ │
+│  │ Overgit /│ │ terminal container       │ │(opens on│ │(changes│ │
+│  │Sessions /│ │ (every tab's SplitHostView;│ a file │ │ PR,    │ │
+│  │ Snippets │ │  only the selected one   │ │  click) │ │ usage, │ │
+│  │ (⌘B)     │ │  visible)                │ │         │ │ commit)│ │
 │  ╰──────────╯ ╰──────────────────────────╯ ╰─────────╯ ╰────────╯ │
 └───────────────────────────────────────────────────────────────────┘
       + ⌘P palette: an overlay over the whole content view
@@ -27,7 +27,7 @@ libghostty's own threads and git calls.
 
   The gap was the divider first — one number, and a grab area for free — but **a divider is measured even for a collapsed item**: with the editor, the changes pane and the inbox all shut, 30 pt of window went dead down the right-hand side, and a shut column *between* two open ones doubled the gap there. A card's own margin is only spent when the card is on screen. The `layout` E2E scenario measures both.
 - A card's top reaches into the title bar, which is taller than the strip. So it refuses to drag the window and zeroes the safe-area inset SwiftUI would otherwise add, and is otherwise transparent to what it wraps — flipped, and it hands on a context menu it does not have.
-- One split (`split`, vertical, autosave `OvertermColumns.v4`): sidebar | terminal | editor | inbox | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
+- One split (`split`, vertical, autosave `OvertermColumns.v5`): sidebar | terminal | editor | browser | inbox | right pane. Bump the key's version whenever a column's width means something new, or stale positions get applied.
 - **The right of the window is one slot** (`RightSlot`, `TerminalWindowController+Browser`): the browser column (the simulator with it) and the pane the changes, the pull request and the usage share. Opening one takes the slot from the other and remembers it (`displacedSlot`); closing it gives the slot back. Open together, the browser sat between the terminal and the pane with all four columns too narrow to work in. A pane that only stepped aside is not a choice to close it — `setRightPaneShown(_:remember:)` writes the "changes pane is open" default for your own ⌥⌘D, not for the browser's.
 - **The strip's empty space is the drag area, whatever is over it** (`TabStripHostingView.hitTest`). It is the title bar: it has to move the window, and zoom it when double-clicked. The tabs scroll, and the scroll view's clip view answered for the space beside them — `mouseDownCanMoveWindow` moves the window, but AppKit zooms no window for a background drag, so double-clicking the title bar quietly stopped zooming. Such an answer is handed to `WindowDragView`, which does both. The `layout` scenario checks the view that answers, in three places along the strip, and that that view zooms: "something draggable is under there" passed through the whole regression.
 - The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
@@ -563,6 +563,55 @@ A failed command gets a ring over its rows (`Blocks/BlockFrameView`,
 AppKit and inert — it lies over live text), and the three things you then
 want are in the pane header, which does not scroll away.
 
+## Overgit (⌥⌘G, sidebar)
+
+One git home: the sidebar panel beside Files, Sessions and Snippets, with
+a commit's own diff in the right-hand pane. `Sources/Overterm/Overgit/`;
+the readers it uses are in `Sources/Overterm/Git/`.
+
+- **What it reads.** `CommitLog` (`git log -z … --decorate=full`) for the
+  history with its parents; `Refs` (`for-each-ref`, `remote -v`) for
+  branches with ahead/behind, tags and remotes; `Stashes`; `CommitShow` for
+  one commit. `--decorate=full` is not decoration: short names cannot be
+  told apart — `feature/x` is a local branch and `origin/x` is not — and
+  the full refname says which without guessing.
+- **Nothing is read unless it is being looked at.** The panel is one of
+  four and most of the time it is not the one on screen, so `OvergitModel`
+  reads only while `visible` **and** only the sections that are open — the
+  inbox's rule, a section at a time. Shutting a section keeps what it read,
+  so reopening it does not blink. Which panel is showing had to leave the
+  view for this: `@AppStorage` inside `SidebarView` could not tell the
+  window when to start and stop, so it is `SidebarModel` (same key).
+- **Pull requests are not read here at all.** `WorktreeModel` already asks
+  `gh` once a minute for the whole repository; a second asker would double
+  the rate limit for the same answer. The overview's uncommitted counts
+  are `DiffModel`'s, for the same reason.
+- **The graph.** `GraphLayout` is pure: a lane is a column some commit is
+  expected in; a commit takes the lowest lane already waiting for it, else
+  the lowest free one; its first parent inherits that lane and the others
+  take their own; a lane nobody waits in is free at once. So six lanes
+  serve a repository with a hundred branches as long as only six overlap.
+  Past that budget lanes are drawn on top of the last one rather than
+  widening the sidebar without end — the sidebar can be 180 pt, and an
+  exact graph there is worth less than a subject you can read. A row says
+  what passes it, what ends at it and what leaves it; `GraphGutter` draws
+  that in a `Canvas` per row, which is why the commit rows are a fixed
+  36 pt — the lines have to meet.
+- **Worktrees moved in** and gave up its icon. A sidebar left on the old
+  panel comes back on Overgit (`SidebarPanel(stored:)`), not empty.
+- **A commit opens in the right-hand pane**, a fourth tab beside Changes,
+  Pull Request and Usage — not a column, so the "right of the window is
+  one slot" rule holds and the browser steps aside as it does for the
+  changes pane. `CommitDetailModel` runs three `git show` calls for the
+  commit and one per file; `GitStatus` and `FileDiff` parse all of it
+  unchanged, and `FileCard` (lifted out of the changes pane into
+  `Diff/FileDiffView.swift`) draws it without the stage box or Discard. A
+  merge is shown against its first parent — what it brought in — and the
+  pane says so.
+- **The mark** is drawn in code (`OvergitMark`), not loaded: there is no
+  asset catalog and no SVG pipeline, and one glyph is not reason enough to
+  add either.
+
 ## Claude sessions (sidebar)
 
 `ClaudeSessions.list` finds transcripts in `~/.claude/projects` for the
@@ -971,7 +1020,7 @@ opener (the browser).
 | Sidebar/changes visible, sidebar panel, changes scope | `UserDefaults` (`sidebarVisible`, `diffVisible`, `sidebarPanel`, `diffScope`) |
 | The app files open in | `UserDefaults` (`openWithApp`, a bundle id) |
 | Files dropped as promises (Photos, Safari) | `~/Library/Caches/io.github.overcraft-hq.overterm/Drops/<uuid>/` (`AppEnvironment.dropsDirectory`) |
-| Divider positions | `UserDefaults` split autosave (`OvertermColumns.v4`) |
+| Divider positions | `UserDefaults` split autosave (`OvertermColumns.v5`) |
 
 Bundle id `io.github.overcraft-hq.overterm`.
 

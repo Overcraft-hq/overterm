@@ -15,6 +15,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var hosts: [Tab.ID: SplitHostView] = [:]
     private(set) var tree = FileTreeModel()
     private(set) var worktrees = WorktreeModel()
+    /// Which panel the sidebar shows — the window's, not the view's, so
+    /// Overgit can be told when to read git and when to stop.
+    let sidebarPanel = SidebarModel()
+    /// The checkout's history, branches, stashes, tags and remotes.
+    let overgit = OvergitModel()
     let snippets = SnippetStore()
     private(set) var palette = PaletteModel()
     private(set) var paletteView: NSView?
@@ -108,7 +113,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     var displacedSlot: RightSlot?
     /// While the editor is zoomed: each other column's state before it.
     private(set) var diffItem: NSSplitViewItem?
-    private var cancellables: Set<AnyCancellable> = []
+    /// Not private: the Overgit extension subscribes too.
+    var cancellables: Set<AnyCancellable> = []
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
@@ -122,6 +128,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// What the agents have spent and what is left of their quotas, in the
     /// right pane and on the strip's gauge.
     let usage = UsageModel()
+    /// The commit picked in Overgit, shown in the right pane.
+    let commitDetail = CommitDetailModel()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -264,8 +272,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // one paints its own translucent material over our theme colour.
         let sidebar = NSHostingController(
             rootView: SidebarView(
+                sidebar: sidebarPanel,
                 tree: tree,
                 worktrees: worktrees,
+                overgit: overgit,
+                diff: diff,
                 snippets: snippets,
                 sessions: sessions,
                 store: store,
@@ -292,6 +303,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newTask: { [weak self] in self?.newTask(nil) },
                     cleanUp: { [weak self] in self?.cleanUpMergedWorktrees(nil) },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) }
+                ),
+                overgitActions: OvergitActions(
+                    showCommit: { [weak self] in self?.showCommit($0) },
+                    checkOut: { [weak self] in self?.checkOut($0) },
+                    newWorktree: { [weak self] in self?.newTask(base: $0.name) },
+                    showPullRequest: { [weak self] in self?.showPullRequest(nil) },
+                    openPullRequest: { if let url = $0.url { NSWorkspace.shared.open(url) } },
+                    applyStash: { [weak self] in self?.applyStash($0) },
+                    dropStash: { [weak self] in self?.dropStash($0) },
+                    showChanges: { [weak self] in self?.showChanges(nil) }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
@@ -434,7 +455,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // in the title bar, View ▸ Changes or ⌥⌘D.
         let diffPanel = NSHostingController(
             rootView: RightPaneView(
-                pane: rightPane, diff: diff, worktrees: worktrees, theme: theme,
+                pane: rightPane, diff: diff, worktrees: worktrees, detail: commitDetail, theme: theme,
                 changes: DiffPanelView(
                     model: diff, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
@@ -448,7 +469,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         self.openInEditor(root.appendingPathComponent(path), line: line)
                     }),
                 usage: UsageView(
-                    model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) })))
+                    model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) }),
+                commit: CommitDetailView(
+                    model: commitDetail, theme: theme,
+                    onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onOpen: { [weak self] path in
+                        guard let self, let root = self.diff.root else { return }
+                        self.openInEditor(root.appendingPathComponent(path))
+                    })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -513,6 +541,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         self.browserItem = browserItem
         split.addSplitViewItem(browserItem)
         wireBrowser()
+        wireOvergit()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -1611,7 +1640,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// New Task: a worktree on a new (or existing) branch next to the repo,
     /// then a tab in it named after the branch, with the agent started.
-    @objc func newTask(_ sender: Any?) {
+    @objc func newTask(_ sender: Any?) { newTask(base: nil) }
+
+    /// `base` is the branch to start from — Overgit's branch rows pass one,
+    /// the menu item passes nothing and the setting decides.
+    func newTask(base: String?) {
         guard let repo = worktrees.main?.path else {
             showAlert("Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.")
             return
@@ -1619,7 +1652,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         presentSheet { close in
             NewTaskView(
                 repo: repo,
-                defaultBase: Settings.shared.taskBase.isEmpty ? worktrees.main?.branch ?? "HEAD" : Settings.shared.taskBase,
+                defaultBase: base ?? (Settings.shared.taskBase.isEmpty ? worktrees.main?.branch ?? "HEAD" : Settings.shared.taskBase),
                 defaultAgent: Settings.shared.defaultTaskAgent,
                 location: Settings.shared.worktreeLocation,
                 onCreate: { [weak self] branch, base, agent in
@@ -2529,6 +2562,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _, _ in
                 self?.toggleFileTree(nil)
             },
+            PaletteItem(
+                id: "a.overgit", group: .action, title: "Overgit",
+                subtitle: "The checkout’s history, branches and worktrees  ⌥⌘G", symbol: "arrow.triangle.branch"
+            ) { [weak self] _, _ in self?.showOvergit(nil) },
             PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
                 [weak self] _, _ in self?.toggleDiff(nil)
             },
@@ -2961,6 +2998,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 self.worktrees.showing = source
                 self.diff.setRoot(source.root)
                 self.diff.showing = source.reason
+                // A commit belongs to the checkout it is in: moving to
+                // another one puts the pane back to nothing.
+                let moved = self.overgit.root?.standardizedFileURL != source.root.standardizedFileURL
+                self.overgit.setRoot(source.root)
+                if moved { self.commitDetail.show(root: source.root, sha: nil) }
             }
     }
 
@@ -3067,10 +3109,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Which of the right pane's three is actually on screen. Each model
     /// reads only while it is: the pull request asks `gh`, usage walks the
     /// agents' logs.
-    private func updateRightPaneVisibility() {
+    func updateRightPaneVisibility() {
         let shown = diffItem?.isCollapsed == false
         pullRequest.visible = shown && rightPane.mode == .pullRequest
         usage.visible = shown && rightPane.mode == .usage
+        commitDetail.visible = shown && rightPane.mode == .commit
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -3078,6 +3121,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let show = sidebarItem.isCollapsed
         sidebarItem.animator().isCollapsed = !show
         AppEnvironment.defaults.set(show, forKey: Self.sidebarVisibleKey)
+        // Overgit reads git only while it is on screen.
+        updateOvergitVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).
@@ -3156,6 +3201,9 @@ extension TerminalWindowController: NSMenuItemValidation {
         }
         if menuItem.action == #selector(toggleDiff(_:)) {
             menuItem.state = diffItem?.isCollapsed == false ? .on : .off
+        }
+        if menuItem.action == #selector(showOvergit(_:)) {
+            menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .git ? .on : .off
         }
         if menuItem.action == #selector(toggleTabPeek(_:)) {
             menuItem.state = peek.isOpen ? .on : .off
