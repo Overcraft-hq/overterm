@@ -11,7 +11,7 @@ import SwiftUI
 /// An arch over a branch: Overterm's "over", and git's.
 struct OvergitMark: View {
     /// The design is drawn on a 24×24 square and scaled from there.
-    private static let side: CGFloat = 24
+    private nonisolated static let side: CGFloat = 24
 
     var body: some View {
         GeometryReader { geometry in

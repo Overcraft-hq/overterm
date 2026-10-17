@@ -29,7 +29,7 @@ struct GraphGutter: View {
 
     /// What one lane is given, in points. Six of them is 66 pt — the widest
     /// the gutter ever gets (`GraphLayout`'s own cap).
-    static let laneWidth: CGFloat = 11
+    nonisolated static let laneWidth: CGFloat = 11
 
     static func width(lanes: Int) -> CGFloat { CGFloat(max(1, lanes)) * laneWidth }
 
