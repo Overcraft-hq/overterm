@@ -706,6 +706,9 @@ struct FileWhy: Equatable {
     /// Opened: every reason, in full; else the newest, in two lines.
     let open: Bool
 
+    /// A card with no strip at all — a commit's files, for one.
+    static let none = FileWhy(reasons: [], commits: [], open: false)
+
     /// Nothing to say: no strip at all.
     var isEmpty: Bool { reasons.isEmpty && commits.isEmpty }
     var shownReasons: [ClaudeEdit] { open ? reasons : Array(reasons.prefix(1)) }
