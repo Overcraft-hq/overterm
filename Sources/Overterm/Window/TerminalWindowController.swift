@@ -128,6 +128,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// What the agents have spent and what is left of their quotas, in the
     /// right pane and on the strip's gauge.
     let usage = UsageModel()
+    /// The commit picked in Overgit, shown in the right pane.
+    let commitDetail = CommitDetailModel()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -453,7 +455,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // in the title bar, View ▸ Changes or ⌥⌘D.
         let diffPanel = NSHostingController(
             rootView: RightPaneView(
-                pane: rightPane, diff: diff, worktrees: worktrees, theme: theme,
+                pane: rightPane, diff: diff, worktrees: worktrees, detail: commitDetail, theme: theme,
                 changes: DiffPanelView(
                     model: diff, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
@@ -467,7 +469,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         self.openInEditor(root.appendingPathComponent(path), line: line)
                     }),
                 usage: UsageView(
-                    model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) })))
+                    model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) }),
+                commit: CommitDetailView(
+                    model: commitDetail, theme: theme,
+                    onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onOpen: { [weak self] path in
+                        guard let self, let root = self.diff.root else { return }
+                        self.openInEditor(root.appendingPathComponent(path))
+                    })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -2989,7 +2998,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 self.worktrees.showing = source
                 self.diff.setRoot(source.root)
                 self.diff.showing = source.reason
+                // A commit belongs to the checkout it is in: moving to
+                // another one puts the pane back to nothing.
+                let moved = self.overgit.root?.standardizedFileURL != source.root.standardizedFileURL
                 self.overgit.setRoot(source.root)
+                if moved { self.commitDetail.show(root: source.root, sha: nil) }
             }
     }
 
@@ -3096,10 +3109,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// Which of the right pane's three is actually on screen. Each model
     /// reads only while it is: the pull request asks `gh`, usage walks the
     /// agents' logs.
-    private func updateRightPaneVisibility() {
+    func updateRightPaneVisibility() {
         let shown = diffItem?.isCollapsed == false
         pullRequest.visible = shown && rightPane.mode == .pullRequest
         usage.visible = shown && rightPane.mode == .usage
+        commitDetail.visible = shown && rightPane.mode == .commit
     }
 
     @objc func toggleFileTree(_ sender: Any?) {

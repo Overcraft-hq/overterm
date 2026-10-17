@@ -43,9 +43,15 @@ extension TerminalWindowController {
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
     }
 
-    /// A commit was picked in the panel.
+    /// A commit was picked in the panel: the right-hand pane shows it.
+    /// That pane is the slot the browser shares, so the browser steps
+    /// aside as it does for the changes pane.
     func showCommit(_ commit: Commit) {
         overgit.selected = commit.sha
+        commitDetail.show(root: overgit.root, sha: commit.sha)
+        rightPane.mode = .commit
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
     }
 
     /// Checks `branch` out in the checkout the panel is about. A remote

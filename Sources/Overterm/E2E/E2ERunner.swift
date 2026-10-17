@@ -1980,14 +1980,37 @@ final class E2ERunner {
         check("so is the remote", app.overgit.remotes.first?.host == "example.com", "\(app.overgit.remotes.map(\.name))")
         check("and the choice is remembered", AppEnvironment.defaults.stringArray(forKey: "overgitSections")?.contains("tags") == true)
 
+        // A commit opens in the right-hand pane, which the browser shares.
+        app.toggleBrowser(nil)
+        check("the browser is open to begin with", app.browserItem?.isCollapsed == false)
         if let commit = app.overgit.commits.first {
             app.showCommit(commit)
             check("picking a commit marks it", app.overgit.selected == commit.sha)
+            check("and puts the right-hand pane on it", app.rightPane.mode == .commit && app.diffItem?.isCollapsed == false)
+            check("the browser steps aside rather than being squeezed", app.browserItem?.isCollapsed == true)
+            check(
+                "the commit's own message arrives",
+                await eventually(10) { self.app.commitDetail.detail?.commit.subject == "Merge feature/x" },
+                "\(String(describing: app.commitDetail.phase))")
+            check(
+                "with what the merge brought in",
+                app.commitDetail.detail?.files.map(\.path) == ["b.txt"],
+                "\(app.commitDetail.detail?.files.map(\.path) ?? [])")
+            check(
+                "and that file's diff, read from the commit",
+                await eventually(10) {
+                    self.app.commitDetail.diffs["b.txt"]?.lines.filter { $0.kind == .added }.map(\.text) == ["two"]
+                })
         }
-
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             await pause(0.8)
             app.captureWindow(to: png)
+        }
+        if let older = app.overgit.commits.last {
+            app.showCommit(older)
+            check(
+                "picking another reads that one", await eventually(10) { self.app.commitDetail.detail?.commit.subject == "Add a" },
+                "\(String(describing: app.commitDetail.detail?.commit.subject))")
         }
 
         // A folder that is no repository says so rather than showing seven
@@ -1996,6 +2019,9 @@ final class E2ERunner {
         try? FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
         app.newTab(in: plain)
         check("outside a repository the panel says so", await eventually(10) { !self.app.overgit.isRepository })
+        check(
+            "and the commit goes with the checkout it was in",
+            await eventually(10) { self.app.commitDetail.sha == nil && self.app.commitDetail.detail == nil })
     }
 
     /// One tab in each state, for looking at: OVERTERM_DUMP_PNG=<png>
