@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.12.4 — 2026-10-17
+
+- git: a repository's commits, branches, stashes, tags and remotes
+
 ## 2.12.3 — 2026-10-17
 
 - window: the browser and the right-hand pane take turns, and the strip zooms again
