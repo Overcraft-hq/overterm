@@ -7,6 +7,34 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.12.3 — 2026-10-17
+
+- window: the browser and the right-hand pane take turns, and the strip zooms again
+
+## 2.12.2 — 2026-10-16
+
+- e2e: the shell times the throughput floods, as another terminal's would
+
+## 2.12.1 — 2026-10-16
+
+- e2e: a throughput scenario, so the terminal can be put beside another
+
+## 2.12.0 — 2026-10-16
+
+- simulator: a device around the screen, and its Home button
+
+## 2.11.0 — 2026-10-16
+
+- simulator: the device itself in the column — live, and you can tap it
+
+## 2.10.1 — 2026-10-16
+
+- simulator: the device's own framebuffer, and a phone in the title bar
+
+## 2.10.0 — 2026-10-16
+
+- browser: the simulator in the column, beside the browser
+
 ## 2.9.2 — 2026-10-16
 
 - browser: a Browser button in the title bar, beside the ± badge

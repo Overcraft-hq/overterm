@@ -6,6 +6,16 @@ enum ZoomedColumn: Equatable {
     case editor, browser
 }
 
+/// The two things that open on the right of the window: the browser column
+/// (the simulator with it) and the pane the changes, the pull request and
+/// the usage share. They are one slot — open together they pushed the
+/// browser into the middle of the window and left all four columns too
+/// narrow to work in — so one opening closes the other, and closing it
+/// gives the slot back.
+enum RightSlot: Equatable {
+    case browser, pane
+}
+
 /// The browser column: each terminal tab's own browser (its pages), shown
 /// while that tab is selected; links and ports routed into it; agents
 /// given it (BrowserBridge).
@@ -19,6 +29,13 @@ extension TerminalWindowController {
             self.setZoomed(self.zoomedColumn == .browser ? nil : .browser)
         }
         browser.onAskAgent = { [weak self] page in self?.askAboutPage(page) }
+        if let simulator = browserColumn?.simulator {
+            simulator.onClose = { [weak self] in self?.closeBrowser() }
+            simulator.onToggleZoom = { [weak self] in
+                guard let self else { return }
+                self.setZoomed(self.zoomedColumn == .browser ? nil : .browser)
+            }
+        }
         browser.onOpenExternally = { NSWorkspace.shared.open($0) }
         browser.makeWorkspace = { [weak self] in
             guard let self, let tab = self.store.selected else { return nil }
@@ -63,7 +80,10 @@ extension TerminalWindowController {
 
     @objc func toggleBrowser(_ sender: Any?) {
         guard let browserItem, Settings.shared.browserEnabled else { return }
-        if browserItem.isCollapsed {
+        // Open on the simulator, the globe takes the column back rather
+        // than shutting it.
+        if browserItem.isCollapsed || browserColumn?.mode != .web {
+            browserColumn?.show(.web)
             showBrowserColumn()
             if browser?.workspace?.active == nil { browser?.focusAddress() }
         } else {
@@ -71,19 +91,72 @@ extension TerminalWindowController {
         }
     }
 
+    /// The title bar's phone, beside the globe: the same column, showing
+    /// the simulator — read only while it is up.
+    @objc func toggleSimulator(_ sender: Any?) {
+        guard let browserItem, Settings.shared.browserEnabled else { return }
+        if browserItem.isCollapsed || browserColumn?.mode != .simulator {
+            showSimulator()
+        } else {
+            closeBrowser()
+        }
+    }
+
+    func showSimulator() {
+        guard Settings.shared.browserEnabled else { return }
+        browserColumn?.show(.simulator)
+        showBrowserColumn()
+    }
+
     private func showBrowserColumn() {
         guard let browserItem else { return }
+        takeRightSlot(.browser)
         if browserItem.isCollapsed { browserItem.animator().isCollapsed = false }
         browserButton.isOpen = true
+        browserButton.isSimulator = browserColumn?.mode == .simulator
+        browserColumn?.setColumnOpen(true)
         if let tab = store.selected, pendingBrowserPages[tab.id] != nil { _ = browserWorkspace(for: tab) }
         showSelectedBrowser()
     }
 
     func closeBrowser() {
+        hideBrowserColumn()
+        focusSelectedTerminal()
+        restoreRightSlot(after: .browser)
+    }
+
+    /// The column goes, without saying what takes its place.
+    private func hideBrowserColumn() {
         if zoomedColumn == .browser { setZoomed(nil) }
         browserItem?.animator().isCollapsed = true
         browserButton.isOpen = false
-        focusSelectedTerminal()
+        browserButton.isSimulator = false
+        browserColumn?.setColumnOpen(false)
+    }
+
+    /// Clears the right-hand slot for `slot`, remembering who had it.
+    func takeRightSlot(_ slot: RightSlot) {
+        switch slot {
+        case .browser:
+            guard diffItem?.isCollapsed == false else { return }
+            setRightPaneShown(false, remember: false)
+            displacedSlot = .pane
+        case .pane:
+            guard browserItem?.isCollapsed == false else { return }
+            hideBrowserColumn()
+            displacedSlot = .browser
+        }
+    }
+
+    /// `slot` has closed: what it took the slot from comes back.
+    func restoreRightSlot(after slot: RightSlot) {
+        let displaced = displacedSlot
+        displacedSlot = nil
+        switch (slot, displaced) {
+        case (.browser, .pane): setRightPaneShown(true, remember: false)
+        case (.pane, .browser): showBrowserColumn()
+        default: break
+        }
     }
 
     /// Opens `url` in `tab`'s browser — in the page showing, or a new one —
@@ -98,7 +171,11 @@ extension TerminalWindowController {
         } else {
             workspace.newPage(url)
         }
-        if tab.id == store.selectedID { showBrowserColumn() }
+        if tab.id == store.selectedID {
+            // A page to look at: the column comes back from the simulator.
+            browserColumn?.show(.web)
+            showBrowserColumn()
+        }
     }
 
     /// A link from Tab Info or a pane header's port: here or the system's,
@@ -161,7 +238,10 @@ extension TerminalWindowController {
             let workspace = browserWorkspace(for: tab)
         else { return nil }
         if tab.id == store.selectedID {
-            if browserItem?.isCollapsed == true { showBrowserColumn() }
+            if browserItem?.isCollapsed == true {
+                browserColumn?.show(.web)
+                showBrowserColumn()
+            }
             if browser?.workspace !== workspace { showSelectedBrowser() }
         }
         return workspace

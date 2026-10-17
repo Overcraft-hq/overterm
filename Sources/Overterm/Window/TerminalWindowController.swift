@@ -91,6 +91,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private(set) var terminalColumn: NSSplitViewItem?
     /// The browser column: the selected tab's browser (Browser/).
     private(set) var browser: BrowserViewController?
+    /// The browser column: the browser, or the simulator in its place.
+    private(set) var browserColumn: BrowserColumnController?
     private(set) var browserItem: NSSplitViewItem?
     /// Each tab's browser (its pages), made when first used.
     var browserWorkspaces: [UUID: BrowserWorkspace] = [:]
@@ -101,6 +103,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let browserButton = BrowserButtonState()
     /// Which column fills the window, and how the others were.
     private var columnZoom: (column: ZoomedColumn, restore: [(item: NSSplitViewItem, collapsed: Bool)])?
+    /// Which of the two right-hand panes gave up the slot to the other, so
+    /// it comes back when that one closes (`RightSlot`).
+    var displacedSlot: RightSlot?
     /// While the editor is zoomed: each other column's state before it.
     private(set) var diffItem: NSSplitViewItem?
     private var cancellables: Set<AnyCancellable> = []
@@ -229,7 +234,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     closeSettings: { [weak self] in self?.closeSettings() },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) },
-                    toggleBrowser: { [weak self] in self?.toggleBrowser(nil) }
+                    toggleBrowser: { [weak self] in self?.toggleBrowser(nil) },
+                    toggleSimulator: { [weak self] in self?.toggleSimulator(nil) }
                 ),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },
@@ -495,12 +501,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.addSplitViewItem(terminalColumn)
         split.addSplitViewItem(editorItem)
         let browser = BrowserViewController(chrome: theme, background: runtime.backgroundColor)
-        let browserItem = NSSplitViewItem(viewController: CardColumnController(browser, fill: .terminal, theme: theme))
+        let browserColumn = BrowserColumnController(
+            browser: browser, simulator: SimulatorViewController(chrome: theme, background: runtime.backgroundColor))
+        let browserItem = NSSplitViewItem(viewController: CardColumnController(browserColumn, fill: .terminal, theme: theme))
         browserItem.canCollapse = true
         browserItem.isCollapsed = true
         browserItem.minimumThickness = 420
         browserItem.holdingPriority = .defaultLow + 5
         self.browser = browser
+        self.browserColumn = browserColumn
         self.browserItem = browserItem
         split.addSplitViewItem(browserItem)
         wireBrowser()
@@ -1686,6 +1695,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.splitView.layoutSubtreeIfNeeded()
         editor?.isZoomed = columnZoom?.column == .editor
         browser?.setZoomed(columnZoom?.column == .browser)
+        browserColumn?.simulator.setZoomed(columnZoom?.column == .browser)
     }
 
     var zoomedColumn: ZoomedColumn? { columnZoom?.column }
@@ -2982,12 +2992,26 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     @objc func toggleDiff(_ sender: Any?) {
         guard let diffItem else { return }
         let show = diffItem.isCollapsed
+        // The right-hand slot is one place: the browser steps aside for it
+        // (RightSlot), and gets the slot back when the pane closes.
+        if show { takeRightSlot(.pane) }
+        setRightPaneShown(show, remember: true)
+        if !show {
+            focusSelectedTerminal()
+            restoreRightSlot(after: .pane)
+        }
+    }
+
+    /// Opens or closes the right-hand pane itself. `remember` is for a
+    /// choice of yours, which the next launch keeps; giving the slot to the
+    /// browser is not one.
+    func setRightPaneShown(_ show: Bool, remember: Bool) {
+        guard let diffItem else { return }
         // First: closing, the content goes before the pane animates shut.
         diff.panelVisible = show
         diffItem.animator().isCollapsed = !show
-        AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey)
+        if remember { AppEnvironment.defaults.set(show, forKey: Self.diffVisibleKey) }
         updateRightPaneVisibility()
-        if !show { focusSelectedTerminal() }
     }
 
     /// The ± badge in the title bar: opens the changes pane on what the

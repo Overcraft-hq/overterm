@@ -64,6 +64,8 @@ final class E2ERunner {
         "inbox": { await $0.inboxScenario() },
         "askAgent": { await $0.askAgentScenario() },
         "dropSplit": { await $0.dropSplitScenario() },
+        "simulator": { await $0.simulatorScenario() },
+        "throughput": { await $0.throughputScenario() },
     ]
 
     private let app: TerminalWindowController
@@ -178,9 +180,14 @@ final class E2ERunner {
     /// reply — swallowing keys typed in that window, which is wider under
     /// load. If the output still doesn't come, the command is typed once
     /// more; these commands only write a file, so a second run is harmless.
-    private func runAndExpect(_ command: String, file: URL, content: String, _ name: String) async {
+    /// Types `command`, waits for `file` to say `content` — or, with no
+    /// content asked for, for the file to be there at all (what a command
+    /// that writes its own measurement into it leaves).
+    private func runAndExpect(_ command: String, file: URL, content: String?, _ name: String) async {
         let ok = await run(command) {
-            (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == content
+            guard let written = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return false }
+            return content.map { written == $0 } ?? !written.isEmpty
         }
         check(name, ok, "\(file.lastPathComponent) = \((try? String(contentsOf: file, encoding: .utf8)) ?? "missing")")
     }
@@ -613,6 +620,34 @@ final class E2ERunner {
         check("the browser can fill the window", app.zoomedColumn == .browser && app.terminalColumn?.isCollapsed == true)
         app.setZoomed(nil)
         check("…and give it back", app.zoomedColumn == nil && app.terminalColumn?.isCollapsed == false)
+
+        // The right of the window is one slot (RightSlot): the browser and
+        // the pane the changes, the pull request and the usage share take
+        // turns in it. Open together, the browser sat in the middle of the
+        // window and every column was too narrow to work in.
+        app.toggleDiff(nil)
+        check(
+            "the changes pane takes the browser's place",
+            await eventually(2) { self.app.diffItem?.isCollapsed == false && self.app.browserItem?.isCollapsed == true },
+            "diff \(app.diffItem?.isCollapsed as Any), browser \(app.browserItem?.isCollapsed as Any)")
+        check("…and the title bar's globe goes out with it", !app.browserButton.isOpen)
+        app.showUsage(nil)
+        check(
+            "usage opens in that same slot", app.rightPane.mode == .usage && app.browserItem?.isCollapsed == true,
+            "\(app.rightPane.mode)")
+        app.toggleBrowser(nil)
+        check(
+            "the globe takes the slot back",
+            await eventually(2) { self.app.browserItem?.isCollapsed == false && self.app.diffItem?.isCollapsed == true }
+                && app.browserButton.isOpen)
+        app.toggleDiff(nil)
+        check(
+            "…and the pane takes it again",
+            await eventually(2) { self.app.diffItem?.isCollapsed == false && self.app.browserItem?.isCollapsed == true })
+        app.toggleDiff(nil)
+        check(
+            "closing the pane gives the browser back what it took",
+            await eventually(2) { self.app.browserItem?.isCollapsed == false && self.app.diffItem?.isCollapsed == true })
 
         // Off in Settings: no column, no pages, links go to your browser.
         Settings.shared.set("browser.enabled", .bool(false))
@@ -1274,30 +1309,109 @@ final class E2ERunner {
 
         // The strip fills the title bar and has to behave like one: its
         // empty space drags the window and a double-click there zooms it.
-        // Both have been lost twice — once to a colour painted in front of
-        // the drag area, once to the scroll view the tabs now live in —
-        // so this checks the space itself, whatever is on top of it.
-        let inStrip = NSPoint(x: window.frame.width * 0.55, y: lights.midY)
-        let onTop = window.contentView?.superview?.hitTest(inStrip)
-        check(
-            "the strip's empty space moves the window",
-            onTop is WindowDragView || onTop?.mouseDownCanMoveWindow == true, "\(String(describing: onTop))")
-        if let dragged = Self.find(WindowDragView.self, in: window.contentView) { _ in true },
+        // Both have been lost three times — to a colour painted in front
+        // of the drag area, to the scroll view the tabs now live in, and
+        // to that scroll view again. The second half is the one that hides:
+        // the clip view moves the window on a drag, so "something
+        // draggable answers" passed while double-clicking did nothing —
+        // AppKit zooms no window for a background drag. So: the view that
+        // answers for the empty strip must be the drag area itself, in
+        // several places along it, and that view must zoom the window.
+        // (The click can't be sent at the window here — the run is never
+        // activated, and AppKit holds a mouse-down for an inactive app.)
+        var dragArea: WindowDragView?
+        for fraction in [0.35, 0.55, 0.75] {
+            let point = NSPoint(x: window.frame.width * fraction, y: lights.midY)
+            let onTop = window.contentView?.superview?.hitTest(point)
+            dragArea = dragArea ?? onTop as? WindowDragView
+            check(
+                "the strip's empty space \(Int(fraction * 100))% along moves the window and zooms it", onTop is WindowDragView,
+                "\(String(describing: onTop)) — canMove=\(onTop?.mouseDownCanMoveWindow ?? false)")
+        }
+        if let dragged = dragArea,
             let doubleClick = NSEvent.mouseEvent(
-                with: .leftMouseDown, location: inStrip, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1)
+                with: .leftMouseDown, location: NSPoint(x: window.frame.width * 0.55, y: lights.midY), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                clickCount: 2, pressure: 1)
         {
             let zoomed = window.isZoomed
             dragged.mouseDown(with: doubleClick)
             check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
             if window.isZoomed != zoomed { window.performZoom(nil) }
         } else {
-            check("the strip has a drag area at all", false)
+            check("the strip's empty space is the drag area at all", false)
         }
     }
 
     /// Dropping a tab onto a pane: the only way to make a split out of
     /// something that is already running.
+    /// The simulator in the browser's column: the title bar's phone puts
+    /// it there, the globe gives the column back, and closing it stops the
+    /// reading — whatever this Mac has booted (or hasn't).
+    private func simulatorScenario() async {
+        app.toggleBrowser(nil)
+        await pause(0.4)
+        guard let column = app.browserColumn else { return check("the window has a browser column", false) }
+        check("the globe opens the column on the browser", column.mode == .web && !column.browser.view.isHidden)
+        check("…and the phone beside it is unlit", app.browserButton.isOpen && !app.browserButton.isSimulator)
+        check("…with nothing read", !column.simulator.isActive)
+
+        app.toggleSimulator(nil)
+        await pause(0.4)
+        let simulator = column.simulator
+        check(
+            "the phone shows the simulator in the same column",
+            column.mode == .simulator && column.browser.view.isHidden && !simulator.view.isHidden)
+        check("…and lights in the title bar", app.browserButton.isOpen && app.browserButton.isSimulator)
+        check("…and it looks for the devices", simulator.isActive)
+        // Xcode is on the machines this runs on, but a booted simulator is
+        // nobody's promise: both answers are right, each with its own face.
+        let listed = await eventually(20) { !simulator.devices.isEmpty }
+        if listed, let booted = simulator.devices.first(where: \.isBooted) {
+            check("the picker is on the booted device", simulator.selected?.udid == booted.udid, simulator.selected?.label ?? "none")
+            // Xcode's own frameworks make it live and touchable; without
+            // them the pane falls back to screenshots. Both are a picture.
+            let arrived = await eventually(25) { simulator.mirrorStatus == .live || simulator.mirrorStatus == .polling }
+            check("…and its screen arrives", arrived, "\(simulator.mirrorStatus)")
+            check("…live, over Xcode's own frameworks", simulator.mirrorStatus == .live, "\(simulator.mirrorStatus) — screenshots instead")
+            // The device's own Home button, pressed the way a person does
+            // — live when the device takes input, and grey when it doesn't
+            // (an Xcode that drops the taps, or a guest that refuses the
+            // HID client), which is not the same thing as a live picture.
+            note("takes input: \(simulator.takesInput), CoreSimulator \(SimulatorHost.coreSimulatorVersion ?? "?")")
+            let home = Self.find(NSButton.self, in: app.window?.contentView) { $0.identifier?.rawValue == "simulatorHome" }
+            if let home {
+                check(
+                    "the pane's Home button is live exactly when the device takes input",
+                    await eventually(3) { home.isEnabled == simulator.takesInput },
+                    "enabled: \(home.isEnabled), takes input: \(simulator.takesInput)")
+                if simulator.takesInput { home.performClick(nil) }
+            } else {
+                check("the pane has a Home button", false)
+            }
+            if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+                await pause(1.0)
+                app.captureWindow(to: png + "-simulator.png")
+            }
+        } else {
+            check("nothing booted: nothing is read", simulator.mirrorStatus == .stopped, "\(simulator.mirrorStatus)")
+        }
+
+        app.toggleBrowser(nil)
+        await pause(0.4)
+        check(
+            "the globe gives the column back to the browser",
+            column.mode == .web && !simulator.isActive && simulator.mirrorStatus == .stopped && !app.browserButton.isSimulator)
+
+        app.toggleSimulator(nil)
+        await pause(0.3)
+        app.toggleSimulator(nil)
+        await pause(0.5)
+        check(
+            "the phone again shuts the column, and the reading with it",
+            app.browserItem?.isCollapsed == true && !simulator.isActive && simulator.mirrorStatus == .stopped)
+    }
+
     private func dropSplitScenario() async {
         let home = FileManager.default.homeDirectoryForCurrentUser
         await waitForPrompt()
@@ -3399,6 +3513,71 @@ final class E2ERunner {
     /// then a flood of output. Measures this process's CPU time, its memory
     /// footprint, and the longest the main thread went without running a
     /// 50 ms timer — what you'd feel as a hitch.
+    /// Throughput, as the terminal benchmarks measure it: how fast the pty
+    /// is drained, in one window with one tab — what another terminal is
+    /// opened to do, so the numbers can be put beside each other. The
+    /// `performance` scenario runs the same three with ten tabs open, which
+    /// is the more honest number for this app and the less comparable one.
+    private func throughputScenario() async {
+        await settledPrompt()
+        await pause(1)
+        let stalls = StallMeter()
+        await measureThroughput(stalls)
+        stalls.stop()
+    }
+
+    /// The three floods every terminal benchmark runs, and what they cost.
+    /// Notes, not thresholds: the numbers are the machine's as much as the
+    /// app's, and a loaded Mac would fail a limit that means nothing. What
+    /// is checked is that the window still answers while they pour in.
+    private func measureThroughput(_ stalls: StallMeter) async {
+        let plain = scratch.appendingPathComponent("plain.txt")
+        let line = String(String(repeating: "lorem ipsum dolor sit amet consectetur ", count: 2).prefix(78)) + "\n"
+        try? Data(String(repeating: line, count: 10 * 1024 * 1024 / line.utf8.count).utf8).write(to: plain)
+        let colourful = scratch.appendingPathComponent("ansi.txt")
+        var sgr = ""
+        for i in 0..<12000 {
+            for cell in 0..<20 { sgr += "\u{1B}[38;5;\((i + cell) % 256);48;5;\((i * 3 + cell) % 256)mlorem" }
+            sgr += "\u{1B}[0m\n"
+        }
+        try? Data(sgr.utf8).write(to: colourful)
+        // The grid is the work: a wider pane has more cells to draw, and a
+        // number without it can't be compared with another terminal's.
+        var grid = "?"
+        if let pane = app.store.selected?.terminal {
+            grid = "\(Int(pane.bounds.width / max(pane.cellSize.width, 1)))×\(pane.rowCount)"
+        }
+        let runs: [(String, String, Double)] = [
+            ("300 000 lines", "seq 1 300000", 300_000 * 7 / 1_048_576.0),
+            ("10 MB of plain text", "cat \(plain.path)", Double((try? Data(contentsOf: plain).count) ?? 0) / 1_048_576),
+            ("5 MB of coloured cells", "cat \(colourful.path)", Double((try? Data(contentsOf: colourful).count) ?? 0) / 1_048_576),
+        ]
+        for (name, command, megabytes) in runs {
+            stalls.reset()
+            // The shell times itself, as it would in any other terminal:
+            // typing the command and noticing the file it writes costs the
+            // better part of a second here, and that is this harness's, not
+            // the terminal's. What is left is what the other terminal's
+            // `time` would have printed.
+            await runAndExpect(
+                "zmodload zsh/datetime; t=$EPOCHREALTIME; \(command); print $((EPOCHREALTIME-t)) > \(out("flow").path)",
+                file: out("flow"), content: nil, name)
+            let seconds = Double((try? String(contentsOf: out("flow"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? 0
+            guard seconds > 0 else {
+                // The command never ran (the harness retypes after 8 s and
+                // can lose a race): a lost measurement, not a slow one.
+                note("\(name): no measurement — the command was lost, not slow")
+                continue
+            }
+            note(
+                String(
+                    format: "%@ in %.2f s (%.1f MB/s) at %@ cells, worst stall %.0f ms", name, seconds, megabytes / seconds, grid,
+                    stalls.worst * 1000))
+            check("the window answers while \(name) floods it (< 400 ms)", stalls.worst < 0.4, String(format: "%.0f ms", stalls.worst * 1000))
+            try? FileManager.default.removeItem(at: out("flow"))
+        }
+    }
+
     private func performanceScenario() async {
         await settledPrompt()
         for i in 0..<9 {
@@ -3515,6 +3694,14 @@ final class E2ERunner {
         let floodStall = stalls.worst
         note(String(format: "flood: 300 000 lines in %.1f s, worst main-thread stall %.0f ms", flood, floodStall * 1000))
         check("the window stays responsive while output floods (< 250 ms)", floodStall < 0.25, String(format: "%.0f ms", floodStall * 1000))
+
+        // Throughput, as the terminal benchmarks measure it: how fast the
+        // pty is drained. Two shapes, because they cost differently — plain
+        // ASCII lines, and cells carrying colour (vtebench's "dense cells").
+        // The numbers are notes, not checks: they are the machine's as much
+        // as the app's, and a loaded Mac would fail a threshold that means
+        // nothing. What is checked is that the window still answers.
+        await measureThroughput(stalls)
         stalls.stop()
     }
 

@@ -28,6 +28,8 @@ libghostty's own threads and git calls.
   The gap was the divider first — one number, and a grab area for free — but **a divider is measured even for a collapsed item**: with the editor, the changes pane and the inbox all shut, 30 pt of window went dead down the right-hand side, and a shut column *between* two open ones doubled the gap there. A card's own margin is only spent when the card is on screen. The `layout` E2E scenario measures both.
 - A card's top reaches into the title bar, which is taller than the strip. So it refuses to drag the window and zeroes the safe-area inset SwiftUI would otherwise add, and is otherwise transparent to what it wraps — flipped, and it hands on a context menu it does not have.
 - One split (`split`, vertical, autosave `OvertermColumns.v4`): sidebar | terminal | editor | inbox | changes. Bump the key's version whenever a column's width means something new, or stale positions get applied.
+- **The right of the window is one slot** (`RightSlot`, `TerminalWindowController+Browser`): the browser column (the simulator with it) and the pane the changes, the pull request and the usage share. Opening one takes the slot from the other and remembers it (`displacedSlot`); closing it gives the slot back. Open together, the browser sat between the terminal and the pane with all four columns too narrow to work in. A pane that only stepped aside is not a choice to close it — `setRightPaneShown(_:remember:)` writes the "changes pane is open" default for your own ⌥⌘D, not for the browser's.
+- **The strip's empty space is the drag area, whatever is over it** (`TabStripHostingView.hitTest`). It is the title bar: it has to move the window, and zoom it when double-clicked. The tabs scroll, and the scroll view's clip view answered for the space beside them — `mouseDownCanMoveWindow` moves the window, but AppKit zooms no window for a background drag, so double-clicking the title bar quietly stopped zooming. Such an answer is handed to `WindowDragView`, which does both. The `layout` scenario checks the view that answers, in three places along the strip, and that that view zooms: "something draggable is under there" passed through the whole regression.
 - The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
 - Every terminal pane carries a **38 pt header** (`PaneHeaderView`): what is running there, its island, its status, its ports, and split / split / zoom / close. The terminal gives up the room, not the pane's share of the tab. The host frames it; the window supplies it (`SplitHostView.makeHeader`), because what goes in it needs the tab and the window's actions.
 - Colours come from `ChromeTheme`, one object per window built from libghostty's background and foreground and held by every SwiftUI root. Three grounds a step apart — `win` (between the cards), `card` (a panel), `term` (the terminal) — then text in three weights, fills, and the status colours. A theme picked in Settings ▸ Themes reloads the config, and `TerminalWindowController.applyTerminalColors` recomputes the object: the views observe it, and the layers nobody binds (the window's background, the cards' fills, the pane dividers) are repainted by hand.
@@ -691,7 +693,9 @@ setting is there to change it. The `terminal` scenario checks the keys.
 An ad-hoc signed build is a new app to macOS each time, so the answer would
 not survive a reinstall; `make install` re-signs the installed copy with
 `SIGN_IDENTITY` (environment or the untracked `local.mk`) when it is set, and
-one identity keeps the grant (README, Build).
+one identity keeps the grant (README, Build). The simulator pane asks for
+nothing: it reads the device's own framebuffer rather than the Mac's screen,
+so no Screen Recording grant is involved (Simulator).
 
 ## Build metadata
 
@@ -860,6 +864,72 @@ driving it are in the same window as the code.
   the controls, each with a ref), click, type, screenshot, console,
   evaluate, back, reload, and the tabs (list, new, select, close). Ask
   Agent (✦) sends a page's address, errors and a screenshot the ⌘L way.
+
+## Simulator
+
+The browser's column shows one of two things, and the title bar has a
+button for each: the globe for the tab's browser, the phone beside it for
+the iOS simulator (`BrowserColumnController`; a sixth column would have
+cost every window the width and `OvertermColumns`' saved positions). Either
+button, pressed while the column already shows it, closes the column.
+
+It is the simulator, not a picture of one: the device's screen is live and
+clicks, drags, the wheel and the keyboard go to it.
+
+- **Xcode's own frameworks do it** (`SimulatorHost`). There is no public
+  API — `simctl` boots a device and takes screenshots, and that is all —
+  so, like every tool that puts a simulator in its own window (Radon IDE,
+  idb), Overterm loads `CoreSimulator` and this Mac's Xcode's
+  `SimulatorKit` at runtime and uses what Simulator.app uses. Nothing is
+  bundled, nothing is linked at build time (a missing class is a `nil`
+  here, not a launch failure), and every step is failable.
+- **The picture** is the device's own `IOSurface`
+  (`SimDisplayIOSurfaceRenderable.framebufferSurface`), put in a layer as
+  it is: no capture, no copy, no encoding, and no Screen Recording grant,
+  because nothing of the Mac's screen is read. CoreSimulator says when it
+  has drawn (`registerCallbackWithUUID:damageRectanglesCallback:`) and the
+  layer is told to look again (`setContentsChanged`); a rotation or resize
+  arrives as a new surface.
+- **The input** is SimulatorKit's own event builders —
+  `IndigoHIDMessageForMouseNSEvent` and
+  `IndigoHIDMessageForKeyboardArbitrary`, the C functions Simulator.app's
+  window calls when you click in it — carried to the device by
+  `SimDeviceLegacyHIDClient`. So the wire format is never written here,
+  only asked for. A click is a touch at a ratio of the screen (0…1 from
+  the top left, `SimulatorDisplayView.ratio`), a drag is down/moved/up, the
+  wheel is a swipe that ends when it stops, and `NSEvent.keyCode` is
+  already the code the keyboard builder wants.
+- **It looks like a device**: the screen is drawn with the device's own
+  corner rounding inside a body, the way Simulator.app draws one — a
+  phone's corners are famously round (iPhone 17 Pro: 55 pt on a 402 pt
+  screen), an iPad's barely, and the proportions say which it is without a
+  table of models to keep up to date (`SimulatorDisplayView.layout`, pure).
+  The toolbar's 🏠 is the device's own Home button
+  (`ButtonEventSourceHomeButton` to the hardware service), which works on a
+  device whose body hasn't had one since the iPhone X.
+- **From Xcode 27** (CoreSimulator 1155.4) the guest drops this input for
+  the whole boot: the bytes arrive, correctly, and nothing happens (idb hit
+  it first). `SimulatorHost.suppressesLegacyInput` is that rule, compared
+  numerically. Whether the device takes anything at all is one answer,
+  `SimulatorViewController.takesInput` — this Xcode builds the events and
+  its CoreSimulator still carries them — and the Home button, the cursor
+  and the note that offers Simulator.app all follow it, rather than
+  leaving you tapping at a picture. A live picture is not the same thing:
+  the screen can arrive from a device that refuses the HID client.
+- **The fallback** is `simctl io <device> screenshot`: no Xcode frameworks
+  (or an Xcode that moved them) means a BMP three or four times a second,
+  cut down to the pane with ImageIO off the main thread — a picture, not a
+  simulator you can use, but never a blank pane. `SimulatorMirror` chooses,
+  and the pane says which it got.
+- **The devices** are `simctl list devices --json`, parsed by
+  `SimulatorList` (booted first, then the newest runtime, a runtime's own
+  devices together). The picker boots a device that is shut down — with
+  `simctl boot`, not Simulator.app, which this pane does not need. `simctl`
+  runs through `Git.run`: a GCD thread, never the main one.
+- **Only while it shows**: the surface and its callbacks go when the column
+  is collapsed or the browser takes it back — the rule the inbox and the
+  usage pane keep. The device list is re-read every 3 s while it is up, so
+  a simulator booted elsewhere appears.
 
 ## Opening files in another app
 

@@ -27,6 +27,8 @@ struct TabBarActions {
     var setPinned: (Tab, Bool) -> Void
     /// The globe: the browser column, shown or hidden.
     var toggleBrowser: () -> Void = {}
+    /// The phone beside it: the same column, showing the simulator.
+    var toggleSimulator: () -> Void = {}
 }
 
 /// What the title bar's globe shows: whether there is a browser (Settings
@@ -34,7 +36,10 @@ struct TabBarActions {
 @MainActor
 final class BrowserButtonState: ObservableObject {
     @Published var isEnabled = true
+    /// The column is open — on the browser, or on the simulator.
     @Published var isOpen = false
+    /// What it is open on: the simulator rather than the browser.
+    @Published var isSimulator = false
 }
 
 /// Chrome-style tab strip, living in the window's title bar.
@@ -172,7 +177,9 @@ struct TabBarView: View {
                     .padding(.trailing, 6)
             }
             if browser.isEnabled {
-                BrowserButton(isOpen: browser.isOpen, theme: theme, action: actions.toggleBrowser)
+                BrowserButton(isOpen: browser.isOpen && !browser.isSimulator, theme: theme, action: actions.toggleBrowser)
+                    .padding(.trailing, 4)
+                SimulatorButton(isOpen: browser.isOpen && browser.isSimulator, theme: theme, action: actions.toggleSimulator)
                     .padding(.trailing, 6)
             }
             if let badge = diff.badge {
@@ -519,7 +526,7 @@ private struct DiffBadge: View {
 
 /// The browser column's switch in the title bar, beside the ± badge: lit
 /// while the column is open.
-private struct BrowserButton: View {
+struct BrowserButton: View {
     let isOpen: Bool
     @ObservedObject var theme: ChromeTheme
     let action: () -> Void
@@ -527,20 +534,43 @@ private struct BrowserButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "globe").font(.system(size: 12, weight: .medium))
-                Text("Browser").font(.system(size: 12, weight: .medium))
-            }
-            .foregroundStyle(isOpen ? theme.text : theme.text2)
-            .padding(.horizontal, 8)
-            .frame(height: 24)
-            .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
-            .contentShape(Rectangle())
+            // The icon alone, as the phone beside it: the word took room
+            // the tabs wanted, and said nothing the globe doesn't.
+            Image(systemName: "globe").font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isOpen ? theme.text : theme.text2)
+                .padding(.horizontal, 7)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(isOpen ? "Hide the browser (⇧⌘B)" : "Browser (⇧⌘B)")
         .accessibilityIdentifier("browserButton")
+    }
+}
+
+/// The simulator's switch, beside the browser's: the same column, showing
+/// the booted simulator's screen. Lit while that is what it shows.
+struct SimulatorButton: View {
+    let isOpen: Bool
+    @ObservedObject var theme: ChromeTheme
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "iphone").font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isOpen ? theme.text : theme.text2)
+                .padding(.horizontal, 7)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(isOpen ? "Hide the simulator" : "Simulator")
+        .accessibilityIdentifier("simulatorButton")
     }
 }
 
@@ -585,10 +615,41 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content> {
     static var height: CGFloat { 52 }
 
     override var mouseDownCanMoveWindow: Bool { false }
+
     /// The strip IS the title bar. With the title bar's inset (which
     /// `.ignoresSafeArea()` doesn't undo here) SwiftUI laid it out in the top
     /// 28 pt of its 38, leaving an empty band under the tabs.
     override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
+
+    /// The empty strip belongs to the drag area, whatever is over it.
+    ///
+    /// The tabs scroll now, and the scroll view's clip view answers for the
+    /// space beside them. That space still moved the window (the clip view's
+    /// `mouseDownCanMoveWindow`), but AppKit zooms no window for a
+    /// background drag, so double-clicking the title bar stopped zooming it
+    /// — the one half of the behaviour a check that calls the drag area
+    /// itself can't see. Nothing interactive is there: a tab answers from
+    /// the document view inside the clip view, a chip from this host.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        guard Self.isEmptyStrip(hit) else { return hit }
+        if dragArea == nil { dragArea = Self.dragArea(in: self) }
+        return dragArea ?? hit
+    }
+
+    /// Whether `view` is the scroll machinery the tabs live in, which has
+    /// nothing of its own under the pointer.
+    static func isEmptyStrip(_ view: NSView?) -> Bool { view is NSClipView || view is NSScrollView }
+
+    private weak var dragArea: WindowDragView?
+
+    private static func dragArea(in view: NSView) -> WindowDragView? {
+        if let drag = view as? WindowDragView { return drag }
+        for subview in view.subviews {
+            if let found = dragArea(in: subview) { return found }
+        }
+        return nil
+    }
 }
 
 /// Behind the tab strip: pressing empty strip space drags (or, double-clicked,
