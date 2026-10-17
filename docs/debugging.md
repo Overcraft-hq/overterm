@@ -90,8 +90,8 @@ in `deinit`.
 |---|---|
 | Tabs | delete `~/Library/Application Support/Overterm/session.json` |
 | Snippets | delete `…/Overterm/snippets.json` (the list starts empty) |
-| Divider positions | `defaults delete io.github.overcraft-hq.overterm "NSSplitView Subview Frames OvertermColumns.v4"` |
-| Panels shown | `defaults delete io.github.overcraft-hq.overterm sidebarVisible` / `diffVisible` / `sidebarPanel` |
+| Divider positions | `defaults delete io.github.overcraft-hq.overterm "NSSplitView Subview Frames OvertermColumns.v5"` |
+| Panels shown | `defaults delete io.github.overcraft-hq.overterm sidebarVisible` / `diffVisible` / `sidebarPanel` / `overgitSections` |
 | The app files open in (asked again next time) | `defaults delete io.github.overcraft-hq.overterm openWithApp` |
 
 ## Things that looked like bugs elsewhere

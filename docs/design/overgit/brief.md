@@ -1,7 +1,16 @@
 # Overgit — design brief
 
-Paste this whole file into the design agent, with `frame.png` (the annotated
-window) and `frame-plain.png` (the same window, unmarked) attached.
+Paste this whole file into the design agent, with these attached:
+
+- `shipped.png` — **what is there now**: the panel built to this brief, with
+  the commit's detail open in the right-hand pane. This is the thing to
+  improve, not a blank page.
+- `frame.png` — the window with the three places marked.
+- `frame-plain.png` — the same window, unmarked.
+
+The build is working and complete; what it wants is the design pass. The
+mark in `shipped.png` is a placeholder drawn in code, and the rows, the
+graph gutter and the commit pane are all first drafts.
 
 ## What you are designing for
 
