@@ -2964,10 +2964,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// tab peek calls to put the others back to sleep when it closes.
     func applyTabVisibility() {
         guard let selected = store.selected else { return }
-        for tab in store.tabs where tab.id != selected.id {
-            hosts[tab.id]?.setVisible(false)
-        }
         hosts[selected.id]?.setVisible(true)
+        // Hiding the view that has the keyboard makes AppKit look for the
+        // next key view across the whole window, every SwiftUI view in it:
+        // ~20 ms a tab switch. The keyboard goes to the tab showing first.
+        let others = store.tabs.filter { $0.id != selected.id }.compactMap { hosts[$0.id] }
+        if let responder = window?.firstResponder as? NSView, others.contains(where: responder.isDescendant(of:)) {
+            window?.makeFirstResponder(selected.terminal)
+        }
+        others.forEach { $0.setVisible(false) }
     }
 
     private func showSelectedTab() {

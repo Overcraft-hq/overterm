@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.14.2 — 2026-10-18
+
+- tabs: a tab switch hands the keyboard over before hiding the old tab
+
 ## 2.14.1 — 2026-10-17
 
 - overgit: builds with Swift 6.1 — the drawing reads its sizes off the main actor
