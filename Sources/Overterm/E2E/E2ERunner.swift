@@ -1482,10 +1482,40 @@ final class E2ERunner {
             "the failed command came with it", app.askAgent.command?.exit == 1,
             "exit \(app.askAgent.command?.exit ?? -99) of \(app.askAgent.command?.command ?? "nothing")")
         app.askAgent.message = "Fix this failing test"
-        let prompt = app.askAgent.prompt()
+        let prompt = app.askAgent.prompt(diff: nil)
         check("the prompt leads with what you typed", prompt.hasPrefix("Fix this failing test"), String(prompt.prefix(40)).debugDescription)
         check("then the command and its exit", prompt.contains("exit 1"), String(prompt.prefix(120)).debugDescription)
         check("then the selection", prompt.contains("AssertionError"), "")
+        check("the git diff chip is not offered outside a checkout", !app.askAgent.canDiff)
+        clickSheetButton("Cancel")
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+
+        // In a checkout the chip is offered, and switching it on actually
+        // puts the diff in what Send would type — it did not, for a while:
+        // the sheet's chip reached the model and nobody ever handed the
+        // prompt a diff to put in.
+        let repo = scratch.appendingPathComponent("askrepo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? "one\n".write(to: repo.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try? await git(["add", "-A"], in: repo)
+        try? await git(["commit", "-q", "-m", "Add a"], in: repo)
+        try? "one\ntwo is the change\n".write(to: repo.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        app.newTab(in: repo)
+        check(
+            "a tab in a checkout", await eventually(10) { self.app.diff.root?.lastPathComponent == "askrepo" && self.app.diff.isRepository })
+
+        app.presentAskAgent(text: "AssertionError 401", command: nil, folder: repo.path, targets: [])
+        check("the sheet opens there too", await eventually(3) { self.window.attachedSheet != nil })
+        check("and the git diff chip is offered", app.askAgent.canDiff)
+        check("but it is off until it is asked for", !app.askAgent.extras.diff)
+        let without = await app.askAgentPrompt()
+        check("so the prompt has no diff in it yet", !without.contains("git diff:"), String(without.prefix(80)).debugDescription)
+        app.askAgent.extras.diff = true
+        let with = await app.askAgentPrompt()
+        check("switching it on puts the diff in the prompt", with.contains("git diff:"), String(with.prefix(120)).debugDescription)
+        check("the real diff, read from the checkout", with.contains("+two is the change"), String(with.suffix(200)).debugDescription)
+        check("the selection is still there", with.contains("AssertionError 401"))
         clickSheetButton("Cancel")
         _ = await eventually(3) { self.window.attachedSheet == nil }
     }

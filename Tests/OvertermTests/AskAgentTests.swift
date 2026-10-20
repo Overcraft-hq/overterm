@@ -6,7 +6,7 @@ import XCTest
 /// string; everything else about it is layout.
 @MainActor
 final class AskAgentTests: XCTestCase {
-    private func model(command: CommandBlock? = nil) -> AskAgentModel {
+    private func model(command: CommandBlock? = nil, diff: Bool = false) -> AskAgentModel {
         let model = AskAgentModel()
         model.begin(
             selection: "AssertionError: expected 200 to be 401\n  at bank.test.ts:58", command: command,
@@ -14,7 +14,7 @@ final class AskAgentTests: XCTestCase {
             targets: [
                 .init(id: UUID(), title: "api · claude", detail: "idle", color: .purple, agent: .claude),
                 .init(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude),
-            ], diff: false)
+            ], diff: diff)
         return model
     }
 
@@ -23,14 +23,14 @@ final class AskAgentTests: XCTestCase {
 
     func testItSendsTheSelectionOnItsOwnWhenThereIsNothingElse() {
         let model = model()
-        XCTAssertEqual(model.prompt(), "AssertionError: expected 200 to be 401\n  at bank.test.ts:58")
+        XCTAssertEqual(model.prompt(diff: nil), "AssertionError: expected 200 to be 401\n  at bank.test.ts:58")
     }
 
     /// The command that produced it is the context the agent cannot see,
     /// and the exit code is the part of it that matters.
     func testTheCommandAndItsExitComeWithIt() {
         let model = model(command: failed)
-        let prompt = model.prompt()
+        let prompt = model.prompt(diff: nil)
         XCTAssertTrue(prompt.contains("$ pnpm --filter api test   (exit 1)"))
         XCTAssertTrue(prompt.contains("AssertionError"))
     }
@@ -38,30 +38,59 @@ final class AskAgentTests: XCTestCase {
     func testEachExtraCanBeLeftOut() {
         let model = model(command: failed)
         model.extras.exit = false
-        XCTAssertTrue(model.prompt().contains("$ pnpm --filter api test"))
-        XCTAssertFalse(model.prompt().contains("exit 1"))
+        XCTAssertTrue(model.prompt(diff: nil).contains("$ pnpm --filter api test"))
+        XCTAssertFalse(model.prompt(diff: nil).contains("exit 1"))
         model.extras.command = false
-        XCTAssertFalse(model.prompt().contains("pnpm"))
+        XCTAssertFalse(model.prompt(diff: nil).contains("pnpm"))
     }
 
     /// A command that succeeded has no exit worth saying.
     func testASuccessfulCommandDoesNotAnnounceItsExit() {
         let ok = CommandBlock(id: 1, command: "pnpm build", startRow: 0, endRow: 1, exit: 0, seconds: 1)
         let model = model(command: ok)
-        XCTAssertEqual(model.prompt().contains("exit"), false)
+        XCTAssertEqual(model.prompt(diff: nil).contains("exit"), false)
     }
 
     func testWhatYouTypeGoesFirst() {
         let model = model(command: failed)
         model.message = "Fix this failing test"
-        XCTAssertTrue(model.prompt().hasPrefix("Fix this failing test"))
+        XCTAssertTrue(model.prompt(diff: nil).hasPrefix("Fix this failing test"))
     }
 
     func testTheDiffIsOnlyThereWhenAskedFor() {
-        let model = model()
+        let model = model(diff: true)
         XCTAssertFalse(model.prompt(diff: "diff --git a/x b/x").contains("git diff"))
         model.extras.diff = true
         XCTAssertTrue(model.prompt(diff: "diff --git a/x b/x").contains("git diff:"))
+    }
+
+    /// The chip is only worth offering where a diff can be had, and
+    /// `begin` is what is told. It used to be handed that and throw it
+    /// away, so the chip showed outside a checkout and did nothing in one.
+    func testTheChipIsOfferedOnlyInACheckout() {
+        XCTAssertFalse(model(diff: false).canDiff)
+        XCTAssertTrue(model(diff: true).canDiff)
+    }
+
+    /// The whole point of the chip: switched on, the diff is in what gets
+    /// typed — selection and all.
+    func testASheetWithTheChipOnProducesAPromptContainingTheDiff() {
+        let model = model(command: failed, diff: true)
+        model.message = "Why does this fail?"
+        model.extras.diff = true
+        let prompt = model.prompt(diff: "diff --git a/bank.ts b/bank.ts\n+  return 401")
+        XCTAssertTrue(prompt.contains("git diff:"), prompt)
+        XCTAssertTrue(prompt.contains("+  return 401"), prompt)
+        XCTAssertTrue(prompt.contains("AssertionError"), prompt)
+        XCTAssertTrue(prompt.hasPrefix("Why does this fail?"), prompt)
+    }
+
+    /// Nothing to show is not an empty section.
+    func testNoDiffMeansNoDiffSection() {
+        let model = model(diff: true)
+        model.extras.diff = true
+        XCTAssertFalse(model.prompt(diff: nil).contains("git diff"))
+        XCTAssertFalse(model.prompt(diff: "").contains("git diff"))
     }
 
     func testItCountsTheLinesItIsSending() {
@@ -78,5 +107,54 @@ final class AskAgentTests: XCTestCase {
         let model = AskAgentModel()
         model.begin(selection: "", command: nil, folder: nil, targets: [], diff: false)
         XCTAssertFalse(model.isOpen)
+    }
+}
+
+/// The other half of the chip: the window has to read the diff and hand
+/// it over. It did not — `prompt()` was called with no argument at all.
+@MainActor
+final class AskAgentDiffReadingTests: XCTestCase {
+    func testItReadsWhatTheCheckoutHasChanged() async throws {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-ask-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        func git(_ arguments: [String]) async throws {
+            _ = try await Git.run(["-c", "user.email=t@t", "-c", "user.name=T"] + arguments, in: repo)
+        }
+        let file = repo.appendingPathComponent("a.txt")
+
+        try await git(["init", "-q", "-b", "main"])
+        try "one\n".write(to: file, atomically: true, encoding: .utf8)
+        // Before the first commit there is no HEAD to compare with.
+        try await git(["add", "-A"])
+        let staged = await TerminalWindowController.uncommittedDiff(in: repo)
+        XCTAssertTrue(staged?.contains("+one") == true, staged ?? "nil")
+
+        try await git(["commit", "-q", "-m", "Add a"])
+        let clean = await TerminalWindowController.uncommittedDiff(in: repo)
+        XCTAssertNil(clean, "a clean checkout has no diff to send")
+
+        try "one\ntwo\n".write(to: file, atomically: true, encoding: .utf8)
+        let unstaged = await TerminalWindowController.uncommittedDiff(in: repo)
+        XCTAssertTrue(unstaged?.contains("+two") == true, unstaged ?? "nil")
+        try await git(["add", "-A"])
+        let both = await TerminalWindowController.uncommittedDiff(in: repo)
+        XCTAssertTrue(both?.contains("+two") == true, "staged counts too: \(both ?? "nil")")
+    }
+
+    /// A diff bigger than the cap is cut, and says so: it is typed into a
+    /// terminal.
+    func testABigDiffIsBoundedAndSaysSo() async throws {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-ask-big-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        _ = try await Git.run(["-c", "user.email=t@t", "-c", "user.name=T", "init", "-q", "-b", "main"], in: repo)
+        let big = (0..<40_000).map { "line \($0)" }.joined(separator: "\n")
+        try big.write(to: repo.appendingPathComponent("big.txt"), atomically: true, encoding: .utf8)
+        _ = try await Git.run(["add", "-A"], in: repo)
+        let diff = await TerminalWindowController.uncommittedDiff(in: repo)
+        let text = try XCTUnwrap(diff)
+        XCTAssertTrue(text.hasSuffix("… diff truncated."), String(text.suffix(40)))
+        XCTAssertLessThan(text.utf8.count, AskAgentModel.maxDiffBytes + 200)
     }
 }

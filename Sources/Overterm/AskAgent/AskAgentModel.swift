@@ -27,6 +27,10 @@ final class AskAgentModel: ObservableObject {
         var diff = false
     }
 
+    /// The most diff that goes into a prompt. It is typed into a terminal,
+    /// and a prompt nobody can scroll past is not a prompt.
+    static let maxDiffBytes = 128 << 10
+
     @Published private(set) var selection = ""
     @Published private(set) var targets: [Target] = []
     @Published var chosen: Tab.ID?
@@ -38,6 +42,10 @@ final class AskAgentModel: ObservableObject {
     private(set) var command: CommandBlock?
     /// The folder a new agent tab would open in.
     private(set) var folder: String?
+    /// Whether a diff can be had at all — the selection is in a checkout.
+    /// The chip is offered only then, and is off until it is asked for:
+    /// the other extras are a line each, this one can be thousands.
+    @Published private(set) var canDiff = false
 
     var lines: Int { selection.isEmpty ? 0 : selection.components(separatedBy: "\n").count }
 
@@ -47,6 +55,7 @@ final class AskAgentModel: ObservableObject {
         self.folder = folder
         self.targets = targets
         chosen = targets.first { $0.id != nil }?.id
+        canDiff = diff
         extras = Extras(command: command != nil, exit: command?.exit != nil, diff: false)
         message = ""
         isOpen = !selection.isEmpty
@@ -59,7 +68,11 @@ final class AskAgentModel: ObservableObject {
 
     /// What will actually be typed. Built here rather than in the view so
     /// it can be read in a test — this is the part that matters.
-    func prompt(diff: String? = nil) -> String {
+    ///
+    /// `diff` has no default on purpose: a caller that forgets it drops
+    /// the chip's whole point without saying so, which is exactly what
+    /// the window did. Pass nil to mean "there is none".
+    func prompt(diff: String?) -> String {
         var parts: [String] = []
         if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append(message) }
         if extras.command, let command {

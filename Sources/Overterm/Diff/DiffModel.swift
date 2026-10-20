@@ -208,7 +208,13 @@ final class DiffModel: ObservableObject {
     }
 
     /// A refresh worked (it always sets `comparison`): a git repository.
-    var badge: Badge? { Self.badge(isRepository: error == nil && comparison != nil, uncommitted: files, branch: branchFiles) }
+    /// Whether the folder being watched is in a repository at all.
+    /// `root` is not that question — it is set to whatever folder the tab
+    /// is in, repository or not, and reading it as "there is a checkout"
+    /// offered the Ask Agent sheet a git diff anywhere.
+    var isRepository: Bool { error == nil && comparison != nil }
+
+    var badge: Badge? { Self.badge(isRepository: isRepository, uncommitted: files, branch: branchFiles) }
 
     /// In any repository, so the pane is one click away: what is uncommitted
     /// while there is some, else the branch's totals — the agent's work stays

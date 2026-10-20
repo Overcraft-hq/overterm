@@ -103,7 +103,7 @@ struct AskAgentView: View {
                 chip("\(model.lines) selected line\(model.lines == 1 ? "" : "s")", .constant(true), fixed: true)
                 if model.command != nil { chip("command", $model.extras.command) }
                 if model.command?.exit != nil { chip("exit code", $model.extras.exit) }
-                chip("git diff", $model.extras.diff)
+                if model.canDiff { chip("git diff", $model.extras.diff) }
             }
             TextField("What should it do with this?", text: $model.message)
                 .textFieldStyle(.plain)

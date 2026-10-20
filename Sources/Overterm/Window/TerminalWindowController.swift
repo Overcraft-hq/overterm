@@ -2340,7 +2340,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         }
         targets.append(
             AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
-        askAgent.begin(selection: text, command: command, folder: folder, targets: targets, diff: diff.root != nil)
+        askAgent.begin(selection: text, command: command, folder: folder, targets: targets, diff: diff.isRepository)
         guard let theme else { return }
         presentSheet { [weak self] close in
             AskAgentView(
@@ -2359,7 +2359,41 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Types the prompt into the chosen agent, or into a new agent tab.
     private func sendToAgent() {
-        let prompt = askAgent.prompt()
+        Task { [weak self] in
+            guard let self else { return }
+            self.deliverToAgent(await self.askAgentPrompt())
+        }
+    }
+
+    /// The prompt the sheet would send, the diff fetched if it was asked
+    /// for. One function, so what the Send button does can be read in a
+    /// test: the chip reached the sheet but nothing ever handed `prompt`
+    /// a diff to put in.
+    func askAgentPrompt() async -> String {
+        guard askAgent.extras.diff, let root = diff.root else { return askAgent.prompt(diff: nil) }
+        return askAgent.prompt(diff: await Self.uncommittedDiff(in: root))
+    }
+
+    /// What the checkout has changed, staged and unstaged together —
+    /// which is what a person means by "the diff" — bounded, because this
+    /// is typed into a terminal. Before the first commit there is no HEAD
+    /// to compare with, so the empty tree stands in, as the changes pane
+    /// does it: plain `git diff` would compare with the index and show
+    /// nothing at all for a first commit that is already staged.
+    static func uncommittedDiff(in root: URL) async -> String? {
+        let limit = AskAgentModel.maxDiffBytes
+        var text = try? await Git.run(["diff", "--no-color", "HEAD"], in: root, outputLimit: limit)
+        if text == nil {
+            text = try? await Git.run(["diff", "--no-color", DiffModel.emptyTree], in: root, outputLimit: limit)
+        }
+        guard let text, !text.isEmpty else { return nil }
+        // `outputLimit` stops reading and says nothing; a diff that came
+        // back at the limit was cut, and a prompt must not pretend
+        // otherwise.
+        return text.utf8.count >= limit ? text + "\n… diff truncated." : text
+    }
+
+    private func deliverToAgent(_ prompt: String) {
         let folder = askAgent.folder
         let chosen = askAgent.chosen
         askAgent.stop()

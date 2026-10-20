@@ -7,6 +7,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 version is tagged `v<version>`. 1.0.0 is the original Terminus as imported
 (bfb55fb); its lines are the commits up to it.
 
+## 2.14.3 — 2026-10-20
+
+- agents: the Ask Agent sheet's git diff reaches the prompt
+
 ## 2.14.2 — 2026-10-18
 
 - tabs: a tab switch hands the keyboard over before hiding the old tab
