@@ -65,10 +65,10 @@ against v1.3.1 defaults:
 | ⌘T / ⌘W / ⌥⌘W | new_tab / close_surface / close_tab | handled → Overterm tabs |
 | ⇧⌘W, ⌥⇧⌘W | close_window, close_all_windows | handled → window close |
 | ⇧⌘P | toggle_command_palette | handled → Overterm palette |
-| ⌘K | clear_screen | Ghostty's (so the palette is ⌘P) |
+| ⌘K | clear_screen | handled → Overterm palette; clearing moved to ⇧⌘K, and `ghosttyLines` writes the unbind |
 | ⌘N | new_window | unhandled (one window) |
-| ⌘D, ⇧⌘D | new_split | unhandled (no splits yet) |
-| ⌘P, ⌘B, ⌥⌘C/X/D, ⇧⌘N, ⌘S | — | free; Overterm menu items |
+| ⌘D, ⇧⌘D | new_split | handled → Overterm splits, which pass the action back to Ghostty |
+| ⌘B, ⌥⌘C/X/D/G/U, ⇧⌘N, ⌘S | — | free; Overterm menu items |
 
 When adding a shortcut, grep `Config.zig` first. The user's own
 `~/Library/Application Support/com.mitchellh.ghostty/config` (or

@@ -16,7 +16,7 @@ libghostty's own threads and git calls.
 │  │ (⌘B)     │ │  visible)                │ │         │ │ commit)│ │
 │  ╰──────────╯ ╰──────────────────────────╯ ╰─────────╯ ╰────────╯ │
 └───────────────────────────────────────────────────────────────────┘
-      + ⌘P palette: an overlay over the whole content view
+      + ⌘K palette: an overlay over the whole content view
       + ⌘F search: an overlay over the terminal container; a compact find
         bar in its top-right corner while a terminal search is kept
       + Tab Peek (⇧⌘E, three fingers down): every tab's host scaled into a
@@ -47,7 +47,7 @@ libghostty's own threads and git calls.
 | `WorktreeModel` | `git worktree list` of that repository |
 | `DiffModel` | that checkout's changes — uncommitted, or everything on its branch (see Changes pane) — counts (always live — the ± badge), per-file diffs and why each file changed (only while the pane is open), stage/discard/commit; works before the first commit (empty-tree base) |
 | `SnippetStore` | `~/Library/Application Support/Overterm/snippets.json` |
-| `PaletteModel` | ⌘P query and ranking |
+| `PaletteModel` | ⌘K query and ranking |
 | `SpotlightModel` | ⌘F: one query over the selected terminal's scrollback, the checkout's file names and their contents |
 | `EditorViewController` + `EditorDocument` | the file open in the editor pane |
 
@@ -102,7 +102,7 @@ intent is unmistakable:
 | | |
 |---|---|
 | the strip is focused on an island (⌃⌘F) | it joins — a loose tab would open out of sight |
-| **a folder** was opened (the sidebar, a worktree row, Finder, the `overterm` command) and it is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
+| **a folder** was opened (the sidebar, a worktree row, Finder) and it is under a folder someone bound to an island (`TabGroup.folder`, ticked in the group popover — never set by default) | it joins |
 | the island was asked and said yes (`TabGroup.takesNewTabs`) | it joins |
 | the island holds every tab in the strip | the tab opens **loose** and the window asks under the chip (`NewTabPrompt`); the answer is the island's, so it is asked once |
 | anything else | loose — inserted after the anchor, which `normalize` then slides past the anchor's island |
@@ -156,7 +156,7 @@ A branch is merged when
 Never pushed never counts: a New Task branch with no commits is reachable
 from main too. A worktree whose folder was deleted by hand (`prunable`) is
 cleanable as well. Rows get a purple merge mark; the Worktrees header gets a
-count that runs **Clean Up Merged Worktrees…** (also File menu, ⌘P, a row's
+count that runs **Clean Up Merged Worktrees…** (also File menu, ⌘K, a row's
 menu): `git fetch --prune` (ssh in BatchMode), then one sheet listing what
 goes and what stays — kept: a tab in it (a shell's directory or where its
 agent works), uncommitted changes, locked. It runs

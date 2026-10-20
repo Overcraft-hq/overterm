@@ -14,7 +14,7 @@ ghosttykit:
 treesitter:
 	./Scripts/build-treesitter.sh
 
-## icon: regenerate Resources/AppIcon.icns from Resources/AppIcon.svg
+## icon: regenerate Resources/AppIcon.icns from Resources/AppIcon.png
 icon:
 	./Scripts/make-icon.sh
 

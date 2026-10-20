@@ -18,7 +18,7 @@ make app                     # Overterm.app in the repo
 make install                 # …and copy it to /Applications, re-signed with
                              # $SIGN_IDENTITY (env or untracked local.mk) if set;
                              # a stable identity keeps privacy grants (mic)
-make icon                    # Resources/AppIcon.svg → AppIcon.icns
+make icon                    # Resources/AppIcon.png → AppIcon.icns
 make themes                  # Resources/themes: the themes Ghostty v1.3.1
                              # doesn't ship (Scripts/fetch-themes.sh; checked in)
 make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Release
@@ -62,7 +62,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 
 ## Rules
 
-- **Never drive the UI with synthetic input** (osascript `keystroke`, System Events, CGEvent). It types into whatever has focus — once it typed into the user's own Claude Code prompt. To check layout or behaviour, use the in-app diagnostic mode (`TERMINUS_DUMP_LAYOUT`, docs/debugging.md), which only touches its own window, or ask the user.
+- **Never drive the UI with synthetic input** (osascript `keystroke`, System Events, CGEvent). It types into whatever has focus — once it typed into the user's own Claude Code prompt. To check layout or behaviour, use the in-app diagnostic mode (`OVERTERM_DUMP_LAYOUT`, docs/debugging.md), which only touches its own window, or ask the user.
 - **libghostty C callbacks must be built in a `nonisolated` context** (`GhosttyRuntime.runtimeConfig()`). `wakeup_cb` comes from the renderer thread; a closure written inside a `@MainActor` type traps under Swift 6.
 - **The same goes for Apple completion handlers** (UserNotifications, and any API that answers on its own queue): a closure written in a `@MainActor` type is main-actor-isolated, and Swift 6 traps when the system calls it elsewhere — `EXC_BREAKPOINT` in `dispatch_assert_queue`. It took the app down at an agent's notification (`AttentionNotifier.authorized`). Build such closures in a `nonisolated` function, or use the `async` variant.
 - **Clipboard confirmations complete *confirmed*** — the text, or `""` to refuse (`ClipboardConfirmation.reply`). Completed unconfirmed, libghostty asks again at once: that looped until the stack overflowed, crashing the app on any OSC 52 read.
@@ -115,7 +115,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
   never a palette in Swift. `appearance.theme` keeps its key under the new
   page: it is in people's settings.json.
 - **A new setting is a `SettingsSchema` entry** (key, section, kind, default): the page, validation and search follow. A new shortcut is a `KeyCommands` entry — and, for a menu item, `MainMenu.command(…, id)`. Never read UserDefaults for a setting.
-- **Isolated runs** (`TERMINUS_E2E`, `TERMINUS_DUMP_LAYOUT`) go through `AppEnvironment` for every piece of persistent state; new state must too, or tests will write into the user's real app.
+- **Isolated runs** (`OVERTERM_E2E`, `OVERTERM_DUMP_LAYOUT`) go through `AppEnvironment` for every piece of persistent state; new state must too, or tests will write into the user's real app.
 
 ## Commits
 

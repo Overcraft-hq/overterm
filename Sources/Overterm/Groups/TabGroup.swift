@@ -22,9 +22,9 @@ final class TabGroup: ObservableObject, Identifiable {
     @Published var isStashed: Bool
     /// When it was stashed, for "Stashed 2 h ago".
     @Published var stashedAt: Date?
-    /// Opening this folder — from the sidebar, Finder, the `overterm`
-    /// command — opens its tab in this group. Nil, the default, is no
-    /// binding at all, and ⌘T never reads it (`NewTabGroup.Opening`).
+    /// Opening this folder — from the sidebar, a worktree row, Finder —
+    /// opens its tab in this group. Nil, the default, is no binding at
+    /// all, and ⌘T never reads it (`NewTabGroup.Opening`).
     @Published var folder: String?
     /// Reopen this group's tabs and splits on launch.
     @Published var restoresOnLaunch: Bool
