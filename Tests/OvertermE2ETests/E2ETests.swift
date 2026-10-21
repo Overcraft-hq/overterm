@@ -66,6 +66,7 @@ final class E2ETests: XCTestCase {
     func testSnippets() throws { try run("snippets") }
     func testAttention() throws { try run("attention") }
     func testMarks() throws { try run("marks") }
+    func testShowcase() throws { try run("showcase") }
     func testPalette() throws { try run("palette") }
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }

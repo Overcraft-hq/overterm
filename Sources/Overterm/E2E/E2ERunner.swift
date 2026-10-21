@@ -34,6 +34,7 @@ final class E2ERunner {
         "snippets": { await $0.snippetsScenario() },
         "attention": { await $0.attention() },
         "marks": { await $0.marks() },
+        "showcase": { await $0.showcase() },
         "palette": { await $0.paletteScenario() },
         "reorder": { await $0.reorder() },
         "info": { await $0.info() },
@@ -2099,6 +2100,115 @@ final class E2ERunner {
             await pause(0.6)
             app.captureWindow(to: png)
         }
+    }
+
+    /// The README's four screenshots, taken by the app itself.
+    ///
+    /// They were made by hand once and went stale the first time the
+    /// chrome moved — the sidebar's icons were still a row across the
+    /// top of a panel months after they had become a rail down its
+    /// edge. This stages the same scene every time and photographs it:
+    ///
+    ///     OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=docs/assets/screenshot \
+    ///       ./Overterm.app/Contents/MacOS/Overterm
+    ///
+    /// writes `-window`, `-tabs`, `-changes` and `-peek` beside that
+    /// path. Nothing is typed into the UI to arrange it: the scenario
+    /// opens the tabs and panes through the same calls the menus use.
+    private func showcase() async {
+        // A fixed frame, so the pictures are the same size every time and
+        // the whole strip is in them — five tabs and the chips do not fit
+        // in the window a test happens to open with.
+        if let screen = window.screen ?? NSScreen.main {
+            let size = CGSize(width: 1_400, height: 880)
+            window.setFrame(
+                NSRect(
+                    x: screen.visibleFrame.midX - size.width / 2,
+                    y: screen.visibleFrame.midY - size.height / 2, width: size.width,
+                    height: size.height), display: true)
+            await pause(0.4)
+        }
+        let repo = scratch.appendingPathComponent("acme")
+        for dir in ["api", "docs", "web"] {
+            try? FileManager.default.createDirectory(
+                at: repo.appendingPathComponent(dir), withIntermediateDirectories: true)
+        }
+        func write(_ path: String, _ text: String) {
+            try? text.write(to: repo.appendingPathComponent(path), atomically: true, encoding: .utf8)
+        }
+        write("package.json", "{\n  \"name\": \"acme\",\n  \"private\": true\n}\n")
+        write("README.md", "# acme\n\nThe demo checkout the screenshots are taken in.\n")
+        write("api/server.ts", (1...24).map { "// line \($0)\n" }.joined())
+        write("api/routes.ts", (1...12).map { "// route \($0)\n" }.joined())
+        write("docs/architecture.md", "# architecture\n\nOne page.\n")
+        write("web/index.html", "<!doctype html>\n<title>acme</title>\n")
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["add", "-A"], in: repo)
+        try? await git(["commit", "-q", "-m", "acme"], in: repo)
+        // Enough of a change for the ± badge to have something to say.
+        write("api/server.ts", (1...22).map { "// line \($0)\n" }.joined() + (1...7).map { "// added \($0)\n" }.joined())
+
+        await waitForPrompt()
+        // The run's own shell is the one that carries "done", so that
+        // nothing is ever written into the tab the pictures are taken
+        // in: a README shot of a terminal full of `printf \033]9;4` is
+        // a shot of the scaffolding.
+        let shell = app.store.selected!
+        shell.customTitle = "shell — done"
+        app.newTab(in: repo)
+        await eventually { self.app.store.selected?.workingDirectory != nil }
+        await eventually(5) { self.app.diff.files.isEmpty == false }
+        let acme = app.store.selected!
+        acme.customTitle = "acme"
+        // Long enough for the shell to draw its prompt: the shot is of a
+        // terminal somebody could type in, not of a login line.
+        await pause(1.6)
+        check("the showcase checkout is open", acme.customTitle == "acme")
+        dump("window")
+
+        // One tab in each state, as `marks` arranges them.
+        app.newTab(in: repo, agent: .claude, startAgent: false)
+        let working = app.store.selected!
+        working.customTitle = "feat/auth"
+        app.newTab(in: repo, agent: .codex, startAgent: false)
+        let waiting = app.store.selected!
+        waiting.customTitle = "fix/billing"
+        app.newTab(in: repo, agent: .claude, startAgent: false)
+        let failed = app.store.selected!
+        failed.customTitle = "chore/deps"
+        for tab in app.store.tabs { _ = await eventually(15) { tab.terminal.needsConfirmClose == false } }
+        emit("9;4;3;0", from: working)
+        emit("777;notify;Codex;approve the migration?", from: waiting)
+        emit("9;4;2;0", from: failed)
+        emit("9;4;3;0", from: shell)
+        _ = await eventually { shell.activity.isWorking }
+        emit("9;4;0;0", from: shell)
+        check(
+            "a tab in each state",
+            await eventually { shell.activity.mark == .done && failed.activity.mark == .failed })
+        app.store.select(acme)
+        await pause(1.0)
+        dump("tabs")
+
+        // The changes pane, on the checkout that has something to show.
+        app.toggleDiff(nil)
+        _ = await eventually(5) { (self.app.diffItem?.viewController.view.superview?.frame.width ?? 0) > 1 }
+        await pause(1.0)
+        dump("changes")
+        app.toggleDiff(nil)
+
+        app.splitRight(nil)
+        app.toggleTabPeek(nil)
+        check("the peek is open for the picture", app.peekView?.isHidden == false)
+        await pause(0.9)
+        dump("peek")
+        app.toggleTabPeek(nil)
+    }
+
+    /// One of the showcase's pictures, named after what it shows.
+    private func dump(_ name: String) {
+        guard let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] else { return }
+        app.captureWindow(to: "\(png)-\(name).png")
     }
 
     /// A point in window coordinates at a tab's centre (tab frames are
