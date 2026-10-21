@@ -6,6 +6,11 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.1.0 — 2026-10-21
+
+- sidebar: the panels move to a rail down the left edge, with Settings and Hide Sidebar at its foot
+- tabs: a group's island is the height of the tab beside it, and the strip keeps its distance from the traffic lights
+
 ## 1.0.0 — 2026-10-21
 
 The first public release: a macOS terminal for working with agents —

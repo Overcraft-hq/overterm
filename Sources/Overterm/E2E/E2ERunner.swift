@@ -1255,6 +1255,20 @@ final class E2ERunner {
         let terminalWidth = app.store.selected?.terminal.frame.width ?? 0
         check("the terminal keeps its minimum", terminalWidth >= 240, "\(terminalWidth)")
 
+        // The sidebar's rail is chrome of a fixed width down its edge, so
+        // the column's minimum has to hold the rail *and* a panel wide
+        // enough to read: taken out of the panel's own minimum, every file
+        // name was truncated at the narrowest width.
+        check(
+            "the sidebar's minimum holds the rail and a readable panel",
+            app.sidebarItem?.minimumThickness == SidebarRail.minimumSidebarWidth
+                && SidebarRail.minimumSidebarWidth - SidebarRail.width >= 176,
+            "\(app.sidebarItem?.minimumThickness ?? 0)")
+        let panel = app.sidebarPanel.panel
+        for item in SidebarPanel.allCases { app.sidebarPanel.panel = item }
+        check("every panel in the rail can be the one showing", app.sidebarPanel.panel == SidebarPanel.allCases.last)
+        app.sidebarPanel.panel = panel
+
         // The chrome: every column is a card, and the gaps are measured
         // where they are seen — between the cards themselves, with the
         // shut columns (editor, changes, inbox) costing nothing. A divider
@@ -4540,10 +4554,10 @@ final class E2ERunner {
             self.app.tree.root?.resolvingSymlinksInPath() == resolvedDir && self.app.tree.rows.map(\.entry.name) == ["folder", "plain.txt", "shot.png", "with space.md"]
         }
         check("the sidebar lists the folder", listed, app.tree.rows.map(\.entry.name).joined(separator: ", "))
-        // Panel bar 40, divider 1, header 34, list padding 4, then 26 a row:
-        // the middle of the second, plain.txt.
-        let top: CGFloat = 40 + 1 + 34 + 4
-        let rowCentre = sidebar.convert(NSPoint(x: 60, y: top + 26 + 13), to: nil)
+        // The rail down the edge, then header 34, list padding 4, then 26 a
+        // row: the middle of the second, plain.txt.
+        let top: CGFloat = 34 + 4
+        let rowCentre = sidebar.convert(NSPoint(x: SidebarRail.width + 60, y: top + 26 + 13), to: nil)
         func mouse(_ type: NSEvent.EventType, clicks: Int) -> NSEvent {
             NSEvent.mouseEvent(
                 with: type, location: rowCentre, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

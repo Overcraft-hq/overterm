@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Overgit's own mark, for the sidebar's icon bar.
+/// Overgit's own mark, for the sidebar's rail.
 ///
 /// Drawn rather than loaded: the app has no asset catalog and no SVG
 /// pipeline — `Resources/` is the app icon and the themes — and one glyph
 /// is not reason enough to add either. It is monochrome on purpose: the
-/// icon bar tints it `text` when the panel is open and `text2` when it is
+/// rail tints it `text` when the panel is open and `text2` when it is
 /// not, beside Apple's own symbols.
 ///
 /// An arch over a branch: Overterm's "over", and git's.

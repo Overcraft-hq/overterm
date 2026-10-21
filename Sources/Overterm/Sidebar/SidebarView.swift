@@ -60,7 +60,8 @@ struct SessionActions {
     var refresh: () -> Void
 }
 
-/// What the sidebar can show, one at a time — Warp-style icon tabs.
+/// What the sidebar can show, one at a time — the rail down its left
+/// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
     case files, git, sessions, snippets
 
@@ -76,20 +77,29 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The fallback glyph. Overgit draws its own mark (`icon`).
+    /// The glyph in the rail. Overgit draws its own mark instead (`icon`),
+    /// but keeps a symbol for anywhere a plain one is wanted.
+    ///
+    /// One symbol each, no `.fill` twin: three of the four have none, and a
+    /// set that changes shape for the open panel reads as four different
+    /// icons rather than one of them being on.
     var symbol: String {
         switch self {
         case .files: "doc.on.doc"
         case .git: "arrow.triangle.branch"
-        case .sessions: "bubble.left.and.text.bubble.right"
-        case .snippets: "text.alignleft"
+        case .sessions: "bubble.left.and.bubble.right"
+        case .snippets: "curlybraces"
         }
     }
 
-    @ViewBuilder var icon: some View {
+    /// The glyph as the rail draws it: the open panel's is a shade heavier,
+    /// which is all the weight the selection needs beside its bar.
+    @ViewBuilder func icon(selected: Bool) -> some View {
         switch self {
-        case .git: OvergitMark().frame(width: 15, height: 15)
-        default: Image(systemName: symbol).font(.system(size: 13))
+        // Wider than the symbols beside it: a drawn mark with this much
+        // air in it reads a size smaller than Apple's do.
+        case .git: OvergitMark().frame(width: 19, height: 19)
+        default: Image(systemName: symbol).font(.system(size: 15, weight: selected ? .semibold : .regular))
         }
     }
 
@@ -101,8 +111,8 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
     }
 }
 
-/// The left panel: an icon bar choosing Files, Worktrees or Snippets, and
-/// the chosen one at full height.
+/// The left column: a rail down its edge choosing Files, Overgit, Sessions
+/// or Snippets, and the chosen one filling the rest.
 struct SidebarView: View {
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var tree: FileTreeModel
@@ -122,55 +132,33 @@ struct SidebarView: View {
     let overgitActions: OvergitActions
     let snippetActions: SnippetActions
     let sessionActions: SessionActions
+    /// The gear at the foot of the rail.
+    let onSettings: () -> Void
     let onClose: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            panelBar
-            Divider().opacity(0.4)
-            switch sidebar.panel {
-            case .files: files
-            case .git:
-                OvergitView(
-                    model: overgit, diff: diff, worktrees: worktrees, store: store, currentRoot: tree.root, group: group,
-                    theme: theme, actions: overgitActions, worktreeActions: worktreeActions)
-            case .sessions:
-                SessionListView(
-                    model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
-            case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
+        HStack(spacing: 0) {
+            SidebarRail(sidebar: sidebar, theme: theme, onSettings: onSettings, onClose: onClose)
+            VStack(spacing: 0) {
+                switch sidebar.panel {
+                case .files: files
+                case .git:
+                    OvergitView(
+                        model: overgit, diff: diff, worktrees: worktrees, store: store, currentRoot: tree.root, group: group,
+                        theme: theme, actions: overgitActions, worktreeActions: worktreeActions)
+                case .sessions:
+                    SessionListView(
+                        model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
+                case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(theme.card)
     }
 
     /// The island the selected tab is in: what every panel here is about.
     private var group: TabGroup? { store.selected.flatMap { store.group(of: $0) } }
-
-    private var panelBar: some View {
-        HStack(spacing: 2) {
-            ForEach(SidebarPanel.allCases) { item in
-                Button(action: { sidebar.panel = item }) {
-                    item.icon
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 28)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(sidebar.panel == item ? theme.rowSel : .clear))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(sidebar.panel == item ? theme.text : theme.text2)
-                .help(item.title)
-            }
-            Spacer(minLength: 0)
-            Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).frame(width: 24, height: 24).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .help("Hide Sidebar (⌘B)")
-        }
-        .padding(.horizontal, 6)
-        .frame(height: 40)
-    }
 
     @ViewBuilder private var files: some View {
         header

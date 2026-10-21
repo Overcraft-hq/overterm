@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The row under the sidebar's icon bar: which panel you are in, which
+/// The row at the top of a sidebar panel: which panel you are in, which
 /// island it is about, and the one or two things you can do to it.
 ///
 /// Every panel used to draw its own, four near-identical copies of the same

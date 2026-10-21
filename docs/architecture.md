@@ -33,6 +33,7 @@ libghostty's own threads and git calls.
 - The **tab strip is 52 pt** (`TabStripHostingView.height`). The unified toolbar's title bar measures 66, but AppKit centres the traffic lights in the top 52 — so the strip is that row and the tabs line up with the lights; the 14 pt below is title bar the cards take.
 - Every terminal pane carries a **38 pt header** (`PaneHeaderView`): what is running there, its island, its status, its ports, and split / split / zoom / close. The terminal gives up the room, not the pane's share of the tab. The host frames it; the window supplies it (`SplitHostView.makeHeader`), because what goes in it needs the tab and the window's actions.
 - Colours come from `ChromeTheme`, one object per window built from libghostty's background and foreground and held by every SwiftUI root. Three grounds a step apart — `win` (between the cards), `card` (a panel), `term` (the terminal) — then text in three weights, fills, and the status colours. A theme picked in Settings ▸ Themes reloads the config, and `TerminalWindowController.applyTerminalColors` recomputes the object: the views observe it, and the layers nobody binds (the window's background, the cards' fills, the pane dividers) are repainted by hand.
+- **The sidebar's panels are a rail down its left edge** (`SidebarRail`, 44 pt): Files, Overgit, Sessions and Snippets, the open one marked by a bar on the edge the way VS Code's activity bar marks it, and Settings and Hide Sidebar at its foot. They were a row of icons across the top, which cost the panel a band of its height and read as part of whichever panel was open; the foot is somewhere for what belongs to no panel. The rail is chrome of a fixed width at every sidebar width, so the **column's minimum is the rail plus a panel that can still be read** (`SidebarRail.minimumSidebarWidth` = 44 + 176), not the old panel minimum with the rail taken out of it — that truncated every file name at the narrowest width. The `layout` scenario checks it.
 - Sidebar, diff panel, tab strip, pane headers, palette: SwiftUI in `NSHostingView`/`NSHostingController`. Terminal, editor text, editor header: AppKit.
 
 ## Ownership
@@ -592,11 +593,11 @@ the readers it uses are in `Sources/Overterm/Git/`.
   take their own; a lane nobody waits in is free at once. So six lanes
   serve a repository with a hundred branches as long as only six overlap.
   Past that budget lanes are drawn on top of the last one rather than
-  widening the sidebar without end — the sidebar can be 180 pt, and an
-  exact graph there is worth less than a subject you can read. A row says
-  what passes it, what ends at it and what leaves it; `GraphGutter` draws
-  that in a `Canvas` per row, which is why the commit rows are a fixed
-  36 pt — the lines have to meet.
+  widening the sidebar without end — the panel beside the rail can be
+  176 pt, and an exact graph there is worth less than a subject you can
+  read. A row says what passes it, what ends at it and what leaves it;
+  `GraphGutter` draws that in a `Canvas` per row, which is why the commit
+  rows are a fixed 36 pt — the lines have to meet.
 - **Worktrees moved in** and gave up its icon. A sidebar left on the old
   panel comes back on Overgit (`SidebarPanel(stored:)`), not empty.
 - **A commit opens in the right-hand pane**, a fourth tab beside Changes,

@@ -323,14 +323,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     resumeInNewTab: { [weak self] in self?.resume($0, inNewTab: true) },
                     refresh: { [weak self] in self?.refreshSessions() }
                 ),
+                onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(
             viewController: CardColumnController(sidebar, fill: .panel, theme: theme))
         sidebarItem.canCollapse = true
-        sidebarItem.minimumThickness = 180
-        sidebarItem.maximumThickness = 520
+        // The rail is chrome of a fixed width, so the column's minimum is
+        // the rail plus a panel that can still be read.
+        sidebarItem.minimumThickness = SidebarRail.minimumSidebarWidth
+        sidebarItem.maximumThickness = 520 + SidebarRail.width
         sidebarItem.holdingPriority = .defaultLow + 10
         // Shown on first launch; after that, as the user left it.
         sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
