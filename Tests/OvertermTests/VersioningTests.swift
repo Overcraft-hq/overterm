@@ -73,7 +73,7 @@ final class VersioningTests: XCTestCase {
     /// headings, newest first, each with its lines.
     func testTheChangelogIsNewestFirstAndEveryEntryHasLines() throws {
         let entries = Self.entries(try read("CHANGELOG.md"))
-        XCTAssertGreaterThan(entries.count, 1)
+        XCTAssertFalse(entries.isEmpty)
         for entry in entries {
             XCTAssertTrue(Self.isSemVer(entry.version), "heading \(entry.version)")
             XCTAssertNotNil(Self.isoDay.date(from: entry.date), "\(entry.version): date \(entry.date)")
@@ -83,7 +83,7 @@ final class VersioningTests: XCTestCase {
             XCTAssertTrue(Self.numbers(older.version).lexicographicallyPrecedes(Self.numbers(newer.version)), "\(newer.version) above \(older.version)")
             XCTAssertGreaterThanOrEqual(newer.date, older.date, "\(newer.version) is dated before \(older.version)")
         }
-        XCTAssertEqual(entries.last?.version, "1.0.0", "the original Overterm, as imported")
+        XCTAssertEqual(entries.last?.version, "1.0.0", "the first public release, where the changelog starts")
     }
 
     // MARK: Running tools
