@@ -121,6 +121,12 @@ conversation.
 
 ## Install
 
+**Homebrew.**
+
+```sh
+brew install --cask overcraft-hq/tap/overterm
+```
+
 **Without Xcode — the release DMG.** Download `Overterm-<version>.dmg` from
 [Releases](https://github.com/Overcraft-hq/overterm/releases), open it and drag
 **Overterm** to **Applications** (Apple silicon, macOS 13+). It is signed ad hoc
