@@ -21,6 +21,8 @@ final class E2ERunner {
         "pin": { await $0.pin() },
         "close": { await $0.close() },
         "editor": { await $0.editorScenario() },
+        "api": { await $0.apiScenario() },
+        "apiImport": { await $0.apiImportScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },
@@ -496,6 +498,265 @@ final class E2ERunner {
         check("a binary file is refused, with a reason", await eventually(2) { editor.document.unavailable == "Binary file." })
     }
 
+    /// The API client: a Bruno collection found in the checkout, a request
+    /// opened as one in the editor, sent to a server on this machine, its
+    /// tests run — and every edit landing in the .bru file's text.
+    private func apiScenario() async {
+        let server = E2EEchoServer()
+        do { try server.start() } catch { return check("the echo server starts", false, "\(error)") }
+        defer { server.stop() }
+        let checkout = out("shop")
+        let root = checkout.appendingPathComponent("bruno", isDirectory: true)
+        func write(_ path: String, _ text: String) {
+            let url = root.appendingPathComponent(path)
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        write("bruno.json", #"{"version":"1","name":"Shop API","type":"collection"}"#)
+        write("collection.bru", "headers {\n  X-App: overterm\n}\n")
+        write("environments/Local.bru", "vars {\n  baseUrl: \(server.baseURL)\n}\nvars:secret [\n  token\n]\n")
+        write("environments/A very long staging environment name.bru", "vars {\n  baseUrl: \(server.baseURL)\n}\n")
+        write(
+            "Echo.bru",
+            """
+            meta {
+              name: Echo
+              type: http
+              seq: 1
+            }
+
+            post {
+              url: {{baseUrl}}/echo
+              body: json
+              auth: none
+            }
+
+            body:json {
+              {"hello": "world"}
+            }
+
+            assert {
+              res.status: eq 200
+            }
+
+            tests {
+              test("echoes the body", function() {
+                expect(JSON.parse(res.body.body).hello).to.equal("world");
+                expect(res.body.headers["x-app"]).to.equal("overterm");
+              });
+            }
+
+            """)
+        write("Users/folder.bru", "meta {\n  name: Users\n  seq: 1\n}\n")
+        write(
+            "Users/Missing.bru",
+            BruFile.newRequest(name: "Missing", url: "{{baseUrl}}/status/404", seq: 1).text + "\nassert {\n  res.status: eq 200\n}\n")
+
+        let api = app.apiWorkspace
+        api.setRoot(checkout)
+        app.showAPIClient(nil)
+        check("the API panel is on screen and reads the checkout", await eventually(3) { api.visible && api.collection != nil })
+        check("it finds the collection", api.collection?.name == "Shop API", "\(api.collections.map(\.name))")
+        check(
+            "its tree is in Bruno's order", api.collection?.tree.children?.map(\.name) == ["Users", "Echo"],
+            "\(api.collection?.tree.children?.map(\.name) ?? [])")
+        check("its environments are listed", api.collection?.environments.map(\.name) == ["A very long staging environment name", "Local"])
+        // A long name is cut, not let to widen the panel past the sidebar.
+        api.environmentName = "A very long staging environment name"
+        await pause(0.4)
+        if let sidebar = app.sidebarItem?.viewController.view, let window = sidebar.window,
+            let panel = Self.find(NSView.self, in: sidebar, where: { $0.className.contains("Hosting") })
+        {
+            let frame = panel.convert(panel.bounds, to: nil)
+            let column = sidebar.convert(sidebar.bounds, to: nil)
+            check(
+                "the panel stays inside its column with a long environment name", frame.minX >= column.minX - 1 && frame.maxX <= column.maxX + 1,
+                "panel \(frame) column \(column) window \(window.frame.width)")
+        }
+        api.environmentName = "Local"
+
+        let echo = root.appendingPathComponent("Echo.bru")
+        app.openInEditor(echo)
+        guard let editor = app.editor else { return check("editor exists", false) }
+        check("the request opens in the editor", await eventually(3) { editor.active?.url == echo && editor.active?.request != nil })
+        check("as a request, not its text", editor.requestHost?.isHidden == false && editor.scrollView.isHidden)
+        guard let model = editor.active?.request else { return }
+        check("it reads the file", model.file.method == "POST" && model.file.url == "{{baseUrl}}/echo")
+
+        model.send()
+        check("Send gets an answer", await eventually(5) { model.result?.response != nil }, model.result?.error ?? "")
+        check("it went to the environment's server", model.result?.response?.status == 200, "\(model.result?.response?.status ?? 0)")
+        check(
+            "its test and assertion pass", model.result?.tests.count == 2 && model.result?.failed == 0,
+            "\(model.result?.tests.map { "\($0.name): \($0.error ?? "ok")" } ?? [])")
+
+        // ✦: the request and its response to an agent, in Ask Agent's sheet.
+        model.askAgent()
+        check("Ask an Agent opens its sheet", await eventually(2) { self.window.attachedSheet != nil })
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        // The environment's secrets, in a sheet of their own.
+        if let collection = api.collection {
+            app.editAPISecrets("Local", in: collection)
+            check("the secrets sheet lists the environment's", await eventually(2) { self.window.attachedSheet != nil })
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            _ = await eventually(2) { self.window.attachedSheet == nil }
+        }
+
+        // An edit in the request view is an edit to the file's text.
+        model.setURL("{{baseUrl}}/echo?page=2")
+        check("a query typed in the URL becomes a param", model.file.queryParams == [BruPair(key: "page", value: "2")])
+        check("and the buffer's text has it", editor.active?.storage.string.contains("url: {{baseUrl}}/echo?page=2") == true)
+        check("which marks the file unsaved", editor.document.isDirty)
+        model.setQueryParams([BruPair(key: "page", value: "3"), BruPair(key: "size", value: "10", enabled: false)])
+        check("editing the params rewrites the URL", model.file.url == "{{baseUrl}}/echo?page=3")
+        editor.saveDocument(nil)
+        let saved = (try? String(contentsOf: echo, encoding: .utf8)) ?? ""
+        check("⌘S writes Bruno's file", saved.contains("url: {{baseUrl}}/echo?page=3") && saved.contains("  ~size: 10"), saved)
+        check("and leaves the blocks it didn't touch as they were", saved.contains("tests {\n  test(\"echoes the body\", function() {"))
+
+        // Renamed from the panel with an edit unsaved: the edit is kept, and
+        // the tab follows the file — no old file put back beside it.
+        model.setURL("{{baseUrl}}/echo?renamed=1")
+        if let item = api.collection?.item(at: echo) {
+            let renamed = try? app.renameAPIItem(item, to: "Echo Two")
+            let target = root.appendingPathComponent("Echo Two.bru")
+            check(
+                "a rename from the panel moves the file",
+                renamed?.resolvingSymlinksInPath() == target.resolvingSymlinksInPath() && FileManager.default.fileExists(atPath: target.path))
+            check("…keeping the edit that wasn't saved", ((try? String(contentsOf: target, encoding: .utf8)) ?? "").contains("echo?renamed=1"))
+            check("…its meta name the new one", ((try? String(contentsOf: target, encoding: .utf8)) ?? "").contains("name: Echo Two"))
+            check(
+                "…and the tab follows it",
+                editor.active?.url?.resolvingSymlinksInPath() == target.resolvingSymlinksInPath() && !editor.document.isDirty,
+                editor.active?.url?.path ?? "")
+            editor.saveDocument(nil)
+            check("…so ⌘S doesn't bring the old file back", !FileManager.default.fileExists(atPath: echo.path))
+            check(
+                "…its request is the renamed file's", editor.active?.request?.url.resolvingSymlinksInPath() == target.resolvingSymlinksInPath(),
+                editor.active?.request?.url.path ?? "none")
+            check("…and its last result went with it", api.result(for: target) != nil)
+            if let back = api.collection?.item(at: target) ?? (try? BrunoCollection.load(root)?.item(at: target)) {
+                _ = try? app.renameAPIItem(back, to: "Echo")
+            }
+            check("renamed back", await eventually(2) { editor.active?.url?.lastPathComponent == "Echo.bru" })
+        }
+
+        // The eye: the .bru text, then the request again.
+        editor.toggleMarkdownPreview()
+        check("the source shows its text", editor.requestHost?.isHidden == true && !editor.scrollView.isHidden)
+        check("the text view holds the file", editor.textView.string.contains("post {"))
+        editor.toggleMarkdownPreview()
+        check("and back to the request", editor.requestHost?.isHidden == false)
+
+        // A failing assertion is a failure, said.
+        let missing = root.appendingPathComponent("Users/Missing.bru")
+        app.openInEditor(missing)
+        check("the second request opens", await eventually(3) { editor.active?.url == missing && editor.active?.request != nil })
+        if let second = editor.active?.request {
+            second.send()
+            check("it is answered 404", await eventually(5) { second.result?.response?.status == 404 })
+            check("and its assertion fails", second.result?.failed == 1 && second.result?.succeeded == false)
+        }
+        check("the panel marks both as sent", api.result(for: echo) != nil && api.result(for: missing) != nil)
+
+        // An agent in a tab on this checkout, over the bridge's real HTTP.
+        if let tab = app.store.selected, Settings.shared.apiAgentControl {
+            tab.attachedCheckout = checkout
+            check("the MCP bridge listens", await eventually(5) { BrowserBridge.shared.port != nil })
+            if let port = BrowserBridge.shared.port, let endpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(tab.terminal.processTag)") {
+                func call(_ name: String, _ arguments: [String: Any]) async -> String {
+                    var request = URLRequest(url: endpoint)
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.setValue("Bearer \(BrowserBridge.shared.token)", forHTTPHeaderField: "Authorization")
+                    request.httpBody = try? JSONSerialization.data(
+                        withJSONObject: ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": name, "arguments": arguments]])
+                    guard let (data, _) = try? await URLSession.shared.data(for: request),
+                        let answer = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    else { return "" }
+                    return (((answer["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "\(answer)"
+                }
+                let listed = await call("api_collections", [:])
+                check("an agent lists its checkout's collection", listed.contains("Shop API") && listed.contains("POST Echo — Echo.bru"), listed)
+                let sent = await call("api_send", ["request": "Echo"])
+                check("…sends a request and reads its tests", sent.contains("200 OK") && sent.contains("Tests: 2/2 passed"), sent)
+            }
+            tab.attachedCheckout = nil
+        }
+
+        // The runner: the whole collection, into the right-hand pane.
+        if let collection = api.collection {
+            app.runAPI([collection.tree], title: collection.name)
+            check("a run shows in the right-hand pane", app.rightPane.mode == .runner && app.diffItem?.isCollapsed == false)
+            check("it runs every request", await eventually(8) { !api.runner.isRunning && api.runner.done == 2 })
+            check(
+                "one passes, one fails", api.runner.passedCount == 1 && api.runner.failedCount == 1,
+                "\(api.runner.entries.map { "\($0.name): \($0.result?.response?.status ?? 0)" })")
+        }
+        await pause(0.5)
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+            app.openInEditor(echo)
+            await pause(0.8)
+            app.captureWindow(to: png)
+        }
+    }
+
+    /// A checkout without a collection: the panel finds the API a tab's
+    /// port serves, imports it as one, and its first request is answered.
+    private func apiImportScenario() async {
+        let server = E2EEchoServer()
+        do { try server.start() } catch { return check("the echo server starts", false, "\(error)") }
+        defer { server.stop() }
+        let checkout = out("service")
+        try? FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+        let api = app.apiWorkspace
+        // The port the tab would list; this server isn't the tab's child.
+        api.ports = { [Int(server.port)] }
+        api.setRoot(checkout)
+        app.showAPIClient(nil)
+        check(
+            "a checkout without a collection opens on My Requests",
+            await eventually(3) { api.visible && !api.isLoading && api.collection?.isPersonal == true } && api.checkoutCollections.isEmpty,
+            api.collection?.name ?? "none")
+        // Postman's way: a request of your own, nothing in the checkout.
+        if let personal = api.collection, personal.isPersonal,
+            let mine = try? api.newRequest(named: "Quick", in: personal.root, url: "\(server.baseURL)/quick")
+        {
+            check("it lives in Overterm's folder, not the checkout's", !mine.path.hasPrefix(checkout.path) && mine.path.contains("My Requests"))
+            app.openInEditor(mine)
+            if let editor = app.editor, await eventually(3, { editor.active?.request != nil }), let model = editor.active?.request {
+                model.send()
+                check("…and is sent as typed", await eventually(5) { model.result?.response?.status == 200 }, model.result?.error ?? "")
+            }
+        }
+        check(
+            "the API the tab serves is offered", await eventually(6) { api.discovered.contains { if case .server = $0 { true } else { false } } },
+            "\(api.discovered.map(\.title))")
+        guard let source = api.discovered.first(where: { if case .server = $0 { true } else { false } }) else { return }
+        do {
+            let imported = try await api.importSource(source)
+            check("it is imported as the checkout's collection", imported.folder.lastPathComponent == "bruno")
+            check("the panel shows it", await eventually(3) { api.collection?.name == "Echo" })
+            api.environmentName = "Local"
+            if let first = imported.firstRequest { app.openInEditor(first) }
+            guard let editor = app.editor else { return }
+            check("its first request opens", await eventually(3) { editor.active?.request != nil })
+            if let model = editor.active?.request {
+                model.send()
+                check("and the server answers it", await eventually(5) { model.result?.response?.status == 200 }, model.result?.error ?? "")
+            }
+        } catch {
+            check("the import succeeds", false, "\(error)")
+        }
+        // The response opens at its top-left, the column's opening animation
+        // notwithstanding (it scrolled the first column out of sight).
+        await pause(0.6)
+        let body = window.contentView.flatMap { Self.find(NSTextView.self, in: $0) { $0.accessibilityIdentifier() == "apiResponseBody" } }
+        check("the response starts at its first column", body?.enclosingScrollView?.contentView.bounds.origin.x == 0, "\(body?.enclosingScrollView?.contentView.bounds ?? .zero)")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] { app.captureWindow(to: png) }
+    }
+
     /// The browser column, a page's console, and the MCP door an agent in
     /// the tab uses — over real HTTP, as Claude Code would.
     private func browserScenario() async {
@@ -656,7 +917,12 @@ final class E2ERunner {
         check("Settings can turn it off", await eventually(2) { self.app.browserItem?.isCollapsed == true && self.app.browserWorkspaces.isEmpty })
         check("…and the title bar's button goes", !app.browserButton.isEnabled && !app.browserButton.isOpen)
         check("…and then links aren't taken", !BrowserLinks.opensInside(URL(string: "http://localhost:3000")!, policy: Settings.shared.browserLinks))
-        check("…nor is Claude given the browser", !Settings.shared.arguments(for: .claude).contains("--mcp-config"))
+        // The MCP server stays for the API client's tools, if those are on;
+        // the browser's go from it.
+        check("…nor is Claude given the browser", !BrowserMCP.offered.contains { ($0["name"] as? String)?.hasPrefix("browser_") == true })
+        check(
+            "…its MCP config only for the API client's tools",
+            Settings.shared.arguments(for: .claude).contains("--mcp-config") == Settings.shared.apiAgentControl)
         Settings.shared.set("browser.enabled", nil)
     }
 

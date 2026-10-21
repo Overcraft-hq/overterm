@@ -60,6 +60,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let overview = AgentOverviewModel()
     /// The Sessions panel's Claude conversations.
     let sessions = SessionsModel()
+    /// The API panel's collections, and the requests open in the editor.
+    let apiWorkspace = APIWorkspace()
+    /// Agents in tabs on other checkouts than the panel's: theirs, by path.
+    var agentAPIWorkspaces: [String: APIWorkspace] = [:]
     private(set) var overviewView: NSView?
     private var overviewPoll: Timer?
     /// The Settings tab's page (Warp's): over the window's body while it shows.
@@ -279,6 +283,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 diff: diff,
                 snippets: snippets,
                 sessions: sessions,
+                api: apiWorkspace,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -322,6 +327,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     resume: { [weak self] in self?.resume($0) },
                     resumeInNewTab: { [weak self] in self?.resume($0, inNewTab: true) },
                     refresh: { [weak self] in self?.refreshSessions() }
+                ),
+                apiActions: APIActions(
+                    open: { [weak self] in self?.openInEditor($0) },
+                    prompt: { [weak self] title, initial, done in self?.askForAPIName(title: title, initial: initial, done: done) },
+                    report: { [weak self] in self?.reportAPIError($0) },
+                    run: { [weak self] items, title in self?.runAPI(items, title: title) },
+                    inform: { [weak self] title, detail in self?.informAPI(title: title, detail: detail) },
+                    editSecrets: { [weak self] environment, collection in self?.editAPISecrets(environment, in: collection) },
+                    rename: { [weak self] item, name in try self?.renameAPIItem(item, to: name) ?? item.url },
+                    trash: { [weak self] item in self?.trashItem(item.url) }
                 ),
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
@@ -458,7 +473,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // in the title bar, View ▸ Changes or ⌥⌘D.
         let diffPanel = NSHostingController(
             rootView: RightPaneView(
-                pane: rightPane, diff: diff, worktrees: worktrees, detail: commitDetail, theme: theme,
+                pane: rightPane, diff: diff, worktrees: worktrees, detail: commitDetail, apiRunner: apiWorkspace.runner, theme: theme,
                 changes: DiffPanelView(
                     model: diff, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
@@ -479,7 +494,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     onOpen: { [weak self] path in
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path))
-                    })))
+                    }),
+                runner: APIRunnerView(
+                    runner: apiWorkspace.runner, workspace: apiWorkspace, theme: theme,
+                    open: { [weak self] in self?.openInEditor($0) },
+                    runWithBru: { [weak self] in self?.runAPIWithBru() })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -545,6 +564,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         split.addSplitViewItem(browserItem)
         wireBrowser()
         wireOvergit()
+        wireAPI()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -998,6 +1018,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+    }
+
+    /// A shell tab after the selected one, in `directory`, that runs
+    /// `command` as soon as its shell starts — as an agent tab starts its agent.
+    func newTab(in directory: URL, running command: String) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let terminal = TerminalView(workingDirectory: directory.path, initialInput: command + "\n", fontSize: fontSize)
+        addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
     }
 
     // MARK: Attention
@@ -2603,6 +2631,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 id: "a.overgit", group: .action, title: "Overgit",
                 subtitle: "The checkout’s history, branches and worktrees  ⌥⌘G", symbol: "arrow.triangle.branch"
             ) { [weak self] _, _ in self?.showOvergit(nil) },
+            PaletteItem(
+                id: "a.api", group: .action, title: "API Client",
+                subtitle: "The checkout’s Bruno collection: send requests, run their tests  ⌥⌘R", symbol: "arrow.left.arrow.right"
+            ) { [weak self] _, _ in self?.showAPIClient(nil) },
             PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
                 [weak self] _, _ in self?.toggleDiff(nil)
             },
@@ -2720,7 +2752,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Shows a SwiftUI view as a sheet; the builder gets the closure that
     /// dismisses it.
-    private func presentSheet<Content: View>(_ build: (@escaping () -> Void) -> Content) {
+    func presentSheet<Content: View>(_ build: (@escaping () -> Void) -> Content) {
         guard let window else { return }
         let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let close = { [weak window, weak sheet] in
@@ -2845,6 +2877,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
                 if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
                 if keys.contains(where: { $0.hasPrefix("browser.") }) { self.browserSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
@@ -3044,6 +3077,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 // another one puts the pane back to nothing.
                 let moved = self.overgit.root?.standardizedFileURL != source.root.standardizedFileURL
                 self.overgit.setRoot(source.root)
+                self.apiWorkspace.setRoot(source.root)
                 if moved { self.commitDetail.show(root: source.root, sha: nil) }
             }
     }
@@ -3163,8 +3197,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         let show = sidebarItem.isCollapsed
         sidebarItem.animator().isCollapsed = !show
         AppEnvironment.defaults.set(show, forKey: Self.sidebarVisibleKey)
-        // Overgit reads git only while it is on screen.
+        // Overgit reads git only while it is on screen; the API panel the disk.
         updateOvergitVisibility()
+        updateAPIVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).
@@ -3246,6 +3281,10 @@ extension TerminalWindowController: NSMenuItemValidation {
         }
         if menuItem.action == #selector(showOvergit(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .git ? .on : .off
+        }
+        if menuItem.action == #selector(showAPIClient(_:)) {
+            menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .api ? .on : .off
+            return Settings.shared.apiEnabled
         }
         if menuItem.action == #selector(toggleTabPeek(_:)) {
             menuItem.state = peek.isOpen ? .on : .off

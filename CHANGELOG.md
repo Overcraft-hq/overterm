@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.2.0 — 2026-10-21
+
+- api: an API client in the sidebar that is Bruno's files — requests, environments, scripts and tests, a runner, imports from OpenAPI, Postman, .http and cURL, My Requests, and MCP tools for agents (⌥⌘R)
+
 ## 1.1.0 — 2026-10-21
 
 - sidebar: the panels move to a rail down the left edge, with Settings and Hide Sidebar at its foot

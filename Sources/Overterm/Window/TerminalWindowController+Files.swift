@@ -36,12 +36,18 @@ extension TerminalWindowController {
             let target = url.deletingLastPathComponent().appendingPathComponent(newName)
             // A change of case only is the same file to a case-insensitive disk.
             if newName.lowercased() != name.lowercased(), let problem = Self.nameProblem(newName, at: target) { return problem }
+            // Resolved before the move, for the API client's requests and results.
+            let resolved = url.resolvingSymlinksInPath().path
             do {
                 try FileManager.default.moveItem(at: url, to: target)
             } catch {
                 return error.localizedDescription
             }
             self.editor?.filesMoved(from: url, to: target)
+            // An open .bru's request, and what it last got, follow it too.
+            self.apiWorkspace.moveResults(from: url, resolved: resolved, to: target)
+            self.editor?.requestsMoved()
+            if self.apiWorkspace.visible { self.apiWorkspace.reload() }
             self.tree.reload()
             return nil
         }
@@ -76,6 +82,8 @@ extension TerminalWindowController {
             }
             self.editor?.filesRemoved(at: url)
             self.tree.reload()
+            // A request or folder of the API panel's: it follows.
+            if self.apiWorkspace.visible { self.apiWorkspace.reload() }
         }
     }
 
@@ -92,7 +100,7 @@ extension TerminalWindowController {
 
     /// A sheet with a name field. `submit` answers nil when done, or why not
     /// — the sheet stays up with that said, the field as typed.
-    private func askForName(title: String, detail: String, initial: String, action: String, submit: @escaping (String) -> String?) {
+    func askForName(title: String, detail: String, initial: String, action: String, submit: @escaping (String) -> String?) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title

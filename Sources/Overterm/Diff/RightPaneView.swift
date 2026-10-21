@@ -4,27 +4,31 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit
+        case changes, pullRequest, usage, commit, runner
     }
 
     @Published var mode: Mode = .changes
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
-/// branch's), its pull request, what the agents have spent, or the commit
-/// picked in Overgit — a switch at the top chooses. Commit shows only
-/// once one has been picked: a tab that can say nothing is in the way.
+/// branch's), its pull request, what the agents have spent, the commit
+/// picked in Overgit, or the API collection run last — a switch at the top
+/// chooses. Commit and Runner show only once there is one: a tab that can
+/// say nothing is in the way.
 struct RightPaneView: View {
     @ObservedObject var pane: RightPane
     @ObservedObject var diff: DiffModel
     @ObservedObject var worktrees: WorktreeModel
     /// Observed so the Commit tab appears the moment one is picked.
     @ObservedObject var detail: CommitDetailModel
+    /// Observed so the Runner tab appears when a run starts.
+    @ObservedObject var apiRunner: APIRunner
     @ObservedObject var theme: ChromeTheme
     let changes: DiffPanelView
     let pullRequest: PullRequestView
     let usage: UsageView
     let commit: CommitDetailView
+    let runner: APIRunnerView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -68,6 +72,16 @@ struct RightPaneView: View {
                         Text(verbatim: sha).font(.system(size: 11, design: .monospaced))
                     }
                 }
+                if apiRunner.hasRun {
+                    // An icon, as the commit's sha alone: a fifth word here
+                    // truncates the others.
+                    tab(.runner, help: "Runner: the API collection run last") {
+                        Image(systemName: apiRunner.isRunning ? "play.circle" : "checklist").font(.system(size: 11))
+                        if apiRunner.failedCount > 0 {
+                            Text(verbatim: "\(apiRunner.failedCount)").foregroundStyle(APIResponseView.statusColor(500))
+                        }
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -77,6 +91,7 @@ struct RightPaneView: View {
             case .pullRequest: pullRequest
             case .usage: usage
             case .commit: commit
+            case .runner: runner
             }
         }
         .background(theme.strip)

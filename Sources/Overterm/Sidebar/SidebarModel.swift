@@ -19,6 +19,8 @@ final class SidebarModel: ObservableObject {
     }
 
     init() {
-        panel = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
+        let stored = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
+        // Left on the API panel, then switched off in Settings: Files.
+        panel = stored == .api && !Settings.shared.apiEnabled ? .files : stored
     }
 }

@@ -103,6 +103,20 @@ each reset, and what the day's tokens would cost at list prices. Both are
 read from the files the agents write on this Mac — nothing is asked over
 the network, and nothing needs a key.
 
+### An API client that is Bruno's files
+
+<kbd>⌥⌘R</kbd>, or the rail's ⇄: the checkout's [Bruno](https://www.usebruno.com)
+collection — its requests by folder, its environments — and a request opens
+beside the terminal with Bruno's tabs (params, body, headers, auth, vars,
+scripts, assert, tests, docs) and the response under them. Scripts and tests
+run as in Bruno (`bru`, `req`, `res`, `expect`), a collection or a folder runs
+top to bottom into a Runner, and the files stay Bruno's: an edit here is a
+minimal edit to the `.bru` file you commit, and Bruno and `bru run` open the
+same collection. No collection yet? It offers the OpenAPI document in the
+checkout, or the one the tab's dev server publishes, and imports Postman,
+`.http` files and a cURL command too. Agents get it over MCP: list the
+requests, send one with its tests, run the collection.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

@@ -180,11 +180,17 @@ final class EditorHeaderView: NSView {
     }
 
     /// Markdown files only: the eye shows it rendered, the brackets go back.
-    func setPreview(available: Bool, showing: Bool) {
+    /// The eye: Markdown rendered, or a Bruno request shown as one — and
+    /// the way back to the text.
+    func setPreview(available: Bool, showing: Bool, request: Bool = false) {
         preview.isHidden = !available
-        let symbol = showing ? "chevron.left.forwardslash.chevron.right" : "eye"
+        let symbol = showing ? "chevron.left.forwardslash.chevron.right" : (request ? "arrow.left.arrow.right" : "eye")
         preview.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        preview.toolTip = showing ? "Back to the Markdown — ⇧⌘V" : "Preview Markdown — ⇧⌘V"
+        if request {
+            preview.toolTip = showing ? "The .bru file's text — ⇧⌘V" : "Back to the request — ⇧⌘V"
+        } else {
+            preview.toolTip = showing ? "Back to the Markdown — ⇧⌘V" : "Preview Markdown — ⇧⌘V"
+        }
         preview.setAccessibilityLabel(preview.toolTip)
     }
 

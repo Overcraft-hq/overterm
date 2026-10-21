@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 
 /// The code editor pane beside the terminal, Zed's way: a tab per open file,
 /// tree-sitter colours, a gutter with numbers, git changes and problems,
@@ -15,6 +16,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var onSaved: (() -> Void)?
     /// Where Go to File looks: the window's checkout.
     var workspaceRoot: (() -> URL?)?
+    /// The window's API client: a `.bru` request opens as one, sent through it.
+    var apiWorkspace: APIWorkspace?
 
     let chrome: ChromeTheme
     private(set) var theme: EditorTheme
@@ -37,6 +40,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private var breadcrumb: EditorBreadcrumbView!
     private(set) var statusBar: EditorStatusBar!
     private(set) var preview: MarkdownPreviewView!
+    /// A Bruno request, shown in place of its file's text.
+    private(set) var requestHost: NSHostingView<AnyView>!
     private var pendingPreview: DispatchWorkItem?
     private var messageLabel: NSTextField!
     private var lineHeight: EditorLineHeight!
@@ -180,12 +185,17 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         preview.isHidden = true
         preview.onOpenFile = { [weak self] url in self?.open(url) }
 
+        let requestHost = NSHostingView(rootView: AnyView(EmptyView()))
+        requestHost.isHidden = true
+        // The view sizes to the pane, never the pane to it.
+        requestHost.sizingOptions = []
+
         let message = NSTextField(labelWithString: "")
         message.textColor = theme.text.withAlphaComponent(0.6)
         message.alignment = .center
         message.isHidden = true
 
-        for view in [header, breadcrumb, scrollView, preview, statusBar, message] as [NSView] {
+        for view in [header, breadcrumb, scrollView, preview, requestHost, statusBar, message] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -206,6 +216,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             preview.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
             preview.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             preview.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            requestHost.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            requestHost.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            requestHost.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            requestHost.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
             statusBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -221,6 +235,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         self.breadcrumb = breadcrumb
         self.statusBar = statusBar
         self.preview = preview
+        self.requestHost = requestHost
         self.messageLabel = message
         view = root
         header.setZoomed(isZoomed)
@@ -246,6 +261,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         let buffer = EditorBuffer()
         buffer.storage.delegate = self
         buffer.load(url, attributes: baseAttributes)
+        attachRequest(buffer)
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
@@ -443,6 +459,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             let selection = isActive ? textView.selectedRange() : buffer.selection.first ?? NSRange(location: 0, length: 0)
             buffer.document.load(url)
             buffer.setText(buffer.document.text, attributes: baseAttributes)
+            buffer.request?.textChanged(buffer.storage.string)
             buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
             bufferDidReload(buffer)
             if isActive {
@@ -611,7 +628,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     func textDidChange(_ notification: Notification) {
         guard let buffer = active else { return }
-        if buffer.showsPreview { schedulePreview() }
+        buffer.request?.textChanged(buffer.storage.string)
+        if buffer.showsPreview, buffer.request == nil { schedulePreview() }
         buffer.document.markEdited()
         gutter.textDidChange()
         bufferDidChange(buffer)
@@ -698,7 +716,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     /// ⇧⌘V or the header's eye: the file rendered, or its text again.
     func toggleMarkdownPreview() {
-        guard let buffer = active, buffer.language?.id == "markdown" else { return }
+        guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil else { return }
         buffer.showsPreview.toggle()
         updatePreview()
         if !buffer.showsPreview { focus() }
@@ -709,6 +727,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     func updatePreview() {
         guard isViewLoaded else { return }
         let buffer = active
+        if let request = buffer?.request, buffer?.document.unavailable == nil {
+            header.setPreview(available: true, showing: buffer?.showsPreview == true, request: true)
+            preview.isHidden = true
+            let showing = buffer?.showsPreview == true
+            requestHost.isHidden = !showing
+            scrollView.isHidden = showing
+            if showing { requestHost.rootView = AnyView(APIRequestView(model: request, theme: chrome)) }
+            return
+        }
+        requestHost.isHidden = true
         let isMarkdown = buffer?.language?.id == "markdown" && buffer?.document.unavailable == nil
         let showing = isMarkdown && buffer?.showsPreview == true
         header.setPreview(available: isMarkdown, showing: showing)

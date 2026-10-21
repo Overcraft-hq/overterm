@@ -6,12 +6,20 @@ import XCTest
 /// width it leaves the panel beside it.
 @MainActor
 final class SidebarRailTests: XCTestCase {
-    /// Files first, then the three that are about what is running — the
-    /// order the rail draws and the order somebody reaches for them in.
+    /// Files first, then the three that are about what is running, then the
+    /// API client — the order the rail draws and the order somebody reaches
+    /// for them in.
     func testThePanelsInOrder() {
-        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets])
+        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api])
         XCTAssertEqual(SidebarPanel.files.title, "Files")
         XCTAssertEqual(SidebarPanel.git.title, "Overgit")
+        XCTAssertEqual(SidebarPanel.api.title, "API")
+    }
+
+    /// The API client's icon is there only while Settings has it on.
+    func testTheAPIPanelFollowsItsSetting() {
+        XCTAssertEqual(SidebarPanel.shown.contains(.api), Settings.shared.apiEnabled)
+        XCTAssertEqual(SidebarPanel.shown.filter { $0 != .api }, [.files, .git, .sessions, .snippets])
     }
 
     /// Four glyphs that can't be mistaken for each other — the whole point

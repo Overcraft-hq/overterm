@@ -204,11 +204,7 @@ extension TerminalWindowController {
     }
 
     func browserSettingsChanged() {
-        if Settings.shared.browserAgentControl {
-            BrowserBridge.shared.start()
-        } else {
-            BrowserBridge.shared.stop()
-        }
+        BrowserBridge.shared.update()
         browserButton.isEnabled = Settings.shared.browserEnabled
         guard !Settings.shared.browserEnabled else { return }
         // Off: the column goes, and every tab's pages with it.

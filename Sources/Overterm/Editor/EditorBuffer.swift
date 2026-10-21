@@ -25,8 +25,11 @@ final class EditorBuffer {
     var usesTabs = false
     /// ⌥Z's choice for this file, over the setting.
     var wrapOverride: Bool?
-    /// Markdown shown rendered instead of its text (⇧⌘V).
+    /// Markdown shown rendered instead of its text (⇧⌘V); a Bruno request
+    /// shown as one (APIRequestView).
     var showsPreview = false
+    /// A `.bru` request's model, while the file is one.
+    var request: APIRequestModel?
 
     var diagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.

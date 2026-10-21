@@ -112,13 +112,17 @@ final class BrowserMCPTests: XCTestCase {
         XCTAssertEqual((result?["serverInfo"] as? [String: Any])?["name"] as? String, "overterm-browser")
         XCTAssertNotNil((result?["capabilities"] as? [String: Any])?["tools"])
         let names = ((await call("tools/list"))?["result"] as? [String: Any])?["tools"] as? [[String: Any]]
+        let listed = Set(names?.compactMap { $0["name"] as? String } ?? [])
         XCTAssertEqual(
-            Set(names?.compactMap { $0["name"] as? String } ?? []),
-            [
+            Set(listed.filter { $0.hasPrefix("browser_") }),
+            Set<String>([
                 "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_console",
                 "browser_evaluate", "browser_back", "browser_reload", "browser_tabs", "browser_tab_new", "browser_tab_select",
                 "browser_tab_close",
-            ])
+            ]))
+        // The API client's, on the same server, while Settings gives them.
+        let api: Set<String> = Settings.shared.apiAgentControl ? ["api_collections", "api_send", "api_request", "api_run"] : []
+        XCTAssertEqual(Set(listed.filter { $0.hasPrefix("api_") }), api)
     }
 
     func testNotificationsGetNoAnswer() async {

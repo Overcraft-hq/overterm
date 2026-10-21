@@ -30,7 +30,9 @@ enum BrowserMCP {
     static let protocolVersion = "2025-06-18"
 
     /// The answer to one JSON-RPC message; nil for a notification.
-    static func handle(_ message: [String: Any], browser: () -> AgentBrowser?) async -> [String: Any]? {
+    static func handle(
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }
+    ) async -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""
         guard let id, !(id is NSNull) else { return nil }
@@ -46,17 +48,30 @@ enum BrowserMCP {
                 "protocolVersion": asked ?? protocolVersion,
                 "capabilities": ["tools": ["listChanged": false]],
                 "serverInfo": ["name": "overterm-browser", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"],
-                "instructions":
-                    "The browser beside your terminal in Overterm (the user sees it). Open a page with browser_navigate, read it with browser_snapshot, act with the refs it lists; browser_console shows the page's errors.",
+                "instructions": instructions,
             ])
         case "ping":
             return reply([String: Any]())
         case "tools/list":
-            return reply(["tools": tools])
+            return reply(["tools": offered])
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
-            guard let browser = browser() else { return reply(errorResult(BrowserError.noBrowser.localizedDescription)) }
+            if name.hasPrefix("api_") {
+                guard Settings.shared.apiAgentControl, let api = api() else {
+                    return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
+                }
+                do {
+                    return reply(try await APIMCP.call(name, arguments, api: api))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(error.localizedDescription))
+                }
+            }
+            guard Settings.shared.browserAgentControl, let browser = browser() else {
+                return reply(errorResult(BrowserError.noBrowser.localizedDescription))
+            }
             do {
                 return reply(try await call(name, arguments, browser))
             } catch let error as ToolError {
@@ -132,6 +147,26 @@ enum BrowserMCP {
         default:
             throw ToolError(message: "Unknown tool: \(name)")
         }
+    }
+
+    /// The tools of what Settings gives agents: the browser's, the API client's.
+    static var offered: [[String: Any]] {
+        (Settings.shared.browserAgentControl ? tools : []) + (Settings.shared.apiAgentControl ? APIMCP.tools : [])
+    }
+
+    static var instructions: String {
+        var parts: [String] = []
+        if Settings.shared.browserAgentControl {
+            parts.append(
+                "The browser beside your terminal in Overterm (the user sees it). Open a page with browser_navigate, read it with browser_snapshot, act with the refs it lists; browser_console shows the page's errors."
+            )
+        }
+        if Settings.shared.apiAgentControl {
+            parts.append(
+                "The API client of your checkout's Bruno collection: api_collections lists its requests, api_send runs one with its tests, api_request sends a one-off, api_run runs the collection — use it to check an endpoint you changed."
+            )
+        }
+        return parts.joined(separator: " ")
     }
 
     static func textResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]]] }

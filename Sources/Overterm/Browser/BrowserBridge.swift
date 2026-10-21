@@ -16,6 +16,11 @@ final class BrowserBridge {
 
     /// The browser of the tab a pane is in — the window answers.
     var resolve: ((String) -> AgentBrowser?)?
+    /// The API client of the checkout a pane's tab is in — the window answers.
+    var resolveAPI: ((String) -> AgentAPI?)?
+
+    /// Agents get the browser, the API client, or both.
+    private var wanted: Bool { Settings.shared.browserAgentControl || Settings.shared.apiAgentControl }
 
     private var server: BridgeServer?
     private(set) var port: UInt16?
@@ -24,11 +29,11 @@ final class BrowserBridge {
     private var configDirectory: URL { AppEnvironment.supportDirectory.appendingPathComponent("mcp", isDirectory: true) }
 
     /// Serving, as Settings ▸ Browser asks.
-    var isServing: Bool { port != nil && Settings.shared.browserAgentControl }
+    var isServing: Bool { port != nil && wanted }
 
     /// Starts listening (once); the config files of an earlier run go.
     func start() {
-        guard server == nil, Settings.shared.browserAgentControl else { return }
+        guard server == nil, wanted else { return }
         try? FileManager.default.removeItem(at: configDirectory)
         let server = BridgeServer(token: token) { [weak self] tag, message in
             await self?.handle(tag: tag, message: message)
@@ -39,6 +44,11 @@ final class BrowserBridge {
         }
     }
 
+    /// Serving exactly while Settings gives agents something.
+    func update() {
+        if wanted { start() } else { stop() }
+    }
+
     func stop() {
         server?.stop()
         server = nil
@@ -46,7 +56,7 @@ final class BrowserBridge {
     }
 
     private func handle(tag: String, message: [String: Any]) async -> [String: Any]? {
-        await BrowserMCP.handle(message) { [weak self] in self?.resolve?(tag) }
+        await BrowserMCP.handle(message, browser: { [weak self] in self?.resolve?(tag) }, api: { [weak self] in self?.resolveAPI?(tag) })
     }
 
     /// The config file for a new pane — written now, while the server is

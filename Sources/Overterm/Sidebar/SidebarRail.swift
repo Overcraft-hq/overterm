@@ -65,7 +65,7 @@ struct SidebarRail: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            ForEach(SidebarPanel.allCases) { item in
+            ForEach(SidebarPanel.shown) { item in
                 RailButton(selected: sidebar.panel == item, help: item.title, theme: theme) {
                     sidebar.panel = item
                 } label: {

@@ -292,6 +292,12 @@ final class Settings: ObservableObject {
     var browserLinks: BrowserLinks.Policy { browserEnabled ? BrowserLinks.Policy(rawValue: string("browser.openLinks")) ?? .local : .none }
     var browserReloadOnSave: Bool { browserEnabled && bool("browser.reloadOnSave") }
     var browserAgentControl: Bool { browserEnabled && bool("browser.agentControl") }
+    var apiEnabled: Bool { bool("api.enabled") }
+    var apiTimeout: Int { Int(number("api.timeout") ?? 30) }
+    var apiFollowRedirects: Bool { bool("api.followRedirects") }
+    var apiVerifyTLS: Bool { bool("api.verifyTLS") }
+    var apiDiscoverServers: Bool { bool("api.discoverServers") }
+    var apiAgentControl: Bool { apiEnabled && bool("api.agentControl") }
 
     // MARK: Ghostty overrides
 

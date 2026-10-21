@@ -63,9 +63,12 @@ struct SessionActions {
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, git, sessions, snippets
+    case files, git, sessions, snippets, api
 
     var id: String { rawValue }
+
+    /// The rail's icons: the API client's only while Settings has it on.
+    @MainActor static var shown: [SidebarPanel] { allCases.filter { $0 != .api || Settings.shared.apiEnabled } }
 
     /// What the stored choice means. `worktrees` had an icon of its own
     /// until Overgit took it in; somebody who left the sidebar there finds
@@ -89,6 +92,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .git: "arrow.triangle.branch"
         case .sessions: "bubble.left.and.bubble.right"
         case .snippets: "curlybraces"
+        case .api: "arrow.left.arrow.right"
         }
     }
 
@@ -106,6 +110,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .git: "Overgit"
+        case .api: "API"
         default: rawValue.capitalized
         }
     }
@@ -123,6 +128,7 @@ struct SidebarView: View {
     @ObservedObject var diff: DiffModel
     @ObservedObject var snippets: SnippetStore
     @ObservedObject var sessions: SessionsModel
+    @ObservedObject var api: APIWorkspace
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
@@ -132,6 +138,7 @@ struct SidebarView: View {
     let overgitActions: OvergitActions
     let snippetActions: SnippetActions
     let sessionActions: SessionActions
+    let apiActions: APIActions
     /// The gear at the foot of the rail.
     let onSettings: () -> Void
     let onClose: () -> Void
@@ -150,6 +157,7 @@ struct SidebarView: View {
                     SessionListView(
                         model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
                 case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
+                case .api: APIPanelView(workspace: api, group: group, theme: theme, actions: apiActions)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

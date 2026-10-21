@@ -124,7 +124,7 @@ struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
-    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + notifications + updates
+    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -348,6 +348,33 @@ enum SettingsSchema {
             help:
                 "Claude Code started from Overterm gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
             kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled"),
+    ]
+
+    private static let api: [SettingSpec] = [
+        SettingSpec(
+            key: "api.enabled", section: .api, group: "API Client", title: "An API client in the sidebar",
+            help:
+                "Bruno collections in the checkout — their requests, environments, scripts and tests — sent and run beside the terminal. The files stay Bruno's: Bruno and bru run open them the same.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "api.timeout", section: .api, group: "Requests", title: "Give up on a request after", kind: .integer(1...600, step: 5, unit: "s"),
+            defaultValue: .int(30), requires: "api.enabled"),
+        SettingSpec(
+            key: "api.followRedirects", section: .api, group: "Requests", title: "Follow redirects", kind: .toggle, defaultValue: .bool(true),
+            requires: "api.enabled"),
+        SettingSpec(
+            key: "api.verifyTLS", section: .api, group: "Requests", title: "Check TLS certificates",
+            help: "Off: a server with a self-signed certificate (a local HTTPS dev server, say) answers too.", kind: .toggle,
+            defaultValue: .bool(true), requires: "api.enabled"),
+        SettingSpec(
+            key: "api.discoverServers", section: .api, group: "Importing", title: "Look for an API the selected tab is serving",
+            help: "The ports a tab listens on are asked where frameworks publish their OpenAPI document (/openapi.json, /v3/api-docs…), on this machine only, to offer it for import.",
+            kind: .toggle, defaultValue: .bool(true), requires: "api.enabled"),
+        SettingSpec(
+            key: "api.agentControl", section: .api, group: "Agents", title: "Agents can use the API client",
+            help:
+                "Claude Code started from Overterm gets MCP tools for its checkout's collection: list the requests, send one with its tests, send a one-off, run the collection.",
+            kind: .toggle, defaultValue: .bool(true), requires: "api.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

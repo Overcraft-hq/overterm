@@ -915,6 +915,84 @@ driving it are in the same window as the code.
   evaluate, back, reload, and the tabs (list, new, select, close). Ask
   Agent (✦) sends a page's address, errors and a screenshot the ⌘L way.
 
+## API client (⌥⌘R, sidebar)
+
+Bruno's collections, sent and tested beside the terminal (the rail's ⇄,
+View ▸ API Client; off entirely with Settings ▸ API Client). The point is
+that it is **Bruno's files**: a collection is a folder with `bruno.json`,
+its requests `.bru` files committed with the code, and the same collection
+opens in Bruno and runs under `bru run` — nothing of Overterm's own on disk.
+
+- **The format** (`BruFile`, `BruRequest`): blocks — `name { … }`, or
+  `name [ … ]` for a list — and whatever is between them, kept as read. A
+  file read and written back with nothing changed is the same bytes; an
+  edit rewrites only its block, laid out as Bruno's writer lays it (two
+  spaces in; every line of a text block indented, empty ones too), so the
+  diff is the edit. A new block goes where Bruno's writer puts it
+  (`BruFile.order`). Requests, `folder.bru`, `collection.bru` and
+  environments are all this one format.
+- **A collection** (`BrunoCollection`): found under the checkout (four
+  folders down at most, never in node_modules, never inside another);
+  its tree in Bruno's sidebar order — folders first, each list by `seq`
+  then name; `folder.bru` names and orders a folder; `bruno.json`'s
+  `ignore` honoured.
+- **Variables** (`APIVariables`): runtime over request over folder over
+  environment over collection, as Bruno's docs layer them;
+  `{{process.env.X}}` from the collection's `.env` first; `{{$guid}}` and
+  the like fresh each send; an unknown name left as written, so it shows
+  in what was sent (and the timeline names it). **Secrets** — the names an
+  environment lists under `vars:secret` — live in the keychain
+  (`KeychainSecretStore`), never in the file, as Bruno keeps them in its
+  app data; an isolated run gets a store that forgets.
+- **Sending** (`APIRequestPlan`, `APIClient`): the plan is pure — the
+  collection's, each folder's, then the request's headers (the nearest
+  wins, case aside), auth from the request or inherited from the nearest
+  folder that sets one, every body Bruno has — so tests and Copy as cURL
+  see exactly what Send would. AWS, digest, NTLM and OAuth 2 are kept in
+  the file and say "run with bru". One `URLSession` per collection keeps
+  its cookies together; its delegates are plain classes, called on the
+  session's queue (CLAUDE.md).
+- **Scripts and tests** (`APIScriptRuntime`, `APIScriptPrelude`,
+  `APIExecution`): each script in a fresh JavaScriptCore context on a
+  queue of its own, with JSC's execution time limit (looked up with
+  `dlsym` — it is only in the private headers) so a loop that never ends is
+  stopped, not the app. The prelude is Bruno's API — `bru`, `req`, `res`,
+  `test` (async ones awaited), a Chai-style `expect`, `assert` — over JSON
+  handed in and read back. A run is Bruno's: pre-request scripts on the
+  request as written (variables filled in after them), the request as they
+  left it, `vars:post-response`, post-response scripts, the assert block,
+  tests — "sandwich" or "sequential" as `bruno.json`'s `scripts.flow` says.
+  `require` of an npm package says to use bru; with bru installed, the
+  Runner's Run with bru runs the same in a terminal tab.
+- **In the editor** (`APIRequestModel`, `APIRequestView`,
+  `EditorViewController+API`): a request `.bru` opens as a request over its
+  text, as Markdown's preview does — the eye shows the text. The file stays
+  the editor's buffer: every edit in the request view is a minimal edit to
+  its text, through the text view, so ⌘S, undo, the unsaved mark and an
+  agent's rewrite on disk work as for any file. The URL's query and the
+  params are kept in step; `:name` segments are the path params.
+  `folder.bru`, `collection.bru` and environments open as text.
+- **The panel and the Runner** (`APIWorkspace`, `APIPanelView`,
+  `APIRunner`): one workspace per window, following the checkout the
+  selected tab shows, reading the disk only while its panel is on screen
+  (`updateAPIVisibility`). A run of the collection or a folder goes to the
+  right-hand pane's Runner tab — the slot the changes and the browser share
+  — with `setNextRequest`, skip and stop honoured and a thousand steps at
+  most.
+- **Importing** (`APIImport`, `OpenAPIImporter`, `PostmanImporter`,
+  `HTTPFileImporter`, `CurlParser`, `APIDiscovery`): each importer makes
+  an `APIImport`, written as the checkout's collection (`bruno/`) or as a
+  folder of the one it has, its environments added and none replaced.
+  YAML is read by the editor's tree-sitter grammar (`YAMLReader`). The
+  panel offers what it finds: documents in the checkout, and the API the
+  selected tab serves, asked for at the paths frameworks publish their
+  OpenAPI document at (localhost only; Settings can turn it off).
+- **Agents** (`APIMCP`): the browser's MCP server carries the API client's
+  tools too — `api_collections`, `api_send`, `api_request`, `api_run` —
+  about the agent's own tab's checkout (`agentAPI(forPane:)`). The server
+  runs while either tool set is given (`BrowserBridge.update`). The
+  response's ✦ hands a request and what came back to an agent.
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a
