@@ -222,7 +222,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 usage: usage,
                 theme: theme,
                 browser: browserButton,
-                leadingInset: 78,
+                leadingInset: 88,
                 actions: TabBarActions(
                     select: { [weak self] tab in
                         // The terminal tab under the Settings tab is still the

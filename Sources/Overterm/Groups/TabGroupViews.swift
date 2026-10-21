@@ -44,7 +44,8 @@ struct GroupIslandView: View {
                 actions: groupActions, holdsSelection: holdsSelection)
             if !group.isCollapsed {
                 ForEach(tabs) { tab in
-                    TabItemView(branch: branch, tab: tab, store: store, theme: theme, actions: actions)
+                    TabItemView(
+                        branch: branch, tab: tab, store: store, theme: theme, actions: actions, nested: true)
                 }
                 // The island's own +. The strip's + opens a loose tab now
                 // (NewTabGroup), so "another one in here" needs a button of
@@ -62,15 +63,15 @@ struct GroupIslandView: View {
                 .help("New Tab in \(group.name)")
             }
         }
-        .padding(3)
+        .padding(TabCard.inset)
         .background(
             // The island you are in is the brighter one, and the only one
             // ringed: with four islands in the strip, "which am I in" has to
             // be answerable without reading a single name.
-            RoundedRectangle(cornerRadius: 11)
+            RoundedRectangle(cornerRadius: TabCard.radius)
                 .fill(tint.opacity(isDropTarget ? 0.26 : (holdsSelection ? 0.16 : 0.09)))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 11)
+                    RoundedRectangle(cornerRadius: TabCard.radius)
                         .strokeBorder(
                             isDropTarget ? tint : (holdsSelection ? tint.opacity(0.5) : .clear),
                             lineWidth: isDropTarget ? 2 : 1))
@@ -153,8 +154,9 @@ private struct GroupChip: View {
             }
         }
         .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: 8).fill(chipBackground))
+        // The chip is a card inside the island, like the tabs beside it.
+        .frame(height: TabCard.nested)
+        .background(RoundedRectangle(cornerRadius: TabCard.nestedRadius).fill(chipBackground))
         .overlay(alignment: .bottom) { if group.isCollapsed { segments } }
         .contentShape(Rectangle())
         .onTapGesture { if !isRenaming { actions.toggleCollapsed(group) } }

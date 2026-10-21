@@ -1306,7 +1306,14 @@ final class E2ERunner {
             abs(strip - ((window.frame.height - lights.maxY) * 2 + lights.height)) < 2,
             "strip \(strip), lights \(lights.integral) in \(window.frame.height)")
         let heights = Set(app.store.tabFrames.values.map { Int($0.height) })
-        check("a tab is 30 pt tall", heights == [30], "\(heights)")
+        check("a loose tab is a card's height", heights == [Int(TabCard.height)], "\(heights)")
+        // And a group is exactly the same height as the tab beside it:
+        // the island's inset twice over plus the tab it holds. They were
+        // 36 and 30, and the strip looked it.
+        check(
+            "a group's island is the same height as a tab",
+            TabCard.nested + TabCard.inset * 2 == TabCard.height,
+            "island \(TabCard.nested + TabCard.inset * 2), tab \(TabCard.height)")
 
         // The strip fills the title bar and has to behave like one: its
         // empty space drags the window and a double-click there zooms it.

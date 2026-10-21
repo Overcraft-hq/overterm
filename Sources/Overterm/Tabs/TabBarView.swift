@@ -205,6 +205,26 @@ struct GroupChipFramesKey: PreferenceKey {
     }
 }
 
+/// How big a card in the strip is.
+///
+/// Four numbers that have to agree, so they live together. Anything
+/// sitting directly in the strip is `height` tall — a loose tab, the
+/// Settings tab, a group's island — and an island comes to exactly that
+/// because its `inset` twice over plus a `nested` tab inside it do. The
+/// radii follow from the inset the way nested corners have to: the
+/// island's is the tab's plus the gap between them, or the ring and the
+/// card it holds are not concentric.
+///
+/// They were 36, 30 and 28 picked separately, which is why a group sat
+/// taller than the tab beside it.
+enum TabCard {
+    static let height: CGFloat = 36
+    static let inset: CGFloat = 3
+    static var nested: CGFloat { height - inset * 2 }
+    static let radius: CGFloat = 11
+    static let nestedRadius: CGFloat = 8
+}
+
 /// Each tab's frame in the strip, top-left origin.
 struct TabFramesKey: PreferenceKey {
     static let space = "tabStrip"
@@ -227,6 +247,10 @@ struct TabItemView: View {
     @ObservedObject var store: TabStore
     @ObservedObject var theme: ChromeTheme
     let actions: TabBarActions
+    /// Inside a group's island, which is inset around it: the tab is
+    /// then the island's height less that inset, so the two cards end
+    /// up the same size as a loose tab beside them.
+    var nested = false
     @State private var hovering = false
 
     /// Not while the Settings tab shows: it covers this one.
@@ -327,6 +351,9 @@ struct TabItemView: View {
         .padding(.trailing, 6)
     }
 
+    private var height: CGFloat { nested ? TabCard.nested : TabCard.height }
+    private var radius: CGFloat { nested ? TabCard.nestedRadius : TabCard.radius }
+
     var body: some View {
         Group {
             if tab.isPinned { pinnedContent } else { fullContent }
@@ -335,11 +362,11 @@ struct TabItemView: View {
         // remaining width.
         .frame(
             minWidth: tab.isPinned ? 38 : 72, idealWidth: tab.isPinned ? 38 : 200, maxWidth: tab.isPinned ? 38 : 220,
-            minHeight: 30, maxHeight: 30
+            minHeight: height, maxHeight: height
         )
         .fixedSize(horizontal: tab.isPinned, vertical: false)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: radius)
                 .fill(isSelected ? theme.tabSel : (hovering ? theme.rowHover : .clear))
                 // The selected tab sits proud of the strip.
                 .shadow(color: isSelected ? theme.tabSelShadow : .clear, radius: 1.5, y: 1)
@@ -347,12 +374,12 @@ struct TabItemView: View {
         .background(
             // A coloured tab carries a faint wash of its colour, so it is
             // findable in a full strip even when not selected.
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: radius)
                 .fill(tab.color?.color.opacity(isSelected ? 0.0 : 0.14) ?? .clear)
         )
         .overlay {
             if isSelected {
-                RoundedRectangle(cornerRadius: 8).strokeBorder(theme.tabSelEdge, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: radius).strokeBorder(theme.tabSelEdge, lineWidth: 0.5)
                     .allowsHitTesting(false)
             }
         }
@@ -373,7 +400,7 @@ struct TabItemView: View {
         // ⌘ shortcut in the app — ⌘B stopped hiding the sidebar.
         .overlay {
             if store.isMarked(tab) {
-                RoundedRectangle(cornerRadius: 8).strokeBorder(TabStatusStyle.signal.opacity(0.9), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: radius).strokeBorder(TabStatusStyle.signal.opacity(0.9), lineWidth: 1.5)
                     .allowsHitTesting(false)
             }
         }
@@ -419,7 +446,10 @@ private struct SettingsTabItem: View {
             .help("Close Settings (⌘W)")
         }
         .padding(.horizontal, 10)
-        .frame(minWidth: 60, idealWidth: 160, maxWidth: 180, minHeight: 28, maxHeight: 28)
+        .frame(
+            minWidth: 60, idealWidth: 160, maxWidth: 180, minHeight: TabCard.height,
+            maxHeight: TabCard.height
+        )
         .background(RoundedRectangle(cornerRadius: 7).fill(selected ? theme.selected : (hovering ? theme.hover : .clear)))
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
