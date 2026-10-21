@@ -23,7 +23,10 @@ final class TabCardTests: XCTestCase {
     }
 
     /// The strip is the row the traffic lights are centred in; a card
-    /// has to fit in it with room above and below.
+    /// has to fit in it with room above and below. The strip's height is
+    /// an NSView's, on the main actor: Swift 6.1 won't read it from the
+    /// assertion's autoclosure otherwise.
+    @MainActor
     func testACardFitsTheStrip() {
         XCTAssertLessThan(TabCard.height, TabStripHostingView<AnyView>.height)
         XCTAssertGreaterThanOrEqual(
