@@ -1,0 +1,105 @@
+# CI: formatted, built and unit-tested on the toolchain the Release workflow
+# ships with — Xcode 16.4, Swift 6.1 — so what would stop a release stops the
+# commit instead. (A test that Swift 6.1 couldn't compile reached main and
+# was found only by the release.)
+#
+# Pull requests, and pushes to main too: the repository is public, so the
+# macOS minutes cost nothing, and commits land on main without a pull request
+# — the one above did. A newer run on the same ref cancels the older one.
+#
+# The end-to-end scenarios (make e2e) open windows and are not run here;
+# docs/testing.md has them, run before calling a change done.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: CI only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  # The pre-commit hook's rule (CLAUDE.md, Commits), for contributors who
+  # never ran `make hooks`: a change to the app bumps VERSION, with its line
+  # in CHANGELOG.md.
+  version:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: VERSION bumped with an app change
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          changed="$(git diff --name-only "$base"...HEAD)"
+          if ! grep -qE '^(Sources/|Resources/|Scripts/|Package\.swift$|Makefile$|mise\.toml$)' <<<"$changed"; then
+            echo "No app change: no bump needed."; exit 0
+          fi
+          old="$(git show "$base:VERSION" | tr -d '[:space:]')"
+          new="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$old" == "$new" ]]; then
+            echo "::error::This changes the app but VERSION is still $old — run Scripts/bump-version.sh major|minor|patch \"<subject>\" (CLAUDE.md, Commits)"; exit 1
+          fi
+          if ! grep -q "^## $new " CHANGELOG.md; then
+            echo "::error::VERSION is $new but CHANGELOG.md has no entry for it — Scripts/bump-version.sh writes both"; exit 1
+          fi
+          echo "VERSION $old → $new"
+
+  build:
+    # Draft pull requests don't run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # Ghostty v1.3.1 (GhosttyKit's pin) builds with Xcode 16, not 26.
+      - name: Use Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Lint (swift-format, strict)
+        run: swift format lint --strict --recursive Sources Tests
+
+      - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
+
+      # The same cache as the Release workflow's: one key on both build scripts.
+      - name: Restore GhosttyKit and TreeSitterKit
+        id: frameworks
+        uses: actions/cache@v6
+        with:
+          path: Frameworks
+          key: frameworks-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+
+      - name: Build GhosttyKit and TreeSitterKit
+        if: steps.frameworks.outputs.cache-hit != 'true'
+        run: make ghosttykit treesitter
+
+      - name: Unit tests
+        run: make test
+
+      # The release path otherwise runs only when someone releases: assemble
+      # the bundle on every run and check what the release depends on.
+      - name: Assemble and verify the app bundle
+        run: |
+          VERSION=9.9.9 BUILD=42 make app
+          test -x Overterm.app/Contents/MacOS/Overterm
+          plist=Overterm.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" | grep -qx 9.9.9
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" | grep -qx 42
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" | grep -qx io.github.overcraft-hq.overterm
+          codesign --verify --strict Overterm.app

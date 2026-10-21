@@ -71,7 +71,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Git goes through `Git.run`** — a GCD thread per call, never a blocked Swift-concurrency thread (the cooperative pool starves; signalbox froze that way).
 - **Tree-sitter and the grammars are pinned as a set with Helix's queries** (`Scripts/build-treesitter.sh`): each grammar at the revision that Helix release pins. Later query patterns win (Helix 25.07+). A query that doesn't compile leaves its language plain — `SyntaxDocumentTests` compiles every one.
 - **Never walk up directories comparing paths with "/"**: `/`'s `deletingLastPathComponent` is `/../`, so the loop never ends — one took 51 GB and the machine down. Stop on `pathComponents.count <= 1`, and bound the loop.
-- **Ghostty is pinned to v1.3.1** (`Scripts/build-ghosttykit.sh`, SHA-checked) with Zig 0.15.2 (`mise.toml`): Ghostty main needs Xcode 26. Bump both together; check `ghostty.h` for API changes. A weekly workflow (`ghostty-release-check`, the repo's only one — macOS CI is too expensive) opens an issue with the steps when Ghostty tags a newer release.
+- **Ghostty is pinned to v1.3.1** (`Scripts/build-ghosttykit.sh`, SHA-checked) with Zig 0.15.2 (`mise.toml`): Ghostty main needs Xcode 26. Bump both together; check `ghostty.h` for API changes. A weekly workflow (`ghostty-release-check`) opens an issue with the steps when Ghostty tags a newer release.
 - **Views don't clip by default since macOS 14.** A subview drawing past its bounds paints over neighbours — the editor gutter did, and the editor's status bar filling its whole dirty rect blanked the pane above it. Set `clipsToBounds` where content may be taller than the view, and fill `dirtyRect.intersection(bounds)`.
 - **The tab strip lives in the title bar**, which swallows right-clicks before SwiftUI sees them. Context menus there go through the window's local event monitor (`installTabRightClick`), not `.contextMenu`.
 - **The window's split dividers measure nothing**; the 10 pt gap between the cards belongs to the cards (`CardColumn.gap`), because a divider is measured even for a collapsed item — as a 10 pt one, it left 30 pt dead down the right of the window. `WideDividerSplitViewController` widens the divider to a grab band over the gap. Autosave key `OvertermColumns.v4` — bump the version whenever the column set changes, or stale positions are applied to new columns.
@@ -119,7 +119,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 
 ## Commits
 
-`area: what changed` subject (areas: `terminal`, `tabs`, `sidebar`, `diff`, `editor`, `git`, `agents`, `session`, `palette`, `snippets`, `window`, `keys`, `build`, `docs`…), body says why. One fix per commit. No `Co-Authored-By` trailer. Run `swift format --in-place --recursive Sources Tests`, `make test` and `make e2e` before committing.
+`area: what changed` subject (areas: `terminal`, `tabs`, `sidebar`, `diff`, `editor`, `git`, `agents`, `session`, `palette`, `snippets`, `window`, `keys`, `build`, `docs`…), body says why. One fix per commit. No `Co-Authored-By` trailer. Run `swift format --in-place --recursive Sources Tests`, `make test` and `make e2e` before committing. CI (`.github/workflows/ci.yml`) runs the lint, the unit tests and the bundle on every pull request and push to main, with the release's Xcode 16.4 (Swift 6.1); E2E stays local.
 
 **Versioning.** `VERSION` is the app's version (SemVer), `CHANGELOG.md` what each version changed; About Overterm shows it with the commit (docs/architecture.md, Build metadata).
 
