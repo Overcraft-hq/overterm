@@ -349,7 +349,7 @@ enum SettingsSchema {
                 "Claude Code started from Overterm gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
             kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled"),
         SettingSpec(
-            key: "simulator.enabled", section: .browser, group: "Simulator", title: "An iOS simulator beside the terminal",
+            key: "browser.simulator", section: .browser, group: "Simulator", title: "An iOS simulator beside the terminal",
             help: "The phone in the title bar: a simulator you can see and click, in the browser's column. Off: the phone goes from the title bar.",
             kind: .toggle, defaultValue: .bool(true)),
     ]

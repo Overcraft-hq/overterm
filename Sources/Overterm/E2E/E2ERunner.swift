@@ -1705,7 +1705,7 @@ final class E2ERunner {
         // Each has its own switch in Settings ▸ Browser, and its button goes with it.
         app.toggleSimulator(nil)
         await pause(0.3)
-        Settings.shared.set("simulator.enabled", .bool(false))
+        Settings.shared.set("browser.simulator", .bool(false))
         check("the simulator off, its phone goes from the title bar", await eventually(3) { !self.app.browserButton.isSimulatorEnabled })
         check("the globe stays", app.browserButton.isEnabled)
         check("and the column it was showing shuts", await eventually(3) { self.app.browserItem?.isCollapsed == true })
@@ -1713,7 +1713,7 @@ final class E2ERunner {
         await pause(0.3)
         check("the phone does nothing while it's off", app.browserItem?.isCollapsed == true)
         Settings.shared.set("browser.enabled", .bool(false))
-        Settings.shared.set("simulator.enabled", nil)
+        Settings.shared.set("browser.simulator", nil)
         check(
             "the browser off and the simulator on: the phone without the globe",
             await eventually(3) { self.app.browserButton.isSimulatorEnabled && !self.app.browserButton.isEnabled })
