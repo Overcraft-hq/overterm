@@ -1110,6 +1110,23 @@ destroying statement are there too).
   SQLite always; BigQuery's signing and answers offline. The `database`
   scenario runs the panel and a console on SQLite.
 
+### SSH tunnels (SSHTunnel)
+
+A server connection can go through a bastion: `/usr/bin/ssh -N -L`
+forwarding a free local port to host:port as the bastion sees them, so
+the user's `~/.ssh/config`, keys and agent work unchanged. The driver
+connects to `127.0.0.1:<port>`; `serverName` keeps TLS on the database's
+own name (PostgresNIO's `tlsServerName`, MySQL's `serverHostname`,
+ClickHouse's trust policy). A password or key passphrase is a keychain
+secret (`.ssh`) handed to ssh by SSH_ASKPASS — a script that prints an
+environment variable set for that one process; with none, BatchMode, so a
+prompt never hangs. A new host key is accepted and remembered
+(`accept-new`), a changed one refused. Ready when the local end answers;
+if ssh exits first, its last line is the error (lines end `\r\n` — one
+Character in Swift). The session closes its tunnel; the app closes every
+one on quit. Tested against an Alpine sshd beside PostgreSQL
+(`SSHTunnelTests`, the `databaseTunnel` scenario).
+
 ### Agents (DatabaseMCP)
 
 On the MCP server the browser's tools are on (BrowserBridge), with

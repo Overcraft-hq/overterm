@@ -58,6 +58,10 @@ Scripts/database-test-servers.sh stop
 Without `OVERTERM_DB_TESTS=1` those three are skipped, so `make test` and
 CI need no Docker. BigQuery's signing and its answers are tested offline.
 
+It also starts an SSH bastion (:52222, on a Docker network with
+PostgreSQL) for `SSHTunnelTests` and the `databaseTunnel` scenario; both
+keep the host key out of your `~/.ssh/known_hosts`.
+
 The same script starts an S3 server (RustFS, :59000) for
 `StorageClientTests` (`OVERTERM_DB_TESTS=1`) and the `storage` scenario,
 which skips itself when nothing answers there.

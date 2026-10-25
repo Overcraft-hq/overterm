@@ -13,6 +13,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
     let connection: DatabaseConnection
     nonisolated var id: UUID { connection.id }
     private var driver: (any DatabaseDriver)?
+    private var tunnel: SSHTunnel?
     private let secrets: DatabaseSecrets
 
     @Published private(set) var state = State.closed
@@ -49,9 +50,17 @@ final class DatabaseSession: ObservableObject, Identifiable {
 
     private func connect() async {
         state = .connecting
-        let driver = DatabaseDrivers.make(
-            connection, password: secrets.value(.password, for: connection.id),
-            serviceAccount: secrets.value(.serviceAccount, for: connection.id))
+        let driver: any DatabaseDriver
+        do {
+            let opened = try await DatabaseDrivers.open(
+                connection, password: secrets.value(.password, for: connection.id),
+                serviceAccount: secrets.value(.serviceAccount, for: connection.id), sshSecret: secrets.value(.ssh, for: connection.id))
+            driver = opened.driver
+            tunnel = opened.tunnel
+        } catch {
+            state = .failed(error.localizedDescription)
+            return
+        }
         do {
             try await driver.connect()
             self.driver = driver
@@ -60,6 +69,8 @@ final class DatabaseSession: ObservableObject, Identifiable {
             schema = schema ?? Self.startingSchema(connection, schemas: schemas)
         } catch {
             await driver.close()
+            tunnel?.close()
+            tunnel = nil
             state = .failed(error.localizedDescription)
         }
     }
@@ -76,6 +87,8 @@ final class DatabaseSession: ObservableObject, Identifiable {
         running?.cancel()
         await driver?.close()
         driver = nil
+        tunnel?.close()
+        tunnel = nil
         state = .closed
         schemas = []
         tables = [:]

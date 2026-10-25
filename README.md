@@ -139,7 +139,8 @@ statement at the caret, completion knows your tables and an alias's
 columns, results land in a grid you sort, copy and save as CSV, JSON,
 Markdown or INSERTs. Passwords and BigQuery's service account keys stay in
 your keychain; a read-only connection refuses anything that writes, and a
-DROP or an UPDATE without WHERE is asked about first.
+DROP or an UPDATE without WHERE is asked about first. A database behind a
+bastion connects through an SSH tunnel, with your own `~/.ssh` setup.
 
 S3 and Google Cloud Storage sit in the same panel — AWS, DigitalOcean
 Spaces, MinIO, R2, B2, Wasabi or any S3 endpoint: browse buckets and

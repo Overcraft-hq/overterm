@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # The database client's test servers, in Docker: PostgreSQL 16, MySQL 8.4,
-# ClickHouse 24.8 and an S3 server (RustFS) on ports nothing else uses, user `ot`, password
-# `otpass`, database `shop`. Then:
+# ClickHouse 24.8, an S3 server (RustFS) and an SSH bastion on ports nothing else uses,
+# user `ot`, password `otpass`, database `shop`. Then:
 #   OVERTERM_DB_TESTS=1 swift test --filter DatabaseDriverTests
 # `Scripts/database-test-servers.sh stop` removes them.
 set -euo pipefail
 
 if [[ "${1:-}" == "stop" ]]; then
-  docker rm -f ot-pg ot-mysql ot-ch ot-minio >/dev/null 2>&1 || true
+  docker rm -f ot-pg ot-mysql ot-ch ot-minio ot-ssh >/dev/null 2>&1 || true
+  docker network rm ot-net >/dev/null 2>&1 || true
   echo "==> stopped"
   exit 0
 fi
 
-docker rm -f ot-pg ot-mysql ot-ch ot-minio >/dev/null 2>&1 || true
-docker run -d --name ot-pg -e POSTGRES_USER=ot -e POSTGRES_PASSWORD=otpass -e POSTGRES_DB=shop -p 55432:5432 postgres:16 >/dev/null
+docker rm -f ot-pg ot-mysql ot-ch ot-minio ot-ssh >/dev/null 2>&1 || true
+docker network create ot-net >/dev/null 2>&1 || true
+docker run -d --name ot-pg --network ot-net -e POSTGRES_USER=ot -e POSTGRES_PASSWORD=otpass -e POSTGRES_DB=shop -p 55432:5432 postgres:16 >/dev/null
 docker run -d --name ot-mysql -e MYSQL_ROOT_PASSWORD=otpass -e MYSQL_DATABASE=shop -e MYSQL_USER=ot -e MYSQL_PASSWORD=otpass \
   -p 53306:3306 mysql:8.4 >/dev/null
 docker run -d --name ot-ch -e CLICKHOUSE_USER=ot -e CLICKHOUSE_PASSWORD=otpass -e CLICKHOUSE_DB=shop -p 58123:8123 \
@@ -23,14 +25,21 @@ docker run -d --name ot-ch -e CLICKHOUSE_USER=ot -e CLICKHOUSE_PASSWORD=otpass -
 # checks signatures as S3 does. Pinned by digest.
 docker run -d --name ot-minio -e RUSTFS_ACCESS_KEY=otadmin -e RUSTFS_SECRET_KEY=otpass12345 -p 59000:9000 \
   rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b >/dev/null
+# An SSH bastion for the tunnel (:52222, user `tunnel`, password `tunnelpass`),
+# on the same network as PostgreSQL: through it, the database is `ot-pg:5432`.
+docker run -d --name ot-ssh --network ot-net -p 52222:22 alpine:3.20 sh -c '
+  apk add --no-cache openssh >/dev/null && ssh-keygen -A >/dev/null &&
+  adduser -D -s /bin/sh tunnel && echo "tunnel:tunnelpass" | chpasswd &&
+  exec /usr/sbin/sshd -D -e -o PasswordAuthentication=yes -o AllowTcpForwarding=yes' >/dev/null
 
 # Ready when each answers.
 for _ in $(seq 1 60); do
   if docker exec ot-pg pg_isready -U ot >/dev/null 2>&1 \
     && docker exec ot-mysql mysqladmin ping -uot -potpass --silent >/dev/null 2>&1 \
     && curl -sf "http://127.0.0.1:58123/ping" >/dev/null \
-    && [[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:59000/)" == "403" ]]; then
-    echo "==> PostgreSQL :55432, MySQL :53306, ClickHouse :58123, S3 (RustFS) :59000"
+    && [[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:59000/)" == "403" ]] \
+    && nc -z 127.0.0.1 52222 >/dev/null 2>&1 && docker exec ot-ssh pgrep sshd >/dev/null 2>&1; then
+    echo "==> PostgreSQL :55432, MySQL :53306, ClickHouse :58123, S3 (RustFS) :59000, SSH :52222"
     exit 0
   fi
   sleep 1

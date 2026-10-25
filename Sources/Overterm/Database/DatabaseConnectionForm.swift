@@ -12,12 +12,14 @@ struct DatabaseConnectionForm: View {
 
     @State private var password = ""
     @State private var serviceAccount = ""
+    @State private var sshSecret = ""
     @State private var testing = false
     @State private var tested: Result<String, Error>?
     @State private var problem: String?
 
     private var hasSavedPassword: Bool { !isNew && store.secrets.value(.password, for: connection.id) != nil }
     private var hasSavedKey: Bool { !isNew && store.secrets.value(.serviceAccount, for: connection.id) != nil }
+    private var hasSavedSSH: Bool { !isNew && store.secrets.value(.ssh, for: connection.id) != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -69,6 +71,34 @@ struct DatabaseConnectionForm: View {
         Picker("SSL", selection: $connection.sslMode) {
             ForEach(DatabaseSSLMode.allCases) { Text($0.title).tag($0) }
         }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// The bastion: Host and Port above are the database as the bastion sees it.
+    @ViewBuilder private var sshFields: some View {
+        TextField("SSH host (a name from ~/.ssh/config works)", text: $connection.sshHost)
+        TextField(
+            "SSH port",
+            text: Binding(
+                get: { connection.sshPort.map(String.init) ?? "" },
+                set: { connection.sshPort = Int($0.filter(\.isNumber)) }))
+        TextField("SSH user (optional)", text: $connection.sshUser)
+        HStack {
+            TextField("Private key (optional — else ~/.ssh and your agent)", text: $connection.sshKeyFile)
+            Button("Choose…") {
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = true
+                panel.showsHiddenFiles = true
+                panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
+                if panel.runModal() == .OK, let url = panel.url {
+                    connection.sshKeyFile = (url.path as NSString).abbreviatingWithTildeInPath
+                }
+            }
+        }
+        SecureField(
+            hasSavedSSH ? "SSH password or key passphrase (saved — empty keeps it)" : "SSH password or key passphrase (optional)",
+            text: $sshSecret)
     }
 
     @ViewBuilder private var sqliteFields: some View {
@@ -180,6 +210,7 @@ struct DatabaseConnectionForm: View {
     /// The secret as it would be saved: what was typed, else the keychain's.
     private var effectivePassword: String? { password.isEmpty ? store.secrets.value(.password, for: connection.id) : password }
     private var effectiveKey: String? { serviceAccount.isEmpty ? store.secrets.value(.serviceAccount, for: connection.id) : serviceAccount }
+    private var effectiveSSH: String? { sshSecret.isEmpty ? store.secrets.value(.ssh, for: connection.id) : sshSecret }
 
     private func test() {
         if let problem = connection.problem {
@@ -192,6 +223,7 @@ struct DatabaseConnectionForm: View {
         let connection = self.connection
         let password = effectivePassword
         let key = effectiveKey
+        let ssh = effectiveSSH
         Task { @MainActor in
             do {
                 let started = Date()
@@ -201,11 +233,19 @@ struct DatabaseConnectionForm: View {
                     let buckets = (try? await client.buckets())?.count ?? 0
                     tested = .success("Connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(buckets) bucket\(buckets == 1 ? "" : "s")")
                 } else {
-                    let driver = DatabaseDrivers.make(connection, password: password, serviceAccount: key)
-                    try await driver.connect()
+                    let (driver, tunnel) = try await DatabaseDrivers.open(connection, password: password, serviceAccount: key, sshSecret: ssh)
+                    defer { tunnel?.close() }
+                    do {
+                        try await driver.connect()
+                    } catch {
+                        await driver.close()
+                        throw error
+                    }
                     let schemas = (try? await driver.schemas())?.count ?? 0
                     await driver.close()
-                    tested = .success("Connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) schema\(schemas == 1 ? "" : "s")")
+                    let through = tunnel == nil ? "" : " through \(connection.sshHost)"
+                    tested = .success(
+                        "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) schema\(schemas == 1 ? "" : "s")")
                 }
             } catch {
                 tested = .failure(error)
@@ -221,7 +261,8 @@ struct DatabaseConnectionForm: View {
         }
         do {
             try store.save(
-                connection, password: password.isEmpty ? nil : password, serviceAccount: serviceAccount.isEmpty ? nil : serviceAccount)
+                connection, password: password.isEmpty ? nil : password, serviceAccount: serviceAccount.isEmpty ? nil : serviceAccount,
+                sshSecret: sshSecret.isEmpty ? nil : sshSecret)
             done(connection)
         } catch {
             problem = error.localizedDescription

@@ -98,3 +98,61 @@ extension E2ERunner {
         await session.delete(["logs/app.log"], in: bucket, refreshing: "")
     }
 }
+
+extension E2ERunner {
+    /// A connection through the bastion of Scripts/database-test-servers.sh
+    /// (:52222) opens as any other, and closing it ends its ssh.
+    func databaseTunnelScenario() async {
+        guard Self.portAnswers(52222) else {
+            print("E2E INFO databaseTunnel: no SSH server on :52222 — Scripts/database-test-servers.sh starts one")
+            return
+        }
+        SSHTunnel.knownHostsFile = scratch.appendingPathComponent("known_hosts").path
+        var connection = DatabaseConnection(name: "Behind the bastion", kind: .postgres)
+        connection.host = "ot-pg"
+        connection.port = 5432
+        connection.user = "ot"
+        connection.database = "shop"
+        connection.sslMode = .disable
+        connection.sshEnabled = true
+        connection.sshHost = "127.0.0.1"
+        connection.sshPort = 52222
+        connection.sshUser = "tunnel"
+        let model = DatabaseModel.shared
+        try? model.store.save(connection, password: "otpass", sshSecret: "tunnelpass")
+        let saved = (try? String(contentsOf: model.store.file, encoding: .utf8)) ?? ""
+        check("the tunnel is saved with the connection", saved.contains("52222") && saved.contains("ot-pg"))
+        check("and its password is not", !saved.contains("tunnelpass"))
+
+        let session = model.session(connection)
+        await session.open()
+        check("it opens through the tunnel", session.state == .open, "\(session.state)")
+        check("and reads the catalog", session.schemas.contains("public"), "\(session.schemas)")
+        var answer: QueryResult?
+        await session.run(["SELECT inet_server_port() AS port"], limit: 1) { _, result in answer = try? result.get() }
+        check("a query runs on the database behind it", answer?.rows == [["5432"]], "\(String(describing: answer))")
+        let ssh = Self.sshChildren()
+        check("one ssh carries it", ssh.count == 1, "\(ssh)")
+        await session.close()
+        check("closing it ends that ssh", await eventually(5) { Self.sshChildren().isEmpty })
+        SSHTunnel.knownHostsFile = nil
+    }
+
+    static func portAnswers(_ port: UInt16) -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        address.sin_port = port.bigEndian
+        return withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0 }
+        }
+    }
+
+    /// This app's ssh children.
+    static func sshChildren() -> [pid_t] {
+        ProcessInspector.children(of: getpid()).filter { $0.name == "ssh" }.map(\.pid)
+    }
+}

@@ -76,6 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
         // shutdown/exit to each language server, so none outlives the app.
         LanguageServers.shared.stopAll()
+        // Each database tunnel's ssh, or it outlives the app.
+        SSHTunnel.closeAll()
         BrowserBridge.shared.stop()
     }
 

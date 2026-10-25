@@ -36,9 +36,11 @@ actor PostgresDriver: DatabaseDriver {
 
     func connect() async throws {
         guard connection == nil else { return }
-        let configuration = PostgresConnection.Configuration(
+        var configuration = PostgresConnection.Configuration(
             host: config.host, port: config.port ?? config.kind.defaultPort ?? 5432, username: config.user, password: password,
             database: config.database.isEmpty ? nil : config.database, tls: try Self.tls(config.sslMode))
+        // Through a tunnel the host is 127.0.0.1: the certificate is the database's.
+        if let name = config.serverName { configuration.options.tlsServerName = name }
         do {
             let opened = try await PostgresConnection.connect(
                 on: MultiThreadedEventLoopGroup.singleton.next(), configuration: configuration, id: 1,

@@ -35,7 +35,7 @@ actor MySQLDriver: DatabaseDriver {
             let address = try SocketAddress.makeAddressResolvingHost(config.host, port: config.port ?? 3306)
             let opened = try await MySQLConnection.connect(
                 to: address, username: config.user, database: config.database, password: password,
-                tlsConfiguration: Self.tls(config.sslMode), serverHostname: config.host, logger: Logger(label: "overterm.database"),
+                tlsConfiguration: Self.tls(config.sslMode), serverHostname: config.serverName ?? config.host, logger: Logger(label: "overterm.database"),
                 on: MultiThreadedEventLoopGroup.singleton.next()
             ).get()
             connection = opened

@@ -104,6 +104,17 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     var provider = StorageProvider.aws
     var pathStyle = false
     var awsProfile = ""
+    /// Through a bastion: ssh to `sshHost` and forward to host:port from
+    /// there (SSHTunnel). Its password or key passphrase is a secret.
+    var sshEnabled = false
+    var sshHost = ""
+    var sshPort: Int? = 22
+    var sshUser = ""
+    var sshKeyFile = ""
+    /// Not saved: the name TLS checks when `host` is a tunnel's local end.
+    var serverName: String?
+
+    var usesTunnel: Bool { sshEnabled && kind.usesServer && !sshHost.isEmpty }
 
     init(name: String, kind: DatabaseKind) {
         self.name = name
@@ -127,7 +138,7 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     // opens (a missing field takes its default) — every connection kept.
     private enum CodingKeys: String, CodingKey {
         case id, name, kind, host, port, user, database, sslMode, filePath, project, location, bigQueryAuth, readOnly, provider,
-            pathStyle, awsProfile
+            pathStyle, awsProfile, sshEnabled, sshHost, sshPort, sshUser, sshKeyFile
     }
 
     init(from decoder: Decoder) throws {
@@ -148,6 +159,11 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
         provider = try c.decodeIfPresent(StorageProvider.self, forKey: .provider) ?? .aws
         pathStyle = try c.decodeIfPresent(Bool.self, forKey: .pathStyle) ?? false
         awsProfile = try c.decodeIfPresent(String.self, forKey: .awsProfile) ?? ""
+        sshEnabled = try c.decodeIfPresent(Bool.self, forKey: .sshEnabled) ?? false
+        sshHost = try c.decodeIfPresent(String.self, forKey: .sshHost) ?? ""
+        sshPort = try c.decodeIfPresent(Int.self, forKey: .sshPort) ?? 22
+        sshUser = try c.decodeIfPresent(String.self, forKey: .sshUser) ?? ""
+        sshKeyFile = try c.decodeIfPresent(String.self, forKey: .sshKeyFile) ?? ""
     }
 
     /// Where it is, for its row and its tooltip.
@@ -174,6 +190,8 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
         default:
             if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The host, please." }
             if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
+            if sshEnabled, sshHost.trimmingCharacters(in: .whitespaces).isEmpty { return "The SSH host, please." }
+            if sshEnabled, port == nil, kind.defaultPort == nil { return "The database's port, for the tunnel." }
             return nil
         }
     }
@@ -231,6 +249,8 @@ enum StorageProvider: String, Codable, CaseIterable, Identifiable, Sendable {
 /// A connection's secret: its password, or BigQuery's service account key.
 enum DatabaseSecretKind: String, Sendable {
     case password, serviceAccount
+    /// The SSH tunnel's password, or its key's passphrase.
+    case ssh
 }
 
 /// Where secrets live — never in the connections' file.
@@ -266,7 +286,12 @@ final class KeychainDatabaseSecrets: DatabaseSecrets {
         guard let value, !value.isEmpty else { return }
         var item = match(kind, id)
         item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrLabel as String] = kind == .password ? "Overterm database password" : "Overterm BigQuery service account"
+        item[kSecAttrLabel as String] =
+            switch kind {
+            case .password: "Overterm database password"
+            case .serviceAccount: "Overterm BigQuery service account"
+            case .ssh: "Overterm database SSH tunnel"
+            }
         SecItemAdd(item as CFDictionary, nil)
     }
 }
@@ -304,7 +329,7 @@ final class DatabaseStore: ObservableObject {
     }
 
     /// Adds or replaces it; `secret` (nil: leave it as it is) goes to the keychain.
-    func save(_ connection: DatabaseConnection, password: String? = nil, serviceAccount: String? = nil) throws {
+    func save(_ connection: DatabaseConnection, password: String? = nil, serviceAccount: String? = nil, sshSecret: String? = nil) throws {
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index] = connection
         } else {
@@ -312,6 +337,7 @@ final class DatabaseStore: ObservableObject {
         }
         if let password { secrets.set(password, .password, for: connection.id) }
         if let serviceAccount { secrets.set(serviceAccount, .serviceAccount, for: connection.id) }
+        if let sshSecret { secrets.set(sshSecret, .ssh, for: connection.id) }
         try write()
     }
 
@@ -319,6 +345,7 @@ final class DatabaseStore: ObservableObject {
         connections.removeAll { $0.id == connection.id }
         secrets.set(nil, .password, for: connection.id)
         secrets.set(nil, .serviceAccount, for: connection.id)
+        secrets.set(nil, .ssh, for: connection.id)
         try write()
     }
 

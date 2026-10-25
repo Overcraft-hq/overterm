@@ -134,15 +134,23 @@ actor ClickHouseDriver: DatabaseDriver {
 /// libpq's do; verify-full leaves it to the system.
 private final class ClickHouseTrust: NSObject, URLSessionDelegate, Sendable {
     let verify: Bool
+    /// Through a tunnel: the name the certificate is checked against.
+    let serverName: String?
 
-    init(config: DatabaseConnection) { verify = config.sslMode == .verifyFull }
+    init(config: DatabaseConnection) {
+        verify = config.sslMode == .verifyFull
+        serverName = config.serverName
+    }
 
     func urlSession(
         _ session: URLSession, didReceive challenge: URLAuthenticationChallenge
     ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
-        guard !verify, challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
             let trust = challenge.protectionSpace.serverTrust
         else { return (.performDefaultHandling, nil) }
-        return (.useCredential, URLCredential(trust: trust))
+        guard verify else { return (.useCredential, URLCredential(trust: trust)) }
+        guard let serverName else { return (.performDefaultHandling, nil) }
+        SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, serverName as CFString))
+        return SecTrustEvaluateWithError(trust, nil) ? (.useCredential, URLCredential(trust: trust)) : (.cancelAuthenticationChallenge, nil)
     }
 }
