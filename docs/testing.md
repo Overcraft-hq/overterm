@@ -44,6 +44,20 @@ pty, same object. Don't initialize the runtime in unit tests.
 Async models supersede older refreshes by design; wait for them to settle
 (`eventually { … }`) rather than asserting right after one call.
 
+### Database drivers
+
+`DatabaseDriverTests` talks to real servers. SQLite runs always; PostgreSQL,
+MySQL and ClickHouse need Docker:
+
+```
+Scripts/database-test-servers.sh            # PostgreSQL :55432, MySQL :53306, ClickHouse :58123
+OVERTERM_DB_TESTS=1 swift test --filter DatabaseDriverTests
+Scripts/database-test-servers.sh stop
+```
+
+Without `OVERTERM_DB_TESTS=1` those three are skipped, so `make test` and
+CI need no Docker. BigQuery's signing and its answers are tested offline.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

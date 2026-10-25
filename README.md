@@ -130,6 +130,17 @@ put them. A terminal selection or a command's output goes into today's
 note in a click, and agents can search and read the vault over MCP —
 never write to it.
 
+### A database client, DataGrip's work
+
+<kbd>⌥⌘B</kbd>, or the rail's cylinder: PostgreSQL, MySQL, SQLite, Redshift,
+ClickHouse and BigQuery — the connections with their schemas, tables and
+columns, and any `.sql` file a console under the editor: ⌘↩ runs the
+statement at the caret, completion knows your tables and an alias's
+columns, results land in a grid you sort, copy and save as CSV, JSON,
+Markdown or INSERTs. Passwords and BigQuery's service account keys stay in
+your keychain; a read-only connection refuses anything that writes, and a
+DROP or an UPDATE without WHERE is asked about first.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

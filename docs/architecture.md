@@ -1061,6 +1061,55 @@ in it, and `.obsidian/` is read for where things go, never written.
   joins the right-hand slot; the panel's lower half is backlinks, outline,
   tags and tasks (`NotesDetailView`).
 
+## Database (⌥⌘B, sidebar)
+
+A database client beside the terminal, DataGrip's work in the sidebar and
+the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery
+(Settings ▸ Database turns it off; its rows fetched and asking before a
+destroying statement are there too).
+
+- **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
+  host, port, user, database, an SSL mode as libpq names them, SQLite's
+  file, BigQuery's project, location and how it signs in (a service
+  account's key, or `gcloud` on this Mac), read-only. `connections.json` in
+  Application Support/Overterm/Database holds them; **a password or a
+  service account key is never in it** — the login keychain holds it
+  (`KeychainDatabaseSecrets`, account `<id>|password`), and loses it with
+  the connection. An isolated run keeps secrets in memory.
+- **Drivers** (`DatabaseDriver`): one actor a connection, the same four
+  things each — a statement (columns, types, rows as text, the row limit
+  kept and whether there were more) and the catalog (schemas, tables, a
+  schema's every column, at once, for the tree and completion).
+  PostgreSQL and Redshift are PostgresNIO: results come binary even for a
+  simple query, so `PostgresText` says each type as psql would; an empty
+  read's columns are asked of a temporary view. MySQL is MySQLNIO, reads as
+  simple queries (text), writes as queries (rows changed). SQLite is the
+  system's libsqlite3. ClickHouse is HTTP (JSONCompact; the server stops at
+  the limit). BigQuery is REST (`jobs.query`, its results until done), the
+  service account's JWT signed with swift-crypto's RSA. Read-only is the
+  database's own where it has one, and refused before sending everywhere.
+- **The model** (`DatabaseModel`, `DatabaseSession`): one for the app; a
+  session a connection, opened when the panel or a console needs it — a
+  statement run while it opens waits for that; tables and columns read a
+  schema at a time, as the tree opens or completion asks; the history.
+- **A console** (`SQLConsole`, `SQLConsoleView`, `EditorViewController+Database`):
+  any `.sql` file in the editor, its connection remembered by its path; a
+  connection's own console is a file in Overterm's folder. Under the text,
+  in `consoleHost` between it and the status bar: the connection and
+  schema, Run (⌘↩ — the statement at the caret, `SQLText.statement`, or
+  the selection; elsewhere ⌘↩ inserts a line) and Run All; a tab a
+  statement; the rows in `ResultGrid` (NSTableView — a SwiftUI list of
+  thousands of rows doesn't scroll), sorted, copied (`ResultExport`).
+- **SQL as text** (`SQLText`, `SQLCompletion`, pure): statements split
+  outside strings, quoted names, comments and `$tag$` bodies; whether one
+  only reads, whether it destroys; what the caret is writing — a table
+  after FROM, a column after `alias.` — and the candidates from the
+  catalog, a schema not read yet read and the list asked again.
+- **Tests**: `DatabaseDriverTests` run PostgreSQL, MySQL and ClickHouse in
+  Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
+  SQLite always; BigQuery's signing and answers offline. The `database`
+  scenario runs the panel and a console on SQLite.
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a
