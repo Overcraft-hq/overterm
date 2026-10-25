@@ -76,6 +76,16 @@ extension E2ERunner {
         console.run(["SELECT count(*) FROM orders"])
         check("a refused DELETE without WHERE isn't sent", await eventually(5) { console.current?.result?.rows == [["3"]] })
 
+        // History: what ran on this connection, back into the console.
+        let ran = model.history.filter { $0.connection == connection.id }.map(\.sql)
+        check("what was run is in the connection's history", ran.contains("SELECT count(*) FROM orders"), "\(ran)")
+        editor.replaceText(of: editor.active!, with: "SELECT 1;")
+        editor.textView.setSelectedRange(NSRange(location: 3, length: 0))
+        editor.insertIntoConsole("SELECT note FROM orders")
+        check(
+            "a query from the history goes in after the caret's statement",
+            editor.textView.string == "SELECT 1;\n\nSELECT note FROM orders;\n", editor.textView.string.debugDescription)
+
         // Read-only: refused before it is sent.
         var reader = connection
         reader.id = UUID()

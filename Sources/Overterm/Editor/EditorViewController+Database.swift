@@ -37,7 +37,8 @@ extension EditorViewController {
                     console: console, store: DatabaseModel.shared.store, theme: chrome,
                     runStatement: { [weak self] in _ = self?.runConsoleStatement() },
                     runAll: { [weak self] in self?.runConsoleAll() },
-                    newConnection: { Self.onNewDatabaseConnection?() })
+                    newConnection: { Self.onNewDatabaseConnection?() },
+                    insert: { [weak self] sql in self?.insertIntoConsole(sql) })
             })
         // Results arriving make room for them; the toolbar alone is a strip.
         consoleObserver = console.$runs.map(\.isEmpty).removeDuplicates().sink { [weak self] empty in
@@ -50,6 +51,24 @@ extension EditorViewController {
         let limit = max(120, view.bounds.height - 160)
         consoleResultsHeight = min(max(height, 80), limit)
         consoleHeight.constant = consoleResultsHeight
+    }
+
+    /// A query from the history, on a line of its own at the caret's
+    /// statement's end, the caret on it — ⌘↩ runs it.
+    func insertIntoConsole(_ sql: String) {
+        guard let buffer = active else { return }
+        let text = textView.string as NSString
+        let caret = textView.selectedRange().location
+        let end = SQLText.statement(at: caret, in: text as String).map(NSMaxRange) ?? text.length
+        let line = text.lineRange(for: NSRange(location: min(end, text.length), length: 0))
+        let at = min(NSMaxRange(line), text.length)
+        let lead = at > 0 && text.character(at: at - 1) != 0x0A ? "\n\n" : "\n"
+        let statement = sql.trimmingCharacters(in: .whitespacesAndNewlines)
+        let piece = lead + statement + (statement.hasSuffix(";") ? "" : ";") + "\n"
+        replaceText(of: buffer, with: text.replacingCharacters(in: NSRange(location: at, length: 0), with: piece))
+        textView.setSelectedRange(NSRange(location: at + (lead as NSString).length, length: 0))
+        textView.scrollRangeToVisible(textView.selectedRange())
+        focus()
     }
 
     /// The selection, else the statement at the caret.

@@ -10,6 +10,9 @@ struct SQLConsoleView: View {
     let runStatement: () -> Void
     let runAll: () -> Void
     let newConnection: () -> Void
+    /// A query from the history, written into the console.
+    var insert: (String) -> Void = { _ in }
+    @ObservedObject var model = DatabaseModel.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,6 +62,21 @@ struct SQLConsoleView: View {
                 .help("The schema completion and unqualified names are about")
             }
             Spacer(minLength: 4)
+            if let connection = console.connection {
+                let recent = model.history.filter { $0.connection == connection.id }.prefix(25)
+                Menu {
+                    if recent.isEmpty { Text("Nothing run yet") }
+                    ForEach(Array(recent)) { item in
+                        Button((item.error == nil ? "" : "⚠︎ ") + item.sql.replacingOccurrences(of: "\n", with: " ").prefix(80)) { insert(item.sql) }
+                    }
+                } label: {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("What was run on this connection — chosen, it goes into the console")
+            }
             if console.isRunning {
                 ProgressView().controlSize(.mini)
                 Button("Stop", action: console.stop).controlSize(.small)
