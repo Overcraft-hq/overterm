@@ -18,6 +18,8 @@ struct TabGroupActions {
     var setRestoresOnLaunch: (TabGroup, Bool) -> Void
     /// Hovering a collapsed chip peeks into it; nil ends the peek.
     var peek: (TabGroup?) -> Void
+    /// A rename in the chip ended: the keyboard back to the terminal.
+    var renameEnded: () -> Void = {}
 }
 
 /// One island: a chip with the group's name, then its tabs, all on a tint
@@ -90,7 +92,6 @@ private struct GroupChip: View {
     let actions: TabGroupActions
     let holdsSelection: Bool
     @State private var hovering = false
-    @FocusState private var editing: Bool
 
     private var isRenaming: Bool { store.renamingGroupID == group.id }
     private var needing: Int { tabs.filter(\.activity.needsAttention).count }
@@ -137,7 +138,7 @@ private struct GroupChip: View {
     var body: some View {
         HStack(spacing: 6) {
             if isRenaming {
-                GroupNameField(group: group, store: store)
+                GroupNameField(group: group, store: store, onEnd: actions.renameEnded)
             } else {
                 Text(verbatim: group.name)
                     .font(.system(size: 12, weight: .bold))
@@ -160,6 +161,10 @@ private struct GroupChip: View {
         .overlay(alignment: .bottom) { if group.isCollapsed { segments } }
         .contentShape(Rectangle())
         .onTapGesture { if !isRenaming { actions.toggleCollapsed(group) } }
+        // As a tab's: a double-click renames (its two clicks toggled the
+        // island back as it was). Simultaneous, so one click isn't held
+        // back for the double-click interval.
+        .simultaneousGesture(TapGesture(count: 2).onEnded { actions.rename(group) })
         .onHover { inside in
             hovering = inside
             // Only a collapsed island peeks: an open one is already there.
@@ -179,24 +184,47 @@ private struct GroupChip: View {
     }
 }
 
-/// Renaming inside the chip, as a tab's own rename works: ↩ confirms,
-/// Esc cancels, and the keyboard goes back to the terminal either way.
+/// Renaming inside the chip, as a tab's own rename works: the field takes
+/// the keyboard as it appears — without that, Rename Group… and a
+/// double-click showed a field the keys never reached (they went on to
+/// the terminal); ↩ or a click elsewhere confirms, Esc cancels, and the
+/// keyboard goes back to the terminal either way.
 private struct GroupNameField: View {
     @ObservedObject var group: TabGroup
     @ObservedObject var store: TabStore
+    let onEnd: () -> Void
     @State private var draft: String = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
         TextField("", text: $draft)
             .textFieldStyle(.plain)
             .font(.system(size: 11, weight: .semibold))
             .frame(width: max(60, CGFloat(draft.count) * 7 + 12))
-            .onSubmit {
-                let trimmed = draft.trimmingCharacters(in: .whitespaces)
-                if !trimmed.isEmpty { group.name = trimmed }
-                store.renamingGroupID = nil
+            .focused($focused)
+            .onAppear {
+                draft = group.name
+                // A turn later: from a menu, its closing took the keyboard
+                // back after a focus given at once.
+                focused = true
+                DispatchQueue.main.async { focused = true }
             }
-            .onExitCommand { store.renamingGroupID = nil }
-            .onAppear { draft = group.name }
+            .onSubmit(commit)
+            .onExitCommand(perform: finish)
+            .onChange(of: focused) { isFocused in
+                if !isFocused, store.renamingGroupID == group.id { commit() }
+            }
+    }
+
+    private func commit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { group.name = trimmed }
+        finish()
+    }
+
+    private func finish() {
+        guard store.renamingGroupID == group.id else { return }
+        store.renamingGroupID = nil
+        onEnd()
     }
 }

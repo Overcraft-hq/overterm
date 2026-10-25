@@ -263,7 +263,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     ungroup: { [weak self] group in self?.store.ungroup(group) },
                     close: { [weak self] group in self?.closeGroup(group) },
                     setRestoresOnLaunch: { group, value in group.restoresOnLaunch = value },
-                    peek: { [weak self] group in self?.peekGroup(group) }
+                    peek: { [weak self] group in self?.peekGroup(group) },
+                    renameEnded: { [weak self] in self?.focusSelectedTerminal() }
                 )
             )
             .background(theme.strip)

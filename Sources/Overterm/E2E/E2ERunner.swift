@@ -1982,6 +1982,23 @@ final class E2ERunner {
         check("with its settings under it", await eventually(3) { self.app.groupPopover?.isShown == true })
         app.groupPopover?.performClose(nil)
         app.store.renamingGroupID = nil
+        _ = await eventually(2) { self.app.groupPopover?.isShown != true }
+
+        // Rename Group… (the menu's, and a double-click's): the field takes
+        // the keyboard — it showed, and the keys went to the terminal.
+        app.focusSelectedTerminal()
+        app.store.renamingGroupID = group.id
+        let editing = await eventually(3) { (self.window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        check("Rename Group gives its field the keyboard", editing, String(describing: window.firstResponder))
+        if let field = window.firstResponder as? NSTextView {
+            field.selectAll(nil)
+            field.insertText("Renamed", replacementRange: field.selectedRange())
+            field.insertNewline(nil)
+        }
+        check(
+            "typing and ↩ rename the island",
+            await eventually(2) { group.name == "Renamed" && self.app.store.renamingGroupID == nil }, group.name)
+        check("and the terminal has the keyboard again", await eventually(2) { self.window.firstResponder is TerminalView })
 
         // The invariant everything else depends on: one contiguous run.
         check(
