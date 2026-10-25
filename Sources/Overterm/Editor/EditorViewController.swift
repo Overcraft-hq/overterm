@@ -21,6 +21,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// The file showing changed (another tab, a rename, the last one closed):
     /// the notes panel highlights it.
     var onActiveChanged: ((URL?) -> Void)?
+    /// A note's reading view, made the first time one is read.
+    var noteReader: NoteReaderView?
+    var noteObserver: AnyCancellable?
+    /// A #tag clicked in a note.
+    var onNoteTag: ((String) -> Void)?
 
     let chrome: ChromeTheme
     private(set) var theme: EditorTheme
@@ -265,6 +270,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         buffer.storage.delegate = self
         buffer.load(url, attributes: baseAttributes)
         attachRequest(buffer)
+        attachNote(buffer)
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
@@ -555,6 +561,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         breadcrumb.recolor(background: theme.background, text: theme.text)
         statusBar.recolor(background: chrome.stripNS, text: theme.text)
         preview.theme = theme
+        if let noteReader {
+            noteReader.invalidate()
+            updatePreview()
+        }
         messageLabel.textColor = theme.text.withAlphaComponent(0.6)
         // The syntax colours are the theme's: every buffer is painted again.
         let attributes = baseAttributes
@@ -719,7 +729,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     /// ⇧⌘V or the header's eye: the file rendered, or its text again.
     func toggleMarkdownPreview() {
-        guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil else { return }
+        guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil || buffer.isNote else { return }
         buffer.showsPreview.toggle()
         updatePreview()
         if !buffer.showsPreview { focus() }
@@ -733,6 +743,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         if let request = buffer?.request, buffer?.document.unavailable == nil {
             header.setPreview(available: true, showing: buffer?.showsPreview == true, request: true)
             preview.isHidden = true
+            noteReader?.isHidden = true
             let showing = buffer?.showsPreview == true
             requestHost.isHidden = !showing
             scrollView.isHidden = showing
@@ -740,6 +751,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             return
         }
         requestHost.isHidden = true
+        if let buffer, buffer.isNote, buffer.document.unavailable == nil {
+            preview.isHidden = true
+            header.setPreview(available: true, showing: buffer.showsPreview)
+            showNote(buffer)
+            return
+        }
+        noteReader?.isHidden = true
         let isMarkdown = buffer?.language?.id == "markdown" && buffer?.document.unavailable == nil
         let showing = isMarkdown && buffer?.showsPreview == true
         header.setPreview(available: isMarkdown, showing: showing)

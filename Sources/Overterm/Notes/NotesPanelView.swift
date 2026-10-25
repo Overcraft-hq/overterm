@@ -78,14 +78,27 @@ struct NotesPanelView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize(horizontal: false, vertical: true)
+            // The vault's name before the buttons: they fold into ⋯ first.
+            .layoutPriority(1)
             .help(model.vault.root.path)
             .accessibilityIdentifier("notesVault")
             Spacer(minLength: 4)
             if model.isLoading && model.tree != nil { ProgressView().controlSize(.mini) }
             PanelHeaderButton(symbol: "square.and.pencil", help: "New Note", action: { actions.newNote(nil) }, theme: theme)
             PanelHeaderButton(symbol: "calendar", help: "Today’s Note", action: actions.dailyNote, theme: theme)
-            PanelHeaderButton(symbol: "folder.badge.plus", help: "New Folder", action: { actions.newFolder(nil) }, theme: theme)
-            PanelHeaderButton(symbol: "rectangle.compress.vertical", help: "Collapse All", action: model.collapseAll, theme: theme)
+            Menu {
+                Button("New Folder") { actions.newFolder(nil) }
+                Button("Collapse All", action: model.collapseAll)
+                Divider()
+                Button("Reload") { model.reload() }
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 11)).frame(width: 22, height: 22)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .foregroundStyle(theme.text2)
+            .help("More")
         }
         .padding(.leading, 12)
         .padding(.trailing, 8)

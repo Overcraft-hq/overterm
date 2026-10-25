@@ -100,6 +100,9 @@ struct ObsidianSettings: Equatable, Sendable {
     /// "shortest", "relative" or "absolute": how a new link names its note.
     var newLinkFormat = "shortest"
     var userIgnoreFilters: [String] = []
+    /// "Strict line breaks": off (Obsidian's default), a single newline
+    /// breaks the line in the reading view.
+    var strictLineBreaks = false
     /// Daily notes: folder, moment.js format, template.
     var dailyFolder = ""
     var dailyFormat = "YYYY-MM-DD"
@@ -122,6 +125,7 @@ struct ObsidianSettings: Equatable, Sendable {
         if let markdown = app["useMarkdownLinks"] as? Bool { settings.useMarkdownLinks = markdown }
         if let format = app["newLinkFormat"] as? String { settings.newLinkFormat = format }
         if let filters = app["userIgnoreFilters"] as? [String] { settings.userIgnoreFilters = filters }
+        if let strict = app["strictLineBreaks"] as? Bool { settings.strictLineBreaks = strict }
         let daily = json("daily-notes.json")
         if let path = daily["folder"] as? String { settings.dailyFolder = path }
         if let format = daily["format"] as? String, !format.isEmpty { settings.dailyFormat = format }

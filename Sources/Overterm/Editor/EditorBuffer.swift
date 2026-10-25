@@ -30,6 +30,8 @@ final class EditorBuffer {
     var showsPreview = false
     /// A `.bru` request's model, while the file is one.
     var request: APIRequestModel?
+    /// A note of the vault: its preview is the reading view (NoteReaderView).
+    var isNote = false
 
     var diagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.

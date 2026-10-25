@@ -52,7 +52,79 @@ extension E2ERunner {
         check("and opens", await eventually(3) { editor.active?.url?.standardizedFileURL == daily.standardizedFileURL })
         check("the tree picks up what was written", await eventually(5) { notes.tree?.allNotes.count == 4 }, "\(notes.tree?.allNotes.map(\.name) ?? [])")
 
+        await readingView(notes: notes, root: root)
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
+    }
+
+    /// A note read as Obsidian draws it: links, embeds, callouts, math,
+    /// mermaid; a link followed, a task ticked in the text.
+    private func readingView(notes: NotesModel, root: URL) async {
+        guard let editor = app.editor else { return }
+        let rich = root.appendingPathComponent("Rich.md")
+        try? """
+        ---
+        status: draft
+        tags: [demo, notes]
+        ---
+        # Rich
+
+        Links to [[Welcome]], [[Projects/Plan#Plan|the plan]] and [[Nowhere]]. A ==highlight== and #inline-tag.%%hidden%%
+
+        > [!warning] Careful
+        > Inside the callout.
+
+        Euler: $e^{i\\pi} + 1 = 0$
+
+        ```mermaid
+        graph TD
+          A --> B
+        ```
+
+        - [ ] first task
+        - [x] second task
+
+        ![[Plan]]
+        """.write(to: rich, atomically: true, encoding: .utf8)
+        notes.reload()
+        _ = await eventually(3) { notes.index.notes["Rich.md"] != nil }
+        app.openNote(rich)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Rich.md" }
+        check("a note is a note in the editor", editor.active?.isNote == true)
+        editor.toggleMarkdownPreview()
+        guard let reader = editor.noteReader else { return check("the reading view is made", false) }
+        check("⇧⌘V reads it", await eventually(5) { reader.renderCount > 0 && !reader.isHidden && editor.scrollView.isHidden })
+        var text = ""
+        reader.renderedText { text = $0 }
+        _ = await eventually(3) { !text.isEmpty }
+        check("its links read as their names", text.contains("Links to Welcome, the plan and Nowhere."), text)
+        check("its properties are shown", text.contains("status") && text.contains("draft"), text)
+        check("comments are hidden", !text.contains("hidden"), text)
+        check("a callout has its title", text.contains("Careful") && !text.contains("[!warning]"), text)
+        check("the embed is drawn in place", text.contains("Back to Welcome."), text)
+        check("mermaid draws its diagram", await eventually(8) { reader.mermaidDrawn == 1 }, "\(reader.mermaidDrawn)")
+        var hasMath = false
+        reader.webView.evaluateJavaScript("document.querySelectorAll('.katex').length") { value, _ in
+            hasMath = (value as? Int ?? 0) > 0
+        }
+        check("math is typeset", await eventually(2) { hasMath })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(0.5)
+            app.captureWindow(to: png)
+        }
+
+        // A task ticked in the view is ticked in the text.
+        let line = (editor.active?.storage.string ?? "").components(separatedBy: "\n").firstIndex { $0.hasPrefix("- [ ] first") } ?? -1
+        editor.toggleNoteTask(line: line)
+        check("a task ticked there is ticked in the text", editor.active?.storage.string.contains("- [x] first task") == true)
+        check("as an unsaved edit", editor.document.isDirty)
+        editor.saveDocument(nil)
+
+        // A link to a note not written yet writes it.
+        editor.followNoteLink("Nowhere", anchor: nil, markdown: false)
+        check("following a link opens its note", await eventually(3) { editor.active?.url?.lastPathComponent == "Nowhere.md" })
+        check("a note not written yet is written", FileManager.default.fileExists(atPath: root.appendingPathComponent("Nowhere.md").path))
+        check("and read, as the link was", editor.active?.showsPreview == true)
     }
 }
