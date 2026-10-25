@@ -501,7 +501,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 runner: APIRunnerView(
                     runner: apiWorkspace.runner, workspace: apiWorkspace, theme: theme,
                     open: { [weak self] in self?.openInEditor($0) },
-                    runWithBru: { [weak self] in self?.runAPIWithBru() })))
+                    runWithBru: { [weak self] in self?.runAPIWithBru() }),
+                graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -2667,6 +2668,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.newNote", group: .action, title: "New Note", subtitle: nil, symbol: "square.and.pencil") {
                 [weak self] _, _ in self?.newNote(nil)
             },
+            PaletteItem(id: "a.graph", group: .action, title: "Graph View", subtitle: "The notes and their links", symbol: "point.3.connected.trianglepath.dotted") {
+                [weak self] _, _ in self?.showNotesGraph(nil)
+            },
             PaletteItem(
                 id: "a.branchNote", group: .action, title: "Note for This Branch", subtitle: "Branches/<repo>/<branch> in the vault", symbol: "arrow.triangle.branch"
             ) { [weak self] _, _ in self?.openBranchNote() },
@@ -3352,7 +3356,9 @@ extension TerminalWindowController: NSMenuItemValidation {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .notes ? .on : .off
             return Settings.shared.notesEnabled
         }
-        if menuItem.action == #selector(openDailyNote(_:)) || menuItem.action == #selector(newNote(_:)) {
+        if menuItem.action == #selector(openDailyNote(_:)) || menuItem.action == #selector(newNote(_:))
+            || menuItem.action == #selector(showNotesGraph(_:))
+        {
             return Settings.shared.notesEnabled
         }
         if menuItem.action == #selector(toggleTabPeek(_:)) {

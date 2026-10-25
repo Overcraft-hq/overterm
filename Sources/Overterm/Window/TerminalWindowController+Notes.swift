@@ -147,6 +147,16 @@ extension TerminalWindowController {
         )
     }
 
+    /// The notes' graph in the right-hand pane (which takes the slot, as
+    /// every pane there does).
+    @objc func showNotesGraph(_ sender: Any?) {
+        guard Settings.shared.notesEnabled else { return }
+        rightPane.graphOpened = true
+        rightPane.mode = .graph
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
     // MARK: Agents and branches
 
     /// ⌘L for a note: the editor's selection in it, or all of it, to an agent.

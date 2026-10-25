@@ -157,6 +157,15 @@ extension E2ERunner {
         let todays = (try? String(contentsOf: daily, encoding: .utf8)) ?? ""
         check("terminal text goes to today's note, fenced under its command", todays.contains("`make app`\n```\nBUILD OK\n```"), todays)
 
+        // The graph, in the right-hand pane.
+        app.openNote(plan)
+        app.showNotesGraph(nil)
+        check("Graph View takes the right-hand pane", app.rightPane.mode == .graph && app.diffItem?.isCollapsed == false)
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(1.5)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-graph.png")
+        }
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

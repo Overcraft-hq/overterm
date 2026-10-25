@@ -102,6 +102,7 @@ enum MainMenu {
         command(viewMenu, "API Client", #selector(TerminalWindowController.showAPIClient(_:)), "api.show")
         command(viewMenu, "Notes", #selector(TerminalWindowController.showNotes(_:)), "notes.show")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
+        command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
         // Ticked while the column shows; off with Settings ▸ Browser.
