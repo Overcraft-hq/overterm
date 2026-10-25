@@ -1,9 +1,15 @@
 import Foundation
 import Security
 
-/// The databases the client speaks.
+/// The databases the client speaks — and the object stores it browses.
 enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case postgres, mysql, sqlite, redshift, clickhouse, bigquery
+    /// Buckets and their files: S3 and everything that speaks it (Spaces,
+    /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
+    case s3, gcs
+
+    /// Files, not tables: its tree is buckets and folders, no console.
+    var isStorage: Bool { self == .s3 || self == .gcs }
 
     var id: String { rawValue }
 
@@ -15,6 +21,8 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .redshift: "Amazon Redshift"
         case .clickhouse: "ClickHouse"
         case .bigquery: "BigQuery"
+        case .s3: "S3-Compatible Storage"
+        case .gcs: "Google Cloud Storage"
         }
     }
 
@@ -26,13 +34,12 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .redshift: 5439
         // ClickHouse's HTTP interface; 8443 with TLS.
         case .clickhouse: 8123
-        case .sqlite, .bigquery: nil
+        case .sqlite, .bigquery, .s3, .gcs: nil
         }
     }
 
-    /// A host, a port, a user and a password — every kind but SQLite's file
-    /// and BigQuery's project.
-    var usesServer: Bool { self != .sqlite && self != .bigquery }
+    /// A host, a port, a user and a password — the SQL servers.
+    var usesServer: Bool { [.postgres, .mysql, .redshift, .clickhouse].contains(self) }
 
     /// The schema a new connection starts on.
     var defaultSchema: String? {
@@ -91,19 +98,64 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     var bigQueryAuth = BigQueryAuth.serviceAccount
     /// Only reads: anything that would write is refused before it is sent.
     var readOnly = false
+    /// S3: whose it is (its endpoint and addressing), bucket names in the
+    /// path rather than the host (MinIO), and credentials from an AWS CLI
+    /// profile instead of a key in the keychain.
+    var provider = StorageProvider.aws
+    var pathStyle = false
+    var awsProfile = ""
 
     init(name: String, kind: DatabaseKind) {
         self.name = name
         self.kind = kind
         port = kind.defaultPort
-        if kind == .bigquery { bigQueryAuth = .gcloud }
+        if kind == .bigquery || kind == .gcs { bigQueryAuth = .gcloud }
+        if kind == .s3 { apply(.aws) }
+    }
+
+    /// A provider's endpoint, region and addressing, as a starting point.
+    mutating func apply(_ provider: StorageProvider) {
+        self.provider = provider
+        host = provider.endpoint(region: provider.defaultRegion)
+        location = provider.defaultRegion
+        pathStyle = provider.pathStyle
+        port = provider == .minio ? 9000 : nil
+        sslMode = provider == .minio ? .disable : .require
+    }
+
+    // Read field by field: a file written before a field existed still
+    // opens (a missing field takes its default) — every connection kept.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, kind, host, port, user, database, sslMode, filePath, project, location, bigQueryAuth, readOnly, provider,
+            pathStyle, awsProfile
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decode(DatabaseKind.self, forKey: .kind)
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? "localhost"
+        port = try c.decodeIfPresent(Int.self, forKey: .port)
+        user = try c.decodeIfPresent(String.self, forKey: .user) ?? ""
+        database = try c.decodeIfPresent(String.self, forKey: .database) ?? ""
+        sslMode = try c.decodeIfPresent(DatabaseSSLMode.self, forKey: .sslMode) ?? .prefer
+        filePath = try c.decodeIfPresent(String.self, forKey: .filePath) ?? ""
+        project = try c.decodeIfPresent(String.self, forKey: .project) ?? ""
+        location = try c.decodeIfPresent(String.self, forKey: .location) ?? ""
+        bigQueryAuth = try c.decodeIfPresent(BigQueryAuth.self, forKey: .bigQueryAuth) ?? .serviceAccount
+        readOnly = try c.decodeIfPresent(Bool.self, forKey: .readOnly) ?? false
+        provider = try c.decodeIfPresent(StorageProvider.self, forKey: .provider) ?? .aws
+        pathStyle = try c.decodeIfPresent(Bool.self, forKey: .pathStyle) ?? false
+        awsProfile = try c.decodeIfPresent(String.self, forKey: .awsProfile) ?? ""
     }
 
     /// Where it is, for its row and its tooltip.
     var summary: String {
         switch kind {
         case .sqlite: (filePath as NSString).abbreviatingWithTildeInPath
-        case .bigquery: project.isEmpty ? "No project" : project
+        case .bigquery, .gcs: project.isEmpty ? "No project" : project
+        case .s3: provider == .aws ? "AWS \(location)" : host
         default:
             "\(user.isEmpty ? "" : user + "@")\(host)\(port.map { ":\($0)" } ?? "")\(database.isEmpty ? "" : "/" + database)"
         }
@@ -114,13 +166,66 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
         if name.trimmingCharacters(in: .whitespaces).isEmpty { return "A name, please." }
         switch kind {
         case .sqlite: return filePath.isEmpty ? "Choose the database file." : nil
-        case .bigquery: return project.isEmpty ? "The project, please." : nil
+        case .bigquery, .gcs: return project.isEmpty ? "The project, please." : nil
+        case .s3:
+            if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The endpoint, please." }
+            if awsProfile.isEmpty, user.isEmpty { return "The access key, or an AWS profile." }
+            return nil
         default:
             if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The host, please." }
             if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
             return nil
         }
     }
+}
+
+/// Whose S3 it is: the endpoint a region makes, and how buckets are named.
+enum StorageProvider: String, Codable, CaseIterable, Identifiable, Sendable {
+    case aws, digitalocean, minio, r2, backblaze, wasabi, gcs, custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .aws: "Amazon S3"
+        case .digitalocean: "DigitalOcean Spaces"
+        case .minio: "MinIO"
+        case .r2: "Cloudflare R2"
+        case .backblaze: "Backblaze B2"
+        case .wasabi: "Wasabi"
+        case .gcs: "Google Cloud Storage (HMAC)"
+        case .custom: "Other S3-compatible"
+        }
+    }
+
+    var defaultRegion: String {
+        switch self {
+        case .aws: "us-east-1"
+        case .digitalocean: "nyc3"
+        case .backblaze: "us-west-004"
+        case .wasabi: "us-east-1"
+        case .r2, .gcs: "auto"
+        case .minio, .custom: "us-east-1"
+        }
+    }
+
+    /// Its endpoint in a region; R2's needs the account's id in place of
+    /// `ACCOUNT_ID`.
+    func endpoint(region: String) -> String {
+        switch self {
+        case .aws: "s3.\(region).amazonaws.com"
+        case .digitalocean: "\(region).digitaloceanspaces.com"
+        case .minio: "localhost"
+        case .r2: "ACCOUNT_ID.r2.cloudflarestorage.com"
+        case .backblaze: "s3.\(region).backblazeb2.com"
+        case .wasabi: "s3.\(region).wasabisys.com"
+        case .gcs: "storage.googleapis.com"
+        case .custom: ""
+        }
+    }
+
+    /// Bucket names in the path (`host/bucket/key`) rather than the host.
+    var pathStyle: Bool { self == .minio || self == .custom || self == .r2 }
 }
 
 /// A connection's secret: its password, or BigQuery's service account key.

@@ -43,12 +43,14 @@ actor BigQueryDriver: DatabaseDriver {
     }
 
     /// The service account signs a JWT (RS256) that Google trades for a token.
-    static func token(serviceAccount json: String, session: URLSession) async throws -> (String, Date) {
+    static func token(
+        serviceAccount json: String, session: URLSession, scope: String = "https://www.googleapis.com/auth/bigquery"
+    ) async throws -> (String, Date) {
         guard let key = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
             let email = key["client_email"] as? String, let pem = key["private_key"] as? String
         else { throw DatabaseError.failed("That isn't a service account key: it has no client_email or private_key.") }
         let audience = key["token_uri"] as? String ?? "https://oauth2.googleapis.com/token"
-        let assertion = try jwt(email: email, privateKey: pem, audience: audience, now: Date())
+        let assertion = try jwt(email: email, privateKey: pem, audience: audience, now: Date(), scope: scope)
         var request = URLRequest(url: URL(string: audience)!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -62,7 +64,9 @@ actor BigQueryDriver: DatabaseDriver {
     }
 
     /// `header.claims.signature`, each base64url.
-    static func jwt(email: String, privateKey pem: String, audience: String, now: Date) throws -> String {
+    static func jwt(
+        email: String, privateKey pem: String, audience: String, now: Date, scope: String = "https://www.googleapis.com/auth/bigquery"
+    ) throws -> String {
         func encode(_ data: Data) -> String {
             data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
                 .replacingOccurrences(of: "=", with: "")
@@ -71,7 +75,7 @@ actor BigQueryDriver: DatabaseDriver {
         let header = try JSONSerialization.data(withJSONObject: ["alg": "RS256", "typ": "JWT"], options: .sortedKeys)
         let claims = try JSONSerialization.data(
             withJSONObject: [
-                "iss": email, "scope": "https://www.googleapis.com/auth/bigquery", "aud": audience, "iat": issued, "exp": issued + 3600,
+                "iss": email, "scope": scope, "aud": audience, "iat": issued, "exp": issued + 3600,
             ], options: .sortedKeys)
         let signing = encode(header) + "." + encode(claims)
         let key: _RSA.Signing.PrivateKey

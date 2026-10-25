@@ -70,9 +70,21 @@ enum DatabaseDrivers {
         case .mysql: MySQLDriver(connection, password: password)
         case .clickhouse: ClickHouseDriver(connection, password: password)
         case .bigquery: BigQueryDriver(connection, serviceAccount: serviceAccount)
+        // Storage has its own client (StorageClient); nothing runs SQL on it.
+        case .s3, .gcs: NoSQLDriver()
         }
     }
 
     /// A name inside SQL — `'it''s'` — for the catalog's queries.
     static func literal(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "''") + "'" }
+}
+
+/// A connection that isn't a database (a bucket store): it says so.
+actor NoSQLDriver: DatabaseDriver {
+    func connect() async throws { throw DatabaseError.failed("Storage runs no SQL.") }
+    func close() async {}
+    func execute(_ sql: String, limit: Int) async throws -> QueryResult { throw DatabaseError.failed("Storage runs no SQL.") }
+    func schemas() async throws -> [String] { [] }
+    func tables(in schema: String) async throws -> [CatalogTable] { [] }
+    func columns(in schema: String) async throws -> [CatalogColumn] { [] }
 }
