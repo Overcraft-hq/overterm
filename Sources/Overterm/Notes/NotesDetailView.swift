@@ -134,34 +134,96 @@ struct NotesDetailView: View {
         }
     }
 
+    /// The open note's tasks, done ones too — or the vault's open ones,
+    /// grouped by note, the most recently changed first. A vault holding
+    /// agents' plans had pages of tasks under file names; the note open is
+    /// what is usually meant.
     @ViewBuilder private var tasks: some View {
-        let open = model.index.tasks.filter { !$0.task.isDone && $0.task.status != "-" }
-        if open.isEmpty {
+        Picker("", selection: $model.tasksInVault) {
+            Text("This Note").tag(false)
+            Text("Vault").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 4)
+        if model.tasksInVault {
+            vaultTasks
+        } else if let path = currentPath {
+            let items = model.index.document(path)?.tasks ?? []
+            if items.isEmpty {
+                placeholder("No tasks in this note")
+            } else {
+                ForEach(items, id: \.line) { task in taskRow(task, in: path) }
+            }
+        } else {
+            placeholder("Open a note to see its tasks")
+        }
+    }
+
+    @ViewBuilder private var vaultTasks: some View {
+        let groups = NotesTaskGroups.make(model.index)
+        if groups.isEmpty {
             placeholder("No open tasks")
         } else {
-            let grouped = Dictionary(grouping: open, by: \.path)
-            ForEach(grouped.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, id: \.self) { path in
-                Text(verbatim: (LinkResolver.name(of: path) as NSString).deletingPathExtension)
-                    .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.text3)
-                    .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 2)
-                ForEach(grouped[path] ?? [], id: \.task.line) { item in
-                    DetailRow(theme: theme, help: path) {
-                        HStack(alignment: .top, spacing: 6) {
-                            Button {
-                                actions.toggleTask(model.url(of: path), item.task.line, item.task.text)
-                            } label: {
-                                Image(systemName: "square").font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(theme.text3)
-                            .help("Done")
-                            Text(verbatim: item.task.text).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(2)
-                        }
-                    } action: {
-                        actions.openAt(model.url(of: path), item.task.line)
+            ForEach(groups, id: \.path) { group in
+                let open = !model.foldedTaskNotes.contains(group.path)
+                HStack(spacing: 4) {
+                    Button {
+                        if open { model.foldedTaskNotes.insert(group.path) } else { model.foldedTaskNotes.remove(group.path) }
+                    } label: {
+                        Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold))
+                            .frame(width: 12, height: 16).contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    Button {
+                        actions.open(model.url(of: group.path))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(verbatim: group.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                                .lineLimit(1).truncationMode(.middle)
+                            if !group.folder.isEmpty {
+                                Text(verbatim: group.folder).font(.system(size: 10)).foregroundStyle(theme.text3)
+                                    .lineLimit(1).truncationMode(.head)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(group.path)
+                    Spacer(minLength: 4)
+                    Text(verbatim: "\(group.tasks.count)").font(.system(size: 10)).foregroundStyle(theme.text3)
+                }
+                .foregroundStyle(theme.text3)
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+                if open {
+                    ForEach(group.tasks, id: \.line) { task in taskRow(task, in: group.path) }
                 }
             }
+        }
+    }
+
+    private func taskRow(_ task: NoteDocument.Task, in path: String) -> some View {
+        DetailRow(theme: theme, help: path) {
+            HStack(alignment: .top, spacing: 6) {
+                Button {
+                    actions.toggleTask(model.url(of: path), task.line, task.text)
+                } label: {
+                    Image(systemName: task.isDone ? "checkmark.square.fill" : "square").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(task.isDone ? theme.accentText : theme.text3)
+                .help(task.isDone ? "Not done" : "Done")
+                Text(NotesTaskGroups.inline(task.text))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(task.isDone ? theme.text3 : theme.text2)
+                    .strikethrough(task.isDone)
+                    .lineLimit(2)
+            }
+        } action: {
+            actions.openAt(model.url(of: path), task.line)
         }
     }
 }
@@ -187,5 +249,39 @@ private struct DetailRow<Content: View>: View {
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
             .help(help)
+    }
+}
+
+/// The vault's open tasks by note, for the Tasks pane. Pure.
+enum NotesTaskGroups {
+    struct Group: Equatable {
+        var path: String
+        /// The note's first heading, else its name.
+        var title: String
+        var folder: String
+        var modified: Date
+        var tasks: [NoteDocument.Task]
+    }
+
+    /// Notes with an open task, the most recently changed first.
+    static func make(_ index: NotesIndex, limit: Int = 60) -> [Group] {
+        index.paths.compactMap { path -> Group? in
+            guard let entry = index.notes[path] else { return nil }
+            let open = entry.document.tasks.filter { !$0.isDone && $0.status != "-" }
+            guard !open.isEmpty else { return nil }
+            let name = (LinkResolver.name(of: path) as NSString).deletingPathExtension
+            return Group(
+                path: path, title: entry.document.title ?? name, folder: LinkResolver.folder(of: path), modified: entry.modified, tasks: open)
+        }
+        .sorted { $0.modified != $1.modified ? $0.modified > $1.modified : $0.path < $1.path }
+        .prefix(limit).map { $0 }
+    }
+
+    /// A task's Markdown as it reads: **bold**, `code`, links — not its markup.
+    static func inline(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        // Wikilinks read as their names.
+        let plain = text.replacingOccurrences(of: #"\[\[([^\]|]+\|)?([^\]]+)\]\]"#, with: "$2", options: .regularExpression)
+        return (try? AttributedString(markdown: plain, options: options)) ?? AttributedString(plain)
     }
 }

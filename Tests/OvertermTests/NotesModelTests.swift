@@ -136,3 +136,23 @@ final class BranchNoteTests: XCTestCase {
         XCTAssertEqual(doc.title, "feat/x")
     }
 }
+
+/// The Tasks pane's vault list: notes with open tasks, newest first, by title.
+final class NotesTaskGroupsTests: XCTestCase {
+    func testGroupsAreNewestFirstByTitleWithOpenTasksOnly() {
+        var index = NotesIndex()
+        index.set("Old.md", text: "# Old plan\n- [ ] a", modified: Date(timeIntervalSince1970: 1))
+        index.set("Work/New.md", text: "- [ ] b\n- [x] done\n- [-] dropped", modified: Date(timeIntervalSince1970: 2))
+        index.set("Done.md", text: "- [x] all done", modified: Date(timeIntervalSince1970: 3))
+        let groups = NotesTaskGroups.make(index)
+        XCTAssertEqual(groups.map(\.path), ["Work/New.md", "Old.md"])
+        XCTAssertEqual(groups.map(\.title), ["New", "Old plan"])
+        XCTAssertEqual(groups.first?.folder, "Work")
+        XCTAssertEqual(groups.first?.tasks.map(\.text), ["b"])
+    }
+
+    func testATasksMarkdownReadsAsText() {
+        XCTAssertEqual(String(NotesTaskGroups.inline("Click **Run now** in `app` for [[Plan|the plan]]").characters), "Click Run now in app for the plan")
+        XCTAssertEqual(String(NotesTaskGroups.inline("see [[Plan]]").characters), "see Plan")
+    }
+}

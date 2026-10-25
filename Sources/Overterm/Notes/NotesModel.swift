@@ -31,6 +31,12 @@ final class NotesModel: ObservableObject {
     }
     /// A tag picked in the Tags pane: the tree lists its notes.
     @Published var tagFilter: String?
+    /// The Tasks pane over the whole vault rather than the note open.
+    @Published var tasksInVault = AppEnvironment.defaults.bool(forKey: "notesTasksInVault") {
+        didSet { AppEnvironment.defaults.set(tasksInVault, forKey: "notesTasksInVault") }
+    }
+    /// Notes whose tasks are folded in the vault's list.
+    @Published var foldedTaskNotes: Set<String> = []
 
     private var showing: Set<ObjectIdentifier> = []
     private var watcher: DirectoryWatcher?
