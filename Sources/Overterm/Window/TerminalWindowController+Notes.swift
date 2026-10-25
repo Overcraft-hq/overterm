@@ -147,6 +147,46 @@ extension TerminalWindowController {
         )
     }
 
+    // MARK: Agents and branches
+
+    /// ⌘L for a note: the editor's selection in it, or all of it, to an agent.
+    func askAgentAboutNote() {
+        guard let editor, let buffer = editor.active, buffer.isNote, let url = buffer.url else { return }
+        let selection = editor.textView.selectedRange()
+        let text =
+            selection.length > 0 ? (buffer.storage.string as NSString).substring(with: selection) : buffer.storage.string
+        let header = "From my note “\(notes.path(of: url))”:\n\n"
+        let selected = store.selected
+        let agents = store.tabs.filter { $0.agent != nil }
+        let ordered = agents.filter { $0.id == selected?.id } + agents.filter { $0.id != selected?.id }
+        presentAskAgent(text: header + text, command: nil, folder: selected?.workingDirectory, targets: ordered)
+    }
+
+    /// The note for the selected tab's branch, made the first time.
+    func openBranchNote() {
+        guard Settings.shared.notesEnabled, let root = store.selected?.checkoutSource?.root else { return NSSound.beep() }
+        Task { [weak self] in
+            let branch = (try? await Git.run(["rev-parse", "--abbrev-ref", "HEAD"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let top = (try? await Git.run(["rev-parse", "--show-toplevel"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let self, let branch, !branch.isEmpty, branch != "HEAD" else { return NSSound.beep() }
+            // The main checkout's name, not a worktree's folder.
+            let common = (try? await Git.run(["rev-parse", "--path-format=absolute", "--git-common-dir"], in: root))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let repo = common.map { URL(fileURLWithPath: $0).deletingLastPathComponent().lastPathComponent } ?? root.lastPathComponent
+            let url = self.notes.vault.root.appendingPathComponent(BranchNote.path(repo: repo, branch: branch))
+            do {
+                if !FileManager.default.fileExists(atPath: url.path), !NoteFiles.isEvicted(url) {
+                    try NoteFiles.write(
+                        BranchNote.text(repo: repo, branch: branch, checkout: top ?? root.path, date: Date()), to: url)
+                    self.notes.reload()
+                }
+                self.openNote(url)
+            } catch {
+                self.reportNotesError(error)
+            }
+        }
+    }
+
     // MARK: From the terminal
 
     /// Terminal text at the end of today's note — in its buffer when the

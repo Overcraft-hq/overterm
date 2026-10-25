@@ -2668,11 +2668,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 [weak self] _, _ in self?.newNote(nil)
             },
             PaletteItem(
+                id: "a.branchNote", group: .action, title: "Note for This Branch", subtitle: "Branches/<repo>/<branch> in the vault", symbol: "arrow.triangle.branch"
+            ) { [weak self] _, _ in self?.openBranchNote() },
+            PaletteItem(
                 id: "a.outputToNote", group: .action, title: "Last Command’s Output to Today’s Note", subtitle: nil, symbol: "text.append"
             ) { [weak self] _, _ in self?.lastOutputToNote(nil) },
         ]
         // Obsidian's Insert template, while a note is open in the editor.
         if editor?.active?.isNote == true {
+            items.append(
+                PaletteItem(id: "a.askNote", group: .action, title: "Ask an Agent About This Note", subtitle: "The selection in it, or all of it", symbol: "sparkles") {
+                    [weak self] _, _ in self?.askAgentAboutNote()
+                })
             let live = editor?.active?.livePreview == true
             items.append(
                 PaletteItem(

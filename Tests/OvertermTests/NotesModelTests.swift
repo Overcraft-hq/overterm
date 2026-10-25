@@ -123,3 +123,16 @@ final class NoteAppendTests: XCTestCase {
         XCTAssertEqual(NoteAppend.append("E\n", to: "# Day\n\n"), "# Day\n\nE\n")
     }
 }
+
+/// A branch's note: where it goes, and what it starts with.
+final class BranchNoteTests: XCTestCase {
+    func testABranchsNoteIsFiledByRepoAndBranch() {
+        XCTAssertEqual(BranchNote.path(repo: "overterm", branch: "feat/release-v03"), "Branches/overterm/feat-release-v03.md")
+        let text = BranchNote.text(repo: "overterm", branch: "feat/x", checkout: NSHomeDirectory() + "/p", date: Date())
+        let doc = NoteParser.parse(text)
+        XCTAssertEqual(doc.properties["branch"], .text("feat/x"))
+        XCTAssertEqual(doc.properties["checkout"], .text("~/p"))
+        XCTAssertEqual(doc.allTags, ["branch"])
+        XCTAssertEqual(doc.title, "feat/x")
+    }
+}

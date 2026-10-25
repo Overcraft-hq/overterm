@@ -113,3 +113,30 @@ enum NoteAppend {
         return trimmed + (trimmed.hasSuffix("\n\n") ? "" : "\n") + entry
     }
 }
+
+/// A note kept for a branch of a repository — what the work on it is
+/// about, decisions, links — found again from any tab on that branch.
+enum BranchNote {
+    /// `Branches/<repo>/<branch>.md`, a branch's slashes as dashes.
+    static func path(repo: String, branch: String) -> String {
+        func clean(_ name: String) -> String {
+            name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespaces)
+        }
+        return "Branches/\(clean(repo))/\(clean(branch)).md"
+    }
+
+    static func text(repo: String, branch: String, checkout: String, date: Date) -> String {
+        """
+        ---
+        repo: \(repo)
+        branch: \(branch)
+        checkout: \((checkout as NSString).abbreviatingWithTildeInPath)
+        created: \(MomentFormat.string(from: date, format: "YYYY-MM-DD"))
+        tags: [branch]
+        ---
+        # \(branch)
+
+
+        """
+    }
+}

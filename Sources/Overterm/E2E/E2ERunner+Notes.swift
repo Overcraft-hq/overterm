@@ -143,6 +143,14 @@ extension E2ERunner {
             app.spotlight.close(keepTerminalSearch: false)
         }
 
+        // ⌘L for a note: Ask Agent's sheet, with the note in it.
+        app.openNote(plan)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Plan.md" }
+        app.askAgentAboutNote()
+        check("Ask an Agent About This Note opens its sheet", await eventually(2) { self.window.attachedSheet != nil })
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+
         // Terminal output into today's note, under its command.
         editor.filesRemoved(at: daily)
         app.appendToTodaysNote("BUILD OK", command: "make app", folder: nil)
