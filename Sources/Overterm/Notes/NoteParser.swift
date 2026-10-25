@@ -159,7 +159,8 @@ enum NoteParser {
         // Wikilinks and embeds.
         each(#"(!?)\[\[([^\[\]\n]+?)\]\]"#, in: ns, from: bodyStart) { groups, range in
             guard !inCode(range.location) else { return }
-            var inner = groups[2]
+            // In a table the bar is escaped: `[[Note\|alias]]`.
+            var inner = groups[2].replacingOccurrences(of: "\\|", with: "|")
             var alias: String?
             if let bar = inner.firstIndex(of: "|") {
                 alias = String(inner[inner.index(after: bar)...])

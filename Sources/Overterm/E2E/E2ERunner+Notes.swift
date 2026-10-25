@@ -54,6 +54,16 @@ extension E2ERunner {
 
         await readingView(notes: notes, root: root)
 
+        // Renamed: every link to it written again, the open tab following.
+        let welcome = root.appendingPathComponent("Welcome.md")
+        app.openNote(welcome)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Welcome.md" }
+        app.moveNote(welcome, to: root.appendingPathComponent("Start.md"))
+        let planText = { (try? String(contentsOf: plan, encoding: .utf8)) ?? "" }
+        check("a rename writes the links to it again", await eventually(3) { planText().contains("Back to [[Start]].") }, planText())
+        check("its tab follows it", editor.active?.url?.lastPathComponent == "Start.md")
+        check("and the index knows it", await eventually(3) { notes.index.backlinks(of: "Start.md").contains { $0.source == "Projects/Plan.md" } })
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

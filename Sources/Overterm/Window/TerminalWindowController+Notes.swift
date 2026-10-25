@@ -69,7 +69,7 @@ extension TerminalWindowController {
     func newNotesFolder(in folder: URL?) {
         do {
             let url = try notes.newFolder(in: folder)
-            renameItem(url)
+            renameNote(url)
         } catch {
             reportNotesError(error)
         }
@@ -110,11 +110,78 @@ extension TerminalWindowController {
             newNote: { [weak self] in self?.newNote(in: $0) },
             newFolder: { [weak self] in self?.newNotesFolder(in: $0) },
             dailyNote: { [weak self] in self?.openDailyNote(nil) },
-            rename: { [weak self] in self?.renameItem($0) },
+            rename: { [weak self] in self?.renameNote($0) },
             trash: { [weak self] in self?.trashItem($0) },
             insertPath: { [weak self] in self?.insertPath($0) },
             chooseVault: { [weak self] in self?.chooseNotesVault() }
         )
+    }
+
+    // MARK: Renaming, links and all
+
+    /// Asks for a new name — a note's without `.md` — and renames it, the
+    /// links to it written again (`moveNote`).
+    func renameNote(_ url: URL) {
+        let isNote = url.pathExtension.lowercased() == "md"
+        let shown = isNote ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+        askForName(title: "Rename", detail: shown, initial: shown, action: "Rename") { [weak self] name in
+            guard let self, name != shown else { return nil }
+            let file = isNote && !name.lowercased().hasSuffix(".md") ? name + ".md" : name
+            let target = url.deletingLastPathComponent().appendingPathComponent(file)
+            // A change of case only is the same file to a case-insensitive disk.
+            if file.lowercased() != url.lastPathComponent.lowercased(), let problem = Self.nameProblem(file, at: target) { return problem }
+            guard self.notes.vault.contains(target) else { return "The name can't leave the vault." }
+            self.moveNote(url, to: target)
+            return nil
+        }
+    }
+
+    /// Moves a note, file or folder of the vault, and writes again every
+    /// link the move would break (NoteRename). A note open with unsaved
+    /// edits gets the change in its buffer, still unsaved; the others are
+    /// written, coordinated, and the editor's tabs follow.
+    func moveNote(_ url: URL, to target: URL) {
+        let notes = self.notes
+        notes.whenLoaded { [weak self] in
+            guard let self else { return }
+            let index = notes.index
+            let old = notes.path(of: url)
+            let new = notes.path(of: target)
+            let moves = NoteRename.moves(of: old, to: new, files: index.resolver.files)
+            var unsaved: [String: EditorBuffer] = [:]
+            for buffer in self.editor?.buffers ?? [] where buffer.document.isDirty {
+                if let open = buffer.url, notes.vault.contains(open) { unsaved[notes.path(of: open)] = buffer }
+            }
+            let rewrites = NoteRename.rewrites(index: index, moves: moves, settings: notes.vault.settings) { path in
+                unsaved[path]?.storage.string ?? (try? NoteFiles.read(notes.url(of: path)))
+            }
+            do {
+                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try NoteFiles.move(url, to: target)
+            } catch {
+                self.reportNotesError(error)
+                return
+            }
+            self.editor?.filesMoved(from: url, to: target)
+            var failed: [Error] = []
+            for (path, text) in rewrites {
+                if let buffer = unsaved[path] {
+                    self.editor?.replaceText(of: buffer, with: text)
+                    continue
+                }
+                do {
+                    try NoteFiles.write(text, to: notes.url(of: moves[path] ?? path))
+                } catch {
+                    failed.append(error)
+                }
+            }
+            self.editor?.reloadIfChangedOnDisk()
+            if notes.current?.standardizedFileURL == url.standardizedFileURL { notes.current = target }
+            notes.expandFolders(of: target)
+            notes.reload()
+            self.tree.reload()
+            if let error = failed.first { self.reportNotesError(error) }
+        }
     }
 
     func reportNotesError(_ error: Error) {
