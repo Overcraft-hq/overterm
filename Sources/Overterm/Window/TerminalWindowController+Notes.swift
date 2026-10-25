@@ -98,19 +98,31 @@ extension TerminalWindowController {
         openInEditor(url, line: line.map { $0 + 1 })
     }
 
+    /// Every open tab on a note, in every window: the vault is the app's, so
+    /// an edit to a note is made where it is open, whichever window that is.
+    func openNoteBuffers(_ url: URL) -> [(EditorViewController, EditorBuffer)] {
+        let key = url.standardizedFileURL.resolvingSymlinksInPath()
+        return NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }.flatMap { controller in
+            (controller.editor?.buffers ?? []).compactMap { buffer in
+                buffer.url?.standardizedFileURL.resolvingSymlinksInPath() == key ? controller.editor.map { ($0, buffer) } : nil
+            }
+        }
+    }
+
     /// A task ticked from the Tasks pane: in the note's buffer when it is
-    /// open (an edit like any), else in the file.
-    func toggleNoteTask(_ url: URL, line: Int) {
-        if let editor, let buffer = editor.buffers.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+    /// open (an edit like any), else in the file. The line is the index's,
+    /// which may be older than the text: the task is found by its words.
+    func toggleNoteTask(_ url: URL, line: Int, text task: String? = nil) {
+        if let (editor, buffer) = openNoteBuffers(url).first {
             let text = buffer.storage.string
-            guard let edit = NoteEdits.toggleTask(in: text, line: line) else { return }
+            guard let edit = NoteEdits.toggleTask(in: text, line: line, text: task) else { return NSSound.beep() }
             editor.replaceText(of: buffer, with: (text as NSString).replacingCharacters(in: edit.range, with: edit.replacement))
             if buffer === editor.active, buffer.showsPreview { editor.renderNote(buffer) }
             return
         }
         do {
             let text = try NoteFiles.read(url)
-            guard let edit = NoteEdits.toggleTask(in: text, line: line) else { return }
+            guard let edit = NoteEdits.toggleTask(in: text, line: line, text: task) else { return NSSound.beep() }
             try NoteFiles.write((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement), to: url)
             notes.reload()
         } catch {
@@ -155,7 +167,7 @@ extension TerminalWindowController {
             insertPath: { [weak self] in self?.insertPath($0) },
             chooseVault: { [weak self] in self?.chooseNotesVault() },
             openAt: { [weak self] url, line in self?.openNote(url, line: line) },
-            toggleTask: { [weak self] url, line in self?.toggleNoteTask(url, line: line) }
+            toggleTask: { [weak self] url, line, text in self?.toggleNoteTask(url, line: line, text: text) }
         )
     }
 
@@ -212,21 +224,31 @@ extension TerminalWindowController {
     // MARK: From the terminal
 
     /// Terminal text at the end of today's note — in its buffer when the
-    /// note is open (an edit like any), else in the file. The note isn't
-    /// opened: the terminal keeps the keyboard.
+    /// note is open in any window (an edit like any), else in the file,
+    /// fetched from iCloud first if it must be. The note isn't opened: the
+    /// terminal keeps the keyboard.
     func appendToTodaysNote(_ text: String, command: String?, folder: String?) {
         guard Settings.shared.notesEnabled else { return }
+        let url: URL
         do {
-            let url = try notes.dailyNote()
-            let entry = NoteAppend.entry(text, command: command, folder: folder, date: Date(), settings: notes.vault.settings)
-            if let editor, let buffer = editor.buffers.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
-                editor.replaceText(of: buffer, with: NoteAppend.append(entry, to: buffer.storage.string))
-                return
-            }
-            try NoteFiles.write(NoteAppend.append(entry, to: try NoteFiles.read(url)), to: url)
-            notes.reload()
+            url = try notes.dailyNote()
         } catch {
-            reportNotesError(error)
+            return reportNotesError(error)
+        }
+        let entry = NoteAppend.entry(text, command: command, folder: folder, date: Date(), settings: notes.vault.settings)
+        if let (editor, buffer) = openNoteBuffers(url).first {
+            editor.replaceText(of: buffer, with: NoteAppend.append(entry, to: buffer.storage.string))
+            return
+        }
+        NoteFiles.whenDownloaded(url) { [weak self] arrived in
+            guard let self else { return }
+            do {
+                guard arrived else { throw NoteFiles.Problem.notDownloaded(url.deletingPathExtension().lastPathComponent) }
+                try NoteFiles.write(NoteAppend.append(entry, to: try NoteFiles.read(url)), to: url)
+                self.notes.reload()
+            } catch {
+                self.reportNotesError(error)
+            }
         }
     }
 
@@ -250,51 +272,83 @@ extension TerminalWindowController {
     }
 
     /// Moves a note, file or folder of the vault, and writes again every
-    /// link the move would break (NoteRename). A note open with unsaved
-    /// edits gets the change in its buffer, still unsaved; the others are
-    /// written, coordinated, and the editor's tabs follow.
+    /// link the move would break (NoteRename). The notes to rewrite are
+    /// read, fetched from iCloud if they must be, and written off the main
+    /// thread; a note open with unsaved edits — in any window — gets the
+    /// change in its buffer, still unsaved, and tabs everywhere follow.
     func moveNote(_ url: URL, to target: URL) {
         let notes = self.notes
         notes.whenLoaded { [weak self] in
             guard let self else { return }
             let index = notes.index
+            let root = notes.vault.root
+            let settings = notes.vault.settings
             let old = notes.path(of: url)
             let new = notes.path(of: target)
             let moves = NoteRename.moves(of: old, to: new, files: index.resolver.files)
-            var unsaved: [String: EditorBuffer] = [:]
-            for buffer in self.editor?.buffers ?? [] where buffer.document.isDirty {
-                if let open = buffer.url, notes.vault.contains(open) { unsaved[notes.path(of: open)] = buffer }
-            }
-            let rewrites = NoteRename.rewrites(
-                index: index, moves: moves, settings: notes.vault.settings, unsaved: unsaved.mapValues(\.storage.string)
-            ) { path in try? NoteFiles.read(notes.url(of: path)) }
-            do {
-                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try NoteFiles.move(url, to: target)
-            } catch {
-                self.reportNotesError(error)
-                return
-            }
-            self.editor?.filesMoved(from: url, to: target)
-            var failed: [Error] = []
-            for (path, text) in rewrites {
-                if let buffer = unsaved[path] {
-                    self.editor?.replaceText(of: buffer, with: text)
-                    continue
-                }
-                do {
-                    try NoteFiles.write(text, to: notes.url(of: moves[path] ?? path))
-                } catch {
-                    failed.append(error)
+            var buffers: [String: (EditorViewController, EditorBuffer)] = [:]
+            for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
+                for buffer in controller.editor?.buffers ?? [] where buffer.document.isDirty {
+                    if let open = buffer.url, notes.vault.contains(open), let editor = controller.editor { buffers[notes.path(of: open)] = (editor, buffer) }
                 }
             }
-            self.editor?.reloadIfChangedOnDisk()
-            if notes.current?.standardizedFileURL == url.standardizedFileURL { notes.current = target }
-            notes.expandFolders(of: target)
-            notes.reload()
-            self.tree.reload()
-            if let error = failed.first { self.reportNotesError(error) }
+            let unsaved = buffers.mapValues { $0.1.storage.string }
+            Task { [weak self] in
+                let outcome = await Task.detached(priority: .userInitiated) {
+                    Self.move(url, to: target, root: root, index: index, moves: moves, settings: settings, unsaved: unsaved)
+                }.value
+                guard let self else { return }
+                if let error = outcome.moveError { return self.reportNotesError(error) }
+                for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
+                    controller.editor?.filesMoved(from: url, to: target)
+                }
+                for (path, text) in outcome.rewrites {
+                    if let (editor, buffer) = buffers[path] { editor.replaceText(of: buffer, with: text) }
+                }
+                for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
+                    controller.editor?.reloadIfChangedOnDisk()
+                }
+                if notes.current?.standardizedFileURL == url.standardizedFileURL { notes.current = target }
+                notes.expandFolders(of: target)
+                notes.reload()
+                self.tree.reload()
+                if let error = outcome.writeErrors.first { self.reportNotesError(error) }
+            }
         }
+    }
+
+    private struct MoveOutcome: @unchecked Sendable {
+        var rewrites: [String: String] = [:]
+        var moveError: Error?
+        var writeErrors: [Error] = []
+    }
+
+    /// The move and the files' rewrites — off the main thread: reading a
+    /// note iCloud hasn't downloaded waits for it.
+    private nonisolated static func move(
+        _ url: URL, to target: URL, root: URL, index: NotesIndex, moves: [String: String], settings: ObsidianSettings,
+        unsaved: [String: String]
+    ) -> MoveOutcome {
+        var outcome = MoveOutcome()
+        outcome.rewrites = NoteRename.rewrites(index: index, moves: moves, settings: settings, unsaved: unsaved) { path in
+            try? NoteFiles.read(root.appendingPathComponent(path))
+        }
+        do {
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try NoteFiles.move(url, to: target)
+        } catch {
+            outcome.moveError = error
+            outcome.rewrites = [:]
+            return outcome
+        }
+        for (path, text) in outcome.rewrites where unsaved[path] == nil {
+            do {
+                try NoteFiles.write(text, to: root.appendingPathComponent(moves[path] ?? path))
+            } catch {
+                outcome.writeErrors.append(error)
+            }
+        }
+        return outcome
     }
 
     func reportNotesError(_ error: Error) {

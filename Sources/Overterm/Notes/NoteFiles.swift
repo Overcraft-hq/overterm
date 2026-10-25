@@ -115,7 +115,7 @@ enum NoteFiles {
     /// files, each by name as Finder sorts them (numbers by value); hidden
     /// and excluded ones left out; placeholders under their real names.
     static func tree(of vault: NotesVault) -> NoteItem {
-        func walk(_ folder: URL, depth: Int) -> [NoteItem] {
+        func walk(_ folder: URL, depth: Int, isExcluded: Bool = false) -> [NoteItem] {
             guard depth < 32,
                 let children = try? FileManager.default.contentsOfDirectory(
                     at: folder, includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey], options: [])
@@ -130,11 +130,16 @@ enum NoteFiles {
                     evicted = true
                 }
                 guard !vault.isHidden(url) else { continue }
+                let excluded = isExcluded || vault.isExcluded(url)
                 if !evicted, (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                    folders.append(NoteItem(url: url, kind: .folder, children: walk(url, depth: depth + 1)))
+                    var folder = NoteItem(url: url, kind: .folder, children: walk(url, depth: depth + 1, isExcluded: excluded))
+                    folder.isExcluded = excluded
+                    folders.append(folder)
                 } else {
                     let modified = (try? child.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                    files.append(NoteItem(url: url, kind: NoteItem.Kind(url), modified: modified, isEvicted: evicted))
+                    var file = NoteItem(url: url, kind: NoteItem.Kind(url), modified: modified, isEvicted: evicted)
+                    file.isExcluded = excluded
+                    files.append(file)
                 }
             }
             func byName(_ a: NoteItem, _ b: NoteItem) -> Bool { a.name.localizedStandardCompare(b.name) == .orderedAscending }
@@ -166,6 +171,8 @@ struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
     var modified: Date = .distantPast
     /// Only a placeholder on this Mac: iCloud fetches it when opened.
     var isEvicted = false
+    /// Under Obsidian's "Excluded files": left out of the tree, kept in the index.
+    var isExcluded = false
 
     var id: String { url.path }
     var isFolder: Bool { kind == .folder }
@@ -180,6 +187,13 @@ struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
     var allFiles: [NoteItem] {
         guard let children else { return [self] }
         return children.flatMap(\.allFiles)
+    }
+
+    /// The tree without what "Excluded files" lists — what the panel shows.
+    var shown: NoteItem {
+        var copy = self
+        copy.children = children?.filter { !$0.isExcluded }.map(\.shown)
+        return copy
     }
 
     /// Notes and folders whose name holds `query`, the folders around them kept.

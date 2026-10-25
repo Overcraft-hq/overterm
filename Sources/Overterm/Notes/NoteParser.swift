@@ -17,6 +17,10 @@ struct NoteDocument: Equatable, Sendable {
         /// `[text](path.md)` rather than `[[…]]`.
         var isMarkdown = false
         var range: NSRange
+        /// Its line (from 0), and that line's text — what a backlink shows,
+        /// with no file read.
+        var line = 0
+        var context = ""
     }
 
     struct Tag: Equatable, Hashable, Sendable {
@@ -183,7 +187,12 @@ enum NoteParser {
         each(#"(!?)\[([^\]\n]*)\]\(([^)\s]+(?:\s[^)]*)?)\)"#, in: ns, from: bodyStart) { groups, range in
             guard !inCode(range.location) else { return }
             var destination = groups[3]
-            if destination.hasPrefix("<"), destination.hasSuffix(">") { destination = String(destination.dropFirst().dropLast()) }
+            if destination.hasPrefix("<"), let close = destination.firstIndex(of: ">") {
+                destination = String(destination[destination.index(after: destination.startIndex)..<close])
+            } else if let space = destination.firstIndex(where: \.isWhitespace) {
+                // `[x](Note.md "Title")`: the title isn't the path.
+                destination = String(destination[..<space])
+            }
             guard !destination.contains("://"), !destination.hasPrefix("mailto:"), !destination.hasPrefix("#") else { return }
             let decoded = destination.removingPercentEncoding ?? destination
             var target = decoded
@@ -198,6 +207,28 @@ enum NoteParser {
                     range: range))
         }
         doc.links.sort { $0.range.location < $1.range.location }
+        if !doc.links.isEmpty {
+            // Line starts once, each link's line by a binary search.
+            var starts = [0]
+            var at = 0
+            while at < ns.length {
+                let end = NSMaxRange(ns.lineRange(for: NSRange(location: at, length: 0)))
+                if end < ns.length { starts.append(end) }
+                at = end
+            }
+            for i in doc.links.indices {
+                let location = doc.links[i].range.location
+                var low = 0
+                var high = starts.count - 1
+                while low < high {
+                    let mid = (low + high + 1) / 2
+                    if starts[mid] <= location { low = mid } else { high = mid - 1 }
+                }
+                doc.links[i].line = low
+                let line = ns.lineRange(for: NSRange(location: starts[low], length: 0))
+                doc.links[i].context = String(ns.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines).prefix(300))
+            }
+        }
 
         // Inline tags: `#` after a space or the line's start, letters,
         // digits, _ - / and at least one that isn't a digit (Obsidian's rule).

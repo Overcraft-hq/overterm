@@ -16,6 +16,7 @@ struct NotesGraphView: View {
     @State private var dragStart: CGSize?
     @State private var hovered: Int?
     @State private var generation = 0
+    @State private var layout: Task<NotesGraph, Never>?
 
     private var center: String? { local ? model.current.map(model.path(of:)) : nil }
 
@@ -161,11 +162,16 @@ struct NotesGraphView: View {
             let center = self.center
             let depth = self.depth
             let local = self.local
+            // The one before is stopped, not only ignored: a whole vault's
+            // layout is a lot of work to finish for nothing.
+            layout?.cancel()
+            let task = Task.detached(priority: .userInitiated) {
+                local && center == nil ? NotesGraph(nodes: [], edges: []) : NotesGraph.make(from: index, center: center, depth: depth)
+            }
+            layout = task
             Task {
-                let made = await Task.detached(priority: .userInitiated) {
-                    local && center == nil ? NotesGraph(nodes: [], edges: []) : NotesGraph.make(from: index, center: center, depth: depth)
-                }.value
-                guard token == generation else { return }
+                let made = await task.value
+                guard token == generation, !task.isCancelled else { return }
                 graph = made
                 hovered = nil
             }

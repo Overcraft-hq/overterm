@@ -185,8 +185,17 @@ enum NoteSections {
 enum NoteEdits {
     /// The task on `line` ticked or unticked; nil when there is none there.
     /// `[x]` goes back to `[ ]`, anything else (`[ ]`, `[/]`) to `[x]`.
-    static func toggleTask(in text: String, line: Int) -> (range: NSRange, replacement: String)? {
-        guard let task = NoteParser.parse(text).tasks.first(where: { $0.line == line }) else { return nil }
+    /// With `text`, the line is where it was: a task with those words
+    /// there, else the nearest with them — never another one.
+    static func toggleTask(in text: String, line: Int, text words: String? = nil) -> (range: NSRange, replacement: String)? {
+        let tasks = NoteParser.parse(text).tasks
+        let task: NoteDocument.Task?
+        if let words {
+            task = tasks.filter { $0.text == words }.min { abs($0.line - line) < abs($1.line - line) }
+        } else {
+            task = tasks.first { $0.line == line }
+        }
+        guard let task else { return nil }
         return (task.statusRange, task.isDone ? " " : "x")
     }
 }

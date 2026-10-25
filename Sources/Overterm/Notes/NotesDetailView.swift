@@ -148,7 +148,7 @@ struct NotesDetailView: View {
                     DetailRow(theme: theme, help: path) {
                         HStack(alignment: .top, spacing: 6) {
                             Button {
-                                actions.toggleTask(model.url(of: path), item.task.line)
+                                actions.toggleTask(model.url(of: path), item.task.line, item.task.text)
                             } label: {
                                 Image(systemName: "square").font(.system(size: 11))
                             }

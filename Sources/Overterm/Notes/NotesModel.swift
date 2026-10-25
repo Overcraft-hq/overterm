@@ -160,25 +160,10 @@ final class NotesModel: ObservableObject {
 
     // MARK: What the lower half shows
 
-    /// The links into the current note, each with the line it sits on.
+    /// The links into the current note, each with the line it sits on —
+    /// the index's, read when the note was: drawing the pane reads nothing.
     func backlinkLines(of path: String) -> [(source: String, line: Int, text: String)] {
-        var texts: [String: [String]] = [:]
-        return index.backlinks(of: path).compactMap { backlink in
-            if texts[backlink.source] == nil {
-                texts[backlink.source] = ((try? NoteFiles.read(url(of: backlink.source))) ?? "").components(separatedBy: "\n")
-            }
-            guard let lines = texts[backlink.source] else { return nil }
-            // The line the link is on, by counting to its offset.
-            var offset = 0
-            for (number, line) in lines.enumerated() {
-                let length = (line as NSString).length + 1
-                if backlink.link.range.location < offset + length {
-                    return (backlink.source, number, line.trimmingCharacters(in: .whitespaces))
-                }
-                offset += length
-            }
-            return nil
-        }
+        index.backlinks(of: path).map { ($0.source, $0.link.line, $0.link.context) }
     }
 
     // MARK: The vault on this Mac

@@ -39,7 +39,8 @@ final class NotesVaultTests: XCTestCase {
         let note = dir.appendingPathComponent("Projects/Plan.md")
         XCTAssertEqual(vault.folderForAttachment(of: note).path, dir.appendingPathComponent("Projects/assets").path)
         XCTAssertEqual(vault.folderForNewNote(beside: note).lastPathComponent, "Inbox")
-        XCTAssertTrue(vault.isHidden(dir.appendingPathComponent("Archive/Old.md")))
+        XCTAssertTrue(vault.isExcluded(dir.appendingPathComponent("Archive/Old.md")))
+        XCTAssertFalse(vault.isHidden(dir.appendingPathComponent("Archive/Old.md")))
         XCTAssertTrue(vault.isHidden(dir.appendingPathComponent(".obsidian")))
     }
 
@@ -121,5 +122,18 @@ final class NotesVaultTests: XCTestCase {
         XCTAssertThrowsError(try NoteFiles.create(dir.appendingPathComponent("Evicted.md")))
         try NoteFiles.create(dir.appendingPathComponent("Sub/New.md"))
         XCTAssertEqual(try NoteFiles.read(dir.appendingPathComponent("Sub/New.md")), "")
+    }
+
+    /// Fable: an excluded note is out of the tree but still a link target,
+    /// as in Obsidian — a click on its link must not make a second one.
+    func testExcludedNotesAreLeftOutOfTheTreeButStillResolve() throws {
+        try write(".obsidian/app.json", #"{"userIgnoreFilters": ["Archive/"]}"#)
+        try write("Archive/Old.md", "old")
+        try write("A.md", "[[Old]]")
+        let vault = NotesVault(root: dir)
+        let tree = NoteFiles.tree(of: vault)
+        XCTAssertEqual(tree.shown.children?.map(\.name), ["A"])
+        let index = NotesIndex.build(vault, tree: tree)
+        XCTAssertEqual(index.backlinks(of: "Archive/Old.md").map(\.source), ["A.md"])
     }
 }

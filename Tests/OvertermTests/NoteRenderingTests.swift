@@ -102,4 +102,13 @@ final class NoteRenderingTests: XCTestCase {
         XCTAssertEqual(payload.links["md:assets/x.png"]?.path, "assets/x.png")
         XCTAssertEqual(payload.links["md:../assets/x.png"]?.path, "assets/x.png")
     }
+
+    /// Fable: a task ticked from the pane by a line the index read before
+    /// an edit above it ticks that task, not whatever is on the line now.
+    func testATaskIsFoundByItsWordsWhenItsLineMoved() throws {
+        let text = "new line\n- [ ] other\n- [ ] mine"
+        let edit = try XCTUnwrap(NoteEdits.toggleTask(in: text, line: 1, text: "mine"))
+        XCTAssertEqual((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement), "new line\n- [ ] other\n- [x] mine")
+        XCTAssertNil(NoteEdits.toggleTask(in: text, line: 1, text: "gone"))
+    }
 }

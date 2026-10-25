@@ -27,9 +27,12 @@ enum NotesMCP {
             guard let path = index.resolver.resolve(name, from: ""), path.lowercased().hasSuffix(".md"), index.notes[path] != nil else {
                 throw BrowserMCP.ToolError(message: "No note “\(target)” in the vault — notes_search finds them.")
             }
+            // Off the main thread: a note iCloud hasn't downloaded is waited for.
+            let url = vault.root.appendingPathComponent(path)
+            let loaded = await Task.detached(priority: .userInitiated) { Result { try NoteFiles.read(url) } }.value
             let text: String
             do {
-                text = try NoteFiles.read(vault.root.appendingPathComponent(path))
+                text = try loaded.get()
             } catch {
                 throw BrowserMCP.ToolError(message: error.localizedDescription)
             }

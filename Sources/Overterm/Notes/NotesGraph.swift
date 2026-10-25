@@ -65,13 +65,15 @@ struct NotesGraph: Equatable, Sendable {
             return
         }
         let ideal = 46.0
-        let steps = max(40, min(400, 30_000_000 / (n * n)))
+        let steps = max(n > 3000 ? 12 : 40, min(400, 30_000_000 / (n * n)))
         var temperature = 60.0
         var x = nodes.map { Double($0.position.x) }
         var y = nodes.map { Double($0.position.y) }
         var dx = [Double](repeating: 0, count: n)
         var dy = [Double](repeating: 0, count: n)
         for _ in 0..<steps {
+            // A layout superseded (another note, another depth) stops here.
+            if Task.isCancelled { return }
             for i in 0..<n {
                 dx[i] = 0
                 dy[i] = 0

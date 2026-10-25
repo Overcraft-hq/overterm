@@ -7,9 +7,13 @@ import Foundation
 struct NotesVault: Equatable, Sendable {
     let root: URL
     let settings: ObsidianSettings
+    /// The root with its links resolved, once: a path from walking the
+    /// root needs none, and resolving each one cost a call per component.
+    private let resolvedRoot: String
 
     init(root: URL) {
         self.root = root.standardizedFileURL
+        resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath().path
         settings = ObsidianSettings.read(from: root)
     }
 
@@ -42,16 +46,17 @@ struct NotesVault: Equatable, Sendable {
 
     /// A note's path inside the vault, without `.md`: what links name.
     func relativePath(of url: URL) -> String {
-        let base = root.resolvingSymlinksInPath().path + "/"
+        let plain = url.standardizedFileURL.path
+        if plain.hasPrefix(root.path + "/") { return String(plain.dropFirst(root.path.count + 1)) }
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
-        let relative = path.hasPrefix(base) ? String(path.dropFirst(base.count)) : url.lastPathComponent
-        return relative
+        return path.hasPrefix(resolvedRoot + "/") ? String(path.dropFirst(resolvedRoot.count + 1)) : url.lastPathComponent
     }
 
     func contains(_ url: URL) -> Bool {
-        let base = root.resolvingSymlinksInPath().path
+        let plain = url.standardizedFileURL.path
+        if plain == root.path || plain.hasPrefix(root.path + "/") { return true }
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
-        return path == base || path.hasPrefix(base + "/")
+        return path == resolvedRoot || path.hasPrefix(resolvedRoot + "/")
     }
 
     /// Where a new note goes, as Obsidian's "Default location for new notes" says.
@@ -74,11 +79,16 @@ struct NotesVault: Equatable, Sendable {
         return root.appendingPathComponent(path, isDirectory: true)
     }
 
-    /// Folders the vault never shows: Obsidian's own, the Trash, and what
-    /// "Excluded files" lists.
+    /// What the vault never has: dotfiles — Obsidian's own folder, the Trash.
     func isHidden(_ url: URL) -> Bool {
         let name = url.lastPathComponent
-        if name.hasPrefix(".") && !name.hasSuffix(".icloud") { return true }
+        return name.hasPrefix(".") && !name.hasSuffix(".icloud")
+    }
+
+    /// What "Excluded files" lists: not in the tree, but still notes —
+    /// links to them resolve, as in Obsidian.
+    func isExcluded(_ url: URL) -> Bool {
+        guard !settings.userIgnoreFilters.isEmpty else { return false }
         let relative = relativePath(of: url)
         return settings.userIgnoreFilters.contains { filter in
             let trimmed = filter.hasSuffix("/") ? String(filter.dropLast()) : filter

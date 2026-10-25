@@ -43,7 +43,7 @@ extension EditorViewController {
             reader.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
         ])
         reader.onOpenLink = { [weak self] target, anchor, markdown, _ in self?.followNoteLink(target, anchor: anchor, markdown: markdown) }
-        reader.onOpenURL = { NSWorkspace.shared.open($0) }
+        reader.onOpenURL = { Self.openExternal($0) }
         reader.onToggleTask = { [weak self] line in self?.toggleNoteTask(line: line) }
         reader.onTag = { [weak self] tag in self?.onNoteTag?(tag) }
         // A note written or renamed elsewhere: links in this one may
@@ -59,6 +59,14 @@ extension EditorViewController {
         return reader
     }
 
+    /// A link out of a note: the web, mail, Obsidian's own — the schemes a
+    /// note has reason to name. Anything else (an app's private scheme in a
+    /// note an agent or a shared vault planted) is not opened.
+    static func openExternal(_ url: URL) {
+        guard ["http", "https", "mailto", "obsidian"].contains(url.scheme?.lowercased() ?? "") else { return NSSound.beep() }
+        NSWorkspace.shared.open(url)
+    }
+
     /// Draws the note — once the index can say what its links mean.
     func renderNote(_ buffer: EditorBuffer, scrollTo anchor: String? = nil) {
         guard let url = buffer.url, let reader = noteReader else { return }
@@ -70,8 +78,19 @@ extension EditorViewController {
                 self.buffers.compactMap { other in other.url.map { (notes.path(of: $0), other.storage.string) } },
                 uniquingKeysWith: { first, _ in first })
             let payload = NoteRenderPayload.make(path: path, text: buffer.storage.string, index: notes.index) { embedded in
-                // An open note's text as it is now, edits and all.
-                open[embedded] ?? (try? NoteFiles.read(notes.url(of: embedded)))
+                // An open note's text as it is now, edits and all. One iCloud
+                // still has is asked for and drawn with the next render.
+                if let text = open[embedded] { return text }
+                let url = notes.url(of: embedded)
+                if NoteFiles.isEvicted(url) {
+                    NoteFiles.whenDownloaded(url) { [weak self, weak buffer] arrived in
+                        guard arrived, let self, let buffer else { return }
+                        self.noteReader?.invalidate()
+                        self.renderNote(buffer)
+                    }
+                    return nil
+                }
+                return try? NoteFiles.read(url)
             }
             reader.vaultRoot = notes.vault.root
             reader.show(payload, settings: notes.vault.settings, theme: self.theme, scrollTo: anchor)
@@ -408,7 +427,7 @@ extension EditorViewController {
             return true
         }
         if let link = storage.attribute(.noteURL, at: index, effectiveRange: nil) as? String, let url = URL(string: link) {
-            NSWorkspace.shared.open(url)
+            Self.openExternal(url)
             return true
         }
         return false

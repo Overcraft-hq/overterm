@@ -19,8 +19,8 @@ struct NotesActions {
     var chooseVault: () -> Void
     /// Opens a note at a line (0-based).
     var openAt: (URL, Int) -> Void = { _, _ in }
-    /// Ticks the task on a line of a note, where it is written.
-    var toggleTask: (URL, Int) -> Void = { _, _ in }
+    /// Ticks the task on a line of a note (with these words), where it is written.
+    var toggleTask: (URL, Int, String) -> Void = { _, _, _ in }
 }
 
 /// The sidebar's Notes panel: the vault's folders and notes, Obsidian's
@@ -176,6 +176,7 @@ struct NotesPanelView: View {
                 .map { Row(item: $0, depth: 0, isExpanded: false) }
         }
         let filtering = !query.isEmpty
+        let root = root.shown
         let shown = filtering ? (root.filtered(query) ?? NoteItem(url: root.url, kind: .folder, children: [])) : root
         var rows: [Row] = []
         func walk(_ items: [NoteItem], _ depth: Int) {

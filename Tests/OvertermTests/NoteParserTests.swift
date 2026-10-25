@@ -107,4 +107,13 @@ final class NoteParserTests: XCTestCase {
         }
         XCTAssertFalse(notes.isEmpty)
     }
+
+    /// Fable: a link knows its line, so backlinks read no file; a Markdown
+    /// link's title isn't its path.
+    func testLinksKnowTheirLineAndTitlesAreNotPaths() {
+        let doc = NoteParser.parse("---\na: 1\n---\nfirst\n  see [[A]] here\n[x](Note.md \"A title\") [y](<My Note.md>)")
+        XCTAssertEqual(doc.links.map(\.line), [4, 5, 5])
+        XCTAssertEqual(doc.links[0].context, "see [[A]] here")
+        XCTAssertEqual(doc.links.map(\.target), ["A", "Note.md", "My Note.md"])
+    }
 }

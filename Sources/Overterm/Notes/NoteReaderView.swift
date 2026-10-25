@@ -187,12 +187,32 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
 /// refused.
 final class NoteResources: NSObject, WKURLSchemeHandler {
     var vaultRoot: URL?
+    /// Tasks WebKit gave up on: never answered after (it raises).
+    private var stopped = Set<ObjectIdentifier>()
 
     /// Resources/notes inside the app.
     static var bundled: URL? { Bundle.main.resourceURL?.appendingPathComponent("notes", isDirectory: true) }
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
-        guard let url = task.request.url, let file = file(for: url), let data = try? Data(contentsOf: file) else {
+        guard let url = task.request.url, let file = file(for: url) else {
+            task.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        // An image iCloud hasn't downloaded: asked for, answered when it
+        // comes — the main thread isn't held meanwhile.
+        if NoteFiles.isEvicted(file) {
+            let id = ObjectIdentifier(task)
+            NoteFiles.whenDownloaded(file) { [weak self] _ in
+                guard let self, self.stopped.remove(id) == nil else { return }
+                self.answer(task, url: url, file: file)
+            }
+            return
+        }
+        answer(task, url: url, file: file)
+    }
+
+    private func answer(_ task: WKURLSchemeTask, url: URL, file: URL) {
+        guard let data = try? Data(contentsOf: file) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
@@ -204,7 +224,7 @@ final class NoteResources: NSObject, WKURLSchemeHandler {
         task.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) { stopped.insert(ObjectIdentifier(task)) }
 
     func file(for url: URL) -> URL? {
         let base: URL?
@@ -218,7 +238,6 @@ final class NoteResources: NSObject, WKURLSchemeHandler {
         let file = base.appendingPathComponent(String(path.drop { $0 == "/" })).standardizedFileURL.resolvingSymlinksInPath()
         let root = base.standardizedFileURL.resolvingSymlinksInPath().path
         guard file.path.hasPrefix(root + "/") else { return nil }
-        if url.host == "vault" { try? NoteFiles.download(file, timeout: 5) }
         return file
     }
 

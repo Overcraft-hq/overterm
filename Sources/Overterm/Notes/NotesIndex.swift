@@ -148,7 +148,9 @@ struct NotesIndex: Sendable {
         relink(files: files)
     }
 
-    var paths: [String] { notes.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    /// The notes' paths in Finder's order, sorted once a change (it was a
+    /// sort a keystroke, and a hover in the graph).
+    private(set) var paths: [String] = []
 
     func document(_ path: String) -> NoteDocument? { notes[path]?.document }
 
@@ -218,6 +220,7 @@ struct NotesIndex: Sendable {
     }
 
     private mutating func relink(files: [String]) {
+        paths = notes.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         resolver = LinkResolver(files: files)
         incoming = [:]
         unresolved = [:]
