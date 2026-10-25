@@ -8,8 +8,12 @@ final class WorktreeModel: ObservableObject {
     @Published private(set) var merged: [String: MergedWorktrees.Reason] = [:]
     /// Each branch's pull request (gh), when there is one.
     @Published private(set) var pullRequests: [String: PullRequestSummary] = [:]
-    /// Why pull requests aren't shown (no gh, not logged in, no remote).
+    /// Why pull requests aren't shown (no gh, not logged in, no remote) —
+    /// for the repository shown now, never one asked about before: an error
+    /// left over from a tab outside a repository (or a worktree whose .git
+    /// points nowhere) hid the list of the next one.
     @Published private(set) var pullRequestError: String?
+    private var pullRequestErrors: [URL: String] = [:]
     /// gh is network: a tab switch reuses what a minute-old list said.
     private var pullRequestCache: [URL: (at: Date, byBranch: [String: PullRequestSummary])] = [:]
     static let pullRequestMaxAge: TimeInterval = 60
@@ -37,8 +41,17 @@ final class WorktreeModel: ObservableObject {
         }
         if fetch { await MergedWorktrees.fetch(in: anchor) }
         let listed = (try? await Git.run(["worktree", "list", "--porcelain"], in: anchor)).map(Worktree.parse(porcelain:)) ?? []
+        // Not in a repository (or in a worktree git can't follow): nothing
+        // to ask GitHub about, and no error to show for it.
+        guard let repo = listed.first(where: { $0.isMain })?.path else {
+            guard anchor == self.anchor else { return }
+            worktrees = []
+            merged = [:]
+            pullRequests = [:]
+            pullRequestError = nil
+            return
+        }
         var merged = await MergedWorktrees.find(in: anchor, worktrees: listed)
-        let repo = listed.first { $0.isMain }?.path ?? anchor
         let pullRequests = await pullRequests(in: repo, force: fetch)
         let branches = listed.filter { !$0.isMain }.compactMap(\.branch)
         let tips = await Self.branchTips(in: repo)
@@ -48,6 +61,7 @@ final class WorktreeModel: ObservableObject {
         worktrees = listed
         self.merged = merged
         self.pullRequests = pullRequests
+        pullRequestError = pullRequestErrors[repo]
     }
 
     /// Asks gh again for the current repository's pull requests (CI moves on
@@ -66,10 +80,12 @@ final class WorktreeModel: ObservableObject {
                 ["pr", "list", "--state", "all", "--limit", "60", "--json", PullRequestSummary.listFields], in: repo)
             let byBranch = PullRequestSummary.byBranch(try PullRequestSummary.parseList(data))
             pullRequestCache[repo] = (Date(), byBranch)
-            pullRequestError = nil
+            pullRequestErrors[repo] = nil
             return byBranch
         } catch {
-            pullRequestError = error.localizedDescription
+            // What gh said last time stands only while there is no list:
+            // a failed refresh of a list we have keeps showing the list.
+            pullRequestErrors[repo] = pullRequestCache[repo] == nil ? error.localizedDescription : nil
             return pullRequestCache[repo]?.byBranch ?? [:]
         }
     }
