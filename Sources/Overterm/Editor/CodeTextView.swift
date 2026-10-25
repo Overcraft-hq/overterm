@@ -21,6 +21,9 @@ protocol CodeTextViewHost: AnyObject {
     /// ⌘V, before the text view's own: true when the host pasted (an image
     /// into a note).
     func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool
+    /// A click in a note's Live Preview: true when it was a box or a link
+    /// and the host acted on it.
+    func codeTextView(_ view: CodeTextView, liveClickAt index: Int) -> Bool
 }
 
 /// A problem a language server reported, as the text view draws it.
@@ -99,6 +102,19 @@ final class CodeTextView: NSTextView {
             NSRect(x: rect.minX, y: line.minY, width: rect.width, height: line.height).fill()
         }
         if showsIndentGuides { drawIndentGuides(in: rect) }
+        // Live Preview's code blocks: the lines on a surface, edge to edge.
+        if let storage = textStorage, storage.length > 0 {
+            let glyphs = layoutManager.glyphRange(forBoundingRect: rect.offsetBy(dx: -origin.x, dy: -origin.y), in: textContainer)
+            let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+            storage.enumerateAttribute(.noteDecoration, in: characters) { value, range, _ in
+                guard case .code = value as? NoteDecoration else { return }
+                let glyph = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                theme.text.withAlphaComponent(theme.isDark ? 0.06 : 0.04).setFill()
+                layoutManager.enumerateLineFragments(forGlyphRange: glyph) { line, _, _, _, _ in
+                    NSRect(x: rect.minX, y: line.minY + origin.y, width: rect.width, height: line.height).fill()
+                }
+            }
+        }
         for range in wordHighlights {
             theme.bracketMatch.withAlphaComponent(0.12).setFill()
             for box in rects(for: range, layoutManager, textContainer, origin) {
@@ -116,6 +132,68 @@ final class CodeTextView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawDiagnostics(in: dirtyRect)
+        drawNoteDecorations(in: dirtyRect)
+    }
+
+    /// Live Preview's boxes, dots, bars and rules (NoteDecoration), over
+    /// the markup they stand for.
+    private func drawNoteDecorations(in rect: NSRect) {
+        guard let layoutManager, let textContainer, let storage = textStorage, storage.length > 0 else { return }
+        let origin = textContainerOrigin
+        let glyphs = layoutManager.glyphRange(forBoundingRect: rect.offsetBy(dx: -origin.x, dy: -origin.y), in: textContainer)
+        let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let accent = theme.info
+        let muted = theme.lineNumber
+        storage.enumerateAttribute(.noteDecoration, in: characters) { value, range, _ in
+            guard let decoration = value as? NoteDecoration else { return }
+            let glyph = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let box = layoutManager.boundingRect(forGlyphRange: glyph, in: textContainer).offsetBy(dx: origin.x, dy: origin.y)
+            let line = layoutManager.lineFragmentRect(forGlyphAt: glyph.location, effectiveRange: nil).offsetBy(dx: origin.x, dy: origin.y)
+            switch decoration {
+            case .checkbox(let done):
+                let side = min(14, line.height - 4)
+                let square = NSRect(x: box.minX + 1, y: line.midY - side / 2, width: side, height: side)
+                let path = NSBezierPath(roundedRect: square, xRadius: 3, yRadius: 3)
+                if done {
+                    accent.setFill()
+                    path.fill()
+                    let tick = NSBezierPath()
+                    tick.move(to: NSPoint(x: square.minX + side * 0.25, y: square.midY))
+                    tick.line(to: NSPoint(x: square.minX + side * 0.43, y: square.maxY - side * 0.27))
+                    tick.line(to: NSPoint(x: square.maxX - side * 0.22, y: square.minY + side * 0.28))
+                    tick.lineWidth = 1.8
+                    tick.lineCapStyle = .round
+                    theme.background.setStroke()
+                    tick.stroke()
+                } else {
+                    muted.setStroke()
+                    path.lineWidth = 1.2
+                    path.stroke()
+                }
+            case .bullet:
+                let dot = NSRect(x: box.midX - 2.5, y: line.midY - 2.5, width: 5, height: 5)
+                muted.setFill()
+                NSBezierPath(ovalIn: dot).fill()
+            case .quote:
+                // Every fragment of the line, wrapped ones too — not the
+                // first glyph's, a hidden `>` laid out as nothing.
+                accent.withAlphaComponent(0.6).setFill()
+                // From the first character drawn: a run of hidden ones at
+                // the line's start is laid out against the line before.
+                var first = range.location
+                while first < NSMaxRange(range) - 1, storage.attribute(.noteHidden, at: first, effectiveRange: nil) != nil { first += 1 }
+                let shown = layoutManager.glyphRange(
+                    forCharacterRange: NSRange(location: first, length: NSMaxRange(range) - first), actualCharacterRange: nil)
+                layoutManager.enumerateLineFragments(forGlyphRange: shown) { fragment, _, _, _, _ in
+                    NSRect(x: origin.x + textContainer.lineFragmentPadding, y: fragment.minY + origin.y, width: 3, height: fragment.height).fill()
+                }
+            case .rule:
+                muted.withAlphaComponent(0.6).setFill()
+                NSRect(x: line.minX + textContainer.lineFragmentPadding, y: line.midY, width: line.width - 2 * textContainer.lineFragmentPadding, height: 1).fill()
+            case .code:
+                break
+            }
+        }
     }
 
     /// The rect of the line holding `index` (the empty last line included).
@@ -409,6 +487,12 @@ final class CodeTextView: NSTextView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
+            let index = characterIndex(at: convert(event.locationInWindow, from: nil)),
+            host?.codeTextView(self, liveClickAt: index) == true
+        {
+            return
+        }
         if event.modifierFlags.contains(.command), event.clickCount == 1,
             let index = characterIndex(at: convert(event.locationInWindow, from: nil)),
             host?.codeTextView(self, commandClickAt: index) == true

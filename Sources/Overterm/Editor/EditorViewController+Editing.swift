@@ -191,6 +191,10 @@ extension EditorViewController: CodeTextViewHost {
         return true
     }
 
+    func codeTextView(_ view: CodeTextView, liveClickAt index: Int) -> Bool {
+        liveClick(at: index)
+    }
+
     func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool {
         guard let buffer = active, buffer.isNote else { return false }
         return pasteIntoNote(from: pasteboard)

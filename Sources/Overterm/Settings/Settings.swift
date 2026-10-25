@@ -301,6 +301,7 @@ final class Settings: ObservableObject {
     var notesEnabled: Bool { bool("notes.enabled") }
     var notesVaultPath: String { string("notes.vaultPath") }
     var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
+    var notesLivePreview: Bool { notesEnabled && bool("notes.livePreview") }
 
     // MARK: Ghostty overrides
 

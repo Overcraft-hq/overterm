@@ -210,6 +210,39 @@ extension E2ERunner {
         check("as an unsaved edit", editor.document.isDirty)
         editor.saveDocument(nil)
 
+        // Live Preview: the same note as text, its markup hidden off the
+        // caret's line.
+        editor.toggleMarkdownPreview()
+        check("the eye again gives the text back", await eventually(2) { !editor.scrollView.isHidden })
+        check("a note opens in Live Preview", editor.active?.livePreview == true && editor.lineHeight.variable)
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let source = editor.textView.string as NSString
+        let link = source.range(of: "[[Welcome]]").location
+        check(
+            "a link's brackets are hidden off the caret's line",
+            await eventually(3) { editor.textView.textStorage?.attribute(.noteHidden, at: link, effectiveRange: nil) != nil })
+        editor.textView.setSelectedRange(NSRange(location: link + 4, length: 0))
+        check(
+            "and shown on it", await eventually(2) { editor.textView.textStorage?.attribute(.noteHidden, at: link, effectiveRange: nil) == nil })
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(0.5)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-live.png")
+        }
+        // Ticked in the reading view above: a box drawn ticked, unticked on a click.
+        let box = source.range(of: "- [x] first").location
+        guard box != NSNotFound else { return check("the ticked task is in the text", false, source as String) }
+        // Painted with what is on screen, a moment after.
+        editor.textView.scrollRangeToVisible(NSRange(location: box, length: 0))
+        check(
+            "a task's box is drawn",
+            await eventually(3) {
+                editor.textView.textStorage?.attribute(.noteDecoration, at: box + 2, effectiveRange: nil) as? NoteDecoration == .checkbox(done: true)
+            })
+        check("a click on it unticks it", editor.liveClick(at: box + 2) && editor.textView.string.contains("- [ ] first task"))
+        editor.toggleMarkdownPreview()
+        _ = await eventually(3) { !(editor.noteReader?.isHidden ?? true) }
+
         // A link to a note not written yet writes it.
         editor.followNoteLink("Nowhere", anchor: nil, markdown: false)
         check("following a link opens its note", await eventually(3) { editor.active?.url?.lastPathComponent == "Nowhere.md" })

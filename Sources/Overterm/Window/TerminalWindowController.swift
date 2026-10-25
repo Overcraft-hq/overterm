@@ -2654,6 +2654,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         ]
         // Obsidian's Insert template, while a note is open in the editor.
         if editor?.active?.isNote == true {
+            let live = editor?.active?.livePreview == true
+            items.append(
+                PaletteItem(
+                    id: "a.livePreview", group: .action, title: live ? "Show the Note’s Markdown" : "Live Preview",
+                    subtitle: "This note as written, or as it reads while you edit it", symbol: "text.viewfinder"
+                ) { [weak self] _, _ in self?.editor?.toggleLivePreview() })
             items += notes.vault.templates.map { template in
                 let name = template.deletingPathExtension().lastPathComponent
                 return PaletteItem(id: "a.template.\(name)", group: .action, title: "Insert Template: \(name)", subtitle: nil, symbol: "doc.badge.plus") {

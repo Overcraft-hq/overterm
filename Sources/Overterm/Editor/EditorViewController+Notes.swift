@@ -13,6 +13,9 @@ extension EditorViewController {
             buffer.document.unavailable == nil, notes.vault.contains(url)
         else { return }
         buffer.isNote = true
+        buffer.livePreview = Settings.shared.notesLivePreview
+        // Prose wraps.
+        buffer.wrapOverride = true
     }
 
     /// Shows the reading view over the text, or the text, as the buffer asks.
@@ -290,5 +293,116 @@ extension EditorViewController {
 
     @objc private func insertTemplateItem(_ sender: NSMenuItem) {
         if let template = sender.representedObject as? URL { insertTemplate(template) }
+    }
+}
+
+// MARK: Live Preview
+
+extension EditorViewController {
+    /// The layout as Live Preview needs it — lines as tall as their fonts,
+    /// markup laid out as nothing — or the code editor's.
+    func setLiveLayout(_ live: Bool) {
+        // No line numbers in Live Preview, as Obsidian: lines of every
+        // height, a heading's and a wrapped paragraph's, numbered as code.
+        if scrollView.rulersVisible == live { scrollView.rulersVisible = !live }
+        guard lineHeight.variable != live, let layout = textView.layoutManager else { return }
+        lineHeight.variable = live
+        let all = NSRange(location: 0, length: layout.textStorage?.length ?? 0)
+        layout.invalidateGlyphs(forCharacterRange: all, changeInLength: 0, actualCharacterRange: nil)
+        layout.invalidateLayout(forCharacterRange: all, actualCharacterRange: nil)
+        textView.needsDisplay = true
+    }
+
+    private var liveStyle: NoteLivePreview {
+        let size = max(13, (textView.font?.pointSize ?? 13) + 2)
+        let body = NSFont.systemFont(ofSize: size)
+        let mono = NSFont.monospacedSystemFont(ofSize: size - 1.5, weight: .regular)
+        return NoteLivePreview(
+            fonts: .init(body: body, mono: mono),
+            colors: .init(
+                text: theme.text, muted: theme.lineNumber, accent: theme.info, mark: theme.warning.withAlphaComponent(0.3),
+                code: theme.style(for: "string")?.color ?? theme.text, heading: theme.text))
+    }
+
+    /// Styles the lines in `range` (attributes only — the text is the file's).
+    func applyLivePreview(over range: NSRange, in buffer: EditorBuffer) {
+        let storage = buffer.storage
+        let text = storage.string as NSString
+        guard range.length > 0, NSMaxRange(range) <= text.length else { return }
+        let lines = text.lineRange(for: range)
+        if buffer.liveBlocks?.version != buffer.version {
+            buffer.liveBlocks = (buffer.version, NoteLivePreview.blocks(in: text))
+        }
+        let editing = buffer === active ? textView.selectedRanges.map(\.rangeValue) : buffer.selection
+        buffer.liveEditing = editing.map { text.lineRange(for: $0) }
+        let runs = liveStyle.runs(in: text, range: lines, editing: editing, blocks: buffer.liveBlocks?.blocks ?? [])
+        storage.beginEditing()
+        for key in [NSAttributedString.Key.noteHidden, .noteDecoration, .noteLink, .noteURL, .backgroundColor, .strikethroughStyle, .cursor] {
+            storage.removeAttribute(key, range: lines)
+        }
+        for (index, run) in runs.enumerated() {
+            let clipped = NSIntersectionRange(run.range, NSRange(location: 0, length: storage.length))
+            guard clipped.length > 0 else { continue }
+            if index == 0 { storage.setAttributes(run.attributes, range: clipped) } else { storage.addAttributes(run.attributes, range: clipped) }
+        }
+        storage.endEditing()
+    }
+
+    /// The caret moved to other lines: those it left hide their markup,
+    /// the ones it is on show theirs.
+    func updateLivePreviewEditing() {
+        guard let buffer = active, buffer.livePreview, !textView.hasMarkedText() else { return }
+        let text = buffer.storage.string as NSString
+        let now = textView.selectedRanges.map { text.lineRange(for: $0.rangeValue) }
+        guard now != buffer.liveEditing else { return }
+        let touched = (buffer.liveEditing + now).filter { NSMaxRange($0) <= text.length }
+        guard let first = touched.map(\.location).min(), let last = touched.map(NSMaxRange).max() else { return }
+        // A selection across many lines restyles them all; a caret, two.
+        applyLivePreview(over: NSRange(location: first, length: max(0, last - first)), in: buffer)
+        buffer.liveEditing = now
+    }
+
+    /// ⌘E in Obsidian: Live Preview or the Markdown as written, for this note.
+    func toggleLivePreview() {
+        guard let buffer = active, buffer.isNote else { return }
+        buffer.livePreview.toggle()
+        buffer.painted = IndexSet()
+        let all = NSRange(location: 0, length: buffer.storage.length)
+        buffer.storage.beginEditing()
+        buffer.storage.setAttributes(baseAttributes, range: all)
+        buffer.storage.endEditing()
+        setLiveLayout(buffer.livePreview)
+        paintVisible()
+    }
+
+    /// A click in Live Preview: a box ticks its task, a link opens — on
+    /// lines not being edited (there the click places the caret, as typed).
+    func liveClick(at index: Int) -> Bool {
+        guard let buffer = active, buffer.livePreview, index < buffer.storage.length else { return false }
+        let storage = buffer.storage
+        let text = storage.string as NSString
+        let line = text.lineRange(for: NSRange(location: index, length: 0))
+        if buffer.liveEditing.contains(where: { NSIntersectionRange($0, line).length > 0 }) { return false }
+        if case .checkbox = storage.attribute(.noteDecoration, at: index, effectiveRange: nil) as? NoteDecoration {
+            let number = text.substring(to: line.location).components(separatedBy: "\n").count - 1
+            toggleNoteTask(line: number)
+            return true
+        }
+        if var target = storage.attribute(.noteLink, at: index, effectiveRange: nil) as? String {
+            let markdown = target.hasPrefix("md:")
+            if markdown { target.removeFirst(3) }
+            var anchor: String?
+            if let hash = target.firstIndex(of: "#") {
+                anchor = String(target[target.index(after: hash)...])
+                target = String(target[..<hash])
+            }
+            followNoteLink(target, anchor: anchor, markdown: markdown)
+            return true
+        }
+        if let link = storage.attribute(.noteURL, at: index, effectiveRange: nil) as? String, let url = URL(string: link) {
+            NSWorkspace.shared.open(url)
+            return true
+        }
+        return false
     }
 }

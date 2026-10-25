@@ -32,6 +32,12 @@ final class EditorBuffer {
     var request: APIRequestModel?
     /// A note of the vault: its preview is the reading view (NoteReaderView).
     var isNote = false
+    /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.
+    var livePreview = false
+    /// The caret's lines when Live Preview last styled them: their markup shows.
+    var liveEditing: [NSRange] = []
+    /// The note's frontmatter and code blocks, for the text's `version`.
+    var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
     var diagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.
@@ -123,6 +129,10 @@ final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchecked Send
         self.multiple = multiple
     }
 
+    /// A note in Live Preview: each line as tall as its largest font (a
+    /// heading's), not the code font's one height for every line.
+    var variable = false
+
     var height: CGFloat { ((font.ascender - font.descender + font.leading) * multiple).rounded() }
 
     func layoutManager(
@@ -130,11 +140,43 @@ final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchecked Send
         lineFragmentUsedRect: UnsafeMutablePointer<NSRect>, baselineOffset: UnsafeMutablePointer<CGFloat>,
         in textContainer: NSTextContainer, forGlyphRange glyphRange: NSRange
     ) -> Bool {
-        let height = self.height
+        var font = self.font
+        if variable, let storage = layoutManager.textStorage {
+            let characters = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            var largest: NSFont?
+            storage.enumerateAttribute(.font, in: NSIntersectionRange(characters, NSRange(location: 0, length: storage.length))) { value, range, _ in
+                guard let candidate = value as? NSFont, storage.attribute(.noteHidden, at: range.location, effectiveRange: nil) == nil else { return }
+                if candidate.pointSize > (largest?.pointSize ?? 0) { largest = candidate }
+            }
+            if let largest { font = largest }
+        }
+        let height = ((font.ascender - font.descender + font.leading) * multiple).rounded()
         let natural = font.ascender - font.descender
         lineFragmentRect.pointee.size.height = height
         lineFragmentUsedRect.pointee.size.height = height
         baselineOffset.pointee = ((height - natural) / 2 + font.ascender).rounded()
         return true
+    }
+
+    /// Live Preview's hidden markup (`.noteHidden`): laid out as nothing.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+        properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>, font: NSFont,
+        forGlyphRange glyphRange: NSRange
+    ) -> Int {
+        guard variable, let storage = layoutManager.textStorage else { return 0 }
+        let count = glyphRange.length
+        var changed: [NSLayoutManager.GlyphProperty]?
+        for i in 0..<count {
+            let index = characterIndexes[i]
+            guard index < storage.length, storage.attribute(.noteHidden, at: index, effectiveRange: nil) != nil else { continue }
+            if changed == nil { changed = Array(UnsafeBufferPointer(start: properties, count: count)) }
+            changed?[i] = .null
+        }
+        guard let changed else { return 0 }
+        changed.withUnsafeBufferPointer { buffer in
+            layoutManager.setGlyphs(glyphs, properties: buffer.baseAddress!, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
+        }
+        return count
     }
 }

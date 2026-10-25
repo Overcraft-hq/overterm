@@ -52,7 +52,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private(set) var requestHost: NSHostingView<AnyView>!
     private var pendingPreview: DispatchWorkItem?
     private var messageLabel: NSTextField!
-    private var lineHeight: EditorLineHeight!
+    private(set) var lineHeight: EditorLineHeight!
     private var cancellables: Set<AnyCancellable> = []
     private var documentObservers: Set<AnyCancellable> = []
     private var flushScheduled = false
@@ -301,6 +301,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         layout.replaceTextStorage(buffer.storage)
         swapping = false
         applyWrap()
+        setLiveLayout(buffer.livePreview)
         let unavailable = buffer.document.unavailable
         messageLabel.stringValue = unavailable ?? ""
         messageLabel.isHidden = unavailable == nil
@@ -717,6 +718,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             if style.strikethrough { storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: clipped) }
         }
         storage.endEditing()
+        if buffer.livePreview { applyLivePreview(over: range, in: buffer) }
         buffer.painted.insert(integersIn: range.location..<NSMaxRange(range))
         if buffer === active {
             // Recolouring mustn't move the caret or the selection.
@@ -851,6 +853,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     func selectionDidChange() {
         guard isViewLoaded else { return }
+        updateLivePreviewEditing()
         updateStatus()
         updateCompletionForSelection()
         gutter.needsDisplay = true

@@ -388,6 +388,10 @@ enum SettingsSchema {
             kind: .text(placeholder: "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Vault", monospaced: true),
             defaultValue: .string(""), requires: "notes.enabled"),
         SettingSpec(
+            key: "notes.livePreview", section: .notes, group: "Editing", title: "Live Preview",
+            help: "Notes open as Obsidian's Live Preview: headings, emphasis, links and tasks as they read, their markup shown only on the line you edit. Off: the Markdown as written.",
+            kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
+        SettingSpec(
             key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
             help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. Agents never write to it.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
