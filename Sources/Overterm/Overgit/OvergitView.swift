@@ -13,6 +13,8 @@ struct OvergitActions {
     var showPullRequest: () -> Void
     /// A pull request on github.com.
     var openPullRequest: (PullRequestSummary) -> Void
+    /// Any pull request of the repository, in the right-hand pane.
+    var showPullRequestNumber: (PullRequestSummary) -> Void = { _ in }
     var applyStash: (Stash) -> Void
     var dropStash: (Stash) -> Void
     /// The changes pane, for the working tree.
@@ -177,7 +179,8 @@ struct OvergitView: View {
             ForEach(livePullRequests, id: \.number) { pr in
                 PullRequestRowView(
                     pullRequest: pr, isCurrent: pr.branch == diff.branch, theme: theme,
-                    onOpen: { pr.branch == diff.branch ? actions.showPullRequest() : actions.openPullRequest(pr) },
+                    // In the right-hand pane, whichever it is; ↗ for GitHub.
+                    onOpen: { actions.showPullRequestNumber(pr) },
                     onOpenExternally: { actions.openPullRequest(pr) })
             }
         }

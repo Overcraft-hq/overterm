@@ -316,6 +316,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     newWorktree: { [weak self] in self?.newTask(base: $0.name) },
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     openPullRequest: { if let url = $0.url { NSWorkspace.shared.open(url) } },
+                    showPullRequestNumber: { [weak self] in self?.showPullRequest(number: $0) },
                     applyStash: { [weak self] in self?.applyStash($0) },
                     dropStash: { [weak self] in self?.dropStash($0) },
                     showChanges: { [weak self] in self?.showChanges(nil) }
@@ -3209,6 +3210,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// The right pane, on the checkout's pull request.
+    /// A pull request picked in Overgit — the checkout's branch's, or
+    /// another — in the right-hand pane rather than on GitHub.
+    func showPullRequest(number pr: PullRequestSummary) {
+        if pr.branch == diff.branch {
+            pullRequest.unpick()
+        } else if let root = diff.root ?? worktrees.main?.path {
+            pullRequest.show(number: pr.number, in: root)
+        }
+        showPullRequest(nil)
+    }
+
     @objc func showPullRequest(_ sender: Any?) {
         rightPane.mode = .pullRequest
         if diffItem?.isCollapsed == true { toggleDiff(nil) }

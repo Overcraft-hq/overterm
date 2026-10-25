@@ -3212,6 +3212,29 @@ final class E2ERunner {
 
         app.newTab(in: repo)
         check("a branch without one says so", await eventually(8) { self.app.pullRequest.phase == .none })
+
+        // Another branch's, picked in Overgit: in the pane, not on GitHub.
+        if let pr {
+            // Once the tab has its branch: a branch arriving lets go of a pick.
+            _ = await eventually(5) { self.app.diff.branch == "main" }
+            app.showPullRequest(number: pr)
+            check(
+                "a pull request picked in Overgit opens in the pane",
+                await eventually(8) {
+                    self.app.pullRequest.picked == 7 && self.app.pullRequest.detail?.summary.number == 7
+                }, "\(app.pullRequest.phase)")
+            app.pullRequest.unpick()
+            check("and lets go, back to the branch's own", await eventually(8) { self.app.pullRequest.phase == .none })
+        }
+
+        // A tab outside any repository leaves no error behind for the next.
+        let plain = scratch.appendingPathComponent("not-a-repo")
+        try? FileManager.default.createDirectory(at: plain, withIntermediateDirectories: true)
+        app.worktrees.setAnchor(plain)
+        _ = await eventually(5) { self.app.worktrees.worktrees.isEmpty }
+        check("outside a repository, no pull request error", app.worktrees.pullRequestError == nil, app.worktrees.pullRequestError ?? "")
+        app.worktrees.setAnchor(repo)
+        check("and the repository's list is back", await eventually(5) { self.app.worktrees.pullRequests["feat/pr"] != nil })
         GitHub.executableOverride = nil
     }
 
@@ -3238,7 +3261,7 @@ final class E2ERunner {
                 {"number": 5, "title": "Done", "headRefName": "done", "headRefOid": "\#(doneTip)", "state": "MERGED", "isDraft": False,
                  "url": "https://github.com/o/r/pull/5", "statusCheckRollup": []}]))
         elif args[:2] == ["pr", "view"]:
-            if args[2] != "feat/pr":
+            if args[2] not in ("feat/pr", "7"):
                 sys.stderr.write('no pull requests found for branch "%s"\n' % args[2])
                 sys.exit(1)
             comments = [{"id": "IC_1", "author": {"login": "rev"}, "body": "First look", "createdAt": "2026-09-20T09:00:00Z", "url": "https://c/1"}]

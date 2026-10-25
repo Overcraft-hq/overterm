@@ -19,6 +19,9 @@ final class PullRequestModel: ObservableObject {
 
     private(set) var root: URL?
     private(set) var branch: String?
+    /// A pull request picked in Overgit — not the checkout's branch's:
+    /// shown by its number until the tab's branch changes or it is let go.
+    @Published private(set) var picked: Int?
     /// Whether the pane is showing: nothing loads while it isn't.
     /// Showing it again asks again: comments and checks move meanwhile.
     var visible = false {
@@ -27,9 +30,32 @@ final class PullRequestModel: ObservableObject {
 
     /// The checkout and branch to show. A change resets and, if visible, loads.
     func show(root: URL?, branch: String?) {
-        guard root != self.root || branch != self.branch else { return }
+        // Compared resolved: /var and /private/var are one checkout, and
+        // taking them for two let go of a picked pull request at once.
+        let same = root?.resolvingSymlinksInPath().path == self.root?.resolvingSymlinksInPath().path
+        guard !same || branch != self.branch else { return }
         self.root = root
         self.branch = branch
+        picked = nil
+        reset()
+    }
+
+    /// Another pull request of the repository, by its number.
+    func show(number: Int, in root: URL) {
+        guard number != picked || root != self.root else { return }
+        self.root = root
+        picked = number
+        reset()
+    }
+
+    /// Back to the checkout's branch's own.
+    func unpick() {
+        guard picked != nil else { return }
+        picked = nil
+        reset()
+    }
+
+    private func reset() {
         detail = nil
         threads = []
         postError = nil
@@ -38,27 +64,29 @@ final class PullRequestModel: ObservableObject {
     }
 
     func refresh() async {
-        guard let root, let branch else {
+        let picked = self.picked
+        guard let root, let selector = picked.map(String.init) ?? branch else {
             phase = .none
             return
         }
+        let branch = self.branch
         phase = .loading
         do {
-            let data = try await GitHub.run(["pr", "view", branch, "--json", PullRequestDetail.viewFields], in: root)
+            let data = try await GitHub.run(["pr", "view", selector, "--json", PullRequestDetail.viewFields], in: root)
             let detail = try PullRequestDetail.parse(data)
             let comments = try await GitHub.run(
                 ["api", "repos/{owner}/{repo}/pulls/\(detail.summary.number)/comments", "--paginate"], in: root)
             let threads = try ReviewThread.parse(comments)
             // The tab may have moved on while gh ran.
-            guard root == self.root, branch == self.branch else { return }
+            guard root == self.root, branch == self.branch, picked == self.picked else { return }
             self.detail = detail
             self.threads = threads
             phase = .loaded
         } catch GitHub.Failure.failed(let message) where message == GitHub.message(for: "no pull requests found") {
-            guard root == self.root, branch == self.branch else { return }
+            guard root == self.root, branch == self.branch, picked == self.picked else { return }
             phase = .none
         } catch {
-            guard root == self.root, branch == self.branch else { return }
+            guard root == self.root, branch == self.branch, picked == self.picked else { return }
             phase = .failed(error.localizedDescription)
         }
     }

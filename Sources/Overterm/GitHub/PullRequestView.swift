@@ -17,6 +17,7 @@ struct PullRequestView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if model.picked != nil { pickedBar }
             Divider().opacity(0.4)
             switch model.phase {
             case .idle,
@@ -34,6 +35,23 @@ struct PullRequestView: View {
     }
 
     // MARK: Header
+
+    /// Picked in Overgit: not this checkout's branch's — said, with the way back.
+    private var pickedBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pin").font(.system(size: 10))
+            Text(verbatim: model.detail.map { "\($0.summary.branch)" } ?? "Picked in Overgit")
+                .font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 4)
+            Button(model.branch.map { "Show \($0)’s" } ?? "Show this branch’s") { model.unpick() }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(theme.accentText)
+        }
+        .foregroundStyle(theme.dimText)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+    }
 
     private var header: some View {
         HStack(spacing: 8) {
