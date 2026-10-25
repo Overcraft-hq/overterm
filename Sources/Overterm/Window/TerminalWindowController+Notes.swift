@@ -18,6 +18,12 @@ extension TerminalWindowController {
             changed?(url)
             self?.editorShows(url)
         }
+        spotlight.notes = { [weak self] in
+            guard let self, Settings.shared.notesEnabled else { return nil }
+            // ⌘F asks for the index: read now if no panel has yet.
+            self.notes.whenLoaded {}
+            return (self.notes.vault, self.notes.index)
+        }
         updateNotesVisibility()
     }
 

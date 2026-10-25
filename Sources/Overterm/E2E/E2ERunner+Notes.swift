@@ -111,6 +111,26 @@ extension E2ERunner {
         check("and embedded at the caret", editor.textView.string.contains("![[\(pasted.first ?? "?")]]"), editor.textView.string)
         board.releaseGlobally()
 
+        // ⌘F finds notes by name and by what they say.
+        if let terminal = app.store.selected?.terminal {
+            app.spotlight.open(root: nil, terminal: terminal, needle: "ship it")
+            let found = await eventually(5) {
+                app.spotlight.rows.contains {
+                    if case .note(let m) = $0 { return m.path == "Projects/Plan.md" && m.line > 0 }; return false
+                }
+            }
+            check("⌘F finds a note by a line in it", found, "\(app.spotlight.rows.map(\.id))")
+            app.spotlight.query = "Start"
+            check(
+                "and by its name",
+                await eventually(3) {
+                    app.spotlight.rows.contains {
+                        if case .note(let m) = $0 { return m.path == "Start.md" && m.line == 0 }; return false
+                    }
+                })
+            app.spotlight.close(keepTerminalSearch: false)
+        }
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

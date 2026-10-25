@@ -1401,6 +1401,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             guard let root = spotlight.root else { return }
             hideSpotlight(keepTerminalSearch: false)
             openInEditor(root.appendingPathComponent(match.path), line: match.line)
+        case .note(let match):
+            hideSpotlight(keepTerminalSearch: false)
+            openNote(notes.url(of: match.path), line: match.line > 0 ? match.line - 1 : nil)
         }
     }
 

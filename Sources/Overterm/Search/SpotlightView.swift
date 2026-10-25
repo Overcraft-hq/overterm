@@ -82,6 +82,13 @@ struct SpotlightView: View {
                 }
                 Spacer()
                 tag("In file")
+            case .note(let match):
+                icon("note.text")
+                title(
+                    ((match.path as NSString).lastPathComponent as NSString).deletingPathExtension,
+                    subtitle: match.line == 0 ? (match.path as NSString).deletingLastPathComponent : match.text)
+                Spacer()
+                tag("Note")
             }
         }
         .font(.system(size: 13))

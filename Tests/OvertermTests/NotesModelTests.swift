@@ -93,3 +93,19 @@ final class NoteAttachmentTests: XCTestCase {
             "![](../assets/Pasted%20image%201.png)")
     }
 }
+
+/// What notes say, searched: every word on a line, case and accents aside.
+final class NotesSearchTests: XCTestCase {
+    func testLinesWithEveryWord() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("search-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "intro\nShip the Café release\nship it\nthe release ships".write(to: dir.appendingPathComponent("A.md"), atomically: true, encoding: .utf8)
+        try "nothing here".write(to: dir.appendingPathComponent("B.md"), atomically: true, encoding: .utf8)
+        let found = NotesSearch.lines("cafe ship", in: NotesVault(root: dir), paths: ["A.md", "B.md"])
+        XCTAssertEqual(found.map(\.line), [2])
+        XCTAssertEqual(found.first?.text, "Ship the Café release")
+        XCTAssertEqual(NotesSearch.lines("release", in: NotesVault(root: dir), paths: ["A.md"], perNote: 5).map(\.line), [2, 4])
+        XCTAssertTrue(NotesSearch.lines("x", in: NotesVault(root: dir), paths: ["A.md"]).isEmpty)
+    }
+}

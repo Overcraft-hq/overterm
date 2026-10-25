@@ -2,7 +2,7 @@ import Combine
 import Foundation
 
 /// ⌘F: one query across the terminal's scrollback, the checkout's file
-/// names and its file contents.
+/// names and its file contents — and the notes vault's, when notes are on.
 @MainActor
 final class SpotlightModel: ObservableObject {
     enum Row: Identifiable, Equatable {
@@ -10,12 +10,15 @@ final class SpotlightModel: ObservableObject {
         case terminal(total: Int?)
         case file(String)
         case content(ContentMatch)
+        /// A note: line 0 for its name matching, else the line that does.
+        case note(ContentMatch)
 
         var id: String {
             switch self {
             case .terminal: "terminal"
             case .file(let path): "f:" + path
             case .content(let m): "c:\(m.path):\(m.line)"
+            case .note(let m): "n:\(m.path):\(m.line)"
             }
         }
     }
@@ -31,6 +34,9 @@ final class SpotlightModel: ObservableObject {
     private var files: [String] = []
     private var names: [String] = []
     private var contents: [ContentMatch] = []
+    private var noteRows: [ContentMatch] = []
+    /// The vault and its index, when notes are on (the window's).
+    var notes: (() -> (NotesVault, NotesIndex)?)?
     private var pending: Task<Void, Never>?
     private var totalSubscription: AnyCancellable?
 
@@ -41,6 +47,7 @@ final class SpotlightModel: ObservableObject {
         files = []
         names = []
         contents = []
+        noteRows = []
         // The terminal search runs behind the overlay (no bar), so matches
         // highlight as you type; its count feeds the first row.
         terminal.search.begin(needle: nil)
@@ -82,19 +89,34 @@ final class SpotlightModel: ObservableObject {
         let files = self.files
         let root = self.root
         if query.count < 2 { contents = [] }
+        let vault = notes?()
+        // Names now — the index has them; what notes say after the grep.
+        let noteNames = vault.map { _, index in
+            index.notes(matching: query, limit: 5).map { ContentMatch(path: $0, line: 0, text: "") }
+        }
+        noteRows = query.isEmpty ? [] : noteNames ?? []
         pending = Task { [weak self] in
             // Off the main thread: every file of the checkout, per keystroke.
             let ranked = await Task.detached(priority: .userInitiated) { CheckoutSearch.rank(files, query: query) }.value
             guard !Task.isCancelled, let self, self.query == query else { return }
             self.names = ranked
             self.rebuild()
-            guard let root, query.count >= 2 else { return }
+            guard query.count >= 2 else { return }
             try? await Task.sleep(nanoseconds: 150_000_000)  // settle typing
             guard !Task.isCancelled else { return }
-            let found = await CheckoutSearch.grep(query, in: root)
-            guard !Task.isCancelled, self.query == query else { return }
-            self.contents = found
-            self.rebuild()
+            if let root {
+                let found = await CheckoutSearch.grep(query, in: root)
+                guard !Task.isCancelled, self.query == query else { return }
+                self.contents = found
+                self.rebuild()
+            }
+            if let (vault, index) = vault {
+                let paths = index.notes(matching: "", limit: .max)
+                let lines = await Task.detached(priority: .userInitiated) { NotesSearch.lines(query, in: vault, paths: paths, limit: 12) }.value
+                guard !Task.isCancelled, self.query == query else { return }
+                self.noteRows = (noteNames ?? []) + lines
+                self.rebuild()
+            }
         }
     }
 
@@ -104,6 +126,7 @@ final class SpotlightModel: ObservableObject {
         if !query.isEmpty { rows.append(.terminal(total: terminal?.search.total)) }
         rows += names.map(Row.file)
         rows += contents.map(Row.content)
+        rows += noteRows.map(Row.note)
         self.rows = rows
         selectedIndex = rows.firstIndex { $0.id == before } ?? 0
     }
