@@ -147,6 +147,27 @@ extension TerminalWindowController {
         )
     }
 
+    // MARK: From the terminal
+
+    /// Terminal text at the end of today's note — in its buffer when the
+    /// note is open (an edit like any), else in the file. The note isn't
+    /// opened: the terminal keeps the keyboard.
+    func appendToTodaysNote(_ text: String, command: String?, folder: String?) {
+        guard Settings.shared.notesEnabled else { return }
+        do {
+            let url = try notes.dailyNote()
+            let entry = NoteAppend.entry(text, command: command, folder: folder, date: Date(), settings: notes.vault.settings)
+            if let editor, let buffer = editor.buffers.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+                editor.replaceText(of: buffer, with: NoteAppend.append(entry, to: buffer.storage.string))
+                return
+            }
+            try NoteFiles.write(NoteAppend.append(entry, to: try NoteFiles.read(url)), to: url)
+            notes.reload()
+        } catch {
+            reportNotesError(error)
+        }
+    }
+
     // MARK: Renaming, links and all
 
     /// Asks for a new name — a note's without `.md` — and renames it, the

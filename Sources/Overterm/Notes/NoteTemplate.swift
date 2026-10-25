@@ -92,3 +92,24 @@ enum NoteAttachments {
         return "![[\(resolver.linkText(for: path, from: source, format: settings.newLinkFormat))]]"
     }
 }
+
+/// Terminal text put into a note: under the time and the command it came
+/// from, fenced so it reads as it printed. Pure.
+enum NoteAppend {
+    static func entry(_ text: String, command: String?, folder: String?, date: Date, settings: ObsidianSettings) -> String {
+        var heading = "#### " + MomentFormat.string(from: date, format: settings.templateTimeFormat)
+        if let command, !command.isEmpty { heading += " — `\(command.replacingOccurrences(of: "`", with: "'"))`" }
+        if let folder, !folder.isEmpty { heading += " in \((folder as NSString).abbreviatingWithTildeInPath)" }
+        // A fence longer than any run of backticks in the text.
+        var fence = "```"
+        while text.contains(fence) { fence += "`" }
+        return "\(heading)\n\(fence)\n\(text.trimmingCharacters(in: .newlines))\n\(fence)\n"
+    }
+
+    /// `entry` after `existing`, a blank line between.
+    static func append(_ entry: String, to existing: String) -> String {
+        if existing.isEmpty { return entry }
+        let trimmed = existing.hasSuffix("\n") ? existing : existing + "\n"
+        return trimmed + (trimmed.hasSuffix("\n\n") ? "" : "\n") + entry
+    }
+}

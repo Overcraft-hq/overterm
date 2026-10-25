@@ -109,3 +109,17 @@ final class NotesSearchTests: XCTestCase {
         XCTAssertTrue(NotesSearch.lines("x", in: NotesVault(root: dir), paths: ["A.md"]).isEmpty)
     }
 }
+
+/// Terminal text in a note: under its time and command, fenced.
+final class NoteAppendTests: XCTestCase {
+    func testAnEntryIsFencedUnderItsCommand() throws {
+        var components = DateComponents()
+        (components.year, components.month, components.day, components.hour, components.minute) = (2026, 3, 7, 9, 5)
+        let date = try XCTUnwrap(Calendar.current.date(from: components))
+        let entry = NoteAppend.entry("a\n```inner```\n", command: "make `x`", folder: nil, date: date, settings: ObsidianSettings())
+        XCTAssertEqual(entry, "#### 09:05 — `make 'x'`\n````\na\n```inner```\n````\n")
+        XCTAssertEqual(NoteAppend.append("E\n", to: ""), "E\n")
+        XCTAssertEqual(NoteAppend.append("E\n", to: "# Day"), "# Day\n\nE\n")
+        XCTAssertEqual(NoteAppend.append("E\n", to: "# Day\n\n"), "# Day\n\nE\n")
+    }
+}

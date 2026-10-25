@@ -143,6 +143,12 @@ extension E2ERunner {
             app.spotlight.close(keepTerminalSearch: false)
         }
 
+        // Terminal output into today's note, under its command.
+        editor.filesRemoved(at: daily)
+        app.appendToTodaysNote("BUILD OK", command: "make app", folder: nil)
+        let todays = (try? String(contentsOf: daily, encoding: .utf8)) ?? ""
+        check("terminal text goes to today's note, fenced under its command", todays.contains("`make app`\n```\nBUILD OK\n```"), todays)
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

@@ -377,7 +377,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     ask: { [weak self] in self?.askAboutSelection(nil) },
                     copy: { [weak self] in self?.copySelection(asMarkdown: false) },
                     copyAsMarkdown: { [weak self] in self?.copySelection(asMarkdown: true) },
-                    search: { [weak self] in self?.searchTheWeb() })))
+                    search: { [weak self] in self?.searchTheWeb() },
+                    toNote: { [weak self] in self?.selectionToNote() })))
         selectionBar.translatesAutoresizingMaskIntoConstraints = true
         selectionBar.isHidden = true
         container.addSubview(selectionBar)
@@ -2344,6 +2345,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         hideSelectionBar()
     }
 
+    /// The selection into today's note, under the command it came from.
+    private func selectionToNote() {
+        guard let tab = store.selected, let text = tab.terminal.selectionText else { return }
+        hideSelectionBar()
+        appendToTodaysNote(text, command: blocks(of: tab.terminal).ledger.lastFinished?.command, folder: tab.terminal.workingDirectory)
+    }
+
+    /// The last command's output into today's note.
+    @objc func lastOutputToNote(_ sender: Any?) {
+        guard let pane = store.selected?.terminal, let block = blocks(of: pane).ledger.lastFinished,
+            let text = output(of: block, in: pane), !text.isEmpty
+        else { return NSSound.beep() }
+        appendToTodaysNote(text, command: block.command, folder: pane.workingDirectory)
+    }
+
     private func searchTheWeb() {
         guard let text = store.selected?.terminal.selectionText,
             let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2651,6 +2667,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.newNote", group: .action, title: "New Note", subtitle: nil, symbol: "square.and.pencil") {
                 [weak self] _, _ in self?.newNote(nil)
             },
+            PaletteItem(
+                id: "a.outputToNote", group: .action, title: "Last Command’s Output to Today’s Note", subtitle: nil, symbol: "text.append"
+            ) { [weak self] _, _ in self?.lastOutputToNote(nil) },
         ]
         // Obsidian's Insert template, while a note is open in the editor.
         if editor?.active?.isNote == true {

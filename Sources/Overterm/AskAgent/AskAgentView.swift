@@ -6,6 +6,8 @@ struct SelectionActions {
     var copy: () -> Void
     var copyAsMarkdown: () -> Void
     var search: () -> Void
+    /// Into today's note — nil while notes are off.
+    var toNote: (() -> Void)? = nil
 }
 
 /// The strip that appears over a selection: the four things you do with
@@ -37,6 +39,7 @@ struct SelectionBar: View {
             plain("Copy", actions.copy)
             plain("Copy as Markdown", actions.copyAsMarkdown)
             plain("Search the Web", actions.search)
+            if let toNote = actions.toNote, Settings.shared.notesEnabled { plain("To Note", toNote) }
         }
         .padding(4)
         .background(
