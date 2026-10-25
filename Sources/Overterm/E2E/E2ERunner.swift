@@ -23,6 +23,7 @@ final class E2ERunner {
         "editor": { await $0.editorScenario() },
         "api": { await $0.apiScenario() },
         "apiImport": { await $0.apiImportScenario() },
+        "notes": { await $0.notesScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },
@@ -72,7 +73,7 @@ final class E2ERunner {
         "throughput": { await $0.throughputScenario() },
     ]
 
-    private let app: TerminalWindowController
+    let app: TerminalWindowController
     private var failures = 0
     /// Scratch space for this run; removed at the end.
     private let scratch = FileManager.default.temporaryDirectory
@@ -106,7 +107,7 @@ final class E2ERunner {
         fflush(stdout)
     }
 
-    private func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
+    func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
         if !ok { failures += 1 }
         let suffix = ok ? "" : " — \(detail())"
         print("E2E \(ok ? "PASS" : "FAIL") \(name)\(suffix)")
@@ -115,7 +116,7 @@ final class E2ERunner {
 
     /// Polls until `condition` holds or `timeout` passes. Returns whether it held.
     @discardableResult
-    private func eventually(_ timeout: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
+    func eventually(_ timeout: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             if Date() > deadline { return false }
@@ -124,11 +125,11 @@ final class E2ERunner {
         return true
     }
 
-    private func pause(_ seconds: Double) async {
+    func pause(_ seconds: Double) async {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
-    private var window: NSWindow { app.window! }
+    var window: NSWindow { app.window! }
     private var terminal: TerminalView? { app.store.selected?.terminal }
 
     /// Waits for the selected tab's shell to be at a prompt (shell
@@ -236,7 +237,7 @@ final class E2ERunner {
         return texts
     }
 
-    private static func find<T: NSView>(_ type: T.Type, in view: NSView?, where match: (T) -> Bool) -> T? {
+    static func find<T: NSView>(_ type: T.Type, in view: NSView?, where match: (T) -> Bool) -> T? {
         guard let view else { return nil }
         if let hit = view as? T, match(hit) { return hit }
         for sub in view.subviews {
@@ -266,7 +267,7 @@ final class E2ERunner {
     }
 
     /// A shell-safe path for typing (the scratch path has no spaces).
-    private func out(_ name: String) -> URL { scratch.appendingPathComponent(name) }
+    func out(_ name: String) -> URL { scratch.appendingPathComponent(name) }
 
     /// What a scenario's scratch file holds, trimmed — the usual way a
     /// scenario checks that something reached a shell.

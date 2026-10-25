@@ -63,12 +63,21 @@ struct SessionActions {
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, git, sessions, snippets, api
+    case files, git, sessions, snippets, api, notes
 
     var id: String { rawValue }
 
-    /// The rail's icons: the API client's only while Settings has it on.
-    @MainActor static var shown: [SidebarPanel] { allCases.filter { $0 != .api || Settings.shared.apiEnabled } }
+    /// The rail's icons: the API client's and the notes' only while
+    /// Settings has them on.
+    @MainActor static var shown: [SidebarPanel] { allCases.filter(\.isEnabled) }
+
+    @MainActor var isEnabled: Bool {
+        switch self {
+        case .api: Settings.shared.apiEnabled
+        case .notes: Settings.shared.notesEnabled
+        default: true
+        }
+    }
 
     /// What the stored choice means. `worktrees` had an icon of its own
     /// until Overgit took it in; somebody who left the sidebar there finds
@@ -93,6 +102,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .sessions: "bubble.left.and.bubble.right"
         case .snippets: "curlybraces"
         case .api: "arrow.left.arrow.right"
+        case .notes: "note.text"
         }
     }
 
@@ -129,6 +139,7 @@ struct SidebarView: View {
     @ObservedObject var snippets: SnippetStore
     @ObservedObject var sessions: SessionsModel
     @ObservedObject var api: APIWorkspace
+    @ObservedObject var notes: NotesModel
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
@@ -139,6 +150,7 @@ struct SidebarView: View {
     let snippetActions: SnippetActions
     let sessionActions: SessionActions
     let apiActions: APIActions
+    let notesActions: NotesActions
     /// The gear at the foot of the rail.
     let onSettings: () -> Void
     let onClose: () -> Void
@@ -158,6 +170,7 @@ struct SidebarView: View {
                         model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
                 case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
                 case .api: APIPanelView(workspace: api, group: group, theme: theme, actions: apiActions)
+                case .notes: NotesPanelView(model: notes, theme: theme, actions: notesActions)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

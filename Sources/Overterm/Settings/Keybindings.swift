@@ -296,6 +296,8 @@ enum KeyCommands {
         .init("sidebar.toggle", "Toggle Sidebar", group: "Panels", key: "cmd+b"),
         .init("overgit.show", "Overgit", group: "Panels", key: "alt+cmd+g"),
         .init("api.show", "API Client", group: "Panels", key: "alt+cmd+r"),
+        .init("notes.show", "Notes", group: "Panels", key: "alt+cmd+n"),
+        .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
         .init("browser.toggle", "Browser", group: "Panels", key: "shift+cmd+b"),
         .init("usage.show", "Usage", group: "Panels", key: "alt+cmd+u"),

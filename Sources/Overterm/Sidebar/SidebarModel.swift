@@ -20,7 +20,7 @@ final class SidebarModel: ObservableObject {
 
     init() {
         let stored = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
-        // Left on the API panel, then switched off in Settings: Files.
-        panel = stored == .api && !Settings.shared.apiEnabled ? .files : stored
+        // Left on the API panel or the notes, then switched off in Settings: Files.
+        panel = stored.isEnabled ? stored : .files
     }
 }

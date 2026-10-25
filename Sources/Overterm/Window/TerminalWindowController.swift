@@ -284,6 +284,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 snippets: snippets,
                 sessions: sessions,
                 api: apiWorkspace,
+                notes: NotesModel.shared,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -338,6 +339,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     rename: { [weak self] item, name in try self?.renameAPIItem(item, to: name) ?? item.url },
                     trash: { [weak self] item in self?.trashItem(item.url) }
                 ),
+                notesActions: notesActions,
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -565,6 +567,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         wireBrowser()
         wireOvergit()
         wireAPI()
+        wireNotes()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -2635,6 +2638,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 id: "a.api", group: .action, title: "API Client",
                 subtitle: "The checkout’s Bruno collection: send requests, run their tests  ⌥⌘R", symbol: "arrow.left.arrow.right"
             ) { [weak self] _, _ in self?.showAPIClient(nil) },
+            PaletteItem(
+                id: "a.notes", group: .action, title: "Notes",
+                subtitle: "The vault: Markdown notes, Obsidian’s and iCloud’s  ⌥⌘N", symbol: "note.text"
+            ) { [weak self] _, _ in self?.showNotes(nil) },
+            PaletteItem(id: "a.dailyNote", group: .action, title: "Today’s Note", subtitle: nil, symbol: "calendar") {
+                [weak self] _, _ in self?.openDailyNote(nil)
+            },
+            PaletteItem(id: "a.newNote", group: .action, title: "New Note", subtitle: nil, symbol: "square.and.pencil") {
+                [weak self] _, _ in self?.newNote(nil)
+            },
             PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
                 [weak self] _, _ in self?.toggleDiff(nil)
             },
@@ -2788,7 +2801,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     /// Types the path into the selected terminal, shell-quoted, with a
     /// trailing space so the next word can follow.
-    private func insertPath(_ url: URL) {
+    func insertPath(_ url: URL) {
         guard let terminal = store.selected?.terminal else { return }
         terminal.insertText(Self.shellQuoted(relativePath(url)) + " ")
         focusSelectedTerminal()
@@ -2878,6 +2891,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
                 if keys.contains(where: { $0.hasPrefix("browser.") }) { self.browserSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
@@ -3200,6 +3214,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         // Overgit reads git only while it is on screen; the API panel the disk.
         updateOvergitVisibility()
         updateAPIVisibility()
+        updateNotesVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).
@@ -3263,6 +3278,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
+        NotesModel.shared.setVisible(false, for: self)
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }
@@ -3285,6 +3301,13 @@ extension TerminalWindowController: NSMenuItemValidation {
         if menuItem.action == #selector(showAPIClient(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .api ? .on : .off
             return Settings.shared.apiEnabled
+        }
+        if menuItem.action == #selector(showNotes(_:)) {
+            menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .notes ? .on : .off
+            return Settings.shared.notesEnabled
+        }
+        if menuItem.action == #selector(openDailyNote(_:)) || menuItem.action == #selector(newNote(_:)) {
+            return Settings.shared.notesEnabled
         }
         if menuItem.action == #selector(toggleTabPeek(_:)) {
             menuItem.state = peek.isOpen ? .on : .off

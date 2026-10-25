@@ -18,6 +18,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var workspaceRoot: (() -> URL?)?
     /// The window's API client: a `.bru` request opens as one, sent through it.
     var apiWorkspace: APIWorkspace?
+    /// The file showing changed (another tab, a rename, the last one closed):
+    /// the notes panel highlights it.
+    var onActiveChanged: ((URL?) -> Void)?
 
     let chrome: ChromeTheme
     private(set) var theme: EditorTheme
@@ -764,6 +767,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             buffers.map { .init(name: $0.name, path: $0.url?.path ?? "", dirty: $0.document.isDirty) }, active: activeIndex)
         updateBreadcrumb()
         updateStatus()
+        onActiveChanged?(active?.url)
     }
 
     func updateBreadcrumb() {

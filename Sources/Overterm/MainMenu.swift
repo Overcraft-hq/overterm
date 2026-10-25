@@ -100,6 +100,8 @@ enum MainMenu {
         // Ticked while the sidebar is on it.
         command(viewMenu, "Overgit", #selector(TerminalWindowController.showOvergit(_:)), "overgit.show")
         command(viewMenu, "API Client", #selector(TerminalWindowController.showAPIClient(_:)), "api.show")
+        command(viewMenu, "Notes", #selector(TerminalWindowController.showNotes(_:)), "notes.show")
+        command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
         // Ticked while the column shows; off with Settings ▸ Browser.

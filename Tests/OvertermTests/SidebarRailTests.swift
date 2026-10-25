@@ -7,22 +7,25 @@ import XCTest
 @MainActor
 final class SidebarRailTests: XCTestCase {
     /// Files first, then the three that are about what is running, then the
-    /// API client — the order the rail draws and the order somebody reaches
-    /// for them in.
+    /// API client and the notes — the order the rail draws and the order
+    /// somebody reaches for them in.
     func testThePanelsInOrder() {
-        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api])
+        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes])
         XCTAssertEqual(SidebarPanel.files.title, "Files")
         XCTAssertEqual(SidebarPanel.git.title, "Overgit")
         XCTAssertEqual(SidebarPanel.api.title, "API")
+        XCTAssertEqual(SidebarPanel.notes.title, "Notes")
     }
 
-    /// The API client's icon is there only while Settings has it on.
-    func testTheAPIPanelFollowsItsSetting() {
+    /// The API client's and the notes' icons are there only while Settings
+    /// has them on.
+    func testThePanelsThatFollowTheirSettings() {
         XCTAssertEqual(SidebarPanel.shown.contains(.api), Settings.shared.apiEnabled)
-        XCTAssertEqual(SidebarPanel.shown.filter { $0 != .api }, [.files, .git, .sessions, .snippets])
+        XCTAssertEqual(SidebarPanel.shown.contains(.notes), Settings.shared.notesEnabled)
+        XCTAssertEqual(SidebarPanel.shown.filter { $0 != .api && $0 != .notes }, [.files, .git, .sessions, .snippets])
     }
 
-    /// Four glyphs that can't be mistaken for each other — the whole point
+    /// Glyphs that can't be mistaken for each other — the whole point
     /// of a rail is telling them apart at 15 pt.
     func testEveryPanelHasItsOwnGlyph() {
         let symbols = SidebarPanel.allCases.map(\.symbol)

@@ -237,8 +237,8 @@ struct NotesIndex: Sendable {
 
     /// Reads the vault: the notes whose modification date `previous` already
     /// has are kept, the others read and parsed. Runs off the main thread.
-    nonisolated static func build(_ vault: NotesVault, previous: NotesIndex = NotesIndex()) -> NotesIndex {
-        let tree = NoteFiles.tree(of: vault)
+    nonisolated static func build(_ vault: NotesVault, tree: NoteItem? = nil, previous: NotesIndex = NotesIndex()) -> NotesIndex {
+        let tree = tree ?? NoteFiles.tree(of: vault)
         var notes: [String: Entry] = [:]
         var files: [String] = []
         for item in tree.allFiles {
