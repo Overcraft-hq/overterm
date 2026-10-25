@@ -123,6 +123,8 @@ extension TerminalWindowController {
     }
 
     func notesSettingsChanged() {
+        // Agents' notes tools come and go with the setting.
+        BrowserBridge.shared.update()
         if !Settings.shared.notesEnabled, sidebarPanel.panel == .notes { sidebarPanel.panel = .files }
         // The rail lists its icons from the setting: drawn again.
         sidebarPanel.objectWillChange.send()

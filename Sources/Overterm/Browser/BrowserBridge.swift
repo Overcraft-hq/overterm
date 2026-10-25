@@ -20,7 +20,7 @@ final class BrowserBridge {
     var resolveAPI: ((String) -> AgentAPI?)?
 
     /// Agents get the browser, the API client, or both.
-    private var wanted: Bool { Settings.shared.browserAgentControl || Settings.shared.apiAgentControl }
+    private var wanted: Bool { Settings.shared.browserAgentControl || Settings.shared.apiAgentControl || Settings.shared.notesAgentAccess }
 
     private var server: BridgeServer?
     private(set) var port: UInt16?

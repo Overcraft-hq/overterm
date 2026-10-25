@@ -57,6 +57,18 @@ enum BrowserMCP {
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
+            if name.hasPrefix("notes_") {
+                guard Settings.shared.notesAgentAccess else {
+                    return reply(errorResult("The notes aren't available to agents — Settings ▸ Notes."))
+                }
+                do {
+                    return reply(try await NotesMCP.call(name, arguments, notes: NotesModel.shared))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(error.localizedDescription))
+                }
+            }
             if name.hasPrefix("api_") {
                 guard Settings.shared.apiAgentControl, let api = api() else {
                     return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
@@ -149,9 +161,10 @@ enum BrowserMCP {
         }
     }
 
-    /// The tools of what Settings gives agents: the browser's, the API client's.
+    /// The tools of what Settings gives agents: the browser's, the API client's, the notes'.
     static var offered: [[String: Any]] {
         (Settings.shared.browserAgentControl ? tools : []) + (Settings.shared.apiAgentControl ? APIMCP.tools : [])
+            + (Settings.shared.notesAgentAccess ? NotesMCP.tools : [])
     }
 
     static var instructions: String {
@@ -164,6 +177,11 @@ enum BrowserMCP {
         if Settings.shared.apiAgentControl {
             parts.append(
                 "The API client of your checkout's Bruno collection: api_collections lists its requests, api_send runs one with its tests, api_request sends a one-off, api_run runs the collection — use it to check an endpoint you changed."
+            )
+        }
+        if Settings.shared.notesAgentAccess {
+            parts.append(
+                "The user's notes (an Obsidian vault): notes_search finds notes by name, #tag or what they say, notes_read reads one with its links — for context the user keeps there. Read-only."
             )
         }
         return parts.joined(separator: " ")
