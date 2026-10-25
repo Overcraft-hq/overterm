@@ -189,6 +189,20 @@ actor S3Client: StorageClient {
             etag: response.value(forHTTPHeaderField: "ETag")?.trimmingCharacters(in: CharacterSet(charactersIn: "\"")))
     }
 
+    func download(bucket: String, key: String, to destination: URL) async throws {
+        guard let url = url(bucket: bucket, key: key) else { throw DatabaseError.failed("The endpoint isn't a valid address.") }
+        var request = URLRequest(url: url)
+        for (name, value) in try signer().sign(method: "GET", url: url, headers: [:], payloadHash: S3Signer.sha256(Data()), date: Date()) {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        let (file, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw Self.failure((try? Data(contentsOf: file)) ?? Data(), (response as? HTTPURLResponse) ?? HTTPURLResponse())
+        }
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: file, to: destination)
+    }
+
     func upload(bucket: String, key: String, file: URL, contentType: String?, progress report: @escaping @Sendable (Double) -> Void) async throws {
         guard let url = url(bucket: bucket, key: key) else { throw DatabaseError.failed("The endpoint isn't a valid address.") }
         // The file's hash, read in pieces: a large file isn't held in memory.

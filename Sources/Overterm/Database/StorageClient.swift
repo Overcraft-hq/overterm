@@ -40,6 +40,8 @@ protocol StorageClient: Actor {
     func keys(bucket: String, prefix: String) async throws -> [String]
     func read(bucket: String, key: String, range: ClosedRange<Int64>?) async throws -> Data
     func head(bucket: String, key: String) async throws -> StorageMetadata
+    /// The whole file to `destination`, through a file on disk — never in memory.
+    func download(bucket: String, key: String, to destination: URL) async throws
     func upload(bucket: String, key: String, file: URL, contentType: String?, progress: @escaping @Sendable (Double) -> Void) async throws
     func put(bucket: String, key: String, data: Data, contentType: String?) async throws
     func delete(bucket: String, keys: [String]) async throws

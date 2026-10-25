@@ -25,6 +25,7 @@ final class E2ERunner {
         "apiImport": { await $0.apiImportScenario() },
         "notes": { await $0.notesScenario() },
         "database": { await $0.databaseScenario() },
+        "storage": { await $0.storageScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },

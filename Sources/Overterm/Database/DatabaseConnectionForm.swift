@@ -29,11 +29,15 @@ struct DatabaseConnectionForm: View {
                 }
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
+                    if kind == .s3 { connection.apply(connection.provider) }
+                    if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
                 }
                 switch connection.kind {
                 case .sqlite: sqliteFields
                 case .bigquery: bigQueryFields
+                case .s3: s3Fields
+                case .gcs: gcsFields
                 default: serverFields
                 }
                 Toggle("Read-only — refuse anything that writes", isOn: $connection.readOnly)
@@ -79,10 +83,60 @@ struct DatabaseConnectionForm: View {
         }
     }
 
+    // MARK: Storage
+
+    @ViewBuilder private var s3Fields: some View {
+        Picker("Provider", selection: $connection.provider) {
+            ForEach(StorageProvider.allCases) { Text($0.title).tag($0) }
+        }
+        .onChange(of: connection.provider) { provider in connection.apply(provider) }
+        TextField("Region", text: $connection.location)
+            .onChange(of: connection.location) { region in
+                // A region names the endpoint for these.
+                if [.aws, .digitalocean, .backblaze, .wasabi].contains(connection.provider) {
+                    connection.host = connection.provider.endpoint(region: region)
+                }
+            }
+        TextField(connection.provider == .r2 ? "Endpoint (your account's id in place of ACCOUNT_ID)" : "Endpoint", text: $connection.host)
+        TextField(
+            "Port (optional)",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        Toggle(
+            "HTTPS",
+            isOn: Binding(get: { connection.sslMode != .disable }, set: { connection.sslMode = $0 ? .require : .disable }))
+        Toggle("Bucket name in the path (path-style — MinIO and most self-hosted)", isOn: $connection.pathStyle)
+        let profiles = AWSProfile.names()
+        if !profiles.isEmpty {
+            Picker("Credentials", selection: $connection.awsProfile) {
+                Text("Access key").tag("")
+                ForEach(profiles, id: \.self) { Text("AWS profile: \($0)").tag($0) }
+            }
+        }
+        if connection.awsProfile.isEmpty {
+            TextField("Access key ID", text: $connection.user)
+            SecureField(hasSavedPassword ? "Secret access key (saved — empty keeps it)" : "Secret access key", text: $password)
+        }
+        TextField("Bucket (optional — when the key may list only it)", text: $connection.database)
+    }
+
+    @ViewBuilder private var gcsFields: some View {
+        TextField("Project", text: $connection.project)
+        TextField("Bucket (optional)", text: $connection.database)
+        TextField("Location for new buckets (optional — US, EU, europe-west1…)", text: $connection.location)
+        googleSignIn
+    }
+
     @ViewBuilder private var bigQueryFields: some View {
         TextField("Project", text: $connection.project)
         TextField("Default dataset (optional)", text: $connection.database)
         TextField("Location (optional — US, EU, europe-west1…)", text: $connection.location)
+        googleSignIn
+    }
+
+    /// A service account's key, or gcloud on this Mac — BigQuery's and GCS's.
+    @ViewBuilder private var googleSignIn: some View {
         Picker("Sign in with", selection: $connection.bigQueryAuth) {
             ForEach(BigQueryAuth.allCases) { Text($0.title).tag($0) }
         }
@@ -139,13 +193,20 @@ struct DatabaseConnectionForm: View {
         let password = effectivePassword
         let key = effectiveKey
         Task { @MainActor in
-            let driver = DatabaseDrivers.make(connection, password: password, serviceAccount: key)
             do {
                 let started = Date()
-                try await driver.connect()
-                let schemas = (try? await driver.schemas())?.count ?? 0
-                await driver.close()
-                tested = .success("Connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) schema\(schemas == 1 ? "" : "s")")
+                if connection.kind.isStorage {
+                    let client = StorageClients.make(connection, secret: password, serviceAccount: key)
+                    try await client.connect()
+                    let buckets = (try? await client.buckets())?.count ?? 0
+                    tested = .success("Connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(buckets) bucket\(buckets == 1 ? "" : "s")")
+                } else {
+                    let driver = DatabaseDrivers.make(connection, password: password, serviceAccount: key)
+                    try await driver.connect()
+                    let schemas = (try? await driver.schemas())?.count ?? 0
+                    await driver.close()
+                    tested = .success("Connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) schema\(schemas == 1 ? "" : "s")")
+                }
             } catch {
                 tested = .failure(error)
             }

@@ -134,6 +134,20 @@ actor GCSClient: StorageClient {
             etag: json["etag"] as? String)
     }
 
+    func download(bucket: String, key: String, to destination: URL) async throws {
+        guard let url = URL(string: "\(Self.api)/b/\(Self.encode(bucket))/o/\(Self.encode(key))?alt=media") else {
+            throw DatabaseError.failed("Not a valid bucket or name.")
+        }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(try await accessToken())", forHTTPHeaderField: "Authorization")
+        let (file, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw Self.failure((try? Data(contentsOf: file)) ?? Data(), (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: file, to: destination)
+    }
+
     func upload(bucket: String, key: String, file: URL, contentType: String?, progress report: @escaping @Sendable (Double) -> Void) async throws {
         guard
             let url = URL(

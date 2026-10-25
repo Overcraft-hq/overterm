@@ -136,6 +136,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let commitDetail = CommitDetailModel()
     /// Two branches, tags or commits compared (Overgit ▸ Compare).
     let compare = CompareModel()
+    /// A stored file opened from the Database panel.
+    let storageObject = StorageObjectModel()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -518,6 +520,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path))
                     }),
+                object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
@@ -3284,6 +3287,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         usage.visible = shown && rightPane.mode == .usage
         commitDetail.visible = shown && rightPane.mode == .commit
         compare.visible = shown && rightPane.mode == .compare
+        storageObject.visible = shown && rightPane.mode == .object
     }
 
     @objc func toggleFileTree(_ sender: Any?) {

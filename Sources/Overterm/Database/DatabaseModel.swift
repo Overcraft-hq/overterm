@@ -149,6 +149,8 @@ final class DatabaseModel: ObservableObject {
     let store: DatabaseStore
     // Not published: a session is made the first time the panel draws its row.
     private(set) var sessions: [UUID: DatabaseSession] = [:]
+    /// Storage connections' sessions, as `sessions` for the databases.
+    var storageSessions: [UUID: StorageSession] = [:]
     /// Open folders of the tree: connection ids, `id/schema`, `id/schema/table`.
     @Published var expanded: Set<String> = []
     @Published var filter = ""
@@ -182,6 +184,8 @@ final class DatabaseModel: ObservableObject {
     }
 
     func disconnect(_ connection: DatabaseConnection) {
+        if let storage = storageSessions.removeValue(forKey: connection.id) { storage.close() }
+        expanded = expanded.filter { !$0.hasPrefix(connection.id.uuidString) }
         guard let session = sessions[connection.id] else { return }
         Task { await session.close() }
         expanded = expanded.filter { !$0.hasPrefix(connection.id.uuidString) }
