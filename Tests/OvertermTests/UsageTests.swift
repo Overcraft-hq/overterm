@@ -290,6 +290,9 @@ final class UsageOnThisMacTests: XCTestCase {
         try XCTSkipUnless(FileManager.default.fileExists(atPath: file.path), "no ~/.claude.json")
         let data = try Data(contentsOf: file)
         let root = try XCTUnwrap((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
+        // Written only once Claude Code has asked: a config folder that
+        // never ran /usage has none, which says nothing about the format.
+        try XCTSkipUnless(root["cachedUsageUtilization"] != nil, "no usage cached in \(file.path) yet — `claude -p /usage` once")
         let cached = try XCTUnwrap(root["cachedUsageUtilization"] as? [String: Any], "the key Claude Code caches limits in")
         let meters = ClaudeUsageSource.windows(in: cached["utilization"] as? [String: Any] ?? [:])
         XCTAssertFalse(meters.isEmpty, "a window with a percentage in it")

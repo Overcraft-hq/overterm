@@ -32,7 +32,8 @@ enum AgentUsageCommand {
         if let found { return found }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let known = [
-            "\(home)/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.bun/bin/claude",
+            // ~/.local/bin is the native installer's.
+            "\(home)/.local/bin/claude", "\(home)/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.bun/bin/claude",
         ]
         if let path = known.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
             found = URL(fileURLWithPath: path)
