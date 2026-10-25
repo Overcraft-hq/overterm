@@ -59,3 +59,36 @@ final class SQLTextTests: XCTestCase {
         XCTAssertEqual(SQLText.tables(in: "update `shop`.`orders` set x = 1").first?.schema, "shop")
     }
 }
+
+final class AgentSQLTests: XCTestCase {
+    func testAnAgentsReadsAreJudgedStrictly() {
+        XCTAssertTrue(SQLText.agentReads("SELECT * FROM users WHERE name = 'DELETE me'"))
+        XCTAssertTrue(SQLText.agentReads("WITH t AS (SELECT 1) SELECT * FROM t"))
+        XCTAssertTrue(SQLText.agentReads("-- a comment saying UPDATE\nSELECT 1"))
+        XCTAssertFalse(SQLText.agentReads("WITH gone AS (DELETE FROM users RETURNING id) SELECT * FROM gone"))
+        XCTAssertFalse(SQLText.agentReads("SELECT * INTO backup FROM users"))
+        XCTAssertFalse(SQLText.agentReads("UPDATE users SET name = 'x'"))
+        XCTAssertFalse(SQLText.agentReads("EXPLAIN ANALYZE DELETE FROM users"))
+    }
+}
+
+@MainActor
+final class DatabaseMCPTests: XCTestCase {
+    func testAResultIsAMarkdownTableThatSaysWhenThereIsMore() {
+        let result = QueryResult(columns: ["id", "name"], types: ["int", "text"], rows: [["1", "Ada"], ["2", nil]], truncated: true)
+        let text = DatabaseMCP.report(result)
+        XCTAssertTrue(text.contains("| id | name |"), text)
+        XCTAssertTrue(text.contains("2 rows — there are more"), text)
+        XCTAssertEqual(DatabaseMCP.report(QueryResult(affected: 3)), "3 rows affected.")
+    }
+
+    func testConnectionsAreDescribedWithoutTheirSecrets() {
+        var connection = DatabaseConnection(name: "Prod", kind: .postgres)
+        connection.host = "db.example.com"
+        connection.user = "app"
+        connection.database = "shop"
+        connection.readOnly = true
+        let text = DatabaseMCP.describe([connection], storage: false)
+        XCTAssertEqual(text, "- Prod: PostgreSQL, shop (read-only)")
+    }
+}

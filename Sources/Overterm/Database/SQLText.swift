@@ -261,3 +261,19 @@ enum SQLText {
         "COALESCE", "CAST", "NOW()", "CURRENT_DATE", "ASC", "DESC", "TRUE", "FALSE", "EXPLAIN", "DESCRIBE", "SHOW TABLES",
     ]
 }
+
+extension SQLText {
+    /// Whether an agent's statement only reads, judged more strictly than
+    /// a person's: a WITH that hides an INSERT, UPDATE, DELETE or MERGE,
+    /// and SELECT … INTO (a new table, in PostgreSQL), write. Text can't
+    /// see what a function does — a read-only connection is the database's
+    /// own guarantee.
+    static func agentReads(_ statement: String) -> Bool {
+        guard onlyReads(statement) else { return false }
+        let upper = stripped(statement).uppercased()
+        let writes = #"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|CALL)\b"#
+        if upper.range(of: writes, options: .regularExpression) != nil { return false }
+        if verb(of: statement) == "SELECT", upper.range(of: #"\bINTO\b"#, options: .regularExpression) != nil { return false }
+        return true
+    }
+}

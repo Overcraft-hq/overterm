@@ -147,6 +147,11 @@ folders, preview a file (CSV as rows, JSON and logs as text, images, PDFs),
 drop files and folders from Finder to upload them, download, delete, copy a
 link that works for an hour.
 
+Claude Code started in Overterm can use them too, through MCP: list your
+connections, read a schema, run a query that reads, browse a bucket and
+read a file — never seeing a password. A write is shown to you first, and
+only if you allow agents to ask (Settings ▸ Database).
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

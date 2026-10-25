@@ -69,6 +69,18 @@ enum BrowserMCP {
                     return reply(errorResult(error.localizedDescription))
                 }
             }
+            if name.hasPrefix("db_") || name.hasPrefix("storage_") {
+                guard Settings.shared.databaseAgentAccess else {
+                    return reply(errorResult("The databases aren't available to agents — Settings ▸ Database."))
+                }
+                do {
+                    return reply(try await DatabaseMCP.call(name, arguments, model: DatabaseModel.shared))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(error.localizedDescription))
+                }
+            }
             if name.hasPrefix("api_") {
                 guard Settings.shared.apiAgentControl, let api = api() else {
                     return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
@@ -164,7 +176,7 @@ enum BrowserMCP {
     /// The tools of what Settings gives agents: the browser's, the API client's, the notes'.
     static var offered: [[String: Any]] {
         (Settings.shared.browserAgentControl ? tools : []) + (Settings.shared.apiAgentControl ? APIMCP.tools : [])
-            + (Settings.shared.notesAgentAccess ? NotesMCP.tools : [])
+            + (Settings.shared.notesAgentAccess ? NotesMCP.tools : []) + (Settings.shared.databaseAgentAccess ? DatabaseMCP.tools : [])
     }
 
     static var instructions: String {
@@ -182,6 +194,11 @@ enum BrowserMCP {
         if Settings.shared.notesAgentAccess {
             parts.append(
                 "The user's notes (an Obsidian vault): notes_search finds notes by name, #tag or what they say, notes_read reads one with its links — for context the user keeps there. Read-only."
+            )
+        }
+        if Settings.shared.databaseAgentAccess {
+            parts.append(
+                "The user's databases and buckets (Overterm's Database panel): db_connections and db_schema show what is there, db_query runs one statement and returns rows — reads; storage_list and storage_read browse S3/GCS. Check real data instead of guessing a schema."
             )
         }
         return parts.joined(separator: " ")

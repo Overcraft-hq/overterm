@@ -1110,6 +1110,21 @@ destroying statement are there too).
   SQLite always; BigQuery's signing and answers offline. The `database`
   scenario runs the panel and a console on SQLite.
 
+### Agents (DatabaseMCP)
+
+On the MCP server the browser's tools are on (BrowserBridge), with
+`database.agentAccess`: `db_connections`, `db_schema`, `db_query`,
+`storage_connections`, `storage_list`, `storage_read`. Connections are
+named, never their secrets. `db_query` takes one statement and reads only:
+`SQLText.agentReads` is stricter than a person's check — a WITH hiding a
+write, `SELECT … INTO` and `EXPLAIN ANALYZE` of a write all count as
+writes. Text can't see what a function does; a read-only connection is the
+database's own guarantee. With `database.agentWrites`, a write is put to
+the user in the window (`DatabaseMCP.allow`) and runs only on yes; a
+read-only connection refuses it anyway. What an agent runs goes into the
+history like anything else. Storage is read-only for agents. The
+`databaseAgent` scenario drives it through `BrowserMCP.handle`.
+
 ### Storage
 
 S3 and GCS are connections in the same panel (`DatabaseKind.s3`, `.gcs`),

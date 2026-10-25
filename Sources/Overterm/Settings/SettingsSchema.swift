@@ -414,6 +414,15 @@ enum SettingsSchema {
             key: "database.confirmDestructive", section: .database, group: "Queries", title: "Ask before a statement that destroys",
             help: "DROP, TRUNCATE, and an UPDATE or DELETE without WHERE are asked about before they are sent.",
             kind: .toggle, defaultValue: .bool(true), requires: "database.enabled"),
+        SettingSpec(
+            key: "database.agentAccess", section: .database, group: "Agents", title: "Agents can read the databases and buckets",
+            help:
+                "Claude Code started from Overterm gets MCP tools to list your connections, read a schema, run a query that reads, and browse a bucket and read a file in it. Never a password or a key.",
+            kind: .toggle, defaultValue: .bool(true), requires: "database.enabled"),
+        SettingSpec(
+            key: "database.agentWrites", section: .database, group: "Agents", title: "Agents can ask to write",
+            help: "A statement that writes is shown to you in the window, and runs only if you say so. Read-only connections refuse it anyway.",
+            kind: .toggle, defaultValue: .bool(false), requires: "database.agentAccess"),
     ]
 
     private static let notifications: [SettingSpec] = [
