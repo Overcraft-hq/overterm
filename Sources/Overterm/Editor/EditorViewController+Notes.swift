@@ -203,3 +203,52 @@ extension EditorViewController {
             selecting: [NSRange(location: anchor + (insert as NSString).length, length: 0)])
     }
 }
+
+// MARK: Pasting images
+
+extension EditorViewController {
+    /// An image on the pasteboard — a screenshot, or image files copied in
+    /// Finder — saved where the vault keeps attachments and embedded at the
+    /// caret. False for anything else, which pastes as text.
+    func pasteIntoNote(from pasteboard: NSPasteboard) -> Bool {
+        guard let buffer = active, let url = buffer.url else { return false }
+        let notes = self.notes
+        let folder = notes.vault.folderForAttachment(of: url)
+        var saved: [URL] = []
+        let images = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? [])
+            .filter { NoteItem.Kind($0) == .image || NoteItem.Kind($0) == .pdf }
+        do {
+            if !images.isEmpty {
+                for file in images {
+                    let name = file.deletingPathExtension().lastPathComponent
+                    let target = NotesVault.freeName(name, extension: file.pathExtension, in: folder)
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: file, to: target)
+                    saved.append(target)
+                }
+            } else if let data = pasteboard.data(forType: .png)
+                ?? pasteboard.data(forType: .tiff).flatMap({ NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) })
+            {
+                let name = (NoteAttachments.pastedName(at: Date()) as NSString).deletingPathExtension
+                let target = NotesVault.freeName(name, extension: "png", in: folder)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try data.write(to: target)
+                saved.append(target)
+            } else {
+                return false
+            }
+        } catch {
+            NSSound.beep()
+            return true
+        }
+        // The index learns the files now, so the embeds name them shortest.
+        var files = notes.index.resolver.files
+        files += saved.map { notes.path(of: $0) }
+        let resolver = LinkResolver(files: files)
+        let source = notes.path(of: url)
+        let embeds = saved.map { NoteAttachments.embed(notes.path(of: $0), from: source, resolver: resolver, settings: notes.vault.settings) }
+        textView.insertText(embeds.joined(separator: "\n"), replacementRange: textView.selectedRange())
+        notes.reload()
+        return true
+    }
+}

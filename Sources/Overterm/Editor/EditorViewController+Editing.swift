@@ -191,6 +191,11 @@ extension EditorViewController: CodeTextViewHost {
         return true
     }
 
+    func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool {
+        guard let buffer = active, buffer.isNote else { return false }
+        return pasteIntoNote(from: pasteboard)
+    }
+
     func codeTextView(_ view: CodeTextView, hoverAt index: Int?) {
         guard let index else { return }
         showHover(at: index, fromKeyboard: false)

@@ -96,6 +96,21 @@ extension E2ERunner {
         check("# offers the vault's tags", tags == ["work"], "\(tags)")
         editor.dismissCompletion()
 
+        // An image pasted lands where the vault keeps attachments, embedded.
+        let board = NSPasteboard(name: NSPasteboard.Name("overterm-e2e-\(UUID().uuidString)"))
+        board.clearContents()
+        let image = NSImage(size: NSSize(width: 4, height: 4))
+        image.lockFocus()
+        NSColor.red.setFill()
+        NSRect(x: 0, y: 0, width: 4, height: 4).fill()
+        image.unlockFocus()
+        board.setData(image.tiffRepresentation, forType: .tiff)
+        check("an image pastes into a note", editor.pasteIntoNote(from: board))
+        let pasted = (try? FileManager.default.contentsOfDirectory(atPath: root.path))?.filter { $0.hasPrefix("Pasted image ") } ?? []
+        check("saved as Obsidian names it", pasted.count == 1 && pasted[0].hasSuffix(".png"), "\(pasted)")
+        check("and embedded at the caret", editor.textView.string.contains("![[\(pasted.first ?? "?")]]"), editor.textView.string)
+        board.releaseGlobally()
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

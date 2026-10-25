@@ -68,3 +68,27 @@ extension NotesVault {
         return candidate
     }
 }
+
+/// Files put into the vault from a note — a pasted image, a file dropped
+/// in — where Obsidian puts them, named as it names them. Pure but for
+/// the names already taken.
+enum NoteAttachments {
+    /// Obsidian's name for a pasted image: `Pasted image 20261025101500.png`.
+    static func pastedName(at date: Date, extension ext: String = "png") -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        return "Pasted image \(formatter.string(from: date)).\(ext)"
+    }
+
+    /// The embed for a file put at `path` (vault-relative), from the note at
+    /// `source`: `![[name]]`, or `![](path)` when the vault uses Markdown links.
+    static func embed(_ path: String, from source: String, resolver: LinkResolver, settings: ObsidianSettings) -> String {
+        if settings.useMarkdownLinks {
+            let target =
+                settings.newLinkFormat == "relative" ? LinkResolver.relative(path, from: LinkResolver.folder(of: source)) : path
+            return "![](\(target.replacingOccurrences(of: "%", with: "%25").replacingOccurrences(of: " ", with: "%20")))"
+        }
+        return "![[\(resolver.linkText(for: path, from: source, format: settings.newLinkFormat))]]"
+    }
+}

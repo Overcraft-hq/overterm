@@ -73,3 +73,23 @@ final class NotesModelTests: XCTestCase {
         XCTAssertEqual(names("two", []), ["0A", "1B", "2Two"])
     }
 }
+
+/// A pasted image's name and embed, as Obsidian writes them.
+final class NoteAttachmentTests: XCTestCase {
+    func testPastedImagesAreNamedAndEmbeddedAsObsidianDoes() throws {
+        var components = DateComponents()
+        (components.year, components.month, components.day, components.hour, components.minute, components.second) = (2026, 3, 7, 9, 5, 1)
+        let date = try XCTUnwrap(Calendar.current.date(from: components))
+        XCTAssertEqual(NoteAttachments.pastedName(at: date), "Pasted image 20260307090501.png")
+        let resolver = LinkResolver(files: ["assets/Pasted image 1.png", "Notes/A.md"])
+        var settings = ObsidianSettings()
+        XCTAssertEqual(
+            NoteAttachments.embed("assets/Pasted image 1.png", from: "Notes/A.md", resolver: resolver, settings: settings),
+            "![[Pasted image 1.png]]")
+        settings.useMarkdownLinks = true
+        settings.newLinkFormat = "relative"
+        XCTAssertEqual(
+            NoteAttachments.embed("assets/Pasted image 1.png", from: "Notes/A.md", resolver: resolver, settings: settings),
+            "![](../assets/Pasted%20image%201.png)")
+    }
+}

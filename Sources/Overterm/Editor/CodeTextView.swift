@@ -18,6 +18,9 @@ protocol CodeTextViewHost: AnyObject {
     /// The mouse rested on `index` (nil: it left the text).
     func codeTextView(_ view: CodeTextView, hoverAt index: Int?)
     func codeTextViewContextMenu(_ view: CodeTextView, for menu: NSMenu) -> NSMenu
+    /// ⌘V, before the text view's own: true when the host pasted (an image
+    /// into a note).
+    func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool
 }
 
 /// A problem a language server reported, as the text view draws it.
@@ -40,6 +43,11 @@ struct EditorDiagnostic: Equatable {
 @MainActor
 final class CodeTextView: NSTextView {
     weak var host: CodeTextViewHost?
+
+    override func paste(_ sender: Any?) {
+        if host?.codeTextView(self, paste: .general) == true { return }
+        super.paste(sender)
+    }
     var theme = EditorTheme(dark: true, background: .black) {
         didSet { needsDisplay = true }
     }
