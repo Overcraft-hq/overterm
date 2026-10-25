@@ -252,3 +252,43 @@ extension EditorViewController {
         return true
     }
 }
+
+// MARK: Templates
+
+extension EditorViewController {
+    /// Obsidian's Insert template: the template's text at the caret, its
+    /// `{{title}}`, `{{date}}` and `{{time}}` filled for this note.
+    func insertTemplate(_ template: URL) {
+        guard let buffer = active, buffer.isNote, let url = buffer.url, let body = try? NoteFiles.read(template) else { return }
+        let text = NoteTemplate.apply(
+            body, title: url.deletingPathExtension().lastPathComponent, date: Date(), settings: notes.vault.settings)
+        if buffer.showsPreview {
+            buffer.showsPreview = false
+            updatePreview()
+        }
+        textView.insertText(text, replacementRange: textView.selectedRange())
+        focus()
+    }
+
+    /// The templates, in a note's right-click menu.
+    func addTemplateItems(to menu: NSMenu) {
+        guard active?.isNote == true else { return }
+        let templates = notes.vault.templates
+        guard !templates.isEmpty else { return }
+        let submenu = NSMenu()
+        for template in templates {
+            let item = NSMenuItem(title: template.deletingPathExtension().lastPathComponent, action: #selector(insertTemplateItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = template
+            submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: "Insert Template", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        menu.insertItem(item, at: 0)
+        menu.insertItem(.separator(), at: 1)
+    }
+
+    @objc private func insertTemplateItem(_ sender: NSMenuItem) {
+        if let template = sender.representedObject as? URL { insertTemplate(template) }
+    }
+}

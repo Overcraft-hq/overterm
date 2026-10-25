@@ -219,6 +219,7 @@ extension EditorViewController: CodeTextViewHost {
             index += 1
         }
         menu.insertItem(.separator(), at: index)
+        addTemplateItems(to: menu)
         return menu
     }
 

@@ -111,6 +111,18 @@ extension E2ERunner {
         check("and embedded at the caret", editor.textView.string.contains("![[\(pasted.first ?? "?")]]"), editor.textView.string)
         board.releaseGlobally()
 
+        // Insert template: the vault's templates folder, its fields filled.
+        write(".obsidian/templates.json", #"{"folder": "Templates"}"#)
+        write("Templates/Meeting.md", "## {{title}} — {{date:YYYY}}\n")
+        notes.reload()
+        _ = await eventually(3) { notes.vault.settings.templatesFolder == "Templates" }
+        check("the vault's templates are listed", notes.vault.templates.map(\.lastPathComponent) == ["Meeting.md"])
+        if let template = notes.vault.templates.first {
+            editor.insertTemplate(template)
+            let year = String(Calendar.current.component(.year, from: Date()))
+            check("a template inserts filled", editor.textView.string.contains("## Untitled — \(year)"), editor.textView.string)
+        }
+
         // ⌘F finds notes by name and by what they say.
         if let terminal = app.store.selected?.terminal {
             app.spotlight.open(root: nil, terminal: terminal, needle: "ship it")

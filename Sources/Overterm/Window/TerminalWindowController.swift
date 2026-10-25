@@ -2651,6 +2651,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             PaletteItem(id: "a.newNote", group: .action, title: "New Note", subtitle: nil, symbol: "square.and.pencil") {
                 [weak self] _, _ in self?.newNote(nil)
             },
+        ]
+        // Obsidian's Insert template, while a note is open in the editor.
+        if editor?.active?.isNote == true {
+            items += notes.vault.templates.map { template in
+                let name = template.deletingPathExtension().lastPathComponent
+                return PaletteItem(id: "a.template.\(name)", group: .action, title: "Insert Template: \(name)", subtitle: nil, symbol: "doc.badge.plus") {
+                    [weak self] _, _ in self?.editor?.insertTemplate(template)
+                }
+            }
+        }
+        items += [
             PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
                 [weak self] _, _ in self?.toggleDiff(nil)
             },
