@@ -165,6 +165,7 @@ extension TerminalWindowController {
             rename: { [weak self] in self?.renameNote($0) },
             trash: { [weak self] in self?.trashItem($0) },
             insertPath: { [weak self] in self?.insertPath($0) },
+            newTab: { [weak self] in self?.newTab(in: $0) },
             chooseVault: { [weak self] in self?.chooseNotesVault() },
             openAt: { [weak self] url, line in self?.openNote(url, line: line) },
             toggleTask: { [weak self] url, line, text in self?.toggleNoteTask(url, line: line, text: text) }

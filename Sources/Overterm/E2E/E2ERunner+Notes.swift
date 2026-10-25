@@ -166,6 +166,18 @@ extension E2ERunner {
             app.captureWindow(to: (png as NSString).deletingPathExtension + "-graph.png")
         }
 
+        // A folder's New Tab Here: a terminal whose shell starts in it.
+        let tabs = app.store.tabs.count
+        let projects = root.appendingPathComponent("Projects")
+        app.notesActions.newTab(projects)
+        check(
+            "New Tab Here opens a terminal in the folder",
+            await eventually(5) {
+                self.app.store.tabs.count == tabs + 1
+                    && self.app.store.selected?.workingDirectory.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
+                        == projects.resolvingSymlinksInPath().path
+            }, app.store.selected?.workingDirectory ?? "-")
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

@@ -15,6 +15,8 @@ struct NotesActions {
     var trash: (URL) -> Void
     /// Types its path into the selected terminal.
     var insertPath: (URL) -> Void
+    /// A new terminal tab whose shell starts in this folder.
+    var newTab: (URL) -> Void = { _ in }
     /// Another folder as the vault, picked in an open panel.
     var chooseVault: () -> Void
     /// Opens a note at a line (0-based).
@@ -296,6 +298,11 @@ private struct NoteRowView: View {
         .accessibilityIdentifier("note-\(model.vault.relativePath(of: item.url))")
     }
 
+    private static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     @ViewBuilder private var menu: some View {
         let folder = item.isFolder ? item.url : item.url.deletingLastPathComponent()
         Button("New Note") { actions.newNote(folder) }
@@ -311,8 +318,13 @@ private struct NoteRowView: View {
                 NSPasteboard.general.setString(item.kind == .image ? "![[\(text)]]" : "[[\(text)]]", forType: .string)
             }
         }
+        if item.isFolder { Button("New Tab Here") { actions.newTab(item.url) } }
         Button("Insert Path in Terminal") { actions.insertPath(item.url) }
         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+        Divider()
+        Button("Copy Path") { Self.copy(item.url.path) }
+        // In the vault — `.md` kept, as a path is written (Copy Link has the name).
+        Button("Copy Relative Path") { Self.copy(model.vault.relativePath(of: item.url)) }
         Divider()
         Button("Rename…") { actions.rename(item.url) }
         Button("Move to Trash…") { actions.trash(item.url) }
