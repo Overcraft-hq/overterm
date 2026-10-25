@@ -27,7 +27,8 @@ struct NotesGraphView: View {
             }
         }
         .onAppear { relayout() }
-        .onChange(of: model.index.paths) { _ in relayout() }
+        // Every reload: a link added between two notes changes no name.
+        .onChange(of: model.revision) { _ in relayout() }
         .onChange(of: model.current) { _ in if local { relayout() } }
         .onChange(of: local) { _ in relayout() }
         .onChange(of: depth) { _ in relayout() }

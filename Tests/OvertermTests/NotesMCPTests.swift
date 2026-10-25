@@ -52,4 +52,13 @@ final class NotesMCPTests: XCTestCase {
             } catch {}
         }
     }
+
+    /// Codex: a negative max_chars once trapped the whole app.
+    func testAnyMaxCharsIsSafe() async throws {
+        let notes = NotesModel(vault: NotesVault(root: dir))
+        for limit in [-1, 0, Int.max] {
+            let result = text(try await NotesMCP.call("notes_read", ["note": "Plan", "max_chars": limit], notes: notes))
+            XCTAssertTrue(result.hasPrefix("# Projects/Plan.md"), "\(limit)")
+        }
+    }
 }

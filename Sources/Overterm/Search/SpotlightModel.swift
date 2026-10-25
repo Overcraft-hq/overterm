@@ -80,6 +80,9 @@ final class SpotlightModel: ObservableObject {
 
     var selected: Row? { rows.indices.contains(selectedIndex) ? rows[selectedIndex] : nil }
 
+    /// The same query again — what it searches has arrived (the notes' index).
+    func refresh() { search() }
+
     private func search() {
         terminal?.search.needle = query
         // The last keystroke's search is superseded: cancelling it stops its

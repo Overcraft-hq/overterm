@@ -33,7 +33,8 @@ enum NotesMCP {
             } catch {
                 throw BrowserMCP.ToolError(message: error.localizedDescription)
             }
-            let limit = arguments["max_chars"] as? Int ?? 40_000
+            // Bounded both ways: a negative prefix traps.
+            let limit = min(max(arguments["max_chars"] as? Int ?? 40_000, 100), 1_000_000)
             return BrowserMCP.textResult(read(path, text: anchor.map { NoteSections.extract(text, anchor: $0) } ?? text, index: index, limit: limit))
         default:
             throw BrowserMCP.ToolError(message: "No tool \(name).")

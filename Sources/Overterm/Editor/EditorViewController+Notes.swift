@@ -83,6 +83,11 @@ extension EditorViewController {
     /// Obsidian does on a click) where new notes go.
     func followNoteLink(_ target: String, anchor: String?, markdown: Bool) {
         guard let current = active?.url else { return }
+        // The index first: a link it hasn't read yet is not a note to write.
+        notes.whenLoaded { [weak self] in self?.followLoadedNoteLink(target, anchor: anchor, markdown: markdown, from: current) }
+    }
+
+    private func followLoadedNoteLink(_ target: String, anchor: String?, markdown: Bool, from current: URL) {
         let notes = self.notes
         let source = notes.path(of: current)
         var resolved: String?
@@ -104,12 +109,15 @@ extension EditorViewController {
                 name.contains("/")
                 ? notes.vault.root.appendingPathComponent(name) : notes.vault.folderForNewNote(beside: current).appendingPathComponent(name)
             guard notes.vault.contains(url) else { return }
-            do {
-                try NoteFiles.write("", to: url)
-            } catch {
-                return
+            // Never over a note that is there: one the index missed is opened.
+            if !FileManager.default.fileExists(atPath: url.path), !NoteFiles.isEvicted(url) {
+                do {
+                    try NoteFiles.create(url)
+                } catch {
+                    return
+                }
+                notes.reload()
             }
-            notes.reload()
         }
         guard url.pathExtension.lowercased() == "md" else {
             // An image, a PDF: Finder's app for it.

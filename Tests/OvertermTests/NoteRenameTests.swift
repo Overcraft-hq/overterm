@@ -76,4 +76,16 @@ final class NoteRenameTests: XCTestCase {
         let result = run(["Plan.md": "", "A.md": "[[Plan.md]] [[Plan]]"], rename: "Plan.md", to: "Work/Roadmap.md", settings: settings)
         XCTAssertEqual(result["A.md"], "[[Work/Roadmap.md]] [[Work/Roadmap]]")
     }
+
+    /// Codex: a link typed and not saved yet is followed by a rename too.
+    func testUnsavedLinksAreRewritten() {
+        var index = NotesIndex()
+        index.set("Plan.md", text: "", modified: Date())
+        index.set("A.md", text: "nothing yet", modified: Date())
+        let moves = NoteRename.moves(of: "Plan.md", to: "Roadmap.md", files: index.resolver.files)
+        let result = NoteRename.rewrites(index: index, moves: moves, settings: ObsidianSettings(), unsaved: ["A.md": "now [[Plan]]"]) { _ in
+            "nothing yet"
+        }
+        XCTAssertEqual(result["A.md"], "now [[Roadmap]]")
+    }
 }

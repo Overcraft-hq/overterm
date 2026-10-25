@@ -110,4 +110,16 @@ final class NotesVaultTests: XCTestCase {
         XCTAssertFalse(tree.allNotes.isEmpty, "\(vault.path)")
         XCTAssertFalse(tree.allFiles.contains { $0.url.path.contains("/.obsidian/") })
     }
+
+    /// Codex: a note is never created over one that is there.
+    func testCreatingNeverOverwrites() throws {
+        let url = dir.appendingPathComponent("Note.md")
+        try write("Note.md", "keep me")
+        XCTAssertThrowsError(try NoteFiles.create(url))
+        XCTAssertEqual(try NoteFiles.read(url), "keep me")
+        try write(".Evicted.md.icloud")
+        XCTAssertThrowsError(try NoteFiles.create(dir.appendingPathComponent("Evicted.md")))
+        try NoteFiles.create(dir.appendingPathComponent("Sub/New.md"))
+        XCTAssertEqual(try NoteFiles.read(dir.appendingPathComponent("Sub/New.md")), "")
+    }
 }

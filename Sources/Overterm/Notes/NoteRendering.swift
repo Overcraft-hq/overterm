@@ -41,6 +41,13 @@ struct NoteRenderPayload: Equatable, Sendable {
             path: path, text: body, lineOffset: lineOffset, properties: properties(doc), links: [:], embeds: [:])
         var seen: Set<String> = [path]
         func collect(_ doc: NoteDocument, from source: String, depth: Int) {
+            // Markdown links and images: a path from the note's folder, else
+            // Obsidian's rules — keyed `md:` and the path as written.
+            for link in doc.links where link.isMarkdown && !link.target.isEmpty && payload.links["md:" + link.target] == nil {
+                if let resolved = NoteRename.target(of: link, from: source, resolver: index.resolver) {
+                    payload.links["md:" + link.target] = Target(path: resolved, kind: NoteItem.Kind(URL(fileURLWithPath: resolved)))
+                }
+            }
             for link in doc.links where !link.isMarkdown {
                 if !link.target.isEmpty, payload.links[link.target] == nil,
                     let resolved = index.resolver.resolve(link.target, from: source)
@@ -53,7 +60,9 @@ struct NoteRenderPayload: Equatable, Sendable {
                 let anchor = link.block.map { "^" + $0 } ?? link.heading
                 let key = link.target + (anchor.map { "#" + $0 } ?? "")
                 guard payload.embeds[key] == nil, let full = read(target) else { continue }
-                let embedded = NoteSections.extract(full, anchor: anchor)
+                // Its links named by their paths: a name means the file
+                // closest to the embedded note, not to this one.
+                let embedded = absolute(NoteSections.extract(full, anchor: anchor), from: target, resolver: index.resolver)
                 payload.embeds[key] = embedded
                 // A note embedding itself whole would never end.
                 if anchor == nil && !seen.insert(target).inserted { payload.embeds[key] = "" }
@@ -62,6 +71,31 @@ struct NoteRenderPayload: Equatable, Sendable {
         }
         collect(doc, from: path, depth: 0)
         return payload
+    }
+
+    /// `text`'s wikilinks with the paths they resolve to from `source`, so
+    /// they mean the same wherever the text is shown. What they read as is
+    /// kept: an alias stays, a bare name becomes the alias.
+    static func absolute(_ text: String, from source: String, resolver: LinkResolver) -> String {
+        let doc = NoteParser.parse(text)
+        let ns = NSMutableString(string: text)
+        for link in doc.links.reversed() where !link.isMarkdown {
+            let path = link.target.isEmpty ? source : resolver.resolve(link.target, from: source)
+            guard let path else { continue }
+            var inner = path.lowercased().hasSuffix(".md") ? String(path.dropLast(3)) : path
+            if let heading = link.heading { inner += "#" + heading }
+            if let block = link.block { inner += "#^" + block }
+            // In a table the bar stays escaped.
+            let bar = ns.substring(with: link.range).contains("\\|") ? "\\|" : "|"
+            if let alias = link.alias {
+                inner += bar + alias
+            } else if !link.isEmbed {
+                let shown = link.target.isEmpty ? (link.heading ?? "") : link.target
+                inner += bar + (link.heading.map { link.target.isEmpty ? $0 : "\(link.target) > \($0)" } ?? shown)
+            }
+            ns.replaceCharacters(in: link.range, with: (link.isEmbed ? "![[" : "[[") + inner + "]]")
+        }
+        return ns as String
     }
 
     /// The frontmatter's keys in the order they're written (a dictionary

@@ -13,6 +13,13 @@ extension TerminalWindowController {
                 DispatchQueue.main.async { self?.updateNotesVisibility(panel: panel) }
             }
             .store(in: &cancellables)
+        // A #tag clicked in a note: the Notes panel, on that tag's notes.
+        editor?.onNoteTag = { [weak self] tag in
+            guard let self else { return }
+            self.showNotes(nil)
+            self.notes.tagFilter = tag
+            self.notes.detail = .tags
+        }
         let changed = editor?.onActiveChanged
         editor?.onActiveChanged = { [weak self] url in
             changed?(url)
@@ -20,7 +27,12 @@ extension TerminalWindowController {
         }
         spotlight.notes = { [weak self] in
             guard let self, Settings.shared.notesEnabled else { return nil }
-            // ⌘F asks for the index: read now if no panel has yet.
+            // ⌘F asks for the index: read now if no panel has yet, and the
+            // query run again when it is.
+            if !self.notes.isLoaded {
+                self.notes.whenLoaded { [weak self] in self?.spotlight.refresh() }
+                return nil
+            }
             self.notes.whenLoaded {}
             return (self.notes.vault, self.notes.index)
         }
@@ -253,9 +265,9 @@ extension TerminalWindowController {
             for buffer in self.editor?.buffers ?? [] where buffer.document.isDirty {
                 if let open = buffer.url, notes.vault.contains(open) { unsaved[notes.path(of: open)] = buffer }
             }
-            let rewrites = NoteRename.rewrites(index: index, moves: moves, settings: notes.vault.settings) { path in
-                unsaved[path]?.storage.string ?? (try? NoteFiles.read(notes.url(of: path)))
-            }
+            let rewrites = NoteRename.rewrites(
+                index: index, moves: moves, settings: notes.vault.settings, unsaved: unsaved.mapValues(\.storage.string)
+            ) { path in try? NoteFiles.read(notes.url(of: path)) }
             do {
                 try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try NoteFiles.move(url, to: target)

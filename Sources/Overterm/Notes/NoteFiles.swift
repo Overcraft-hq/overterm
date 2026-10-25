@@ -65,6 +65,38 @@ enum NoteFiles {
         try result.get()
     }
 
+    /// An empty note at `url` — never over one that is there, here or in iCloud.
+    static func create(_ url: URL) throws {
+        if FileManager.default.fileExists(atPath: url.path) || isEvicted(url) { throw CocoaError(.fileWriteFileExists) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var result: Result<Void, Error> = .success(())
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) { url in
+            result = Result { try Data().write(to: url, options: .withoutOverwriting) }
+        }
+        if let coordinationError { throw coordinationError }
+        try result.get()
+    }
+
+    /// Asks iCloud for a file only a placeholder is here for, and calls back
+    /// on the main thread once it has come (or, after `timeout`, hasn't) —
+    /// without holding the main thread meanwhile.
+    @MainActor static func whenDownloaded(_ url: URL, timeout: TimeInterval = 30, _ done: @escaping @MainActor (Bool) -> Void) {
+        guard isEvicted(url) else { return done(true) }
+        do {
+            try FileManager.default.startDownloadingUbiquitousItem(at: url)
+        } catch {
+            return done(false)
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        func poll() {
+            if !isEvicted(url) { return done(true) }
+            guard Date() < deadline else { return done(false) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { MainActor.assumeIsolated { poll() } }
+        }
+        poll()
+    }
+
     static func move(_ from: URL, to: URL) throws {
         var result: Result<Void, Error> = .success(())
         var coordinationError: NSError?

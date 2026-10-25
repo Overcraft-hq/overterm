@@ -260,6 +260,14 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// Opens `url` in a tab of its own, or shows the tab it has.
     func open(_ url: URL, then done: @escaping (Bool) -> Void = { _ in }) {
         _ = view
+        // Only iCloud's placeholder is here: fetched first, then opened.
+        if NoteFiles.isEvicted(url) {
+            NoteFiles.whenDownloaded(url) { [weak self] arrived in
+                guard arrived, let self else { return done(false) }
+                self.open(url, then: done)
+            }
+            return
+        }
         let key = url.standardizedFileURL.resolvingSymlinksInPath()
         if let index = buffers.firstIndex(where: { $0.url?.standardizedFileURL.resolvingSymlinksInPath() == key }) {
             activate(index)

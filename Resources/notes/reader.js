@@ -380,6 +380,8 @@
   const purifyOptions = {
     ADD_ATTR: ["data-target", "data-anchor", "data-tag", "data-line", "data-status", "data-diagram", "data-heading", "data-callout", "checked", "disabled"],
     FORBID_TAGS: ["style", "form", "iframe", "object", "embed"],
+    // DOMPurify's own list, and the app's scheme the vault's images come by.
+    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|overterm-note):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   };
 
   // MARK: Showing
@@ -401,6 +403,16 @@
     const html = properties() + md.render(next.text, { depth: 0 });
     main.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html, purifyOptions) : html;
     callouts(main);
+    // Markdown images by Obsidian's rules (Swift resolved them), not the
+    // browser's: `![](assets/x.png)` in Projects/ may mean the vault's assets/.
+    for (const img of main.querySelectorAll("img[src]")) {
+      const src = img.getAttribute("src");
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src)) continue;
+      let written = src;
+      try { written = decodeURIComponent(src); } catch (error) {}
+      const resolved = payload.links["md:" + written] || payload.links["md:" + written.replace(/^\.\//, "")];
+      if (resolved) img.setAttribute("src", vaultURL(resolved.path));
+    }
     for (const a of main.querySelectorAll("a[href]")) {
       const href = a.getAttribute("href");
       if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("overterm-note:")) a.classList.add("external");

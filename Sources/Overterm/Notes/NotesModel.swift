@@ -16,6 +16,9 @@ final class NotesModel: ObservableObject {
     @Published private(set) var tree: NoteItem?
     @Published private(set) var index = NotesIndex()
     @Published private(set) var isLoading = false
+    /// Counts the index's reloads: what draws from it (the graph) redraws
+    /// on a change of links, not only of names.
+    @Published private(set) var revision = 0
     /// The name filter over the tree.
     @Published var query = ""
     /// Open folders, by path.
@@ -35,6 +38,7 @@ final class NotesModel: ObservableObject {
     private var reloadPending = false
     private var waiting: [() -> Void] = []
     private var loadedOnce = false
+    private var loadedAt = Date.distantPast
 
     init(vault: NotesVault? = nil) {
         self.vault = vault ?? NotesVault(root: NotesVault.root(fromSetting: Settings.shared.notesVaultPath))
@@ -42,6 +46,9 @@ final class NotesModel: ObservableObject {
 
     /// Whether some window shows the panel.
     var visible: Bool { !showing.isEmpty }
+
+    /// The index has been read at least once.
+    var isLoaded: Bool { loadedOnce }
 
     /// A window says whether its Notes panel is on screen.
     func setVisible(_ visible: Bool, for owner: AnyObject) {
@@ -77,8 +84,12 @@ final class NotesModel: ObservableObject {
 
     /// The index, read now if it never was — for a note opened while the
     /// panel isn't showing, and for agents.
+    ///
+    /// With no panel showing there is no watcher: an index older than a few
+    /// seconds is read again first — Obsidian may have written since.
     func whenLoaded(_ body: @escaping () -> Void) {
-        if loadedOnce, !isLoading {
+        let fresh = visible || Date().timeIntervalSince(loadedAt) < 5
+        if loadedOnce, !isLoading, fresh {
             body()
             return
         }
@@ -109,7 +120,9 @@ final class NotesModel: ObservableObject {
             if vault.settings != self.vault.settings { self.vault = vault }
             self.tree = tree
             self.index = index
+            self.revision += 1
             self.loadedOnce = true
+            self.loadedAt = Date()
             let waiting = self.waiting
             self.waiting = []
             waiting.forEach { $0() }

@@ -26,7 +26,8 @@ final class NoteRenderingTests: XCTestCase {
         XCTAssertEqual(payload.links["B"]?.path, "B.md")
         XCTAssertEqual(payload.links["img.png"]?.kind, .image)
         XCTAssertNil(payload.links["Missing"])
-        XCTAssertEqual(payload.embeds["B#Part"], "## Part\nin part [[C]]")
+        // Its links by their paths, read as they were written.
+        XCTAssertEqual(payload.embeds["B#Part"], "## Part\nin part [[C|C]]")
         // A link inside the embed resolves too.
         XCTAssertEqual(payload.links["C"]?.path, "C.md")
     }
@@ -73,5 +74,32 @@ final class NoteRenderingTests: XCTestCase {
         XCTAssertNil(resources.file(for: URL(string: "overterm-note://vault/../../etc/passwd")!))
         XCTAssertNil(resources.file(for: URL(string: "overterm-note://elsewhere/p.png")!))
         XCTAssertEqual(NoteReaderView.encode("a b/c#d"), "a%20b/c%23d")
+    }
+
+    /// Codex: a name in an embedded note means the file closest to that
+    /// note, not to the one embedding it.
+    func testAnEmbedsLinksKeepTheirOwnFolder() {
+        let notes = [
+            "A/Main.md": "![[Child]] ![[Local]]", "A/Local.md": "main's local", "B/Child.md": "![[Local]] and [[Local#Top|top]] | [[Local\\|x]] |",
+            "B/Local.md": "child's local", "A/Child.md": "",
+        ]
+        var index = NotesIndex()
+        for (path, text) in notes { index.set(path, text: text, modified: Date()) }
+        let payload = NoteRenderPayload.make(path: "A/Main.md", text: notes["A/Main.md"]!, index: index) { notes[$0] }
+        XCTAssertEqual(payload.embeds["Local"], "main's local")
+        // A/Child.md is the closer Child: empty; B's own is reached by path.
+        let child = NoteRenderPayload.absolute(notes["B/Child.md"]!, from: "B/Child.md", resolver: index.resolver)
+        XCTAssertEqual(child, "![[B/Local]] and [[B/Local#Top|top]] | [[B/Local\\|x]] |")
+    }
+
+    /// Codex: `![](assets/x.png)` written from Projects/ means the vault's
+    /// assets/ when the note's folder has none.
+    func testMarkdownImagesResolveByTheVaultsRules() {
+        var index = NotesIndex()
+        index.set("Projects/Plan.md", text: "![](assets/x.png) ![](../assets/x.png)", modified: Date())
+        index = NotesIndex(notes: index.notes, files: index.resolver.files + ["assets/x.png"])
+        let payload = NoteRenderPayload.make(path: "Projects/Plan.md", text: "![](assets/x.png) ![](../assets/x.png)", index: index) { _ in nil }
+        XCTAssertEqual(payload.links["md:assets/x.png"]?.path, "assets/x.png")
+        XCTAssertEqual(payload.links["md:../assets/x.png"]?.path, "assets/x.png")
     }
 }

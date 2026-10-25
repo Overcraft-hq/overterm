@@ -198,7 +198,17 @@ extension E2ERunner {
         - [x] second task
 
         ![[Plan]]
+
+        ![[dot.png]]
         """.write(to: rich, atomically: true, encoding: .utf8)
+        let dot = NSImage(size: NSSize(width: 6, height: 6))
+        dot.lockFocus()
+        NSColor.blue.setFill()
+        NSRect(x: 0, y: 0, width: 6, height: 6).fill()
+        dot.unlockFocus()
+        if let tiff = dot.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: root.appendingPathComponent("dot.png"))
+        }
         notes.reload()
         _ = await eventually(3) { notes.index.notes["Rich.md"] != nil }
         app.openNote(rich)
@@ -221,6 +231,15 @@ extension E2ERunner {
             hasMath = (value as? Int ?? 0) > 0
         }
         check("math is typeset", await eventually(2) { hasMath })
+        // An embedded image loads, through the app's scheme and DOMPurify.
+        var loaded = -1
+        for _ in 0..<20 where loaded <= 0 {
+            reader.webView.evaluateJavaScript("[...document.images].filter(i => i.complete && i.naturalWidth > 0).length") { value, _ in
+                loaded = value as? Int ?? 0
+            }
+            await pause(0.15)
+        }
+        check("an embedded image loads", loaded >= 1, "\(loaded)")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
             await pause(0.5)
             app.captureWindow(to: png)

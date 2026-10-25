@@ -18,22 +18,25 @@ enum NoteRename {
     }
 
     /// The new text of every note whose links change, by its path before
-    /// the rename. `read` gives a note's text as it is now.
+    /// the rename. `read` gives a note's text as it is now; `unsaved` the
+    /// text of notes open with edits — links typed since the last save
+    /// count, which the index hasn't seen.
     static func rewrites(
-        index: NotesIndex, moves: [String: String], settings: ObsidianSettings, read: (String) -> String?
+        index: NotesIndex, moves: [String: String], settings: ObsidianSettings, unsaved: [String: String] = [:],
+        read: (String) -> String?
     ) -> [String: String] {
         guard !moves.isEmpty else { return [:] }
         let after = LinkResolver(files: index.resolver.files.map { moves[$0] ?? $0 })
         var result: [String: String] = [:]
-        for source in index.paths {
-            guard let doc = index.document(source), !doc.links.isEmpty else { continue }
+        for source in Set(index.paths).union(unsaved.keys).sorted() {
+            guard let doc = unsaved[source].map(NoteParser.parse) ?? index.document(source), !doc.links.isEmpty else { continue }
             let sourceAfter = moves[source] ?? source
             // Only notes with a link that may break are read.
             let touched = doc.links.contains { link in
                 guard let target = target(of: link, from: source, resolver: index.resolver) else { return false }
                 return moves[target] != nil || moves[source] != nil
             }
-            guard touched, let text = read(source) else { continue }
+            guard touched, let text = unsaved[source] ?? read(source) else { continue }
             // Ranges from the text as it is, not as the index last saw it.
             let current = NoteParser.parse(text)
             var edits: [(NSRange, String)] = []
