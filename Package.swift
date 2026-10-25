@@ -6,6 +6,14 @@ let package = Package(
     platforms: [
         .macOS(.v13)
     ],
+    // The database client's wire protocols: PostgreSQL (and Redshift, which
+    // speaks it) and MySQL — TLS, SCRAM and caching_sha2 included, which is
+    // why they are packages and not ours. SQLite is the system's; ClickHouse
+    // and BigQuery are HTTP.
+    dependencies: [
+        .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.2"),
+        .package(url: "https://github.com/vapor/mysql-nio.git", from: "1.9.2"),
+    ],
     targets: [
         // Built locally by `make ghosttykit` (Scripts/build-ghosttykit.sh); not
         // committed. A static library + the GhosttyKit module map.
@@ -21,7 +29,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "Overterm",
-            dependencies: ["GhosttyKit", "TreeSitterKit"],
+            dependencies: [
+                "GhosttyKit", "TreeSitterKit",
+                .product(name: "PostgresNIO", package: "postgres-nio"),
+                .product(name: "MySQLNIO", package: "mysql-nio"),
+            ],
             path: "Sources/Overterm",
             linkerSettings: [
                 // libghostty's C++ deps (glslang, spirv-cross, simdutf) and the
@@ -33,6 +45,8 @@ let package = Package(
                 .linkedFramework("QuartzCore"),
                 .linkedFramework("IOSurface"),
                 .linkedFramework("UniformTypeIdentifiers"),
+                // SQLite: the system's.
+                .linkedLibrary("sqlite3"),
             ]
         ),
         .testTarget(
