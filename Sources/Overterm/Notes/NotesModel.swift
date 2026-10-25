@@ -22,6 +22,12 @@ final class NotesModel: ObservableObject {
     @Published var expanded: Set<String> = []
     /// The note the editor shows, highlighted in the tree.
     @Published var current: URL?
+    /// What the panel's lower half shows; nil when it is folded away.
+    @Published var detail: NotesDetail? = NotesDetail(stored: AppEnvironment.defaults.string(forKey: NotesDetail.key)) {
+        didSet { AppEnvironment.defaults.set(detail?.rawValue ?? "none", forKey: NotesDetail.key) }
+    }
+    /// A tag picked in the Tags pane: the tree lists its notes.
+    @Published var tagFilter: String?
 
     private var showing: Set<ObjectIdentifier> = []
     private var watcher: DirectoryWatcher?
@@ -61,6 +67,7 @@ final class NotesModel: ObservableObject {
         index = NotesIndex()
         expanded = []
         query = ""
+        tagFilter = nil
         loadedOnce = false
         if visible {
             watch()
@@ -138,6 +145,29 @@ final class NotesModel: ObservableObject {
         }
     }
 
+    // MARK: What the lower half shows
+
+    /// The links into the current note, each with the line it sits on.
+    func backlinkLines(of path: String) -> [(source: String, line: Int, text: String)] {
+        var texts: [String: [String]] = [:]
+        return index.backlinks(of: path).compactMap { backlink in
+            if texts[backlink.source] == nil {
+                texts[backlink.source] = ((try? NoteFiles.read(url(of: backlink.source))) ?? "").components(separatedBy: "\n")
+            }
+            guard let lines = texts[backlink.source] else { return nil }
+            // The line the link is on, by counting to its offset.
+            var offset = 0
+            for (number, line) in lines.enumerated() {
+                let length = (line as NSString).length + 1
+                if backlink.link.range.location < offset + length {
+                    return (backlink.source, number, line.trimmingCharacters(in: .whitespaces))
+                }
+                offset += length
+            }
+            return nil
+        }
+    }
+
     // MARK: The vault on this Mac
 
     /// The vaults to switch between: this one, Obsidian's, and the default.
@@ -212,4 +242,29 @@ final class NotesModel: ObservableObject {
     func path(of url: URL) -> String { vault.relativePath(of: url) }
 
     func url(of path: String) -> URL { vault.root.appendingPathComponent(path) }
+}
+
+/// The Notes panel's lower half: Obsidian's side panes.
+enum NotesDetail: String, CaseIterable, Identifiable {
+    case backlinks, outline, tags, tasks
+
+    static let key = "notesDetail"
+
+    var id: String { rawValue }
+
+    init?(stored: String?) {
+        if stored == "none" { return nil }
+        self = stored.flatMap(NotesDetail.init(rawValue:)) ?? .backlinks
+    }
+
+    var title: String { rawValue.capitalized }
+
+    var symbol: String {
+        switch self {
+        case .backlinks: "arrow.uturn.backward"
+        case .outline: "list.bullet.indent"
+        case .tags: "number"
+        case .tasks: "checklist"
+        }
+    }
 }

@@ -64,6 +64,21 @@ extension E2ERunner {
         check("its tab follows it", editor.active?.url?.lastPathComponent == "Start.md")
         check("and the index knows it", await eventually(3) { notes.index.backlinks(of: "Start.md").contains { $0.source == "Projects/Plan.md" } })
 
+        // The lower half: backlinks with their lines, tags, tasks.
+        notes.detail = .backlinks
+        let lines = notes.backlinkLines(of: "Start.md")
+        check("backlinks carry the line they're on", lines.contains { $0.source == "Projects/Plan.md" && $0.text == "Back to [[Start]]." }, "\(lines)")
+        notes.tagFilter = "work"
+        let tree = notes.tree ?? NoteItem(url: root, kind: .folder)
+        let tagged = Set(notes.index.notes(tagged: "work").map { notes.url(of: $0).standardizedFileURL.path })
+        let rows = NotesPanelView.rows(tree, query: "", expanded: [], tagged: tagged).map(\.item.name)
+        check("a tag picked lists its notes", rows == ["Plan"], "\(rows)")
+        notes.tagFilter = nil
+        editor.filesRemoved(at: plan)
+        let taskLine = planText().components(separatedBy: "\n").firstIndex { $0.hasPrefix("- [ ] ship it") } ?? -1
+        app.toggleNoteTask(plan, line: taskLine)
+        check("a task ticked in the pane is ticked in its file", planText().contains("- [x] ship it"), planText())
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }

@@ -17,6 +17,10 @@ struct NotesActions {
     var insertPath: (URL) -> Void
     /// Another folder as the vault, picked in an open panel.
     var chooseVault: () -> Void
+    /// Opens a note at a line (0-based).
+    var openAt: (URL, Int) -> Void = { _, _ in }
+    /// Ticks the task on a line of a note, where it is written.
+    var toggleTask: (URL, Int) -> Void = { _, _ in }
 }
 
 /// The sidebar's Notes panel: the vault's folders and notes, Obsidian's
@@ -27,23 +31,47 @@ struct NotesPanelView: View {
     let actions: NotesActions
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            searchField
-            if let tree = model.tree {
-                if tree.children?.isEmpty ?? true {
-                    empty
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                header
+                searchField
+                if let tag = model.tagFilter { tagChip(tag) }
+                if let tree = model.tree {
+                    if tree.children?.isEmpty ?? true {
+                        empty
+                    } else {
+                        list(tree)
+                    }
                 } else {
-                    list(tree)
+                    Spacer()
+                    if model.isLoading { ProgressView().controlSize(.small) }
+                    Spacer()
                 }
-            } else {
-                Spacer()
-                if model.isLoading { ProgressView().controlSize(.small) }
-                Spacer()
+                if model.tree != nil {
+                    NotesDetailView(model: model, theme: theme, actions: actions)
+                        .frame(height: model.detail == nil ? 31 : max(160, geometry.size.height * 0.4))
+                }
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
+    }
+
+    private func tagChip(_ tag: String) -> some View {
+        HStack(spacing: 4) {
+            Text(verbatim: "#" + tag).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.accentText).lineLimit(1)
+            Button {
+                model.tagFilter = nil
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.text3)
+            .help("Show every note")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 4)
     }
 
     // MARK: Header
@@ -139,7 +167,14 @@ struct NotesPanelView: View {
 
     /// The tree as rows: open folders' children under them; every folder
     /// open while filtering, so a match is never hidden.
-    static func rows(_ root: NoteItem, query: String, expanded: Set<String>) -> [Row] {
+    static func rows(_ root: NoteItem, query: String, expanded: Set<String>, tagged: Set<String>? = nil) -> [Row] {
+        // A tag picked: its notes, flat, by name.
+        if let tagged {
+            return root.allNotes.filter { tagged.contains($0.url.standardizedFileURL.path) }
+                .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .map { Row(item: $0, depth: 0, isExpanded: false) }
+        }
         let filtering = !query.isEmpty
         let shown = filtering ? (root.filtered(query) ?? NoteItem(url: root.url, kind: .folder, children: [])) : root
         var rows: [Row] = []
@@ -157,13 +192,19 @@ struct NotesPanelView: View {
     private func list(_ tree: NoteItem) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Self.rows(tree, query: model.query, expanded: model.expanded)) { row in
+                ForEach(Self.rows(tree, query: model.query, expanded: model.expanded, tagged: tagged)) { row in
                     NoteRowView(row: row, model: model, theme: theme, actions: actions)
                 }
             }
             .padding(.vertical, 4)
         }
         .contextMenu { folderMenu(model.vault.root) }
+    }
+
+    /// The notes the picked tag is on, as paths.
+    private var tagged: Set<String>? {
+        guard let tag = model.tagFilter else { return nil }
+        return Set(model.index.notes(tagged: tag).map { model.url(of: $0).standardizedFileURL.path })
     }
 
     @ViewBuilder func folderMenu(_ folder: URL) -> some View {

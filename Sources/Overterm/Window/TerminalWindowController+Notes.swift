@@ -75,9 +75,29 @@ extension TerminalWindowController {
         }
     }
 
-    func openNote(_ url: URL) {
+    func openNote(_ url: URL, line: Int? = nil) {
         notes.expandFolders(of: url)
-        openInEditor(url)
+        openInEditor(url, line: line.map { $0 + 1 })
+    }
+
+    /// A task ticked from the Tasks pane: in the note's buffer when it is
+    /// open (an edit like any), else in the file.
+    func toggleNoteTask(_ url: URL, line: Int) {
+        if let editor, let buffer = editor.buffers.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+            let text = buffer.storage.string
+            guard let edit = NoteEdits.toggleTask(in: text, line: line) else { return }
+            editor.replaceText(of: buffer, with: (text as NSString).replacingCharacters(in: edit.range, with: edit.replacement))
+            if buffer === editor.active, buffer.showsPreview { editor.renderNote(buffer) }
+            return
+        }
+        do {
+            let text = try NoteFiles.read(url)
+            guard let edit = NoteEdits.toggleTask(in: text, line: line) else { return }
+            try NoteFiles.write((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement), to: url)
+            notes.reload()
+        } catch {
+            reportNotesError(error)
+        }
     }
 
     /// Another folder as the vault, picked in Finder's panel.
@@ -113,7 +133,9 @@ extension TerminalWindowController {
             rename: { [weak self] in self?.renameNote($0) },
             trash: { [weak self] in self?.trashItem($0) },
             insertPath: { [weak self] in self?.insertPath($0) },
-            chooseVault: { [weak self] in self?.chooseNotesVault() }
+            chooseVault: { [weak self] in self?.chooseNotesVault() },
+            openAt: { [weak self] url, line in self?.openNote(url, line: line) },
+            toggleTask: { [weak self] url, line in self?.toggleNoteTask(url, line: line) }
         )
     }
 
