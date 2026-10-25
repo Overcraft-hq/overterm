@@ -13,6 +13,12 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.2"),
         .package(url: "https://github.com/vapor/mysql-nio.git", from: "1.9.2"),
+        // Theirs, named for what the client itself uses: the event loops, TLS,
+        // their logger, and RSA — BigQuery's service account signs a JWT.
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.5"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.15.1"),
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
     ],
     targets: [
         // Built locally by `make ghosttykit` (Scripts/build-ghosttykit.sh); not
@@ -33,6 +39,11 @@ let package = Package(
                 "GhosttyKit", "TreeSitterKit",
                 .product(name: "PostgresNIO", package: "postgres-nio"),
                 .product(name: "MySQLNIO", package: "mysql-nio"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "_CryptoExtras", package: "swift-crypto"),
             ],
             path: "Sources/Overterm",
             linkerSettings: [
