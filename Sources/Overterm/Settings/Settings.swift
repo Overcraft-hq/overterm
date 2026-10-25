@@ -289,6 +289,7 @@ final class Settings: ObservableObject {
     var editorVimMode: Bool { bool("editor.vimMode") }
     var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
     var browserEnabled: Bool { bool("browser.enabled") }
+    var simulatorEnabled: Bool { bool("simulator.enabled") }
     var browserLinks: BrowserLinks.Policy { browserEnabled ? BrowserLinks.Policy(rawValue: string("browser.openLinks")) ?? .local : .none }
     var browserReloadOnSave: Bool { browserEnabled && bool("browser.reloadOnSave") }
     var browserAgentControl: Bool { browserEnabled && bool("browser.agentControl") }

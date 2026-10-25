@@ -15,6 +15,7 @@ version is tagged `v<version>`.
 - overgit: stage and commit from Overgit — a Changes section with each file's box, Stage All, the message, Amend, and Push or Publish Branch
 - overgit: search the history — words in the message, a hash, and author:, path:, code:, since:, branch: filters
 - overgit: compare two branches, tags or commits in the right-hand pane — the commits on each side and every file's diff since they parted
+- browser: the browser and the simulator each have their own switch in Settings ▸ Browser — off, its button leaves the title bar
 
 ## 1.2.0 — 2026-10-21
 

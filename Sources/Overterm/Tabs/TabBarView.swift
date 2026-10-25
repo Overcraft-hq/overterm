@@ -36,6 +36,8 @@ struct TabBarActions {
 @MainActor
 final class BrowserButtonState: ObservableObject {
     @Published var isEnabled = true
+    /// The phone beside it (Settings ▸ Browser ▸ Simulator): each has its own switch.
+    @Published var isSimulatorEnabled = true
     /// The column is open — on the browser, or on the simulator.
     @Published var isOpen = false
     /// What it is open on: the simulator rather than the browser.
@@ -178,7 +180,9 @@ struct TabBarView: View {
             }
             if browser.isEnabled {
                 BrowserButton(isOpen: browser.isOpen && !browser.isSimulator, theme: theme, action: actions.toggleBrowser)
-                    .padding(.trailing, 4)
+                    .padding(.trailing, browser.isSimulatorEnabled ? 4 : 6)
+            }
+            if browser.isSimulatorEnabled {
                 SimulatorButton(isOpen: browser.isOpen && browser.isSimulator, theme: theme, action: actions.toggleSimulator)
                     .padding(.trailing, 6)
             }

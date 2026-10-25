@@ -2953,7 +2953,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 guard let self else { return }
                 if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
                 if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
-                if keys.contains(where: { $0.hasPrefix("browser.") }) { self.browserSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("browser.") || $0.hasPrefix("simulator.") }) { self.browserSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }

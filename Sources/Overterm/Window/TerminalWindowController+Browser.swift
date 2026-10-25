@@ -23,6 +23,7 @@ extension TerminalWindowController {
     func wireBrowser() {
         guard let browser else { return }
         browserButton.isEnabled = Settings.shared.browserEnabled
+        browserButton.isSimulatorEnabled = Settings.shared.simulatorEnabled
         browser.onClose = { [weak self] in self?.closeBrowser() }
         browser.onToggleZoom = { [weak self] in
             guard let self else { return }
@@ -94,7 +95,7 @@ extension TerminalWindowController {
     /// The title bar's phone, beside the globe: the same column, showing
     /// the simulator — read only while it is up.
     @objc func toggleSimulator(_ sender: Any?) {
-        guard let browserItem, Settings.shared.browserEnabled else { return }
+        guard let browserItem, Settings.shared.simulatorEnabled else { return }
         if browserItem.isCollapsed || browserColumn?.mode != .simulator {
             showSimulator()
         } else {
@@ -103,7 +104,7 @@ extension TerminalWindowController {
     }
 
     func showSimulator() {
-        guard Settings.shared.browserEnabled else { return }
+        guard Settings.shared.simulatorEnabled else { return }
         browserColumn?.show(.simulator)
         showBrowserColumn()
     }
@@ -206,9 +207,14 @@ extension TerminalWindowController {
     func browserSettingsChanged() {
         BrowserBridge.shared.update()
         browserButton.isEnabled = Settings.shared.browserEnabled
+        browserButton.isSimulatorEnabled = Settings.shared.simulatorEnabled
+        let open = browserItem?.isCollapsed == false
+        // The simulator off: the column goes if it was showing it.
+        if !Settings.shared.simulatorEnabled, open, browserColumn?.mode == .simulator { closeBrowser() }
         guard !Settings.shared.browserEnabled else { return }
-        // Off: the column goes, and every tab's pages with it.
-        if browserItem?.isCollapsed == false { closeBrowser() }
+        // Off: the column goes (unless it is the simulator's), and every
+        // tab's pages with it.
+        if browserItem?.isCollapsed == false, browserColumn?.mode != .simulator { closeBrowser() }
         browser?.show(nil, ports: [])
         for (id, workspace) in browserWorkspaces {
             workspace.closeAll()

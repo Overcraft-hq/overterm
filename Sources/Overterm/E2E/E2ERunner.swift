@@ -1701,6 +1701,26 @@ final class E2ERunner {
         check(
             "the phone again shuts the column, and the reading with it",
             app.browserItem?.isCollapsed == true && !simulator.isActive && simulator.mirrorStatus == .stopped)
+
+        // Each has its own switch in Settings ▸ Browser, and its button goes with it.
+        app.toggleSimulator(nil)
+        await pause(0.3)
+        Settings.shared.set("simulator.enabled", .bool(false))
+        check("the simulator off, its phone goes from the title bar", await eventually(3) { !self.app.browserButton.isSimulatorEnabled })
+        check("the globe stays", app.browserButton.isEnabled)
+        check("and the column it was showing shuts", await eventually(3) { self.app.browserItem?.isCollapsed == true })
+        app.toggleSimulator(nil)
+        await pause(0.3)
+        check("the phone does nothing while it's off", app.browserItem?.isCollapsed == true)
+        Settings.shared.set("browser.enabled", .bool(false))
+        Settings.shared.set("simulator.enabled", nil)
+        check(
+            "the browser off and the simulator on: the phone without the globe",
+            await eventually(3) { self.app.browserButton.isSimulatorEnabled && !self.app.browserButton.isEnabled })
+        app.toggleSimulator(nil)
+        check("and the simulator still opens", await eventually(3) { self.app.browserItem?.isCollapsed == false && column.mode == .simulator })
+        app.toggleSimulator(nil)
+        Settings.shared.set("browser.enabled", nil)
     }
 
     private func dropSplitScenario() async {
