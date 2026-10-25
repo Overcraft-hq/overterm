@@ -117,6 +117,19 @@ checkout, or the one the tab's dev server publishes, and imports Postman,
 `.http` files and a cURL command too. Agents get it over MCP: list the
 requests, send one with its tests, run the collection.
 
+### Notes that are your Obsidian vault
+
+<kbd>⌥⌘N</kbd>, or the rail's note: a folder of Markdown — your Obsidian
+vault as it is, in iCloud or anywhere — beside the terminal. Notes open in
+Live Preview (headings, links, tasks as they read; the Markdown on the
+line you are editing) or the reading view, with mermaid diagrams, math,
+callouts, embeds and code drawn offline. Backlinks, outline, tags, tasks
+and a graph; `[[` completes your notes; a rename takes its links with it;
+today's note, templates and pasted images go where Obsidian's settings
+put them. A terminal selection or a command's output goes into today's
+note in a click, and agents can search and read the vault over MCP —
+never write to it.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

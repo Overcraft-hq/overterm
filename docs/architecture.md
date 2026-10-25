@@ -993,6 +993,74 @@ opens in Bruno and runs under `bru run` — nothing of Overterm's own on disk.
   runs while either tool set is given (`BrowserBridge.update`). The
   response's ✦ hands a request and what came back to an agent.
 
+## Notes (⌥⌘N, sidebar)
+
+A notes vault beside the terminal: a folder of Markdown that is an
+Obsidian vault as it is — the same folder opens in Obsidian, on the phone
+through iCloud, and here (Settings ▸ Notes names it; empty is "Overterm
+Notes" in iCloud Drive; the panel's header switches between the vaults
+Obsidian lists in its `obsidian.json`). Overterm keeps nothing of its own
+in it, and `.obsidian/` is read for where things go, never written.
+
+- **The files** (`NotesVault`, `NoteFiles`): every read and write goes
+  through `NSFileCoordinator`, so a write never lands in the middle of a
+  sync or of Obsidian's own; a file iCloud hasn't downloaded (a
+  `.Name.md.icloud` placeholder) is listed under its real name and fetched
+  when opened. The tree is Obsidian's order — folders first, names as
+  Finder sorts them — without hidden files and "Excluded files".
+  `ObsidianSettings` reads `app.json`, `daily-notes.json` and
+  `templates.json`: where new notes and attachments go, Markdown links or
+  wikilinks, the "New link format", strict line breaks, daily notes and
+  templates (moment.js formats, `MomentFormat`).
+- **A note** (`NoteParser`, pure): frontmatter (through `YAMLReader`),
+  `[[links#heading|alias]]`, `#^blocks`, embeds, Markdown links into the
+  vault, tags by Obsidian's rule, headings, tasks with the range of their
+  status character — nothing from code. Ranges are UTF-16, as the editor
+  counts; the text is parsed as a native `NSString` and code ranges are
+  binary-searched (agents' transcripts are 2.6 MB notes).
+- **The index** (`NotesIndex`, `LinkResolver`): a value built off the main
+  thread, the notes whose date is unchanged kept. A link means what
+  Obsidian decides: a path from the note's folder, then the vault's root,
+  then a name — the closest file with it, in the note's own folder, else
+  the shortest path. Backlinks, tags (nested ones counted for their
+  parents), tasks and unresolved links are lookups.
+- **`NotesModel`** is one for the app — the vault isn't a checkout's — and
+  reads only while some window shows the panel, or when something needs
+  the index now (a note open, ⌘F, an agent): `whenLoaded`. Obsidian's
+  settings are read again with every reload; its workspace file, rewritten
+  on nearly every click, wakes nothing.
+- **Reading view** (`NoteReaderView`, `Resources/notes`): a WKWebView with
+  markdown-it, DOMPurify, KaTeX, highlight.js and mermaid, bundled, pinned
+  and SHA-checked (`Scripts/fetch-notes-web.sh`). Swift resolves every link
+  and cuts every embed (`NoteRenderPayload`, `NoteSections`); the script
+  only draws and posts back what was clicked. The page loads only through
+  `overterm-note:` — the app's files and the vault's, a path leaving either
+  refused — and a note's HTML is sanitized, because the page talks back to
+  the app. DOMPurify drops any attribute value with `-->` in it: a mermaid
+  diagram's source is kept in a table, not an attribute.
+- **Live Preview** (`NoteLivePreview`): the note's own text, styled with
+  attributes — nothing inserted. Markup carries `.noteHidden`, which the
+  layout manager's delegate (`EditorLineHeight`) lays out as nothing, on
+  every line but the ones the selection touches; in Live Preview the same
+  delegate makes each line as tall as its largest font. Boxes, dots, quote
+  bars and rules are `.noteDecoration`, drawn by `CodeTextView`; links carry
+  `.noteLink`/`.noteURL` for a click. An attribute, not a list of ranges:
+  it moves with every edit. The caret moving restyles the lines it left
+  and the ones it is on.
+- **Writing** (`NoteRename`, `NoteEdits`, `NoteTemplate`, `NoteAppend`):
+  a rename writes again only the links it would break, in the shape they
+  were written; a task ticked anywhere is its `[ ]` in the text (the open
+  buffer's, else the file's); templates, daily notes, pasted images,
+  terminal text and branch notes go where Obsidian's settings put them.
+- **Agents** (`NotesMCP`): `notes_search` and `notes_read` beside the
+  browser's and the API client's tools on the same MCP server, read-only,
+  naming only the index's notes. Settings ▸ Notes ▸ "Agents can read the
+  notes".
+- **Elsewhere**: ⌘F lists notes after the checkout (`NotesSearch`); the
+  Graph View (`NotesGraph`, deterministic force layout off the main thread)
+  joins the right-hand slot; the panel's lower half is backlinks, outline,
+  tags and tasks (`NotesDetailView`).
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a
