@@ -302,6 +302,9 @@ final class Settings: ObservableObject {
     var notesEnabled: Bool { bool("notes.enabled") }
     var notesVaultPath: String { string("notes.vaultPath") }
     var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
+    var databaseEnabled: Bool { bool("database.enabled") }
+    var databaseRowLimit: Int { Int(number("database.rowLimit") ?? 500) }
+    var databaseConfirmDestructive: Bool { databaseEnabled && bool("database.confirmDestructive") }
     var notesLivePreview: Bool { notesEnabled && bool("notes.livePreview") }
 
     // MARK: Ghostty overrides

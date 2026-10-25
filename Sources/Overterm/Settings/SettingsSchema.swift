@@ -124,7 +124,7 @@ struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
-    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notes + notifications + updates
+    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notes + database + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -399,6 +399,21 @@ enum SettingsSchema {
             key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
             help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. Agents never write to it.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
+    ]
+
+    private static let database: [SettingSpec] = [
+        SettingSpec(
+            key: "database.enabled", section: .database, group: "Database", title: "A database client in the sidebar",
+            help: "PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery: connections, their schemas, a console with completion, results in a grid. Passwords and keys stay in your keychain.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "database.rowLimit", section: .database, group: "Queries", title: "Rows fetched for a result",
+            help: "A query's first this many rows are shown; the grid says when there were more.", kind: .integer(100...100_000, step: 100, unit: "rows"),
+            defaultValue: .int(500), requires: "database.enabled"),
+        SettingSpec(
+            key: "database.confirmDestructive", section: .database, group: "Queries", title: "Ask before a statement that destroys",
+            help: "DROP, TRUNCATE, and an UPDATE or DELETE without WHERE are asked about before they are sent.",
+            kind: .toggle, defaultValue: .bool(true), requires: "database.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [
