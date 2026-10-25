@@ -29,6 +29,9 @@ struct TabBarActions {
     var toggleBrowser: () -> Void = {}
     /// The phone beside it: the same column, showing the simulator.
     var toggleSimulator: () -> Void = {}
+    /// The suspended chip: one tab, or every one, carried on.
+    var resume: (Tab) -> Void = { _ in }
+    var resumeAll: () -> Void = {}
 }
 
 /// What the title bar's globe shows: whether there is a browser (Settings
@@ -171,6 +174,8 @@ struct TabBarView: View {
                 .padding(.trailing, 6)
             }
             AttentionChip(store: store, theme: theme, select: actions.select)
+                .padding(.trailing, 6)
+            SuspendedChip(store: store, theme: theme, select: actions.select, resume: actions.resume, resumeAll: actions.resumeAll)
                 .padding(.trailing, 6)
             StashedGroupsChip(store: store, theme: theme, restore: groupActions.restore)
                 .padding(.trailing, 4)

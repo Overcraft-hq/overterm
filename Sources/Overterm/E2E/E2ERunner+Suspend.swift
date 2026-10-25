@@ -20,10 +20,6 @@ extension E2ERunner {
         check("Suspend Tab stops every process in it", await eventually(5) { processes().allSatisfy { Self.isStopped($0.pid) } }, "\(processes().map { "\($0.name):\(Self.isStopped($0.pid))" })")
         check("the tab says so", tab.isSuspended && app.menu(for: tab).items.contains { $0.title == "Resume Tab" })
         check("a cover over the pane", pane.subviews.contains { $0 is SuspendedCover })
-        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
-            await pause(0.5)
-            app.captureWindow(to: png)
-        }
         await pause(1)
         check("still stopped a moment later", Self.isStopped(sleep.pid))
 
@@ -36,6 +32,25 @@ extension E2ERunner {
             "the job keeps the terminal",
             login.flatMap(ProcessInspector.foregroundGroup(of:)) == ProcessInspector.processGroup(of: sleep.pid),
             "foreground \(String(describing: login.flatMap(ProcessInspector.foregroundGroup(of:)))), sleep's \(String(describing: ProcessInspector.processGroup(of: sleep.pid)))")
+
+        // Suspend Other Tabs, from a second tab: the first stops, this one
+        // runs; the strip counts what is stopped.
+        app.newTab(in: scratch)
+        guard let other = app.store.selected, other !== tab else { return check("a second tab", false) }
+        let menu = app.menu(for: other)
+        if let index = menu.items.firstIndex(where: { $0.title == "Suspend Other Tabs" }) {
+            menu.performActionForItem(at: index)
+        }
+        check("Suspend Other Tabs stops the others", await eventually(5) { tab.isSuspended && Self.isStopped(sleep.pid) })
+        check("and leaves this one", !other.isSuspended)
+        check("the strip counts them", app.store.tabs.filter(\.isSuspended).count >= 1)
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            app.store.select(tab)
+            await pause(0.6)
+            app.captureWindow(to: png)
+        }
+        app.store.tabs.filter(\.isSuspended).forEach { app.resumeTab($0) }
+        check("Resume All carries them on", await eventually(5) { !Self.isStopped(sleep.pid) && !app.store.tabs.contains(where: \.isSuspended) })
 
         // Closed while suspended: continued first, so the hangup lands.
         app.suspendTab(tab)

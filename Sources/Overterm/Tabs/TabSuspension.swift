@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Suspend Tab: every process in a tab's panes stopped (SIGSTOP) — no CPU,
 /// nothing lost — until Resume Tab continues them (SIGCONT) where they were.
@@ -90,14 +91,16 @@ extension TerminalWindowController {
         DispatchQueue.global(qos: .userInitiated).async {
             let orders = roots.map { TabSuspension.order(inspector.tree(root: $0.0, tag: $0.1)) }
             Task { @MainActor in
-                for (pane, pids) in zip(panes, orders) { pane.suspend(pids) }
                 tab.objectWillChange.send()
+                self.store.objectWillChange.send()
+                for (pane, pids) in zip(panes, orders) { pane.suspend(pids) }
             }
         }
     }
 
     func resumeTab(_ tab: Tab) {
         tab.objectWillChange.send()
+        store.objectWillChange.send()
         tab.terminals.forEach { $0.resume() }
         if store.selected === tab { tab.terminal.window?.makeFirstResponder(tab.terminal) }
     }
@@ -108,5 +111,74 @@ extension TerminalWindowController {
         while let current = view, !(current is TerminalView) { view = current.superview }
         guard let tab = tab(containing: view as? TerminalView) else { return }
         resumeTab(tab)
+    }
+}
+
+/// "2 suspended" in the strip, beside "need you": a stopped tab is easy to
+/// forget, and one scrolled out of the strip or in a collapsed island
+/// says nothing at all. The list behind it resumes one, or all.
+struct SuspendedChip: View {
+    @ObservedObject var store: TabStore
+    @ObservedObject var theme: ChromeTheme
+    let select: (Tab) -> Void
+    let resume: (Tab) -> Void
+    let resumeAll: () -> Void
+    @State private var showing = false
+
+    private var suspended: [Tab] { store.tabs.filter(\.isSuspended) }
+
+    var body: some View {
+        let tabs = suspended
+        if !tabs.isEmpty {
+            Button {
+                showing.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "pause.circle.fill").font(.system(size: 11))
+                    Text(verbatim: "\(tabs.count) suspended").font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(theme.text2)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(Capsule().fill(theme.selected))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Suspended tabs — their processes stopped until resumed")
+            .popover(isPresented: $showing, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Suspended").font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                    ForEach(tabs) { tab in
+                        HStack(spacing: 8) {
+                            Button {
+                                showing = false
+                                select(tab)
+                            } label: {
+                                Text(tab.title).font(.system(size: 13)).foregroundStyle(theme.text).lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Button("Resume") { resume(tab) }.controlSize(.small)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                    }
+                    Divider().padding(.horizontal, 10).padding(.vertical, 5)
+                    HStack {
+                        Spacer()
+                        Button("Resume All") {
+                            showing = false
+                            resumeAll()
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 10).padding(.bottom, 6)
+                }
+                .padding(5)
+                .frame(width: 300)
+                .environment(\.colorScheme, theme.isDark ? .dark : .light)
+            }
+        }
     }
 }

@@ -252,7 +252,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) },
                     toggleBrowser: { [weak self] in self?.toggleBrowser(nil) },
-                    toggleSimulator: { [weak self] in self?.toggleSimulator(nil) }
+                    toggleSimulator: { [weak self] in self?.toggleSimulator(nil) },
+                    resume: { [weak self] in self?.resumeTab($0) },
+                    resumeAll: { [weak self] in self?.store.tabs.filter(\.isSuspended).forEach { self?.resumeTab($0) } }
                 ),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },
@@ -2096,6 +2098,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             tab.isSuspended
                 ? ClosureMenuItem("Resume Tab") { [weak self] in self?.resumeTab(tab) }
                 : ClosureMenuItem("Suspend Tab") { [weak self] in self?.suspendTab(tab) })
+        let running = store.tabs.filter { $0.id != tab.id && !$0.isSuspended }
+        menu.addItem(ClosureMenuItem("Suspend Other Tabs", enabled: !running.isEmpty) { [weak self] in running.forEach { self?.suspendTab($0) } })
         addWorkingDirectoryItems(to: menu, for: tab)
         menu.addItem(.separator())
         addGroupItems(to: menu, for: tab)
