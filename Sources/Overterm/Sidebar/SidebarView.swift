@@ -63,7 +63,7 @@ struct SessionActions {
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, git, sessions, snippets, api, notes
+    case files, git, sessions, snippets, api, notes, database
 
     var id: String { rawValue }
 
@@ -75,6 +75,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         switch self {
         case .api: Settings.shared.apiEnabled
         case .notes: Settings.shared.notesEnabled
+        case .database: Settings.shared.databaseEnabled
         default: true
         }
     }
@@ -103,6 +104,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .snippets: "curlybraces"
         case .api: "arrow.left.arrow.right"
         case .notes: "note.text"
+        case .database: "cylinder.split.1x2"
         }
     }
 
@@ -140,6 +142,7 @@ struct SidebarView: View {
     @ObservedObject var sessions: SessionsModel
     @ObservedObject var api: APIWorkspace
     @ObservedObject var notes: NotesModel
+    @ObservedObject var database: DatabaseModel
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
@@ -151,6 +154,7 @@ struct SidebarView: View {
     let sessionActions: SessionActions
     let apiActions: APIActions
     let notesActions: NotesActions
+    let databaseActions: DatabaseActions
     /// The gear at the foot of the rail.
     let onSettings: () -> Void
     let onClose: () -> Void
@@ -171,6 +175,7 @@ struct SidebarView: View {
                 case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
                 case .api: APIPanelView(workspace: api, group: group, theme: theme, actions: apiActions)
                 case .notes: NotesPanelView(model: notes, theme: theme, actions: notesActions)
+                case .database: DatabasePanelView(model: database, store: database.store, theme: theme, actions: databaseActions)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

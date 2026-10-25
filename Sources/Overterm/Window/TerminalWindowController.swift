@@ -288,6 +288,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 sessions: sessions,
                 api: apiWorkspace,
                 notes: NotesModel.shared,
+                database: DatabaseModel.shared,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -346,6 +347,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     trash: { [weak self] item in self?.trashItem(item.url) }
                 ),
                 notesActions: notesActions,
+                databaseActions: databaseActions,
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -584,6 +586,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         wireOvergit()
         wireAPI()
         wireNotes()
+        wireDatabase()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -2956,6 +2959,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 if keys.contains(where: { $0.hasPrefix("browser.") }) { self.browserSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
@@ -3377,6 +3381,10 @@ extension TerminalWindowController: NSMenuItemValidation {
         if menuItem.action == #selector(showAPIClient(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .api ? .on : .off
             return Settings.shared.apiEnabled
+        }
+        if menuItem.action == #selector(showDatabase(_:)) {
+            menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .database ? .on : .off
+            return Settings.shared.databaseEnabled
         }
         if menuItem.action == #selector(showNotes(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .notes ? .on : .off

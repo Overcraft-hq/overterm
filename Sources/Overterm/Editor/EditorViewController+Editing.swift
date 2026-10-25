@@ -91,6 +91,8 @@ extension EditorViewController: CodeTextViewHost {
         case "editor.duplicateLineDown": apply(EditCommands.duplicateLines(.down, in: text, selections: selections))
         case "editor.deleteLine": apply(EditCommands.deleteLines(in: text, selections: selections))
         case "editor.insertLineBelow":
+            // ⌘↩ in a console runs, as DataGrip's does.
+            if buffer.sqlConsole?.connection != nil { return runConsoleStatement() }
             apply(EditCommands.insertLineBelow(in: text, selections: selections, style: buffer.indentStyle, languageID: buffer.languageID))
         case "editor.insertLineAbove": apply(EditCommands.insertLineAbove(in: text, selections: selections))
         case "editor.selectNext":

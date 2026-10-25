@@ -10,7 +10,7 @@ final class SidebarRailTests: XCTestCase {
     /// API client and the notes — the order the rail draws and the order
     /// somebody reaches for them in.
     func testThePanelsInOrder() {
-        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes])
+        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes, .database])
         XCTAssertEqual(SidebarPanel.files.title, "Files")
         XCTAssertEqual(SidebarPanel.git.title, "Overgit")
         XCTAssertEqual(SidebarPanel.api.title, "API")
@@ -22,7 +22,8 @@ final class SidebarRailTests: XCTestCase {
     func testThePanelsThatFollowTheirSettings() {
         XCTAssertEqual(SidebarPanel.shown.contains(.api), Settings.shared.apiEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.notes), Settings.shared.notesEnabled)
-        XCTAssertEqual(SidebarPanel.shown.filter { $0 != .api && $0 != .notes }, [.files, .git, .sessions, .snippets])
+        XCTAssertEqual(SidebarPanel.shown.contains(.database), Settings.shared.databaseEnabled)
+        XCTAssertEqual(SidebarPanel.shown.filter { $0 != .api && $0 != .notes && $0 != .database }, [.files, .git, .sessions, .snippets])
     }
 
     /// Glyphs that can't be mistaken for each other — the whole point

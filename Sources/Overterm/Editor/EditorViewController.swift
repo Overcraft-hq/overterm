@@ -47,6 +47,12 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private var header: EditorHeaderView!
     private var breadcrumb: EditorBreadcrumbView!
     private(set) var statusBar: EditorStatusBar!
+    /// A `.sql` file's console, under its text (EditorViewController+Database).
+    private(set) var consoleHost: NSHostingView<AnyView>!
+    var consoleHeight: NSLayoutConstraint!
+    var consoleObserver: AnyCancellable?
+    /// How tall the console is with results showing; dragged by its edge.
+    var consoleResultsHeight: CGFloat = 260
     private(set) var preview: MarkdownPreviewView!
     /// A Bruno request, shown in place of its file's text.
     private(set) var requestHost: NSHostingView<AnyView>!
@@ -193,6 +199,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         preview.isHidden = true
         preview.onOpenFile = { [weak self] url in self?.open(url) }
 
+        let consoleHost = NSHostingView(rootView: AnyView(EmptyView()))
+        consoleHost.sizingOptions = []
+        consoleHost.clipsToBounds = true
+
         let requestHost = NSHostingView(rootView: AnyView(EmptyView()))
         requestHost.isHidden = true
         // The view sizes to the pane, never the pane to it.
@@ -203,7 +213,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         message.alignment = .center
         message.isHidden = true
 
-        for view in [header, breadcrumb, scrollView, preview, requestHost, statusBar, message] as [NSView] {
+        for view in [header, breadcrumb, scrollView, preview, requestHost, consoleHost, statusBar, message] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -219,7 +229,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             scrollView.topAnchor.constraint(equalTo: breadcrumb.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: consoleHost.topAnchor),
+            consoleHost.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            consoleHost.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            consoleHost.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
             preview.topAnchor.constraint(equalTo: scrollView.topAnchor),
             preview.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
             preview.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
@@ -242,6 +255,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         self.header = header
         self.breadcrumb = breadcrumb
         self.statusBar = statusBar
+        self.consoleHost = consoleHost
+        consoleHeight = consoleHost.heightAnchor.constraint(equalToConstant: 0)
+        consoleHeight.isActive = true
         self.preview = preview
         self.requestHost = requestHost
         self.messageLabel = message
@@ -279,6 +295,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         buffer.load(url, attributes: baseAttributes)
         attachRequest(buffer)
         attachNote(buffer)
+        attachConsole(buffer)
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
@@ -310,6 +327,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         swapping = false
         applyWrap()
         setLiveLayout(buffer.livePreview)
+        showConsole(buffer)
         let unavailable = buffer.document.unavailable
         messageLabel.stringValue = unavailable ?? ""
         messageLabel.isHidden = unavailable == nil
@@ -381,6 +399,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             textView.layoutManager?.replaceTextStorage(emptyStorage)
             swapping = false
             hideTransientUI()
+            showConsole(nil)
             updatePreview()
             refreshChrome()
             onClose?()

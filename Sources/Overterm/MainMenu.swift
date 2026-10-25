@@ -101,6 +101,7 @@ enum MainMenu {
         command(viewMenu, "Overgit", #selector(TerminalWindowController.showOvergit(_:)), "overgit.show")
         command(viewMenu, "API Client", #selector(TerminalWindowController.showAPIClient(_:)), "api.show")
         command(viewMenu, "Notes", #selector(TerminalWindowController.showNotes(_:)), "notes.show")
+        command(viewMenu, "Database", #selector(TerminalWindowController.showDatabase(_:)), "database.show")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).

@@ -32,6 +32,8 @@ final class EditorBuffer {
     var request: APIRequestModel?
     /// A note of the vault: its preview is the reading view (NoteReaderView).
     var isNote = false
+    /// A `.sql` file: the console under it (connection, results).
+    var sqlConsole: SQLConsole?
     /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.
     var livePreview = false
     /// The caret's lines when Live Preview last styled them: their markup shows.
