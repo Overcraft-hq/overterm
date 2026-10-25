@@ -124,7 +124,7 @@ struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
-    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notifications + updates
+    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notes + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -375,6 +375,22 @@ enum SettingsSchema {
             help:
                 "Claude Code started from Overterm gets MCP tools for its checkout's collection: list the requests, send one with its tests, send a one-off, run the collection.",
             kind: .toggle, defaultValue: .bool(true), requires: "api.enabled"),
+    ]
+
+    private static let notes: [SettingSpec] = [
+        SettingSpec(
+            key: "notes.enabled", section: .notes, group: "Notes", title: "Notes in the sidebar",
+            help: "A folder of Markdown notes — an Obsidian vault opens as it is, and stays one: Obsidian, the phone and Overterm share it.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "notes.vaultPath", section: .notes, group: "Notes", title: "Vault folder",
+            help: "Empty: “Overterm Notes” in iCloud Drive. An Obsidian vault's folder (the Notes panel lists the ones Obsidian knows) uses it as it is.",
+            kind: .text(placeholder: "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/My Vault", monospaced: true),
+            defaultValue: .string(""), requires: "notes.enabled"),
+        SettingSpec(
+            key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
+            help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. Agents never write to it.",
+            kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

@@ -298,6 +298,9 @@ final class Settings: ObservableObject {
     var apiVerifyTLS: Bool { bool("api.verifyTLS") }
     var apiDiscoverServers: Bool { bool("api.discoverServers") }
     var apiAgentControl: Bool { apiEnabled && bool("api.agentControl") }
+    var notesEnabled: Bool { bool("notes.enabled") }
+    var notesVaultPath: String { string("notes.vaultPath") }
+    var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
 
     // MARK: Ghostty overrides
 
