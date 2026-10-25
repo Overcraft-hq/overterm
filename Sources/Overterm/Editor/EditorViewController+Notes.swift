@@ -341,7 +341,10 @@ extension EditorViewController {
     }
 
     private var liveStyle: NoteLivePreview {
-        let size = max(13, (textView.font?.pointSize ?? 13) + 2)
+        // From Settings' font, never `textView.font` — the first character's,
+        // a heading's in a note that opens with one: each restyle grew it
+        // by a heading's scale again.
+        let size = max(13, lineHeight.font.pointSize + 2)
         let body = NSFont.systemFont(ofSize: size)
         let mono = NSFont.monospacedSystemFont(ofSize: size - 1.5, weight: .regular)
         return NoteLivePreview(

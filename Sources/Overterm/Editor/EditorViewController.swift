@@ -504,7 +504,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     }
 
     var baseAttributes: [NSAttributedString.Key: Any] {
-        let font = textView?.font ?? Self.font
+        // The editor's font as Settings set it — not `textView.font`, which
+        // is the first character's: a note opening on a Live Preview
+        // heading made every line a heading's size.
+        let font = lineHeight?.font ?? Self.font
         let paragraph = NSMutableParagraphStyle()
         let space = ("m" as NSString).size(withAttributes: [.font: font]).width
         paragraph.defaultTabInterval = space * CGFloat(Settings.shared.editorTabSize)

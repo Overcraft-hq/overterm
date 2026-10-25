@@ -297,6 +297,27 @@ extension E2ERunner {
         editor.toggleMarkdownPreview()
         _ = await eventually(3) { !(editor.noteReader?.isHidden ?? true) }
 
+        // A note opening on a heading: its size stays a heading's however
+        // often the caret moves — it grew each restyle, from the first
+        // character's font, and a note in a real vault became one word a screen.
+        let headed = root.appendingPathComponent("Headed.md")
+        try? "# Knowledge Graph\n\nSome text, [[Rich]].\n\nMore.\n".write(to: headed, atomically: true, encoding: .utf8)
+        app.openNote(headed)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Headed.md" }
+        if editor.active?.showsPreview == true { editor.toggleMarkdownPreview() }
+        var sizes: [CGFloat] = []
+        for location in [0, 25, 0, 30, 0, 25] {
+            editor.textView.setSelectedRange(NSRange(location: location, length: 0))
+            await pause(0.15)
+            sizes.append((editor.textView.textStorage?.attribute(.font, at: 3, effectiveRange: nil) as? NSFont)?.pointSize ?? 0)
+        }
+        let body = (editor.textView.textStorage?.attribute(.font, at: 22, effectiveRange: nil) as? NSFont)?.pointSize ?? 0
+        check("a heading keeps its size as the caret moves", Set(sizes).count == 1 && (sizes.first ?? 0) < 40, "\(sizes)")
+        check("and the text under it is the body's", body > 0 && body < 20, "\(body)")
+        app.openNote(rich)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Rich.md" }
+        if editor.active?.showsPreview == false { editor.toggleMarkdownPreview() }
+
         // A link to a note not written yet writes it.
         editor.followNoteLink("Nowhere", anchor: nil, markdown: false)
         check("following a link opens its note", await eventually(3) { editor.active?.url?.lastPathComponent == "Nowhere.md" })
