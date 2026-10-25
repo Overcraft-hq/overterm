@@ -534,6 +534,18 @@ final class DiffModel: ObservableObject {
     /// A click on a card's header.
     func toggleFold(_ path: String) { folded[path] = !isFolded(path) }
 
+    /// A file asked for from elsewhere (Overgit): unfolded, and the pane
+    /// scrolls to it.
+    @Published private(set) var revealed: (path: String, ticket: Int)?
+    private var revealTicket = 0
+
+    func reveal(_ path: String) {
+        if scope != .uncommitted { choose(.uncommitted) }
+        folded[path] = false
+        revealTicket += 1
+        revealed = (path, revealTicket)
+    }
+
     /// The pane header's Collapse All: every card, and those shown later.
     func collapseAll() { foldAll(true) }
 
@@ -657,6 +669,29 @@ final class DiffModel: ObservableObject {
 
     func stageAll() async { await perform(["add", "--all"]) }
 
+    /// Everything out of the index, the files left as they are.
+    func unstageAll() async {
+        guard let root else { return }
+        // Before the first commit there is no HEAD to restore from.
+        let hasHead = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)) != nil
+        await perform(hasHead ? ["restore", "--staged", "--", "."] : ["rm", "-r", "--cached", "--quiet", "--", "."])
+    }
+
+    /// The last commit's message — what Amend starts from.
+    func lastCommitMessage() async -> String? {
+        guard let root else { return nil }
+        return (try? await Git.run(["log", "-1", "--format=%B"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Pushes the branch — to its upstream, or, the first time, to origin
+    /// as its upstream (what `git push` would tell you to do).
+    @discardableResult
+    func push() async -> Bool {
+        guard let root else { return false }
+        let upstream = (try? await Git.run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], in: root)) != nil
+        return await perform(upstream ? ["push"] : ["push", "--set-upstream", "origin", "HEAD"], timeout: nil)
+    }
+
     /// Throws the file's changes away: back to HEAD, staged and unstaged. A
     /// file HEAD doesn't have (untracked, or newly added) goes to the Trash,
     /// not oblivion.
@@ -678,14 +713,14 @@ final class DiffModel: ObservableObject {
 
     /// Commits what is staged. Returns whether it worked (the panel clears
     /// its message field then).
-    func commit(message: String) async -> Bool {
-        await perform(["commit", "-m", message], timeout: nil)
+    func commit(message: String, amend: Bool = false) async -> Bool {
+        await perform(["commit", "-m", message] + (amend ? ["--amend"] : []), timeout: nil)
     }
 
     /// Nothing staged: stage everything, then commit — Warp's one-button path.
-    func commitAll(message: String) async -> Bool {
+    func commitAll(message: String, amend: Bool = false) async -> Bool {
         guard await perform(["add", "--all"]) else { return false }
-        return await perform(["commit", "-m", message], timeout: nil)
+        return await perform(["commit", "-m", message] + (amend ? ["--amend"] : []), timeout: nil)
     }
 
     @discardableResult

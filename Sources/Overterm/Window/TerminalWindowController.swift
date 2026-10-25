@@ -134,6 +134,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     let usage = UsageModel()
     /// The commit picked in Overgit, shown in the right pane.
     let commitDetail = CommitDetailModel()
+    /// Two branches, tags or commits compared (Overgit ▸ Compare).
+    let compare = CompareModel()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -320,7 +322,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     showPullRequestNumber: { [weak self] in self?.showPullRequest(number: $0) },
                     applyStash: { [weak self] in self?.applyStash($0) },
                     dropStash: { [weak self] in self?.dropStash($0) },
-                    showChanges: { [weak self] in self?.showChanges(nil) }
+                    showChanges: { [weak self] in self?.showChanges(nil) },
+                    showChangedFile: { [weak self] in self?.showChangedFile($0) },
+                    compare: { [weak self] base, head in self?.showCompare(base: base, head: head) }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
@@ -504,6 +508,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     runner: apiWorkspace.runner, workspace: apiWorkspace, theme: theme,
                     open: { [weak self] in self?.openInEditor($0) },
                     runWithBru: { [weak self] in self?.runAPIWithBru() }),
+                compare: CompareView(
+                    model: compare, theme: theme,
+                    onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onCommit: { [weak self] in self?.showCommit($0) },
+                    onOpen: { [weak self] path in
+                        guard let self, let root = self.diff.root else { return }
+                        self.openInEditor(root.appendingPathComponent(path))
+                    }),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
@@ -3267,6 +3279,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         pullRequest.visible = shown && rightPane.mode == .pullRequest
         usage.visible = shown && rightPane.mode == .usage
         commitDetail.visible = shown && rightPane.mode == .commit
+        compare.visible = shown && rightPane.mode == .compare
     }
 
     @objc func toggleFileTree(_ sender: Any?) {

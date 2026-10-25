@@ -4,12 +4,14 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph
+        case changes, pullRequest, usage, commit, runner, graph, compare
     }
 
     @Published var mode: Mode = .changes
     /// The notes' graph was asked for: its tab stays from then on.
     @Published var graphOpened = false
+    /// A comparison was asked for in Overgit: its tab stays from then on.
+    @Published var compareOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -31,6 +33,7 @@ struct RightPaneView: View {
     let usage: UsageView
     let commit: CommitDetailView
     let runner: APIRunnerView
+    let compare: CompareView
     let graph: NotesGraphView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
@@ -85,6 +88,11 @@ struct RightPaneView: View {
                         }
                     }
                 }
+                if pane.compareOpened {
+                    tab(.compare, help: "The comparison picked in Overgit") {
+                        Image(systemName: "arrow.left.arrow.right.square").font(.system(size: 11))
+                    }
+                }
                 if pane.graphOpened {
                     tab(.graph, help: "The notes' graph") {
                         Image(systemName: "point.3.connected.trianglepath.dotted").font(.system(size: 11))
@@ -101,6 +109,7 @@ struct RightPaneView: View {
             case .commit: commit
             case .runner: runner
             case .graph: graph
+            case .compare: compare
             }
         }
         .background(theme.strip)

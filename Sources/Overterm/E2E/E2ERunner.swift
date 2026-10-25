@@ -69,6 +69,7 @@ final class E2ERunner {
         "askAgent": { await $0.askAgentScenario() },
         "dropSplit": { await $0.dropSplitScenario() },
         "overgit": { await $0.overgitScenario() },
+        "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
@@ -76,7 +77,7 @@ final class E2ERunner {
     let app: TerminalWindowController
     private var failures = 0
     /// Scratch space for this run; removed at the end.
-    private let scratch = FileManager.default.temporaryDirectory
+    let scratch = FileManager.default.temporaryDirectory
         .appendingPathComponent("overterm-e2e-\(UUID().uuidString)", isDirectory: true)
 
     init(app: TerminalWindowController) {
@@ -246,7 +247,7 @@ final class E2ERunner {
         return nil
     }
 
-    private func git(_ args: [String], in dir: URL) async throws {
+    func git(_ args: [String], in dir: URL) async throws {
         _ = try await Git.run(["-c", "user.email=e2e@overterm", "-c", "user.name=e2e"] + args, in: dir)
     }
 

@@ -86,13 +86,15 @@ struct OvergitOverview: View {
 }
 
 /// One commit: its lane in the graph, its subject, and who and when.
-struct CommitRowView: View {
+struct CommitRowView<Extra: View>: View {
     let commit: Commit
     let row: GraphRow?
     let lanes: Int
     let isSelected: Bool
     @ObservedObject var theme: ChromeTheme
     let onOpen: () -> Void
+    /// More of the menu: Compare, where the row is Overgit's.
+    @ViewBuilder var menu: Extra
     @State private var hovering = false
 
     var body: some View {
@@ -138,7 +140,7 @@ struct CommitRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onOpen)
-        .help(Self.help(commit))
+        .help(CommitRowRefs.help(commit))
         .contextMenu {
             Button("Show This Commit", action: onOpen)
             Button("Copy SHA") {
@@ -149,12 +151,18 @@ struct CommitRowView: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(commit.subject, forType: .string)
             }
+            menu
         }
     }
 
     /// The one ref worth the room: where HEAD is, else a local branch,
     /// else a tag, else whatever there is.
-    static func leadingRef(_ refs: [CommitRef]) -> CommitRef? {
+    static func leadingRef(_ refs: [CommitRef]) -> CommitRef? { CommitRowRefs.leading(refs) }
+}
+
+/// Which ref a commit row shows.
+enum CommitRowRefs {
+    static func leading(_ refs: [CommitRef]) -> CommitRef? {
         refs.first { $0.isHead } ?? refs.first { $0.kind == .branch } ?? refs.first { $0.kind == .tag } ?? refs.first
     }
 
@@ -194,6 +202,7 @@ struct RefPill: View {
 
 /// A branch, or the folder a `/` makes.
 struct BranchRowView: View {
+    @ObservedObject var model: OvergitModel
     let node: BranchNode
     let isCurrent: Bool
     let isOpen: Bool
@@ -241,6 +250,7 @@ struct BranchRowView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(branch.name, forType: .string)
                 }
+                CompareMenuItems(ref: branch.name, model: model, actions: actions)
             }
         }
     }
@@ -328,5 +338,11 @@ struct StashRowView: View {
             Button("Apply") { actions.applyStash(stash) }
             Button("Drop…", role: .destructive) { actions.dropStash(stash) }
         }
+    }
+}
+
+extension CommitRowView where Extra == EmptyView {
+    init(commit: Commit, row: GraphRow?, lanes: Int, isSelected: Bool, theme: ChromeTheme, onOpen: @escaping () -> Void) {
+        self.init(commit: commit, row: row, lanes: lanes, isSelected: isSelected, theme: theme, onOpen: onOpen) { EmptyView() }
     }
 }

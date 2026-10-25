@@ -19,12 +19,13 @@ final class OvergitModel: ObservableObject {
     /// The panel's collapsible parts, in the order they are drawn. The
     /// overview above them is not one: it is always there.
     enum Section: String, CaseIterable, Identifiable {
-        case commits, branches, pullRequests, worktrees, stashes, tags, remotes
+        case changes, commits, branches, pullRequests, worktrees, stashes, tags, remotes
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
+            case .changes: "Changes"
             case .commits: "Commits"
             case .branches: "Branches"
             case .pullRequests: "Pull Requests"
@@ -37,6 +38,7 @@ final class OvergitModel: ObservableObject {
 
         var symbol: String {
             switch self {
+            case .changes: "plusminus.circle"
             case .commits: "clock.arrow.circlepath"
             case .branches: "arrow.triangle.branch"
             case .pullRequests: "arrow.triangle.pull"
@@ -48,11 +50,12 @@ final class OvergitModel: ObservableObject {
         }
 
         /// Asked of git, rather than of something the window already has.
-        var isRead: Bool { self != .pullRequests && self != .worktrees }
+        /// The changes are DiffModel's, the pull requests and worktrees WorktreeModel's.
+        var isRead: Bool { self != .pullRequests && self != .worktrees && self != .changes }
     }
 
     private static let sectionsKey = "overgitSections"
-    private static let defaultSections: Set<Section> = [.commits, .branches, .pullRequests, .worktrees]
+    private static let defaultSections: Set<Section> = [.changes, .commits, .branches, .pullRequests, .worktrees]
 
     @Published private(set) var commits: [Commit] = []
     @Published private(set) var graph: [GraphRow] = []
@@ -72,6 +75,18 @@ final class OvergitModel: ObservableObject {
     @Published var expandedBranchFolders: Set<String> = []
     /// The commit whose detail the right-hand pane is showing.
     @Published var selected: String?
+
+    /// The Commits section's search (CommitSearch): the commits already read
+    /// filter at once, and `git log` searches the whole history after a pause.
+    @Published var commitQuery = "" {
+        didSet { if commitQuery != oldValue { searchCommits() } }
+    }
+    /// A branch, tag or commit picked with "Select for Compare".
+    @Published var compareBase: String?
+    /// What the search found — nil while there is no query.
+    @Published private(set) var searchResults: [Commit]?
+    @Published private(set) var isSearching = false
+    private var search: Task<Void, Never>?
 
     /// Set while the panel is the one on screen and the sidebar is open.
     var visible = false {
@@ -106,6 +121,8 @@ final class OvergitModel: ObservableObject {
         error = nil
         isRepository = false
         selected = nil
+        commitQuery = ""
+        searchResults = nil
         guard visible else { return }
         Task { await refresh() }
     }
@@ -137,6 +154,12 @@ final class OvergitModel: ObservableObject {
         defer {
             reading = false
             isReading = false
+            // A section opened while this read ran is read next — however
+            // this one ended: an early return used to drop it, and the
+            // section stayed empty.
+            let pending = again
+            again = []
+            if !pending.isEmpty { Task { await refresh(pending) } }
         }
 
         let inside =
@@ -171,7 +194,7 @@ final class OvergitModel: ObservableObject {
             case .stashes: read[.stashes] = await run(Stashes.arguments)
             case .tags: read[.tags] = await run(Refs.tagArguments())
             case .remotes: read[.remotes] = await run(Refs.remoteArguments)
-            case .pullRequests, .worktrees: break
+            case .pullRequests, .worktrees, .changes: break
             }
         }
         // A tab switch may have moved the root while git ran.
@@ -186,10 +209,37 @@ final class OvergitModel: ObservableObject {
         if let output = read[.tags] { tags = Refs.parse(tags: output) }
         if let output = read[.remotes] { remotes = Refs.parse(remotes: output) }
         error = failure
+    }
 
-        let pending = again
-        again = []
-        if !pending.isEmpty { await refresh(pending) }
+    // MARK: Searching the history
+
+    private func searchCommits() {
+        search?.cancel()
+        let query = CommitSearch(commitQuery)
+        guard !query.isEmpty, let root else {
+            searchResults = nil
+            isSearching = false
+            return
+        }
+        // At once, from what is read; git's answer replaces it.
+        searchResults = commits.filter(query.matches)
+        isSearching = true
+        let allRefs = Settings.shared.overgitAllRefs
+        let limit = max(200, Settings.shared.overgitCommits)
+        search = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            var found = CommitLog.parse((try? await Git.run(query.arguments(limit: limit, allRefs: allRefs), in: root, outputLimit: 8 << 20)) ?? "")
+            // A hash, from anywhere in the repository.
+            if let sha = query.possibleSHA, !found.contains(where: { $0.sha.hasPrefix(sha) }),
+                let output = try? await Git.run(CommitShow.headerArguments(sha), in: root)
+            {
+                found = CommitLog.parse(output) + found
+            }
+            guard let self, !Task.isCancelled, root == self.root else { return }
+            self.searchResults = found
+            self.isSearching = false
+        }
     }
 
     /// The branch's own row, for the overview card's ahead/behind.

@@ -19,6 +19,10 @@ struct OvergitActions {
     var dropStash: (Stash) -> Void
     /// The changes pane, for the working tree.
     var showChanges: () -> Void
+    /// The changes pane, at one file's diff.
+    var showChangedFile: (ChangedFile) -> Void = { _ in }
+    /// What `head` has that `base` doesn't, in the right-hand pane.
+    var compare: (_ base: String, _ head: String) -> Void = { _, _ in }
 }
 
 /// Overgit: one git home in the sidebar — where you are, what has
@@ -93,6 +97,7 @@ struct OvergitView: View {
 
     private func count(of section: OvergitModel.Section) -> Int {
         switch section {
+        case .changes: diff.files.count
         case .commits: model.commits.count
         case .branches: model.branches.count
         case .pullRequests: livePullRequests.count
@@ -105,6 +110,12 @@ struct OvergitView: View {
 
     @ViewBuilder private func rows(of section: OvergitModel.Section) -> some View {
         switch section {
+        case .changes:
+            let ref = model.branch(named: diff.branch)
+            OvergitChanges(
+                diff: diff, theme: theme, ahead: ref?.ahead ?? 0, hasUpstream: ref?.upstream != nil,
+                onOpen: { actions.showChangedFile($0) },
+                onCommitted: { Task { await model.refresh([.commits, .branches]) } })
         case .commits: commits
         case .branches: branches
         case .pullRequests: pullRequests
@@ -127,7 +138,20 @@ struct OvergitView: View {
     // MARK: Commits
 
     @ViewBuilder private var commits: some View {
-        if model.commits.isEmpty {
+        CommitSearchField(model: model, theme: theme)
+        if let results = model.searchResults {
+            // Found commits don't make a graph: their rows go without one.
+            if results.isEmpty {
+                OvergitEmpty(text: model.isSearching ? "Searching…" : "No commit matches", theme: theme)
+            } else {
+                ForEach(results) { commit in
+                    CommitRowView(
+                        commit: commit, row: nil, lanes: 0, isSelected: model.selected == commit.sha, theme: theme,
+                        onOpen: { actions.showCommit(commit) }
+                    ) { CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions) }
+                }
+            }
+        } else if model.commits.isEmpty {
             OvergitEmpty(text: "No commits yet", theme: theme)
         } else {
             let lanes = model.gutterLanes
@@ -135,7 +159,8 @@ struct OvergitView: View {
                 CommitRowView(
                     commit: commit, row: model.graphRow(at: index), lanes: lanes,
                     isSelected: model.selected == commit.sha, theme: theme,
-                    onOpen: { actions.showCommit(commit) })
+                    onOpen: { actions.showCommit(commit) }
+                ) { CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions) }
             }
         }
     }
@@ -148,6 +173,7 @@ struct OvergitView: View {
         } else {
             ForEach(BranchTree.rows(model.branches, expanded: model.expandedBranchFolders)) { node in
                 BranchRowView(
+                    model: model,
                     node: node, isCurrent: node.branch?.name == diff.branch && node.branch?.isRemote == false,
                     isOpen: model.expandedBranchFolders.contains(node.id), theme: theme,
                     onToggle: {
@@ -243,7 +269,9 @@ struct OvergitView: View {
             ForEach(model.tags) { tag in
                 OvergitPlainRow(
                     symbol: "tag", title: tag.name, detail: tag.subject, trailing: tag.sha, theme: theme,
-                    help: "\(tag.name) · \(tag.sha)")
+                    help: "\(tag.name) · \(tag.sha)"
+                )
+                .contextMenu { CompareMenuItems(ref: tag.name, model: model, actions: actions) }
             }
         }
     }

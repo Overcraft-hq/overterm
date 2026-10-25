@@ -70,6 +70,16 @@ struct DiffPanelView: View {
     }
 
     private var cards: some View {
+        ScrollViewReader { proxy in
+            cardList
+                .onChange(of: model.revealed?.ticket) { _ in
+                    guard let path = model.revealed?.path else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(path, anchor: .top) }
+                }
+        }
+    }
+
+    private var cardList: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
                 if !editable, !model.commits.isEmpty {
@@ -90,6 +100,7 @@ struct DiffPanelView: View {
                         onDiscard: { discarding = file },
                         onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
                     )
+                    .id(file.path)
                 }
                 if model.shownFiles.count > DiffModel.maxDiffedFiles {
                     Text("Diffs shown for the first \(DiffModel.maxDiffedFiles) files.")

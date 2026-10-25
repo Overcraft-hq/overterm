@@ -43,6 +43,24 @@ extension TerminalWindowController {
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
     }
 
+    /// Overgit ▸ Compare: what `head` has that `base` doesn't, in the
+    /// right-hand pane. "HEAD" is the checkout's branch, by its name.
+    func showCompare(base: String, head: String) {
+        let name: (String) -> String = { [diff] ref in ref == "HEAD" ? diff.branch ?? "HEAD" : ref }
+        compare.show(root: overgit.root ?? diff.root, base: name(base), head: name(head))
+        rightPane.compareOpened = true
+        rightPane.mode = .compare
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
+    /// A file clicked in Overgit's Changes: its diff in the changes pane.
+    func showChangedFile(_ file: ChangedFile) {
+        showChanges(nil)
+        // A turn later: the pane lays its cards out as it opens.
+        DispatchQueue.main.async { [weak self] in self?.diff.reveal(file.path) }
+    }
+
     /// A commit was picked in the panel: the right-hand pane shows it.
     /// That pane is the slot the browser shares, so the browser steps
     /// aside as it does for the changes pane.

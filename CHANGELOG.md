@@ -12,6 +12,9 @@ version is tagged `v<version>`.
 - overgit: Pull Requests shows the repository's list — an error from a tab outside a repository, or a worktree git can't follow, no longer hides it
 - overgit: a pull request clicked in Overgit opens in the right-hand pane, any branch's — ↗ still opens GitHub
 - groups: Rename Group… and a double-click on an island's chip rename it — the field took no keys before
+- overgit: stage and commit from Overgit — a Changes section with each file's box, Stage All, the message, Amend, and Push or Publish Branch
+- overgit: search the history — words in the message, a hash, and author:, path:, code:, since:, branch: filters
+- overgit: compare two branches, tags or commits in the right-hand pane — the commits on each side and every file's diff since they parted
 
 ## 1.2.0 — 2026-10-21
 
