@@ -7,6 +7,8 @@ dist/
 # Ghostty source checkout and the GhosttyKit build product (~135 MB) — both are
 # reproduced by `make ghosttykit` from the pin in Scripts/build-ghosttykit.sh.
 vendor/
+# The reading view's scripts, pinned and checked in (Scripts/fetch-notes-web.sh).
+!Resources/notes/vendor/
 Frameworks/
 
 # This Mac's make settings (SIGN_IDENTITY for make install).
