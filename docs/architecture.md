@@ -1110,6 +1110,38 @@ destroying statement are there too).
   SQLite always; BigQuery's signing and answers offline. The `database`
   scenario runs the panel and a console on SQLite.
 
+### Storage
+
+S3 and GCS are connections in the same panel (`DatabaseKind.s3`, `.gcs`),
+their buckets where a database's schemas would be.
+
+- **S3** (`S3Client`, `S3Signer`): every S3-compatible service — AWS,
+  DigitalOcean Spaces, MinIO, R2, B2, Wasabi, any endpoint
+  (`StorageProvider` fills the endpoint from the region and says whether
+  the bucket goes in the path). SigV4 is ours, checked against AWS's own
+  examples (`S3SignerTests`); no SDK. Keys come from the form (the secret
+  in the keychain, as a password) or a profile in `~/.aws/credentials`
+  (`AWSProfile`). Uploads stream from the file with their SHA-256 worked
+  out first, downloads go to a file; a batch delete carries its
+  Content-MD5 and falls back to one at a time where a server lacks it.
+- **GCS** (`GCSClient`): the JSON API, signed in as BigQuery is — a
+  service account's key or `gcloud` (`BigQueryDriver.token`, by scope).
+- **The session** (`StorageSession`): buckets, each folder's listing by
+  `bucket/prefix` a page at a time, the transfers with their progress.
+  A folder is a prefix: New Folder writes a `name/` marker, and deleting a
+  folder lists every key under it first and says how many. A read-only
+  connection refuses every write here too.
+- **A file** (`StorageObjectModel`, `StorageObjectView`) opens in the right
+  of the window — the right slot's `.object` mode, read only while it
+  shows. Its metadata, then a preview (`FilePreview`, pure): CSV/TSV as
+  rows in `ResultGrid`, JSON(L), logs and code as text — the first 2 MB,
+  by a ranged read — images and PDFs whole up to 30 MB. Open in Editor
+  opens a copy from the cache.
+- **Tests**: `StorageClientTests` against the RustFS container
+  (`Scripts/database-test-servers.sh`); the `storage` scenario makes a
+  bucket, uploads a file and a folder, previews both, deletes — skipped
+  when nothing answers on :59000.
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a

@@ -141,6 +141,12 @@ Markdown or INSERTs. Passwords and BigQuery's service account keys stay in
 your keychain; a read-only connection refuses anything that writes, and a
 DROP or an UPDATE without WHERE is asked about first.
 
+S3 and Google Cloud Storage sit in the same panel — AWS, DigitalOcean
+Spaces, MinIO, R2, B2, Wasabi or any S3 endpoint: browse buckets and
+folders, preview a file (CSV as rows, JSON and logs as text, images, PDFs),
+drop files and folders from Finder to upload them, download, delete, copy a
+link that works for an hour.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

@@ -58,6 +58,10 @@ Scripts/database-test-servers.sh stop
 Without `OVERTERM_DB_TESTS=1` those three are skipped, so `make test` and
 CI need no Docker. BigQuery's signing and its answers are tested offline.
 
+The same script starts an S3 server (RustFS, :59000) for
+`StorageClientTests` (`OVERTERM_DB_TESTS=1`) and the `storage` scenario,
+which skips itself when nothing answers there.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
