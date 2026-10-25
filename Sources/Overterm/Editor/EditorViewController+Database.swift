@@ -108,3 +108,69 @@ private struct ConsoleDragEdge: View {
                     .onEnded { _ in start = nil })
     }
 }
+
+// MARK: Completion
+
+extension EditorViewController {
+    /// Tables, columns and keywords from the console's connection, for what
+    /// the caret is writing; a schema not read yet is read, and the list
+    /// comes back with it. False when there is nothing to offer.
+    @discardableResult
+    func updateSQLCompletion() -> Bool {
+        guard let buffer = active, let console = buffer.sqlConsole, let session = console.session, session.isOpen,
+            textView.selectedRanges.count == 1, textView.selectedRange().length == 0, let window = view.window
+        else { return false }
+        let text = textView.string as NSString
+        let caret = textView.selectedRange().location
+        let range = SQLText.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
+        let start = min(range.location, caret)
+        let before = text.substring(with: NSRange(location: start, length: caret - start))
+        let statement = text.substring(with: NSRange(location: start, length: max(NSMaxRange(range), caret) - start))
+        let context = SQLText.completionContext(before: before)
+        let catalog = SQLCompletion.Catalog(
+            schemas: session.schemas, defaultSchema: session.schema, tables: session.tables, columns: session.columns)
+        let missing = SQLCompletion.missing(context, statement: statement, catalog: catalog)
+        if !missing.isEmpty {
+            Task { [weak self, weak buffer] in
+                for schema in missing {
+                    await session.loadTables(schema)
+                    await session.loadColumns(schema)
+                }
+                guard let self, let buffer, buffer === self.active, self.textView.selectedRange().location == caret else { return }
+                self.updateSQLCompletion()
+            }
+        }
+        let prefix: String
+        switch context {
+        case .table(_, let typed), .qualifiedColumn(_, let typed), .any(let typed): prefix = typed
+        }
+        let found = SQLCompletion.candidates(context, statement: statement, catalog: catalog).prefix(200)
+        guard !found.isEmpty else {
+            completionPopup.hide()
+            completion = nil
+            return missing.isEmpty ? false : true
+        }
+        let candidates = found.map { candidate in
+            let (badge, color): (String, NSColor) =
+                switch candidate.kind {
+                case .table: ("T", theme.style(for: "type")?.color ?? theme.info)
+                case .view: ("V", theme.style(for: "type")?.color ?? theme.info)
+                case .column: ("col", theme.style(for: "property")?.color ?? theme.info)
+                case .schema: ("S", theme.style(for: "namespace")?.color ?? theme.hint)
+                case .keyword: ("kw", theme.style(for: "keyword")?.color ?? theme.hint)
+                }
+            return CompletionState.Candidate(
+                label: candidate.label, filterText: candidate.label, insertText: candidate.insert, isSnippet: false, badge: badge,
+                badgeColor: color, detail: candidate.detail, edit: nil, additionalEdits: [], sortText: candidate.label, fromServer: false)
+        }
+        completionRequests += 1
+        let anchor = caret - (prefix as NSString).length
+        var state = CompletionState(anchor: anchor, requestedAt: caret, buffer: buffer, candidates: candidates, generation: completionRequests)
+        state.isSQL = true
+        state.shown = Array(candidates.indices)
+        completion = state
+        let items = candidates.map { EditorListItem(title: $0.label, detail: $0.detail, badge: $0.badge, badgeColor: $0.badgeColor, matched: []) }
+        completionPopup.show(items, details: candidates.map(\.detail), at: textView.screenRect(forCharacterAt: anchor), in: window)
+        return true
+    }
+}

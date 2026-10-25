@@ -54,6 +54,21 @@ extension E2ERunner {
         _ = editor.runConsoleStatement()
         check("⌘↩ runs the statement at the caret", await eventually(5) { console.current?.result?.rows == [["third"]] }, "\(String(describing: console.current?.result))")
 
+        // Completion from the catalog: tables after FROM, an alias's columns.
+        editor.replaceText(of: editor.active!, with: "SELECT * FROM ord")
+        editor.textView.setSelectedRange(NSRange(location: 17, length: 0))
+        _ = editor.updateSQLCompletion()
+        let tables = editor.completion.map { state in state.shown.map { state.candidates[$0].label } } ?? []
+        check("FROM completes the schema's tables", tables.first == "orders", "\(tables)")
+        editor.acceptCompletion(at: 0)
+        check("and accepting writes the name", editor.textView.string == "SELECT * FROM orders", editor.textView.string)
+        editor.replaceText(of: editor.active!, with: "SELECT o.to FROM orders o")
+        editor.textView.setSelectedRange(NSRange(location: 11, length: 0))
+        _ = editor.updateSQLCompletion()
+        let columns = editor.completion.map { state in state.shown.map { state.candidates[$0].label } } ?? []
+        check("an alias completes its table's columns", columns == ["total"], "\(columns)")
+        editor.dismissCompletion()
+
         // A statement that destroys is asked about; refused, it isn't sent.
         console.confirm = { _, _ in false }
         console.run(["DELETE FROM orders"])

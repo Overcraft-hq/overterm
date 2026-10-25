@@ -33,6 +33,9 @@ struct CompletionState {
     /// A note's `[[link` or `#tag`, not code: filtered and accepted by
     /// EditorViewController+Notes.
     var isNote = false
+    /// A console's tables and columns, from its connection's catalog
+    /// (EditorViewController+Database): filtered there, accepted as any.
+    var isSQL = false
 }
 
 extension EditorViewController: CodeTextViewHost {
@@ -240,6 +243,14 @@ extension EditorViewController: CodeTextViewHost {
         guard let buffer = active, textView.selectedRanges.count == 1 else { return dismissCompletion() }
         if buffer.isNote, updateNoteCompletion() { return }
         if completion?.isNote == true { dismissCompletion() }
+        if buffer.sqlConsole?.session?.isOpen == true {
+            if text.count == 1, text == "." || text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }),
+                updateSQLCompletion()
+            {
+                return
+            }
+            return dismissCompletion()
+        }
         if let state = completion {
             if text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }) {
                 // An incomplete list is the server's first answer, not its
@@ -318,6 +329,10 @@ extension EditorViewController: CodeTextViewHost {
         guard var state = completion else { return }
         if state.isNote {
             if !updateNoteCompletion() { dismissCompletion() }
+            return
+        }
+        if state.isSQL {
+            if !updateSQLCompletion() { dismissCompletion() }
             return
         }
         let text = textView.string as NSString
