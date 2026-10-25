@@ -30,6 +30,9 @@ struct CompletionState {
     var shown: [Int] = []
     /// Answers for an older request are dropped.
     var generation: Int
+    /// A note's `[[link` or `#tag`, not code: filtered and accepted by
+    /// EditorViewController+Notes.
+    var isNote = false
 }
 
 extension EditorViewController: CodeTextViewHost {
@@ -223,6 +226,8 @@ extension EditorViewController: CodeTextViewHost {
 
     private func didType(_ text: String) {
         guard let buffer = active, textView.selectedRanges.count == 1 else { return dismissCompletion() }
+        if buffer.isNote, updateNoteCompletion() { return }
+        if completion?.isNote == true { dismissCompletion() }
         if let state = completion {
             if text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }) {
                 // An incomplete list is the server's first answer, not its
@@ -299,6 +304,10 @@ extension EditorViewController: CodeTextViewHost {
     /// left the word or nothing matches.
     func refilterCompletion(manual: Bool = false) {
         guard var state = completion else { return }
+        if state.isNote {
+            if !updateNoteCompletion() { dismissCompletion() }
+            return
+        }
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
         guard textView.selectedRanges.count == 1, caret >= state.anchor, caret <= text.length else { return dismissCompletion() }
@@ -363,6 +372,7 @@ extension EditorViewController: CodeTextViewHost {
         guard let state = completion, state.shown.indices.contains(index), active != nil else { return dismissCompletion() }
         let candidate = state.candidates[state.shown[index]]
         dismissCompletion()
+        if state.isNote { return acceptNoteCompletion(candidate, anchor: state.anchor) }
         let caret = textView.selectedRange().location
         var start = state.anchor
         var end = caret

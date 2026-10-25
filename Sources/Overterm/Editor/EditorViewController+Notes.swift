@@ -138,3 +138,68 @@ extension EditorViewController {
         renderNote(buffer)
     }
 }
+
+// MARK: Completing links and tags
+
+extension EditorViewController {
+    /// `[[` lists the vault's notes, `[[Note#` its headings, `#` the tags —
+    /// shown, or the list kept up to date. False when the caret is in none.
+    func updateNoteCompletion() -> Bool {
+        guard let buffer = active, buffer.isNote, let url = buffer.url, textView.selectedRanges.count == 1,
+            textView.selectedRange().length == 0, let window = view.window
+        else { return false }
+        let text = textView.string as NSString
+        let caret = textView.selectedRange().location
+        let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
+        let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
+        guard let context = NoteCompletion.context(before: before) else { return false }
+        let start: Int
+        switch context {
+        case .link(_, let at), .heading(_, _, let at), .tag(_, let at): start = lineStart + at
+        }
+        let found = NoteCompletion.candidates(context, index: notes.index, source: notes.path(of: url), settings: notes.vault.settings)
+        guard !found.isEmpty else {
+            completionPopup.hide()
+            completion = nil
+            return true
+        }
+        let badge: String
+        switch context {
+        case .link: badge = "[["
+        case .heading: badge = "#"
+        case .tag: badge = "tag"
+        }
+        let candidates = found.map {
+            CompletionState.Candidate(
+                label: $0.label, filterText: $0.label, insertText: $0.insert, isSnippet: false, badge: badge, badgeColor: theme.info,
+                detail: $0.detail, edit: nil, additionalEdits: [], sortText: $0.label, fromServer: false)
+        }
+        completionRequests += 1
+        var state = CompletionState(anchor: start, requestedAt: caret, buffer: buffer, candidates: candidates, generation: completionRequests)
+        state.isNote = true
+        state.shown = Array(candidates.indices)
+        completion = state
+        let items = candidates.map {
+            EditorListItem(title: $0.label, detail: $0.detail, badge: $0.badge, badgeColor: $0.badgeColor, matched: [])
+        }
+        completionPopup.show(items, details: candidates.map(\.detail), at: textView.screenRect(forCharacterAt: start), in: window)
+        return true
+    }
+
+    /// The name (or heading, or tag) in place of what was typed — a link
+    /// closed with `]]`, past the pair the editor already typed if it did.
+    func acceptNoteCompletion(_ candidate: CompletionState.Candidate, anchor: Int) {
+        let text = textView.string as NSString
+        let caret = textView.selectedRange().location
+        guard anchor <= caret else { return }
+        var end = caret
+        var insert = candidate.insertText
+        if candidate.badge == "[[" || candidate.badge == "#" {
+            if caret + 2 <= text.length, text.substring(with: NSRange(location: caret, length: 2)) == "]]" { end += 2 }
+            insert += "]]"
+        }
+        textView.apply(
+            [(range: NSRange(location: anchor, length: end - anchor), text: insert)],
+            selecting: [NSRange(location: anchor + (insert as NSString).length, length: 0)])
+    }
+}

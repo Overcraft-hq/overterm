@@ -79,6 +79,23 @@ extension E2ERunner {
         app.toggleNoteTask(plan, line: taskLine)
         check("a task ticked in the pane is ticked in its file", planText().contains("- [x] ship it"), planText())
 
+        // `[[` completes the vault's notes; the link is closed on accepting.
+        app.openNote(untitled)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Untitled.md" }
+        if editor.active?.showsPreview == true { editor.toggleMarkdownPreview() }
+        editor.textView.setSelectedRange(NSRange(location: (editor.textView.string as NSString).length, length: 0))
+        editor.textView.insertText("See [[Sta", replacementRange: editor.textView.selectedRange())
+        _ = editor.updateNoteCompletion()
+        let offered = editor.completion.map { state in state.shown.map { state.candidates[$0].label } } ?? []
+        check("[[ offers the vault's notes", editor.completion?.isNote == true && offered.first == "Start", "\(offered)")
+        editor.acceptCompletion(at: 0)
+        check("accepting writes the link, closed", editor.textView.string.hasSuffix("See [[Start]]"), editor.textView.string)
+        editor.textView.insertText(" #wo", replacementRange: editor.textView.selectedRange())
+        _ = editor.updateNoteCompletion()
+        let tags = editor.completion.map { state in state.shown.map { state.candidates[$0].label } } ?? []
+        check("# offers the vault's tags", tags == ["work"], "\(tags)")
+        editor.dismissCompletion()
+
         app.sidebarPanel.panel = .files
         check("another panel stops the reading", await eventually(2) { !notes.visible })
     }
