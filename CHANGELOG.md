@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - database: a database client in the sidebar — PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery; any .sql file a console with ⌘↩, completion from your schema, results in a grid to sort, copy and export, history; passwords and keys in your keychain (⌥⌘B)
 - database: S3 and Google Cloud Storage in the Database panel — AWS, DigitalOcean Spaces, MinIO, R2 and any S3 endpoint; browse buckets, preview files (CSV as rows, JSON, logs, images, PDFs), upload from Finder, download, delete, share a link
+- tabs: Suspend Tab in a tab's menu — everything running in it stopped where it is, no CPU, until Resume Tab carries on
 
 ## 1.3.0 — 2026-10-25
 

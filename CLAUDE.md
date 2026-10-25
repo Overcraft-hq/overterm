@@ -31,7 +31,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | Path | What |
 |---|---|
 | `Sources/Overterm/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
-| `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is), `TabActivity` (needs-you flags), `AttentionChip` ("N need you"), `Agent`, tab context menu |
+| `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is), `TabActivity` (needs-you flags), `AttentionChip` ("N need you"), `Agent`, tab context menu, `TabSuspension` (Suspend Tab: SIGSTOP the shell first, SIGCONT it last) |
 | `Sources/Overterm/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `NewTabGroup` (which island a new tab joins), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |
 | `Sources/Overterm/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme` (the chrome's colour vocabulary), `CardColumn`/`GapSplitView` (the columns as cards on the window), `AttentionNotifier`, split controllers |
 | `Sources/Overterm/Sidebar/` | Files / Overgit / Sessions / Snippets panels, `SidebarModel` (which one shows), `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents) |

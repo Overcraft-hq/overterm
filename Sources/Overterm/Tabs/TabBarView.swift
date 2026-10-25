@@ -289,11 +289,15 @@ struct TabItemView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .topTrailing) {
             Group {
-                switch tab.activity.mark {
-                case .waiting: WaitingDot(size: 5)
-                case .failed: ResultMark(failed: true, size: 7)
-                case .done: ResultMark(failed: false, size: 7)
-                case .none: EmptyView()
+                if tab.isSuspended {
+                    SuspendedBadge(ring: theme.win, color: theme.text2, size: 8)
+                } else {
+                    switch tab.activity.mark {
+                    case .waiting: WaitingDot(size: 5)
+                    case .failed: ResultMark(failed: true, size: 7)
+                    case .done: ResultMark(failed: false, size: 7)
+                    case .none: EmptyView()
+                    }
                 }
             }
             .padding(2)
@@ -311,10 +315,16 @@ struct TabItemView: View {
             .frame(width: 20, height: 20)
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
             .overlay(alignment: .bottomTrailing) {
-                StatusBadge(activity: tab.activity, ring: isSelected ? theme.tabSel : theme.win)
-                    .offset(x: 4, y: 4)
+                Group {
+                    if tab.isSuspended {
+                        SuspendedBadge(ring: isSelected ? theme.tabSel : theme.win, color: theme.text2)
+                    } else {
+                        StatusBadge(activity: tab.activity, ring: isSelected ? theme.tabSel : theme.win)
+                    }
+                }
+                .offset(x: 4, y: 4)
             }
-            .help(tab.agent?.name ?? kind.name)
+            .help(tab.isSuspended ? "Suspended — right-click to resume" : tab.agent?.name ?? kind.name)
     }
 
     private var fullContent: some View {
@@ -327,7 +337,7 @@ struct TabItemView: View {
                     .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(isSelected ? theme.text : theme.text2)
+                    .foregroundStyle(tab.isSuspended ? theme.text3 : isSelected ? theme.text : theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             // The branch only on the selected tab: it is what you need while

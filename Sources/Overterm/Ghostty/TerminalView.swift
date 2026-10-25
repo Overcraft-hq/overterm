@@ -20,6 +20,10 @@ final class TerminalView: NSView {
     /// them (ProcessInspector).
     let processTag = UUID().uuidString
 
+    /// What Suspend Tab stopped in this pane, parents first (TabSuspension);
+    /// nil while it runs.
+    var suspendedPIDs: [pid_t]?
+
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.
     var workingDirectory: String? {
@@ -200,6 +204,8 @@ final class TerminalView: NSView {
     /// Frees the surface, which also ends its pty. Call before dropping the
     /// view; libghostty holds a raw pointer to it until then.
     func close() {
+        // A stopped process would sit on the hangup until continued.
+        resume()
         BrowserBridge.shared.removeConfig(forPane: processTag)
         guard let surface else { return }
         self.surface = nil
@@ -469,6 +475,8 @@ final class TerminalView: NSView {
     // MARK: Keyboard
 
     override func keyDown(with event: NSEvent) {
+        // Nobody would read it until Resume — then all at once.
+        if isSuspended { return NSSound.beep() }
         guard let surface else {
             interpretKeyEvents([event])
             return

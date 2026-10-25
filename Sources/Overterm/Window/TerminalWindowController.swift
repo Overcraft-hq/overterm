@@ -37,6 +37,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var agentPoll: Timer?
     /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
     private let inspector = ProcessInspector()
+    var processInspector: ProcessInspector { inspector }
     /// Kept across popovers: transcripts are re-read only where they grew.
     private let claudeReader = ClaudeUsageReader()
     private(set) var infoPopover: NSPopover?
@@ -2091,6 +2092,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
         menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        menu.addItem(
+            tab.isSuspended
+                ? ClosureMenuItem("Resume Tab") { [weak self] in self?.resumeTab(tab) }
+                : ClosureMenuItem("Suspend Tab") { [weak self] in self?.suspendTab(tab) })
         addWorkingDirectoryItems(to: menu, for: tab)
         menu.addItem(.separator())
         addGroupItems(to: menu, for: tab)

@@ -114,6 +114,20 @@ struct StatusBadge: View {
     }
 }
 
+/// A suspended tab's corner: paused, not done or waiting.
+struct SuspendedBadge: View {
+    let ring: Color
+    let color: Color
+    var size: CGFloat = 12
+
+    var body: some View {
+        Image(systemName: "pause.circle.fill")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(color)
+            .background(Circle().fill(ring).padding(1))
+    }
+}
+
 /// A thin bar sliding along the bottom of a working tab, like a page
 /// loading in Chrome — visible even on a 38 pt pinned tab.
 struct WorkingBar: View {
