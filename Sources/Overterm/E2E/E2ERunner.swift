@@ -32,6 +32,7 @@ final class E2ERunner {
         "sessionGroups": { await $0.sessionGroupsScenario() },
         "fullScreen": { await $0.fullScreenScenario() },
         "imagePaste": { await $0.imagePasteScenario() },
+        "sidebarPanels": { await $0.sidebarPanelsScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },

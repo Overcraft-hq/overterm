@@ -178,6 +178,14 @@ enum SettingsSchema {
             help:
                 "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Esc and ⇧⌘E work whatever this says.",
             kind: .choice(TabPeekGesture.Fingers.allCases.map { .init(value: $0.rawValue, label: $0.name) }), defaultValue: .string("three")),
+        SettingSpec(
+            key: "general.sessions", section: .general, group: "Sidebar", title: "Claude sessions in the sidebar",
+            help: "Every conversation run in the repository, to resume. Off: no panel, and nothing reads the transcripts for it.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "general.snippets", section: .general, group: "Sidebar", title: "Snippets",
+            help: "Commands you keep, in the sidebar and ⌘K. Off: neither shows them; snippets.json is kept as it is.",
+            kind: .toggle, defaultValue: .bool(true)),
     ]
 
     private static let appearance: [SettingSpec] = [

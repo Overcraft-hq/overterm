@@ -67,8 +67,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The rail's icons: the API client's and the notes' only while
-    /// Settings has them on.
+    /// The rail's icons: each optional panel's only while Settings has it on.
     @MainActor static var shown: [SidebarPanel] { allCases.filter(\.isEnabled) }
 
     @MainActor var isEnabled: Bool {
@@ -76,6 +75,8 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .api: Settings.shared.apiEnabled
         case .notes: Settings.shared.notesEnabled
         case .database: Settings.shared.databaseEnabled
+        case .sessions: Settings.shared.sessionsEnabled
+        case .snippets: Settings.shared.snippetsEnabled
         default: true
         }
     }

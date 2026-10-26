@@ -1087,9 +1087,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Claude sessions
 
+    /// Sessions or Snippets switched off: the panel on screen gives way to
+    /// Files, and the rail draws its icons again.
+    func sidebarPanelsChanged() {
+        if !sidebarPanel.panel.isEnabled { sidebarPanel.panel = .files }
+        sidebarPanel.objectWillChange.send()
+        if Settings.shared.sessionsEnabled { refreshSessions() }
+    }
+
     /// Re-lists the sessions of the repository's worktrees (or, outside
     /// one, of the file tree's root).
     func refreshSessions() {
+        guard Settings.shared.sessionsEnabled else { return }
         let directories = worktrees.worktrees.isEmpty ? [tree.root?.path].compactMap { $0 } : worktrees.worktrees.map(\.path.path)
         Task { await sessions.refresh(directories: directories, tabs: store.tabs, inspector: inspector) }
     }
@@ -2620,7 +2629,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         focusSelectedTerminal()
     }
 
-    private func hidePalette() {
+    func hidePalette() {
         paletteView?.isHidden = true
         focusSelectedTerminal()
     }
@@ -2754,7 +2763,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 symbol: worktree.isMain ? "house" : "arrow.triangle.branch"
             ) { [weak self] _, _ in self?.openWorktree(worktree) }
         }
-        items += snippets.snippets.map { snippet in
+        items += (Settings.shared.snippetsEnabled ? snippets.snippets : []).map { snippet in
             PaletteItem(
                 id: "s.\(snippet.id)", group: .snippet, title: snippet.name, subtitle: snippet.command,
                 symbol: "text.alignleft", detail: nil, failed: nil, placeholders: snippet.placeholders
@@ -2975,6 +2984,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
+                if keys.contains("general.sessions") || keys.contains("general.snippets") { self.sidebarPanelsChanged() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }
