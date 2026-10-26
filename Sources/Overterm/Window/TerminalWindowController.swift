@@ -168,12 +168,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         )
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        // An empty toolbar makes the title bar tall enough for the tab strip
-        // and vertically centres the traffic lights in it. Unified rather
-        // than unifiedCompact: the strip holds 30 pt tabs with an island
-        // around them, which needs the taller bar.
-        window.toolbar = NSToolbar()
-        window.toolbarStyle = .unified
+        Self.giveToolbar(to: window)
         // The window ground is what shows between the cards, never behind a
         // terminal — so it is the chrome's `win`, not the terminal's colour.
         window.backgroundColor =
@@ -3343,22 +3338,28 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// Full screen hides the menu bar but never the toolbar: the strip is
-    /// the title bar, and with the toolbar auto-hidden AppKit slid the
-    /// window up by the title bar's height — every tab off the top of the
-    /// screen, the cards starting under the camera housing.
-    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions = []) -> NSApplication.PresentationOptions {
-        Self.fullScreenOptions(proposed)
+    /// Full screen takes the toolbar away, and gives it back after. The
+    /// toolbar is only there to make the title bar tall enough for the strip;
+    /// in full screen AppKit puts title bar and toolbar in a window of their
+    /// own, 68 pt over the top of ours — over the strip. Auto-hidden, it slid
+    /// our window up and the strip off the screen (1.4.0); kept (1.4.1), it
+    /// covered the strip with a black band.
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        window?.toolbar = nil
     }
 
-    static func fullScreenOptions(_ proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
-        var options = proposed
-        options.remove(.autoHideToolbar)
-        options.insert(.fullScreen)
-        // Auto-hiding the toolbar needs the menu bar auto-hidden; the other
-        // way round it is fine, and the menu bar still slides away.
-        if !options.contains(.hideMenuBar) { options.insert(.autoHideMenuBar) }
-        return options
+    func windowDidExitFullScreen(_ notification: Notification) {
+        Self.giveToolbar(to: window)
+    }
+
+    /// An empty toolbar makes the title bar tall enough for the tab strip
+    /// and vertically centres the traffic lights in it. Unified rather than
+    /// unifiedCompact: the strip holds 30 pt tabs with an island around
+    /// them, which needs the taller bar.
+    static func giveToolbar(to window: NSWindow?) {
+        guard let window, window.toolbar == nil else { return }
+        window.toolbar = NSToolbar()
+        window.toolbarStyle = .unified
     }
 
     /// Closing the window closes every tab: always confirmed.

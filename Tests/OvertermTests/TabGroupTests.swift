@@ -466,14 +466,3 @@ final class IslandDropTests: XCTestCase {
         XCTAssertNil(TabStore.island(at: 9.9, spans: spans))
     }
 }
-
-@MainActor
-final class FullScreenOptionsTests: XCTestCase {
-    func testTheToolbarStaysAndTheMenuBarStillHides() {
-        let options = TerminalWindowController.fullScreenOptions([.fullScreen, .autoHideMenuBar, .autoHideToolbar, .autoHideDock])
-        XCTAssertFalse(options.contains(.autoHideToolbar))
-        XCTAssertTrue(options.contains(.autoHideMenuBar))
-        XCTAssertTrue(options.contains(.autoHideDock))
-        XCTAssertTrue(options.contains(.fullScreen))
-    }
-}

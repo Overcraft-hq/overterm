@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.4.2 — 2026-10-26
 
 - groups: tabs inside an island and the island's chip can be dragged — a press there no longer moves the window
+- window: full screen shows the tab strip — no black band over it; the toolbar is put away while full screen lasts
 
 ## 1.4.1 — 2026-10-26
 
