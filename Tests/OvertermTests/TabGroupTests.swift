@@ -98,6 +98,25 @@ final class TabGroupTests: XCTestCase {
         XCTAssertEqual(islands(store.strip), ["[work: a,b]", "[play: c,d]", "e"])
     }
 
+    /// A tab dragged inside its island changes places with the others
+    /// there, and stays in the island.
+    func testATabDraggedInsideItsIslandReorders() throws {
+        tab("x")
+        let a = tab("a"), b = tab("b"), c = tab("c")
+        tab("y")
+        store.addToNewGroup([a, b, c], name: "work")
+        layOut()
+        // x 0–100, chip 100–120, a 120–220, b 220–320, c 320–420, y 420–520
+        store.drop(c, atPointerX: 150)  // left of a's middle
+        XCTAssertEqual(islands(store.strip), ["x", "[work: c,a,b]", "y"])
+        layOut()
+        store.drop(c, atPointerX: 390)  // past b's middle (b is now 320–420? no: c 120, a 220, b 320)
+        XCTAssertEqual(islands(store.strip), ["x", "[work: a,b,c]", "y"])
+        layOut()
+        store.drop(a, atPointerX: 300)  // past b's middle (b 220–320 → mid 270)
+        XCTAssertEqual(islands(store.strip), ["x", "[work: b,a,c]", "y"])
+    }
+
     // MARK: Making a group
 
     func testAGroupGathersItsTabsWhereTheFirstOneIs() {

@@ -66,6 +66,7 @@ final class E2ETests: XCTestCase {
     func testFullScreen() throws { try run("fullScreen") }
     func testImagePaste() throws { try run("imagePaste") }
     func testSidebarPanels() throws { try run("sidebarPanels") }
+    func testCloseKeys() throws { try run("closeKeys") }
     func testEditorZed() throws { try run("editorZed") }
     func testFileActions() throws { try run("fileActions") }
     func testBrowser() throws { try run("browser") }

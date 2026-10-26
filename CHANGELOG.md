@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.4.2 — 2026-10-26
+
+- groups: tabs inside an island and the island's chip can be dragged — a press there no longer moves the window
+
 ## 1.4.1 — 2026-10-26
 
 - session: both islands come back — restoring one no longer drops the other's tabs

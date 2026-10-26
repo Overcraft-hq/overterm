@@ -33,6 +33,7 @@ final class E2ERunner {
         "fullScreen": { await $0.fullScreenScenario() },
         "imagePaste": { await $0.imagePasteScenario() },
         "sidebarPanels": { await $0.sidebarPanelsScenario() },
+        "closeKeys": { await $0.closeKeysScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },
@@ -2637,6 +2638,24 @@ final class E2ERunner {
             app.store.selected?.customTitle = name
         }
         func titled(_ name: String) -> Tab? { app.store.tabs.first { $0.title == name } }
+        // A real press that lands on the window-drag area moves the window
+        // and no drag ever reaches the strip — which in-process events can't
+        // show. An island's tabs and chip sit on SwiftUI scroll views that say
+        // they move it, so a press there makes the window unmovable until the
+        // release.
+        func pressMakesUnmovable(at p: NSPoint) async -> Bool {
+            func mouse(_ type: NSEvent.EventType) -> NSEvent {
+                NSEvent.mouseEvent(
+                    with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            NSApp.sendEvent(mouse(.leftMouseDown))
+            let held = !window.isMovable
+            NSApp.sendEvent(mouse(.leftMouseUp))
+            await pause(0.1)
+            return held && window.isMovable
+        }
+        if let a = titled("A"), let p = point(inTab: a) { check("a press on a loose tab doesn't move the window", await pressMakesUnmovable(at: p)) }
         guard let ta = titled("A"), let tb = titled("B"), let tc = titled("C"), let td = titled("D"),
             let work = app.store.addToNewGroup([ta, tb], name: "work"), app.store.addToNewGroup([tc, td], name: "play") != nil
         else { return check("two islands", false) }
@@ -2665,6 +2684,21 @@ final class E2ERunner {
         let front = bar.convert(NSPoint(x: first - 10, y: bar.isFlipped ? 20 : bar.bounds.height - 20), to: nil)
         await drag(from: grab2, to: front, steps: 30, gap: 0.01)
         check("and left, back to the front", strip() == ["[work: A,B]", "[play: C,D]", "E"], "\(strip())")
+
+        // Inside an island: its tabs change places, and stay in it.
+        await pause(0.3)
+        guard let tabA = titled("A"), let tabB = titled("B"), let fromB = point(inTab: tabB), let beforeA = point(inTab: tabA, dx: -30) else {
+            return check("points", false)
+        }
+        let frames = "A \(app.store.tabFrames[tabA.id] ?? .zero) B \(app.store.tabFrames[tabB.id] ?? .zero) chip \(app.store.groupChipFrames[work.id] ?? .zero)"
+        await drag(from: fromB, to: beforeA, steps: 30, gap: 0.01)
+        check("a tab dragged inside its island changes places there", strip() == ["[work: B,A]", "[play: C,D]", "E"], "\(strip()) — \(frames)")
+
+        if let tabB = titled("B"), let p = point(inTab: tabB) {
+            check("a press on a tab in an island doesn't move the window", await pressMakesUnmovable(at: p))
+        }
+        // Last: a click on the chip folds the island.
+        if let p = chip(work) { check("nor a press on its chip", await pressMakesUnmovable(at: p)) }
     }
 
     /// Tab Info shows the tab's own processes, measured — and not another tab's.

@@ -2038,6 +2038,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         // A chip drags its whole island.
                         self.pressedGroup = (group, point.x)
                     }
+                    // A press on a tab or a chip is the strip's, not the
+                    // title bar's: in an island it lands on SwiftUI's scroll
+                    // views, which say they move the window — and a real
+                    // press then dragged the window, and no drag ever reached
+                    // the strip. Unmovable until the release.
+                    if self.pressedTab != nil || self.pressedGroup != nil { self.window?.isMovable = false }
                     return event
                 }
             case .leftMouseDragged:
@@ -2082,6 +2088,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     self.store.select(pressed.tab)
                 }
                 self.hideDropZones()
+                self.window?.isMovable = true
                 self.pressedTab = nil
                 self.pressedGroup = nil
                 self.store.draggingID = nil
