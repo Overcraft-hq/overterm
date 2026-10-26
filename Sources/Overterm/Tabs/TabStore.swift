@@ -142,6 +142,9 @@ final class TabStore: ObservableObject {
         tabs.first { tabFrames[$0.id]?.contains(point) == true }
     }
 
+    /// A session is being rebuilt: islands without their tabs yet are kept.
+    var restoring = false
+
     /// The tab being dragged in the strip, if any (drawn slightly faded).
     @Published var draggingID: Tab.ID?
 

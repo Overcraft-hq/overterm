@@ -31,6 +31,37 @@ final class TabGroupTests: XCTestCase {
         }
     }
 
+    // MARK: Restoring
+
+    /// A session comes back island by island: every group is there before
+    /// its tabs are. The first tab of the first island used to prune the
+    /// others as empty, and their tabs came back loose.
+    func testRestoringTwoIslandsBringsBothBack() {
+        let work = TabGroup(name: "work", color: .blue)
+        let play = TabGroup(name: "play", color: .green)
+        store.groups = [work, play]
+        store.restoring = true
+        for (name, group) in [("a", work), ("b", work), ("c", play), ("d", play)] {
+            let tab = Tab(terminal: TerminalView())
+            tab.customTitle = name
+            store.insert(tab, after: store.tabs.last, joining: group.id)
+        }
+        store.restoring = false
+        store.normalize()
+        XCTAssertEqual(islands(store.strip), ["[work: a,b]", "[play: c,d]"])
+    }
+
+    /// Whatever happens to its island, a tab stays in the strip.
+    func testATabWhoseIslandIsGoneStaysLoose() {
+        let a = tab("a"), b = tab("b")
+        store.addToNewGroup([b], name: "gone")
+        store.groups.removeAll()
+        store.normalize()
+        XCTAssertEqual(order, ["a", "b"])
+        XCTAssertNil(b.groupID)
+        XCTAssertNil(a.groupID)
+    }
+
     // MARK: Making a group
 
     func testAGroupGathersItsTabsWhereTheFirstOneIs() {

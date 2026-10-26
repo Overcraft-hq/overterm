@@ -29,6 +29,7 @@ final class E2ERunner {
         "suspend": { await $0.suspendScenario() },
         "databaseAgent": { await $0.databaseAgentScenario() },
         "databaseTunnel": { await $0.databaseTunnelScenario() },
+        "sessionGroups": { await $0.sessionGroupsScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },

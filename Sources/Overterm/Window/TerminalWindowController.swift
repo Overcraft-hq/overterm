@@ -1256,6 +1256,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 restoresOnLaunch: $0.restoresOnLaunch, takesNewTabs: $0.takesNewTabs)
         }
         store.groups = groups
+        store.restoring = true
+        defer { store.restoring = false }
         for saved in state.tabs {
             // Settings ▸ the group's own switch: an island marked not to
             // come back brings none of its tabs with it.
@@ -1303,6 +1305,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             let pages = (saved.browserPages ?? saved.browserURL.map { [$0] } ?? []).compactMap(URL.init(string:))
             if !pages.isEmpty { pendingBrowserPages[tab.id] = (pages, min(saved.browserPage ?? 0, pages.count - 1)) }
         }
+        store.restoring = false
         store.normalize()
         if let i = state.selectedIndex, store.tabs.indices.contains(i) { store.select(index: i) }
         // A tab inside a stashed or collapsed island must not stay selected.

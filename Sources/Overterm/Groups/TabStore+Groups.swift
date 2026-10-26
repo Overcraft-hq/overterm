@@ -139,8 +139,12 @@ extension TabStore {
         normalize()
     }
 
-    /// A group with no tabs left is not a group. Called after any removal.
+    /// A group with no tabs left is not a group. Called after any removal —
+    /// but not while a session is coming back (`restoring`): its islands are
+    /// all there before their tabs, and the first tab of the first one
+    /// pruned the rest.
     func pruneEmptyGroups() {
+        guard !restoring else { return }
         let alive = Set(tabs.compactMap(\.groupID))
         groups.removeAll { !alive.contains($0.id) && !$0.isStashed }
     }
@@ -269,7 +273,11 @@ extension TabStore {
         var runs: [TabGroup.ID: [Tab]] = [:]
         var order: [Tab] = []
         for tab in tabs where !tab.isPinned {
-            guard let id = tab.groupID, group(id) != nil else {
+            // A tab whose island has gone is loose — never dropped: a tab
+            // left out of this list vanished from the strip, its shell still
+            // running with nothing to show it.
+            if let id = tab.groupID, group(id) == nil { tab.groupID = nil }
+            guard let id = tab.groupID else {
                 order.append(tab)
                 continue
             }
