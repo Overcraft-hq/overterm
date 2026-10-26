@@ -260,11 +260,37 @@ extension TabStore {
         normalize()
     }
 
-    /// A whole island dragged by its chip: it goes where its first tab
-    /// would, and its run follows.
+    /// A whole island dragged by its chip, left or right, past loose tabs
+    /// and other islands alike.
     func dragMove(_ group: TabGroup, toPointerX x: CGFloat) {
-        guard let first = tabs(in: group).first else { return }
-        dragMove(first, toPointerX: x)
+        let moving = tabs(in: group)
+        guard !moving.isEmpty else { return }
+        // The strip as pieces — each other island whole, each loose tab —
+        // and the island after every piece whose middle the pointer has
+        // passed. Moving its first tab alone left the island where the rest
+        // of it was: it could go left, never right.
+        var pieces: [[Tab]] = []
+        for tab in tabs where !tab.isPinned && tab.groupID != group.id {
+            if let id = tab.groupID, let last = pieces.last?.first, last.groupID == id {
+                pieces[pieces.count - 1].append(tab)
+            } else {
+                pieces.append([tab])
+            }
+        }
+        let spans = Dictionary(islandSpans.map { ($0.id, $0.span) }, uniquingKeysWith: { first, _ in first })
+        func middle(_ piece: [Tab]) -> CGFloat {
+            if let id = piece.first?.groupID, let span = spans[id] { return (span.lowerBound + span.upperBound) / 2 }
+            return piece.first.flatMap { tabFrames[$0.id]?.midX } ?? .infinity
+        }
+        let position = pieces.filter { middle($0) < x }.count
+        var rebuilt = tabs.filter(\.isPinned)
+        for (index, piece) in pieces.enumerated() {
+            if index == position { rebuilt += moving }
+            rebuilt += piece
+        }
+        if position >= pieces.count { rebuilt += moving }
+        guard rebuilt.map(ObjectIdentifier.init) != tabs.map(ObjectIdentifier.init) else { return }
+        replaceTabs(rebuilt)
         normalize()
     }
 

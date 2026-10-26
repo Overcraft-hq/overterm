@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - session: both islands come back — restoring one no longer drops the other's tabs
 - window: full screen keeps the tab strip — the toolbar it lives in no longer hides
+- groups: an island dragged by its chip moves right as well as left, its tabs in their order
 
 ## 1.4.0 — 2026-10-25
 

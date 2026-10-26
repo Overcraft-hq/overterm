@@ -2626,6 +2626,43 @@ final class E2ERunner {
         guard let b = app.store.tabs.first(where: { $0.title == "B" }), let pb = point(inTab: b) else { return }
         await drag(from: pb, to: pb)
         check("a click selects the tab", await eventually(2) { self.app.store.selected?.title == "B" }, app.store.selected?.title ?? "nil")
+
+        // An island dragged by its chip, rightwards past another island and
+        // back: only leftwards ever worked.
+        app.store.setPinned(c, false)
+        for name in ["D", "E"] {
+            app.newTab(nil)
+            app.store.selected?.customTitle = name
+        }
+        func titled(_ name: String) -> Tab? { app.store.tabs.first { $0.title == name } }
+        guard let ta = titled("A"), let tb = titled("B"), let tc = titled("C"), let td = titled("D"),
+            let work = app.store.addToNewGroup([ta, tb], name: "work"), app.store.addToNewGroup([tc, td], name: "play") != nil
+        else { return check("two islands", false) }
+        func strip() -> [String] {
+            app.store.strip.map {
+                switch $0 {
+                case .group(let g, let tabs): "[\(g.name): \(tabs.map(\.title).joined(separator: ","))]"
+                case .loose(let t): t.title
+                }
+            }
+        }
+        check("two islands and a loose tab", await eventually(3) { self.app.store.groupChipFrames[work.id] != nil }, "\(strip())")
+        func chip(_ group: TabGroup) -> NSPoint? {
+            guard let frame = app.store.groupChipFrames[group.id], let bar = app.tabBarView else { return nil }
+            var p = NSPoint(x: frame.midX, y: frame.midY)
+            if !bar.isFlipped { p.y = bar.bounds.height - p.y }
+            return bar.convert(p, to: nil)
+        }
+        guard let grab = chip(work), let e = titled("E"), let pastPlay = point(inTab: e, dx: -40) else { return check("points", false) }
+        await drag(from: grab, to: pastPlay, steps: 30, gap: 0.01)
+        check("an island dragged right goes past the next one", strip() == ["[play: C,D]", "[work: A,B]", "E"], "\(strip())")
+        await pause(0.3)
+        guard let grab2 = chip(work), let first = app.store.groupChipFrames.values.map(\.minX).min(), let bar = app.tabBarView else {
+            return check("points", false)
+        }
+        let front = bar.convert(NSPoint(x: first - 10, y: bar.isFlipped ? 20 : bar.bounds.height - 20), to: nil)
+        await drag(from: grab2, to: front, steps: 30, gap: 0.01)
+        check("and left, back to the front", strip() == ["[work: A,B]", "[play: C,D]", "E"], "\(strip())")
     }
 
     /// Tab Info shows the tab's own processes, measured — and not another tab's.

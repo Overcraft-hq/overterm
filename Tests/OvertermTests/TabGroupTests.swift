@@ -62,6 +62,42 @@ final class TabGroupTests: XCTestCase {
         XCTAssertNil(a.groupID)
     }
 
+    // MARK: Dragging an island
+
+    /// Lays the strip out as it would be drawn: each chip 20 pt, each tab 100.
+    private func layOut() {
+        var x: CGFloat = 0
+        var seen = Set<TabGroup.ID>()
+        for tab in store.tabs {
+            if let id = tab.groupID, seen.insert(id).inserted {
+                store.groupChipFrames[id] = CGRect(x: x, y: 0, width: 20, height: 30)
+                x += 20
+            }
+            store.tabFrames[tab.id] = CGRect(x: x, y: 0, width: 100, height: 30)
+            x += 100
+        }
+    }
+
+    /// An island's chip dragged right, past the next island and a loose
+    /// tab: the whole island moves there. Only its first tab moved, and the
+    /// island stayed where its other tabs were — it could only go left.
+    func testAnIslandDraggedRightGoesPastItsNeighbours() throws {
+        let a = tab("a"), b = tab("b"), c = tab("c"), d = tab("d")
+        tab("e")
+        let work = try XCTUnwrap(store.addToNewGroup([a, b], name: "work"))
+        store.addToNewGroup([c, d], name: "play")
+        layOut()
+        XCTAssertEqual(islands(store.strip), ["[work: a,b]", "[play: c,d]", "e"])
+        store.dragMove(work, toPointerX: 340)  // past play's middle, before e's
+        XCTAssertEqual(islands(store.strip), ["[play: c,d]", "[work: a,b]", "e"])
+        layOut()
+        store.dragMove(work, toPointerX: 10_000)
+        XCTAssertEqual(islands(store.strip), ["[play: c,d]", "e", "[work: a,b]"])
+        layOut()
+        store.dragMove(work, toPointerX: 0)
+        XCTAssertEqual(islands(store.strip), ["[work: a,b]", "[play: c,d]", "e"])
+    }
+
     // MARK: Making a group
 
     func testAGroupGathersItsTabsWhereTheFirstOneIs() {
