@@ -17,13 +17,15 @@ final class SidebarRailTests: XCTestCase {
         XCTAssertEqual(SidebarPanel.notes.title, "Notes")
     }
 
-    /// The API client's and the notes' icons are there only while Settings
-    /// has them on.
+    /// The optional panels' icons are there only while Settings has them
+    /// on — this Mac's settings, whatever they say; Files and Overgit always.
     func testThePanelsThatFollowTheirSettings() {
         XCTAssertEqual(SidebarPanel.shown.contains(.api), Settings.shared.apiEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.notes), Settings.shared.notesEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.database), Settings.shared.databaseEnabled)
-        XCTAssertEqual(SidebarPanel.shown.filter { $0 != .api && $0 != .notes && $0 != .database }, [.files, .git, .sessions, .snippets])
+        XCTAssertEqual(SidebarPanel.shown.contains(.sessions), Settings.shared.sessionsEnabled)
+        XCTAssertEqual(SidebarPanel.shown.contains(.snippets), Settings.shared.snippetsEnabled)
+        XCTAssertEqual(Array(SidebarPanel.shown.prefix(2)), [.files, .git])
     }
 
     /// Glyphs that can't be mistaken for each other — the whole point
