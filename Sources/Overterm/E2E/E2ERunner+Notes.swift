@@ -294,6 +294,16 @@ extension E2ERunner {
                 editor.textView.textStorage?.attribute(.noteDecoration, at: box + 2, effectiveRange: nil) as? NoteDecoration == .checkbox(done: true)
             })
         check("a click on it unticks it", editor.liveClick(at: box + 2) && editor.textView.string.contains("- [ ] first task"))
+        // The caret on the task: its `- [ ]` as written, no box over it —
+        // the two drawn on top of each other was the bug.
+        editor.textView.setSelectedRange(NSRange(location: box + 8, length: 0))
+        check(
+            "editing a task shows its markup with no box over it",
+            await eventually(2) { editor.textView.textStorage?.attribute(.noteDecoration, at: box + 2, effectiveRange: nil) == nil })
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        check(
+            "and the box is back when the caret leaves",
+            await eventually(2) { editor.textView.textStorage?.attribute(.noteDecoration, at: box + 2, effectiveRange: nil) != nil })
         editor.toggleMarkdownPreview()
         _ = await eventually(3) { !(editor.noteReader?.isHidden ?? true) }
 

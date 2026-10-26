@@ -13,6 +13,7 @@ version is tagged `v<version>`.
 - groups: an island dragged by its chip moves right as well as left, its tabs in their order
 - terminal: ⌘V pastes a screenshot into Claude Code and Codex — with only an image on the clipboard, the agent gets the ⌃V it reads images on
 - sidebar: Sessions and Snippets can be switched off in Settings ▸ General — the panel, its icon and the palette's snippets with it
+- notes: a task being edited shows its `- [ ]` without a box drawn over it, as a list item shows its `-`
 
 ## 1.4.0 — 2026-10-25
 

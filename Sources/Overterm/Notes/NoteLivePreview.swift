@@ -164,15 +164,22 @@ struct NoteLivePreview {
             let status = (string as NSString).substring(with: m.range(at: 3))
             let done = status == "x" || status == "X"
             let box = NSRange(location: m.range(at: 2).location, length: m.range.length - m.range(at: 2).location)
-            runs.append((at(box), [.noteDecoration: NoteDecoration.checkbox(done: done), .foregroundColor: NSColor.clear]))
-            if shows { runs.append((at(box), [.foregroundColor: colors.muted])) }
+            // The line being edited shows `- [ ]` as written and no box:
+            // drawn over its own markup, the box doubled it up.
+            if shows {
+                runs.append((at(box), [.foregroundColor: colors.muted]))
+            } else {
+                runs.append((at(box), [.noteDecoration: NoteDecoration.checkbox(done: done), .foregroundColor: NSColor.clear]))
+            }
             if done {
                 let body = NSRange(location: m.range.length, length: line.length - m.range.length)
                 runs.append((at(body), [.foregroundColor: colors.muted, .strikethroughStyle: NSUnderlineStyle.single.rawValue]))
             }
             inlineStart = m.range.length
         } else if let m = regex(#"^([ \t]*)([-*+])[ \t]"#)?.firstMatch(in: string, range: NSRange(location: 0, length: line.length)) {
-            runs.append((at(m.range(at: 2)), [.noteDecoration: NoteDecoration.bullet, .foregroundColor: shows ? colors.muted : NSColor.clear]))
+            // Likewise a bullet: its `-` while edited, the dot otherwise.
+            runs.append(
+                (at(m.range(at: 2)), shows ? [.foregroundColor: colors.muted] : [.noteDecoration: NoteDecoration.bullet, .foregroundColor: NSColor.clear]))
             inlineStart = m.range.length
         } else if let m = regex(#"^([ \t]*)(\d+[.)])[ \t]"#)?.firstMatch(in: string, range: NSRange(location: 0, length: line.length)) {
             runs.append((at(m.range(at: 2)), [.foregroundColor: colors.muted]))

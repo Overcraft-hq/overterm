@@ -50,6 +50,22 @@ final class NoteLivePreviewTests: XCTestCase {
         XCTAssertEqual(boxes, [.checkbox(done: false), .checkbox(done: true)])
     }
 
+    /// The line being edited shows its markup as written — and only that:
+    /// the box (and a bullet's dot) drawn over the `- [ ]` doubled it up.
+    func testTheEditedLineHasNoBoxOverItsMarkup() {
+        let text = "- [ ] todo\n- [ ] editing\n- item"
+        let ns = text as NSString
+        let second = ns.lineRange(for: NSRange(location: 11, length: 0))
+        let third = ns.lineRange(for: NSRange(location: ns.length - 1, length: 0))
+        let runs = style.runs(in: ns, range: NSRange(location: 0, length: ns.length), editing: [second, third], blocks: [])
+        func decorations(in line: NSRange) -> [NoteDecoration] {
+            runs.filter { NSIntersectionRange($0.range, line).length > 0 }.compactMap { $0.attributes[.noteDecoration] as? NoteDecoration }
+        }
+        XCTAssertEqual(decorations(in: ns.lineRange(for: NSRange(location: 0, length: 0))), [.checkbox(done: false)], "the others keep theirs")
+        XCTAssertEqual(decorations(in: second), [], "the edited task: its `- [ ]`, no box")
+        XCTAssertEqual(decorations(in: third), [], "the edited item: its `-`, no dot")
+    }
+
     func testCodeBlocksAndFrontmatterAreLeftAsWritten() {
         let text = "---\ntags: [a]\n---\n```\n**not bold** [[nolink]]\n```\nafter **b**"
         XCTAssertEqual(shown(text), "---\ntags: [a]\n---\n```\n**not bold** [[nolink]]\n```\nafter b")
