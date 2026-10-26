@@ -301,10 +301,15 @@ final class UsageOnThisMacTests: XCTestCase {
 
     func testCodexsNewestRolloutStillParses() throws {
         try XCTSkipUnless(CodexUsageSource.isPresent(), "no ~/.codex/sessions")
-        let rollouts = CodexUsageSource.rollouts(limit: 4)
+        // The newest that has one, as the pane reads them: Codex writes two
+        // rollouts at once, and only one of them carries the quota.
+        let rollouts = CodexUsageSource.rollouts(limit: 8)
         try XCTSkipUnless(!rollouts.isEmpty, "no rollouts")
-        let line = try XCTUnwrap(CodexUsageSource.lastTokenCount(in: rollouts[0]), "a token_count event")
-        let found = try XCTUnwrap(line.withUnsafeBytes { CodexUsageSource.limits(in: $0) })
-        XCTAssertFalse(found.meters.isEmpty)
+        // Read once each — never lazy.compactMap(…).first over files (CLAUDE.md).
+        var found: Data?
+        for file in rollouts where found == nil { found = CodexUsageSource.lastTokenCount(in: file) }
+        let line = try XCTUnwrap(found, "a token_count event in the newest rollouts")
+        let limits = try XCTUnwrap(line.withUnsafeBytes { CodexUsageSource.limits(in: $0) })
+        XCTAssertFalse(limits.meters.isEmpty)
     }
 }
