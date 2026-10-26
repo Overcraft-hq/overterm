@@ -3326,6 +3326,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
+    /// Full screen hides the menu bar but never the toolbar: the strip is
+    /// the title bar, and with the toolbar auto-hidden AppKit slid the
+    /// window up by the title bar's height — every tab off the top of the
+    /// screen, the cards starting under the camera housing.
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions = []) -> NSApplication.PresentationOptions {
+        Self.fullScreenOptions(proposed)
+    }
+
+    static func fullScreenOptions(_ proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
+        var options = proposed
+        options.remove(.autoHideToolbar)
+        options.insert(.fullScreen)
+        // Auto-hiding the toolbar needs the menu bar auto-hidden; the other
+        // way round it is fine, and the menu bar still slides away.
+        if !options.contains(.hideMenuBar) { options.insert(.autoHideMenuBar) }
+        return options
+    }
+
     /// Closing the window closes every tab: always confirmed.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if let editor, let name = editor.unsavedNames.first {

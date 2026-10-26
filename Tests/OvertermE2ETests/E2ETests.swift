@@ -63,6 +63,7 @@ final class E2ETests: XCTestCase {
     func testDatabaseAgent() throws { try run("databaseAgent") }
     func testDatabaseTunnel() throws { try run("databaseTunnel") }
     func testSessionGroups() throws { try run("sessionGroups") }
+    func testFullScreen() throws { try run("fullScreen") }
     func testEditorZed() throws { try run("editorZed") }
     func testFileActions() throws { try run("fileActions") }
     func testBrowser() throws { try run("browser") }

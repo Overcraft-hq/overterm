@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.4.1 — 2026-10-26
 
 - session: both islands come back — restoring one no longer drops the other's tabs
+- window: full screen keeps the tab strip — the toolbar it lives in no longer hides
 
 ## 1.4.0 — 2026-10-25
 
