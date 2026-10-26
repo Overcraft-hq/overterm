@@ -84,6 +84,21 @@ final class ModelPricingTests: XCTestCase {
 
     /// A model nobody here has heard of has no price at all: the pane shows
     /// its tokens and says they are unpriced, rather than a confident $0.
+    /// List prices, the ones that moved within a family: Opus 4.5 onwards
+    /// is a third of Opus 4, and Fable 5.1 reads its cache at a quarter.
+    func testTheFamiliesThatChangedPrice() {
+        for model in ["claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5-20251101"] {
+            XCTAssertEqual(ModelPricing.rate(for: model)?.input, 5, model)
+            XCTAssertEqual(ModelPricing.rate(for: model)?.output, 25, model)
+            XCTAssertEqual(ModelPricing.rate(for: model)?.cacheRead, 0.50, model)
+        }
+        XCTAssertEqual(ModelPricing.rate(for: "claude-opus-4-1-20250805")?.input, 15)
+        XCTAssertEqual(ModelPricing.rate(for: "claude-opus-4-20250514")?.output, 75)
+        XCTAssertEqual(ModelPricing.rate(for: "claude-sonnet-5-5")?.cacheRead, 0.20)
+        XCTAssertEqual(ModelPricing.rate(for: "claude-fable-5-1")?.cacheRead, 0.25)
+        XCTAssertEqual(ModelPricing.rate(for: "claude-fable-5")?.cacheRead, 1.00)
+    }
+
     func testAnUnknownModelHasNoPrice() {
         XCTAssertNil(ModelPricing.rate(for: "llama-9"))
         XCTAssertNil(ModelPricing.cost(UsageTokens(input: 1_000_000), model: "llama-9"))

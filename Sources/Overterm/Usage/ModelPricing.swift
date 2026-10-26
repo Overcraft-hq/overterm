@@ -30,13 +30,21 @@ enum ModelPricing {
     private static let rates: [(prefix: String, rate: Rate)] = [
         ("claude-opus-5-5", Rate(input: 4, output: 20, cacheRead: 0.20, cacheWrite5m: 5, cacheWrite1h: 8)),
         ("claude-opus-5", Rate(input: 5, output: 25, cacheRead: 0.50, cacheWrite5m: 6.25, cacheWrite1h: 10)),
+        // Opus 4.5 and later are a third of Opus 4 and 4.1: priced at those,
+        // a day of Opus 4.8 read as three.
+        ("claude-opus-4-8", Rate(input: 5, output: 25, cacheRead: 0.50, cacheWrite5m: 6.25, cacheWrite1h: 10)),
+        ("claude-opus-4-7", Rate(input: 5, output: 25, cacheRead: 0.50, cacheWrite5m: 6.25, cacheWrite1h: 10)),
+        ("claude-opus-4-6", Rate(input: 5, output: 25, cacheRead: 0.50, cacheWrite5m: 6.25, cacheWrite1h: 10)),
+        ("claude-opus-4-5", Rate(input: 5, output: 25, cacheRead: 0.50, cacheWrite5m: 6.25, cacheWrite1h: 10)),
         ("claude-opus-4", Rate(input: 15, output: 75, cacheRead: 1.50, cacheWrite5m: 18.75, cacheWrite1h: 30)),
-        ("claude-sonnet-5-5", Rate(input: 2, output: 10, cacheRead: 0.10, cacheWrite5m: 2.50, cacheWrite1h: 4)),
+        ("claude-sonnet-5-5", Rate(input: 2, output: 10, cacheRead: 0.20, cacheWrite5m: 2.50, cacheWrite1h: 4)),
         ("claude-sonnet-5", Rate(input: 2, output: 10, cacheRead: 0.20, cacheWrite5m: 2.50, cacheWrite1h: 4)),
         ("claude-sonnet-4", Rate(input: 3, output: 15, cacheRead: 0.30, cacheWrite5m: 3.75, cacheWrite1h: 6)),
         ("claude-haiku-5", Rate(input: 0.10, output: 0.50, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.20)),
         ("claude-haiku-4", Rate(input: 1, output: 5, cacheRead: 0.10, cacheWrite5m: 1.25, cacheWrite1h: 2)),
-        ("claude-fable-5", Rate(input: 10, output: 50, cacheRead: 0.25, cacheWrite5m: 12.50, cacheWrite1h: 20)),
+        // Fable 5.1 reads its cache at a quarter of Fable 5's.
+        ("claude-fable-5-1", Rate(input: 10, output: 50, cacheRead: 0.25, cacheWrite5m: 12.50, cacheWrite1h: 20)),
+        ("claude-fable-5", Rate(input: 10, output: 50, cacheRead: 1.00, cacheWrite5m: 12.50, cacheWrite1h: 20)),
         // Codex's models. The cache write is free there; a cached input
         // token is a tenth of a fresh one.
         ("gpt-5.6", Rate(input: 1.25, output: 10, cacheRead: 0.125, cacheWrite5m: 0, cacheWrite1h: 0)),
