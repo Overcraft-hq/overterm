@@ -294,6 +294,60 @@ final class UsageTailScannerTests: XCTestCase {
         XCTAssertEqual(first, second)
         XCTAssertEqual(reads, 0, "answered from what it already read")
     }
+
+    private func append(_ text: String, to file: URL) throws {
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        handle.write(Data(text.utf8))
+        try handle.close()
+    }
+
+    /// A transcript being written to is read only as far as it grew: the
+    /// old lines aren't parsed again, a reply whose blocks straddle the
+    /// two reads counts once, and a line half-written at the first read
+    /// counts once it is whole.
+    func testAGrowingFileIsReadOnlyWhereItGrew() throws {
+        let file = try write([
+            reply("a", at: "2026-10-15T09:00:00.000Z", input: 3, output: 4),
+            reply("b", at: "2026-10-15T09:10:00.000Z", input: 10, output: 0),
+        ])
+        defer { try? FileManager.default.removeItem(at: file) }
+        let since = try XCTUnwrap(UsageBytes.instant("2026-10-15T00:00:00Z"))
+        let scanner = UsageTailScanner()
+        // Half a line: the writer is mid-way through it.
+        let next = reply("c", at: "2026-10-15T09:20:00.000Z", input: 100, output: 0)
+        let half = next.index(next.startIndex, offsetBy: next.count / 2)
+        try append(String(next[..<half]), to: file)
+        XCTAssertEqual(scanner.slices(of: file, since: since, parse: ClaudeUsageSource.line).values.reduce(0) { $0 + $1.total }, 17)
+
+        // The rest of it, then "b" again (another content block), then "d".
+        try append(
+            String(next[half...]) + "\n" + reply("b", at: "2026-10-15T09:10:00.000Z", input: 10, output: 0) + "\n"
+                + reply("d", at: "2026-10-15T09:30:00.000Z", input: 1000, output: 0) + "\n", to: file)
+        var parsed = 0
+        let grown = scanner.slices(
+            of: file, since: since,
+            parse: { line in
+                parsed += 1
+                return ClaudeUsageSource.line(line)
+            })
+        XCTAssertEqual(grown.values.reduce(0) { $0 + $1.total }, 1117, "c and d added; b's second block not counted again")
+        XCTAssertEqual(parsed, 3, "only the three new lines read")
+    }
+
+    /// A transcript past the old 64 MB cap is read to the start of the
+    /// window — it was cut off there, and a month came up short.
+    func testABigTranscriptIsReadToTheStartOfTheWindow() throws {
+        let filler = #"{"type":"user","timestamp":"2026-10-15T08:00:00.000Z","content":""# + String(repeating: "x", count: 1_000_000) + #""}"#
+        var lines = [reply("first", at: "2026-10-15T08:00:00.000Z", input: 5, output: 0)]
+        lines += Array(repeating: filler, count: 70)
+        lines.append(reply("last", at: "2026-10-15T09:00:00.000Z", input: 7, output: 0))
+        let file = try write(lines)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let since = try XCTUnwrap(UsageBytes.instant("2026-10-15T00:00:00Z"))
+        let total = UsageTailScanner().slices(of: file, since: since, parse: ClaudeUsageSource.line).values.reduce(0) { $0 + $1.total }
+        XCTAssertEqual(total, 12, "the reply 70 MB from the end counts too")
+    }
 }
 
 /// Canaries: the real files on this Mac, when they are there. They are what

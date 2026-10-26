@@ -39,6 +39,12 @@ final class UsageTailScanner: @unchecked Sendable {
         let modified: Date
         let since: Date
         let slices: [UsageSlice.Key: UsageTokens]
+        /// Where the read stopped at the end: after the last whole line. A
+        /// file that grew is read from here on, not again from the end.
+        let covered: UInt64
+        /// The newest replies' ids: a reply is written once per content
+        /// block, and its blocks can fall either side of `covered`.
+        let recentIDs: [String]
     }
 
     private let lock = NSLock()
@@ -49,17 +55,25 @@ final class UsageTailScanner: @unchecked Sendable {
     /// first of these; the loop takes another when it hasn't reached far
     /// enough back yet.
     static let step = 256 << 10
-    /// Where a walk gives up, so a pathological file can't hold the pane:
-    /// 64 MB is two months of the busiest transcript on this Mac.
-    static let limit = 64 << 20
+    /// Where a walk gives up, so a pathological file can't hold the pane
+    /// forever. It was 64 MB — "two months of the busiest transcript" —
+    /// until one transcript passed 2 GB and a month left most of it
+    /// uncounted. A file is read this deep once; after that only what it
+    /// grew by (`covered`).
+    static let limit: UInt64 = 16 << 30
+    /// How many of the newest replies' ids a file keeps between reads.
+    static let recentIDCount = 256
 
     /// Adds up `file`'s tokens from `since` onwards, by the hour and the
     /// model they were spent on. Blocking; call off the main thread.
     func slices(of file: URL, since: Date, parse: (UnsafeRawBufferPointer) -> UsageLine?) -> [UsageSlice.Key: UsageTokens] {
-        let values = try? file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-        let size = UInt64(values?.fileSize ?? 0)
-        let modified = values?.contentModificationDate ?? .distantPast
-        if let known = lock.withLock({ scanned[file] }), known.size == size, known.modified == modified, known.since <= since {
+        // From the file system each time: a URL keeps the resource values
+        // it read once, and a transcript grows under it.
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        let size = (attributes?[.size] as? NSNumber)?.uint64Value ?? 0
+        let modified = attributes?[.modificationDate] as? Date ?? .distantPast
+        let known = lock.withLock { scanned[file] }
+        if let known, known.since <= since, known.size == size, known.modified == modified {
             // Read already, and it reached further back than this window
             // wants: keep only the hours asked for.
             return known.slices.filter { $0.key.hour >= Self.hour(of: since) }
@@ -67,21 +81,55 @@ final class UsageTailScanner: @unchecked Sendable {
         guard size > 0, let handle = try? FileHandle(forReadingFrom: file) else { return [:] }
         defer { try? handle.close() }
 
-        var totals = [UsageSlice.Key: UsageTokens]()
-        var seen = Set<String>()
-        var end = size
+        // Grown since it was read, from a window at least as long: only
+        // the new lines, added to what it had. (Truncated or rewritten, or
+        // read for a shorter window: read again.)
+        let grown = known.flatMap { $0.since <= since && size > $0.covered ? $0 : nil }
+        var totals = grown?.slices ?? [:]
+        var seen = Set(grown?.recentIDs ?? [])
+        var newest: [String] = []
+        let covered = Self.walk(
+            handle, size: size, floor: grown?.covered ?? 0, since: since, into: &totals, seen: &seen, newest: &newest, parse: parse)
+        let recent = Array((newest + (grown?.recentIDs ?? [])).prefix(Self.recentIDCount))
+
+        lock.withLock {
+            // Grown, it still reaches as far back as the first read did.
+            let reach = grown.map { min($0.since, since) } ?? since
+            scanned[file] = Scanned(size: size, modified: modified, since: reach, slices: totals, covered: covered, recentIDs: recent)
+        }
+        return grown == nil ? totals : totals.filter { $0.key.hour >= Self.hour(of: since) }
+    }
+
+    /// Reads `handle` backwards from its last whole line down to `floor` (a
+    /// line start), until a reply older than `since`. Returns where the
+    /// last whole line ends — what a later read starts from.
+    private static func walk(
+        _ handle: FileHandle, size: UInt64, floor: UInt64, since: Date, into totals: inout [UsageSlice.Key: UsageTokens],
+        seen: inout Set<String>, newest: inout [String], parse: (UnsafeRawBufferPointer) -> UsageLine?
+    ) -> UInt64 {
+        // A line still being written isn't read: it is read whole next time.
+        var covered = size
+        if size > floor {
+            let tail = min(UInt64(step), size - floor)
+            try? handle.seek(toOffset: size - tail)
+            let last = handle.readData(ofLength: Int(tail))
+            if last.last != 0x0A {
+                covered = last.lastIndex(of: 0x0A).map { size - tail + UInt64($0 - last.startIndex) + 1 } ?? floor
+            }
+        }
+        var end = covered
         var carry = Data()
         var reachedBack = false
-        while end > 0, size - end < UInt64(Self.limit), !reachedBack {
-            let length = UInt64(min(Self.step, Int(end)))
+        while end > floor, covered - end < limit, !reachedBack {
+            let length = min(UInt64(step), end - floor)
             let start = end - length
             try? handle.seek(toOffset: start)
             var data = autoreleasepool { handle.readData(ofLength: Int(length)) }
             data.append(carry)
-            // The first line of a chunk is half a line unless we are at the
-            // start of the file; it is carried into the next step.
+            // The first line of a chunk is half a line unless the chunk
+            // starts at the floor; it is carried into the next step.
             var from = data.startIndex
-            if start > 0 {
+            if start > floor {
                 guard let newline = data.firstIndex(of: 0x0A) else {
                     carry = data
                     end = start
@@ -92,12 +140,10 @@ final class UsageTailScanner: @unchecked Sendable {
             } else {
                 carry = Data()
             }
-            reachedBack = Self.consume(data[from...], since: since, into: &totals, seen: &seen, parse: parse)
+            reachedBack = consume(data[from...], since: since, into: &totals, seen: &seen, newest: &newest, parse: parse)
             end = start
         }
-
-        lock.withLock { scanned[file] = Scanned(size: size, modified: modified, since: since, slices: totals) }
-        return totals
+        return covered
     }
 
     /// Walks a chunk's whole lines backwards. Returns true once a line that
@@ -105,7 +151,7 @@ final class UsageTailScanner: @unchecked Sendable {
     /// file is older still.
     private static func consume(
         _ data: Data, since: Date, into totals: inout [UsageSlice.Key: UsageTokens], seen: inout Set<String>,
-        parse: (UnsafeRawBufferPointer) -> UsageLine?
+        newest: inout [String], parse: (UnsafeRawBufferPointer) -> UsageLine?
     ) -> Bool {
         var reached = false
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
@@ -129,6 +175,7 @@ final class UsageTailScanner: @unchecked Sendable {
                 // steps. Both are the same guard.
                 if let id = found.id {
                     guard seen.insert(id).inserted else { continue }
+                    if newest.count < recentIDCount { newest.append(id) }
                 }
                 let key = UsageSlice.Key(hour: hour(of: found.at), model: found.model ?? "")
                 totals[key] = (totals[key] ?? UsageTokens()) + found.tokens

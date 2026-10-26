@@ -11,6 +11,7 @@ version is tagged `v<version>`.
 - groups: tabs inside an island and the island's chip can be dragged — a press there no longer moves the window
 - window: full screen shows the tab strip — no black band over it; the toolbar is put away while full screen lasts
 - usage: Opus 4.5–4.8 priced at their own list price — they were counted at Opus 4's, three times over
+- usage: 30 days counts all of a big transcript — anything past its last 64 MB was left out; a transcript being written is read only where it grew
 
 ## 1.4.1 — 2026-10-26
 

@@ -116,7 +116,9 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **Agent logs are read backwards** (`UsageTailScanner`): 643 MB of
   transcripts, most of it written today, so a day costs 0.1 MB a file this
   way and everything forwards. Only a line that carries usage may stop the
-  walk — attachments are written out of order by hours.
+  walk — attachments are written out of order by hours. No depth cap that
+  a transcript can outgrow (one passed 2 GB, and a month came up short):
+  a file is read deep once, then only where it grew (`covered`).
 - **A theme is a file, not code**: Ghostty resolves `theme = "<name>"` in
   `Contents/Resources/ghostty/themes` (its own 463, plus `Resources/themes`
   beside them) and `~/.config/ghostty/themes`. Settings ▸ Themes reads the
