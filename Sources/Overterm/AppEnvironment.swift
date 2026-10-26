@@ -86,6 +86,43 @@ enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/ghostty/themes", isDirectory: true)
     }
 
+    /// Claude Code's other config folders on this Mac, beside the one above:
+    /// `CLAUDE_CONFIG_DIR` points one launch at another folder — an alias
+    /// per account, `~/.claude-work` — and a GUI app never sees that
+    /// variable. Each `~/.claude-*` folder with sessions in it counts. None
+    /// in an isolated run.
+    static var otherClaudeConfigDirectories: [URL] {
+        guard !isIsolated else { return [] }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        // ~/.claude too: the main folder is CLAUDE_CONFIG_DIR's when it is set.
+        var found: [URL] = [home.appendingPathComponent(".claude", isDirectory: true)]
+        if let dir = env["CLAUDE_CONFIG_DIR"] { found.append(URL(fileURLWithPath: dir, isDirectory: true)) }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: home.path)) ?? []
+        for name in names.sorted() where name.hasPrefix(".claude-") || name.hasPrefix(".claude.") {
+            let dir = home.appendingPathComponent(name, isDirectory: true)
+            var folder: ObjCBool = false
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("projects").path, isDirectory: &folder), folder.boolValue {
+                found.append(dir)
+            }
+        }
+        let main = claudeProjectsDirectory.resolvingSymlinksInPath().path
+        var seen = Set<String>()
+        return found.filter { dir in
+            let projects = dir.appendingPathComponent("projects").resolvingSymlinksInPath().path
+            return projects != main && FileManager.default.fileExists(atPath: projects) && seen.insert(projects).inserted
+        }
+    }
+
+    /// A config folder's state file: `~/.claude`'s lives beside it, as
+    /// `~/.claude.json`; any other folder keeps its own inside.
+    static func claudeConfigFile(of directory: URL) -> URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if directory.standardizedFileURL.path == home.appendingPathComponent(".claude").standardizedFileURL.path {
+            return home.appendingPathComponent(".claude.json")
+        }
+        return directory.appendingPathComponent(".claude.json")
+    }
+
     /// Claude Code's own state file, where it caches what the API told it
     /// about your limits (Settings ▸ Usage reads it; nobody writes it).
     /// An isolated run points at its own, so a scenario never reads the

@@ -12,6 +12,7 @@ version is tagged `v<version>`.
 - window: full screen shows the tab strip — no black band over it; the toolbar is put away while full screen lasts
 - usage: Opus 4.5–4.8 priced at their own list price — they were counted at Opus 4's, three times over
 - usage: 30 days counts all of a big transcript — anything past its last 64 MB was left out; a transcript being written is read only where it grew
+- usage: every Claude Code config folder on this Mac counts — sessions run under CLAUDE_CONFIG_DIR (`~/.claude-work`…) were missing, and the limits come from the newest of them
 
 ## 1.4.1 — 2026-10-26
 

@@ -17,8 +17,8 @@ import Foundation
 enum ClaudeUsageSource {
     /// Whether there is anything of Claude's on this Mac to read.
     static func isPresent() -> Bool {
-        FileManager.default.fileExists(atPath: AppEnvironment.claudeConfigFile.path)
-            || FileManager.default.fileExists(atPath: ClaudeUsageReader.projectsDirectory.path)
+        configFiles.contains { FileManager.default.fileExists(atPath: $0.path) }
+            || projectDirectories.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     // MARK: The windows
@@ -29,14 +29,38 @@ enum ClaudeUsageSource {
     nonisolated(unsafe) private static var lastGood: (meters: [UsageMeter], asOf: Date?)?
     private static let lastGoodLock = NSLock()
 
-    /// The windows Claude last heard about, and when it heard.
+    /// Every Claude Code state file on this Mac: the main one, and each
+    /// other config folder's (`AppEnvironment.otherClaudeConfigDirectories`).
+    static var configFiles: [URL] {
+        [AppEnvironment.claudeConfigFile] + AppEnvironment.otherClaudeConfigDirectories.map(AppEnvironment.claudeConfigFile(of:))
+    }
+
+    /// Every folder of transcripts: the main one, and each other config
+    /// folder's — sessions run under `CLAUDE_CONFIG_DIR` were left out.
+    static var projectDirectories: [URL] {
+        [ClaudeUsageReader.projectsDirectory] + AppEnvironment.otherClaudeConfigDirectories.map { $0.appendingPathComponent("projects") }
+    }
+
+    /// The cached answer that is newest among `files`, and when it came.
+    static func freshestCache(in files: [URL]) -> (cached: [String: Any], asOf: Date?)? {
+        var best: (cached: [String: Any], asOf: Date?)?
+        for file in files {
+            guard let data = try? Data(contentsOf: file),
+                let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                let cached = root["cachedUsageUtilization"] as? [String: Any]
+            else { continue }
+            let asOf = (cached["fetchedAtMs"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+            if best == nil || (asOf ?? .distantPast) > (best?.asOf ?? .distantPast) { best = (cached, asOf) }
+        }
+        return best
+    }
+
+    /// The windows Claude last heard about, and when it heard — from the
+    /// state file that heard last, where there are several: one account's
+    /// limits are the same in each, and the newest is the truest.
     static func meters() -> (meters: [UsageMeter], asOf: Date?) {
-        guard let data = try? Data(contentsOf: AppEnvironment.claudeConfigFile),
-            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-            let cached = root["cachedUsageUtilization"] as? [String: Any]
-        else { return lastGoodLock.withLock { lastGood } ?? ([], nil) }
-        let asOf = (cached["fetchedAtMs"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
-        let read = (meters: windows(in: cached["utilization"] as? [String: Any] ?? [:]), asOf: asOf)
+        guard let best = freshestCache(in: configFiles) else { return lastGoodLock.withLock { lastGood } ?? ([], nil) }
+        let read = (meters: windows(in: best.cached["utilization"] as? [String: Any] ?? [:]), asOf: best.asOf)
         lastGoodLock.withLock { lastGood = read }
         return read
     }
@@ -169,8 +193,7 @@ enum ClaudeUsageSource {
     /// agent's tokens are nowhere in the session that started it.
     static func transcripts(since: Date) -> [URL] {
         let manager = FileManager.default
-        guard let folders = try? manager.contentsOfDirectory(at: ClaudeUsageReader.projectsDirectory, includingPropertiesForKeys: nil)
-        else { return [] }
+        let folders = projectDirectories.flatMap { (try? manager.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
         var found = [URL]()
         for folder in folders {
             guard let entries = try? manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])

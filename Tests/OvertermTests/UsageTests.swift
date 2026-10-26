@@ -350,6 +350,38 @@ final class UsageTailScannerTests: XCTestCase {
     }
 }
 
+/// More than one Claude config folder: each launch under CLAUDE_CONFIG_DIR
+/// writes its own state file and transcripts.
+final class ClaudeConfigFoldersTests: XCTestCase {
+    func testTheNewestCachedAnswerWins() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-claude-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func state(_ name: String, at ms: Double, percent: Int) throws -> URL {
+            let file = folder.appendingPathComponent(name)
+            try #"{"cachedUsageUtilization":{"fetchedAtMs":\#(ms),"utilization":{"five_hour":{"utilization":\#(percent)}}}}"#
+                .write(to: file, atomically: true, encoding: .utf8)
+            return file
+        }
+        let old = try state("old.json", at: 1_000, percent: 0)
+        let new = try state("new.json", at: 2_000, percent: 3)
+        let none = folder.appendingPathComponent("missing.json")
+        let best = try XCTUnwrap(ClaudeUsageSource.freshestCache(in: [old, none, new]))
+        XCTAssertEqual(best.asOf, Date(timeIntervalSince1970: 2))
+        XCTAssertEqual((best.cached["utilization"] as? [String: Any])?["five_hour"] as? [String: Int], ["utilization": 3])
+        XCTAssertNil(ClaudeUsageSource.freshestCache(in: [none]))
+    }
+
+    /// ~/.claude keeps its state file beside it; any other folder inside.
+    func testWhereEachFolderKeepsItsStateFile() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        XCTAssertEqual(AppEnvironment.claudeConfigFile(of: home.appendingPathComponent(".claude")).path, home.appendingPathComponent(".claude.json").path)
+        XCTAssertEqual(
+            AppEnvironment.claudeConfigFile(of: home.appendingPathComponent(".claude-work")).path,
+            home.appendingPathComponent(".claude-work/.claude.json").path)
+    }
+}
+
 /// Canaries: the real files on this Mac, when they are there. They are what
 /// catches a format that has moved — the fixtures above only prove we read
 /// the format we wrote down.
