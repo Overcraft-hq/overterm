@@ -572,6 +572,17 @@ final class TerminalView: NSView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, focused, let surface else { return false }
 
+        // The paste key with only a picture to paste, into an agent: ⌃V,
+        // which is how Claude Code and Codex take an image (ImagePaste).
+        if isPasteKey(event), ImagePaste.clipboardHasOnlyImage(),
+            ImagePaste.agentHasKeyboard(login: SurfaceProcesses.shared.loginPID(of: self)),
+            let down = ImagePaste.controlV(like: event, .keyDown), let up = ImagePaste.controlV(like: event, .keyUp)
+        {
+            keyDown(with: down)
+            keyUp(with: up)
+            return true
+        }
+
         var isBinding = false
         var ghosttyEvent = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
         (event.characters ?? "").withCString { ptr in
@@ -666,6 +677,14 @@ final class TerminalView: NSView {
 
     @objc func copy(_ sender: Any?) { performBinding("copy_to_clipboard") }
     @objc func paste(_ sender: Any?) { performBinding("paste_from_clipboard") }
+
+    /// Whether `event` is the key Paste is on (⌘V, unless rebound).
+    private func isPasteKey(_ event: NSEvent) -> Bool {
+        guard let command = KeyCommands.all.first(where: { $0.id == "edit.paste" }), let key = Keybindings.shared.key(for: command) else {
+            return false
+        }
+        return KeyCombo(event: event) == key
+    }
     @objc override func selectAll(_ sender: Any?) { performBinding("select_all") }
 
     /// Runs a Ghostty binding action by name (`copy_to_clipboard`,

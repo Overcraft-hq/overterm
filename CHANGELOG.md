@@ -11,6 +11,7 @@ version is tagged `v<version>`.
 - session: both islands come back — restoring one no longer drops the other's tabs
 - window: full screen keeps the tab strip — the toolbar it lives in no longer hides
 - groups: an island dragged by its chip moves right as well as left, its tabs in their order
+- terminal: ⌘V pastes a screenshot into Claude Code and Codex — with only an image on the clipboard, the agent gets the ⌃V it reads images on
 
 ## 1.4.0 — 2026-10-25
 

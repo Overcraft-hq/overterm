@@ -31,6 +31,7 @@ final class E2ERunner {
         "databaseTunnel": { await $0.databaseTunnelScenario() },
         "sessionGroups": { await $0.sessionGroupsScenario() },
         "fullScreen": { await $0.fullScreenScenario() },
+        "imagePaste": { await $0.imagePasteScenario() },
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },
