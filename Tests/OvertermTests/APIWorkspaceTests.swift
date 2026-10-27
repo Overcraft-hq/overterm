@@ -21,6 +21,46 @@ final class APIWorkspaceTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    private func workspaceWithMyRequests() -> (APIWorkspace, URL) {
+        let personal = dir.appendingPathComponent("support/api/My Requests", isDirectory: true)
+        let workspace = APIWorkspace(secrets: MemorySecretStore(), scripts: APIScriptRuntime(), personalRoot: personal)
+        workspace.setRoot(dir)
+        workspace.loadNow()
+        return (workspace, personal)
+    }
+
+    /// Imported with My Requests picked, a Postman collection lands in My
+    /// Requests — it went into the checkout's collection, whatever was picked.
+    func testAnImportGoesIntoThePickedCollectionEvenAPersonalOne() throws {
+        let (workspace, personal) = workspaceWithMyRequests()
+        workspace.selectedRoot = personal
+        XCTAssertEqual(workspace.collection?.isPersonal, true)
+        let postman: [String: Any] = [
+            "info": ["name": "Shop", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"],
+            "item": [["name": "List orders", "request": ["method": "GET", "url": ["raw": "https://shop.example.com/orders"]]]],
+        ]
+        let imported = try workspace.write(try PostmanImporter.make(postman))
+        XCTAssertTrue(imported.folder.standardizedFileURL.path.hasPrefix(personal.standardizedFileURL.path), imported.folder.path)
+        let checkout = try FileManager.default.contentsOfDirectory(atPath: dir.appendingPathComponent("api").path).sorted()
+        XCTAssertEqual(checkout, ["bruno.json", "environments"], "nothing written into the checkout")
+    }
+
+    /// A collection can always be made — in the checkout beside the one it
+    /// has, or of your own beside My Requests.
+    func testMoreCollectionsCanBeMadeOfBothKinds() throws {
+        let (workspace, personal) = workspaceWithMyRequests()
+        let first = try workspace.newCheckoutCollection(named: "Payments")
+        let second = try workspace.newCheckoutCollection(named: "Search")
+        XCTAssertEqual(first.lastPathComponent, "bruno")
+        XCTAssertEqual(second.lastPathComponent, "bruno-Search", "a second one beside the first")
+        let mine = try workspace.newPersonalCollection(named: "Scratch")
+        XCTAssertEqual(mine.deletingLastPathComponent().standardizedFileURL, personal.deletingLastPathComponent().standardizedFileURL)
+        workspace.loadNow()
+        XCTAssertEqual(Set(workspace.checkoutCollections.map(\.name)), ["S", "Payments", "Search"])
+        XCTAssertEqual(Set(workspace.collections.filter(\.isPersonal).map(\.name)), ["My Requests", "Scratch"])
+        XCTAssertEqual(workspace.collection?.root.standardizedFileURL, mine.standardizedFileURL, "the new one is picked")
+    }
+
     func testASecretLeavesTheFileForTheStore() throws {
         let store = MemorySecretStore()
         let workspace = APIWorkspace(secrets: store, scripts: APIScriptRuntime(), personalRoot: nil)

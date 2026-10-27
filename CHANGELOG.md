@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.4.5 — 2026-10-27
 
 - window: full screen gives the traffic lights' room to the tabs
+- api: an import goes into the collection you picked, My Requests too; the collection menu makes more collections — in the checkout, or your own on this Mac
 
 ## 1.4.2 — 2026-10-26
 

@@ -125,11 +125,34 @@ final class APIWorkspace: ObservableObject {
         return collection
     }
 
-    /// The checkout's collections, and yours after them.
+    /// The checkout's collections, and yours after them: My Requests, and
+    /// every other collection made beside it in Overterm's folder.
     nonisolated static func loadAll(in root: URL, personal: URL?) -> [BrunoCollection] {
-        let personalPath = personal?.standardizedFileURL.path
-        let checkout = BrunoCollection.find(in: root).filter { $0.standardizedFileURL.path != personalPath }.compactMap(BrunoCollection.load)
-        return checkout + [personal.flatMap(personalCollection(at:))].compactMap { $0 }
+        // Anything in the personal folder is yours, even when the checkout
+        // holds it (a home folder opened as one).
+        let personalParent = personal.map { $0.deletingLastPathComponent().standardizedFileURL.path + "/" }
+        let checkout = BrunoCollection.find(in: root)
+            .filter { found in personalParent.map { !(found.standardizedFileURL.path + "/").hasPrefix($0) } ?? true }
+            .compactMap(BrunoCollection.load)
+        let mine = [personal.flatMap(personalCollection(at:))].compactMap { $0 } + (personal.map(otherPersonalCollections(beside:)) ?? [])
+        return checkout + mine
+    }
+
+    /// Personal collections other than My Requests: the folders beside it
+    /// with a bruno.json, by name.
+    nonisolated static func otherPersonalCollections(beside myRequests: URL) -> [BrunoCollection] {
+        let parent = myRequests.deletingLastPathComponent()
+        let folders = (try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil)) ?? []
+        return
+            folders
+            .filter { $0.standardizedFileURL.path != myRequests.standardizedFileURL.path }
+            .filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent(BrunoCollection.configName).path) }
+            .compactMap { folder -> BrunoCollection? in
+                var collection = BrunoCollection.load(folder)
+                collection?.isPersonal = true
+                return collection
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     /// The checkout's own: what agents, imports and the runner's bru see.
@@ -262,13 +285,27 @@ final class APIWorkspace: ObservableObject {
         let notes: [String]
     }
 
-    /// Writes `imported` into the checkout: as a folder of its collection
-    /// when it has one, else as a collection of its own in `bruno/` —
-    /// into the checkout, where it is shared, never into My Requests.
-    func write(_ imported: APIImport) throws -> Imported {
+    /// Where an import goes.
+    enum Destination {
+        /// The collection picked in the panel — a personal one too: a file
+        /// you import, into My Requests if that is where you are.
+        case picked
+        /// The checkout's: its own API, found in it, is the checkout's.
+        case checkout
+    }
+
+    /// Writes `imported` as a folder of its destination's collection; with
+    /// none, as a collection of its own in the checkout's `bruno/`.
+    /// Imported with My Requests picked, a Postman export went into the
+    /// checkout's collection whatever was picked.
+    func write(_ imported: APIImport, into destination: Destination = .picked) throws -> Imported {
         guard let root else { throw FileError.exists("No checkout") }
         let folder: URL
-        let target = collection.flatMap { $0.isPersonal ? nil : $0 } ?? checkoutCollections.first
+        let target =
+            switch destination {
+            case .picked: collection ?? checkoutCollections.first
+            case .checkout: checkoutCollections.first
+            }
         var notes = imported.notes
         if let collection = target {
             notes += imported.environmentConflicts(in: collection.root)
@@ -306,12 +343,13 @@ final class APIWorkspace: ObservableObject {
 
     func importSource(_ source: APIDiscovery.Source) async throws -> Imported {
         switch source {
+        // Found in the checkout or served by it: the checkout's API.
         case .file(let url, _):
-            return try write(try APIImport.read(url))
+            return try write(try APIImport.read(url), into: .checkout)
         case .server(let base, let spec, _):
             let (data, _) = try await URLSession.shared.data(from: spec)
             guard let document = APIImport.parseDocument(data) else { throw APIImport.Problem.unreadable(spec.absoluteString) }
-            return try write(try OpenAPIImporter.make(document, baseURL: base.absoluteString))
+            return try write(try OpenAPIImporter.make(document, baseURL: base.absoluteString), into: .checkout)
         }
     }
 
@@ -567,6 +605,30 @@ final class APIWorkspace: ObservableObject {
         try meta.text.write(to: folder.appendingPathComponent("folder.bru"), atomically: true, encoding: .utf8)
         reload()
         return folder
+    }
+
+    /// A new collection in the checkout, shared with whoever clones it: in
+    /// `bruno/`, or beside it when that is taken — a second one had nowhere
+    /// to go.
+    @discardableResult
+    func newCheckoutCollection(named name: String) throws -> URL {
+        guard let root else { throw FileError.exists("No checkout") }
+        let preferred = root.appendingPathComponent("bruno", isDirectory: true)
+        let folder =
+            FileManager.default.fileExists(atPath: preferred.path)
+            ? APIImport.unique(root.appendingPathComponent("bruno-" + Self.fileName(name), isDirectory: true), isFolder: true)
+            : preferred
+        return try newCollection(named: name, at: folder)
+    }
+
+    /// A new collection of your own, beside My Requests in Overterm's
+    /// folder: nothing of it lands in the checkout.
+    @discardableResult
+    func newPersonalCollection(named name: String) throws -> URL {
+        guard let personalRoot else { throw FileError.exists("No place for personal collections") }
+        let parent = personalRoot.deletingLastPathComponent()
+        let folder = APIImport.unique(parent.appendingPathComponent(Self.fileName(name), isDirectory: true), isFolder: true)
+        return try newCollection(named: name, at: folder)
     }
 
     /// A new collection in `folder` (made if missing): bruno.json, a Local

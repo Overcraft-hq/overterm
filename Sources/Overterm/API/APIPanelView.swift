@@ -79,21 +79,32 @@ struct APIPanelView: View {
     /// the other to its icon in a sidebar of ordinary width.
     private func pickers(_ collection: BrunoCollection) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            if workspace.collections.count > 1 {
-                Menu {
-                    ForEach(workspace.collections, id: \.root) { other in
-                        Button(other.name) { workspace.selectedRoot = other.root }
-                    }
-                } label: {
-                    Label(collection.name, systemImage: "shippingbox").font(.system(size: 11.5)).lineLimit(1)
+            // Always there, one collection or ten: it is also where a new one
+            // is made — only the empty panel offered that before, and only
+            // in the checkout.
+            Menu {
+                let shared = workspace.checkoutCollections
+                let mine = workspace.collections.filter(\.isPersonal)
+                if !shared.isEmpty {
+                    Section("In this checkout") { collectionButtons(shared, current: collection) }
                 }
-                .menuStyle(.borderlessButton)
-                // Never fixed to its title: a long one made the row, and so
-                // the whole panel, wider than the sidebar — the rail was
-                // pushed out of the window.
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                .frame(height: 24)
+                if !mine.isEmpty {
+                    Section("Mine — on this Mac") { collectionButtons(mine, current: collection) }
+                }
+                Divider()
+                if workspace.root != nil { Button("New Collection in This Checkout…") { newCollection() } }
+                Button("New Personal Collection…") { newPersonalCollection() }
+            } label: {
+                Label(collection.name, systemImage: collection.isPersonal ? "person.crop.circle" : "shippingbox")
+                    .font(.system(size: 11.5)).lineLimit(1)
             }
+            .menuStyle(.borderlessButton)
+            // Never fixed to its title: a long one made the row, and so
+            // the whole panel, wider than the sidebar — the rail was
+            // pushed out of the window.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .frame(height: 24)
+            .accessibilityIdentifier("apiCollection")
             Menu {
                 Button("No Environment") { workspace.environmentName = nil }
                 if !collection.environments.isEmpty { Divider() }
@@ -123,6 +134,16 @@ struct APIPanelView: View {
         }
         .padding(.horizontal, 10)
         .padding(.bottom, 2)
+    }
+
+    @ViewBuilder private func collectionButtons(_ list: [BrunoCollection], current: BrunoCollection) -> some View {
+        ForEach(list, id: \.root) { other in
+            Button {
+                workspace.selectedRoot = other.root
+            } label: {
+                if other.root == current.root { Label(other.name, systemImage: "checkmark") } else { Text(other.name) }
+            }
+        }
     }
 
     private var searchField: some View {
@@ -385,10 +406,18 @@ struct APIPanelView: View {
         }
     }
 
+    /// In the checkout: committed with the code, shared.
     private func newCollection() {
         guard let root = workspace.root else { return }
-        actions.prompt("New Collection — in the checkout's bruno folder", root.lastPathComponent + " API") { name in
-            run { _ = try workspace.newCollection(named: name, at: root.appendingPathComponent("bruno", isDirectory: true)) }
+        actions.prompt("New Collection — in this checkout, shared", root.lastPathComponent + " API") { name in
+            run { _ = try workspace.newCheckoutCollection(named: name) }
+        }
+    }
+
+    /// Yours: in Overterm's folder, nothing of it in the checkout.
+    private func newPersonalCollection() {
+        actions.prompt("New Personal Collection — on this Mac only", "My API") { name in
+            run { _ = try workspace.newPersonalCollection(named: name) }
         }
     }
 
