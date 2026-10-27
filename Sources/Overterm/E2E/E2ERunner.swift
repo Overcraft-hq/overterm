@@ -2569,6 +2569,25 @@ final class E2ERunner {
         await pause(0.2)
     }
 
+    /// A drag as a hand makes it: the drag and the release are already
+    /// queued when the press is handled, so a tracking loop the press starts
+    /// (the title bar's) takes them from the queue, as it does a real hand's
+    /// — `drag(from:to:)` hands each to the app in turn, past any such loop.
+    private func queuedDrag(from start: NSPoint, to end: NSPoint, steps: Int = 12) async {
+        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        for step in 1...steps {
+            let t = CGFloat(step) / CGFloat(steps)
+            NSApp.postEvent(mouse(.leftMouseDragged, NSPoint(x: start.x + (end.x - start.x) * t, y: start.y)), atStart: false)
+        }
+        NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
+        NSApp.sendEvent(mouse(.leftMouseDown, start))
+        await pause(0.6)
+    }
+
     /// Dragging a tab reorders the strip (and doesn't move the window).
     private func reorder() async {
         guard let a = app.store.selected else { return check("a tab", false) }
@@ -2592,6 +2611,15 @@ final class E2ERunner {
                 check("a press on tab \(tab.title) (dx \(Int(dx))) doesn't hit the window-drag area", !name.contains("WindowDrag") && !(hit is WindowDragView), name)
             }
         }
+
+        // As a hand drags: what is queued behind the press.
+        guard let qa = point(inTab: a), let qc = point(inTab: c, dx: 30) else { return check("points", false) }
+        let queuedOrigin = window.frame.origin
+        await queuedDrag(from: qa, to: qc)
+        check("a hand's drag reorders too", app.store.tabs.map(\.title) == ["B", "C", "A"], app.store.tabs.map(\.title).joined(separator: ","))
+        check("and doesn't move the window", window.frame.origin == queuedOrigin, "\(queuedOrigin) → \(window.frame.origin)")
+        if let back = point(inTab: a), let front = point(inTab: app.store.tabs[0], dx: -30) { await drag(from: back, to: front) }
+        _ = await eventually(2) { self.app.store.tabs.map(\.title) == ["A", "B", "C"] }
 
         let windowOrigin = window.frame.origin
         // Past C's middle: that is what "after C" means (as in Chrome).

@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import GhosttyKit
 import SwiftUI
+import os
 
 /// One Overterm window: the tab strip in the title bar; below it the
 /// collapsible sidebar and the selected tab's terminal. Every tab's
@@ -2039,12 +2040,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     // press then dragged the window, and no drag ever reached
                     // the strip. Unmovable until the release.
                     if self.pressedTab != nil || self.pressedGroup != nil { self.window?.isMovable = false }
+                    Self.stripLog.debug(
+                        "press at \(Int(point.x), privacy: .public),\(Int(point.y), privacy: .public): tab \(self.pressedTab?.tab.title ?? "-", privacy: .public), chip \(self.pressedGroup?.group.name ?? "-", privacy: .public), movable \(self.window?.isMovable ?? true, privacy: .public)"
+                    )
                     return event
                 }
             case .leftMouseDragged:
                 guard self.pressedTab != nil || self.pressedGroup != nil, let strip = self.tabBarView,
                     event.window === self.window
-                else { return event }
+                else {
+                    if self.pressedTab != nil || self.pressedGroup != nil {
+                        Self.stripLog.debug("drag dropped: window \(event.window === self.window, privacy: .public)")
+                    }
+                    return event
+                }
+                if self.store.draggingID == nil {
+                    Self.stripLog.debug("drag at x \(Int(strip.convert(event.locationInWindow, from: nil).x), privacy: .public)")
+                }
                 var point = strip.convert(event.locationInWindow, from: nil)
                 if !strip.isFlipped { point.y = strip.bounds.height - point.y }
                 if let island = self.pressedGroup {
@@ -2082,6 +2094,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 } else if let pressed = self.pressedTab, self.store.draggingID == nil {
                     self.store.select(pressed.tab)
                 }
+                if self.pressedTab != nil || self.pressedGroup != nil {
+                    Self.stripLog.debug(
+                        "release: dragged \(self.store.draggingID != nil, privacy: .public), order \(self.store.tabs.map(\.title).joined(separator: ","), privacy: .public)"
+                    )
+                }
                 self.hideDropZones()
                 self.window?.isMovable = true
                 self.pressedTab = nil
@@ -2094,6 +2111,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             }
         }
     }
+
+    /// What the strip's mouse does, for `log stream --level debug
+    /// --predicate 'category == "strip"'`: debug level, kept only while
+    /// someone is streaming it.
+    static let stripLog = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "strip")
 
     func menu(for tab: Tab) -> NSMenu {
         let menu = NSMenu()
