@@ -9,7 +9,7 @@ import os
 /// TerminalView stays alive in the container (hidden and occluded when not
 /// selected) so its pty and scrollback survive tab switches.
 @MainActor
-final class TerminalWindowController: NSWindowController, NSWindowDelegate {
+final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
     let store = TabStore()
     private let container = NSView()
     /// Each tab's panes, laid out; only the selected tab's is visible.
@@ -38,6 +38,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     private var agentPoll: Timer?
     /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
     private let inspector = ProcessInspector()
+    /// The strip's width in the toolbar (`sizeStrip`).
+    var stripWidth: NSLayoutConstraint?
     var processInspector: ProcessInspector { inspector }
     /// Kept across popovers: transcripts are re-read only where they grew.
     private let claudeReader = ClaudeUsageReader()
@@ -169,7 +171,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         )
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        Self.giveToolbar(to: window)
+        window.titlebarSeparatorStyle = .none
         // The window ground is what shows between the cards, never behind a
         // terminal — so it is the chrome's `win`, not the terminal's colour.
         window.backgroundColor =
@@ -227,7 +229,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                 usage: usage,
                 theme: theme,
                 browser: browserButton,
-                leadingInset: 88,
                 actions: TabBarActions(
                     select: { [weak self] tab in
                         // The terminal tab under the Settings tab is still the
@@ -250,7 +251,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     toggleBrowser: { [weak self] in self?.toggleBrowser(nil) },
                     toggleSimulator: { [weak self] in self?.toggleSimulator(nil) },
                     resume: { [weak self] in self?.resumeTab($0) },
-                    resumeAll: { [weak self] in self?.store.tabs.filter(\.isSuspended).forEach { self?.resumeTab($0) } }
+                    resumeAll: { [weak self] in self?.store.tabs.filter(\.isSuspended).forEach { self?.resumeTab($0) } },
+                    press: { [weak self] subject, event, phase in self?.stripPress(subject, event, phase) }
                 ),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },
@@ -267,7 +269,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                     close: { [weak self] group in self?.closeGroup(group) },
                     setRestoresOnLaunch: { group, value in group.restoresOnLaunch = value },
                     peek: { [weak self] group in self?.peekGroup(group) },
-                    renameEnded: { [weak self] in self?.focusSelectedTerminal() }
+                    renameEnded: { [weak self] in self?.focusSelectedTerminal() },
+                    press: { [weak self] subject, event, phase in self?.stripPress(subject, event, phase) }
                 )
             )
             .background(theme.strip)
@@ -598,6 +601,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         if !AppEnvironment.isIsolated { split.splitView.autosaveName = "OvertermColumns.v5" }
         self.sidebarItem = sidebarItem
 
+        // Its natural size only, never a required minimum: with every tab's
+        // width as a minimum it outgrew the toolbar as tabs were added, and
+        // the bar put the whole strip in its overflow menu (a lone »).
+        tabBar.sizingOptions = [.intrinsicContentSize]
         tabBarView = tabBar
         installTabRightClick()
         installTabDragging()
@@ -605,21 +612,32 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
         let content = NSView()
         let body = split.view
-        tabBar.translatesAutoresizingMaskIntoConstraints = false
         body.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(tabBar)
         content.addSubview(body)
+        // The strip is the title bar: the toolbar's one item (`installToolbar`),
+        // and the body starts under it — where the window says its content
+        // may begin.
+        window.contentView = content
+        installToolbar(in: window)
+        let titleBottom = (window.contentLayoutGuide as? NSLayoutGuide)?.topAnchor ?? content.topAnchor
+        // The title bar's ground, in the strip's colour: the strip paints only
+        // its item, and the traffic lights stood on the darker window.
+        let titleBand = NSHostingView(rootView: TitleBand(theme: theme))
+        titleBand.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(titleBand, positioned: .below, relativeTo: body)
         NSLayoutConstraint.activate([
-            tabBar.topAnchor.constraint(equalTo: content.topAnchor),
-            tabBar.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            tabBar.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            tabBar.heightAnchor.constraint(equalToConstant: TabStripHostingView<AnyView>.height),
+            titleBand.topAnchor.constraint(equalTo: content.topAnchor),
+            titleBand.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            titleBand.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            titleBand.bottomAnchor.constraint(equalTo: titleBottom),
+        ])
+        NSLayoutConstraint.activate([
             // The cards keep the same 10 pt from the window on all four
             // sides as they keep from each other — under the strip too,
             // which is a panel of its own now and would otherwise run
             // straight into the terminal. Sideways each card already keeps
             // half of it, so the window only owes the other half.
-            body.topAnchor.constraint(equalTo: tabBar.bottomAnchor, constant: CardColumn.gap),
+            body.topAnchor.constraint(equalTo: titleBottom, constant: CardColumn.gap),
             body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: CardColumn.gap / 2),
             body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -CardColumn.gap / 2),
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
@@ -632,7 +650,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
         settingsView.isHidden = true
         content.addSubview(settingsView)
         NSLayoutConstraint.activate([
-            settingsView.topAnchor.constraint(equalTo: tabBar.bottomAnchor),
+            settingsView.topAnchor.constraint(equalTo: titleBottom),
             settingsView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             settingsView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             settingsView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
@@ -706,7 +724,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
             switcherView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         self.switcherView = switcherView
-        window.contentView = content
     }
 
     private func titleBarHeight(of window: NSWindow) -> CGFloat {
@@ -1879,6 +1896,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
                         .compactMap { window.standardWindowButton($0) }
                         .map { $0.convert($0.bounds, to: nil).integral }
                     out += "titlebar height=\(self.titleBarHeight(of: window)) lights=\(lights)\n"
+                    if let strip = self.tabBarView {
+                        var chain: [String] = []
+                        var view: NSView? = strip.superview
+                        while let current = view, chain.count < 6 {
+                            chain.append("\(Swift.type(of: current))")
+                            view = current.superview
+                        }
+                        let inWindow = strip.window == nil ? NSRect.zero : strip.convert(strip.bounds, to: nil)
+                        out += "strip in window \(inWindow) own window \(strip.window.map { "\(Swift.type(of: $0))" } ?? "none") under \(chain.joined(separator: " < "))\n"
+                    }
                 }
                 @MainActor func walk(_ v: NSView, _ depth: Int) {
                     guard depth < 11 else { return }
@@ -2010,104 +2037,145 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// context menu — the title bar keeps drags from SwiftUI. The press
     /// itself goes through untouched (it still selects); only the drag
     /// events are taken.
+    /// ⌃-click (the menu) and ⌘-click (marking a tab for a group command)
+    /// on the strip, before anything else sees them. A plain press is the
+    /// tab's or the chip's own view's (`stripPress`).
     private func installTabDragging() {
-        dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
-            guard let self else { return event }
-            switch event.type {
-            case .leftMouseDown:
-                self.pressedTab = nil
-                guard let point = self.stripPoint(event) else { return event }
-                // ⌃-click and ⌘-click ride this monitor rather than one of
-                // their own: a second monitor on .leftMouseDown is one more
-                // thing between the title bar and its own mouse handling.
-                switch StripClick.kind(type: event.type, modifiers: event.modifierFlags) {
-                case .context:
-                    return self.showStripMenu(at: point, with: event) ? nil : event
-                case .mark:
-                    guard let tab = self.store.tab(at: point) else { return event }
-                    self.store.toggleMultiSelection(tab)
-                    return nil
-                case .press, nil:
-                    if self.store.renamingID == nil, let tab = self.store.tab(at: point) {
-                        self.pressedTab = (tab, point.x)
-                    } else if self.store.renamingGroupID == nil, let group = self.store.group(at: point) {
-                        // A chip drags its whole island.
-                        self.pressedGroup = (group, point.x)
-                    }
-                    // A press on a tab or a chip is the strip's, not the
-                    // title bar's: in an island it lands on SwiftUI's scroll
-                    // views, which say they move the window — and a real
-                    // press then dragged the window, and no drag ever reached
-                    // the strip. Unmovable until the release.
-                    if self.pressedTab != nil || self.pressedGroup != nil { self.window?.isMovable = false }
-                    Self.stripLog.debug(
-                        "press at \(Int(point.x), privacy: .public),\(Int(point.y), privacy: .public): tab \(self.pressedTab?.tab.title ?? "-", privacy: .public), chip \(self.pressedGroup?.group.name ?? "-", privacy: .public), movable \(self.window?.isMovable ?? true, privacy: .public)"
-                    )
-                    return event
-                }
-            case .leftMouseDragged:
-                guard self.pressedTab != nil || self.pressedGroup != nil, let strip = self.tabBarView,
-                    event.window === self.window
-                else {
-                    if self.pressedTab != nil || self.pressedGroup != nil {
-                        Self.stripLog.debug("drag dropped: window \(event.window === self.window, privacy: .public)")
-                    }
-                    return event
-                }
-                if self.store.draggingID == nil {
-                    Self.stripLog.debug("drag at x \(Int(strip.convert(event.locationInWindow, from: nil).x), privacy: .public)")
-                }
-                var point = strip.convert(event.locationInWindow, from: nil)
-                if !strip.isFlipped { point.y = strip.bounds.height - point.y }
-                if let island = self.pressedGroup {
-                    guard abs(point.x - island.x) > 4 else { return nil }
-                    withAnimation(.easeOut(duration: 0.12)) { self.store.dragMove(island.group, toPointerX: point.x) }
-                    return nil
-                }
-                guard let pressed = self.pressedTab else { return event }
-                if self.store.draggingID == nil {
-                    guard abs(point.x - pressed.x) > 4 else { return nil }
-                    self.store.draggingID = pressed.tab.id
-                    self.store.select(pressed.tab)
-                }
-                // Only x matters (the pointer may drift off the strip vertically).
-                // The drop decides the island too: dragging a tab into one
-                // joins it, dragging it out between two leaves.
-                // Dragged down out of the strip and over the panes: it is
-                // no longer being reordered, it is being dropped into a
-                // split.
-                if self.updateDropZones(for: pressed.tab, at: event) { return nil }
-                withAnimation(.easeOut(duration: 0.12)) {
-                    self.store.drop(pressed.tab, atPointerX: point.x)
-                    self.store.dropGroupID = TabStore.island(at: point.x, spans: self.store.islandSpans)
-                }
+        dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            guard let self, let point = self.stripPoint(event) else { return event }
+            switch StripClick.kind(type: event.type, modifiers: event.modifierFlags) {
+            case .context:
+                return self.showStripMenu(at: point, with: event) ? nil : event
+            case .mark:
+                guard let tab = self.store.tab(at: point) else { return event }
+                self.store.toggleMultiSelection(tab)
                 return nil
-            case .leftMouseUp:
-                // A press released without dragging is a click: select here,
-                // not only in SwiftUI's tap gesture (which doesn't reliably
-                // see the press once drags are being taken). Always let the
-                // release through — SwiftUI saw the press and must see it end.
-                if let pressed = self.pressedTab, let zone = self.dropZone, let target = self.store.selected,
-                    target !== pressed.tab
-                {
-                    self.movePane(pressed.tab.terminal, from: pressed.tab, into: target, zone.direction)
-                } else if let pressed = self.pressedTab, self.store.draggingID == nil {
-                    self.store.select(pressed.tab)
-                }
-                if self.pressedTab != nil || self.pressedGroup != nil {
-                    Self.stripLog.debug(
-                        "release: dragged \(self.store.draggingID != nil, privacy: .public), order \(self.store.tabs.map(\.title).joined(separator: ","), privacy: .public)"
-                    )
-                }
-                self.hideDropZones()
-                self.window?.isMovable = true
-                self.pressedTab = nil
-                self.pressedGroup = nil
-                self.store.draggingID = nil
-                self.store.dropGroupID = nil
+            case .press, nil:
                 return event
-            default:
-                return event
+            }
+        }
+    }
+
+    /// Where the dragged tab was taken hold of: the pointer's distance from
+    /// its left edge, kept as it follows the pointer.
+    private var grabOffset: CGFloat = 0
+    /// A chip moved its island this press: its release is no click.
+    private var islandDragged = false
+    /// Takes a press's drag and release from the app's events while it
+    /// lasts (`stripPress`); nil between presses.
+    private var stripDragMonitor: Any?
+
+    /// A press, drag or release on a tab or an island chip, from the view
+    /// under it (`StripPressView`), which AppKit gives all three to.
+    /// A click selects (a tab) or folds (a chip), a double-click renames;
+    /// past 4 pt of travel a tab is dragged — its copy following the pointer,
+    /// the strip reordering as it passes each neighbour's middle, dropped on
+    /// the panes into a split — and a chip drags its whole island.
+    func stripPress(_ subject: StripPressSubject, _ event: NSEvent, _ phase: StripPressPhase, fromMonitor: Bool = false) {
+        // While the press's own monitor runs, it is the one that says.
+        if phase != .down, stripDragMonitor != nil, !fromMonitor { return }
+        guard let strip = tabBarView else { return }
+        var point = strip.convert(event.locationInWindow, from: nil)
+        if !strip.isFlipped { point.y = strip.bounds.height - point.y }
+        switch phase {
+        case .down:
+            pressedTab = nil
+            pressedGroup = nil
+            islandDragged = false
+            switch subject {
+            case .tab(let tab):
+                guard store.renamingID != tab.id else { return }
+                pressedTab = (tab, point.x)
+                grabOffset = point.x - (store.tabFrames[tab.id]?.minX ?? point.x)
+            case .group(let group):
+                guard store.renamingGroupID != group.id else { return }
+                pressedGroup = (group, point.x)
+            }
+            Self.stripLog.debug("press at \(Int(point.x), privacy: .public),\(Int(point.y), privacy: .public) on \(String(describing: subject), privacy: .public)")
+            // The drag and the release come from here until the release, not
+            // from the view that took the press: a tab dragged into another
+            // island is a new view there, SwiftUI drops the old one, and the
+            // drag sent to it went nowhere — the tab froze where it crossed.
+            if let monitor = stripDragMonitor { NSEvent.removeMonitor(monitor) }
+            stripDragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+                guard let self else { return event }
+                self.stripPress(subject, event, event.type == .leftMouseUp ? .up : .drag, fromMonitor: true)
+                return nil
+            }
+        case .drag:
+            defer {
+                Self.stripLog.debug(
+                    "drag x \(Int(point.x), privacy: .public) y \(Int(point.y), privacy: .public): dragging \(self.store.draggingID != nil, privacy: .public), copy at \(self.store.dragX.map { "\(Int($0))" } ?? "-", privacy: .public), over the panes \(self.dropZone != nil, privacy: .public)"
+                )
+            }
+            if let island = pressedGroup {
+                guard islandDragged || abs(point.x - island.x) > 4 else { return }
+                islandDragged = true
+                withAnimation(.easeOut(duration: 0.12)) { store.dragMove(island.group, toPointerX: point.x) }
+                return
+            }
+            guard let pressed = pressedTab else { return }
+            if store.draggingID == nil {
+                guard abs(point.x - pressed.x) > 4 else { return }
+                store.draggingID = pressed.tab.id
+                store.select(pressed.tab)
+            }
+            // Dragged down out of the strip and over the panes: no longer
+            // reordered but dropped into a split.
+            if updateDropZones(for: pressed.tab, at: event) {
+                store.dragX = nil
+                return
+            }
+            // The copy follows the pointer at once; the strip around it moves
+            // with its animation.
+            withTransaction(Transaction(animation: nil)) { store.dragX = point.x - grabOffset }
+            // Only x matters (the pointer may drift off the strip vertically).
+            // The drop decides the island too: dragging a tab into one joins
+            // it, dragging it out between two leaves.
+            let before = store.tabs.map(\.id)
+            withAnimation(.easeOut(duration: 0.12)) {
+                store.drop(pressed.tab, atPointerX: point.x)
+                store.dropGroupID = TabStore.island(at: point.x, spans: store.islandSpans)
+            }
+            if store.tabs.map(\.id) != before {
+                Self.stripLog.debug("reorder at x \(Int(point.x), privacy: .public)")
+            }
+        case .up:
+            let dragged = store.draggingID != nil || islandDragged
+            if let pressed = pressedTab, let zone = dropZone, let target = store.selected, target !== pressed.tab {
+                movePane(pressed.tab.terminal, from: pressed.tab, into: target, zone.direction)
+            } else if !dragged {
+                switch subject {
+                case .tab(let tab):
+                    // A double-click renames — a pinned tab has no name to edit.
+                    if event.clickCount >= 2, !tab.isPinned {
+                        store.renamingID = tab.id
+                    } else {
+                        // Under the Settings tab, a click only uncovers it.
+                        hideSettingsPage()
+                        store.select(tab)
+                    }
+                case .group(let group):
+                    // The first click folded or opened it: the second puts it
+                    // back, and renames.
+                    if event.clickCount >= 2 {
+                        toggleGroupCollapsed(group)
+                        store.renamingGroupID = group.id
+                    } else if pressedGroup != nil {
+                        toggleGroupCollapsed(group)
+                    }
+                }
+            }
+            Self.stripLog.debug("release: dragged \(dragged, privacy: .public), order changed by the drag")
+            hideDropZones()
+            pressedTab = nil
+            pressedGroup = nil
+            store.draggingID = nil
+            store.dropGroupID = nil
+            store.dragX = nil
+            if let monitor = stripDragMonitor {
+                NSEvent.removeMonitor(monitor)
+                stripDragMonitor = nil
             }
         }
     }
@@ -3360,34 +3428,95 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// Full screen takes the toolbar away, and gives it back after. The
-    /// toolbar is only there to make the title bar tall enough for the strip;
-    /// in full screen AppKit puts title bar and toolbar in a window of their
-    /// own, 68 pt over the top of ours — over the strip. Auto-hidden, it slid
-    /// our window up and the strip off the screen (1.4.0); kept (1.4.1), it
-    /// covered the strip with a black band.
-    func windowWillEnterFullScreen(_ notification: Notification) {
-        window?.toolbar = nil
-        // Full screen has no traffic lights: the tabs take their room.
-        store.isFullScreen = true
+    /// Full screen keeps the toolbar — the strip is in it — and so the strip
+    /// comes down with the title bar when the pointer reaches the top,
+    /// rather than the traffic lights coming down over the tabs.
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions = [])
+        -> NSApplication.PresentationOptions
+    {
+        var options = proposed
+        options.remove(.autoHideToolbar)
+        options.insert(.fullScreen)
+        if !options.contains(.hideMenuBar) { options.insert(.autoHideMenuBar) }
+        return options
     }
 
-    func windowWillExitFullScreen(_ notification: Notification) {
-        store.isFullScreen = false
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        sizeStrip()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
-        Self.giveToolbar(to: window)
+        sizeStrip()
     }
 
-    /// An empty toolbar makes the title bar tall enough for the tab strip
-    /// and vertically centres the traffic lights in it. Unified rather than
-    /// unifiedCompact: the strip holds 30 pt tabs with an island around
-    /// them, which needs the taller bar.
-    static func giveToolbar(to window: NSWindow?) {
-        guard let window, window.toolbar == nil else { return }
-        window.toolbar = NSToolbar()
+    // MARK: The strip, in the title bar
+
+    static let stripItem = NSToolbarItem.Identifier("overterm.strip")
+
+    /// The tab strip is the toolbar's one item, as Safari's tabs are. Laid
+    /// under the title bar instead, the title bar's own views lay over it,
+    /// and macOS moved the window for a press there before the app heard of
+    /// it: dragging a tab dragged the window, whatever the strip's views
+    /// answered. In the toolbar it is the title bar — after the traffic
+    /// lights, and in full screen it comes down with them.
+    func installToolbar(in window: NSWindow) {
+        let toolbar = NSToolbar(identifier: "overterm.main")
+        toolbar.delegate = self
+        toolbar.allowsUserCustomization = false
+        toolbar.displayMode = .iconOnly
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
         window.toolbarStyle = .unified
+        sizeStrip()
+    }
+
+    /// The strip as wide as the bar leaves it — after the traffic lights,
+    /// or from the edge in full screen — set as the window resizes and goes
+    /// in and out of full screen. Never wider: an item the bar can't hold
+    /// goes into the overflow menu, and the tabs vanished behind a ».
+    func sizeStrip() {
+        let width = Self.stripWidth(for: window)
+        stripWidth?.constant = width
+        (tabBarView as? TitleBarStrip)?.barWidth = width
+    }
+
+    /// The bar gives an item its width less 95 pt beside the traffic
+    /// lights (measured); a little under, to be sure.
+    static func stripWidth(for window: NSWindow?) -> CGFloat {
+        guard let window else { return 600 }
+        let used: CGFloat = window.styleMask.contains(.fullScreen) ? 24 : 100
+        return max(200, window.frame.width - used)
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.stripItem] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.stripItem] }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool)
+        -> NSToolbarItem?
+    {
+        guard identifier == Self.stripItem, let strip = tabBarView else { return nil }
+        (strip as? TitleBarStrip)?.barWidth = Self.stripWidth(for: window)
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        strip.translatesAutoresizingMaskIntoConstraints = false
+        if stripWidth == nil {
+            // Flexible — the bar won't place an item whose width is fixed —
+            // between room for a tab and what the bar leaves (`sizeStrip`),
+            // as wide as it can be. The cap keeps the tabs' own width (every
+            // tab, wider than the bar) from pushing the strip into the
+            // overflow menu.
+            let most = strip.widthAnchor.constraint(lessThanOrEqualToConstant: Self.stripWidth(for: window))
+            let fill = strip.widthAnchor.constraint(equalToConstant: 10_000)
+            fill.priority = .defaultLow
+            NSLayoutConstraint.activate([
+                most, fill, strip.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+                strip.heightAnchor.constraint(equalToConstant: TabStripHostingView<AnyView>.height),
+            ])
+            stripWidth = most
+        }
+        item.view = strip
+        item.label = ""
+        item.visibilityPriority = .high
+        return item
     }
 
     /// Closing the window closes every tab: always confirmed.
@@ -3425,7 +3554,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// The peek's cards are frames in the container; a resize moves them.
-    func windowDidResize(_ notification: Notification) { peek.relayout() }
+    func windowDidResize(_ notification: Notification) {
+        sizeStrip()
+        peek.relayout()
+    }
 
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }

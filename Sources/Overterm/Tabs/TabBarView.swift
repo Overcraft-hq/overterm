@@ -32,6 +32,8 @@ struct TabBarActions {
     /// The suspended chip: one tab, or every one, carried on.
     var resume: (Tab) -> Void = { _ in }
     var resumeAll: () -> Void = {}
+    /// A press, drag or release on a tab (`StripPressView`).
+    var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
 }
 
 /// What the title bar's globe shows: whether there is a browser (Settings
@@ -59,8 +61,6 @@ struct TabBarView: View {
     @ObservedObject var theme: ChromeTheme
     /// The globe beside the ± badge.
     @ObservedObject var browser: BrowserButtonState
-    /// Room for the traffic lights on the left.
-    let leadingInset: CGFloat
     let actions: TabBarActions
     let groupActions: TabGroupActions
 
@@ -73,7 +73,6 @@ struct TabBarView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: store.isFullScreen ? 10 : leadingInset)
             // The tabs scroll in what is left over. Laid out plainly, a
             // strip of eight tabs is wider than the window and SwiftUI
             // overflows it both ways: tabs ended up under the traffic
@@ -100,12 +99,27 @@ struct TabBarView: View {
         // title bar would otherwise be the window's own ground, a step
         // darker than every panel under it.
         .background(theme.card)
+        // The dragged tab, following the pointer.
+        .overlay(alignment: .topLeading) { draggedTab }
         .coordinateSpace(name: TabFramesKey.space)
         .onPreferenceChange(TabFramesKey.self) { frames in
             MainActor.assumeIsolated { store.tabFrames = frames }
         }
         .onPreferenceChange(GroupChipFramesKey.self) { frames in
             MainActor.assumeIsolated { store.groupChipFrames = frames }
+        }
+    }
+
+    /// The dragged tab's copy where the pointer has it, over its empty place.
+    @ViewBuilder private var draggedTab: some View {
+        if let id = store.draggingID, let x = store.dragX, let tab = store.tabs.first(where: { $0.id == id }),
+            let frame = store.tabFrames[id]
+        {
+            TabItemView(branch: selectedBranch, tab: tab, store: store, theme: theme, actions: actions, ghost: true)
+                .frame(width: frame.width, height: frame.height)
+                .offset(x: x, y: frame.minY)
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
+                .allowsHitTesting(false)
         }
     }
 
@@ -260,6 +274,9 @@ struct TabItemView: View {
     /// then the island's height less that inset, so the two cards end
     /// up the same size as a loose tab beside them.
     var nested = false
+    /// The copy that follows the pointer while the tab is dragged: drawn
+    /// only — no frame reported, no press taken.
+    var ghost = false
     @State private var hovering = false
 
     /// Not while the Settings tab shows: it covers this one.
@@ -355,19 +372,22 @@ struct TabItemView: View {
                     .foregroundStyle(theme.text3)
                     .layoutPriority(-1)
             }
-            Button(action: { actions.close(tab) }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .frame(width: 16, height: 16)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.text3)
-            .opacity(isSelected || hovering ? 1 : 0)
-            .help("Close Tab (⌘W)")
+            // Room for the ×, which is drawn over the tab's press view
+            // (`closeButton`).
+            Color.clear.frame(width: 16, height: 16)
         }
         .padding(.leading, 5)
         .padding(.trailing, 6)
+    }
+
+    /// The ×: AppKit's, in front of the press view — a SwiftUI Button
+    /// under it never got its click.
+    @ViewBuilder private var closeButton: some View {
+        if !tab.isPinned && !ghost {
+            CloseTabButton(color: theme.text3, visible: isSelected || hovering) { actions.close(tab) }
+                .frame(width: 16, height: 16)
+                .padding(.trailing, 6)
+        }
     }
 
     private var height: CGFloat { nested ? TabCard.nested : TabCard.height }
@@ -410,9 +430,18 @@ struct TabItemView: View {
             }
         }
         .contentShape(Rectangle())
-        // Single and double tap together, not exclusively: an exclusive double
-        // tap would delay every plain click by the double-click interval.
-        .onTapGesture { actions.select(tab) }
+        // Click, double-click (rename) and drag (reorder) are the press
+        // view's: SwiftUI's own view under a tab told AppKit it moves the
+        // window, and a real drag dragged the window (StripPressView).
+        // In front: SwiftUI hit-tests the host, and an AppKit view behind
+        // the tab's content was never reached. Not while renaming: the name
+        // field takes the clicks then.
+        .overlay {
+            if !ghost && !isRenaming {
+                StripPressView(help: tab.title) { event, phase in actions.press(.tab(tab), event, phase) }
+            }
+        }
+        .overlay(alignment: .trailing) { closeButton }
         // ⌘-click marks a tab for a group command. It is handled by the
         // window's mouse monitor, not here: a SwiftUI
         // `TapGesture().modifiers(.command)` in the strip swallowed every
@@ -423,16 +452,18 @@ struct TabItemView: View {
                     .allowsHitTesting(false)
             }
         }
-        .simultaneousGesture(TapGesture(count: 2).onEnded { if !tab.isPinned { store.renamingID = tab.id } })
         .onHover { hovering = $0 }
-        // Reordering is done by the window (installTabMouseHandling): drags
-        // in the title bar never reach SwiftUI's onDrag.
-        .opacity(store.draggingID == tab.id ? 0.75 : 1)
+        // Dragged, its place stays empty and its copy follows the pointer
+        // (the strip's overlay): with the tab standing still until the
+        // pointer passed its neighbour's middle, nothing seemed to happen.
+        .opacity(store.draggingID == tab.id && !ghost ? (store.dragX == nil ? 0.75 : 0) : 1)
         // Where this tab is, for the window's right-click and drag handling:
         // the title bar swallows both before they reach SwiftUI.
         .background(
             GeometryReader { proxy in
-                Color.clear.preference(key: TabFramesKey.self, value: [tab.id: proxy.frame(in: .named(TabFramesKey.space))])
+                if !ghost {
+                    Color.clear.preference(key: TabFramesKey.self, value: [tab.id: proxy.frame(in: .named(TabFramesKey.space))])
+                }
             }
         )
         .help(tab.title)
@@ -654,7 +685,21 @@ private struct PullRequestChip: View {
 /// part of the strip does that itself (WindowDragArea) — or dragging a tab
 /// would move the window instead of the tab.
 /// The tab strip, which lives in the title bar.
-final class TabStripHostingView<Content: View>: NSHostingView<Content> {
+/// Under the title bar, beside the strip: the strip's colour, so the
+/// traffic lights stand on the same panel as the tabs.
+struct TitleBand: View {
+    @ObservedObject var theme: ChromeTheme
+    var body: some View { theme.card.ignoresSafeArea() }
+}
+
+/// The strip's host, whatever its SwiftUI content: the window sets the
+/// width the title bar leaves it.
+@MainActor
+protocol TitleBarStrip: AnyObject {
+    var barWidth: CGFloat { get set }
+}
+
+final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBarStrip {
     /// How tall the strip is.
     ///
     /// The unified toolbar's title bar measures 66 pt, but AppKit does not
@@ -664,6 +709,17 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content> {
     static var height: CGFloat { 52 }
 
     override var mouseDownCanMoveWindow: Bool { false }
+
+    /// The width the title bar leaves it (the window sets it); its item's
+    /// constraints stretch it to that.
+    var barWidth: CGFloat = 600
+
+    /// Small and fixed, never its tabs' width: the toolbar places an item
+    /// by this. Every tab's width, wider than the bar, put the strip in the
+    /// overflow menu — a lone »; no width, or the bar's whole width, and
+    /// the bar didn't place it at all. The item's constraints then stretch
+    /// it across the bar (`TerminalWindowController.installToolbar`).
+    override var intrinsicContentSize: NSSize { NSSize(width: 200, height: Self.height) }
 
     /// The strip IS the title bar. With the title bar's inset (which
     /// `.ignoresSafeArea()` doesn't undo here) SwiftUI laid it out in the top
@@ -679,6 +735,7 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content> {
     /// — the one half of the behaviour a check that calls the drag area
     /// itself can't see. Nothing interactive is there: a tab answers from
     /// the document view inside the clip view, a chip from this host.
+    /// A tab or a chip answers with its own press view (`StripPressView`).
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         guard Self.isEmptyStrip(hit) else { return hit }

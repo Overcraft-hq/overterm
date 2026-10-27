@@ -8,7 +8,7 @@ version is tagged `v<version>`.
 
 ## 1.4.5 — 2026-10-27
 
-- window: full screen gives the traffic lights' room to the tabs
+- tabs: dragging tabs and islands to reorder works by hand — the strip is the title bar now, the dragged tab follows the pointer into and out of islands; in full screen the strip comes down with the traffic lights
 - api: an import goes into the collection you picked, My Requests too; the collection menu makes more collections — in the checkout, or your own on this Mac
 - api: New Request opens at once and sends before it is saved, as in Postman — ⌘S names it and puts it in the collection; closed unsaved, it is gone
 - api: a request in a narrow pane keeps its left edge — Params, the status and Body were cut off

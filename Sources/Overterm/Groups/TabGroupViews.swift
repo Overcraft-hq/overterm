@@ -20,6 +20,8 @@ struct TabGroupActions {
     var peek: (TabGroup?) -> Void
     /// A rename in the chip ended: the keyboard back to the terminal.
     var renameEnded: () -> Void = {}
+    /// A press, drag or release on the chip (`StripPressView`).
+    var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
 }
 
 /// One island: a chip with the group's name, then its tabs, all on a tint
@@ -160,11 +162,14 @@ private struct GroupChip: View {
         .background(RoundedRectangle(cornerRadius: TabCard.nestedRadius).fill(chipBackground))
         .overlay(alignment: .bottom) { if group.isCollapsed { segments } }
         .contentShape(Rectangle())
-        .onTapGesture { if !isRenaming { actions.toggleCollapsed(group) } }
-        // As a tab's: a double-click renames (its two clicks toggled the
-        // island back as it was). Simultaneous, so one click isn't held
-        // back for the double-click interval.
-        .simultaneousGesture(TapGesture(count: 2).onEnded { actions.rename(group) })
+        // Click, double-click and drag are the press view's: the chip is in
+        // the title bar, where a press on SwiftUI's own view moved the
+        // window (StripPressView). Under the name field while renaming.
+        .overlay {
+            if !isRenaming {
+                StripPressView(help: nil) { event, phase in actions.press(.group(group), event, phase) }
+            }
+        }
         .onHover { inside in
             hovering = inside
             // Only a collapsed island peeks: an open one is already there.

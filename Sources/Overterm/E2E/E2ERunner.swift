@@ -2619,6 +2619,13 @@ final class E2ERunner {
 
     /// Dragging a tab reorders the strip (and doesn't move the window).
     private func reorder() async {
+        // OVERTERM_E2E_FULLSCREEN=1: the same, the window full screen — where
+        // the drags were tried by hand.
+        if ProcessInfo.processInfo.environment["OVERTERM_E2E_FULLSCREEN"] == "1" {
+            window.toggleFullScreen(nil)
+            check("full screen first", await eventually(8) { self.window.styleMask.contains(.fullScreen) })
+            await pause(1.5)
+        }
         guard let a = app.store.selected else { return check("a tab", false) }
         a.customTitle = "A"
         app.newTab(nil)
@@ -2639,6 +2646,33 @@ final class E2ERunner {
                 let name = hit.map { String(describing: Swift.type(of: $0)) } ?? "nil"
                 check("a press on tab \(tab.title) (dx \(Int(dx))) doesn't hit the window-drag area", !name.contains("WindowDrag") && !(hit is WindowDragView), name)
             }
+        }
+
+        // The dragged tab follows the pointer: 20 pt along, its copy is 20 pt
+        // along — with nothing moving until the pointer passed a neighbour's
+        // middle, a drag looked like it did nothing, and was let go.
+        if let start = point(inTab: a), let frameA = app.store.tabFrames[a.id] {
+            func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
+                NSEvent.mouseEvent(
+                    with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            NSApp.sendEvent(mouse(.leftMouseDown, start))
+            for dx in stride(from: 4.0, through: 20.0, by: 4.0) { NSApp.sendEvent(mouse(.leftMouseDragged, NSPoint(x: start.x + dx, y: start.y))) }
+            await pause(0.1)
+            let followed = app.store.dragX.map { abs($0 - (frameA.minX + 20)) < 2 } ?? false
+            check("the dragged tab follows the pointer", followed, "dragX \(String(describing: app.store.dragX)) vs \(frameA.minX + 20)")
+            NSApp.sendEvent(mouse(.leftMouseUp, NSPoint(x: start.x + 20, y: start.y)))
+            await pause(0.1)
+            check("and is let go with the press", app.store.dragX == nil && app.store.draggingID == nil)
+        }
+        if let frame = window.contentView?.superview, let c = app.store.tabs.last, let cFrame = app.store.tabFrames[c.id],
+            let bar = app.tabBarView
+        {
+            var x = NSPoint(x: cFrame.maxX - 6 - 8, y: cFrame.midY)
+            if !bar.isFlipped { x.y = bar.bounds.height - x.y }
+            let hit = frame.hitTest(frame.convert(bar.convert(x, to: nil), from: nil))
+            check("a tab's × is its own button, over the press view", hit is NSButton, hit.map { "\(Swift.type(of: $0))" } ?? "nil")
         }
 
         // As a hand drags: what is queued behind the press.
@@ -2695,22 +2729,23 @@ final class E2ERunner {
             app.store.selected?.customTitle = name
         }
         func titled(_ name: String) -> Tab? { app.store.tabs.first { $0.title == name } }
-        // A real press that lands on the window-drag area moves the window
-        // and no drag ever reaches the strip — which in-process events can't
-        // show. An island's tabs and chip sit on SwiftUI scroll views that say
-        // they move it, so a press there makes the window unmovable until the
-        // release.
+        // A real press on a view that says it moves the window moves it, and
+        // no drag ever reaches the strip — which in-process events can't show.
+        // So: what a press at each place hits, and what that view says. (The
+        // window made unmovable for the press did not stop macOS.)
+        // Asked of the frame view, as a real press is: the title bar's
+        // toolbar lies over the strip, and asked at the content view (as
+        // this was) it never showed.
         func pressMakesUnmovable(at p: NSPoint) async -> Bool {
-            func mouse(_ type: NSEvent.EventType) -> NSEvent {
-                NSEvent.mouseEvent(
-                    with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            guard let frame = window.contentView?.superview, let hit = frame.hitTest(frame.convert(p, from: nil)) else { return false }
+            // The strip's own press view, which takes the drag — nothing of
+            // SwiftUI's or the title bar's, which move the window.
+            let ok = hit is StripPressNSView && !hit.mouseDownCanMoveWindow
+            if !ok {
+                let viewer = app.tabBarView?.superview.map { "\($0.frame)" } ?? "-"
+                print("E2E INFO press at \(p) hits \(Swift.type(of: hit)) \(hit.convert(hit.bounds, to: nil)); strip's item viewer \(viewer)")
             }
-            NSApp.sendEvent(mouse(.leftMouseDown))
-            let held = !window.isMovable
-            NSApp.sendEvent(mouse(.leftMouseUp))
-            await pause(0.1)
-            return held && window.isMovable
+            return ok
         }
         if let a = titled("A"), let p = point(inTab: a) { check("a press on a loose tab doesn't move the window", await pressMakesUnmovable(at: p)) }
         guard let ta = titled("A"), let tb = titled("B"), let tc = titled("C"), let td = titled("D"),
@@ -2754,6 +2789,35 @@ final class E2ERunner {
         if let tabB = titled("B"), let p = point(inTab: tabB) {
             check("a press on a tab in an island doesn't move the window", await pressMakesUnmovable(at: p))
         }
+        // Out of an island, through the next and past the end: the drag is
+        // the window's for the whole press. A tab crossing into another
+        // island is a new view there, and when the drag went to the view that
+        // took the press, it froze at the crossing.
+        if let tabA = titled("A"), let start = point(inTab: tabA), let e = titled("E"), let far = point(inTab: e, dx: 80) {
+            func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
+                NSEvent.mouseEvent(
+                    with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            NSApp.sendEvent(mouse(.leftMouseDown, start))
+            var lastCopy: CGFloat = -1
+            var crossed = false
+            for step in 1...12 {
+                let x = start.x + (far.x - start.x) * CGFloat(step) / 12
+                NSApp.sendEvent(mouse(.leftMouseDragged, NSPoint(x: x, y: start.y)))
+                await pause(0.12)
+                if tabA.groupID != nil, tabA.groupID != work.id { crossed = true }
+                lastCopy = app.store.dragX ?? lastCopy
+            }
+            check("a tab dragged out of its island passes through the next", crossed)
+            // It froze at 474 when the drag died at the crossing.
+            let copyFollowed = lastCopy > 900
+            check("its copy follows the pointer the whole way", copyFollowed, "copy at \(lastCopy)")
+            NSApp.sendEvent(mouse(.leftMouseUp, far))
+            await pause(0.4)
+            check("and it lands at the end, in no island", strip().last == "A" && tabA.groupID == nil, "\(strip())")
+        }
+
         // Last: a click on the chip folds the island.
         if let p = chip(work) { check("nor a press on its chip", await pressMakesUnmovable(at: p)) }
     }

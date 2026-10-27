@@ -34,7 +34,10 @@ extension E2ERunner {
             "\(Swift.type(of: $0)) \($0.frame) level \($0.level.rawValue) #\($0.windowNumber)"
         }
         print("E2E INFO fullScreen: strip \(middle), on top at its middle #\(onTop) (ours #\(window.windowNumber)), active \(NSApp.isActive); others: \(others)")
-        check("nothing covers the strip", onTop == window.windowNumber || !NSApp.isActive, "#\(onTop) over it; \(others)")
+        // The strip is the title bar now: in full screen it lives in the title
+        // bar's own window, which comes down with the menu bar — on top at the
+        // strip is the strip's window, whichever window that is.
+        check("nothing covers the strip", onTop == strip.window?.windowNumber || !NSApp.isActive, "#\(onTop) over it; \(others)")
         let onScreen = strip.window.map { $0.convertToScreen(strip.convert(strip.bounds, to: nil)) } ?? .zero
         let screen = window.screen?.frame ?? .zero
         let top = screen.maxY - (window.screen?.safeAreaInsets.top ?? 0)
@@ -42,16 +45,14 @@ extension E2ERunner {
         FileHandle.standardError.write(Data("fullscreen: \(report)\n".utf8))
         check("the strip is on screen, under the menu bar's band", onScreen.height > 40 && onScreen.maxY <= top + 1 && onScreen.minY >= screen.minY, report)
         check("and the tabs in it", app.store.tabFrames.values.contains { $0.width > 0 })
-        check("full screen has no toolbar to cover the strip", window.toolbar == nil)
-        // No traffic lights: the first tab starts at the edge, not 88 pt in.
-        let firstTab = app.store.tabs.first.flatMap { app.store.tabFrames[$0.id] }
-        check("the tabs take the traffic lights' room", (firstTab?.minX ?? .infinity) < 30, "\(String(describing: firstTab))")
+        check("the strip is the toolbar's one item", window.toolbar?.items.first?.view === strip && window.toolbar?.items.count == 1)
+        // No traffic lights: the strip starts near the screen's edge.
+        check("the strip takes the traffic lights' room", onScreen.minX - screen.minX < 30, "\(onScreen) on \(screen)")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty { app.captureWindow(to: png) }
         window.toggleFullScreen(nil)
         check("and comes back", await eventually(8) { !self.window.styleMask.contains(.fullScreen) })
-        check("with its toolbar again", await eventually(3) { self.window.toolbar != nil })
-        let back = app.store.tabs.first.flatMap { app.store.tabFrames[$0.id] }
-        check("and the room for the traffic lights", await eventually(3) { (self.app.store.tabs.first.flatMap { self.app.store.tabFrames[$0.id] }?.minX ?? 0) > 80 }, "\(String(describing: back))")
+        let back = strip.convert(strip.bounds, to: nil)
+        check("and the strip is after the traffic lights again", await eventually(3) { strip.convert(strip.bounds, to: nil).minX > 80 }, "\(back)")
         await pause(1)
     }
 }

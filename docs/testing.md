@@ -200,3 +200,15 @@ closing without asking, the no-HEAD diff all have one).
 `OVERTERM_DUMP_LAYOUT` / `OVERTERM_DUMP_PNG` (docs/debugging.md) print the
 view tree and capture the real window — use them when a check isn't enough
 to see what's wrong.
+
+### The title bar and full screen
+
+`OVERTERM_E2E_ACTIVATE=1` brings an isolated run to the front for the
+`fullScreen` scenario — full screen's title bar window only shows for the
+app in front — and takes the keyboard for a few seconds, so ask first.
+`OVERTERM_E2E_FULLSCREEN=1` runs `reorder` with the window full screen.
+What macOS does itself with a real pointer — moving a window by its title
+bar, the title bar coming down in full screen — no in-process event
+reaches; the scenarios check what a press would hit from the frame view
+down, and the rest is tried by hand (an Overterm Dev build, with its own
+bundle id and `OVERTERM_SUPPORT_DIR`).

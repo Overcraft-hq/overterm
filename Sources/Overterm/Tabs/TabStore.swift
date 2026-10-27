@@ -134,6 +134,10 @@ final class TabStore: ObservableObject {
     /// so the strip can say which one will take it before you let go.
     @Published var dropGroupID: TabGroup.ID?
 
+    /// Where the dragged tab's copy is drawn, its left edge in the strip:
+    /// it follows the pointer. Nil when no tab is being dragged.
+    @Published var dragX: CGFloat?
+
     func group(at point: CGPoint) -> TabGroup? {
         groups.first { groupChipFrames[$0.id]?.contains(point) == true }
     }
@@ -141,10 +145,6 @@ final class TabStore: ObservableObject {
     func tab(at point: CGPoint) -> Tab? {
         tabs.first { tabFrames[$0.id]?.contains(point) == true }
     }
-
-    /// The window is full screen: no traffic lights, so the strip starts at
-    /// the edge rather than after the room it keeps for them.
-    @Published var isFullScreen = false
 
     /// A session is being rebuilt: islands without their tabs yet are kept.
     var restoring = false
