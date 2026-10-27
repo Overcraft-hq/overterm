@@ -17,7 +17,9 @@ extension TerminalWindowController {
             settings: { [weak self] in self?.openSettings(.docker) },
             openPage: { [weak self] in self?.toggleDockerPage(nil) },
             showContainer: { [weak self] in self?.showContainer($0) },
-            openDatabase: { [weak self] in self?.newDatabaseConnection(from: $0) }
+            openDatabase: { [weak self] in self?.newDatabaseConnection(from: $0) },
+            openFile: { [weak self] container, path in self?.openContainerFile(container, path) },
+            downloadFile: { [weak self] container, path in self?.downloadContainerFile(container, path) }
         )
     }
 
@@ -67,6 +69,95 @@ extension TerminalWindowController {
                     self.showDatabase(nil)
                 }, suggestedPassword: guess.password ?? "")
         }
+    }
+
+    // MARK: A container's files
+
+    /// A container's file in the editor: a copy under Overterm's folder,
+    /// written back into the container when the editor saves it.
+    func openContainerFile(_ container: ContainerSummary, _ path: String) {
+        guard let engine = DockerModel.shared.engine else { return }
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        Task {
+            do {
+                let stat = try await engine.stat(container.Id, path: path)
+                guard !stat.isDirectory else { throw DockerError(status: 0, message: "\(path) is a folder.") }
+                let data = try await engine.read(container.Id, file: path)
+                let local = DockerFiles.localCopy(of: path, in: container.name, under: AppEnvironment.supportDirectory)
+                try FileManager.default.createDirectory(at: local.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: local)
+                dockerFileCopies[local.path] = DockerFileCopy(container: container.Id, name: container.name, path: path, stat: stat)
+                hookContainerSaves()
+                openInEditor(local)
+            } catch {
+                reportDockerError("Open \(path)", error)
+            }
+        }
+    }
+
+    /// The editor's save goes back into the container too, for a copy.
+    private func hookContainerSaves() {
+        guard !dockerSaveHooked, let editor else { return }
+        dockerSaveHooked = true
+        let saved = editor.onSaved
+        editor.onSaved = { [weak self] in
+            saved?()
+            guard let self, let url = self.editor?.active?.url, let copy = self.dockerFileCopies[url.path] else { return }
+            self.saveContainerFile(copy, from: url)
+        }
+    }
+
+    /// Written back — asked first when the file changed in the container
+    /// since it was opened (a process there wrote it, or another editor).
+    func saveContainerFile(_ copy: DockerFileCopy, from local: URL, overwrite: Bool = false) {
+        guard let engine = DockerModel.shared.engine else { return reportDockerError("Save \(copy.path)", DockerError.unreachable("Docker isn't running.")) }
+        Task {
+            do {
+                let now = try? await engine.stat(copy.container, path: copy.path)
+                if !overwrite, let now, now.size != copy.stat.size || now.mtime != copy.stat.mtime {
+                    confirmDocker(
+                        "“\((copy.path as NSString).lastPathComponent)” changed in \(copy.name)",
+                        "It was written in the container after you opened it. Saving replaces that with your copy.", "Replace"
+                    ) { [weak self] in self?.saveContainerFile(copy, from: local, overwrite: true) }
+                    return
+                }
+                let data = try Data(contentsOf: local)
+                try await engine.write(copy.container, file: copy.path, data: data, mode: Int(copy.stat.mode & 0o777))
+                if let written = try? await engine.stat(copy.container, path: copy.path) {
+                    dockerFileCopies[local.path]?.stat = written
+                }
+            } catch {
+                reportDockerError("Save \(copy.path) into \(copy.name)", error)
+            }
+        }
+    }
+
+    /// A container's file to the Mac, where the user says.
+    func downloadContainerFile(_ container: ContainerSummary, _ path: String) {
+        guard let window, let engine = DockerModel.shared.engine else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = (path as NSString).lastPathComponent
+        panel.beginSheetModal(for: window) { response in
+            guard response == .OK, let url = panel.url else { return }
+            MainActor.assumeIsolated {
+                Task { [weak self] in
+                    do {
+                        try await engine.read(container.Id, file: path).write(to: url)
+                    } catch {
+                        self?.reportDockerError("Save \(path)", error)
+                    }
+                }
+            }
+        }
+    }
+
+    func reportDockerError(_ what: String, _ error: Error) {
+        dockerPage.error = "\(what): \(error.localizedDescription)"
+        guard let window, store.showingOverlay != .docker else { return }
+        let alert = NSAlert()
+        alert.messageText = what
+        alert.informativeText = error.localizedDescription
+        alert.beginSheetModal(for: window)
     }
 
     // MARK: Attention

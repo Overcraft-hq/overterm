@@ -236,6 +236,35 @@ final class DockerPrunePlanTests: XCTestCase {
     }
 }
 
+/// A container's folders, as the Files tab lists them. Pure.
+final class DockerFilesTests: XCTestCase {
+    func testTheListingIsRead() {
+        let entries = DockerFiles.parse("f\t20\tnginx.conf\nd\t-\tconf.d\nl\t-\tlogs\nf\t-\twith\ttab\nbroken line\n")
+        XCTAssertEqual(entries.map(\.name), ["conf.d", "logs", "nginx.conf", "with\ttab"])
+        XCTAssertEqual(entries.first { $0.name == "nginx.conf" }?.size, 20)
+        XCTAssertNil(entries.first { $0.name == "with\ttab" }?.size, "a size it couldn't read")
+        XCTAssertEqual(entries.first { $0.name == "logs" }?.kind, .link)
+    }
+
+    func testPaths() {
+        XCTAssertEqual(DockerFiles.join("/", "etc"), "/etc")
+        XCTAssertEqual(DockerFiles.join("/etc", "nginx"), "/etc/nginx")
+        XCTAssertEqual(DockerFiles.parent("/etc/nginx"), "/etc")
+        XCTAssertEqual(DockerFiles.parent("/etc"), "/")
+        XCTAssertEqual(DockerFiles.parent("/"), "/", "the root is its own parent, once")
+        XCTAssertEqual(DockerFiles.crumbs("/etc/nginx").map(\.path), ["/", "/etc", "/etc/nginx"])
+        XCTAssertEqual(DockerFiles.command(listing: "/srv").suffix(2), ["overterm-ls", "/srv"])
+    }
+
+    /// A typed `..` can't take a copy out of Overterm's folder.
+    func testACopyStaysInItsFolder() {
+        let root = URL(fileURLWithPath: "/support")
+        XCTAssertEqual(DockerFiles.localCopy(of: "/etc/nginx/nginx.conf", in: "web", under: root).path, "/support/Containers/web/etc/nginx/nginx.conf")
+        XCTAssertEqual(DockerFiles.localCopy(of: "/../../../etc/passwd", in: "web", under: root).path, "/support/Containers/web/etc/passwd")
+        XCTAssertEqual(DockerFiles.localCopy(of: "/a/./b", in: "x/y", under: root).path, "/support/Containers/x_y/a/b")
+    }
+}
+
 /// A database container as a Database connection. Pure.
 final class DockerDatabaseGuessTests: XCTestCase {
     private func container(_ image: String, ports: [DockerPort], project: String? = "shop") -> ContainerSummary {

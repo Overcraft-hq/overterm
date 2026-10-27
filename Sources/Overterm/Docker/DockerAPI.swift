@@ -86,6 +86,47 @@ extension DockerEngine {
         return (top.Titles, top.Processes)
     }
 
+    // MARK: Running a command in it
+
+    struct ExecResult: Equatable, Sendable {
+        var stdout: String
+        var stderr: String
+        var exitCode: Int
+    }
+
+    /// A command in a running container, no TTY and no input, its output
+    /// back when it ends. The engine answers `start` by hijacking the
+    /// connection: the output comes framed until it closes.
+    func exec(_ id: String, _ command: [String]) async throws -> ExecResult {
+        struct Created: Decodable { var Id: String }
+        struct Inspect: Decodable { var ExitCode: Int? }
+        let json = [("Content-Type", "application/json")]
+        let create = try JSONSerialization.data(withJSONObject: ["AttachStdout": true, "AttachStderr": true, "Tty": false, "Cmd": command])
+        let made = try JSONDecoder().decode(Created.self, from: try await send(.POST, "/containers/\(id)/exec", body: create, headers: json).body)
+        let start = try JSONSerialization.data(withJSONObject: ["Detach": false, "Tty": false])
+        var demuxer = DockerLogDemuxer(framed: true)
+        var stdout = ""
+        var stderr = ""
+        for try await data in transport.stream(.POST, path("/exec/\(made.Id)/start"), body: start, headers: json) {
+            for chunk in demuxer.feed(data) {
+                if chunk.stream == .stderr { stderr += chunk.text } else { stdout += chunk.text }
+            }
+        }
+        let inspect = try await get(Inspect.self, "/exec/\(made.Id)/json")
+        return ExecResult(stdout: stdout, stderr: stderr, exitCode: inspect.ExitCode ?? 0)
+    }
+
+    /// A folder's entries (DockerFiles), through `exec`.
+    func list(_ id: String, folder: String) async throws -> [DockerFiles.Entry] {
+        let result = try await exec(id, DockerFiles.command(listing: folder))
+        guard result.exitCode == 0 else {
+            let said = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            // 126/127: no `sh` to run (a distroless image).
+            throw DockerError(status: 0, message: [126, 127].contains(result.exitCode) ? "This image has no shell: its folders can't be listed." : said)
+        }
+        return DockerFiles.parse(result.stdout)
+    }
+
     // MARK: Files in a container
 
     /// What a path is — without reading it.

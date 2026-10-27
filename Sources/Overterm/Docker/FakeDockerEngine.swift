@@ -14,6 +14,8 @@ final class FakeDockerEngine: @unchecked Sendable {
         var env: [String] = []
         var tty = false
         var files: [String: Data] = [:]
+        /// When each was last written, as the archive's stat says it.
+        var mtimes: [String: String] = [:]
         /// Each line with the time it was written, as the engine keeps it.
         var logs: [(stream: DockerLogChunk.Stream, text: String, time: String)] = []
         var error: String = ""
@@ -27,6 +29,8 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var networks: [NetworkSummary] = []
     /// Bytes of build cache not in use.
     var buildCache = 0
+    private var execs: [String: (container: String, command: [String])] = [:]
+    private var exitCodes: [String: Int] = [:]
     private var eventStreams: [ObjectIdentifier: Channel] = [:]
     private var logFollowers: [String: [Channel]] = [:]
     private var samplers: [ObjectIdentifier: Channel] = [:]
@@ -153,7 +157,13 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
 
-    func setFile(_ id: String, _ path: String, _ data: Data) { locked { containers[id]?.files[path] = data } }
+    func setFile(_ id: String, _ path: String, _ data: Data) {
+        let now = Self.timestamp()
+        locked {
+            containers[id]?.files[path] = data
+            containers[id]?.mtimes[path] = now
+        }
+    }
 
     /// An image; untagged (`<none>`) when `tag` is nil. Its id back.
     @discardableResult
@@ -255,7 +265,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         if parts.first?.hasPrefix("v1.") == true { parts.removeFirst() }
         guard let kind = parts.first else { return .notFound }
         // `containers/<id>/logs` → id and `logs`; `containers/json` → no id.
-        let named = ["containers", "images", "volumes", "networks"].contains(kind) && parts.count > 1 && !["json", "prune", "create"].contains(parts[1])
+        let named = ["containers", "images", "volumes", "networks", "exec"].contains(kind) && parts.count > 1 && !["json", "prune", "create"].contains(parts[1])
         let id = named ? parts[1] : ""
         let verb = named ? parts.dropFirst(2).joined(separator: "/") : parts.dropFirst().joined(separator: "/")
         switch kind {
@@ -270,6 +280,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         case "containers" where verb == "prune", "images" where verb == "prune", "volumes" where verb == "prune", "networks" where verb == "prune":
             return Self.json(prune(kind, all: (query["filters"] ?? "").contains("\"dangling\":[\"false\"]") || (query["filters"] ?? "").contains("\"all\"")))
         case "containers": return named ? container(method, id, verb, query, body) : containerList(query)
+        case "exec": return exec(method, id, verb)
         case "images" where named && verb == "history": return image(id).map { Self.json(Self.history(of: $0)) } ?? Self.error(404, "No such image: \(id)")
         case "images" where named && verb == "json": return image(id).map { Self.json($0) } ?? Self.error(404, "No such image: \(id)")
         case "images" where named && verb == "tag":
@@ -347,9 +358,18 @@ final class FakeDockerEngine: @unchecked Sendable {
             return .raw(200, frames, [("Content-Type", "application/vnd.docker.multiplexed-stream")])
         case (.GET, "stats"):
             return .stats(id)
+        case (.POST, "exec"):
+            guard container.summary.state == .running else { return Self.error(409, "container \(id) is not running") }
+            struct Request: Decodable { var Cmd: [String] }
+            guard let command = try? JSONDecoder().decode(Request.self, from: body).Cmd else { return Self.error(400, "no Cmd") }
+            let execID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            locked { execs[execID] = (id, command) }
+            return .json(201, Data(#"{"Id":"\#(execID)"}"#.utf8))
         case (.HEAD, "archive"):
             guard let data = container.files[path] else { return Self.error(404, "Could not find the file \(path) in container \(id)") }
-            let stat = DockerTar.PathStat(name: (path as NSString).lastPathComponent, size: data.count, mode: 0o644, mtime: Self.timestamp(), linkTarget: "")
+            let stat = DockerTar.PathStat(
+                name: (path as NSString).lastPathComponent, size: data.count, mode: 0o644, mtime: container.mtimes[path] ?? "2026-01-01T00:00:00Z",
+                linkTarget: "")
             return .raw(200, Data(), [("X-Docker-Container-Path-Stat", (try? JSONEncoder().encode(stat))?.base64EncodedString() ?? "")])
         case (.GET, "archive"):
             guard let data = container.files[path], let archive = DockerTar.archive(name: (path as NSString).lastPathComponent, data: data) else {
@@ -364,6 +384,45 @@ final class FakeDockerEngine: @unchecked Sendable {
         default:
             return Self.error(404, "page not found")
         }
+    }
+
+    /// An exec's start and its exit: the listing script answered from the
+    /// container's files; anything else isn't there (127, as a shell says).
+    private func exec(_ method: HTTPMethod, _ execID: String, _ verb: String) -> Answer {
+        guard let (containerID, command) = locked({ execs[execID] }) else { return Self.error(404, "No such exec instance: \(execID)") }
+        switch (method, verb) {
+        case (.POST, "start"):
+            let (code, out, err) = run(command, in: containerID)
+            locked { exitCodes[execID] = code }
+            var frames = Data()
+            if !out.isEmpty { frames += Self.frame(.stdout, out) }
+            if !err.isEmpty { frames += Self.frame(.stderr, err) }
+            return .raw(200, frames, [("Content-Type", "application/vnd.docker.multiplexed-stream")])
+        case (.GET, "json"):
+            return .json(200, Data(#"{"ExitCode":\#(locked { exitCodes[execID] } ?? 0),"Running":false}"#.utf8))
+        default:
+            return Self.error(404, "page not found")
+        }
+    }
+
+    private func run(_ command: [String], in id: String) -> (Int, String, String) {
+        guard command.first == "sh", command.contains("overterm-ls"), let folder = command.last else {
+            return (127, "", "\(command.first ?? ""): not found\n")
+        }
+        let files = locked { containers[id]?.files ?? [:] }
+        let prefix = folder.hasSuffix("/") ? folder : folder + "/"
+        var lines: [String: String] = [:]
+        for (path, data) in files where path.hasPrefix(prefix) {
+            let rest = path.dropFirst(prefix.count)
+            if let slash = rest.firstIndex(of: "/") {
+                let name = String(rest[..<slash])
+                lines[name] = "d\t-\t\(name)"
+            } else {
+                lines[String(rest)] = "f\t\(data.count)\t\(rest)"
+            }
+        }
+        guard !lines.isEmpty || folder == "/" else { return (2, "", "No such folder: \(folder)\n") }
+        return (0, lines.values.sorted().map { $0 + "\n" }.joined(), "")
     }
 
     private func image(_ idOrName: String) -> ImageSummary? {

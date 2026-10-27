@@ -194,6 +194,65 @@ final class DockerTransportTests: XCTestCase {
         }
     }
 
+    func testAFolderIsListedThroughExec() async throws {
+        let id = fake.add(name: "web")
+        fake.setFile(id, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))
+        fake.setFile(id, "/etc/nginx/conf.d/default.conf", Data("server {}\n".utf8))
+        let entries = try await engine.list(id, folder: "/etc/nginx")
+        XCTAssertEqual(entries.map(\.name), ["conf.d", "nginx.conf"], "folders first")
+        XCTAssertEqual(entries.map(\.kind), [.folder, .file])
+        XCTAssertEqual(entries.last?.size, 20)
+        do {
+            _ = try await engine.list(id, folder: "/nope")
+            XCTFail("no such folder")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("No such folder"), error.localizedDescription)
+        }
+        let missing = try await engine.exec(id, ["bash", "-c", "true"])
+        XCTAssertEqual(missing.exitCode, 127)
+        let stopped = fake.add(name: "stopped", state: .exited)
+        do {
+            _ = try await engine.list(stopped, folder: "/")
+            XCTFail("a stopped container runs nothing")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 409)
+        }
+    }
+
+    /// Exec, write and read against the real engine — its `exec start`
+    /// hijacks the connection, which the fake can't show. A container of
+    /// our own, labelled, from an image already here; removed after.
+    func testExecAndFilesOnTheRealEngine() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_DOCKER_TESTS"] == "1", "OVERTERM_DOCKER_TESTS=1 runs it")
+        let real = DockerEngine(endpoint: .current())
+        try await real.ping()
+        let image = "debian:bookworm-slim"
+        guard (try? await real.send(.GET, "/images/\(image)/json")) != nil else { throw XCTSkip("\(image) isn't on this Mac; nothing is pulled") }
+        let create = try JSONSerialization.data(withJSONObject: ["Image": image, "Cmd": ["sleep", "120"], "Labels": ["overterm.test": "1"]])
+        struct Created: Decodable { var Id: String }
+        let made = try JSONDecoder().decode(
+            Created.self,
+            from: try await real.send(
+                .POST, "/containers/create", ["name": "overterm-test-\(UUID().uuidString.prefix(8))"], body: create,
+                headers: [("Content-Type", "application/json")]
+            ).body)
+        do {
+            try await real.perform(.start, on: made.Id)
+            let etc = try await real.list(made.Id, folder: "/etc")
+            XCTAssertTrue(etc.contains { $0.name == "hostname" && $0.kind == .file }, "\(etc.map(\.name))")
+            XCTAssertTrue(etc.contains { $0.name == "apt" && $0.kind == .folder })
+            try await real.write(made.Id, file: "/tmp/overterm.txt", data: Data("hello\n".utf8))
+            let back = try await real.read(made.Id, file: "/tmp/overterm.txt")
+            XCTAssertEqual(String(decoding: back, as: UTF8.self), "hello\n")
+            let missing = try await real.exec(made.Id, ["no-such-command"])
+            XCTAssertTrue([126, 127].contains(missing.exitCode), "\(missing)")
+        } catch {
+            try? await real.remove(container: made.Id, force: true)
+            throw error
+        }
+        try await real.remove(container: made.Id, force: true)
+    }
+
     func testImagesVolumesNetworksAndPrunes() async throws {
         fake.addImage("postgres:16", size: 400 << 20, containers: 1)
         fake.addImage("node:20", size: 1 << 30)

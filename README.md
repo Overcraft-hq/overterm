@@ -176,7 +176,9 @@ sit in its panes' headers beside the ones its own processes listen on. A
 container that crashes, runs out of memory or turns unhealthy marks the
 tab whose checkout it belongs to, as a failed command does. `d` on a
 PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
-its connection filled in from the container.
+its connection filled in from the container. A container's files are a
+tab of its own: browse its folders, open a config in the editor, and the
+save goes back into the container.
 
 ### And the work around the work
 

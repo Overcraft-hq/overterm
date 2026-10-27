@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The detail's tabs.
 enum ContainerTab: String, CaseIterable, Identifiable {
-    case overview, logs, inspect, stats
+    case overview, logs, files, inspect, stats
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
@@ -114,6 +114,105 @@ struct DockerLogsPane: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+}
+
+/// The Files tab: a folder at a time, a file to the editor (saved back
+/// into the container), or to the Mac.
+struct DockerFilesPane: View {
+    let container: ContainerSummary
+    @ObservedObject var session: ContainerSession
+    @ObservedObject var theme: ChromeTheme
+    let actions: DockerActions
+    @State private var path = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 2) {
+                ForEach(DockerFiles.crumbs(session.folder ?? "/"), id: \.path) { crumb in
+                    Button(crumb.name == "/" ? "/" : crumb.name + " ›") { session.open(crumb.path) }
+                        .buttonStyle(.plain).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
+                }
+                Spacer(minLength: 6)
+                if session.listing { ProgressView().controlSize(.mini) }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text.magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
+                TextField("Open a path — /etc/nginx/nginx.conf", text: $path).textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                    .onSubmit { go(path) }
+                    .accessibilityIdentifier("docker.files.path")
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
+            Rectangle().fill(theme.border).frame(height: 1)
+            if let error = session.filesError {
+                Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text2).padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer()
+            } else {
+                List {
+                    if let folder = session.folder, folder != "/" {
+                        row(symbol: "arrow.turn.left.up", name: "..", detail: "") { session.open(DockerFiles.parent(folder)) }
+                    }
+                    ForEach(session.entries) { entry in
+                        let full = DockerFiles.join(session.folder ?? "/", entry.name)
+                        row(symbol: Self.symbol(entry.kind), name: entry.name, detail: entry.size.map { DockerBytes.string($0) } ?? "") {
+                            if entry.kind == .folder { session.open(full) } else if entry.kind == .file { actions.openFile(container, full) }
+                        }
+                        .contextMenu {
+                            if entry.kind == .file {
+                                Button("Open in the Editor") { actions.openFile(container, full) }
+                                Button("Save to the Mac…") { actions.downloadFile(container, full) }
+                            }
+                            Button("Copy Path") { actions.copy(full) }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("docker.files")
+            }
+        }
+    }
+
+    /// A folder's path lists it; anything else opens as a file.
+    private func go(_ typed: String) {
+        let path = typed.trimmingCharacters(in: .whitespaces)
+        guard path.hasPrefix("/") else { return }
+        if path.hasSuffix("/") || session.entries.contains(where: { DockerFiles.join(session.folder ?? "/", $0.name) == path && $0.kind == .folder }) {
+            session.open(path)
+        } else {
+            actions.openFile(container, path)
+        }
+        self.path = ""
+    }
+
+    static func symbol(_ kind: DockerFiles.Entry.Kind) -> String {
+        switch kind {
+        case .folder: "folder"
+        case .file: "doc"
+        case .link: "arrow.uturn.right"
+        case .other: "questionmark.square.dashed"
+        }
+    }
+
+    private func row(symbol: String, name: String, detail: String, open: @escaping () -> Void) -> some View {
+        Button(action: open) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(theme.text3).frame(width: 16)
+                Text(verbatim: name).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Text(verbatim: detail).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+            }
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -182,6 +182,44 @@ extension E2ERunner {
             "leaving the tabs closes their streams", await eventually(3) { fake.openStreams == 1 },
             fake.streams + " " + fake.requests.filter { $0.contains("/logs") }.map { String($0.suffix(60)) }.joined(separator: " | "))
 
+        // Files: a folder at a time through exec; a file to the editor and back.
+        fake.setFile(web, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))
+        fake.setFile(web, "/etc/nginx/conf.d/default.conf", Data("server {}\n".utf8))
+        fake.setFile(web, "/usr/share/nginx/html/index.html", Data("<h1>hi</h1>\n".utf8))
+        page.detailTab = .files
+        check(
+            "Files lists its working folder", await eventually(5) { page.session?.entries.map(\.name) == ["etc", "usr"] },
+            "\(page.session?.entries.map(\.name) ?? []) \(page.session?.filesError ?? "")")
+        page.session?.open("/etc/nginx")
+        check("a folder opens, folders first", await eventually(5) { page.session?.entries.map(\.name) == ["conf.d", "nginx.conf"] })
+        if let container = docker.container(web) { app.openContainerFile(container, "/etc/nginx/nginx.conf") }
+        let opened = await eventually(5) { self.app.editor?.active?.url?.path.hasSuffix("Containers/ot-shop-web-1/etc/nginx/nginx.conf") == true }
+        check("a file opens in the editor", opened, app.editor?.active?.url?.path ?? "nothing")
+        check("as the container has it", app.editor?.textView?.string.contains("worker_processes 1;") == true)
+        if opened, let editor = app.editor, let text = editor.textView {
+            text.setSelectedRange(NSRange(location: 0, length: (text.string as NSString).length))
+            text.insertText("worker_processes 4;\n", replacementRange: text.selectedRange())
+            editor.saveDocument(nil)
+            check(
+                "saving writes it back into the container",
+                await eventually(5) { fake.file(web, "/etc/nginx/nginx.conf") == Data("worker_processes 4;\n".utf8) },
+                String(decoding: fake.file(web, "/etc/nginx/nginx.conf") ?? Data(), as: UTF8.self))
+            // Written in the container since: asked before it is replaced.
+            await pause(0.05)
+            fake.setFile(web, "/etc/nginx/nginx.conf", Data("worker_processes auto;\n".utf8))
+            text.setSelectedRange(NSRange(location: 0, length: (text.string as NSString).length))
+            text.insertText("worker_processes 8;\n", replacementRange: text.selectedRange())
+            editor.saveDocument(nil)
+            check("a change made in the container since is asked about", await eventually(5) { self.window.attachedSheet != nil })
+            check("not written over unasked", fake.file(web, "/etc/nginx/nginx.conf") == Data("worker_processes auto;\n".utf8))
+            let replaced = clickSheetButton("Replace")
+            let written = await eventually(5) { fake.file(web, "/etc/nginx/nginx.conf") == Data("worker_processes 8;\n".utf8) }
+            check("and replaced when you say so", replaced && written)
+        }
+        page.detailTab = .overview
+        app.toggleDockerPage(nil)
+        _ = await eventually(3) { self.app.dockerListHasKeyboard() }
+
         // Keys: `s` stops it, `s` again starts it, as the engine says.
         let pressed = page.press("s")
         let stopped = await eventually(5) { docker.container(web)?.state == .exited }

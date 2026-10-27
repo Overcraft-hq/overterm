@@ -32,6 +32,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var dockerAttention = DockerAttention()
     /// The last connection a container was opened in the Database panel with.
     var dockerDatabaseDraft: DockerDatabaseGuess.Guess?
+    /// Containers' files open in the editor, by their local copy's path.
+    var dockerFileCopies: [String: DockerFileCopy] = [:]
+    var dockerSaveHooked = false
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.

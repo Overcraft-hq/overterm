@@ -23,6 +23,11 @@ final class ContainerSession: ObservableObject {
     @Published private(set) var history: [DockerUsage] = []
     /// Inspect as the engine wrote it, secrets taken out.
     @Published private(set) var json: String?
+    /// The Files tab: the folder shown, its entries, what went wrong.
+    @Published private(set) var folder: String?
+    @Published private(set) var entries: [DockerFiles.Entry] = []
+    @Published private(set) var filesError: String?
+    @Published private(set) var listing = false
 
     static let keep = 5000
     static let tail = 500
@@ -91,6 +96,30 @@ final class ContainerSession: ObservableObject {
     func follow(_ tab: ContainerTab, shown: Bool) {
         if shown && tab == .logs { showLogs() } else { hideLogs() }
         if shown && tab == .stats { showStats() } else { hideStats() }
+        if shown && tab == .files && folder == nil { open(detail?.Config.WorkingDir.flatMap { $0.isEmpty ? nil : $0 } ?? "/") }
+    }
+
+    // MARK: Files
+
+    /// A folder of the container, listed (a running one: `exec`).
+    func open(_ folder: String) {
+        self.folder = folder
+        listing = true
+        Task { [weak self, docker, id] in
+            guard let engine = docker.engine else { return }
+            do {
+                let entries = try await engine.list(id, folder: folder)
+                guard self?.folder == folder else { return }
+                self?.entries = entries
+                self?.filesError = nil
+            } catch {
+                guard self?.folder == folder else { return }
+                self?.entries = []
+                let stopped = (error as? DockerError)?.status == 409
+                self?.filesError = stopped ? "It isn't running: start it to see its folders. A file can still be opened by its path." : error.localizedDescription
+            }
+            self?.listing = false
+        }
     }
 
     // MARK: Logs

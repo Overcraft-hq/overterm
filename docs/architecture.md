@@ -1255,6 +1255,17 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **A container's files** (the detail's Files tab, `DockerFiles`, pure):
+  a folder at a time, listed by a plain `sh` script run with `exec` —
+  `archive` hands a folder over as its whole tree. `exec start` hijacks
+  the connection and the output comes framed until it closes; the live
+  test checks that against the real engine. An image without a shell
+  can't be listed, but a file in it can be opened by its path. A file
+  opens in the editor as a copy under Overterm's folder
+  (`Containers/<name>/<path>`, `.` and `..` left out) and is written back
+  through `archive` when the editor saves it — asked first when it
+  changed in the container since it was opened (its stat's size and
+  mtime), and kept with its mode.
 - **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
   MySQL, MariaDB or ClickHouse container as a connection — the kind from
   its image, user, password and database from the variables its image's

@@ -19,6 +19,10 @@ struct DockerActions {
     var showContainer: (ContainerSummary) -> Void = { _ in }
     /// A database container's connection, in the Database panel's form.
     var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
+    /// A container's file, in the editor — saved back into the container.
+    var openFile: (ContainerSummary, String) -> Void = { _, _ in }
+    /// A container's file, to the Mac.
+    var downloadFile: (ContainerSummary, String) -> Void = { _, _ in }
 }
 
 /// One block of the containers list: a compose project with its

@@ -34,6 +34,7 @@ struct ContainerDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .logs: DockerLogsPane(container: container, session: session, theme: theme, actions: actions)
+            case .files: DockerFilesPane(container: container, session: session, theme: theme, actions: actions)
             case .inspect: DockerInspectPane(session: session, theme: theme, actions: actions)
             case .stats: DockerStatsPane(container: container, session: session, theme: theme)
             }
