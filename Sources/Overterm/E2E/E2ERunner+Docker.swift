@@ -266,6 +266,13 @@ extension E2ERunner {
             await eventually(8) { (try? String(contentsOf: mark, encoding: .utf8))?.contains("docker-e2e-42") == true }
                 && app.store.selected?.workingDirectory == folder.path)
 
+        // Its ports in the tab's pane headers, though Docker's process holds them.
+        if let tab = app.store.selected {
+            app.updateContainerPorts(of: tab)
+            check("a checkout's container ports reach its tab", await eventually(5) { tab.containerPorts.map(\.port) == [58080] }, "\(tab.containerPorts)")
+            check("and don't make it a server", tab.kind != .server)
+        }
+
         // The rail's panel: this checkout's stack, then what runs elsewhere.
         let elsewhere = fake.add(name: "ot-elsewhere", image: "redis:7")
         app.showDockerPanel(nil)

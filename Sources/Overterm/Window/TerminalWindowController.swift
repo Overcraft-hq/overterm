@@ -610,6 +610,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDatabase()
         watchDockerPage().store(in: &cancellables)
         wireDockerPanel()
+        wireDockerPorts()
         watchDockerPalette().store(in: &cancellables)
         installDockerKeys()
         split.addSplitViewItem(inboxItem)
@@ -800,7 +801,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     tab: tab, pane: pane, store: self.store, blocks: self.blocks(of: pane), theme: theme,
                     actions: PaneHeaderActions(
                         copyOutput: { [weak self] in self?.copyOutput(of: $0) },
-                        killPort: { port in
+                        killPort: { [weak self] port in
+                            // A container's: stopped through the engine.
+                            if let container = port.container {
+                                self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
+                                return
+                            }
                             // The exact pid lsof reported. Never a pattern:
                             // `pkill -f` once killed the shell running the
                             // tests (CLAUDE.md).
@@ -817,6 +823,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         openPort: { [weak self, weak tab] port in
                             guard let url = port.url else { return }
                             self?.openLink(url, for: tab)
+                        },
+                        showContainer: { [weak self] name in
+                            guard let id = DockerModel.shared.container(name)?.Id else { return }
+                            self?.revealOnDockerPage(id)
                         })))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -1537,6 +1547,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 guard readPorts else { return }
                 let ports = await ListeningPorts.of(pids)
                 if tab.ports != ports { tab.ports = ports }
+                // Its folder may have moved: its checkout's containers again.
+                self.updateContainerPorts(of: tab)
             }
         }
     }

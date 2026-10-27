@@ -80,6 +80,24 @@ enum ComposeProjects {
         return (projects, loose.sorted { $0.name < $1.name })
     }
 
+    /// What a checkout's projects publish, as a pane header shows ports:
+    /// running containers' host ports, each once, by number.
+    static func ports(of projects: [ComposeProject]) -> [ListeningPort] {
+        var seen = Set<Int>()
+        var ports: [ListeningPort] = []
+        for project in projects {
+            for container in project.containers where container.state == .running {
+                for port in PublishedPort.of(container.Ports ?? []) where port.proto == "tcp" && seen.insert(port.hostPort).inserted {
+                    ports.append(
+                        ListeningPort(
+                            pid: 0, process: container.composeService ?? container.name, port: port.hostPort, address: port.hostIP ?? "*",
+                            container: container.name))
+                }
+            }
+        }
+        return ports.sorted { $0.port < $1.port }
+    }
+
     /// `db:service_started:false,cache:service_healthy:true` → db, cache.
     static func dependencies(_ label: String?) -> [String] {
         (label ?? "").split(separator: ",").compactMap { $0.split(separator: ":").first.map(String.init) }.filter { !$0.isEmpty }

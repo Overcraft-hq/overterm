@@ -1,14 +1,18 @@
 import Foundation
 
-/// A TCP port a tab's process is listening on — typically a dev server.
+/// A TCP port a tab's process is listening on — typically a dev server —
+/// or one a container of the tab's checkout publishes (Docker's own
+/// process holds those, so lsof never finds them under the tab).
 struct ListeningPort: Identifiable, Hashable {
     let pid: pid_t
     let process: String
     let port: Int
     /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`).
     let address: String
+    /// The container publishing it; its service is `process`, `pid` is 0.
+    var container: String? = nil
 
-    var id: String { "\(pid):\(port)" }
+    var id: String { container.map { "\($0):\(port)" } ?? "\(pid):\(port)" }
 
     /// Loopback or wildcard: reachable as localhost.
     var url: URL? { URL(string: "http://localhost:\(port)") }

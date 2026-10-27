@@ -131,6 +131,19 @@ final class DockerModel: ObservableObject {
                 return
             }
             self.endpoint = endpoint
+            // Watched in the background only: Docker Desktop's Resource
+            // Saver has paused its VM, or it is stopped, and a ping would
+            // wake it — its own CLI (the host's side) is asked instead.
+            if viewers == 0, attemptQuietly(endpoint) {
+                let status = await DockerCLI.status(of: .dockerDesktop, endpoint: endpoint)
+                runtimeStatus = status
+                if status == .paused || status == .stopped {
+                    connection = .down(status == .paused ? "Docker Desktop is resting (Resource Saver)." : "Docker Desktop isn't running.")
+                    clear()
+                    try? await Task.sleep(for: retries.last ?? .seconds(30))
+                    continue
+                }
+            }
             if !connection.isRunning { connection = .connecting }
             let engine = DockerEngine(endpoint: endpoint)
             do {
@@ -173,6 +186,12 @@ final class DockerModel: ObservableObject {
             attempt += 1
             try? await Task.sleep(for: wait)
         }
+    }
+
+    /// Whether to ask Docker Desktop before pinging it: only its own
+    /// socket, and only when its CLI is there to ask.
+    private func attemptQuietly(_ endpoint: DockerEndpoint) -> Bool {
+        DockerRuntime.of(endpoint) == .dockerDesktop && DockerCLI.locate("docker") != nil
     }
 
     /// What the bar says when the engine doesn't answer.
@@ -224,7 +243,12 @@ final class DockerModel: ObservableObject {
     /// Something shows Docker: the slow poll runs until the last `hide`.
     func show() {
         viewers += 1
-        start()
+        // Waiting out a quiet retry in the background: now someone looks.
+        if viewers == 1, watching != nil, !connection.isRunning {
+            reconnect()
+        } else {
+            start()
+        }
         guard polling == nil else { return }
         polling = Task { [weak self, poll] in
             while !Task.isCancelled {

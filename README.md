@@ -171,7 +171,8 @@ progress, tagged, their layers), volumes with their sizes and who mounts
 them, and networks with who is on them sit in sections of their own, and
 Clean Up lists what nothing uses before anything goes. The rail's shippingbox keeps the
 selected tab's checkout's stack beside the terminal, a container's logs a
-click away in the right-hand pane.
+click away in the right-hand pane, and the ports its containers publish
+sit in its panes' headers beside the ones its own processes listen on.
 
 ### And the work around the work
 

@@ -37,10 +37,38 @@ extension TerminalWindowController {
             .store(in: &cancellables)
     }
 
-    /// The repository's root, else the tab's own folder.
+    /// The repository's root, else the tab's own folder. A checkout with a
+    /// compose file wants Docker watched — its ports in the pane headers —
+    /// whether or not Docker is on screen.
     func updateDockerCheckout(root: URL?) {
         let folder = root ?? store.selected?.workingDirectory.map { URL(fileURLWithPath: $0) }
         if dockerPanel.checkout != folder { dockerPanel.checkout = folder }
+        if Settings.shared.dockerEnabled, dockerPanel.composeFile != nil { DockerModel.shared.start() }
+    }
+
+    // MARK: Ports
+
+    /// The containers' ports follow the containers.
+    func wireDockerPorts() {
+        DockerModel.shared.$projects
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateContainerPorts() } }
+            .store(in: &cancellables)
+    }
+
+    func updateContainerPorts() {
+        for tab in store.tabs { updateContainerPorts(of: tab) }
+    }
+
+    /// What the compose projects of a tab's checkout publish.
+    func updateContainerPorts(of tab: Tab) {
+        let docker = DockerModel.shared
+        var ports: [ListeningPort] = []
+        if docker.connection.isRunning, !docker.projects.isEmpty, let directory = tab.workingDirectory {
+            let checkout = FileTreeModel.realPath(FileTreeModel.treeRoot(for: directory))
+            ports = ComposeProjects.ports(of: ComposeProjects.projects(docker.projects, in: checkout))
+        }
+        if tab.containerPorts != ports { tab.containerPorts = ports }
     }
 
     func updateDockerVisibility(panel: SidebarPanel? = nil) {

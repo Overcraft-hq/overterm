@@ -1249,6 +1249,18 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   unless named ones are asked for; a network stays while any container,
   stopped too, is on it (`/containers/json`'s `NetworkSettings`, since a
   network's own record lists only running members).
+- **Ports in the panes** (`ComposeProjects.ports`, `Tab.containerPorts`):
+  Docker's own process (`com.docker.backend`) holds a container's
+  published ports, so lsof never finds them under a tab. What the compose
+  projects of a tab's checkout publish is shown beside its own ports, with
+  a shippingbox; Stop goes through the engine, Docker shows it on the page.
+  Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **Watched in the background**: the model starts when Docker is shown,
+  or when the selected tab's checkout has a compose file at its top. While
+  nothing shows Docker, a retry asks Docker Desktop's own CLI first (the
+  host's side) and doesn't ping a VM that Resource Saver has paused, or
+  one that is stopped — the ping would wake it; showing Docker tries at
+  once.
 - **The rail's panel** (`DockerPanelView`, `DockerPanelModel` per window):
   the selected tab's checkout's stack — its compose projects
   (`DockerModel.projects(in:)`) — then what else runs. A container picked

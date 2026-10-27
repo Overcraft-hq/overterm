@@ -228,6 +228,25 @@ final class ComposeProjectsTests: XCTestCase {
         XCTAssertEqual(project.workingDir, "/new/app")
     }
 
+    /// What a pane header shows for a checkout: running containers' TCP
+    /// ports, each once, by number, named for their service.
+    func testWhatACheckoutPublishes() {
+        var web = container("a-web-1", project: "a", service: "web", dir: "/w/a")
+        web.Ports = [
+            DockerPort(IP: "0.0.0.0", PrivatePort: 80, PublicPort: 8080, Type: "tcp"), DockerPort(IP: "::", PrivatePort: 80, PublicPort: 8080, Type: "tcp"),
+            DockerPort(IP: "0.0.0.0", PrivatePort: 53, PublicPort: 5353, Type: "udp"),
+        ]
+        var db = container("a-db-1", project: "a", service: "db", dir: "/w/a")
+        db.Ports = [DockerPort(IP: "127.0.0.1", PrivatePort: 5432, PublicPort: 55432, Type: "tcp")]
+        var stopped = container("a-cache-1", project: "a", service: "cache", state: "exited", status: "Exited (0) 1 minute ago", dir: "/w/a")
+        stopped.Ports = [DockerPort(IP: "0.0.0.0", PrivatePort: 6379, PublicPort: 6379, Type: "tcp")]
+        let ports = ComposeProjects.ports(of: ComposeProjects.group([web, db, stopped]).projects)
+        XCTAssertEqual(ports.map(\.port), [8080, 55432])
+        XCTAssertEqual(ports.map(\.process), ["web", "db"])
+        XCTAssertEqual(ports.map(\.container), ["a-web-1", "a-db-1"])
+        XCTAssertEqual(ports.first?.id, "a-web-1:8080", "not a pid's: there is none")
+    }
+
     func testDependencies() {
         XCTAssertEqual(ComposeProjects.dependencies("db:service_started:false,cache:service_healthy:true"), ["db", "cache"])
         XCTAssertEqual(ComposeProjects.dependencies(""), [])
