@@ -25,6 +25,8 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var images: [ImageSummary] = []
     private var volumes: [VolumeSummary] = []
     private var networks: [NetworkSummary] = []
+    /// Bytes of build cache not in use.
+    var buildCache = 0
     private var eventStreams: [ObjectIdentifier: Channel] = [:]
     private var logFollowers: [String: [Channel]] = [:]
     private var samplers: [ObjectIdentifier: Channel] = [:]
@@ -69,7 +71,8 @@ final class FakeDockerEngine: @unchecked Sendable {
     @discardableResult
     func add(
         name: String, image: String = "debian:bookworm-slim", state: ContainerState = .running, project: String? = nil, workingDir: String? = nil,
-        service: String? = nil, ports: [DockerPort] = [], env: [String] = [], health: String? = nil
+        service: String? = nil, ports: [DockerPort] = [], env: [String] = [], health: String? = nil, imageID: String? = nil,
+        volumes: [String] = []
     ) -> String {
         let id = String((name + UUID().uuidString).utf8.map { String(format: "%02x", $0) }.joined().prefix(64))
         var labels: [String: String] = [:]
@@ -85,8 +88,9 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
         let status = Self.status(state, health: health)
         let summary = ContainerSummary(
-            Id: id, Names: ["/" + name], Image: image, ImageID: "sha256:" + String(repeating: "a", count: 64), Command: "sleep infinity",
-            Created: Int(Date().timeIntervalSince1970), Ports: ports, Labels: labels, State: state.rawValue, Status: status, Mounts: [],
+            Id: id, Names: ["/" + name], Image: image, ImageID: imageID ?? "sha256:" + String(repeating: "a", count: 64), Command: "sleep infinity",
+            Created: Int(Date().timeIntervalSince1970), Ports: ports, Labels: labels, State: state.rawValue, Status: status,
+            Mounts: volumes.map { DockerMountPoint(Type: "volume", Name: $0, Destination: "/data") },
             Health: health.map { .init(Status: $0, FailingStreak: 0) })
         locked { containers[id] = Container(summary: summary, env: env) }
         emit("create", id)
@@ -151,23 +155,33 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     func setFile(_ id: String, _ path: String, _ data: Data) { locked { containers[id]?.files[path] = data } }
 
-    func addImage(_ tag: String, size: Int, containers: Int = 0) {
+    /// An image; untagged (`<none>`) when `tag` is nil. Its id back.
+    @discardableResult
+    func addImage(_ tag: String?, size: Int, containers: Int = 0) -> String {
+        let seed = tag ?? UUID().uuidString
         let image = ImageSummary(
-            Id: "sha256:" + String(tag.utf8.map { String(format: "%02x", $0) }.joined().prefix(64)).padding(toLength: 64, withPad: "0", startingAt: 0),
-            RepoTags: [tag], RepoDigests: [], Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size, Containers: containers,
-            Labels: [:])
+            Id: "sha256:" + String(seed.utf8.map { String(format: "%02x", $0) }.joined().prefix(64)).padding(toLength: 64, withPad: "0", startingAt: 0),
+            RepoTags: tag.map { [$0] } ?? ["<none>:<none>"], RepoDigests: [], Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size,
+            Containers: containers, Labels: [:])
         locked { images.append(image) }
+        return image.Id
     }
 
-    func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil) {
+    func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil, anonymous: Bool = false) {
+        var labels = project.map { ["com.docker.compose.project": $0] } ?? [:]
+        if anonymous { labels["com.docker.volume.anonymous"] = "" }
         let volume = VolumeSummary(
             Name: name, Driver: "local", Mountpoint: "/var/lib/docker/volumes/\(name)/_data", CreatedAt: nil,
-            Labels: project.map { ["com.docker.compose.project": $0] }, Scope: "local", UsageData: .init(Size: size, RefCount: refCount))
+            Labels: labels, Scope: "local", UsageData: .init(Size: size, RefCount: refCount))
         locked { volumes.append(volume) }
     }
 
-    func addNetwork(_ name: String) {
-        locked { networks.append(NetworkSummary(Name: name, Id: name + "-id", Driver: "bridge", Scope: "local", Containers: [:], Labels: [:])) }
+    func addNetwork(_ name: String, members: [String] = []) {
+        let network = NetworkSummary(
+            Name: name, Id: name + "-id", Driver: name == "host" || name == "none" ? name : "bridge", Scope: "local",
+            Containers: Dictionary(uniqueKeysWithValues: members.map { ($0, .init(Name: nil, IPv4Address: "172.18.0.2/16")) }), Labels: [:],
+            IPAM: .init(Driver: "default", Config: [.init(Subnet: "172.18.0.0/16", Gateway: "172.18.0.1")]))
+        locked { networks.append(network) }
     }
 
     var containerIDs: [String] { locked { Array(containers.keys) } }
@@ -244,9 +258,22 @@ final class FakeDockerEngine: @unchecked Sendable {
         case "info": return info()
         case "events": return .events
         case "system" where verb == "df": return diskUsage()
+        case "build" where verb == "prune":
+            let freed = locked { buildCache }
+            locked { buildCache = 0 }
+            return Self.json(PruneReport(SpaceReclaimed: freed, CachesDeleted: freed > 0 ? ["cache"] : []))
         case "containers" where verb == "prune", "images" where verb == "prune", "volumes" where verb == "prune", "networks" where verb == "prune":
-            return Self.json(prune(kind))
+            return Self.json(prune(kind, all: (query["filters"] ?? "").contains("\"dangling\":[\"false\"]") || (query["filters"] ?? "").contains("\"all\"")))
         case "containers": return named ? container(method, id, verb, query, body) : containerList(query)
+        case "images" where named && verb == "history": return image(id).map { Self.json(Self.history(of: $0)) } ?? Self.error(404, "No such image: \(id)")
+        case "images" where named && verb == "json": return image(id).map { Self.json($0) } ?? Self.error(404, "No such image: \(id)")
+        case "images" where named && verb == "tag":
+            guard let found = image(id) else { return Self.error(404, "No such image: \(id)") }
+            let name = (query["repo"] ?? "") + ":" + (query["tag"] ?? "latest")
+            locked { if let at = images.firstIndex(where: { $0.Id == found.Id }) { images[at].RepoTags = (images[at].RepoTags ?? []) + [name] } }
+            emitImage("tag", found.Id)
+            return .empty(201)
+        case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"))
         case "images", "volumes", "networks": return other(method, kind, id, named)
         default: return Self.error(404, "page not found")
         }
@@ -268,7 +295,9 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     private func diskUsage() -> Answer {
         let usage = locked {
-            DockerDiskUsage(LayersSize: images.reduce(0) { $0 + $1.Size }, Images: images, Containers: [], Volumes: volumes, BuildCache: [])
+            DockerDiskUsage(
+                LayersSize: images.reduce(0) { $0 + $1.Size }, Images: images, Containers: [], Volumes: volumes,
+                BuildCache: buildCache > 0 ? [.init(ID: "cache", Size: buildCache, InUse: false, Shared: false)] : [])
         }
         return Self.json(usage)
     }
@@ -329,6 +358,47 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
+    private func image(_ idOrName: String) -> ImageSummary? {
+        locked { images.first { $0.Id == idOrName || $0.tags.contains(idOrName) || $0.shortID == idOrName } }
+    }
+
+    static func history(of image: ImageSummary) -> [ImageLayer] {
+        [
+            ImageLayer(Id: image.Id, Created: image.Created, CreatedBy: "/bin/sh -c #(nop)  CMD [\"sleep\" \"infinity\"]", Size: 0),
+            ImageLayer(Id: "<missing>", Created: image.Created, CreatedBy: "/bin/sh -c apt-get update &&     apt-get install -y curl", Size: image.Size / 2),
+            ImageLayer(Id: "<missing>", Created: image.Created, CreatedBy: "/bin/sh -c #(nop) ADD file:abc in / ", Size: image.Size / 2),
+        ]
+    }
+
+    /// A pull, as the engine streams one: a few layers downloading, then
+    /// the image there. `private/…` names are refused, as a registry that
+    /// wants credentials does.
+    private func pull(_ name: String) -> Answer {
+        if name.hasPrefix("private/") {
+            return .json(
+                200, Data(#"{"errorDetail":{"message":"pull access denied"},"error":"pull access denied for private, repository does not exist or may require 'docker login'"}"#.utf8 + [0x0A]))
+        }
+        let lines = [
+            #"{"status":"Pulling from library/\#(name)","id":"latest"}"#, #"{"status":"Pulling fs layer","progressDetail":{},"id":"l1"}"#,
+            #"{"status":"Downloading","progressDetail":{"current":512,"total":2048},"id":"l1"}"#,
+            #"{"status":"Download complete","progressDetail":{},"id":"l1"}"#, #"{"status":"Pull complete","progressDetail":{},"id":"l1"}"#,
+            #"{"status":"Status: Downloaded newer image for \#(name)"}"#,
+        ]
+        addImage(name, size: 2048)
+        emitImage("pull", name)
+        return .raw(200, Data(lines.joined(separator: "\n").utf8 + [0x0A]), [("Content-Type", "application/json")])
+    }
+
+    private func emitImage(_ action: String, _ id: String) {
+        let streams = locked { Array(eventStreams.values) }
+        let event = DockerEvent(Type: "image", Action: action, Actor: .init(ID: id, Attributes: [:]), time: Int(Date().timeIntervalSince1970))
+        guard var line = try? JSONEncoder().encode(event) else { return }
+        line.append(0x0A)
+        for channel in streams {
+            channel.eventLoop.execute { channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(bytes: line))), promise: nil) }
+        }
+    }
+
     private func other(_ method: HTTPMethod, _ kind: String, _ id: String, _ named: Bool) -> Answer {
         switch (method, kind, named) {
         case (.GET, "images", false): return Self.json(locked { images })
@@ -336,6 +406,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         case (.GET, "networks", false): return Self.json(locked { networks })
         case (.DELETE, "images", true):
             locked { images.removeAll { $0.Id == id || $0.tags.contains(id) } }
+            emitImage("delete", id)
             return Self.json([PruneReport.ImageDeleted(Untagged: nil, Deleted: id)])
         case (.DELETE, "volumes", true):
             locked { volumes.removeAll { $0.Name == id } }
@@ -348,21 +419,24 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    /// What is unused goes, as the engine's prune.
-    private func prune(_ kind: String) -> PruneReport {
+    /// What is unused goes, as the engine's prune: untagged images and
+    /// anonymous volumes only, unless `all`.
+    private func prune(_ kind: String, all: Bool) -> PruneReport {
         var report = PruneReport(SpaceReclaimed: 0)
         locked {
+            let used = Set(containers.values.compactMap(\.summary.ImageID))
             switch kind {
             case "images":
-                let unused = images.filter { ($0.Containers ?? 0) == 0 }
+                let unused = images.filter { ($0.Containers ?? 0) == 0 && !used.contains($0.Id) && (all || $0.isDangling) }
                 report.SpaceReclaimed = unused.reduce(0) { $0 + $1.Size }
                 report.ImagesDeleted = unused.map { .init(Untagged: $0.tags.first, Deleted: $0.Id) }
-                images.removeAll { ($0.Containers ?? 0) == 0 }
+                images.removeAll { image in unused.contains { $0.Id == image.Id } }
             case "volumes":
-                let unused = volumes.filter { ($0.UsageData?.RefCount ?? 0) == 0 }
+                let mounted = Set(containers.values.flatMap { ($0.summary.Mounts ?? []).compactMap(\.Name) })
+                let unused = volumes.filter { ($0.UsageData?.RefCount ?? 0) == 0 && !mounted.contains($0.Name) && (all || $0.isAnonymous) }
                 report.SpaceReclaimed = unused.reduce(0) { $0 + ($1.UsageData?.Size ?? 0) }
                 report.VolumesDeleted = unused.map(\.Name)
-                volumes.removeAll { ($0.UsageData?.RefCount ?? 0) == 0 }
+                volumes.removeAll { volume in unused.contains { $0.Name == volume.Name } }
             case "containers":
                 let stopped = containers.values.filter { $0.summary.state == .exited }.map(\.summary.Id)
                 report.ContainersDeleted = stopped

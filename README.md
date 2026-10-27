@@ -166,7 +166,10 @@ see the command. Filter with `status:running project:api port:5432`;
 `?` lists the keys. A container's logs are followed as they are written,
 coloured by level and filtered, and picked up again after a restart; its
 inspect data and its CPU, memory, network and disk sit beside it. Secrets
-in a container's environment stay masked. The rail's shippingbox keeps the
+in a container's environment stay masked. Images (pulled with their
+progress, tagged, their layers), volumes with their sizes and who mounts
+them, and networks with who is on them sit in sections of their own, and
+Clean Up lists what nothing uses before anything goes. The rail's shippingbox keeps the
 selected tab's checkout's stack beside the terminal, a container's logs a
 click away in the right-hand pane.
 

@@ -22,6 +22,7 @@ struct DockerPageView: View {
         .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .overlay { if page.cheatSheet { cheatSheet } }
+        .sheet(isPresented: $page.cleaning) { DockerCleanUpSheet(page: page, docker: docker, theme: theme) }
         .onChange(of: page.focusList) { _ in focus = .list }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         .onAppear { focus = .list }
@@ -35,10 +36,14 @@ struct DockerPageView: View {
                 Button {
                     page.section = section
                 } label: {
-                    HStack {
-                        Label(section.title, systemImage: section.symbol)
+                    HStack(spacing: 8) {
+                        // A column of their own: the glyphs differ in width.
+                        Image(systemName: section.symbol).frame(width: 18)
+                        Text(section.title)
                         Spacer()
-                        Text(verbatim: "\(docker.containers.count)").foregroundStyle(theme.text3).font(.system(size: 11, design: .monospaced))
+                        if let count = count(section) {
+                            Text(verbatim: "\(count)").foregroundStyle(theme.text3).font(.system(size: 11, design: .monospaced))
+                        }
                     }
                     .foregroundStyle(page.section == section ? theme.text : theme.text2)
                     .padding(.horizontal, 10)
@@ -49,9 +54,31 @@ struct DockerPageView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            DockerDiskSummary(docker: docker, theme: theme).padding(.bottom, 8)
+            Button {
+                page.cleaning = true
+            } label: {
+                Label("Clean Up…", systemImage: "sparkles").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.text2)
+            .disabled(!docker.connection.isRunning)
+            .help("What nothing uses, listed before it goes (c)")
+            .accessibilityIdentifier("docker.cleanUp")
             engine
         }
         .padding(12)
+    }
+
+    /// A section's count, once it has been read.
+    private func count(_ section: DockerPageModel.Section) -> Int? {
+        switch section {
+        case .containers: docker.containers.count
+        case .images: docker.images.isEmpty ? nil : docker.images.count
+        case .volumes: docker.volumes.isEmpty ? nil : docker.volumes.count
+        case .networks: docker.networks.isEmpty ? nil : docker.networks.count
+        }
     }
 
     private var engineColor: Color {
@@ -109,8 +136,12 @@ struct DockerPageView: View {
         VStack(spacing: 0) {
             header
             if let error = page.error { banner(error) }
+            if let cleaned = page.cleaned { note(cleaned) }
             Rectangle().fill(theme.border).frame(height: 1)
             switch docker.connection {
+            case .running where page.section == .images: DockerImagesView(page: page, docker: docker, theme: theme, actions: actions)
+            case .running where page.section == .volumes: DockerVolumesView(page: page, docker: docker, theme: theme, actions: actions)
+            case .running where page.section == .networks: DockerNetworksView(page: page, docker: docker, theme: theme, actions: actions)
             case .running:
                 if docker.containers.isEmpty {
                     empty("No containers", "Run one — `docker run`, or `docker compose up` in a checkout — and it shows here.")
@@ -151,11 +182,13 @@ struct DockerPageView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Text(page.section.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text)
-            if docker.connection.isRunning {
+            if docker.connection.isRunning, page.section == .containers {
                 Text(verbatim: "\(running) running · \(docker.containers.count)").font(.system(size: 12)).foregroundStyle(theme.text3)
             }
             Spacer(minLength: 12)
-            Toggle("Running only", isOn: $page.runningOnly).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
+            if page.section == .containers {
+                Toggle("Running only", isOn: $page.runningOnly).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
+            }
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(theme.text3)
                 TextField("Filter  /", text: $page.filter)
@@ -182,6 +215,20 @@ struct DockerPageView: View {
         }
         .padding(.horizontal, 20)
         .frame(height: 56)
+    }
+
+    /// What went well, said once.
+    private func note(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(TabStatusStyle.done)
+            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text)
+            Spacer()
+            Button("Dismiss") { page.cleaned = nil }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 12))
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(TabStatusStyle.done.opacity(0.1))
+        .accessibilityIdentifier("docker.cleaned")
     }
 
     private func banner(_ error: String) -> some View {

@@ -1230,6 +1230,25 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   padded to nine digits: Docker trims a fraction's zeros). Lines go into an
   NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
   Inspect is the engine's JSON with the env's secret values taken out.
+- **Images, volumes, networks** (the page's sections 2–4,
+  `DockerResourceViews`): read only while their section shows
+  (`DockerModel.want`) and then kept current by their own events (the
+  event filter takes images, volumes and networks too, but not a volume's
+  mount or a network's connect at every start). Volumes come from
+  `/system/df`, the only place that says each one's size and users. An
+  image pulls with its layers' progress summed (`DockerPull`); one a
+  registry won't give without credentials says to pull it in a terminal
+  tab, where the credential helper signs in — Overterm never handles a
+  registry password. Tag, remove (asked first; never what a running
+  container uses), browse a volume in a tab (a throwaway container).
+- **Clean Up** (`c`, `DockerPrunePlan`, pure): what the engine's prunes
+  would remove, listed before anything goes — the prunes say what they
+  removed only afterwards. It follows their rules: stopped containers
+  first, so an image or a network only they kept counts as unused; images
+  untagged only unless asked; volumes only when asked, anonymous ones only
+  unless named ones are asked for; a network stays while any container,
+  stopped too, is on it (`/containers/json`'s `NetworkSettings`, since a
+  network's own record lists only running members).
 - **The rail's panel** (`DockerPanelView`, `DockerPanelModel` per window):
   the selected tab's checkout's stack — its compose projects
   (`DockerModel.projects(in:)`) — then what else runs. A container picked

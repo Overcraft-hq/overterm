@@ -151,12 +151,13 @@ final class DockerModelTests: XCTestCase {
         let lists = { self.fake.requests.filter { $0.contains("/containers/json") }.count }
         model.show()
         let before = lists()
-        try await Task.sleep(for: .milliseconds(650))
-        XCTAssertGreaterThanOrEqual(lists() - before, 2)
+        try await eventually("two polls") { lists() - before >= 2 }
         model.hide()
+        // A poll already on its way when it was hidden still lands.
+        try await Task.sleep(for: .milliseconds(150))
         let after = lists()
         try await Task.sleep(for: .milliseconds(450))
-        XCTAssertEqual(lists(), after)
+        XCTAssertEqual(lists(), after, "no poll once hidden")
     }
 }
 

@@ -119,3 +119,14 @@ enum DockerSecrets {
         values.sorted { $0.count > $1.count }.reduce(text) { $0.replacingOccurrences(of: $1, with: "••••••") }
     }
 }
+
+/// Sizes as Docker's lists say them: `0 KB`, never ByteCountFormatter's
+/// "Zero KB"; memory in binary units, files and images in decimal.
+enum DockerBytes {
+    static func string(_ count: Int, memory: Bool = false) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = memory ? .memory : .file
+        formatter.allowsNonnumericFormatting = false
+        return formatter.string(fromByteCount: Int64(count))
+    }
+}

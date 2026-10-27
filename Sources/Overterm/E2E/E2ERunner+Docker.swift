@@ -24,6 +24,77 @@ extension E2ERunner {
         app.sidebarPanel.panel = .files
     }
 
+    /// Images, volumes, networks, Clean Up — on the page, which shows.
+    private func resourcesChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        let debian = fake.addImage("debian:bookworm-slim", size: 80 << 20)
+        let dangling = fake.addImage(nil, size: 10 << 20)
+        let redis = fake.addImage("redis:7", size: 40 << 20)
+        let old = fake.add(name: "ot-old", image: "debian:bookworm-slim", state: .exited, imageID: debian, volumes: ["ot-old-data"])
+        fake.addVolume("ot-old-data", size: 5 << 20, refCount: 1)
+        fake.addVolume(String(repeating: "f", count: 64), size: 7 << 20, refCount: 0, anonymous: true)
+        fake.addNetwork("bridge")
+        fake.addNetwork("ot-shop_default", members: [docker.container("ot-shop-web-1")?.Id ?? ""])
+        fake.buildCache = 30 << 20
+
+        page.press("2")
+        check("2 is Images", page.section == .images)
+        check("read when their section shows", await eventually(5) { docker.images.count == 3 }, "\(docker.images.map(\.tags))")
+        check(
+            "what uses one is known", await eventually(3) { docker.images.first { $0.Id == debian }.map { docker.containers(using: $0).map(\.Id) } == [old] },
+            "\(docker.containers.map { "\($0.name) \($0.ImageID ?? "")" }) vs \(debian)")
+        check("and their sizes on the left", await eventually(5) { docker.diskUsage != nil })
+        page.pull("busybox:1.36")
+        check(
+            "a pull shows its progress, then the image",
+            await eventually(5) { page.pulls["busybox:1.36"]?.done == true && docker.images.contains { $0.tags.contains("busybox:1.36") } },
+            page.pulls["busybox:1.36"]?.summary ?? "no pull")
+        page.pull("private/thing")
+        check(
+            "one the engine may not pull says where it can be",
+            await eventually(5) { page.pulls["private/thing"]?.error?.contains("terminal tab") == true }, page.pulls["private/thing"]?.error ?? "")
+        if let image = docker.images.first(where: { $0.Id == redis }) { page.tag(image, as: "ot/cache:1") }
+        check("a tag is added", await eventually(5) { docker.images.first { $0.Id == redis }?.tags.contains("ot/cache:1") == true })
+        page.imageSelection = [redis]
+        page.press("\u{7F}")
+        let asked = await eventually(2) { self.window.attachedSheet != nil }
+        let clicked = asked && clickSheetButton("Remove")
+        let gone = await eventually(5) { !docker.images.contains { $0.Id == redis } }
+        check(
+            "⌫ removes an image, asked first", clicked && gone,
+            "asked \(asked), clicked \(clicked), gone \(gone), \(page.error ?? ""), \(fake.requests.filter { $0.hasPrefix("DELETE /v1.47/images") })")
+
+        page.press("3")
+        check("3 is Volumes, with their sizes", await eventually(5) { docker.volumes.count == 2 && docker.volumes.allSatisfy { $0.UsageData != nil } })
+        check("an anonymous one goes by its start", docker.volumes.last?.shortName == String(repeating: "f", count: 12))
+        check("what mounts one is known", docker.volumes.first.map { docker.containers(mounting: $0).map(\.Id) } == [old])
+
+        page.press("4")
+        check("4 is Networks, Docker's own last", await eventually(5) { docker.networks.map(\.Name) == ["ot-shop_default", "bridge"] })
+        check("with who is on them", docker.networks.first.map { docker.containers(on: $0).map(\.name) } == ["ot-shop-web-1"])
+
+        // Clean Up: listed, then done.
+        page.press("c")
+        check("c opens Clean Up", await eventually(2) { self.window.attachedSheet != nil })
+        let plan = page.cleanPlan
+        check("it lists the stopped container", plan.containers.map(\.Id) == [old], "\(plan.containers.map(\.name))")
+        check("the untagged image, not the tagged ones", plan.images.map(\.Id) == [dangling], "\(plan.images.map(\.tags))")
+        check("no volume unless asked", plan.volumes.isEmpty)
+        check("and the build cache", await eventually(3) { page.cleanPlan.buildCache == 30 << 20 }, "\(page.cleanPlan.buildCache)")
+        page.cleanUp()
+        check(
+            "Clean Up removes what it listed",
+            await eventually(5) { fake.summary(old) == nil && !docker.images.contains { $0.Id == dangling } && fake.buildCache == 0 },
+            page.error ?? "")
+        check("and says what it freed", await eventually(3) { page.cleaned?.contains("freed") == true }, page.cleaned ?? "")
+        check("its sheet closed", await eventually(2) { self.window.attachedSheet == nil })
+        page.press("2")
+        await capture("images")
+        page.press("1")
+        check("1 is Containers again", page.section == .containers)
+    }
+
     func dockerScenario() async {
         await settledPrompt()
         let socket = "/tmp/ot-e2e-docker-\(UUID().uuidString.prefix(6)).sock"
@@ -241,6 +312,7 @@ extension E2ERunner {
         app.showDockerSwitcher(nil)
         app.showDockerSwitcher(nil)
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
+        await resourcesChecks(fake)
         app.hideOverlay()
 
         // ⌥⌘P twice: back to the terminal, the page kept in the strip.

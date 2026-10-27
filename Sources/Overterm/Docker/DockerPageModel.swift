@@ -34,13 +34,26 @@ struct DockerListGroup: Identifiable, Equatable {
 @MainActor
 final class DockerPageModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case containers
+        case containers, images, volumes, networks
 
         var id: String { rawValue }
         var title: String { rawValue.capitalized }
         var symbol: String {
             switch self {
             case .containers: "shippingbox"
+            case .images: "square.stack.3d.down.right"
+            case .volumes: "externaldrive"
+            case .networks: "point.3.filled.connected.trianglepath.dotted"
+            }
+        }
+
+        /// What the model reads for it.
+        var resource: DockerModel.Resource? {
+            switch self {
+            case .containers: nil
+            case .images: .images
+            case .volumes: .volumes
+            case .networks: .networks
             }
         }
     }
@@ -60,19 +73,47 @@ final class DockerPageModel: ObservableObject {
     @Published var cheatSheet = false
     /// Bumped to put the keyboard in the filter field (`/`).
     @Published var focusFilter = 0
+    /// The other sections' selections: image ids, volume names, network ids.
+    @Published var imageSelection: Set<String> = []
+    @Published var volumeSelection: Set<String> = []
+    @Published var networkSelection: Set<String> = []
+    /// Images being pulled, by name: their layers' progress.
+    @Published var pulls: [String: DockerPull] = [:]
+    /// Clean Up's sheet, and what it would remove.
+    @Published var cleaning = false
+    @Published var cleanChoice = DockerPrunePlan.Choice()
+    /// What Clean Up freed, said once.
+    @Published var cleaned: String?
 
     let docker: DockerModel
 
     private var streams: AnyCancellable?
+    private var wanting: AnyCancellable?
+    /// The resource this page holds the model to (`DockerModel.want`).
+    private var wanted: DockerModel.Resource?
 
     init(docker: DockerModel = .shared) {
         self.docker = docker
+        // A section on screen is read, and kept current, while it shows.
+        wanting = $section.combineLatest($visible)
+            .sink { [weak self] section, visible in
+                DispatchQueue.main.async { self?.want(visible ? section.resource : nil) }
+            }
         // The detail's streams follow what it shows and whether it shows.
         streams = Publishers.CombineLatest4($selection, $detailTab, $visible, $showDetail)
             .sink { [weak self] _ in
                 // @Published fires before the values land.
                 DispatchQueue.main.async { self?.updateStreams() }
             }
+    }
+
+    private func want(_ resource: DockerModel.Resource?) {
+        guard resource != wanted else { return }
+        if let wanted { docker.unwant(wanted) }
+        wanted = resource
+        if let resource { docker.want(resource) }
+        // Their sizes on the left, whichever section shows.
+        if visible, docker.diskUsage == nil { docker.load(.volumes) }
     }
 
     func updateStreams() {
@@ -218,6 +259,23 @@ final class DockerPageModel: ObservableObject {
             return true
         }
         guard let key = DockerKey.of(characters) else { return false }
+        if let section = key.section {
+            self.section = section
+            return true
+        }
+        switch key {
+        case .filter:
+            focusFilter += 1
+            return true
+        case .help:
+            cheatSheet = true
+            return true
+        case .cleanUp:
+            cleaning = true
+            return true
+        default: break
+        }
+        guard section == .containers else { return pressInList(key) }
         let selected = selectedContainers
         let endpoint = docker.endpoint
         switch key {
@@ -244,10 +302,28 @@ final class DockerPageModel: ObservableObject {
             if let project = selectedProject { compose("up", project) }
         case .composeDown:
             if let project = selectedProject { compose("down", project) }
-        case .filter: focusFilter += 1
-        case .help: cheatSheet = true
+        default: break
         }
         return true
+    }
+
+    /// Images, volumes, networks: what a key means there.
+    private func pressInList(_ key: DockerKey) -> Bool {
+        switch key {
+        case .remove:
+            switch section {
+            case .images: confirmRemove(images: docker.images.filter { imageSelection.contains($0.Id) })
+            case .volumes: confirmRemove(volumes: docker.volumes.filter { volumeSelection.contains($0.Name) })
+            case .networks: confirmRemove(networks: docker.networks.filter { networkSelection.contains($0.Id) })
+            case .containers: break
+            }
+            return true
+        case .toggleDetail:
+            showDetail.toggle()
+            return true
+        default:
+            return false
+        }
     }
 
     /// A project's verbs: `up`, `down` (asked first) and the logs in a

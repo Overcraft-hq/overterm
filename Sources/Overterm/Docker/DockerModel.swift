@@ -42,6 +42,20 @@ final class DockerModel: ObservableObject {
     /// The containers in no compose project.
     @Published private(set) var loose: [ContainerSummary] = []
 
+    /// What a section lists besides containers, read only while one shows
+    /// it (`want`), then kept current by its events.
+    enum Resource: Hashable, Sendable { case images, volumes, networks }
+    @Published private(set) var images: [ImageSummary] = []
+    /// From `/system/df`, which says each one's size and users.
+    @Published private(set) var volumes: [VolumeSummary] = []
+    @Published private(set) var networks: [NetworkSummary] = []
+    /// What the images, volumes, containers and build cache take.
+    @Published private(set) var diskUsage: DockerDiskUsage?
+    private var wanted: [Resource: Int] = [:]
+    private var loading: [Resource: Task<Void, Never>] = [:]
+    /// Asked for again while a read was on its way: read once more after it.
+    private var again: Set<Resource> = []
+
     /// Each listed event as it comes — what the attention marks read.
     let events = PassthroughSubject<DockerEvent, Never>()
 
@@ -131,9 +145,15 @@ final class DockerModel: ObservableObject {
                 connection = .running(version)
                 attempt = 0
                 await reload()
+                for resource in wanted.keys { load(resource) }
                 for try await event in events {
                     self.events.send(event)
-                    scheduleReload()
+                    switch event.Type {
+                    case "image": reloadWanted(.images)
+                    case "volume": reloadWanted(.volumes)
+                    case "network": reloadWanted(.networks)
+                    default: scheduleReload()
+                    }
                 }
                 // Stopped (the stream ends when its task is cancelled), or
                 // the engine went away: Docker Desktop quit.
@@ -166,6 +186,10 @@ final class DockerModel: ObservableObject {
 
     private func clear() {
         info = nil
+        if !images.isEmpty { images = [] }
+        if !volumes.isEmpty { volumes = [] }
+        if !networks.isEmpty { networks = [] }
+        diskUsage = nil
         if !containers.isEmpty { containers = [] }
         if !projects.isEmpty { projects = [] }
         if !loose.isEmpty { loose = [] }
@@ -216,6 +240,75 @@ final class DockerModel: ObservableObject {
         guard viewers == 0 else { return }
         polling?.cancel()
         polling = nil
+    }
+
+    // MARK: Images, volumes, networks
+
+    /// A section shows it: read now, and again as its events come.
+    func want(_ resource: Resource) {
+        wanted[resource, default: 0] += 1
+        start()
+        load(resource)
+    }
+
+    func unwant(_ resource: Resource) {
+        let count = (wanted[resource] ?? 0) - 1
+        wanted[resource] = count > 0 ? count : nil
+    }
+
+    private func reloadWanted(_ resource: Resource) {
+        if wanted[resource] != nil { load(resource) }
+        // An image pulled or removed changes what containers say they run.
+        if resource == .images { scheduleReload() }
+    }
+
+    /// Read it. A read already on its way may have started before what
+    /// changed: it is followed by one more, not by one each.
+    func load(_ resource: Resource) {
+        guard loading[resource] == nil else {
+            again.insert(resource)
+            return
+        }
+        guard let engine else { return }
+        loading[resource] = Task { [weak self] in
+            defer {
+                self?.loading[resource] = nil
+                if self?.again.remove(resource) != nil { self?.load(resource) }
+            }
+            switch resource {
+            case .images:
+                if let images = try? await engine.images() {
+                    self?.images = images.sorted { ($0.tags.first ?? "~" + $0.Id) < ($1.tags.first ?? "~" + $1.Id) }
+                }
+            case .volumes:
+                // `/volumes` says nothing of size or users; `/system/df` does.
+                if let usage = try? await engine.diskUsage() {
+                    self?.diskUsage = usage
+                    self?.volumes = (usage.Volumes ?? []).sorted { ($0.isAnonymous ? 1 : 0, $0.Name) < ($1.isAnonymous ? 1 : 0, $1.Name) }
+                }
+            case .networks:
+                if let networks = try? await engine.networks() {
+                    self?.networks = networks.sorted { ($0.isBuiltIn ? 1 : 0, $0.Name) < ($1.isBuiltIn ? 1 : 0, $1.Name) }
+                }
+            }
+        }
+    }
+
+    /// What uses an image: containers made from it, stopped ones too.
+    func containers(using image: ImageSummary) -> [ContainerSummary] {
+        containers.filter { $0.ImageID == image.Id }
+    }
+
+    /// What mounts a volume.
+    func containers(mounting volume: VolumeSummary) -> [ContainerSummary] {
+        containers.filter { ($0.Mounts ?? []).contains { $0.Name == volume.Name } }
+    }
+
+    /// What is on a network, as the list says (a network's own record says
+    /// it only for running containers).
+    func containers(on network: NetworkSummary) -> [ContainerSummary] {
+        let members = Set((network.Containers ?? [:]).keys)
+        return containers.filter { members.contains($0.Id) || $0.networkNames.contains(network.Name) }
     }
 
     func container(_ idOrName: String) -> ContainerSummary? {

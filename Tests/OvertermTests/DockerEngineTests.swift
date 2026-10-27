@@ -231,6 +231,12 @@ final class DockerEngineTests: XCTestCase {
         XCTAssertEqual(DockerUsage(ContainerStatsSample()).cpuPercent, 0, "the first sample has nothing before it")
     }
 
+    func testSizesAreNumbers() {
+        XCTAssertFalse(DockerBytes.string(0).lowercased().contains("zero"), DockerBytes.string(0))
+        XCTAssertTrue(DockerBytes.string(0).contains("0"))
+        XCTAssertNotEqual(DockerBytes.string(1 << 30, memory: true), DockerBytes.string(1 << 30), "memory counts in 1024s")
+    }
+
     func testPortsAreListedOnce() {
         let ports = PublishedPort.of([
             DockerPort(IP: "0.0.0.0", PrivatePort: 5432, PublicPort: 55432, Type: "tcp"),

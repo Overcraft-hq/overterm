@@ -189,13 +189,7 @@ struct DockerStatsPane: View {
         .accessibilityIdentifier("docker.stats")
     }
 
-    /// `0 KB`, not ByteCountFormatter's "Zero KB".
-    static func bytes(_ count: Int) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .memory
-        formatter.allowsNonnumericFormatting = false
-        return formatter.string(fromByteCount: Int64(count))
-    }
+    static func bytes(_ count: Int) -> String { DockerBytes.string(count, memory: true) }
 
     private func tile(_ title: String, _ value: String, detail: String, values: [Double]) -> some View {
         VStack(alignment: .leading, spacing: 4) {

@@ -12,7 +12,8 @@ extension DockerEngine {
     /// What changes containers, as it happens: the events a list shows
     /// (`DockerEvent.listed`), from now on.
     func events() -> AsyncThrowingStream<DockerEvent, Error> {
-        let filters = #"{"type":["container"],"event":[\#(DockerEvent.listed.sorted().map { "\"\($0)\"" }.joined(separator: ","))]}"#
+        func list(_ words: [String]) -> String { words.map { "\"\($0)\"" }.joined(separator: ",") }
+        let filters = #"{"type":[\#(list(DockerEvent.types))],"event":[\#(list(DockerEvent.listed.sorted()))]}"#
         return decodedLines(stream("/events", ["filters": filters]), as: DockerEvent.self)
     }
 

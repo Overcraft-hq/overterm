@@ -5,7 +5,18 @@ import Foundation
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, inspect, open, remove, composeUp, composeDown, filter,
-        help
+        cleanUp, containers, images, volumes, networks, help
+
+    /// The section a digit goes to.
+    var section: DockerPageModel.Section? {
+        switch self {
+        case .containers: .containers
+        case .images: .images
+        case .volumes: .volumes
+        case .networks: .networks
+        default: nil
+        }
+    }
 
     /// What is pressed: one character, or a key's name.
     var key: String {
@@ -24,6 +35,11 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .composeUp: "u"
         case .composeDown: "D"
         case .filter: "/"
+        case .cleanUp: "c"
+        case .containers: "1"
+        case .images: "2"
+        case .volumes: "3"
+        case .networks: "4"
         case .help: "?"
         }
     }
@@ -44,6 +60,11 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .composeUp: "Compose up, in a terminal tab"
         case .composeDown: "Compose down, in a terminal tab (asks first)"
         case .filter: "Filter — status:running project:api port:5432"
+        case .cleanUp: "Clean Up… — what is unused, listed before it goes"
+        case .containers: "Containers"
+        case .images: "Images"
+        case .volumes: "Volumes"
+        case .networks: "Networks"
         case .help: "These keys"
         }
     }

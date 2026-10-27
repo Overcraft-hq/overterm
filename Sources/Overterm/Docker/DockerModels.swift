@@ -35,11 +35,26 @@ struct ContainerSummary: Codable, Identifiable, Hashable, Sendable {
     var Mounts: [DockerMountPoint]?
     /// API 1.52+; else read from `Status` ("(healthy)").
     var Health: HealthSummary?
+    /// The networks it is on, stopped or not — what keeps a network from
+    /// being pruned.
+    var NetworkSettings: SummaryNetworks?
 
     struct HealthSummary: Codable, Hashable, Sendable {
         var Status: String?
         var FailingStreak: Int?
     }
+
+    struct SummaryNetworks: Codable, Hashable, Sendable {
+        var Networks: [String: Attachment]?
+
+        struct Attachment: Codable, Hashable, Sendable {
+            var NetworkID: String?
+            var IPAddress: String?
+        }
+    }
+
+    /// The networks' names.
+    var networkNames: [String] { (NetworkSettings?.Networks ?? [:]).keys.sorted() }
 
     var id: String { Id }
     /// `/web-1` → `web-1`.
@@ -214,6 +229,11 @@ struct VolumeSummary: Codable, Identifiable, Hashable, Sendable {
     var id: String { Name }
     /// Compose's own: `project_name`.
     var composeProject: String? { Labels?["com.docker.compose.project"] }
+    /// Made for one container's `VOLUME`, unnamed: what a prune removes
+    /// unless asked for every unused volume.
+    var isAnonymous: Bool { Labels?["com.docker.volume.anonymous"] != nil }
+    /// A hash for a name says nothing; its start does as well.
+    var shortName: String { isAnonymous || (Name.count == 64 && Name.allSatisfy(\.isHexDigit)) ? String(Name.prefix(12)) : Name }
 }
 
 struct NetworkSummary: Codable, Identifiable, Hashable, Sendable {
@@ -226,11 +246,24 @@ struct NetworkSummary: Codable, Identifiable, Hashable, Sendable {
     var Created: String?
     var Containers: [String: Member]?
     var Labels: [String: String]?
+    var IPAM: Addressing?
 
     struct Member: Codable, Hashable, Sendable {
         var Name: String?
         var IPv4Address: String?
     }
+
+    struct Addressing: Codable, Hashable, Sendable {
+        var Driver: String?
+        var Config: [Pool]?
+
+        struct Pool: Codable, Hashable, Sendable {
+            var Subnet: String?
+            var Gateway: String?
+        }
+    }
+
+    var subnet: String? { IPAM?.Config?.first?.Subnet }
 
     var id: String { Id }
     /// The ones Docker makes and keeps: never offered for removal.
@@ -287,11 +320,17 @@ struct DockerEvent: Codable, Sendable {
     var verb: String { String(Action.split(separator: ":").first ?? Substring(Action)).trimmingCharacters(in: .whitespaces) }
 
     /// The events that change what a list shows. Healthchecks run `exec`s
-    /// every few seconds (the spike counted 189 in a minute); those, and our
-    /// own `archive` reads, are left out.
+    /// every few seconds (the spike counted 189 in a minute); those, our
+    /// own `archive` reads, and a volume's mount at every start or a
+    /// network's connect, are left out.
     static let listed: Set<String> = [
         "create", "start", "restart", "die", "stop", "kill", "pause", "unpause", "destroy", "rename", "health_status", "oom", "update",
+        // Images, volumes, networks.
+        "pull", "delete", "tag", "untag", "import", "load", "remove", "prune",
     ]
+
+    /// The kinds of thing whose events are read.
+    static let types = ["container", "image", "volume", "network"]
 }
 
 /// `GET /containers/{id}/stats`.

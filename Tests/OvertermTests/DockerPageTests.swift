@@ -143,3 +143,95 @@ final class DockerPageTests: XCTestCase {
         XCTAssertFalse(page.showDetail)
     }
 }
+
+/// Clean Up's preview, and an image's pull. Pure.
+final class DockerPrunePlanTests: XCTestCase {
+    private func container(_ name: String, image: String, state: String, volumes: [String] = [], networks: [String] = []) -> ContainerSummary {
+        ContainerSummary(
+            Id: name, Names: ["/" + name], Image: image, ImageID: image, Created: 1, State: state, Status: "",
+            Mounts: volumes.map { DockerMountPoint(Type: "volume", Name: $0, Destination: "/data") },
+            NetworkSettings: .init(Networks: Dictionary(uniqueKeysWithValues: networks.map { ($0, .init(NetworkID: $0 + "-id")) })))
+    }
+
+    private func image(_ id: String, tags: [String], size: Int) -> ImageSummary {
+        ImageSummary(Id: id, RepoTags: tags, Created: 1, Size: size)
+    }
+
+    private func volume(_ name: String, anonymous: Bool, size: Int) -> VolumeSummary {
+        VolumeSummary(
+            Name: name, Driver: "local", Mountpoint: "/v", Labels: anonymous ? ["com.docker.volume.anonymous": ""] : [:],
+            UsageData: .init(Size: size, RefCount: 0))
+    }
+
+
+    func testWhatGoesAndWhatStays() {
+        let containers = [
+            container("web", image: "nginx", state: "running", volumes: ["shop_data"], networks: ["shop_default"]),
+            container("old", image: "node", state: "exited", volumes: ["abc"], networks: ["old_default"]),
+        ]
+        let images = [
+            image("nginx", tags: ["nginx:1.27"], size: 100), image("node", tags: ["node:20"], size: 1000), image("none", tags: [], size: 10),
+            image("redis", tags: ["redis:7"], size: 50),
+        ]
+        let volumes = [volume("shop_data", anonymous: false, size: 5), volume("abc", anonymous: true, size: 7), volume("named", anonymous: false, size: 9)]
+        let networks = [
+            NetworkSummary(Name: "bridge", Id: "bridge-id"), NetworkSummary(Name: "shop_default", Id: "shop_default-id"),
+            NetworkSummary(Name: "old_default", Id: "old_default-id"), NetworkSummary(Name: "lonely", Id: "lonely-id"),
+        ]
+        let cache = [
+            DockerDiskUsage.BuildCacheEntry(ID: "a", Size: 30, InUse: false, Shared: false),
+            DockerDiskUsage.BuildCacheEntry(ID: "b", Size: 40, InUse: true, Shared: false),
+        ]
+        func plan(_ choice: DockerPrunePlan.Choice) -> DockerPrunePlan {
+            DockerPrunePlan.make(choice, containers: containers, images: images, volumes: volumes, networks: networks, buildCache: cache)
+        }
+        let standard = plan(DockerPrunePlan.Choice())
+        XCTAssertEqual(standard.containers.map(\.name), ["old"])
+        XCTAssertEqual(standard.images.map(\.Id), ["none"], "untagged only, by default")
+        XCTAssertTrue(standard.volumes.isEmpty, "volumes only when asked")
+        XCTAssertEqual(standard.networks.map(\.Name), ["old_default", "lonely"], "its stopped container goes, so its network is unused")
+        XCTAssertEqual(standard.buildCache, 30)
+        XCTAssertEqual(standard.reclaimable, 40)
+
+        var everything = DockerPrunePlan.Choice()
+        everything.allImages = true
+        everything.volumes = true
+        let wide = plan(everything)
+        XCTAssertEqual(wide.images.map(\.Id), ["node", "none", "redis"], "node is unused once the stopped container goes")
+        XCTAssertEqual(wide.volumes.map(\.Name), ["abc"], "anonymous only unless named ones are asked for")
+        everything.namedVolumes = true
+        XCTAssertEqual(plan(everything).volumes.map(\.Name), ["abc", "named"], "a running container's volume stays")
+
+        var keepContainers = DockerPrunePlan.Choice()
+        keepContainers.containers = false
+        keepContainers.allImages = true
+        XCTAssertEqual(plan(keepContainers).images.map(\.Id), ["none", "redis"], "a stopped container that stays keeps its image")
+        XCTAssertEqual(plan(keepContainers).networks.map(\.Name), ["lonely"], "and its network")
+    }
+
+    func testAPullSumsItsLayers() {
+        var pull = DockerPull(image: "redis:7")
+        pull.add(.init(id: nil, status: "Pulling from library/redis"))
+        pull.add(.init(id: "a", status: "Pulling fs layer"))
+        pull.add(.init(id: "b", status: "Pulling fs layer"))
+        pull.add(.init(id: "a", status: "Downloading", current: 1_000_000, total: 4_000_000))
+        pull.add(.init(id: "b", status: "Already exists"))
+        XCTAssertEqual(pull.downloaded.current, 1_000_000)
+        XCTAssertEqual(pull.downloaded.total, 4_000_000)
+        XCTAssertTrue(pull.summary.hasPrefix("1 of 2 layers — "), pull.summary)
+        pull.add(.init(id: "a", status: "Pull complete"))
+        XCTAssertEqual(pull.downloaded.current, pull.downloaded.total)
+        XCTAssertTrue(pull.summary.hasPrefix("2 of 2 layers"), pull.summary)
+        pull.add(.init(id: nil, status: "Status: Downloaded newer image for redis:7"))
+        pull.done = true
+        XCTAssertEqual(pull.summary, "Status: Downloaded newer image for redis:7")
+    }
+
+    func testVolumesAndImagesSayWhatTheyAre() {
+        XCTAssertEqual(volume(String(repeating: "a", count: 64), anonymous: true, size: 0).shortName, String(repeating: "a", count: 12))
+        XCTAssertEqual(volume("shop_pgdata", anonymous: false, size: 0).shortName, "shop_pgdata")
+        XCTAssertEqual(DockerImageDetailSteps.step("/bin/sh -c #(nop)  CMD [\"nginx\" \"-g\"]"), "CMD [\"nginx\" \"-g\"]")
+        XCTAssertEqual(DockerImageDetailSteps.step("/bin/sh -c apt-get update &&     apt-get install -y curl"), "RUN apt-get update && apt-get install -y curl")
+        XCTAssertEqual(DockerImageDetailSteps.step("RUN /bin/sh -c echo hi # buildkit"), "RUN /bin/sh -c echo hi # buildkit")
+    }
+}
