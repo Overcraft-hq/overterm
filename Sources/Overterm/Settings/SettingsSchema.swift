@@ -477,6 +477,11 @@ enum SettingsSchema {
             kind: .text(placeholder: "unix:///var/run/docker.sock, tcp://host:2375", monospaced: true), defaultValue: .string(""),
             requires: "docker.enabled"),
         SettingSpec(
+            key: "docker.notifyOnExit", section: .docker, group: "Attention", title: "Mark a checkout's tab when its container fails",
+            help:
+                "A container of the tab's checkout that exits with an error, runs out of memory or turns unhealthy marks the tab as a failed command does, and notifies you while you are elsewhere. One you stopped doesn't.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+        SettingSpec(
             key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
             help: "Under the selected tab's checkout's stack, the containers of other projects and of none that are running.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),

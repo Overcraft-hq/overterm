@@ -172,7 +172,9 @@ them, and networks with who is on them sit in sections of their own, and
 Clean Up lists what nothing uses before anything goes. The rail's shippingbox keeps the
 selected tab's checkout's stack beside the terminal, a container's logs a
 click away in the right-hand pane, and the ports its containers publish
-sit in its panes' headers beside the ones its own processes listen on.
+sit in its panes' headers beside the ones its own processes listen on. A
+container that crashes, runs out of memory or turns unhealthy marks the
+tab whose checkout it belongs to, as a failed command does.
 
 ### And the work around the work
 

@@ -148,7 +148,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             case .paused: "pause"
             default: state.rawValue
             }
-        emit(action, id)
+        emit(action, id, extra: state == .exited ? ["exitCode": "\(exitCode)"] : [:])
     }
 
     func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
@@ -202,9 +202,9 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     func summary(_ id: String) -> ContainerSummary? { locked { containers[id]?.summary } }
 
-    private func emit(_ action: String, _ id: String) {
+    private func emit(_ action: String, _ id: String, extra: [String: String] = [:]) {
         let (streams, labels) = locked { (Array(eventStreams.values), containers[id]?.summary.labels ?? [:]) }
-        var attributes = labels
+        var attributes = labels.merging(extra) { $1 }
         attributes["name"] = locked { containers[id]?.summary.name }
         let event = DockerEvent(Type: "container", Action: action, Actor: .init(ID: id, Attributes: attributes), time: Int(Date().timeIntervalSince1970))
         guard var line = try? JSONEncoder().encode(event) else { return }
@@ -323,7 +323,10 @@ final class FakeDockerEngine: @unchecked Sendable {
                 case "pause": .paused
                 default: .running
                 }
-            set(id, state: state, exitCode: verb == "kill" ? 137 : 0)
+            // Asked to stop: Docker says `kill` before the `die`.
+            if ["stop", "kill", "restart"].contains(verb) { emit("kill", id, extra: ["signal": verb == "kill" ? "9" : "15"]) }
+            if verb == "restart" { set(id, state: .exited, exitCode: 143) }
+            set(id, state: state, exitCode: verb == "kill" ? 137 : 143)
             return .empty(204)
         case (.DELETE, ""):
             if container.summary.state == .running, query["force"] != "1" {

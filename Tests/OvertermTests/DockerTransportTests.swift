@@ -89,7 +89,7 @@ final class DockerTransportTests: XCTestCase {
             var actions: [String] = []
             for try await event in events {
                 actions.append(event.verb)
-                if actions.count == 3 { break }
+                if actions.count == 4 { break }
             }
             return actions
         }
@@ -98,7 +98,7 @@ final class DockerTransportTests: XCTestCase {
         try await engine.perform(.start, on: id)
         try await engine.perform(.pause, on: id)
         let actions = try await received.value
-        XCTAssertEqual(actions, ["die", "start", "pause"])
+        XCTAssertEqual(actions, ["kill", "die", "start", "pause"], "a stop asked for is a kill, then a die")
         XCTAssertEqual(fake.summary(id)?.state, .paused)
         XCTAssertTrue(fake.requests.contains { $0.hasSuffix("/containers/\(id)/stop?t=10") }, "\(fake.requests)")
     }

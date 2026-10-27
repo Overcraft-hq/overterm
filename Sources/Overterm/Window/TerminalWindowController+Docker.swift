@@ -46,6 +46,30 @@ extension TerminalWindowController {
         if Settings.shared.dockerEnabled, dockerPanel.composeFile != nil { DockerModel.shared.start() }
     }
 
+    // MARK: Attention
+
+    /// A checkout's container dying on its own marks the checkout's tab.
+    func wireDockerAttention() {
+        DockerModel.shared.events
+            .sink { [weak self] event in
+                guard let self, let alert = self.dockerAttention.note(event), Settings.shared.dockerNotifyOnExit,
+                    let folder = alert.workingDir, let tab = self.tab(forProjectIn: folder)
+                else { return }
+                self.markContainerFailure(alert.note, on: tab)
+            }
+            .store(in: &cancellables)
+    }
+
+    /// The tab whose checkout holds a project run in `folder`: the
+    /// selected one when it does, else the first.
+    func tab(forProjectIn folder: String) -> Tab? {
+        let tabs = ([store.selected].compactMap { $0 } + store.tabs).filter { tab in
+            guard let directory = tab.workingDirectory else { return false }
+            return DockerAttention.belongs(folder, to: FileTreeModel.realPath(FileTreeModel.treeRoot(for: directory)))
+        }
+        return tabs.first
+    }
+
     // MARK: Ports
 
     /// The containers' ports follow the containers.

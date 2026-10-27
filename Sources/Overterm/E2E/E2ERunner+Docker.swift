@@ -273,6 +273,27 @@ extension E2ERunner {
             check("and don't make it a server", tab.kind != .server)
         }
 
+        // A checkout's container failing on its own marks the checkout's tab.
+        if let projectTab = app.store.selected, let elsewhereTab = app.store.tabs.first(where: { $0 !== projectTab }) {
+            projectTab.activity.seen()
+            app.store.select(elsewhereTab)
+            fake.set(web, state: .exited, exitCode: 2)
+            check(
+                "a checkout's container crashing marks its tab", await eventually(5) { projectTab.activity.mark == .failed },
+                "\(projectTab.activity.mark)")
+            check("saying which and how", projectTab.activity.note == "ot-shop-web-1 exited (2)", projectTab.activity.note ?? "")
+            projectTab.activity.seen()
+            fake.set(web, state: .running)
+            _ = await eventually(5) { docker.container(web)?.state == .running }
+            page.act(.stop, on: docker.container(web).map { [$0] } ?? [])
+            _ = await eventually(5) { docker.container(web)?.state == .exited }
+            await pause(0.3)
+            check("a stop asked for doesn't", projectTab.activity.mark == .none, "\(projectTab.activity.note ?? "")")
+            page.act(.start, on: docker.container(web).map { [$0] } ?? [])
+            _ = await eventually(5) { docker.container(web)?.state == .running }
+            app.store.select(projectTab)
+        }
+
         // The rail's panel: this checkout's stack, then what runs elsewhere.
         let elsewhere = fake.add(name: "ot-elsewhere", image: "redis:7")
         app.showDockerPanel(nil)

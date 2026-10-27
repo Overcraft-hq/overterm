@@ -161,6 +161,56 @@ final class DockerModelTests: XCTestCase {
     }
 }
 
+/// Which events are a container going wrong on its own. Pure.
+final class DockerAttentionTests: XCTestCase {
+    private func event(_ action: String, _ id: String = "c1", _ attributes: [String: String] = [:]) -> DockerEvent {
+        var all = ["name": "shop-web-1", "com.docker.compose.project.working_dir": "/w/shop"]
+        all.merge(attributes) { $1 }
+        return DockerEvent(Type: "container", Action: action, Actor: .init(ID: id, Attributes: all))
+    }
+
+    func testACrashIsNewsAndAStopAskedForIsNot() {
+        var attention = DockerAttention()
+        let now = Date()
+        XCTAssertEqual(
+            attention.note(event("die", "c1", ["exitCode": "1"]), at: now),
+            .init(container: "shop-web-1", detail: "exited (1)", workingDir: "/w/shop"))
+        XCTAssertNil(attention.note(event("die", "c1", ["exitCode": "0"]), at: now), "done with its work")
+        XCTAssertNil(attention.note(event("kill", "c2", ["signal": "15"]), at: now))
+        XCTAssertNil(attention.note(event("die", "c2", ["exitCode": "143"]), at: now.addingTimeInterval(10)), "docker stop")
+        XCTAssertNil(attention.note(event("kill", "c3"), at: now))
+        XCTAssertNotNil(attention.note(event("die", "c3", ["exitCode": "1"]), at: now.addingTimeInterval(60)), "a kill long before isn't this die's")
+        XCTAssertNotNil(attention.note(event("die", "c2", ["exitCode": "1"]), at: now.addingTimeInterval(11)), "a kill is used up by its die")
+    }
+
+    func testOutOfMemoryAndUnhealthy() {
+        var attention = DockerAttention()
+        XCTAssertEqual(attention.note(event("oom", "c4"))?.detail, "ran out of memory")
+        XCTAssertNil(attention.note(event("die", "c4", ["exitCode": "137"])), "said once, not twice")
+        XCTAssertEqual(attention.note(event("health_status: unhealthy"))?.note, "shop-web-1 is unhealthy")
+        XCTAssertNil(attention.note(event("health_status: healthy")))
+        XCTAssertNil(attention.note(DockerEvent(Type: "image", Action: "delete", Actor: .init(ID: "x", Attributes: nil))))
+    }
+
+    func testWhoseCheckoutItIs() {
+        XCTAssertTrue(DockerAttention.belongs("/w/shop", to: "/w/shop"))
+        XCTAssertTrue(DockerAttention.belongs("/w/shop/deploy", to: "/w/shop"))
+        XCTAssertTrue(DockerAttention.belongs("/w/shop", to: "/w/shop/services/api"), "a tab in a folder of the project")
+        XCTAssertFalse(DockerAttention.belongs("/w/shop-2", to: "/w/shop"))
+        XCTAssertFalse(DockerAttention.belongs("/w", to: "/"), "the root is nobody's checkout")
+    }
+
+    @MainActor
+    func testAFailureMarksATabNotLooking() {
+        var activity = TabActivity()
+        XCTAssertFalse(activity.containerFailed("db exited (1)", visible: true), "seen as it happened")
+        XCTAssertTrue(activity.containerFailed("db exited (1)", visible: false))
+        XCTAssertEqual(activity.mark, .failed)
+        XCTAssertEqual(activity.note, "db exited (1)")
+        XCTAssertFalse(activity.containerFailed("db exited (1)", visible: false), "once until seen")
+    }
+}
+
 /// Compose's labels, read into projects. Pure.
 final class ComposeProjectsTests: XCTestCase {
     private func container(

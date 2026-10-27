@@ -1255,6 +1255,15 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **A failing container marks its tab** (`DockerAttention`, pure;
+  `TabActivity.containerFailed`): a container of a tab's checkout that
+  exits non-zero, runs out of memory or turns unhealthy marks the tab
+  failed — the strip, the Dock badge, a notification while you are
+  elsewhere, as a long command failing does. A stop someone asked for
+  isn't news: Docker sends `kill` before such a `die`, and a crash gets
+  `die` alone. Whose checkout is the compose project's working folder
+  against each tab's (`DockerAttention.belongs`), the selected tab first.
+  Settings ▸ Docker ▸ Attention turns it off.
 - **Watched in the background**: the model starts when Docker is shown,
   or when the selected tab's checkout has a compose file at its top. While
   nothing shows Docker, a retry asks Docker Desktop's own CLI first (the

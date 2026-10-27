@@ -12,6 +12,7 @@ version is tagged `v<version>`.
 - docker: the rail's shippingbox keeps the selected tab's checkout's stack beside the terminal, a container's logs a click away in the right-hand pane
 - docker: ⇧⌥⌘P finds any container or compose project by name, from anywhere
 - docker: images (pulled with their progress, tagged, their layers), volumes with their sizes and who mounts them, networks with who is on them; Clean Up lists what nothing uses before anything goes
+- docker: a container that crashes, runs out of memory or turns unhealthy marks its checkout's tab, as a failed command does
 
 ## 1.4.6 — 2026-10-29
 

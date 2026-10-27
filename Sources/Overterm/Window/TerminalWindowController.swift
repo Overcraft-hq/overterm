@@ -28,6 +28,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var rightClickMonitor: Any?
     /// The Docker list's single-letter keys (DockerKey).
     var dockerKeys: Any?
+    /// What the engine's events say went wrong (DockerAttention).
+    var dockerAttention = DockerAttention()
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
@@ -611,6 +613,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         watchDockerPage().store(in: &cancellables)
         wireDockerPanel()
         wireDockerPorts()
+        wireDockerAttention()
         watchDockerPalette().store(in: &cancellables)
         installDockerKeys()
         split.addSplitViewItem(inboxItem)
@@ -1104,6 +1107,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
         tab.activity.seen()
         AttentionNotifier.withdraw(tab: tab)
+        updateAttentionBadge()
+    }
+
+    /// A container of `tab`'s checkout went wrong on its own: marked as a
+    /// failed command is, and told while you are elsewhere.
+    func markContainerFailure(_ note: String, on tab: Tab) {
+        if tab.activity.containerFailed(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
 
