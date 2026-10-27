@@ -103,6 +103,9 @@ struct APIResponseView: View {
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 12)
         .frame(height: 32)
+        // Leading, and cut on the right in a narrow pane: the status first.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .clipped()
     }
 
     static func statusColor(_ status: Int) -> Color {

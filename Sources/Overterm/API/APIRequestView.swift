@@ -14,11 +14,17 @@ struct APIRequestView: View {
             Rectangle().fill(theme.border).frame(height: 1)
             VSplitView {
                 requestPane
-                    .frame(minHeight: 140, idealHeight: 260)
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 140, idealHeight: 260)
                 APIResponseView(model: model, theme: theme)
-                    .frame(minHeight: 160)
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 160)
             }
         }
+        // Never wider than the pane: a line that wanted more (the response's
+        // status, size, tests and buttons) widened the whole view, and the
+        // pane centred it — Params, the status and Body cut off on the left.
+        // Now what doesn't fit is cut on the right.
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
         .background(theme.term)
     }
 
