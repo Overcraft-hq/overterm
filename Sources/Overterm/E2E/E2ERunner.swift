@@ -4002,7 +4002,7 @@ final class E2ERunner {
         // view around the terminal is redrawn — and must not take the
         // keyboard off it, which a SwiftUI root rebuilt under a text field
         // has done before.
-        app.closeSettings()
+        app.closeOverlay(.settings)
         settings.set("appearance.theme", .string("Claude Light"))
         check("a theme set while the page is closed still arrives", await eventually(3) { self.app.theme?.isDark == false })
         await runAndExpect(
@@ -4304,7 +4304,7 @@ final class E2ERunner {
         (NSApp.delegate as? AppDelegate)?.showChangelog(nil)
         check("View Latest Changelog opens it", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
         ChangelogWindowController.shared.window?.close()
-        app.closeSettings()
+        app.closeOverlay(.settings)
     }
 
     /// How heavy Overterm is to live in: idle with ten tabs (two split),

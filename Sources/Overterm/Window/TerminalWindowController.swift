@@ -72,7 +72,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var overviewPoll: Timer?
     /// The Settings tab's page (Warp's): over the window's body while it shows.
     let settingsPage = SettingsPageModel()
-    private(set) var settingsView: NSView?
+    /// The pages that cover the body (WorkspaceOverlay), each its own view.
+    private var overlayViews: [WorkspaceOverlay: NSView] = [:]
+    var settingsView: NSView? { overlayViews[.settings] }
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
     let focus = GroupFocus()
     /// ⌥⌘I: one line typed into every tab of an island.
@@ -199,7 +201,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 // Another terminal tab chosen (⌘T, ⇧⌘], a click): it comes
                 // out from under the Settings tab — and from under a zoomed
                 // editor.
-                self?.hideSettingsPage(focus: false)
+                self?.hideOverlay(focus: false)
                 self?.setEditorZoomed(false)
             }
             .store(in: &cancellables)
@@ -231,9 +233,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 browser: browserButton,
                 actions: TabBarActions(
                     select: { [weak self] tab in
-                        // The terminal tab under the Settings tab is still the
+                        // The terminal tab under a page (Settings) is still the
                         // selected one: clicking it only uncovers it.
-                        self?.hideSettingsPage()
+                        self?.hideOverlay()
                         self?.store.select(tab)
                     },
                     close: { [weak self] in self?.closeTab($0) },
@@ -244,8 +246,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     showUsage: { [weak self] in self?.showUsage(nil) },
                     showUpdate: { [weak self] in self?.openSettings(.about) },
-                    showSettings: { [weak self] in self?.showSettingsPage() },
-                    closeSettings: { [weak self] in self?.closeSettings() },
+                    showOverlay: { [weak self] in self?.showOverlay($0) },
+                    closeOverlay: { [weak self] in self?.closeOverlay($0) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) },
                     toggleBrowser: { [weak self] in self?.toggleBrowser(nil) },
@@ -642,19 +644,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
         ])
 
-        // The Settings tab's page covers the body, under the tab strip.
-        let settingsView = NSHostingView(
-            rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme))
-        settingsView.translatesAutoresizingMaskIntoConstraints = false
-        settingsView.isHidden = true
-        content.addSubview(settingsView)
-        NSLayoutConstraint.activate([
-            settingsView.topAnchor.constraint(equalTo: titleBottom),
-            settingsView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            settingsView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            settingsView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
-        self.settingsView = settingsView
+        // The pages (Settings's tab) cover the body, under the title bar
+        // where the tab strip is.
+        addOverlay(
+            .settings,
+            NSHostingView(rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme)),
+            in: content, below: titleBottom)
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(
@@ -2166,8 +2161,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     if event.clickCount >= 2, !tab.isPinned {
                         store.renamingID = tab.id
                     } else {
-                        // Under the Settings tab, a click only uncovers it.
-                        hideSettingsPage()
+                        // Under a page (Settings), a click only uncovers it.
+                        hideOverlay()
                         store.select(tab)
                     }
                 case .group(let group):
@@ -3131,38 +3126,56 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if Settings.shared.writeGhosttyOverrides(keybindings: Keybindings.shared.ghosttyLines) { GhosttyRuntime.shared.reloadConfig() }
     }
 
-    // MARK: The Settings tab
+    // MARK: Pages over the body (Settings)
 
-    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
-    func openSettings(_ section: SettingsSection? = nil) {
-        if let section { settingsPage.show(section) }
-        store.settingsOpen = true
-        showSettingsPage()
+    /// A page's view, hidden, covering everything under the tab strip.
+    private func addOverlay(_ overlay: WorkspaceOverlay, _ view: NSView, in content: NSView, below top: NSLayoutYAxisAnchor) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        content.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: top),
+            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        overlayViews[overlay] = view
     }
 
-    func showSettingsPage() {
-        guard let settingsView else { return }
+    /// A page, opened if it isn't, over the body — in place of whichever
+    /// page showed: they take turns.
+    func showOverlay(_ overlay: WorkspaceOverlay) {
+        guard let view = overlayViews[overlay] else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
         hideSpotlight(keepTerminalSearch: false)
-        store.settingsShowing = true
-        settingsView.isHidden = false
-        window?.makeFirstResponder(settingsView)
+        if let showing = store.showingOverlay, showing != overlay { overlayViews[showing]?.isHidden = true }
+        store.showOverlay(overlay)
+        view.isHidden = false
+        window?.makeFirstResponder(view)
     }
 
-    /// Uncovers the selected terminal tab; the Settings tab stays in the strip.
-    func hideSettingsPage(focus: Bool = true) {
-        guard store.settingsShowing else { return }
-        store.settingsShowing = false
-        settingsView?.isHidden = true
+    /// Uncovers the selected terminal tab; the pages stay in the strip.
+    func hideOverlay(focus: Bool = true) {
+        guard let showing = store.showingOverlay else { return }
+        store.hideOverlay()
+        overlayViews[showing]?.isHidden = true
         if focus { focusSelectedTerminal() }
     }
 
     /// Its ✕, or ⌘W while it shows.
-    func closeSettings() {
-        hideSettingsPage()
-        store.settingsOpen = false
-        settingsPage.draft = nil
+    func closeOverlay(_ overlay: WorkspaceOverlay) {
+        if store.showingOverlay == overlay { hideOverlay() }
+        store.closeOverlay(overlay)
+        switch overlay {
+        case .settings: settingsPage.draft = nil
+        }
+    }
+
+    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
+    func openSettings(_ section: SettingsSection? = nil) {
+        if let section { settingsPage.show(section) }
+        showOverlay(.settings)
     }
 
     /// What closing these tabs would end — running processes by name, agents
@@ -3304,7 +3317,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
     /// ⌘W: the focused pane of a split tab, else the tab.
     @objc func closeSelectedTab(_ sender: Any?) {
-        if store.settingsShowing { return closeSettings() }
+        if let overlay = store.showingOverlay { return closeOverlay(overlay) }
         guard let tab = store.selected else { return }
         if tab.isSplit {
             closePane(tab.terminal, in: tab)
