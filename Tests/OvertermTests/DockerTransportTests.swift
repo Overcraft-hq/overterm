@@ -214,6 +214,12 @@ final class DockerTransportTests: XCTestCase {
         _ = try await real.images()
         _ = try await real.volumes()
         _ = try await real.networks()
+        // Its runtime says it is up, through its own command.
+        let runtime = DockerRuntime.of(real.endpoint, operatingSystem: try await real.info().OperatingSystem)
+        if runtime.statusCommand() != nil {
+            let status = await DockerCLI.status(of: runtime, endpoint: real.endpoint)
+            XCTAssertTrue([.running, .paused].contains(status), "\(runtime.name): \(status)")
+        }
     }
 
     /// Until the fake engine says so.

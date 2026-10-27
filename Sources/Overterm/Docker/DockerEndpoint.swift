@@ -29,6 +29,23 @@ struct DockerEndpoint: Equatable, Sendable {
 
     static let defaultHost = "unix:///var/run/docker.sock"
 
+    /// As `DOCKER_HOST` spells it.
+    var host: String {
+        switch address {
+        case .unix(let path): "unix://" + path
+        case .tcp(let host, let port): "tcp://\(host.contains(":") ? "[\(host)]" : host):\(port)"
+        case .unsupported(let host): host
+        }
+    }
+
+    /// What a `docker` command is given to reach this engine: the context
+    /// it came from, else its host. Nothing for the default, which the CLI
+    /// finds by itself.
+    var environment: [String: String] {
+        if let context { return ["DOCKER_CONTEXT": context] }
+        return source == "default" ? [:] : ["DOCKER_HOST": host]
+    }
+
     /// `unix:///path`, `tcp://host:port`, `http://host:port`; anything else
     /// is unsupported, kept as written.
     static func address(of host: String) -> Address {
@@ -102,56 +119,4 @@ struct DockerEndpoint: Equatable, Sendable {
         }
         return result
     }
-}
-
-/// Which engine is answering: what its socket and its `/info` say. The
-/// panel names it and knows how to start and stop it.
-enum DockerRuntime: String, Equatable, Sendable {
-    case dockerDesktop, orbStack, colima, rancherDesktop, podman, engine
-
-    var name: String {
-        switch self {
-        case .dockerDesktop: "Docker Desktop"
-        case .orbStack: "OrbStack"
-        case .colima: "Colima"
-        case .rancherDesktop: "Rancher Desktop"
-        case .podman: "Podman"
-        case .engine: "Docker Engine"
-        }
-    }
-
-    /// From the socket's path, the context's name and `/info`'s
-    /// OperatingSystem (Docker Desktop and OrbStack say who they are there).
-    static func of(_ endpoint: DockerEndpoint, operatingSystem: String? = nil) -> DockerRuntime {
-        let os = operatingSystem?.lowercased() ?? ""
-        let path: String = {
-            if case .unix(let path) = endpoint.address { return path.lowercased() }
-            return ""
-        }()
-        let context = endpoint.context?.lowercased() ?? ""
-        if os.contains("docker desktop") || path.contains("/.docker/run/") || context == "desktop-linux" { return .dockerDesktop }
-        if os.contains("orbstack") || path.contains("/.orbstack/") || context == "orbstack" { return .orbStack }
-        if path.contains("/.colima/") || context.hasPrefix("colima") { return .colima }
-        if path.contains("/.rd/") || context == "rancher-desktop" { return .rancherDesktop }
-        if path.contains("podman") || context.contains("podman") { return .podman }
-        return .engine
-    }
-
-    /// What starts it, stops it and restarts it, as commands — run in a
-    /// terminal tab so the user sees them. Nil where there is no command.
-    func command(_ action: Action, context: String? = nil) -> String? {
-        let profile = context.flatMap { $0.hasPrefix("colima-") ? " --profile \($0.dropFirst("colima-".count))" : nil } ?? ""
-        switch (self, action) {
-        case (.dockerDesktop, _): return "docker desktop \(action.rawValue)"
-        case (.orbStack, _): return "orb \(action.rawValue)"
-        case (.colima, _): return "colima \(action.rawValue)\(profile)"
-        case (.podman, .start): return "podman machine start"
-        case (.podman, .stop): return "podman machine stop"
-        case (.podman, .restart): return "podman machine stop && podman machine start"
-        case (.rancherDesktop, .start): return "open -a 'Rancher Desktop'"
-        default: return nil
-        }
-    }
-
-    enum Action: String, Sendable { case start, stop, restart }
 }
