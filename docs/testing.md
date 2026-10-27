@@ -66,6 +66,22 @@ The same script starts an S3 server (RustFS, :59000) for
 `StorageClientTests` (`OVERTERM_DB_TESTS=1`) and the `storage` scenario,
 which skips itself when nothing answers there.
 
+### Docker
+
+`DockerTransportTests` and the Docker scenarios talk to `FakeDockerEngine`
+(`Sources/Overterm/Docker/`): Docker's Engine API on a unix socket of its
+own in `/tmp` (a socket's path must stay under 104 bytes), with containers,
+images, volumes and networks held as values, events sent as the engine
+sends them, logs framed, files as tar. Nothing touches your Docker.
+
+```
+OVERTERM_DOCKER_TESTS=1 swift test --filter DockerTransportTests
+```
+
+adds read-only calls (`_ping`, `info`, the lists) to the engine your
+terminal's `docker` reaches, to check that the models still read what it
+answers.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
