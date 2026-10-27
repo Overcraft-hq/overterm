@@ -83,6 +83,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var overlayTop: NSLayoutYAxisAnchor?
     /// The Docker page's own state; its view is made the first time it opens.
     let dockerPage = DockerPageModel()
+    /// The rail's Docker panel and the container it put on the right.
+    let dockerPanel = DockerPanelModel()
+    /// Whether this window's panel holds the model's poll.
+    var dockerPanelShown = false
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
     let focus = GroupFocus()
     /// ⌥⌘I: one line typed into every tab of an island.
@@ -303,6 +307,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 api: apiWorkspace,
                 notes: NotesModel.shared,
                 database: DatabaseModel.shared,
+                dockerPanel: dockerPanel,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -362,6 +367,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 ),
                 notesActions: notesActions,
                 databaseActions: databaseActions,
+                dockerActions: dockerActions,
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -532,6 +538,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         self.openInEditor(root.appendingPathComponent(path))
                     }),
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
+                container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
@@ -602,6 +609,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireNotes()
         wireDatabase()
         watchDockerPage().store(in: &cancellables)
+        wireDockerPanel()
         installDockerKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
@@ -3454,6 +3462,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         commitDetail.visible = shown && rightPane.mode == .commit
         compare.visible = shown && rightPane.mode == .compare
         storageObject.visible = shown && rightPane.mode == .object
+        dockerPanel.slotVisible = shown && rightPane.mode == .container
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -3465,6 +3474,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         updateOvergitVisibility()
         updateAPIVisibility()
         updateNotesVisibility()
+        updateDockerVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).

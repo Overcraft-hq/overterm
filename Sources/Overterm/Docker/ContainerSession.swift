@@ -86,6 +86,13 @@ final class ContainerSession: ObservableObject {
         }
     }
 
+    /// Logs read only while Logs shows, stats while Stats does — on
+    /// screen. Its owner calls this as those change.
+    func follow(_ tab: ContainerTab, shown: Bool) {
+        if shown && tab == .logs { showLogs() } else { hideLogs() }
+        if shown && tab == .stats { showStats() } else { hideStats() }
+    }
+
     // MARK: Logs
 
     /// The Logs tab is open: the last lines, then what comes.

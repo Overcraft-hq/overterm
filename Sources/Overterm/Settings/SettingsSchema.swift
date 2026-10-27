@@ -476,6 +476,10 @@ enum SettingsSchema {
             help: "Empty: the one docker uses — DOCKER_HOST, else the current context. Or a socket or an address of your own.",
             kind: .text(placeholder: "unix:///var/run/docker.sock, tcp://host:2375", monospaced: true), defaultValue: .string(""),
             requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
+            help: "Under the selected tab's checkout's stack, the containers of other projects and of none that are running.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

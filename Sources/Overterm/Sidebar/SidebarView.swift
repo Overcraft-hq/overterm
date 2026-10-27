@@ -63,7 +63,7 @@ struct SessionActions {
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, git, sessions, snippets, api, notes, database
+    case files, git, sessions, snippets, api, notes, database, docker
 
     var id: String { rawValue }
 
@@ -111,6 +111,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .api: "api.enabled"
         case .notes: "notes.enabled"
         case .database: "database.enabled"
+        case .docker: "docker.enabled"
         case .sessions: "general.sessions"
         case .snippets: "general.snippets"
         case .files, .git: nil
@@ -144,6 +145,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .api: "arrow.left.arrow.right"
         case .notes: "note.text"
         case .database: "cylinder.split.1x2"
+        case .docker: "shippingbox"
         }
     }
 
@@ -182,6 +184,7 @@ struct SidebarView: View {
     @ObservedObject var api: APIWorkspace
     @ObservedObject var notes: NotesModel
     @ObservedObject var database: DatabaseModel
+    @ObservedObject var dockerPanel: DockerPanelModel
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
@@ -194,6 +197,7 @@ struct SidebarView: View {
     let apiActions: APIActions
     let notesActions: NotesActions
     let databaseActions: DatabaseActions
+    let dockerActions: DockerActions
     /// The gear at the foot of the rail.
     let onSettings: () -> Void
     let onClose: () -> Void
@@ -215,6 +219,10 @@ struct SidebarView: View {
                 case .api: APIPanelView(workspace: api, group: group, theme: theme, actions: apiActions)
                 case .notes: NotesPanelView(model: notes, theme: theme, actions: notesActions)
                 case .database: DatabasePanelView(model: database, store: database.store, theme: theme, actions: databaseActions)
+                case .docker:
+                    DockerPanelView(
+                        panel: dockerPanel, docker: .shared, settings: .shared, theme: theme, group: group, actions: dockerActions,
+                        openPage: dockerActions.openPage, show: dockerActions.showContainer)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

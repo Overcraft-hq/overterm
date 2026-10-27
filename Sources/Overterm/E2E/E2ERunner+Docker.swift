@@ -12,6 +12,18 @@ extension E2ERunner {
         app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-\(name).png"))
     }
 
+    /// The panel and the right-hand pane, for OVERTERM_DUMP_PNG.
+    private func capturePanel() async {
+        guard ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false, let web = DockerModel.shared.container("ot-shop-web-1") else {
+            return
+        }
+        app.showDockerPanel(nil)
+        app.showContainer(web)
+        await capture("panel")
+        app.toggleDiff(nil)
+        app.sidebarPanel.panel = .files
+    }
+
     func dockerScenario() async {
         await settledPrompt()
         let socket = "/tmp/ot-e2e-docker-\(UUID().uuidString.prefix(6)).sock"
@@ -182,6 +194,28 @@ extension E2ERunner {
             "which runs it in the project's folder",
             await eventually(8) { (try? String(contentsOf: mark, encoding: .utf8))?.contains("docker-e2e-42") == true }
                 && app.store.selected?.workingDirectory == folder.path)
+
+        // The rail's panel: this checkout's stack, then what runs elsewhere.
+        let elsewhere = fake.add(name: "ot-elsewhere", image: "redis:7")
+        app.showDockerPanel(nil)
+        check("the rail opens on the Docker panel", app.sidebarPanel.panel == .docker && app.sidebarItem?.isCollapsed == false)
+        check(
+            "it follows the selected tab's checkout",
+            await eventually(5) { app.dockerPanel.checkout.map(FileTreeModel.realPath) == real }, app.dockerPanel.checkout?.path ?? "nil")
+        check("and lists its compose project", await eventually(5) { app.dockerPanel.here.map(\.name) == ["ot-shop"] })
+        check("then what runs elsewhere", await eventually(5) { app.dockerPanel.others.map(\.Id) == [elsewhere] }, "\(app.dockerPanel.others.map(\.name))")
+        if let container = docker.container(web) { app.showContainer(container) }
+        check("a container picked opens on the right", app.rightPane.mode == .container && app.diffItem?.isCollapsed == false)
+        check("with its detail", await eventually(5) { app.dockerPanel.session?.detail?.name == "ot-shop-web-1" })
+        let followed = await eventually(5) { app.dockerPanel.session?.following == true }
+        check(
+            "on its logs, followed", followed,
+            "visible \(app.dockerPanel.slotVisible), tab \(app.dockerPanel.tab), panelVisible \(app.diff.panelVisible), lines \(app.dockerPanel.session?.lines.count ?? -1), \(fake.streams)")
+        app.toggleDiff(nil)
+        check("closing the pane closes its log", await eventually(3) { fake.openStreams == 1 }, fake.streams)
+        app.sidebarPanel.panel = .files
+        check("the panel off the rail lets the poll go", await eventually(2) { !app.dockerPanelShown })
+        await capturePanel()
 
         // ⌥⌘P twice: back to the terminal, the page kept in the strip.
         app.toggleDockerPage(nil)

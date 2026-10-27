@@ -13,6 +13,10 @@ struct DockerActions {
     var copy: (String) -> Void
     /// Settings ▸ Docker.
     var settings: () -> Void
+    /// The page (⌥⌘P), from the panel.
+    var openPage: () -> Void = {}
+    /// A container in the right-hand pane, from the panel.
+    var showContainer: (ContainerSummary) -> Void = { _ in }
 }
 
 /// One block of the containers list: a compose project with its
@@ -59,8 +63,25 @@ final class DockerPageModel: ObservableObject {
 
     let docker: DockerModel
 
+    private var streams: AnyCancellable?
+
     init(docker: DockerModel = .shared) {
         self.docker = docker
+        // The detail's streams follow what it shows and whether it shows.
+        streams = Publishers.CombineLatest4($selection, $detailTab, $visible, $showDetail)
+            .sink { [weak self] _ in
+                // @Published fires before the values land.
+                DispatchQueue.main.async { self?.updateStreams() }
+            }
+    }
+
+    func updateStreams() {
+        guard let container = detailed else {
+            session?.close()
+            session = nil
+            return
+        }
+        session(for: container.Id).follow(detailTab, shown: visible && showDetail)
     }
 
     nonisolated static let looseTag = "loose"

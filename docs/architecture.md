@@ -1174,7 +1174,7 @@ their buckets where a database's schemas would be.
   bucket, uploads a file and a folder, previews both, deletes — skipped
   when nothing answers on :59000.
 
-## Docker (⌥⌘P, a page)
+## Docker (⌥⌘P, a page; the rail's shippingbox)
 
 Docker Desktop's work on a page of its own, over the body like Settings
 (`WorkspaceOverlay.docker`, made the first time it opens): the engine the
@@ -1230,6 +1230,17 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   padded to nine digits: Docker trims a fraction's zeros). Lines go into an
   NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
   Inspect is the engine's JSON with the env's secret values taken out.
+- **The rail's panel** (`DockerPanelView`, `DockerPanelModel` per window):
+  the selected tab's checkout's stack — its compose projects
+  (`DockerModel.projects(in:)`) — then what else runs. A container picked
+  opens in the right-hand pane (`RightPane.Mode.container`,
+  `DockerSlotView`), the same detail as the page's, which reads its logs
+  and stats only while that pane shows it — the models that own a session
+  start and stop its streams (`ContainerSession.follow`), not the view's
+  appearing: SwiftUI swaps a view's instances, and the one leaving
+  stopped what the next had started. With no project running, a
+  compose file at the checkout's top offers `up`. The panel, like the page,
+  starts the model and holds its poll only while it is on screen.
 - **Keys** (`DockerKey`, a pure table, `?` shows it): single letters while
   the list's table has the keyboard — `s` start/stop, `r` restart, `p`
   pause, `e` a shell, `t` logs followed, `o` its port, `u`/`D` compose

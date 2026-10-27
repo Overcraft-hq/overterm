@@ -14,8 +14,57 @@ extension TerminalWindowController {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
             },
-            settings: { [weak self] in self?.openSettings(.docker) }
+            settings: { [weak self] in self?.openSettings(.docker) },
+            openPage: { [weak self] in self?.toggleDockerPage(nil) },
+            showContainer: { [weak self] in self?.showContainer($0) }
         )
+    }
+
+    // MARK: The rail's panel
+
+    /// The panel follows the selected tab's checkout, and holds the
+    /// model's poll only while it is on screen.
+    func wireDockerPanel() {
+        diff.$root
+            .combineLatest(store.$selectedID)
+            .sink { [weak self] root, _ in
+                // @Published fires before the value lands; the root given is the new one.
+                DispatchQueue.main.async { self?.updateDockerCheckout(root: root) }
+            }
+            .store(in: &cancellables)
+        sidebarPanel.$panel
+            .sink { [weak self] panel in DispatchQueue.main.async { self?.updateDockerVisibility(panel: panel) } }
+            .store(in: &cancellables)
+    }
+
+    /// The repository's root, else the tab's own folder.
+    func updateDockerCheckout(root: URL?) {
+        let folder = root ?? store.selected?.workingDirectory.map { URL(fileURLWithPath: $0) }
+        if dockerPanel.checkout != folder { dockerPanel.checkout = folder }
+    }
+
+    func updateDockerVisibility(panel: SidebarPanel? = nil) {
+        let shown = sidebarItem?.isCollapsed == false && (panel ?? sidebarPanel.panel) == .docker && Settings.shared.dockerEnabled
+        guard shown != dockerPanelShown else { return }
+        dockerPanelShown = shown
+        if shown { DockerModel.shared.show() } else { DockerModel.shared.hide() }
+    }
+
+    /// The rail's shippingbox: the sidebar, on the Docker panel.
+    @objc func showDockerPanel(_ sender: Any?) {
+        guard Settings.shared.dockerEnabled else { return }
+        if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
+        sidebarPanel.panel = .docker
+        updateDockerVisibility(panel: .docker)
+    }
+
+    /// A container in the right-hand pane, on its logs the first time.
+    func showContainer(_ container: ContainerSummary) {
+        dockerPanel.picked = container.Id
+        rightPane.containerOpened = true
+        rightPane.mode = .container
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
     }
 
     /// The page's view, made the first time it opens.
@@ -109,11 +158,18 @@ extension TerminalWindowController {
     func dockerSettingsChanged() {
         if !Settings.shared.dockerEnabled {
             closeOverlay(.docker)
+            if sidebarPanel.panel == .docker { sidebarPanel.panel = .files }
+            if rightPane.mode == .container { rightPane.mode = .changes }
+            rightPane.containerOpened = false
+            dockerPanel.picked = nil
+            updateDockerVisibility()
             DockerModel.shared.stop()
         } else if DockerModel.shared.isWatching {
             // Another engine, maybe: nothing starts that wasn't started.
             DockerModel.shared.reconnect()
         }
+        // The rail lists its icons from the setting: drawn again.
+        sidebarPanel.objectWillChange.send()
     }
 
     /// A command in a new tab: compose in the project's folder, the rest

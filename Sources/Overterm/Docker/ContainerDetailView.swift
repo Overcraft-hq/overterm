@@ -6,9 +6,11 @@ import SwiftUI
 struct ContainerDetailView: View {
     let container: ContainerSummary
     @ObservedObject var session: ContainerSession
+    /// Which tab; the model that owns the session follows it with the
+    /// streams (`ContainerSession.follow`), not this view's appearing —
+    /// SwiftUI swaps a view's instances, and one leaving stopped what the
+    /// next had started.
     @Binding var tab: ContainerTab
-    /// Whether it is on screen: a hidden page reads no logs and no stats.
-    let visible: Bool
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     /// What the page does for the header's buttons.
@@ -37,19 +39,6 @@ struct ContainerDetailView: View {
             }
         }
         .accessibilityIdentifier("docker.detail")
-        .onAppear { follow() }
-        .onChange(of: tab) { _ in follow() }
-        .onChange(of: visible) { _ in follow() }
-        .onDisappear {
-            session.hideLogs()
-            session.hideStats()
-        }
-    }
-
-    /// Logs and stats are read only while their tab shows.
-    private func follow() {
-        if visible && tab == .logs { session.showLogs() } else { session.hideLogs() }
-        if visible && tab == .stats { session.showStats() } else { session.hideStats() }
     }
 
     private var tabs: some View {

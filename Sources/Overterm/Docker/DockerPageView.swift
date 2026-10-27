@@ -126,7 +126,7 @@ struct DockerPageView: View {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ContainerDetailView(
                                     container: container, session: page.session(for: container.Id), tab: $page.detailTab,
-                                    visible: page.visible, theme: theme, actions: actions,
+                                    theme: theme, actions: actions,
                                     act: { page.act($0, on: [container]) }, remove: { page.confirmRemove([container]) }
                                 )
                                 .id(container.Id)
