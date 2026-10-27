@@ -70,7 +70,7 @@ final class APIWorkspace: ObservableObject {
 
     /// The collection a file is in, by path.
     func collection(containing url: URL) -> BrunoCollection? {
-        let path = Self.canonicalPath(url)
+        let path = Self.canonicalPath(place(of: url))
         return (collections + elsewhere).filter { path.hasPrefix(Self.canonicalPath($0.root) + "/") }
             .max { $0.root.path.count < $1.root.path.count }
     }
@@ -215,6 +215,8 @@ final class APIWorkspace: ObservableObject {
     /// headers and scripts apply. Only for a file in the checkout, and
     /// only when it isn't known yet — the panel still reads nothing idle.
     func ensureLoaded(for url: URL) {
+        // A draft's collection is where it will be saved, not where it sits.
+        let url = place(of: url)
         guard collection(containing: url) == nil else { return }
         // The checkout is read once; a .bru no collection holds (an example
         // in the docs) isn't a reason to walk it again on every send.
@@ -493,7 +495,8 @@ final class APIWorkspace: ObservableObject {
             setup.collectionName = collection.name
             setup.collectionRoot = collection.root
             setup.collectionFile = collection.collectionFile
-            setup.folderFiles = collection.folders(containing: url).compactMap(BrunoCollection.folderFile)
+            // A draft runs as if it were already where it will be saved.
+            setup.folderFiles = collection.folders(containing: place(of: url)).compactMap(BrunoCollection.folderFile)
             setup.scriptFlow = collection.scriptFlow
             let environment: String? =
                 switch fixed(choice, for: collection) {
@@ -585,6 +588,59 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// A new request in `folder`, after the ones there; its URL.
+    // MARK: Drafts
+
+    /// Requests not saved yet, as Postman's new tabs: a file of Overterm's,
+    /// outside every collection — nothing lands in the checkout or in My
+    /// Requests until it is saved — but sent as if it were in the folder it
+    /// was started from, with that collection's environment and settings.
+    nonisolated static var draftsDirectory: URL {
+        draftsOverride ?? AppEnvironment.supportDirectory.appendingPathComponent("api-drafts", isDirectory: true)
+    }
+    /// Unit tests' own: they aren't an isolated run, and must not write
+    /// into the user's support folder.
+    nonisolated(unsafe) static var draftsOverride: URL?
+
+    /// Each draft, by its path, and the folder it belongs in.
+    private(set) var drafts: [String: URL] = [:]
+
+    func isDraft(_ url: URL) -> Bool { drafts[Self.canonicalPath(url)] != nil }
+
+    /// Where a request is sent from: a draft's folder, else its own place.
+    func place(of url: URL) -> URL {
+        drafts[Self.canonicalPath(url)].map { $0.appendingPathComponent(url.lastPathComponent) } ?? url
+    }
+
+    /// A new request, unnamed and unsaved, ready to send.
+    func newDraft(in folder: URL, url: String = "") throws -> URL {
+        try FileManager.default.createDirectory(at: Self.draftsDirectory, withIntermediateDirectories: true)
+        let file = APIImport.unique(Self.draftsDirectory.appendingPathComponent("New Request.bru"), isFolder: false)
+        try BruFile.newRequest(name: "New Request", url: url, seq: 1).text.write(to: file, atomically: true, encoding: .utf8)
+        drafts[Self.canonicalPath(file)] = folder
+        return file
+    }
+
+    /// Saves a draft as `name` in the folder it was started from; the
+    /// request's file there.
+    func saveDraft(_ draft: URL, named name: String) throws -> URL {
+        guard let folder = drafts[Self.canonicalPath(draft)] else { throw FileError.exists("Not a draft") }
+        var file = BruFile(parsing: try String(contentsOf: draft, encoding: .utf8))
+        file.name = name
+        file.seq = (collection(containing: folder.appendingPathComponent("x"))?.item(at: folder)?.children?.compactMap(\.seq).max() ?? 0) + 1
+        let target = APIImport.unique(folder.appendingPathComponent(Self.fileName(name) + ".bru"), isFolder: false)
+        try file.text.write(to: target, atomically: true, encoding: .utf8)
+        drafts[Self.canonicalPath(draft)] = nil
+        try? FileManager.default.removeItem(at: draft)
+        reload()
+        return target
+    }
+
+    /// A draft closed without saving: gone.
+    func discardDraft(_ draft: URL) {
+        guard drafts.removeValue(forKey: Self.canonicalPath(draft)) != nil else { return }
+        try? FileManager.default.removeItem(at: draft)
+    }
+
     @discardableResult
     func newRequest(named name: String, in folder: URL, method: String = "get", url: String = "") throws -> URL {
         let file = folder.appendingPathComponent(Self.fileName(name) + ".bru")

@@ -382,17 +382,16 @@ struct APIPanelView: View {
         do { try work() } catch { actions.report(error) }
     }
 
+    /// A new request opens at once, unnamed and ready to send — it is named,
+    /// and lands in `folder`, when it is saved (⌘S), as a Postman tab does.
+    /// Asking a name first, and writing an empty request, came before using it.
     private func newRequest(in folder: URL?) {
         guard let folder else { return }
-        actions.prompt("New Request", "New Request") { name in
-            run {
-                // Yours start blank, for a URL typed whole; a collection's
-                // start from its environment's base.
-                let personal = workspace.collection(containing: folder.appendingPathComponent("x"))?.isPersonal == true
-                let url = try workspace.newRequest(named: name, in: folder, url: personal ? "" : "{{baseUrl}}/")
-                expanded.insert(folder.path)
-                actions.open(url)
-            }
+        run {
+            // Yours start blank, for a URL typed whole; a collection's
+            // start from its environment's base.
+            let personal = workspace.collection(containing: folder.appendingPathComponent("x"))?.isPersonal == true
+            actions.open(try workspace.newDraft(in: folder, url: personal ? "" : "{{baseUrl}}/"))
         }
     }
 

@@ -61,6 +61,35 @@ final class APIWorkspaceTests: XCTestCase {
         XCTAssertEqual(workspace.collection?.root.standardizedFileURL, mine.standardizedFileURL, "the new one is picked")
     }
 
+    /// New Request opens a draft: sent with its collection's environment,
+    /// written nowhere in the collection until it is saved — then named and
+    /// put in the folder it was started from. Closed unsaved, it is gone.
+    func testANewRequestIsADraftUntilSaved() throws {
+        APIWorkspace.draftsOverride = dir.appendingPathComponent("drafts", isDirectory: true)
+        defer { APIWorkspace.draftsOverride = nil }
+        let (workspace, _) = workspaceWithMyRequests()
+        let collection = try XCTUnwrap(workspace.checkoutCollections.first)
+        workspace.selectedRoot = collection.root
+        workspace.environmentName = "Local"
+        let draft = try workspace.newDraft(in: collection.root, url: "{{baseUrl}}/orders")
+        XCTAssertTrue(workspace.isDraft(draft))
+        XCTAssertFalse(draft.path.hasPrefix(collection.root.path), "not in the collection")
+        XCTAssertEqual(workspace.collection(containing: draft)?.root, collection.root, "but sent as one of its requests")
+        let setup = workspace.setup(for: draft, file: BruFile(parsing: try String(contentsOf: draft, encoding: .utf8)))
+        XCTAssertEqual(setup.environment["baseUrl"], "http://x", "with its environment")
+
+        let saved = try workspace.saveDraft(draft, named: "List orders")
+        XCTAssertEqual(saved.deletingLastPathComponent().standardizedFileURL, collection.root.standardizedFileURL)
+        XCTAssertEqual(saved.lastPathComponent, "List orders.bru")
+        XCTAssertEqual(BruFile(parsing: try String(contentsOf: saved, encoding: .utf8)).name, "List orders")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draft.path), "the draft is gone")
+        XCTAssertFalse(workspace.isDraft(saved))
+
+        let unsaved = try workspace.newDraft(in: collection.root)
+        workspace.discardDraft(unsaved)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: unsaved.path), "closed unsaved: gone")
+    }
+
     func testASecretLeavesTheFileForTheStore() throws {
         let store = MemorySecretStore()
         let workspace = APIWorkspace(secrets: store, scripts: APIScriptRuntime(), personalRoot: nil)

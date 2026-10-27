@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - window: full screen gives the traffic lights' room to the tabs
 - api: an import goes into the collection you picked, My Requests too; the collection menu makes more collections — in the checkout, or your own on this Mac
+- api: New Request opens at once and sends before it is saved, as in Postman — ⌘S names it and puts it in the collection; closed unsaved, it is gone
 
 ## 1.4.2 — 2026-10-26
 

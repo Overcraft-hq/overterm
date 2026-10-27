@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
+        // Requests started and never saved, from the last run: nothing points
+        // at them now (editor tabs aren't restored).
+        try? FileManager.default.removeItem(at: APIWorkspace.draftsDirectory)
         // Before any pane: a pane learns the browser's MCP address as it is made.
         BrowserBridge.shared.start()
 

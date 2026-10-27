@@ -706,6 +706,35 @@ final class E2ERunner {
                 "one passes, one fails", api.runner.passedCount == 1 && api.runner.failedCount == 1,
                 "\(api.runner.entries.map { "\($0.name): \($0.result?.response?.status ?? 0)" })")
         }
+
+        // New Request, Postman's way: open, send, and only then save it —
+        // with its collection's environment even when the panel has moved
+        // to another checkout (here it is on the home folder by now).
+        let before = Set((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? [])
+        guard let draft = try? api.newDraft(in: root, url: "{{baseUrl}}/echo") else { return check("a draft", false) }
+        app.openInEditor(draft)
+        check("New Request opens at once, as a request", await eventually(3) { editor.active?.url == draft && editor.active?.request != nil })
+        if let unsaved = editor.active?.request {
+            print()
+            print()
+            unsaved.send()
+            check("it sends before it is saved", await eventually(5) { unsaved.result?.response != nil }, unsaved.result?.error ?? "")
+        }
+        check(
+            "and nothing is written in the collection yet",
+            Set((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []) == before)
+        if let buffer = editor.active { editor.save(buffer, overwriting: false) }
+        check("⌘S asks its name", await eventually(2) { self.window.attachedSheet != nil })
+        if let sheet = window.attachedSheet, let field = Self.find(NSTextField.self, in: sheet.contentView, where: { $0.isEditable }) {
+            field.stringValue = "Echo again"
+            clickSheetButton("Save")
+        }
+        let named = root.appendingPathComponent("Echo again.bru")
+        check("then it is in the collection, under that name", await eventually(3) { FileManager.default.fileExists(atPath: named.path) })
+        check(
+            "its tab follows it there", editor.active?.url?.standardizedFileURL == named.standardizedFileURL,
+            editor.active?.url?.path ?? "nil")
+        check("and the draft is gone", !FileManager.default.fileExists(atPath: draft.path) && !api.isDraft(named))
         await pause(0.5)
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             app.openInEditor(echo)

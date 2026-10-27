@@ -392,6 +392,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         }
         bufferWillClose(buffer)
         buffer.document.close()
+        // A new request closed unsaved is gone, as Postman's tab is.
+        if let url = buffer.url { apiWorkspace?.discardDraft(url) }
         buffers.remove(at: index)
         if buffers.isEmpty {
             activeIndex = -1
@@ -958,6 +960,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     }
 
     func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
+        // A new request: saving it is naming it and putting it in its collection.
+        if isDraft(buffer) { return saveDraft(buffer) }
         if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
             formatDocument(buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
             return
@@ -1003,6 +1007,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             guard let self else { return }
             switch response {
             case .alertFirstButtonReturn:
+                if self.isDraft(buffer) { return self.saveDraft(buffer, then: proceed) }
                 self.save(buffer, overwriting: false, formatted: true)
                 proceed(!buffer.document.isDirty)
             case .alertThirdButtonReturn:

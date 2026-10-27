@@ -44,6 +44,57 @@ extension EditorViewController {
         }
     }
 
+    // MARK: Drafts
+
+    /// A request started with New Request and not saved yet.
+    func isDraft(_ buffer: EditorBuffer) -> Bool {
+        buffer.url.map { apiWorkspace?.isDraft($0) == true } ?? false
+    }
+
+    /// Saves a new request: asks its name, then puts it in the folder it was
+    /// started from — its tab following it there. `done(false)` when
+    /// cancelled.
+    func saveDraft(_ buffer: EditorBuffer, then done: ((Bool) -> Void)? = nil) {
+        guard let window = view.window, let draft = buffer.url, let workspace = apiWorkspace else {
+            done?(false)
+            return
+        }
+        let folder = workspace.place(of: draft).deletingLastPathComponent()
+        let collection = workspace.collection(containing: draft)
+        let alert = NSAlert()
+        alert.messageText = "Save Request"
+        alert.informativeText =
+            "In “\(collection?.name ?? folder.lastPathComponent)”"
+            + (collection.map { folder.standardizedFileURL != $0.root.standardizedFileURL } == true ? ", in “\(folder.lastPathComponent)”" : "")
+            + (collection?.isPersonal == true ? " — yours, on this Mac." : " — in the checkout.")
+        let field = NSTextField(string: buffer.request?.file.name ?? "New Request")
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 22)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else {
+                done?(false)
+                return
+            }
+            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+            do {
+                // What is in the editor, then moved in under its name.
+                try buffer.document.save(buffer.storage.string, overwriting: true)
+                let target = try workspace.saveDraft(draft, named: name.isEmpty ? "New Request" : name)
+                self.filesMoved(from: draft, to: target)
+                self.reloadIfChangedOnDisk()
+                self.requestsMoved()
+                self.onSaved?()
+                done?(true)
+            } catch {
+                NSAlert(error: error).beginSheetModal(for: window)
+                done?(false)
+            }
+        }
+    }
+
     /// Files were renamed under open requests: each request's model is made
     /// again for its file's new path.
     func requestsMoved() {
