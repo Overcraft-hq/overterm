@@ -242,8 +242,13 @@ final class FakeDockerEngine: @unchecked Sendable {
         case notFound
     }
 
-    func answer(_ method: HTTPMethod, _ uri: String, body: Data) -> Answer {
+    func answer(_ method: HTTPMethod, _ uri: String, body: Data, chunked: Bool = false) -> Answer {
         locked { asked.append("\(method.rawValue) \(uri)") }
+        // As the engine does: a start with a body of unknown length is
+        // refused (it took every real start down once).
+        if method == .POST, chunked, uri.hasSuffix("/start") {
+            return Self.error(400, "starting container with non-empty request body was deprecated since API v1.22 and removed in v1.24")
+        }
         guard let url = URLComponents(string: "http://docker" + uri) else { return .notFound }
         let query = Dictionary((url.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
         var parts = url.path.split(separator: "/").map(String.init)
@@ -543,7 +548,8 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
             head.headers.add(name: "Transfer-Encoding", value: "chunked")
             context.writeAndFlush(wrapOutboundOut(.head(head)), promise: nil)
         }
-        switch engine.answer(request.method, request.uri, body: body) {
+        let chunked = request.headers["Transfer-Encoding"].contains { $0.lowercased().contains("chunked") }
+        switch engine.answer(request.method, request.uri, body: body, chunked: chunked) {
         case .json(let status, let data): whole(status, data, [("Content-Type", "application/json")])
         case .empty(let status): whole(status, Data())
         case .raw(let status, let data, let extra): whole(status, data, extra)

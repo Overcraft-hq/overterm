@@ -74,7 +74,10 @@ struct NIODockerTransport: DockerTransport {
         head.headers.add(name: "Connection", value: "close")
         head.headers.add(name: "User-Agent", value: "Overterm")
         for (name, value) in headers { head.headers.add(name: name, value: value) }
-        if let body { head.headers.add(name: "Content-Length", value: "\(body.count)") }
+        // Always said, 0 for none: left out, NIO sends a POST chunked, and the
+        // engine (Go) takes a body of unknown length as one — "starting
+        // container with non-empty request body" refused every start.
+        if method != .GET && method != .HEAD || body != nil { head.headers.add(name: "Content-Length", value: "\(body?.count ?? 0)") }
         channel.write(HTTPClientRequestPart.head(head), promise: nil)
         if let body { channel.write(HTTPClientRequestPart.body(.byteBuffer(ByteBuffer(bytes: body))), promise: nil) }
         channel.writeAndFlush(HTTPClientRequestPart.end(nil), promise: nil)
