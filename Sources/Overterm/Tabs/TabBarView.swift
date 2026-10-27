@@ -73,7 +73,7 @@ struct TabBarView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: leadingInset)
+            Color.clear.frame(width: store.isFullScreen ? 10 : leadingInset)
             // The tabs scroll in what is left over. Laid out plainly, a
             // strip of eight tabs is wider than the window and SwiftUI
             // overflows it both ways: tabs ended up under the traffic

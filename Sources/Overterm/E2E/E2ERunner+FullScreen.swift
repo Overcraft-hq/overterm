@@ -43,10 +43,15 @@ extension E2ERunner {
         check("the strip is on screen, under the menu bar's band", onScreen.height > 40 && onScreen.maxY <= top + 1 && onScreen.minY >= screen.minY, report)
         check("and the tabs in it", app.store.tabFrames.values.contains { $0.width > 0 })
         check("full screen has no toolbar to cover the strip", window.toolbar == nil)
+        // No traffic lights: the first tab starts at the edge, not 88 pt in.
+        let firstTab = app.store.tabs.first.flatMap { app.store.tabFrames[$0.id] }
+        check("the tabs take the traffic lights' room", (firstTab?.minX ?? .infinity) < 30, "\(String(describing: firstTab))")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty { app.captureWindow(to: png) }
         window.toggleFullScreen(nil)
         check("and comes back", await eventually(8) { !self.window.styleMask.contains(.fullScreen) })
         check("with its toolbar again", await eventually(3) { self.window.toolbar != nil })
+        let back = app.store.tabs.first.flatMap { app.store.tabFrames[$0.id] }
+        check("and the room for the traffic lights", await eventually(3) { (self.app.store.tabs.first.flatMap { self.app.store.tabFrames[$0.id] }?.minX ?? 0) > 80 }, "\(String(describing: back))")
         await pause(1)
     }
 }

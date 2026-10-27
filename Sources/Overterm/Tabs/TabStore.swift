@@ -142,6 +142,10 @@ final class TabStore: ObservableObject {
         tabs.first { tabFrames[$0.id]?.contains(point) == true }
     }
 
+    /// The window is full screen: no traffic lights, so the strip starts at
+    /// the edge rather than after the room it keeps for them.
+    @Published var isFullScreen = false
+
     /// A session is being rebuilt: islands without their tabs yet are kept.
     var restoring = false
 

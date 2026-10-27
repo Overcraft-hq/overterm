@@ -3346,6 +3346,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate {
     /// covered the strip with a black band.
     func windowWillEnterFullScreen(_ notification: Notification) {
         window?.toolbar = nil
+        // Full screen has no traffic lights: the tabs take their room.
+        store.isFullScreen = true
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        store.isFullScreen = false
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
