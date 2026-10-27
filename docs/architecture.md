@@ -1174,6 +1174,78 @@ their buckets where a database's schemas would be.
   bucket, uploads a file and a folder, previews both, deletes — skipped
   when nothing answers on :59000.
 
+## Docker (⌥⌘P, a page)
+
+Docker Desktop's work on a page of its own, over the body like Settings
+(`WorkspaceOverlay.docker`, made the first time it opens): the engine the
+user's `docker` reaches — Docker Desktop, OrbStack, Colima — and its
+containers, grouped by compose project. Settings ▸ Docker turns it off
+(nothing is read then) or points it at another engine.
+
+- **Where the engine is** (`DockerEndpoint`, pure once the files are read):
+  as the CLI finds it — `DOCKER_HOST`, `DOCKER_CONTEXT` or `config.json`'s
+  `currentContext`, that context's record (`contexts/meta/<sha256>/meta.json`),
+  the default socket. `docker.endpoint` overrides it; an isolated run
+  reaches none unless `OVERTERM_DOCKER_HOST` names one (a scenario's fake).
+  `DockerRuntime` says which engine it is from the socket's path, the
+  context and `/info`, and how to start, stop and restart it.
+- **Talking to it** (`DockerEngine`, `DockerAPI`): the Engine API over the
+  unix socket with SwiftNIO's HTTP/1.1 (one connection a call, ~30 ms),
+  the API version settled with `/_ping`. Streams — events, followed logs,
+  stats, a pull — are `AsyncThrowingStream`s that close their connection
+  when the reader leaves. Pure helpers beside it: log frames demuxed across
+  any cut and lines read for their level (`DockerFrames`), a plain ustar
+  writer for `archive` (macOS's `tar` adds xattrs the engine fails on),
+  stats as `docker stats` works them out, ports once rather than once per
+  address family, secret-looking env values masked (`DockerStats`).
+- **`docker` itself** (`DockerCLI`): for what the API doesn't answer — a
+  runtime's own status while its socket is silent (`docker desktop
+  status`, `orb status`, `colima status`). Found where installers put it (an
+  app from the Dock has none of it on its PATH), run through `Git.run`, told
+  the context or host Overterm uses.
+- **The model** (`DockerModel`, one for the app): whether the engine
+  answers, its containers, the compose projects among them
+  (`ComposeProjects` — Compose's only record is its labels; a checkout's
+  stack is the projects run in it or from a compose file in it, compared by
+  real path). Events keep it current, a burst read as one list 120 ms after
+  it starts, filtered to what changes a list (healthchecks' `exec_*` are
+  most of the traffic). It starts when the page first shows; a page on
+  screen adds a 15 s poll for "Up 2 minutes". An engine that goes away
+  empties the lists and is tried again at growing intervals.
+- **The page** (`DockerPageModel` per window, `DockerPageView`): sections
+  and the engine on the left, the list in the middle, the selected
+  container's detail (`ContainerDetailView`, `ContainerSession`) at the
+  right — the list keeps its place in the view tree whether or not the
+  detail is beside it, or SwiftUI makes its table again and the keyboard
+  and the scroll position go with it. The filter is `DockerFilter`
+  (`status:running project:api image:postgres port:5432`, `-` negates).
+- **A container's detail**: Overview (ports, command, health, mounts,
+  networks, env with secrets masked), Logs, Inspect, Stats. A session
+  (`ContainerSession`) reads logs only while Logs shows and stats only
+  while Stats does — nothing while the page is hidden. The log is the last
+  500 lines, then followed; Docker ends a followed log when the container
+  stops, and the session follows it again on the container's own `start`
+  event (a list read after a quick restart can look as before), from the
+  last line's second, dropping what it already has (timestamps compared
+  padded to nine digits: Docker trims a fraction's zeros). Lines go into an
+  NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
+  Inspect is the engine's JSON with the env's secret values taken out.
+- **Keys** (`DockerKey`, a pure table, `?` shows it): single letters while
+  the list's table has the keyboard — `s` start/stop, `r` restart, `p`
+  pause, `e` a shell, `t` logs followed, `o` its port, `u`/`D` compose
+  up/down, `⌫` remove, `/` the filter. The window's key monitor
+  (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
+  and an AppKit table would eat letters for type-select.
+- **What runs in a terminal** (`DockerCommands`, pure): compose up, down,
+  pull and logs, a shell in a container, its logs followed — typed into a
+  new tab in the project's folder, where the user sees them and can run
+  them again. A command is told the engine (`DOCKER_HOST=`) only when the
+  shell wouldn't find the same one by itself.
+- **Tests**: `FakeDockerEngine` plays the API on a socket of its own
+  (containers, events, logs framed, files as tar); `DockerTransportTests`,
+  `DockerModelTests` and the `docker` scenario run against it, which records
+  rather than types what would reach a real `docker`.
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a

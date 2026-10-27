@@ -14,7 +14,8 @@ final class FakeDockerEngine: @unchecked Sendable {
         var env: [String] = []
         var tty = false
         var files: [String: Data] = [:]
-        var logs: [(DockerLogChunk.Stream, String)] = []
+        /// Each line with the time it was written, as the engine keeps it.
+        var logs: [(stream: DockerLogChunk.Stream, text: String, time: String)] = []
         var error: String = ""
     }
 
@@ -45,7 +46,10 @@ final class FakeDockerEngine: @unchecked Sendable {
         let bootstrap = ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .childChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.configureHTTPServerPipeline(withErrorHandling: true)
+                    // No pipelining help: it stops reading while a response is
+                    // open, and a followed log, idle, would never see its
+                    // client leave (Docker does).
+                    try channel.pipeline.syncOperations.configureHTTPServerPipeline(withPipeliningAssistance: false, withErrorHandling: true)
                     try channel.pipeline.syncOperations.addHandler(Handler(engine: self))
                 }
             }
@@ -101,11 +105,12 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// Lines the container has written; to followers too.
     func log(_ id: String, _ text: String, stream: DockerLogChunk.Stream = .stdout) {
+        let time = Self.timestamp()
         let followers = locked {
-            containers[id]?.logs.append((stream, text))
+            containers[id]?.logs.append((stream, text, time))
             return logFollowers[id] ?? []
         }
-        let frame = Self.frame(stream, Self.timestamp() + " " + text + "\n")
+        let frame = Self.frame(stream, time + " " + text + "\n")
         for channel in followers {
             channel.eventLoop.execute {
                 channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(bytes: frame))), promise: nil)
@@ -121,6 +126,15 @@ final class FakeDockerEngine: @unchecked Sendable {
             containers[id]?.summary.Status = Self.status(state, health: health, exitCode: exitCode)
             containers[id]?.summary.Health = health.map { .init(Status: $0, FailingStreak: 0) }
             containers[id]?.error = error
+        }
+        // A followed log ends when its container stops, as Docker's does.
+        if !state.isUp {
+            let followers = locked { logFollowers.removeValue(forKey: id) ?? [] }
+            for channel in followers {
+                channel.eventLoop.execute {
+                    channel.writeAndFlush(HTTPServerResponsePart.end(nil)).whenComplete { _ in channel.close(promise: nil) }
+                }
+            }
         }
         if let health { emit("health_status: \(health)", id) }
         let action =
@@ -163,6 +177,11 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// Who is waiting for events now.
     var listening: Int { locked { eventStreams.count } }
+
+    /// Which are open, for a test's message.
+    var streams: String {
+        locked { "events \(eventStreams.count), stats \(samplers.count), logs \(logFollowers.values.reduce(0) { $0 + $1.count })" }
+    }
 
     /// Streams still open: events, followed logs, stats.
     var openStreams: Int { locked { eventStreams.count + samplers.count + logFollowers.values.reduce(0) { $0 + $1.count } } }
@@ -286,7 +305,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             return .empty(204)
         case (.GET, "logs"):
             let tail = Int(query["tail"] ?? "") ?? container.logs.count
-            let frames = container.logs.suffix(tail).reduce(into: Data()) { $0 += Self.frame($1.0, Self.timestamp() + " " + $1.1 + "\n") }
+            let frames = container.logs.suffix(tail).reduce(into: Data()) { $0 += Self.frame($1.stream, $1.time + " " + $1.text + "\n") }
             if query["follow"] == "1" { return .follow(id, frames) }
             return .raw(200, frames, [("Content-Type", "application/vnd.docker.multiplexed-stream")])
         case (.GET, "stats"):

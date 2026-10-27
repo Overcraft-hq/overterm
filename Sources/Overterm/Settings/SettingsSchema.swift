@@ -140,7 +140,8 @@ struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
-    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notes + database + notifications + updates
+    static let all: [SettingSpec] =
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -462,6 +463,19 @@ enum SettingsSchema {
             key: "database.agentWrites", section: .database, group: "Agents", title: "Agents can ask to write",
             help: "A statement that writes is shown to you in the window, and runs only if you say so. Read-only connections refuse it anyway.",
             kind: .toggle, defaultValue: .bool(false), requires: "database.agentAccess"),
+    ]
+
+    private static let docker: [SettingSpec] = [
+        SettingSpec(
+            key: "docker.enabled", section: .docker, group: "Docker", title: "Docker in Overterm",
+            help:
+                "Containers and compose projects of the engine your terminal's docker reaches — Docker Desktop, OrbStack, Colima — on a page of their own (⌥⌘P). Nothing is read while it is off.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "docker.endpoint", section: .docker, group: "Docker", title: "Engine",
+            help: "Empty: the one docker uses — DOCKER_HOST, else the current context. Or a socket or an address of your own.",
+            kind: .text(placeholder: "unix:///var/run/docker.sock, tcp://host:2375", monospaced: true), defaultValue: .string(""),
+            requires: "docker.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

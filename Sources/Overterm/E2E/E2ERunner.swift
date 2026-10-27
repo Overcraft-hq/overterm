@@ -81,6 +81,7 @@ final class E2ERunner {
         "overgit": { await $0.overgitScenario() },
         "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
+        "docker": { await $0.dockerScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 
@@ -154,7 +155,7 @@ final class E2ERunner {
 
     /// At a prompt, and past the moment a shell may still be reading the
     /// terminal while drawing it (see runAndExpect).
-    private func settledPrompt() async {
+    func settledPrompt() async {
         await waitForPrompt()
         // A new shell's first prompt keeps working (git status for the
         // theme, deferred integration init) after it first reports; keys
@@ -230,7 +231,7 @@ final class E2ERunner {
 
     /// Clicks the button titled `title` in the window's attached sheet.
     @discardableResult
-    private func clickSheetButton(_ title: String) -> Bool {
+    func clickSheetButton(_ title: String) -> Bool {
         guard let sheet = window.attachedSheet, let button = Self.find(NSButton.self, in: sheet.contentView, where: { $0.title == title })
         else { return false }
         button.performClick(nil)

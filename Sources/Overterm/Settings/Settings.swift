@@ -310,6 +310,8 @@ final class Settings: ObservableObject {
     var databaseAgentAccess: Bool { databaseEnabled && bool("database.agentAccess") }
     var databaseAgentWrites: Bool { databaseAgentAccess && bool("database.agentWrites") }
     var notesLivePreview: Bool { notesEnabled && bool("notes.livePreview") }
+    var dockerEnabled: Bool { bool("docker.enabled") }
+    var dockerEndpoint: String { string("docker.endpoint").trimmingCharacters(in: .whitespaces) }
 
     // MARK: Ghostty overrides
 

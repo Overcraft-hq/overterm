@@ -153,6 +153,20 @@ connections, read a schema, run a query that reads, browse a bucket and
 read a file — never seeing a password. A write is shown to you first, and
 only if you allow agents to ask (Settings ▸ Database).
 
+### Docker, Docker Desktop's work
+
+<kbd>⌥⌘P</kbd>: the containers of the engine your terminal's `docker`
+reaches — Docker Desktop, OrbStack, Colima — on a page of their own,
+grouped by compose project, kept current as they start, stop and crash.
+Single keys while the list has the keyboard: `s` starts or stops, `r`
+restarts, `e` opens a shell in a tab, `t` follows its logs, `o` opens its
+port, `u` and `D` bring a project up and down — in a terminal tab, where you
+see the command. Filter with `status:running project:api port:5432`;
+`?` lists the keys. A container's logs are followed as they are written,
+coloured by level and filtered, and picked up again after a restart; its
+inspect data and its CPU, memory, network and disk sit beside it. Secrets
+in a container's environment stay masked.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

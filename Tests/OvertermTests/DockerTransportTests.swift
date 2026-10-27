@@ -161,6 +161,21 @@ final class DockerTransportTests: XCTestCase {
         XCTAssertEqual(containers.count, 1)
     }
 
+    /// A followed log whose reader's task is cancelled — a tab left —
+    /// closes its connection.
+    func testACancelledLogFollowIsClosed() async throws {
+        let id = fake.add(name: "chatty")
+        fake.log(id, "one")
+        let logs = engine.logs(id, tty: false, tail: 10, follow: true)
+        let reader = Task {
+            for try await _ in logs {}
+        }
+        try await waitUntil { $0.openStreams == 1 }
+        reader.cancel()
+        _ = await reader.result
+        try await waitUntil { $0.openStreams == 0 }
+    }
+
     func testFilesAreReadAndWrittenThroughTar() async throws {
         let id = fake.add(name: "nginx")
         fake.setFile(id, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))

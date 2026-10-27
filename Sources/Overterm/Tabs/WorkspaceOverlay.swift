@@ -4,11 +4,12 @@ import Foundation
 /// tab, and sits in the strip after the terminal tabs while open
 /// (`TabStore.openOverlays`). Not a `Tab`: no terminal, no group, no ⌘1–9.
 enum WorkspaceOverlay: String, Equatable {
-    case settings
+    case settings, docker
 
     var title: String {
         switch self {
         case .settings: "Settings"
+        case .docker: "Docker"
         }
     }
 
@@ -16,6 +17,7 @@ enum WorkspaceOverlay: String, Equatable {
     var symbol: String {
         switch self {
         case .settings: "gearshape"
+        case .docker: "shippingbox"
         }
     }
 }

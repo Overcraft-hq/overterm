@@ -26,6 +26,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var paletteView: NSView?
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
+    /// The Docker list's single-letter keys (DockerKey).
+    var dockerKeys: Any?
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
@@ -75,6 +77,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The pages that cover the body (WorkspaceOverlay), each its own view.
     private var overlayViews: [WorkspaceOverlay: NSView] = [:]
     var settingsView: NSView? { overlayViews[.settings] }
+    var dockerView: NSView? { overlayViews[.docker] }
+    /// Where a page made later goes: the window's content, under the strip.
+    private weak var overlayContent: NSView?
+    private var overlayTop: NSLayoutYAxisAnchor?
+    /// The Docker page's own state; its view is made the first time it opens.
+    let dockerPage = DockerPageModel()
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
     let focus = GroupFocus()
     /// ⌥⌘I: one line typed into every tab of an island.
@@ -593,6 +601,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireAPI()
         wireNotes()
         wireDatabase()
+        watchDockerPage().store(in: &cancellables)
+        installDockerKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -3086,6 +3096,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("docker.") }) { self.dockerSettingsChanged() }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
@@ -3132,7 +3143,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private func addOverlay(_ overlay: WorkspaceOverlay, _ view: NSView, in content: NSView, below top: NSLayoutYAxisAnchor) {
         view.translatesAutoresizingMaskIntoConstraints = false
         view.isHidden = true
-        content.addSubview(view)
+        // Beside the pages already there, under what floats over them (the
+        // palette, the switcher) — a page made later must not cover those.
+        if let sibling = overlayViews.values.first {
+            content.addSubview(view, positioned: .above, relativeTo: sibling)
+        } else {
+            content.addSubview(view)
+        }
+        overlayContent = content
+        overlayTop = top
         NSLayoutConstraint.activate([
             view.topAnchor.constraint(equalTo: top),
             view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
@@ -3145,6 +3164,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A page, opened if it isn't, over the body — in place of whichever
     /// page showed: they take turns.
     func showOverlay(_ overlay: WorkspaceOverlay) {
+        if overlayViews[overlay] == nil, let content = overlayContent, let top = overlayTop, let made = makeOverlay(overlay) {
+            addOverlay(overlay, made, in: content, below: top)
+        }
         guard let view = overlayViews[overlay] else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
@@ -3169,6 +3191,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         store.closeOverlay(overlay)
         switch overlay {
         case .settings: settingsPage.draft = nil
+        case .docker: dockerPage.selection = []
         }
     }
 
@@ -3590,6 +3613,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
+        if let dockerKeys { NSEvent.removeMonitor(dockerKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peek.close()

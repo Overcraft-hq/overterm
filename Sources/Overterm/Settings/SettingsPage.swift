@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Settings' sections, as in the list on the page's left.
 enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
-    case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, notifications, shortcuts, about
+    case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, docker, notifications, shortcuts, about
 
     var id: String { rawValue }
 
@@ -20,6 +20,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .api: "API Client"
         case .notes: "Notes"
         case .database: "Database"
+        case .docker: "Docker"
         case .notifications: "Notifications"
         case .shortcuts: "Keyboard Shortcuts"
         case .about: "About"
@@ -38,6 +39,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .api: "arrow.left.arrow.right"
         case .notes: "note.text"
         case .database: "cylinder.split.1x2"
+        case .docker: "shippingbox"
         case .notifications: "bell"
         case .shortcuts: "keyboard"
         case .about: "info.circle"

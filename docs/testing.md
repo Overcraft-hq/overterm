@@ -68,7 +68,7 @@ which skips itself when nothing answers there.
 
 ### Docker
 
-`DockerTransportTests` and the Docker scenarios talk to `FakeDockerEngine`
+`DockerTransportTests`, `DockerModelTests` and the `docker` scenario talk to `FakeDockerEngine`
 (`Sources/Overterm/Docker/`): Docker's Engine API on a unix socket of its
 own in `/tmp` (a socket's path must stay under 104 bytes), with containers,
 images, volumes and networks held as values, events sent as the engine

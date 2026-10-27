@@ -60,7 +60,9 @@ final class DockerModel: ObservableObject {
     /// - Parameter retries: the waits between attempts while the engine is
     ///   away, the last one repeated.
     init(
-        endpoint: @escaping @MainActor () -> DockerEndpoint? = { AppEnvironment.dockerEndpoint() },
+        endpoint: @escaping @MainActor () -> DockerEndpoint? = {
+            Settings.shared.dockerEnabled ? AppEnvironment.dockerEndpoint(setting: Settings.shared.dockerEndpoint) : nil
+        },
         retries: [Duration] = [.seconds(1), .seconds(2), .seconds(5), .seconds(10), .seconds(30)], poll: Duration = .seconds(15)
     ) {
         resolve = endpoint
@@ -69,6 +71,9 @@ final class DockerModel: ObservableObject {
     }
 
     // MARK: Connecting
+
+    /// Whether it watches an engine (or waits to retry one).
+    var isWatching: Bool { watching != nil }
 
     /// Starts watching the engine, if it isn't already.
     func start() {
@@ -95,9 +100,17 @@ final class DockerModel: ObservableObject {
         start()
     }
 
+    /// A scenario's own engine (the fake one), in place of the user's.
+    private var override: DockerEndpoint?
+
+    func use(_ endpoint: DockerEndpoint?) {
+        override = endpoint
+        reconnect()
+    }
+
     private func watch() async {
         while !Task.isCancelled {
-            guard let endpoint = resolve() else {
+            guard let endpoint = override ?? resolve() else {
                 self.endpoint = nil
                 connection = .off
                 clear()

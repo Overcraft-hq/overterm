@@ -102,6 +102,8 @@ enum MainMenu {
         command(viewMenu, "API Client", #selector(TerminalWindowController.showAPIClient(_:)), "api.show")
         command(viewMenu, "Notes", #selector(TerminalWindowController.showNotes(_:)), "notes.show")
         command(viewMenu, "Database", #selector(TerminalWindowController.showDatabase(_:)), "database.show")
+        // A page over the body, as Settings; ⌥⌘P again goes back to the terminal.
+        command(viewMenu, "Docker", #selector(TerminalWindowController.toggleDockerPage(_:)), "docker.page")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
