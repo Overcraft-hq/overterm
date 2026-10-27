@@ -1247,6 +1247,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   up/down, `⌫` remove, `/` the filter. The window's key monitor
   (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
   and an AppKit table would eat letters for type-select.
+- **The switcher** (⇧⌥⌘P): the palette scoped to its Docker group —
+  every container and compose project (`dockerPaletteItems`), restocked as
+  they come and go. ↩ shows one on the page, selected and unfolded; ⌥↩ is
+  a shell in a running container, a start for a stopped one, `up` for a
+  project. Compose Up, Down… and Restart act on the selected tab's
+  checkout's stack (View menu, palette; no keys). A tab running
+  `docker exec -it …` (or attach, debug, an interactive run, Compose's
+  exec and run) is a `TabKind.container`, its icon the shippingbox.
 - **What runs in a terminal** (`DockerCommands`, pure): compose up, down,
   pull and logs, a shell in a container, its logs followed — typed into a
   new tab in the project's folder, where the user sees them and can run

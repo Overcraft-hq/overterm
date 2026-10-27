@@ -60,7 +60,11 @@ struct PaletteView: View {
         HStack(spacing: 4) {
             chip("All", nil)
             // No Snippets chip while Settings has snippets off.
-            ForEach(PaletteItem.Group.scopes.filter { $0 != .snippet || Settings.shared.snippetsEnabled }, id: \.self) { group in
+            ForEach(
+                PaletteItem.Group.scopes.filter {
+                    ($0 != .snippet || Settings.shared.snippetsEnabled) && ($0 != .container || Settings.shared.dockerEnabled)
+                }, id: \.self
+            ) { group in
                 chip(group == .snippet ? "Snippets" : group.rawValue, group)
             }
         }

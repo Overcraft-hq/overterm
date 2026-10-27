@@ -158,6 +158,7 @@ only if you allow agents to ask (Settings ▸ Database).
 <kbd>⌥⌘P</kbd>: the containers of the engine your terminal's `docker`
 reaches — Docker Desktop, OrbStack, Colima — on a page of their own,
 grouped by compose project, kept current as they start, stop and crash.
+<kbd>⇧⌥⌘P</kbd> finds any container or project by name from anywhere.
 Single keys while the list has the keyboard: `s` starts or stops, `r`
 restarts, `e` opens a shell in a tab, `t` follows its logs, `o` opens its
 port, `u` and `D` bring a project up and down — in a terminal tab, where you

@@ -31,6 +31,19 @@ final class TabKindTests: XCTestCase {
         XCTAssertEqual(TabKind.of(agent: nil, title: "pnpm dev", hasPort: false), .shell)
     }
 
+    func testAShellInAContainerIsAContainer() {
+        for title in [
+            "docker exec -it shop-db-1 sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'",
+            "DOCKER_HOST=unix:///tmp/x.sock docker exec -it api bash", "docker run --rm -it debian:bookworm-slim", "docker compose exec web sh",
+            "docker compose run --rm migrate", "docker attach api", "docker debug api", "podman exec -it db psql", "docker container exec -it db sh",
+        ] {
+            XCTAssertEqual(TabKind.of(agent: nil, title: title, hasPort: true), .container, title)
+        }
+        for title in ["docker ps", "docker run -d nginx", "docker logs -f api", "docker compose up -d", "dockerd"] {
+            XCTAssertNotEqual(TabKind.of(agent: nil, title: title, hasPort: false), .container, title)
+        }
+    }
+
     func testAPlainShellIsTheFallback() {
         XCTAssertEqual(TabKind.of(agent: nil, title: "", hasPort: false), .shell)
         XCTAssertEqual(TabKind.of(agent: nil, title: "zsh", hasPort: false), .shell)

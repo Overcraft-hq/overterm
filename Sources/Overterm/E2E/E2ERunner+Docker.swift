@@ -217,6 +217,32 @@ extension E2ERunner {
         check("the panel off the rail lets the poll go", await eventually(2) { !app.dockerPanelShown })
         await capturePanel()
 
+        // ⇧⌥⌘P: the palette, on containers and compose projects.
+        app.showDockerSwitcher(nil)
+        check("⇧⌥⌘P opens the palette on Docker", app.paletteView?.isHidden == false && app.palette.scope == .container)
+        check(
+            "listing its projects and containers",
+            Set(app.palette.results.map(\.title)).isSuperset(of: ["ot-shop", "ot-shop-web-1", "ot-shop-db-1", "ot-elsewhere"])
+                && app.palette.results.allSatisfy { $0.group == .container }, "\(app.palette.results.map(\.title))")
+        app.palette.query = "elsew"
+        check("found by part of its name", app.palette.selected?.title == "ot-elsewhere", app.palette.selected?.title ?? "nothing")
+        if let item = app.palette.selected {
+            app.hidePalette()
+            item.perform(true, [:])
+        }
+        check("↩ shows it on the page, selected", app.store.showingOverlay == .docker && page.selection == [elsewhere], "\(page.selection)")
+        app.showDockerSwitcher(nil)
+        app.palette.query = "ot-shop-db"
+        if let item = app.palette.selected, item.title == "ot-shop-db-1" {
+            app.hidePalette()
+            item.perform(false, [:])
+        }
+        check("⌥↩ starts a stopped one", await eventually(5) { docker.container(db)?.state == .running })
+        app.showDockerSwitcher(nil)
+        app.showDockerSwitcher(nil)
+        check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
+        app.hideOverlay()
+
         // ⌥⌘P twice: back to the terminal, the page kept in the strip.
         app.toggleDockerPage(nil)
         app.toggleDockerPage(nil)

@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - docker: Docker's work on a page of its own (⌥⌘P) — the containers of the engine your terminal's `docker` reaches, grouped by compose project and kept current as they start, stop and crash; a container's logs followed and coloured by level, its inspect data with secrets masked, its CPU, memory and network; single keys while the list has the keyboard, `?` lists them
 - docker: the rail's shippingbox keeps the selected tab's checkout's stack beside the terminal, a container's logs a click away in the right-hand pane
+- docker: ⇧⌥⌘P finds any container or compose project by name, from anywhere
 
 ## 1.4.6 — 2026-10-29
 

@@ -208,3 +208,147 @@ extension TerminalWindowController {
         openInBrowser(url, for: store.selected)
     }
 }
+
+// MARK: The switcher and the palette
+
+extension TerminalWindowController {
+    /// ⇧⌥⌘P: the palette, on containers and compose projects. Docker is
+    /// started if it wasn't; what it lists comes in as it answers.
+    @objc func showDockerSwitcher(_ sender: Any?) {
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
+        DockerModel.shared.start()
+        if paletteView?.isHidden == false, palette.scope == .container { return hidePalette() }
+        if paletteView?.isHidden != false { showPalette(nil) }
+        palette.scope = .container
+    }
+
+    /// Containers came or went while the palette shows them.
+    func watchDockerPalette() -> AnyCancellable {
+        DockerModel.shared.$containers
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.restockPalette() } }
+    }
+
+    /// What the palette offers of Docker: the page, the checkout's stack's
+    /// verbs, every container and project. A container's ↩ shows it on
+    /// the page; ⌥↩ a shell in it (or starts it); a project's ⌥↩ is `up`.
+    func dockerPaletteItems() -> [PaletteItem] {
+        guard Settings.shared.dockerEnabled else { return [] }
+        let docker = DockerModel.shared
+        var items = [
+            PaletteItem(id: "a.docker", group: .action, title: "Docker", subtitle: "Containers, compose projects, logs  ⌥⌘P", symbol: "shippingbox") {
+                [weak self] _, _ in self?.toggleDockerPage(nil)
+            }
+        ]
+        let stack = dockerPanelStack()
+        if !stack.isEmpty {
+            let names = stack.map(\.name).joined(separator: ", ")
+            items += [
+                PaletteItem(id: "a.composeRestart", group: .action, title: "Compose Restart", subtitle: names, symbol: "arrow.clockwise") {
+                    [weak self] _, _ in self?.composeRestart(nil)
+                },
+                PaletteItem(id: "a.composeDown", group: .action, title: "Compose Down…", subtitle: names, symbol: "stop.fill") {
+                    [weak self] _, _ in self?.composeDown(nil)
+                },
+            ]
+        }
+        if !stack.isEmpty || dockerPanel.composeFile != nil {
+            items.append(
+                PaletteItem(
+                    id: "a.composeUp", group: .action, title: "Compose Up",
+                    subtitle: stack.isEmpty ? dockerPanel.composeFile?.lastPathComponent : stack.map(\.name).joined(separator: ", "), symbol: "play.fill"
+                ) { [weak self] _, _ in self?.composeUp(nil) })
+        }
+        guard docker.connection.isRunning else { return items }
+        items += docker.projects.map { project in
+            PaletteItem(
+                id: "d.p.\(project.name)", group: .container, title: project.name,
+                subtitle: "\(project.running)/\(project.containers.filter { !$0.isOneOff }.count) running"
+                    + (project.workingDir.map { " — " + ($0 as NSString).abbreviatingWithTildeInPath } ?? ""),
+                symbol: "square.stack.3d.up"
+            ) { [weak self] run, _ in
+                guard let self else { return }
+                if run {
+                    self.revealOnDockerPage(DockerPageModel.projectTag(project.name))
+                } else {
+                    self.runDockerCommand(DockerCommands.compose(project, "up -d", endpoint: docker.endpoint), in: project.workingDir.map { URL(fileURLWithPath: $0) })
+                }
+            }
+        }
+        items += docker.containers.map { container in
+            PaletteItem(
+                id: "d.c.\(container.Id)", group: .container, title: container.name,
+                subtitle: [DockerStatusStyle.status(container), container.Image].joined(separator: " — "),
+                symbol: container.state.isUp ? "shippingbox.fill" : "shippingbox"
+            ) { [weak self] run, _ in
+                guard let self else { return }
+                if run {
+                    self.revealOnDockerPage(container.Id)
+                } else if container.state == .running {
+                    self.runDockerCommand(DockerCommands.shell(in: container, endpoint: docker.endpoint), in: nil)
+                } else {
+                    self.dockerPage.act(.start, on: [container])
+                }
+            }
+        }
+        return items
+    }
+
+    /// The page, with this container (or `project:<name>`) selected and
+    /// in view: the filter cleared, its project unfolded.
+    func revealOnDockerPage(_ tag: String) {
+        dockerPage.filter = ""
+        if let container = DockerModel.shared.container(tag) {
+            dockerPage.runningOnly = dockerPage.runningOnly && container.state.isUp
+            if let project = container.composeProject { dockerPage.collapsed.remove(DockerPageModel.projectTag(project)) }
+        }
+        dockerPage.selection = [tag]
+        if store.showingOverlay != .docker { showOverlay(.docker) }
+        focusDockerList()
+    }
+
+    // MARK: The checkout's stack
+
+    /// The selected tab's checkout's compose projects.
+    func dockerPanelStack() -> [ComposeProject] {
+        updateDockerCheckout(root: diff.root)
+        return dockerPanel.here
+    }
+
+    /// Compose Up: the checkout's projects again from their files, or the
+    /// compose file at its top when none runs.
+    @objc func composeUp(_ sender: Any?) {
+        let endpoint = DockerModel.shared.endpoint
+        let stack = dockerPanelStack()
+        if stack.isEmpty {
+            guard dockerPanel.composeFile != nil else { return NSSound.beep() }
+            runDockerCommand(DockerCommands.prefix(for: endpoint) + "docker compose up -d", in: dockerPanel.checkout)
+        } else {
+            for project in stack {
+                runDockerCommand(DockerCommands.compose(project, "up -d", endpoint: endpoint), in: project.workingDir.map { URL(fileURLWithPath: $0) })
+            }
+        }
+    }
+
+    @objc func composeDown(_ sender: Any?) {
+        let stack = dockerPanelStack()
+        guard !stack.isEmpty else { return NSSound.beep() }
+        let endpoint = DockerModel.shared.endpoint
+        confirmDocker(
+            stack.count == 1 ? "Take “\(stack[0].name)” down?" : "Take \(stack.count) projects down?",
+            "docker compose down stops and removes their containers and networks, in a terminal tab. Their volumes stay.", "Down"
+        ) { [weak self] in
+            for project in stack {
+                self?.runDockerCommand(
+                    DockerCommands.compose(project, "down", endpoint: endpoint), in: project.workingDir.map { URL(fileURLWithPath: $0) })
+            }
+        }
+    }
+
+    /// Restarted here, through the engine: nothing for a tab to show.
+    @objc func composeRestart(_ sender: Any?) {
+        let stack = dockerPanelStack()
+        guard !stack.isEmpty else { return NSSound.beep() }
+        dockerPage.act(.restart, on: stack.flatMap(\.containers).filter { !$0.isOneOff })
+    }
+}

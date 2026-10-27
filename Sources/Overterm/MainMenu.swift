@@ -104,6 +104,10 @@ enum MainMenu {
         command(viewMenu, "Database", #selector(TerminalWindowController.showDatabase(_:)), "database.show")
         // A page over the body, as Settings; ⌥⌘P again goes back to the terminal.
         command(viewMenu, "Docker", #selector(TerminalWindowController.toggleDockerPage(_:)), "docker.page")
+        command(viewMenu, "Docker Switcher", #selector(TerminalWindowController.showDockerSwitcher(_:)), "docker.switch")
+        command(viewMenu, "Compose Up", #selector(TerminalWindowController.composeUp(_:)), "docker.composeUp")
+        command(viewMenu, "Compose Down…", #selector(TerminalWindowController.composeDown(_:)), "docker.composeDown")
+        command(viewMenu, "Compose Restart", #selector(TerminalWindowController.composeRestart(_:)), "docker.composeRestart")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).

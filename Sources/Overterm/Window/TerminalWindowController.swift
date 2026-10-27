@@ -610,6 +610,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDatabase()
         watchDockerPage().store(in: &cancellables)
         wireDockerPanel()
+        watchDockerPalette().store(in: &cancellables)
         installDockerKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
@@ -2322,6 +2323,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
+    /// The open palette's items again — containers came or went.
+    func restockPalette() {
+        guard paletteView?.isHidden == false else { return }
+        palette.restock(paletteItems(matching: palette.query))
+    }
+
     static func firstTextField(in view: NSView) -> NSTextField? {
         if let field = view as? NSTextField, field.isEditable { return field }
         for sub in view.subviews {
@@ -2899,6 +2906,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 }
             }
         }
+        items += dockerPaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
