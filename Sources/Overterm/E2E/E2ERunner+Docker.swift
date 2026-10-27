@@ -235,6 +235,23 @@ extension E2ERunner {
         check("e is a shell in it", commands.last?.contains("docker exec -it ot-shop-web-1 sh -c") == true, commands.last ?? "")
         page.actions = actions
 
+        // d: a database container, in the Database panel's form, filled in.
+        let pgID = fake.add(
+            name: "ot-pg", image: "postgres:16", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 5432, PublicPort: 55432, Type: "tcp")],
+            env: ["POSTGRES_USER=shop", "POSTGRES_PASSWORD=hunter2", "POSTGRES_DB=orders"])
+        _ = await eventually(5) { docker.container(pgID) != nil }
+        page.selection = [pgID]
+        page.press("d")
+        check("d opens a database container in the connection form", await eventually(5) { self.window.attachedSheet != nil })
+        let draft = app.dockerDatabaseDraft?.connection
+        check(
+            "filled in from its image, env and port",
+            draft?.kind == .postgres && draft?.port == 55432 && draft?.user == "shop" && draft?.database == "orders"
+                && app.dockerDatabaseDraft?.password == "hunter2", "\(String(describing: draft))")
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        try? await docker.remove(pgID, force: true)
+
         // Remove asks first.
         page.selection = [loose]
         _ = page.press("\u{7F}")

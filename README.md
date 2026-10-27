@@ -174,7 +174,9 @@ selected tab's checkout's stack beside the terminal, a container's logs a
 click away in the right-hand pane, and the ports its containers publish
 sit in its panes' headers beside the ones its own processes listen on. A
 container that crashes, runs out of memory or turns unhealthy marks the
-tab whose checkout it belongs to, as a failed command does.
+tab whose checkout it belongs to, as a failed command does. `d` on a
+PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
+its connection filled in from the container.
 
 ### And the work around the work
 

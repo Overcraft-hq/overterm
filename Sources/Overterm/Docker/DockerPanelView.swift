@@ -184,6 +184,16 @@ struct DockerPanelView: View {
             if let url = PublishedPort.of(container.Ports ?? []).first?.url {
                 Button("Open \(url.absoluteString)") { actions.open(url) }
             }
+            if DockerDatabaseGuess.kind(of: container.Image) != nil {
+                Button("Open in Database…") {
+                    Task {
+                        guard let detail = try? await docker.engine?.container(container.Id),
+                            let guess = DockerDatabaseGuess.guess(container, env: detail.env)
+                        else { return }
+                        actions.openDatabase(guess)
+                    }
+                }
+            }
             Divider()
             Button("Copy Name") { actions.copy(container.name) }
         }

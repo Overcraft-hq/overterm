@@ -325,6 +325,9 @@ struct DockerPageView: View {
         if let port = PublishedPort.of(container.Ports ?? []).first, let url = port.url {
             Button("Open \(url.absoluteString)") { actions.open(url) }
         }
+        if DockerDatabaseGuess.kind(of: container.Image) != nil {
+            Button("Open in Database…") { page.openInDatabase(container) }
+        }
         Divider()
         Button("Copy Name") { actions.copy(container.name) }
         Button("Copy ID") { actions.copy(container.Id) }

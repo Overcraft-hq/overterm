@@ -4,8 +4,8 @@ import Foundation
 /// keyboard — the terminal never sees them, and a list is where a
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
-    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, inspect, open, remove, composeUp, composeDown, filter,
-        cleanUp, containers, images, volumes, networks, help
+    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, inspect, open, database, remove, composeUp, composeDown,
+        filter, cleanUp, containers, images, volumes, networks, help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -31,6 +31,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .shell: "e"
         case .inspect: "i"
         case .open: "o"
+        case .database: "d"
         case .remove: "⌫"
         case .composeUp: "u"
         case .composeDown: "D"
@@ -56,6 +57,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .shell: "A shell in it, in a terminal tab"
         case .inspect: "Inspect"
         case .open: "Open its first port in the browser"
+        case .database: "Open a database container in the Database panel"
         case .remove: "Remove (asks first)"
         case .composeUp: "Compose up, in a terminal tab"
         case .composeDown: "Compose down, in a terminal tab (asks first)"
@@ -69,8 +71,8 @@ enum DockerKey: String, CaseIterable, Sendable {
         }
     }
 
-    /// The key a typed character is, if any. Case matters: `D` is down,
-    /// `d` is free for later (connect in Database).
+    /// The key a typed character is, if any. Case matters: `D` is compose
+    /// down, `d` the Database panel.
     static func of(_ characters: String) -> DockerKey? {
         switch characters {
         case "\r": .details

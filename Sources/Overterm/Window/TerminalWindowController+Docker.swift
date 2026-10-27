@@ -16,7 +16,8 @@ extension TerminalWindowController {
             },
             settings: { [weak self] in self?.openSettings(.docker) },
             openPage: { [weak self] in self?.toggleDockerPage(nil) },
-            showContainer: { [weak self] in self?.showContainer($0) }
+            showContainer: { [weak self] in self?.showContainer($0) },
+            openDatabase: { [weak self] in self?.newDatabaseConnection(from: $0) }
         )
     }
 
@@ -44,6 +45,28 @@ extension TerminalWindowController {
         let folder = root ?? store.selected?.workingDirectory.map { URL(fileURLWithPath: $0) }
         if dockerPanel.checkout != folder { dockerPanel.checkout = folder }
         if Settings.shared.dockerEnabled, dockerPanel.composeFile != nil { DockerModel.shared.start() }
+    }
+
+    // MARK: Database
+
+    /// A database container's connection, in the form, filled in. The
+    /// page steps aside for the Database panel once it is saved.
+    func newDatabaseConnection(from guess: DockerDatabaseGuess.Guess) {
+        guard Settings.shared.databaseEnabled else { return openSettings(.database) }
+        dockerDatabaseDraft = guess
+        let model = DatabaseModel.shared
+        presentSheet { [weak self] close in
+            DatabaseConnectionForm(
+                connection: guess.connection, isNew: true, store: model.store,
+                done: { saved in
+                    close()
+                    guard let saved, let self else { return }
+                    model.expanded.insert(saved.id.uuidString)
+                    Task { await model.session(saved).open() }
+                    if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                    self.showDatabase(nil)
+                }, suggestedPassword: guess.password ?? "")
+        }
     }
 
     // MARK: Attention

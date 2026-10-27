@@ -13,6 +13,7 @@ version is tagged `v<version>`.
 - docker: ⇧⌥⌘P finds any container or compose project by name, from anywhere
 - docker: images (pulled with their progress, tagged, their layers), volumes with their sizes and who mounts them, networks with who is on them; Clean Up lists what nothing uses before anything goes
 - docker: a container that crashes, runs out of memory or turns unhealthy marks its checkout's tab, as a failed command does
+- docker: `d` on a PostgreSQL, MySQL or ClickHouse container opens it in the Database panel, its connection filled in from the container
 
 ## 1.4.6 — 2026-10-29
 

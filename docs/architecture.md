@@ -1255,6 +1255,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
+  MySQL, MariaDB or ClickHouse container as a connection — the kind from
+  its image, user, password and database from the variables its image's
+  documentation asks for, the host port it publishes — in the Database
+  panel's form, filled in. Nothing is saved until the form is, and then
+  the password goes to the keychain as any connection's does. A port not
+  published can't be reached from the Mac (the containers live in a VM),
+  and says so.
 - **A failing container marks its tab** (`DockerAttention`, pure;
   `TabActivity.containerFailed`): a container of a tab's checkout that
   exits non-zero, runs out of memory or turns unhealthy marks the tab

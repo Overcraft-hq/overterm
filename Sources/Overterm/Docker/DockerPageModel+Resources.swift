@@ -44,6 +44,25 @@ struct DockerPull: Equatable, Sendable {
 }
 
 extension DockerPageModel {
+    // MARK: Database
+
+    /// Its connection, guessed from its image, env and published port,
+    /// in the Database panel's form — nothing saved until the form is.
+    func openInDatabase(_ container: ContainerSummary) {
+        guard DockerDatabaseGuess.kind(of: container.Image) != nil else {
+            error = "\(container.name) isn't a database Overterm knows (PostgreSQL, MySQL, MariaDB, ClickHouse)."
+            return
+        }
+        Task {
+            guard let detail = try? await docker.engine?.container(container.Id) else { return }
+            guard let guess = DockerDatabaseGuess.guess(container, env: detail.env) else {
+                error = "\(container.name) publishes no port on this Mac: the Database panel can't reach it."
+                return
+            }
+            actions?.openDatabase(guess)
+        }
+    }
+
     // MARK: Images
 
     /// A public image down, its progress shown as it comes. One the engine

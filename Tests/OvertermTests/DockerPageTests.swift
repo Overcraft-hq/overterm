@@ -70,7 +70,7 @@ final class DockerPageTests: XCTestCase {
     func testKeys() {
         XCTAssertEqual(DockerKey.of("s"), .startStop)
         XCTAssertEqual(DockerKey.of("D"), .composeDown)
-        XCTAssertNil(DockerKey.of("d"), "lower-case d is kept for later")
+        XCTAssertEqual(DockerKey.of("d"), .database, "lower-case d is the Database panel, D compose down")
         XCTAssertEqual(DockerKey.of("\r"), .details)
         XCTAssertEqual(DockerKey.of(" "), .toggleDetail)
         XCTAssertEqual(DockerKey.of("\u{7F}"), .remove)
@@ -233,5 +233,65 @@ final class DockerPrunePlanTests: XCTestCase {
         XCTAssertEqual(DockerImageDetailSteps.step("/bin/sh -c #(nop)  CMD [\"nginx\" \"-g\"]"), "CMD [\"nginx\" \"-g\"]")
         XCTAssertEqual(DockerImageDetailSteps.step("/bin/sh -c apt-get update &&     apt-get install -y curl"), "RUN apt-get update && apt-get install -y curl")
         XCTAssertEqual(DockerImageDetailSteps.step("RUN /bin/sh -c echo hi # buildkit"), "RUN /bin/sh -c echo hi # buildkit")
+    }
+}
+
+/// A database container as a Database connection. Pure.
+final class DockerDatabaseGuessTests: XCTestCase {
+    private func container(_ image: String, ports: [DockerPort], project: String? = "shop") -> ContainerSummary {
+        var labels: [String: String] = [:]
+        if let project {
+            labels["com.docker.compose.project"] = project
+            labels["com.docker.compose.service"] = "db"
+        }
+        return ContainerSummary(Id: "x", Names: ["/shop-db-1"], Image: image, Created: 1, Ports: ports, Labels: labels, State: "running", Status: "")
+    }
+
+    private let pg = [
+        DockerPort(IP: "0.0.0.0", PrivatePort: 5432, PublicPort: 55432, Type: "tcp"), DockerPort(IP: "::", PrivatePort: 5432, PublicPort: 55432, Type: "tcp"),
+    ]
+
+    func testPostgres() throws {
+        let guess = try XCTUnwrap(
+            DockerDatabaseGuess.guess(
+                container("postgres:16-alpine", ports: pg), env: [("POSTGRES_USER", "shop"), ("POSTGRES_PASSWORD", "hunter2"), ("POSTGRES_DB", "orders")]))
+        XCTAssertEqual(guess.connection.kind, .postgres)
+        XCTAssertEqual(guess.connection.name, "shop db")
+        XCTAssertEqual(guess.connection.host, "127.0.0.1")
+        XCTAssertEqual(guess.connection.port, 55432)
+        XCTAssertEqual(guess.connection.user, "shop")
+        XCTAssertEqual(guess.connection.database, "orders")
+        XCTAssertEqual(guess.connection.sslMode, .disable)
+        XCTAssertEqual(guess.password, "hunter2")
+        let defaults = try XCTUnwrap(DockerDatabaseGuess.guess(container("ghcr.io/acme/postgis:16", ports: pg), env: []))
+        XCTAssertEqual(defaults.connection.user, "postgres", "the image's defaults")
+        XCTAssertEqual(defaults.connection.database, "postgres")
+        XCTAssertNil(defaults.password)
+    }
+
+    func testMySQLAndClickHouse() throws {
+        let port = [DockerPort(IP: "127.0.0.1", PrivatePort: 3306, PublicPort: 53306, Type: "tcp")]
+        let root = try XCTUnwrap(DockerDatabaseGuess.guess(container("mariadb:11", ports: port), env: [("MARIADB_ROOT_PASSWORD", "r00t")]))
+        XCTAssertEqual(root.connection.kind, .mysql)
+        XCTAssertEqual(root.connection.user, "root")
+        XCTAssertEqual(root.password, "r00t")
+        let user = try XCTUnwrap(
+            DockerDatabaseGuess.guess(
+                container("mysql:8", ports: port), env: [("MYSQL_ROOT_PASSWORD", "r00t"), ("MYSQL_USER", "app"), ("MYSQL_PASSWORD", "pw"), ("MYSQL_DATABASE", "shop")]))
+        XCTAssertEqual(user.connection.user, "app", "the app's own user over root")
+        XCTAssertEqual(user.password, "pw")
+        XCTAssertEqual(user.connection.database, "shop")
+        let clickhouse = try XCTUnwrap(
+            DockerDatabaseGuess.guess(
+                container("clickhouse/clickhouse-server:24", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 8123, PublicPort: 58123, Type: "tcp")]), env: []))
+        XCTAssertEqual(clickhouse.connection.kind, .clickhouse)
+        XCTAssertEqual(clickhouse.connection.user, "default")
+    }
+
+    func testNoGuessForWhatCantBeReached() {
+        XCTAssertNil(DockerDatabaseGuess.guess(container("postgres:16", ports: []), env: []), "not published: not reachable from the Mac")
+        XCTAssertNil(DockerDatabaseGuess.guess(container("redis:7", ports: pg), env: []))
+        XCTAssertNil(DockerDatabaseGuess.kind(of: "nginx"))
+        XCTAssertEqual(DockerDatabaseGuess.kind(of: "bitnami/postgresql:16")?.0, .postgres)
     }
 }

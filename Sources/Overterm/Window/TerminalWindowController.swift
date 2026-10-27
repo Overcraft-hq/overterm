@@ -30,6 +30,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var dockerKeys: Any?
     /// What the engine's events say went wrong (DockerAttention).
     var dockerAttention = DockerAttention()
+    /// The last connection a container was opened in the Database panel with.
+    var dockerDatabaseDraft: DockerDatabaseGuess.Guess?
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.

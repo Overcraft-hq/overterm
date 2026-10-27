@@ -17,6 +17,8 @@ struct DockerActions {
     var openPage: () -> Void = {}
     /// A container in the right-hand pane, from the panel.
     var showContainer: (ContainerSummary) -> Void = { _ in }
+    /// A database container's connection, in the Database panel's form.
+    var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
 }
 
 /// One block of the containers list: a compose project with its
@@ -297,6 +299,8 @@ final class DockerPageModel: ObservableObject {
             }
         case .open:
             if let url = selected.lazy.compactMap({ PublishedPort.of($0.Ports ?? []).first?.url }).first { actions?.open(url) }
+        case .database:
+            if let container = selected.first { openInDatabase(container) }
         case .remove: confirmRemove(selected)
         case .composeUp:
             if let project = selectedProject { compose("up", project) }
