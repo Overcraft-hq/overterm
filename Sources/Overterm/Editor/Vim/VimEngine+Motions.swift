@@ -298,14 +298,23 @@ extension VimEngine {
         var e = t.next(p)
         while s > ls && t.charClass(t.prev(s), big: big) == c { s = t.prev(s) }
         while e < le && t.charClass(e, big: big) == c { e = t.next(e) }
+        // No `&&` in these loops: its right side is an autoclosure, which in
+        // a nested function Swift 6.3 takes for a main-actor closure
+        // capturing `t`, and refuses (sending 't' risks causing data races).
         func extendRun() {
             guard e < le else { return }
             let run = t.charClass(e, big: big)
-            while e < le && t.charClass(e, big: big) == run { e = t.next(e) }
+            while e < le {
+                guard t.charClass(e, big: big) == run else { break }
+                e = t.next(e)
+            }
         }
         func extendBlanks() -> Bool {
             guard e < le, t.charClass(e, big: big) == 0 else { return false }
-            while e < le && t.charClass(e, big: big) == 0 { e = t.next(e) }
+            while e < le {
+                guard t.charClass(e, big: big) == 0 else { break }
+                e = t.next(e)
+            }
             return true
         }
         if !around {
