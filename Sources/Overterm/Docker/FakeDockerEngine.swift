@@ -295,7 +295,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             emitImage("tag", found.Id)
             return .empty(201)
         case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"))
-        case "images", "volumes", "networks": return other(method, kind, id, named, body)
+        case "images", "volumes", "networks": return other(method, kind, id, named, body, query)
         default: return Self.error(404, "page not found")
         }
     }
@@ -524,9 +524,16 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    private func other(_ method: HTTPMethod, _ kind: String, _ id: String, _ named: Bool, _ body: Data) -> Answer {
+    private func other(_ method: HTTPMethod, _ kind: String, _ id: String, _ named: Bool, _ body: Data, _ query: [String: String]) -> Answer {
         switch (method, kind, named) {
         case (.GET, "images", false): return Self.json(locked { images })
+        case (.GET, "images", true) where id == "search":
+            let term = (query["term"] ?? "").lowercased()
+            let catalog = [("redis", "Redis is the world's fastest data platform", 13_000, true), ("bitnami/redis", "Bitnami Redis", 300, false)]
+            let found = catalog.filter { $0.0.contains(term) }.map {
+                #"{"name":"\#($0.0)","description":"\#($0.1)","star_count":\#($0.2),"is_official":\#($0.3),"is_automated":false}"#
+            }
+            return .json(200, Data(("[" + found.joined(separator: ",") + "]").utf8))
         case (.GET, "volumes", false): return Self.json(VolumeList(Volumes: locked { volumes }, Warnings: nil))
         case (.POST, "volumes", false):
             struct Request: Decodable { var Name: String }

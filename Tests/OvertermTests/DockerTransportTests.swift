@@ -289,6 +289,13 @@ final class DockerTransportTests: XCTestCase {
         try await real.remove(volume: name, force: true)
     }
 
+    func testHubIsSearchedThroughTheEngine() async throws {
+        let found = try await engine.search("redis")
+        XCTAssertEqual(found.map(\.name), ["redis", "bitnami/redis"])
+        XCTAssertEqual(found.first?.is_official, true)
+        XCTAssertTrue(fake.requests.contains { $0.contains("/images/search?limit=10&term=redis") }, "\(fake.requests)")
+    }
+
     func testImagesVolumesNetworksAndPrunes() async throws {
         fake.addImage("postgres:16", size: 400 << 20, containers: 1)
         fake.addImage("node:20", size: 1 << 30)

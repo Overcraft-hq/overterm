@@ -97,6 +97,8 @@ extension E2ERunner {
             "a pull shows its progress, then the image",
             await eventually(5) { page.pulls["busybox:1.36"]?.done == true && docker.images.contains { $0.tags.contains("busybox:1.36") } },
             page.pulls["busybox:1.36"]?.summary ?? "no pull")
+        let hub = await page.searchHub("redis")
+        check("Docker Hub is searched through the engine", hub.first.map { $0.name == "redis" && $0.is_official == true } == true, "\(hub)")
         page.pull("private/thing")
         check(
             "one the engine may not pull says where it can be",

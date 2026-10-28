@@ -267,6 +267,22 @@ extension DockerEngine {
         var total: Int?
     }
 
+    /// An image on Docker Hub, as the engine's search finds it.
+    struct SearchResult: Decodable, Identifiable, Equatable, Sendable {
+        var name: String
+        var description: String?
+        var star_count: Int?
+        var is_official: Bool?
+
+        var id: String { name }
+    }
+
+    /// Docker Hub's images matching `term`, best first — asked by the
+    /// engine, as `docker search` asks.
+    func search(_ term: String, limit: Int = 10) async throws -> [SearchResult] {
+        try await get([SearchResult].self, "/images/search", ["term": term, "limit": "\(limit)"])
+    }
+
     /// A public image's pull, its progress line by line.
     func pull(_ image: String) -> AsyncThrowingStream<PullProgress, Error> {
         let (name, tag) = Self.split(image)

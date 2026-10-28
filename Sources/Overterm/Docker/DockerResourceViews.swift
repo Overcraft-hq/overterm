@@ -69,6 +69,7 @@ struct DockerImagesView: View {
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var pullName = ""
+    @State private var found: [DockerEngine.SearchResult] = []
 
     private var shown: [ImageSummary] {
         let words = page.filter.lowercased().split(separator: " ").map(String.init)
@@ -87,14 +88,24 @@ struct DockerImagesView: View {
                     .onSubmit {
                         page.pull(pullName)
                         pullName = ""
+                        found = []
                     }
                     .accessibilityIdentifier("docker.pull")
+                    .task(id: pullName) {
+                        // Asked once typing pauses; a name with a tag is already chosen.
+                        let term = pullName.trimmingCharacters(in: .whitespaces)
+                        guard term.count >= 2, !term.contains(":") else { return found = [] }
+                        try? await Task.sleep(for: .milliseconds(350))
+                        guard !Task.isCancelled else { return }
+                        found = await page.searchHub(term)
+                    }
             }
             .padding(.horizontal, 10)
             .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.6)))
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            if !found.isEmpty { suggestions }
             ForEach(page.pulls.keys.sorted(), id: \.self) { name in
                 if let pull = page.pulls[name] { pullRow(pull) }
             }
@@ -122,6 +133,36 @@ struct DockerImagesView: View {
                 }
             }
         }
+    }
+
+    /// Docker Hub's images for what is typed: a click pulls one.
+    private var suggestions: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(found.prefix(6)) { result in
+                Button {
+                    page.pull(result.name)
+                    pullName = ""
+                    found = []
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(verbatim: result.name).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
+                        if result.is_official == true {
+                            Text("Official").font(.system(size: 10)).foregroundStyle(theme.accentText)
+                                .padding(.horizontal, 5).background(Capsule().stroke(theme.accentText.opacity(0.5)))
+                        }
+                        Text(verbatim: result.description ?? "").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(verbatim: "★ \(result.star_count ?? 0)").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                    }
+                    .frame(height: 22)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("docker.search")
     }
 
     private func pullRow(_ pull: DockerPull) -> some View {

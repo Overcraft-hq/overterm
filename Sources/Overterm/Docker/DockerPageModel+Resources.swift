@@ -293,6 +293,12 @@ extension DockerPageModel {
 
     func dismissPull(_ image: String) { pulls[image] = nil }
 
+    /// Docker Hub's images for a term, through the engine; none when it
+    /// can't reach Hub.
+    func searchHub(_ term: String) async -> [DockerEngine.SearchResult] {
+        (try? await docker.engine?.search(term)) ?? []
+    }
+
     func tag(_ image: ImageSummary, as name: String) {
         let (repository, tag) = DockerEngine.split(name.trimmingCharacters(in: .whitespaces))
         Task {

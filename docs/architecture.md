@@ -1242,7 +1242,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   image pulls with its layers' progress summed (`DockerPull`); one a
   registry won't give without credentials says to pull it in a terminal
   tab, where the credential helper signs in — Overterm never handles a
-  registry password. Tag, remove (asked first; never what a running
+  registry password. Typing in the pull field asks Docker Hub through
+  the engine's own `/images/search` (as `docker search` does) and suggests
+  images with their stars and the official mark. Tag, remove (asked first; never what a running
   container uses), browse a volume in a tab (a throwaway container).
 - **Builds** (section 5, `DockerBuildRecord`/`DockerBuildDetail`, pure):
   what `docker buildx history` keeps — Docker Desktop's Builds view reads

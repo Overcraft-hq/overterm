@@ -27,6 +27,7 @@ version is tagged `v<version>`.
 - docker: a volume exports, imports and clones; a container's filesystem and an image save as tars
 - tasks: New Task can start the new worktree's compose stack with it
 - docker: Builds shows what buildx kept of each — how long, how much from cache, its log, the Dockerfile a click away
+- docker: Docker Hub is searched as you type the image to pull
 
 ## 1.4.6 — 2026-10-29
 
