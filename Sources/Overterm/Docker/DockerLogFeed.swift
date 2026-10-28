@@ -118,6 +118,8 @@ final class DockerLogFollower {
             // A TTY's output comes plain, the rest framed; the detail says.
             var tty = tty
             if tty == nil { tty = try? await engine.container(id).Config.Tty }
+            // Stopped while that was read: no stream is opened after all.
+            guard !Task.isCancelled else { return }
             let stream = engine.logs(id, tty: tty ?? false, tail: since == nil ? tail : 1000, follow: true, since: since)
             self?.set(following: true)
             do {
