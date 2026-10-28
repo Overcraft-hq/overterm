@@ -28,6 +28,7 @@ version is tagged `v<version>`.
 - tasks: New Task can start the new worktree's compose stack with it
 - docker: Builds shows what buildx kept of each — how long, how much from cache, its log, the Dockerfile a click away
 - docker: Docker Hub is searched as you type the image to pull
+- docker: Docker Desktop's update check, diagnose and Kubernetes status in the engine menu, in a terminal tab
 
 ## 1.4.6 — 2026-10-29
 

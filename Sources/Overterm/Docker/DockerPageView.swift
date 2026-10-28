@@ -107,6 +107,12 @@ struct DockerPageView: View {
                             Button("\(action.rawValue.capitalized) \(docker.runtime.name)") { actions.run(command, nil) }
                         }
                     }
+                    let extras = docker.runtime.extras(context: docker.endpoint?.context)
+                    if !extras.isEmpty {
+                        Divider()
+                        ForEach(extras, id: \.title) { extra in Button(extra.title) { actions.run(extra.command, nil) } }
+                    }
+                    Divider()
                     Button("Edit Engine Settings…") { page.editEngineConfig() }
                         .help("\(docker.runtime.configFile(context: docker.endpoint?.context)?.path ?? "") — applied when it restarts")
                     Divider()

@@ -52,6 +52,25 @@ enum DockerRuntime: String, Equatable, Sendable {
 
     enum Action: String, Sendable { case start, stop, restart }
 
+    /// The rest of what the runtime's own CLI does for it — updates,
+    /// diagnostics, Kubernetes — run in a terminal tab where the user sees
+    /// it ask and answer.
+    func extras(context: String? = nil) -> [(title: String, command: String)] {
+        let profile = Self.colimaProfile(context).map { " --profile \($0)" } ?? ""
+        switch self {
+        case .dockerDesktop:
+            return [
+                ("Check for Updates", "docker desktop update --check-only"), ("Update Docker Desktop", "docker desktop update"),
+                ("Kubernetes Status", "docker desktop kubernetes status"), ("Diagnose", "docker desktop diagnose"),
+                ("Docker Desktop's Logs", "docker desktop logs"),
+            ]
+        case .orbStack: return [("OrbStack's Status", "orb status"), ("OrbStack's Logs", "orb logs")]
+        case .colima: return [("Colima's Status", "colima status\(profile)"), ("Colima's Profiles", "colima list")]
+        case .podman: return [("Podman Machines", "podman machine list")]
+        case .rancherDesktop, .engine: return []
+        }
+    }
+
     /// `colima-work` → work; Colima's default profile's context is `colima`.
     static func colimaProfile(_ context: String?) -> String? {
         guard let context, context.hasPrefix("colima-") else { return nil }

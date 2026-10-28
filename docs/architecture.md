@@ -1191,7 +1191,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Overterm types carry `DOCKER_CONTEXT=`; an isolated run
   reaches none unless `OVERTERM_DOCKER_HOST` names one (a scenario's fake).
   `DockerRuntime` says which engine it is from the socket's path, the
-  context and `/info`, and how to start, stop and restart it.
+  context and `/info`, how to start, stop and restart it, and the rest its
+  own CLI does for it (`extras`: Docker Desktop's update check, update,
+  Kubernetes status, diagnose, logs; OrbStack's and Colima's status) —
+  the engine menu runs them in a terminal tab.
 - **Talking to it** (`DockerEngine`, `DockerAPI`): the Engine API over the
   unix socket with SwiftNIO's HTTP/1.1 (one connection a call, ~30 ms),
   the API version settled with `/_ping`. Streams — events, followed logs,

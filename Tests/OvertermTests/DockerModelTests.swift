@@ -358,6 +358,14 @@ final class DockerCLITests: XCTestCase {
         XCTAssertEqual(output.trimmingCharacters(in: .whitespacesAndNewlines), "colima|desktop status --format json")
     }
 
+    func testWhatEachRuntimesOwnCLIDoesForIt() {
+        let desktop = DockerRuntime.dockerDesktop.extras().map(\.command)
+        XCTAssertTrue(desktop.contains("docker desktop update --check-only"))
+        XCTAssertTrue(desktop.contains("docker desktop kubernetes status"))
+        XCTAssertEqual(DockerRuntime.colima.extras(context: "colima-work").first?.command, "colima status --profile work")
+        XCTAssertTrue(DockerRuntime.engine.extras().isEmpty)
+    }
+
     func testWhereEachEngineKeepsItsSettings() {
         let home = URL(fileURLWithPath: "/Users/me")
         XCTAssertEqual(DockerRuntime.dockerDesktop.configFile(home: home)?.path, "/Users/me/.docker/daemon.json")
