@@ -83,9 +83,12 @@ no agent, so nothing of your ~/.ssh is read or written (skipped where
 OVERTERM_DOCKER_TESTS=1 swift test --filter DockerTransportTests
 ```
 
-adds read-only calls (`_ping`, `info`, the lists) to the engine your
-terminal's `docker` reaches, to check that the models still read what it
-answers.
+adds calls to the engine your terminal's `docker` reaches, to check that
+the models still read what it answers: reads (`_ping`, `info`, the lists),
+then exec, files and a volume's export and import on a container and a
+volume of their own — labelled `overterm.test`, made from
+`debian:bookworm-slim` only if it is already there (nothing is pulled),
+and removed after.
 
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 

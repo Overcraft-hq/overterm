@@ -5,8 +5,11 @@ import XCTest
 
 /// The engine's calls over a real unix socket, against the fake engine:
 /// answers, errors, streams that go on, streams left early. Never the
-/// user's Docker; with OVERTERM_DOCKER_TESTS=1 a few read-only calls go to
-/// it as well (`testTheRealEngineAnswers`).
+/// user's Docker; with OVERTERM_DOCKER_TESTS=1 a few calls go to it as
+/// well: reads (`testTheRealEngineAnswers`), and exec, files and a
+/// volume's export and import on a container and a volume of their own —
+/// labelled `overterm.test`, from an image already there (nothing is
+/// pulled), removed after.
 final class DockerTransportTests: XCTestCase {
     private var fake: FakeDockerEngine!
     private var engine: DockerEngine!
