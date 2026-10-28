@@ -136,6 +136,21 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: MCP Toolkit
+
+    func loadMCPToolkit() {
+        Task {
+            let clients = await DockerMCPToolkit.read(endpoint: docker.endpoint)
+            if clients != mcpClients { mcpClients = clients }
+        }
+    }
+
+    /// Connects an agent to the Toolkit's gateway, or disconnects it — in
+    /// a terminal tab: it rewrites that agent's own config.
+    func toggleMCP(_ client: MCPToolkitClient) {
+        actions?.run(DockerMCPToolkit.command(client, connect: !client.connected), nil)
+    }
+
     // MARK: Builds
 
     /// The builds `buildx history` keeps, read when the section shows.

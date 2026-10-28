@@ -246,6 +246,41 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// Docker's MCP Toolkit beside the agents, as a stub `docker` answers
+    /// `docker mcp client ls`; connecting one is a tab's command.
+    private func mcpToolkitChecks() async {
+        let page = app.dockerPage
+        check("no Toolkit read in an isolated run without a stub", page.mcpClients == nil)
+        let bin = scratch.appendingPathComponent("mcp-stub-bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("docker")
+        let script = """
+            #!/bin/sh
+            case "$*" in
+              "mcp client ls --global --json") echo '{"claude-code":{"displayName":"Claude Code","dockerMCPCatalogConnected":true,"isInstalled":true},"codex":{"displayName":"Codex","dockerMCPCatalogConnected":false,"isInstalled":true}}' ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        defer { DockerCLI.override = nil }
+        page.loadMCPToolkit()
+        check(
+            "the Toolkit says which agents reach its servers",
+            await eventually(5) { page.mcpClients?.map { "\($0.id) \($0.connected)" } == ["claude-code true", "codex false"] },
+            "\(page.mcpClients ?? [])")
+        var commands: [String] = []
+        let actions = page.actions
+        page.actions?.run = { command, _ in commands.append(command) }
+        if let codex = page.mcpClients?.last { page.toggleMCP(codex) }
+        page.actions = actions
+        check("Connect is the Toolkit's own command, in a tab", commands == ["docker mcp client connect --global codex"], "\(commands)")
+        page.press("6")
+        await capture("models")
+        page.press("1")
+    }
+
     /// The same engine as a remote one, `ssh://` to a throwaway sshd on
     /// 127.0.0.1 with its socket forwarded — what an ssh context does.
     private func remoteChecks(socket: String, web: String, folder: URL) async {
@@ -722,6 +757,7 @@ extension E2ERunner {
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
         await modelsChecks(fake)
+        await mcpToolkitChecks()
         await agentChecks(fake, web: web)
         await remoteChecks(socket: socket, web: web, folder: folder)
         app.hideOverlay()

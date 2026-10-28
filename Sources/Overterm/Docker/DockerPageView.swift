@@ -57,6 +57,7 @@ struct DockerPageView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            if let clients = page.mcpClients, !clients.isEmpty { mcpToolkit(clients).padding(.bottom, 10) }
             DockerDiskSummary(docker: docker, theme: theme).padding(.bottom, 8)
             Button {
                 page.cleaning = true
@@ -93,6 +94,25 @@ struct DockerPageView: View {
         case .down: TabStatusStyle.failed
         case .off: theme.text3
         }
+    }
+
+    /// Overterm's agents and Docker's MCP Toolkit: which reach its servers.
+    private func mcpToolkit(_ clients: [MCPToolkitClient]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("MCP Toolkit").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            ForEach(clients) { client in
+                HStack(spacing: 6) {
+                    DockerStatusDot(color: client.connected ? TabStatusStyle.done : theme.text3)
+                    Text(verbatim: client.name).font(.system(size: 11.5)).foregroundStyle(client.installed ? theme.text2 : theme.text3).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Button(client.connected ? "Disconnect" : "Connect") { page.toggleMCP(client) }
+                        .buttonStyle(.borderless).font(.system(size: 11))
+                        .help(DockerMCPToolkit.command(client, connect: !client.connected) + " — in a terminal tab; it changes \(client.name)'s config")
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .accessibilityIdentifier("docker.mcpToolkit")
     }
 
     /// Which engine, whether it answers, and what can be done to it.

@@ -118,11 +118,15 @@ final class DockerPageModel: ObservableObject {
     @Published var models: ModelRunner.Contents?
     @Published var modelsError: String?
     @Published var modelSelection: Set<String> = []
+    /// Claude Code and Codex as Docker's MCP Toolkit sees them, read each
+    /// time the page shows; nil without the Toolkit.
+    @Published var mcpClients: [MCPToolkitClient]?
 
     let docker: DockerModel
 
     private var streams: AnyCancellable?
     private var wanting: AnyCancellable?
+    private var showing: AnyCancellable?
     /// The resource this page holds the model to (`DockerModel.want`).
     private var wanted: DockerModel.Resource?
 
@@ -137,6 +141,8 @@ final class DockerPageModel: ObservableObject {
                     if visible, section == .models { self?.loadModels() }
                 }
             }
+        showing = $visible.removeDuplicates().filter { $0 }
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.loadMCPToolkit() } }
         // The detail's streams follow what it shows and whether it shows.
         streams = Publishers.CombineLatest4($selection, $detailTab, $visible, $showDetail)
             .combineLatest($projectTab)

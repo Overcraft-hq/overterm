@@ -1291,6 +1291,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   first and is the runner's `DELETE /models/…`. The header copies the
   OpenAI-compatible base URL for a container and, for a runner
   container, for this Mac; agents get the same in `docker_models`.
+- **MCP Toolkit** (`DockerMCPToolkit`, pure but for `read`): whether
+  Claude Code and Codex reach Docker's MCP gateway — `docker mcp client
+  ls --global --json`, which reads their config files and nothing else,
+  each time the page shows (an isolated run asks only a scenario's stub).
+  Connect and Disconnect are `docker mcp client connect|disconnect
+  --global <agent>` in a terminal tab: they rewrite that agent's config,
+  so the user sees them do it. Without Docker Desktop's plugin the block
+  isn't there.
 - **Export and import**: a container's filesystem (`/export`, `docker
   export`) and an image (`/images/…/get`, `docker save`) stream to a file
   as they come. A volume goes through a helper: a container created with
