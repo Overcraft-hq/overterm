@@ -15,6 +15,7 @@ version is tagged `v<version>`.
 - docker: a container that crashes, runs out of memory or turns unhealthy marks its checkout's tab, as a failed command does
 - docker: `d` on a PostgreSQL, MySQL or ClickHouse container opens it in the Database panel, its connection filled in from the container
 - docker: a container's files — browse its folders, open a config in the editor, and the save goes back into the container
+- docker: agents started in Overterm read Docker through MCP — containers, projects, logs, why one failed — with secrets kept out; starting, stopping, compose and exec are asked about in the window each time
 
 ## 1.4.6 — 2026-10-29
 

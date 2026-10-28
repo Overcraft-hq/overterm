@@ -28,6 +28,8 @@ extension TerminalWindowController {
     /// The panel follows the selected tab's checkout, and holds the
     /// model's poll only while it is on screen.
     func wireDockerPanel() {
+        // An agent's compose up or down runs in a tab of this window.
+        DockerMCP.runInTab = { [weak self] command, folder in self?.runDockerCommand(command, in: folder) }
         diff.$root
             .combineLatest(store.$selectedID)
             .sink { [weak self] root, _ in
@@ -321,7 +323,9 @@ extension TerminalWindowController {
         return table.isDescendant(of: page)
     }
 
-    func dockerSettingsChanged() {
+    func dockerSettingsChanged(_ keys: Set<String> = ["docker.enabled"]) {
+        // Agents' Docker tools come and go with the setting.
+        BrowserBridge.shared.update()
         if !Settings.shared.dockerEnabled {
             closeOverlay(.docker)
             if sidebarPanel.panel == .docker { sidebarPanel.panel = .files }
@@ -330,8 +334,9 @@ extension TerminalWindowController {
             dockerPanel.picked = nil
             updateDockerVisibility()
             DockerModel.shared.stop()
-        } else if DockerModel.shared.isWatching {
-            // Another engine, maybe: nothing starts that wasn't started.
+        } else if DockerModel.shared.isWatching, keys.contains("docker.enabled") || keys.contains("docker.endpoint") {
+            // Another engine, maybe: nothing starts that wasn't started,
+            // and an agents' setting reconnects nothing.
             DockerModel.shared.reconnect()
         }
         // The rail lists its icons from the setting: drawn again.

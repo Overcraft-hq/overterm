@@ -313,6 +313,8 @@ final class Settings: ObservableObject {
     var dockerEnabled: Bool { bool("docker.enabled") }
     var dockerEndpoint: String { string("docker.endpoint").trimmingCharacters(in: .whitespaces) }
     var dockerNotifyOnExit: Bool { dockerEnabled && bool("docker.notifyOnExit") }
+    var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
+    var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
 
     // MARK: Ghostty overrides
 

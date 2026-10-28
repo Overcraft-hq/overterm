@@ -482,6 +482,15 @@ enum SettingsSchema {
                 "A container of the tab's checkout that exits with an error, runs out of memory or turns unhealthy marks the tab as a failed command does, and notifies you while you are elsewhere. One you stopped doesn't.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
         SettingSpec(
+            key: "docker.agentAccess", section: .docker, group: "Agents", title: "Agents can see Docker",
+            help:
+                "Claude Code started from Overterm gets MCP tools to list the containers and compose projects, read a container's logs, inspect data and use. Env values that look like secrets are masked, and taken out of logs.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.agentWrites", section: .docker, group: "Agents", title: "Agents can ask to act",
+            help: "Start, stop, restart or remove a container, run compose, exec in a container — each asked about in the window first, and run only if you say so.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess"),
+        SettingSpec(
             key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
             help: "Under the selected tab's checkout's stack, the containers of other projects and of none that are running.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),

@@ -1283,6 +1283,17 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `die` alone. Whose checkout is the compose project's working folder
   against each tab's (`DockerAttention.belongs`), the selected tab first.
   Settings ▸ Docker ▸ Attention turns it off.
+- **Agents** (`DockerMCP`, on BrowserBridge's server beside the
+  browser's, the API client's, the notes' and the databases' tools):
+  `docker_containers`, `docker_projects`, `docker_logs` (levels read,
+  filtered), `docker_inspect` (state, error, health, ports, mounts, env)
+  and `docker_stats` read; `docker_action`, `docker_compose` and
+  `docker_exec` act, each asked about in the window first (`allow`; a
+  test answers through `askOverride`), compose up and down in a terminal
+  tab the user sees. Settings ▸ Docker ▸ Agents: reading, and asking to
+  act — on by default, as decided. No secret leaves in an answer: env
+  values that look like secrets are masked, and their values taken out of
+  logs and exec output.
 - **Watched in the background**: the model starts when Docker is shown,
   or when the selected tab's checkout has a compose file at its top. While
   nothing shows Docker, a retry asks Docker Desktop's own CLI first (the

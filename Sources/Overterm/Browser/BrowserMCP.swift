@@ -81,6 +81,18 @@ enum BrowserMCP {
                     return reply(errorResult(error.localizedDescription))
                 }
             }
+            if name.hasPrefix("docker_") {
+                guard Settings.shared.dockerAgentAccess else {
+                    return reply(errorResult("Docker isn't available to agents — Settings ▸ Docker."))
+                }
+                do {
+                    return reply(try await DockerMCP.call(name, arguments, docker: DockerModel.shared))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(error.localizedDescription))
+                }
+            }
             if name.hasPrefix("api_") {
                 guard Settings.shared.apiAgentControl, let api = api() else {
                     return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
@@ -175,8 +187,13 @@ enum BrowserMCP {
 
     /// The tools of what Settings gives agents: the browser's, the API client's, the notes'.
     static var offered: [[String: Any]] {
-        (Settings.shared.browserAgentControl ? tools : []) + (Settings.shared.apiAgentControl ? APIMCP.tools : [])
-            + (Settings.shared.notesAgentAccess ? NotesMCP.tools : []) + (Settings.shared.databaseAgentAccess ? DatabaseMCP.tools : [])
+        var offered: [[String: Any]] = []
+        if Settings.shared.browserAgentControl { offered += tools }
+        if Settings.shared.apiAgentControl { offered += APIMCP.tools }
+        if Settings.shared.notesAgentAccess { offered += NotesMCP.tools }
+        if Settings.shared.databaseAgentAccess { offered += DatabaseMCP.tools }
+        if Settings.shared.dockerAgentAccess { offered += DockerMCP.tools }
+        return offered
     }
 
     static var instructions: String {
@@ -201,6 +218,7 @@ enum BrowserMCP {
                 "The user's databases and buckets (Overterm's Database panel): db_connections and db_schema show what is there, db_query runs one statement and returns rows — reads; storage_list and storage_read browse S3/GCS. Check real data instead of guessing a schema."
             )
         }
+        if Settings.shared.dockerAgentAccess { parts.append(DockerMCP.instructions) }
         return parts.joined(separator: " ")
     }
 

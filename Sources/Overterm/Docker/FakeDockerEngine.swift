@@ -356,6 +356,8 @@ final class FakeDockerEngine: @unchecked Sendable {
             let frames = container.logs.suffix(tail).reduce(into: Data()) { $0 += Self.frame($1.stream, $1.time + " " + $1.text + "\n") }
             if query["follow"] == "1" { return .follow(id, frames) }
             return .raw(200, frames, [("Content-Type", "application/vnd.docker.multiplexed-stream")])
+        case (.GET, "stats") where query["stream"] == "false":
+            return .json(200, statsSample(id, tick: 1))
         case (.GET, "stats"):
             return .stats(id)
         case (.POST, "exec"):

@@ -3139,7 +3139,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
-                if keys.contains(where: { $0.hasPrefix("docker.") }) { self.dockerSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("docker.") }) { self.dockerSettingsChanged(keys) }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }

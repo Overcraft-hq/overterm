@@ -180,6 +180,11 @@ its connection filled in from the container. A container's files are a
 tab of its own: browse its folders, open a config in the editor, and the
 save goes back into the container.
 
+Claude Code started in Overterm can read Docker too, through MCP: the
+containers and compose projects, a container's logs, why it failed, what
+it uses — secrets kept out. Starting, stopping, compose and exec are asked
+about in the window each time, and Settings ▸ Docker can take them away.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started

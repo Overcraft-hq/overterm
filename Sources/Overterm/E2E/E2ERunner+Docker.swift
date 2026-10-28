@@ -24,6 +24,53 @@ extension E2ERunner {
         app.sidebarPanel.panel = .files
     }
 
+    /// Docker's MCP tools as an agent calls them: reads open, secrets kept
+    /// out, each write asked first, writes gone when Settings says so.
+    private func agentChecks(_ fake: FakeDockerEngine, web: String) async {
+        func call(_ name: String, _ arguments: [String: Any] = [:]) async -> (text: String, isError: Bool) {
+            let message: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": name, "arguments": arguments]]
+            let answer = await BrowserMCP.handle(message, browser: { nil })
+            if let error = answer?["error"] as? [String: Any] { return (error["message"] as? String ?? "", true) }
+            let result = answer?["result"] as? [String: Any]
+            return (((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "", result?["isError"] as? Bool == true)
+        }
+        func listed() async -> [String] {
+            let answer = await BrowserMCP.handle(["jsonrpc": "2.0", "id": 1, "method": "tools/list"], browser: { nil })
+            return ((answer?["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String } ?? []
+        }
+        let docker = DockerModel.shared
+        let tools = await listed()
+        check("agents are offered Docker's tools", tools.contains("docker_logs") && tools.contains("docker_action"), "\(tools)")
+        let containers = await call("docker_containers")
+        check("docker_containers lists them with their ports", containers.text.contains("ot-shop-web-1") && containers.text.contains("localhost:58080→80"), containers.text)
+        let inspect = await call("docker_inspect", ["container": "ot-shop-web-1"])
+        check("docker_inspect masks a secret", inspect.text.contains("API_TOKEN=••••••") && !inspect.text.contains("s3cr3t-value"), inspect.text)
+
+        DockerMCP.askOverride = { _ in false }
+        let declined = await call("docker_action", ["container": "ot-shop-web-1", "action": "stop"])
+        check("a write the user declines doesn't happen", declined.isError && declined.text.contains("declined") && fake.summary(web)?.state == .running, declined.text)
+        var asked = ""
+        DockerMCP.askOverride = { question in
+            asked = question
+            return true
+        }
+        let stopped = await call("docker_action", ["container": "ot-shop-web-1", "action": "stop"])
+        check("one allowed does", !stopped.isError && fake.summary(web)?.state == .exited, stopped.text)
+        check("asked about by name", asked.contains("stop") && asked.contains("ot-shop-web-1"), asked)
+        _ = await call("docker_action", ["container": "ot-shop-web-1", "action": "start"])
+        check("and back", await eventually(5) { docker.container(web)?.state == .running })
+        let exec = await call("docker_exec", ["container": "ot-shop-web-1", "command": "cat /etc/hostname"])
+        check("docker_exec says the exit code", exec.text.hasPrefix("exit 127"), exec.text)
+
+        Settings.shared.set("docker.agentWrites", .bool(false))
+        let without = await listed()
+        check("with writes off, no write is offered", without.contains("docker_logs") && !without.contains("docker_action"), "\(without)")
+        let refused = await call("docker_action", ["container": "ot-shop-web-1", "action": "stop"])
+        check("nor done", refused.isError && refused.text.contains("Settings ▸ Docker") && fake.summary(web)?.state == .running, refused.text)
+        Settings.shared.set("docker.agentWrites", nil)
+        DockerMCP.askOverride = nil
+    }
+
     /// Images, volumes, networks, Clean Up — on the page, which shows.
     private func resourcesChecks(_ fake: FakeDockerEngine) async {
         let page = app.dockerPage
@@ -218,7 +265,13 @@ extension E2ERunner {
         }
         page.detailTab = .overview
         app.toggleDockerPage(nil)
-        _ = await eventually(3) { self.app.dockerListHasKeyboard() }
+        // The editor takes the keyboard as its file opens, maybe after the
+        // page is back: the list is given it until it has it.
+        let back = await eventually(5) {
+            if !self.app.dockerListHasKeyboard() { self.app.focusDockerList() }
+            return self.app.dockerListHasKeyboard()
+        }
+        check("the page comes back with the keyboard in its list", back, "\(String(describing: window.firstResponder))")
 
         // Keys: `s` stops it, `s` again starts it, as the engine says.
         let pressed = page.press("s")
@@ -396,6 +449,7 @@ extension E2ERunner {
         app.showDockerSwitcher(nil)
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
+        await agentChecks(fake, web: web)
         app.hideOverlay()
 
         // ⌥⌘P twice: back to the terminal, the page kept in the strip.
