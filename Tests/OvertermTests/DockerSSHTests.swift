@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 
@@ -151,6 +152,37 @@ final class DockerSSHTests: XCTestCase {
         XCTAssertEqual(mode.map { $0 & 0o077 }, 0, "the local end is this user's alone")
         let name = await DockerSSHForward.hostName(of: target)
         XCTAssertEqual(name, "127.0.0.1")
+    }
+
+    /// Connect Again closes the ssh and opens it again — the close done
+    /// first, or it took the new forward down and the bar said "down".
+    @MainActor
+    func testAReconnectKeepsItsForward() async throws {
+        let host = try startHost()
+        let socket = host.folder.appendingPathComponent("engine.sock").path
+        let fake = FakeDockerEngine(socket: socket)
+        try fake.start()
+        defer { fake.stop() }
+        let endpoint = DockerEndpoint(address: .ssh(DockerSSHTarget(host: "127.0.0.1", port: host.port, socket: socket)), context: nil, source: "test")
+        let model = DockerModel(endpoint: { endpoint }, retries: [.seconds(5)])
+        defer { model.stop() }
+        func until(_ ok: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(10)
+            while !ok(), Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        model.start()
+        try await until { model.connection.isRunning }
+        XCTAssertTrue(model.connection.isRunning, "\(model.connection)")
+        var seen: [DockerModel.Connection] = []
+        let watching = model.$connection.sink { seen.append($0) }
+        defer { watching.cancel() }
+        for _ in 0..<3 {
+            model.reconnect()
+            try await until { model.connection.isRunning }
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertTrue(model.connection.isRunning, "\(model.connection)")
+        XCTAssertFalse(seen.contains { if case .down = $0 { return true } else { return false } }, "\(seen)")
     }
 
     func testAMissingRemoteSocketSaysWhy() async throws {

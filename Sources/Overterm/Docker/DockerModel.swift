@@ -67,6 +67,8 @@ final class DockerModel: ObservableObject {
     private let retries: [Duration]
     private let poll: Duration
     private var watching: Task<Void, Never>?
+    /// A remote engine's ssh being closed (`closeForward`).
+    private var closing: Task<Void, Never>?
     private var reloading: Task<Void, Never>?
     private var polling: Task<Void, Never>?
     private var viewers = 0
@@ -129,6 +131,9 @@ final class DockerModel: ObservableObject {
     }
 
     private func watch() async {
+        // A reconnect's stop closed the forward: done before this one opens
+        // its own, or it would close the new one.
+        await closing?.value
         while !Task.isCancelled {
             guard let endpoint = override ?? resolve() else {
                 closeForward()
@@ -205,7 +210,11 @@ final class DockerModel: ObservableObject {
     /// A remote engine's ssh, closed when it is no longer the engine.
     private func closeForward() {
         guard case .ssh(let target) = endpoint?.address else { return }
-        Task { await DockerSSHForwards.shared.close(target) }
+        let before = closing
+        closing = Task {
+            await before?.value
+            await DockerSSHForwards.shared.close(target)
+        }
     }
 
     /// A container's published ports, where they are reached from here.
