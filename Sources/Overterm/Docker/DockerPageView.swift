@@ -104,6 +104,8 @@ struct DockerPageView: View {
                         }
                     }
                     Divider()
+                    contexts
+                    Divider()
                     Button("Connect Again") { docker.reconnect() }
                     Button("Docker Settings…") { actions.settings() }
                 } label: {
@@ -118,6 +120,23 @@ struct DockerPageView: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.rowHover.opacity(0.6)))
+    }
+
+    /// The CLI's contexts: one picked is Overterm's alone (`docker.context`).
+    @ViewBuilder private var contexts: some View {
+        let chosen = Settings.shared.dockerContext
+        Button {
+            Settings.shared.set("docker.context", nil)
+        } label: {
+            Text(chosen.isEmpty ? "✓ The CLI's Current Context" : "The CLI's Current Context")
+        }
+        ForEach(DockerEndpoint.contexts().map(\.name), id: \.self) { name in
+            Button {
+                Settings.shared.set("docker.context", .string(name))
+            } label: {
+                Text(chosen == name ? "✓ \(name)" : name)
+            }
+        }
     }
 
     private var engineDetail: String {

@@ -91,6 +91,15 @@ struct DockerEndpoint: Equatable, Sendable {
         }
     }
 
+    /// A context picked in Overterm (`docker.context`), for Overterm alone:
+    /// the CLI's own current context is never changed. Nil when it has no
+    /// record (removed since).
+    static func chosen(context: String, docker: URL = home) -> DockerEndpoint? {
+        if context == "default" { return DockerEndpoint(address: address(of: defaultHost), context: "default", source: "docker.context") }
+        guard let host = contextHost(context, docker: docker) else { return nil }
+        return DockerEndpoint(address: address(of: host), context: context, source: "docker.context")
+    }
+
     static var home: URL {
         if let dir = ProcessInfo.processInfo.environment["DOCKER_CONFIG"], !dir.isEmpty { return URL(fileURLWithPath: dir) }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".docker")

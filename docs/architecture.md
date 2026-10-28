@@ -1185,7 +1185,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **Where the engine is** (`DockerEndpoint`, pure once the files are read):
   as the CLI finds it — `DOCKER_HOST`, `DOCKER_CONTEXT` or `config.json`'s
   `currentContext`, that context's record (`contexts/meta/<sha256>/meta.json`),
-  the default socket. `docker.endpoint` overrides it; an isolated run
+  the default socket. `docker.endpoint` overrides it with a host, and
+  `docker.context` (the engine menu's list) with a context — for Overterm
+  alone: the CLI's current context is never changed, and the commands
+  Overterm types carry `DOCKER_CONTEXT=`; an isolated run
   reaches none unless `OVERTERM_DOCKER_HOST` names one (a scenario's fake).
   `DockerRuntime` says which engine it is from the socket's path, the
   context and `/info`, and how to start, stop and restart it.

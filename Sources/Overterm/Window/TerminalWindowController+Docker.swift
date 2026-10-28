@@ -348,7 +348,7 @@ extension TerminalWindowController {
             dockerPanel.picked = nil
             updateDockerVisibility()
             DockerModel.shared.stop()
-        } else if DockerModel.shared.isWatching, keys.contains("docker.enabled") || keys.contains("docker.endpoint") {
+        } else if DockerModel.shared.isWatching, !keys.isDisjoint(with: ["docker.enabled", "docker.endpoint", "docker.context"]) {
             // Another engine, maybe: nothing starts that wasn't started,
             // and an agents' setting reconnects nothing.
             DockerModel.shared.reconnect()

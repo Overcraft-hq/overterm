@@ -403,6 +403,12 @@ extension E2ERunner {
         try? fake.start()
         check("its return is noticed", await eventually(8) { docker.connection.isRunning && docker.containers.count == 2 })
 
+        // A context picked for Overterm reconnects; this run's engine stays its own.
+        Settings.shared.set("docker.context", .string("default"))
+        check("picking a context reconnects", await eventually(5) { docker.connection.isRunning && docker.containers.count == 2 })
+        Settings.shared.set("docker.context", nil)
+        _ = await eventually(5) { docker.connection.isRunning }
+
         // A command really typed into a tab, out from under the page.
         let mark = scratch.appendingPathComponent("docker-command.txt")
         let tabs = app.store.tabs.count

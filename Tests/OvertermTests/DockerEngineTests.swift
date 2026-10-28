@@ -60,6 +60,23 @@ final class DockerEngineTests: XCTestCase {
         XCTAssertEqual(Set(contexts), ["default", "orbstack", "colima-work"])
     }
 
+    /// A context picked in Overterm is Overterm's: its endpoint says so,
+    /// and the commands it types carry it.
+    func testAContextOfOverterms() throws {
+        let docker = FileManager.default.temporaryDirectory.appendingPathComponent("docker-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: docker) }
+        let folder = docker.appendingPathComponent("contexts/meta/\(DockerEndpoint.metaFolder(for: "orbstack"))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(#"{"Name":"orbstack","Endpoints":{"docker":{"Host":"unix:///Users/me/.orbstack/run/docker.sock"}}}"#.utf8)
+            .write(to: folder.appendingPathComponent("meta.json"))
+        let chosen = try XCTUnwrap(DockerEndpoint.chosen(context: "orbstack", docker: docker))
+        XCTAssertEqual(chosen.address, .unix("/Users/me/.orbstack/run/docker.sock"))
+        XCTAssertEqual(DockerRuntime.of(chosen), .orbStack)
+        XCTAssertEqual(DockerCommands.prefix(for: chosen), "DOCKER_CONTEXT=orbstack ")
+        XCTAssertEqual(DockerEndpoint.chosen(context: "default", docker: docker)?.address, .unix("/var/run/docker.sock"))
+        XCTAssertNil(DockerEndpoint.chosen(context: "removed", docker: docker))
+    }
+
     func testRuntimes() {
         func runtime(_ path: String, context: String? = nil, os: String? = nil) -> DockerRuntime {
             DockerRuntime.of(DockerEndpoint(address: .unix(path), context: context, source: ""), operatingSystem: os)

@@ -75,7 +75,8 @@ final class DockerModel: ObservableObject {
     ///   away, the last one repeated.
     init(
         endpoint: @escaping @MainActor () -> DockerEndpoint? = {
-            Settings.shared.dockerEnabled ? AppEnvironment.dockerEndpoint(setting: Settings.shared.dockerEndpoint) : nil
+            Settings.shared.dockerEnabled
+                ? AppEnvironment.dockerEndpoint(setting: Settings.shared.dockerEndpoint, context: Settings.shared.dockerContext) : nil
         },
         retries: [Duration] = [.seconds(1), .seconds(2), .seconds(5), .seconds(10), .seconds(30)], poll: Duration = .seconds(15)
     ) {

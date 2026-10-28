@@ -18,6 +18,7 @@ version is tagged `v<version>`.
 - docker: agents started in Overterm read Docker through MCP — containers, projects, logs, why one failed — with secrets kept out; starting, stopping, compose and exec are asked about in the window each time
 - docker: a compose project's logs merged as `compose logs` merges them, each service in its colour
 - docker: two stacks wanting the same port — the one that couldn't start says which stack, or which tab's process, has it, and stops that one for you
+- docker: any context the `docker` CLI knows, picked for Overterm alone; Docker Desktop, OrbStack and Colima started, stopped and restarted from the page
 
 ## 1.4.6 — 2026-10-29
 

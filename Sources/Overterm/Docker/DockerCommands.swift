@@ -8,8 +8,12 @@ enum DockerCommands {
     /// What the shell needs to reach Overterm's engine. Nothing when the
     /// shell finds the same one by itself (the CLI's own rules).
     static func prefix(for endpoint: DockerEndpoint?) -> String {
-        guard let endpoint, endpoint.source == "docker.endpoint" || endpoint.source == "OVERTERM_DOCKER_HOST" else { return "" }
-        return "DOCKER_HOST=\(quote(endpoint.host)) "
+        guard let endpoint else { return "" }
+        switch endpoint.source {
+        case "docker.context": return endpoint.context.map { "DOCKER_CONTEXT=\(quote($0)) " } ?? ""
+        case "docker.endpoint", "OVERTERM_DOCKER_HOST": return "DOCKER_HOST=\(quote(endpoint.host)) "
+        default: return ""
+        }
     }
 
     /// A compose verb for a project Compose knows by its labels. `up`,
