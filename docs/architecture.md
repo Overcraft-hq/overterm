@@ -1195,6 +1195,27 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   own CLI does for it (`extras`: Docker Desktop's update check, update,
   Kubernetes status, diagnose, logs; OrbStack's and Colima's status) —
   the engine menu runs them in a terminal tab.
+- **A remote engine** (`ssh://user@host`, a context's or `DOCKER_HOST`;
+  `DockerSSH`): the system's ssh forwards a socket here to the engine's on
+  the host (`-L local.sock:/var/run/docker.sock`, the local end the user's
+  alone), so the transport talks to a unix socket as it does for a local
+  engine and one ssh carries every call and stream — the CLI's own way,
+  `docker system dial-stdio`, is an ssh per connection. The engine's socket
+  there is the URL's path, else what the host's `docker context inspect`
+  says, else `/var/run/docker.sock`. BatchMode, its own connection
+  (ControlMaster off), the user's ~/.ssh/config, keys and agent: whatever
+  `docker -H ssh://` does works; nothing is asked. A forward whose ssh has
+  gone is opened again by the next call, one per host, closed when it is
+  no longer the engine and when the app quits. What ssh says is the
+  engine bar's reason — a refused key, or the host's socket refused
+  (`connect failed: Permission denied`: the user isn't in its docker
+  group). A remote engine is `.engine` whatever `/info` calls it (Docker
+  Desktop's commands would start this Mac's); its ports open on the host
+  (`publishedHost`, the name `ssh -G` resolves; one bound to the host's
+  loopback has no link), aren't a checkout's servers or a port conflict
+  here, and a database in it is reached through the Database client's
+  own SSH tunnel to the host. The engine menu adds a shell on the host and
+  its `daemon.json` and log there, in a terminal tab.
 - **Talking to it** (`DockerEngine`, `DockerAPI`): the Engine API over the
   unix socket with SwiftNIO's HTTP/1.1 (one connection a call, ~30 ms),
   the API version settled with `/_ping`. Streams — events, followed logs,

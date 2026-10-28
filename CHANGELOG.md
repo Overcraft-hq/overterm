@@ -29,6 +29,7 @@ version is tagged `v<version>`.
 - docker: Builds shows what buildx kept of each — how long, how much from cache, its log, the Dockerfile a click away
 - docker: Docker Hub is searched as you type the image to pull
 - docker: Docker Desktop's update check, diagnose and Kubernetes status in the engine menu, in a terminal tab
+- docker: an `ssh://` context reaches a remote engine through your own ssh, its ports opening on the host
 
 ## 1.4.6 — 2026-10-29
 

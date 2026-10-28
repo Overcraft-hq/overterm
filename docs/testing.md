@@ -73,6 +73,11 @@ which skips itself when nothing answers there.
 own in `/tmp` (a socket's path must stay under 104 bytes), with containers,
 images, volumes and networks held as values, events sent as the engine
 sends them, logs framed, files as tar. Nothing touches your Docker.
+`DockerSSHTests` and the scenario reach it as a remote engine too, through
+`FakeSSHHost`: a throwaway sshd on 127.0.0.1 with its own host key, the one
+client key it lets in and its own known_hosts — ssh told `-F /dev/null` and
+no agent, so nothing of your ~/.ssh is read or written (skipped where
+`/usr/sbin/sshd` won't start).
 
 ```
 OVERTERM_DOCKER_TESTS=1 swift test --filter DockerTransportTests

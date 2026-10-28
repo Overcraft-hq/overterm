@@ -36,7 +36,8 @@ final class DockerEngineTests: XCTestCase {
         XCTAssertEqual(DockerEndpoint.address(of: "tcp://192.168.1.4:2376"), .tcp(host: "192.168.1.4", port: 2376))
         XCTAssertEqual(DockerEndpoint.address(of: "tcp://localhost"), .tcp(host: "localhost", port: 2375))
         XCTAssertEqual(DockerEndpoint.address(of: "http://:2375/"), .tcp(host: "127.0.0.1", port: 2375))
-        XCTAssertEqual(DockerEndpoint.address(of: "ssh://me@box"), .unsupported("ssh://me@box"))
+        XCTAssertEqual(DockerEndpoint.address(of: "ssh://me@box"), .ssh(DockerSSHTarget(user: "me", host: "box")))
+        XCTAssertEqual(DockerEndpoint.address(of: "npipe:////./pipe/docker_engine"), .unsupported("npipe:////./pipe/docker_engine"))
     }
 
     /// The CLI's folder for a context is its name's SHA-256, and the files

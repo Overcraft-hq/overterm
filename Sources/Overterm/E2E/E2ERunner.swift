@@ -114,7 +114,7 @@ final class E2ERunner {
     // MARK: Primitives
 
     /// A measurement, printed whether or not a check passes.
-    private func note(_ text: String) {
+    func note(_ text: String) {
         print("E2E INFO \(text)")
         fflush(stdout)
     }

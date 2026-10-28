@@ -360,7 +360,7 @@ final class DockerPageModel: ObservableObject {
                 actions?.run(DockerCommands.debugShell(beside: container, image: Settings.shared.dockerDebugImage, endpoint: endpoint), nil)
             }
         case .open:
-            if let url = selected.lazy.compactMap({ PublishedPort.of($0.Ports ?? []).first?.url }).first { actions?.open(url) }
+            if let url = selected.compactMap({ docker.ports(of: $0).first?.url }).first { actions?.open(url) }
         case .database:
             if let container = selected.first { openInDatabase(container) }
         case .remove: confirmRemove(selected)

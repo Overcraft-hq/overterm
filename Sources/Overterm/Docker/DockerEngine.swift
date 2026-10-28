@@ -40,9 +40,10 @@ protocol DockerTransport: Sendable {
     func stream(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error>
 }
 
-/// HTTP/1.1 over the engine's unix socket (or `tcp://`), on NIO's shared
-/// event loops: a connection a request — a unix socket costs nothing to
-/// open, and a stream holds its own until it is done.
+/// HTTP/1.1 over the engine's unix socket (or `tcp://`, or an `ssh://`
+/// host's socket forwarded to one here), on NIO's shared event loops: a
+/// connection a request — a unix socket costs nothing to open, and a
+/// stream holds its own until it is done.
 struct NIODockerTransport: DockerTransport {
     let address: DockerEndpoint.Address
 
@@ -59,6 +60,9 @@ struct NIODockerTransport: DockerTransport {
             switch address {
             case .unix(let path): return try await bootstrap.connect(unixDomainSocketPath: path).get()
             case .tcp(let host, let port): return try await bootstrap.connect(host: host, port: port).get()
+            case .ssh(let target):
+                let socket = try await DockerSSHForwards.shared.socket(for: target)
+                return try await bootstrap.connect(unixDomainSocketPath: socket).get()
             case .unsupported(let host): throw DockerError.unreachable("\(host) isn't an address Overterm reaches yet.")
             }
         } catch let error as DockerError {

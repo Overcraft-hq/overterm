@@ -177,14 +177,14 @@ struct DockerPanelView: View {
             Button("Open a Shell in a Tab") { actions.run(DockerCommands.shell(in: container, endpoint: docker.endpoint), nil) }
                 .disabled(container.state != .running)
             Button("Follow Logs in a Tab") { actions.run(DockerCommands.followLogs(of: container, endpoint: docker.endpoint), nil) }
-            if let url = PublishedPort.of(container.Ports ?? []).first?.url {
+            if let url = docker.ports(of: container).first?.url {
                 Button("Open \(url.absoluteString)") { actions.open(url) }
             }
             if DockerDatabaseGuess.kind(of: container.Image) != nil {
                 Button("Open in Database…") {
                     Task {
                         guard let detail = try? await docker.engine?.container(container.Id),
-                            let guess = DockerDatabaseGuess.guess(container, env: detail.env)
+                            let guess = DockerDatabaseGuess.guess(container, env: detail.env, endpoint: docker.endpoint)
                         else { return }
                         actions.openDatabase(guess)
                     }

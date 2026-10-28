@@ -35,7 +35,7 @@ enum DockerMCP {
             let all = arguments["all"] as? Bool ?? true
             let project = string("project")
             let list = docker.containers.filter { (all || $0.state.isUp) && (project == nil || $0.composeProject == project) }
-            return BrowserMCP.textResult(describe(list))
+            return BrowserMCP.textResult(describe(list, remoteHost: docker.publishedHost))
         case "docker_projects":
             return BrowserMCP.textResult(describe(docker.projects))
         case "docker_logs":
@@ -56,7 +56,7 @@ enum DockerMCP {
             return BrowserMCP.textResult(bounded(DockerSecrets.redact(text.isEmpty ? "(no lines)" : text, values: secrets)))
         case "docker_inspect":
             let target = try container()
-            return BrowserMCP.textResult(describe(target, try await engine.container(target.Id)))
+            return BrowserMCP.textResult(describe(target, try await engine.container(target.Id), remoteHost: docker.publishedHost))
         case "docker_stats":
             let target = try container()
             guard target.state == .running else { return BrowserMCP.textResult("\(target.name) isn't running.") }
@@ -166,15 +166,20 @@ enum DockerMCP {
         text.count > max ? String(text.suffix(max)) + "\n… (the last \(max) characters)" : text
     }
 
-    static func describe(_ containers: [ContainerSummary]) -> String {
+    static func describe(_ containers: [ContainerSummary], remoteHost: String? = nil) -> String {
         guard !containers.isEmpty else { return "No containers." }
         return containers.map { container in
             var line = "- \(container.name): \(container.Image), \(container.Status)"
             if let project = container.composeProject { line += " — compose \(project)/\(container.composeService ?? "")" }
-            let ports = PublishedPort.of(container.Ports ?? [])
-            if !ports.isEmpty { line += " — ports " + ports.map { "localhost:\($0.hostPort)→\($0.containerPort)" }.joined(separator: ", ") }
+            let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
+            if !ports.isEmpty { line += " — ports " + ports.map(reach).joined(separator: ", ") }
             return line
         }.joined(separator: "\n")
+    }
+
+    /// `localhost:8080→80`; on a remote engine, its host's name.
+    private static func reach(_ port: PublishedPort) -> String {
+        "\(port.address ?? "the host's loopback"):\(port.hostPort)→\(port.containerPort)"
     }
 
     static func describe(_ projects: [ComposeProject]) -> String {
@@ -190,7 +195,7 @@ enum DockerMCP {
     }
 
     /// What Inspect says, as an agent needs it: secrets masked.
-    static func describe(_ container: ContainerSummary, _ detail: ContainerDetail) -> String {
+    static func describe(_ container: ContainerSummary, _ detail: ContainerDetail, remoteHost: String? = nil) -> String {
         var lines = ["\(container.name): \(container.Image)", "State: \(container.Status)"]
         if let error = detail.State.Error, !error.isEmpty { lines.append("Error: \(error)") }
         if detail.State.OOMKilled == true { lines.append("Killed: out of memory") }
@@ -198,8 +203,8 @@ enum DockerMCP {
             lines.append("Health: \(status)" + (health.Log?.last?.Output.map { " — last check: \($0.trimmingCharacters(in: .whitespacesAndNewlines))" } ?? ""))
         }
         lines.append("Command: " + ((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " "))
-        let ports = PublishedPort.of(container.Ports ?? [])
-        if !ports.isEmpty { lines.append("Ports: " + ports.map { "localhost:\($0.hostPort)→\($0.containerPort)" }.joined(separator: ", ")) }
+        let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
+        if !ports.isEmpty { lines.append("Ports: " + ports.map(reach).joined(separator: ", ")) }
         for mount in detail.Mounts ?? [] { lines.append("Mount: \(mount.Name ?? mount.Source ?? "") → \(mount.Destination)") }
         if let networks = detail.NetworkSettings?.Networks {
             lines.append("Networks: " + networks.keys.sorted().map { "\($0) \(networks[$0]?.IPAddress ?? "")" }.joined(separator: ", "))

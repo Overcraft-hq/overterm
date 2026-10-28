@@ -55,7 +55,7 @@ extension DockerPageModel {
         }
         Task {
             guard let detail = try? await docker.engine?.container(container.Id) else { return }
-            guard let guess = DockerDatabaseGuess.guess(container, env: detail.env) else {
+            guard let guess = DockerDatabaseGuess.guess(container, env: detail.env, endpoint: docker.endpoint) else {
                 error = "\(container.name) publishes no port on this Mac: the Database panel can't reach it."
                 return
             }

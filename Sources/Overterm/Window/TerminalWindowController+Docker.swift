@@ -249,7 +249,8 @@ extension TerminalWindowController {
     func updateContainerPorts(of tab: Tab) {
         let docker = DockerModel.shared
         var ports: [ListeningPort] = []
-        if docker.connection.isRunning, !docker.projects.isEmpty, let directory = tab.workingDirectory {
+        // A remote engine's ports are its host's, not this checkout's servers.
+        if docker.connection.isRunning, docker.publishedHost == nil, !docker.projects.isEmpty, let directory = tab.workingDirectory {
             let checkout = FileTreeModel.realPath(FileTreeModel.treeRoot(for: directory))
             ports = ComposeProjects.ports(of: ComposeProjects.projects(docker.projects, in: checkout))
         }

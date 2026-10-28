@@ -71,6 +71,8 @@ struct DockerContainerRow: View {
     let open: (URL) -> Void
     /// The rail's narrow panel: no ports, no status words.
     var compact = false
+    /// A remote engine's host, where its ports are (`DockerModel.publishedHost`).
+    var remoteHost: String?
 
     var title: String {
         guard inProject, let service = container.composeService else { return container.name }
@@ -89,7 +91,7 @@ struct DockerContainerRow: View {
             .layoutPriority(1)
             Spacer(minLength: 6)
             if !compact {
-                ForEach(PublishedPort.of(container.Ports ?? []).prefix(3), id: \.self) { port in
+                ForEach(PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost).prefix(3), id: \.self) { port in
                     DockerPortPill(port: port, theme: theme, open: open)
                 }
                 Text(verbatim: DockerStatusStyle.status(container))

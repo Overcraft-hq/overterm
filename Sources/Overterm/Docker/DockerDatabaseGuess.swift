@@ -6,7 +6,10 @@ import Foundation
 /// Pure.
 ///
 /// A port that isn't published can't be reached from the Mac (Docker
-/// Desktop's containers live in a VM): no guess then.
+/// Desktop's containers live in a VM): no guess then. A remote engine's
+/// is reached at its host — through ssh to it, for `ssh://`, as the
+/// engine is: the Database client's own tunnel, which reaches a port bound
+/// to the host's loopback too.
 enum DockerDatabaseGuess {
     struct Guess: Equatable {
         var connection: DatabaseConnection
@@ -23,7 +26,7 @@ enum DockerDatabaseGuess {
         return nil
     }
 
-    static func guess(_ container: ContainerSummary, env: [(key: String, value: String)]) -> Guess? {
+    static func guess(_ container: ContainerSummary, env: [(key: String, value: String)], endpoint: DockerEndpoint? = nil) -> Guess? {
         guard let (kind, inside) = kind(of: container.Image),
             let published = PublishedPort.of(container.Ports ?? []).first(where: { $0.containerPort == inside && $0.proto == "tcp" })
         else { return nil }
@@ -33,6 +36,16 @@ enum DockerDatabaseGuess {
             name: [container.composeProject, container.composeService].compactMap { $0 }.joined(separator: " ").nonEmpty ?? container.name, kind: kind)
         connection.host = published.hostIP ?? "127.0.0.1"
         connection.port = published.hostPort
+        switch endpoint?.address {
+        case .ssh(let target):
+            connection.sshEnabled = true
+            connection.sshHost = target.host
+            connection.sshUser = target.user ?? ""
+            connection.sshPort = target.port ?? 22
+        case .tcp:
+            if let host = endpoint?.remoteHost { connection.host = published.hostIP ?? host }
+        default: break
+        }
         var password: String?
         switch kind {
         case .postgres:

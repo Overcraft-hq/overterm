@@ -137,7 +137,7 @@ struct ProjectDetailView: View {
                             Button {
                                 page.selection = [container.Id]
                             } label: {
-                                DockerContainerRow(container: container, inProject: true, busy: false, theme: theme, open: actions.open)
+                                DockerContainerRow(container: container, inProject: true, busy: false, theme: theme, open: actions.open, remoteHost: page.docker.publishedHost)
                             }
                             .buttonStyle(.plain)
                         }

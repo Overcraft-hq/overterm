@@ -32,6 +32,9 @@ final class DockerModel: ObservableObject {
 
     @Published private(set) var connection: Connection = .off
     @Published private(set) var endpoint: DockerEndpoint?
+    /// Where a remote engine's published ports are: its host, by the name
+    /// ~/.ssh/config gives it for `ssh://`. Nil for an engine on this Mac.
+    @Published private(set) var publishedHost: String?
     @Published private(set) var runtime: DockerRuntime = .engine
     /// Asked of the runtime while the engine is down and Docker is on screen.
     @Published private(set) var runtimeStatus: DockerRuntime.Status = .unknown
@@ -96,13 +99,15 @@ final class DockerModel: ObservableObject {
         watching = Task { [weak self] in await self?.watch() }
     }
 
-    /// Stops it: nothing is read, the lists empty.
+    /// Stops it: nothing is read, the lists empty; a remote engine's ssh
+    /// is closed.
     func stop() {
         watching?.cancel()
         watching = nil
         reloading?.cancel()
         reloading = nil
         engine = nil
+        closeForward()
         connection = .off
         clear()
     }
@@ -126,12 +131,18 @@ final class DockerModel: ObservableObject {
     private func watch() async {
         while !Task.isCancelled {
             guard let endpoint = override ?? resolve() else {
+                closeForward()
                 self.endpoint = nil
                 connection = .off
                 clear()
                 return
             }
-            self.endpoint = endpoint
+            if self.endpoint != endpoint {
+                closeForward()
+                self.endpoint = endpoint
+                publishedHost = endpoint.remoteHost
+                if case .ssh(let target) = endpoint.address, let name = await DockerSSHForward.hostName(of: target) { publishedHost = name }
+            }
             // Watched in the background only: Docker Desktop's Resource
             // Saver has paused its VM, or it is stopped, and a ping would
             // wake it — its own CLI (the host's side) is asked instead.
@@ -178,7 +189,9 @@ final class DockerModel: ObservableObject {
             } catch {
                 guard !Task.isCancelled else { return }
                 runtime = DockerRuntime.of(endpoint, operatingSystem: info?.OperatingSystem)
-                connection = .down(Self.reason(error, endpoint: endpoint, runtime: runtime))
+                var refusal: String?
+                if case .ssh(let target) = endpoint.address { refusal = await DockerSSHForwards.shared.refusal(target) }
+                connection = .down(Self.reason(error, endpoint: endpoint, runtime: runtime, refusal: refusal))
             }
             self.engine = nil
             clear()
@@ -189,16 +202,32 @@ final class DockerModel: ObservableObject {
         }
     }
 
+    /// A remote engine's ssh, closed when it is no longer the engine.
+    private func closeForward() {
+        guard case .ssh(let target) = endpoint?.address else { return }
+        Task { await DockerSSHForwards.shared.close(target) }
+    }
+
+    /// A container's published ports, where they are reached from here.
+    func ports(of container: ContainerSummary) -> [PublishedPort] {
+        PublishedPort.of(container.Ports ?? [], remoteHost: publishedHost)
+    }
+
     /// Whether to ask Docker Desktop before pinging it: only its own
     /// socket, and only when its CLI is there to ask.
     private func attemptQuietly(_ endpoint: DockerEndpoint) -> Bool {
         DockerRuntime.of(endpoint) == .dockerDesktop && DockerCLI.locate("docker") != nil
     }
 
-    /// What the bar says when the engine doesn't answer.
-    static func reason(_ error: Error, endpoint: DockerEndpoint, runtime: DockerRuntime) -> String {
+    /// What the bar says when the engine doesn't answer. `refusal` is what
+    /// a remote host's ssh said of its engine's socket.
+    nonisolated static func reason(_ error: Error, endpoint: DockerEndpoint, runtime: DockerRuntime, refusal: String? = nil) -> String {
         if case .unix(let path) = endpoint.address, !FileManager.default.fileExists(atPath: path) {
             return "\(runtime.name) isn't running — no socket at \(path)."
+        }
+        if case .ssh(let target) = endpoint.address {
+            if let refusal { return "\(target.host)'s engine refused the connection (\(refusal))." }
+            if let error = error as? DockerError, error.message.hasPrefix("SSH: ") { return error.message }
         }
         if let error = error as? DockerError, error.status > 0 { return error.message }
         return "\(runtime.name) isn't answering at \(endpoint.host)."

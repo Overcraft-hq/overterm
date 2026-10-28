@@ -113,8 +113,12 @@ struct DockerPageView: View {
                         ForEach(extras, id: \.title) { extra in Button(extra.title) { actions.run(extra.command, nil) } }
                     }
                     Divider()
-                    Button("Edit Engine Settings…") { page.editEngineConfig() }
-                        .help("\(docker.runtime.configFile(context: docker.endpoint?.context)?.path ?? "") — applied when it restarts")
+                    if case .ssh(let target) = docker.endpoint?.address {
+                        ForEach(target.commands, id: \.title) { command in Button(command.title) { actions.run(command.command, nil) } }
+                    } else {
+                        Button("Edit Engine Settings…") { page.editEngineConfig() }
+                            .help("\(docker.runtime.configFile(context: docker.endpoint?.context)?.path ?? "") — applied when it restarts")
+                    }
                     Divider()
                     contexts
                     Divider()
@@ -154,7 +158,8 @@ struct DockerPageView: View {
     private var engineDetail: String {
         switch docker.connection {
         case .running(let api):
-            return [docker.info?.ServerVersion.map { "Engine \($0)" }, "API \(api)", docker.endpoint?.context].compactMap { $0 }.joined(separator: " · ")
+            return [docker.info?.ServerVersion.map { "Engine \($0)" }, "API \(api)", docker.endpoint?.context, docker.publishedHost.map { "on \($0)" }]
+                .compactMap { $0 }.joined(separator: " · ")
         case .connecting: return "Connecting…"
         case .down: return docker.runtimeStatus == .starting ? "Starting…" : "Not answering"
         case .off: return "Off"
@@ -306,7 +311,7 @@ struct DockerPageView: View {
                     ForEach(group.containers) { container in
                         DockerContainerRow(
                             container: container, inProject: group.project != nil, busy: page.busy.contains(container.Id), theme: theme,
-                            open: actions.open
+                            open: actions.open, remoteHost: docker.publishedHost
                         )
                         .tag(container.Id)
                         .listRowSeparator(.hidden)
@@ -374,7 +379,7 @@ struct DockerPageView: View {
         .disabled(container.state != .running)
         .help("\(Settings.shared.dockerDebugImage), sharing its processes and network; its files at /proc/1/root")
         Button("Follow Logs in a Tab") { actions.run(DockerCommands.followLogs(of: container, endpoint: docker.endpoint), nil) }
-        if let port = PublishedPort.of(container.Ports ?? []).first, let url = port.url {
+        if let url = docker.ports(of: container).first?.url {
             Button("Open \(url.absoluteString)") { actions.open(url) }
         }
         if DockerDatabaseGuess.kind(of: container.Image) != nil {

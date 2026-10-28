@@ -39,7 +39,7 @@ final class ContainerSession: ObservableObject {
 
     static let tail = 500
 
-    private let docker: DockerModel
+    let docker: DockerModel
     private var watching: AnyCancellable?
     private var starts: AnyCancellable?
     private var loading: Task<Void, Never>?
@@ -106,6 +106,9 @@ final class ContainerSession: ObservableObject {
         if let holder = PortConflicts.container(holding: port, among: docker.containers, except: id) {
             conflict = DockerPortConflict(
                 port: port, holder: .container(id: holder.Id, name: holder.name, project: holder.composeProject, folder: holder.composeWorkingDir))
+        } else if docker.publishedHost != nil {
+            // A remote engine's port is its host's: nothing here holds it.
+            conflict = DockerPortConflict(port: port, holder: .unknown)
         } else if let (tab, title, process) = Self.tabHolding(port) {
             conflict = DockerPortConflict(port: port, holder: .tab(id: tab, title: title, process: process))
         } else if let process = await ListeningPorts.holder(of: port) {

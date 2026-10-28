@@ -15,8 +15,10 @@ struct DockerEndpoint: Equatable, Sendable {
     enum Address: Equatable, Sendable {
         case unix(String)
         case tcp(host: String, port: Int)
-        /// `ssh://user@host` and the like: a remote engine, not reached
-        /// directly (the plan's third stage).
+        /// `ssh://user@host`: a remote engine, its socket forwarded here by
+        /// the system's ssh (`DockerSSHForward`).
+        case ssh(DockerSSHTarget)
+        /// `npipe://` and the like: nothing a Mac reaches.
         case unsupported(String)
     }
 
@@ -34,7 +36,20 @@ struct DockerEndpoint: Equatable, Sendable {
         switch address {
         case .unix(let path): "unix://" + path
         case .tcp(let host, let port): "tcp://\(host.contains(":") ? "[\(host)]" : host):\(port)"
+        case .ssh(let target): target.url
         case .unsupported(let host): host
+        }
+    }
+
+    /// The host a remote engine runs on — where its published ports are —
+    /// or nil for one on this Mac (its own socket, a VM's forwarded to
+    /// localhost). For `ssh://`, the name as written; ~/.ssh/config may
+    /// call it something else (`DockerModel.publishedHost`).
+    var remoteHost: String? {
+        switch address {
+        case .tcp(let host, _): ["127.0.0.1", "localhost", "::1"].contains(host) ? nil : host
+        case .ssh(let target): target.host
+        case .unix, .unsupported: nil
         }
     }
 
@@ -46,10 +61,11 @@ struct DockerEndpoint: Equatable, Sendable {
         return source == "default" ? [:] : ["DOCKER_HOST": host]
     }
 
-    /// `unix:///path`, `tcp://host:port`, `http://host:port`; anything else
-    /// is unsupported, kept as written.
+    /// `unix:///path`, `tcp://host:port`, `http://host:port`,
+    /// `ssh://user@host`; anything else is unsupported, kept as written.
     static func address(of host: String) -> Address {
         if host.hasPrefix("unix://") { return .unix(String(host.dropFirst("unix://".count))) }
+        if let target = DockerSSHTarget.parse(host) { return .ssh(target) }
         for scheme in ["tcp://", "http://"] where host.hasPrefix(scheme) {
             let rest = host.dropFirst(scheme.count).split(separator: "/").first.map(String.init) ?? ""
             let parts = rest.split(separator: ":", omittingEmptySubsequences: false)

@@ -19,7 +19,10 @@ enum DockerRuntime: String, Equatable, Sendable {
 
     /// From the socket's path, the context's name and `/info`'s
     /// OperatingSystem (Docker Desktop and OrbStack say who they are there).
+    /// A remote engine is an engine: what starts Docker Desktop here would
+    /// start this Mac's, not the host's.
     static func of(_ endpoint: DockerEndpoint, operatingSystem: String? = nil) -> DockerRuntime {
+        if endpoint.remoteHost != nil { return .engine }
         let os = operatingSystem?.lowercased() ?? ""
         let path: String = {
             if case .unix(let path) = endpoint.address { return path.lowercased() }

@@ -56,23 +56,34 @@ struct PublishedPort: Hashable, Sendable, Comparable {
     var proto: String
     /// The host address it is bound to, when it isn't every address.
     var hostIP: String?
+    /// The engine's host when it isn't this Mac (`DockerModel.publishedHost`).
+    var remoteHost: String?
 
     static func < (a: PublishedPort, b: PublishedPort) -> Bool { (a.hostPort, a.containerPort) < (b.hostPort, b.containerPort) }
 
-    /// Where to open it: localhost unless bound elsewhere.
+    /// Where it is reached from here: localhost unless bound elsewhere; a
+    /// remote engine's host — nil when bound to that host's own loopback,
+    /// which only the host reaches.
+    var address: String? {
+        guard let remoteHost else { return hostIP ?? "localhost" }
+        guard let hostIP else { return remoteHost }
+        return ["127.0.0.1", "::1"].contains(hostIP) ? nil : hostIP
+    }
+
+    /// Where to open it.
     var url: URL? {
-        let host = hostIP.map { $0.contains(":") ? "[\($0)]" : $0 } ?? "localhost"
-        return URL(string: "http://\(host):\(hostPort)")
+        guard let address else { return nil }
+        return URL(string: "http://\(address.contains(":") ? "[\(address)]" : address):\(hostPort)")
     }
 
     var label: String { "\(hostPort)→\(containerPort)\(proto == "tcp" ? "" : "/\(proto)")" }
 
-    static func of(_ ports: [DockerPort]) -> [PublishedPort] {
+    static func of(_ ports: [DockerPort], remoteHost: String? = nil) -> [PublishedPort] {
         var byPort: [String: PublishedPort] = [:]
         for port in ports {
             guard let host = port.PublicPort else { continue }
             let ip = port.IP.flatMap { ["0.0.0.0", "::", ""].contains($0) ? nil : $0 }
-            let candidate = PublishedPort(hostPort: host, containerPort: port.PrivatePort, proto: port.Type, hostIP: ip)
+            let candidate = PublishedPort(hostPort: host, containerPort: port.PrivatePort, proto: port.Type, hostIP: ip, remoteHost: remoteHost)
             let key = "\(host)/\(port.Type)"
             // Bound to every address wins; else IPv4's address over IPv6's.
             if let kept = byPort[key], kept.hostIP == nil || candidate.hostIP?.contains(":") == true { continue }

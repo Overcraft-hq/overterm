@@ -204,6 +204,47 @@ extension E2ERunner {
         check("1 is Containers again", page.section == .containers)
     }
 
+    /// The same engine as a remote one, `ssh://` to a throwaway sshd on
+    /// 127.0.0.1 with its socket forwarded — what an ssh context does.
+    private func remoteChecks(socket: String, web: String, folder: URL) async {
+        let host: FakeSSHHost
+        do {
+            host = try FakeSSHHost.start()
+        } catch {
+            return note("no remote engine checks: \(error)")
+        }
+        DockerSSHForward.testOptions = host.options
+        defer {
+            DockerSSHForwards.closeAll()
+            DockerSSHForward.testOptions = []
+            host.stop()
+        }
+        let docker = DockerModel.shared
+        let page = app.dockerPage
+        let target = DockerSSHTarget(host: "127.0.0.1", port: host.port, socket: socket)
+        docker.use(DockerEndpoint(address: .ssh(target), context: nil, source: "OVERTERM_DOCKER_HOST"))
+        check("an ssh:// engine is reached through its host", await eventually(10) { docker.connection.isRunning }, "\(docker.connection)")
+        check(
+            "and lists what a local one does", await eventually(5) { page.groups.map(\.id) == ["project:ot-shop", "loose"] }, "\(page.groups.map(\.id))")
+        check(
+            "as an engine on that host, never this Mac's Docker Desktop", docker.runtime == .engine && docker.publishedHost == "127.0.0.1",
+            "\(docker.runtime) \(docker.publishedHost ?? "nil")")
+        check(
+            "its ports open on the host", docker.container(web).flatMap { docker.ports(of: $0).first?.url?.absoluteString } == "http://127.0.0.1:58080")
+        if let tab = app.store.tabs.first(where: { $0.workingDirectory == folder.path }) {
+            app.updateContainerPorts(of: tab)
+            check("and aren't the checkout's own servers", tab.containerPorts.isEmpty, "\(tab.containerPorts)")
+        }
+        page.selection = []
+        page.selection = [web]
+        page.detailTab = .logs
+        check("its logs come over the same ssh", await eventually(5) { page.session?.lines.isEmpty == false })
+        docker.use(DockerEndpoint(address: .unix(socket), context: nil, source: "OVERTERM_DOCKER_HOST"))
+        let forwarded = DockerSSHForward.localSocket(for: target)
+        check("switched away, its ssh is closed", await eventually(3) { !FileManager.default.fileExists(atPath: forwarded) })
+        check("and the local engine is back", await eventually(5) { docker.connection.isRunning && docker.publishedHost == nil })
+    }
+
     func dockerScenario() async {
         await settledPrompt()
         let socket = "/tmp/ot-e2e-docker-\(UUID().uuidString.prefix(6)).sock"
@@ -639,6 +680,7 @@ extension E2ERunner {
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
         await agentChecks(fake, web: web)
+        await remoteChecks(socket: socket, web: web, folder: folder)
         app.hideOverlay()
 
         // ⌥⌘P twice: back to the terminal, the page kept in the strip.

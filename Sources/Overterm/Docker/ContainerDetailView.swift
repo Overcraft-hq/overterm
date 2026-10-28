@@ -164,7 +164,7 @@ struct ContainerDetailView: View {
     // MARK: Overview
 
     @ViewBuilder private var overview: some View {
-        let ports = PublishedPort.of(container.Ports ?? [])
+        let ports = session.docker.ports(of: container)
         if !ports.isEmpty {
             block("Ports") {
                 ForEach(ports, id: \.self) { port in

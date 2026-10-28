@@ -81,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         LanguageServers.shared.stopAll()
         // Each database tunnel's ssh, or it outlives the app.
         SSHTunnel.closeAll()
+        DockerSSHForwards.closeAll()
         BrowserBridge.shared.stop()
     }
 
