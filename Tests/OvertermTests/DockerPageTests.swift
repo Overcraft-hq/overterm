@@ -62,6 +62,9 @@ final class DockerPageTests: XCTestCase {
             DockerCommands.shell(in: container("api")), "docker exec -it api sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'")
         XCTAssertEqual(DockerCommands.followLogs(of: container("it's")), #"docker logs -f --tail 200 'it'\''s'"#)
         XCTAssertEqual(DockerCommands.quote("tcp://10.0.0.2:2375"), "tcp://10.0.0.2:2375")
+        XCTAssertEqual(
+            DockerCommands.debugShell(beside: container("api"), image: "nicolaka/netshoot"),
+            "docker run --rm -it --pid container:api --network container:api --volumes-from api nicolaka/netshoot")
         XCTAssertEqual(DockerCommands.quote(""), "''")
     }
 

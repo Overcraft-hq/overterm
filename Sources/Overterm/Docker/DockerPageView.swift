@@ -352,6 +352,11 @@ struct DockerPageView: View {
         Divider()
         Button("Open a Shell in a Tab") { actions.run(DockerCommands.shell(in: container, endpoint: docker.endpoint), nil) }
             .disabled(container.state != .running)
+        Button("Debug Shell Beside It") {
+            actions.run(DockerCommands.debugShell(beside: container, image: Settings.shared.dockerDebugImage, endpoint: docker.endpoint), nil)
+        }
+        .disabled(container.state != .running)
+        .help("\(Settings.shared.dockerDebugImage), sharing its processes and network; its files at /proc/1/root")
         Button("Follow Logs in a Tab") { actions.run(DockerCommands.followLogs(of: container, endpoint: docker.endpoint), nil) }
         if let port = PublishedPort.of(container.Ports ?? []).first, let url = port.url {
             Button("Open \(url.absoluteString)") { actions.open(url) }

@@ -482,6 +482,10 @@ enum SettingsSchema {
                 "Empty: the one docker uses now. A context's name (docker context ls) for Overterm alone — your terminal's current context isn't changed; the commands Overterm types are given it. The Docker page's engine menu picks one.",
             kind: .text(placeholder: "desktop-linux, orbstack, colima", monospaced: true), defaultValue: .string(""), requires: "docker.enabled"),
         SettingSpec(
+            key: "docker.debugImage", section: .docker, group: "Docker", title: "Debug shell's image",
+            help: "The toolbox a debug shell runs beside a container (E): it shares the container's processes and network; the container's files are at /proc/1/root.",
+            kind: .text(placeholder: "nicolaka/netshoot", monospaced: true), defaultValue: .string("nicolaka/netshoot"), requires: "docker.enabled"),
+        SettingSpec(
             key: "docker.notifyOnExit", section: .docker, group: "Attention", title: "Mark a checkout's tab when its container fails",
             help:
                 "A container of the tab's checkout that exits with an error, runs out of memory or turns unhealthy marks the tab as a failed command does, and notifies you while you are elsewhere. One you stopped doesn't.",

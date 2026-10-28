@@ -4,8 +4,8 @@ import Foundation
 /// keyboard — the terminal never sees them, and a list is where a
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
-    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, inspect, open, database, remove, composeUp, composeDown,
-        run, filter, cleanUp, containers, images, volumes, networks, help
+    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, inspect, open, database, remove, composeUp,
+        composeDown, run, filter, cleanUp, containers, images, volumes, networks, help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -29,6 +29,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .logs: "l"
         case .followLogs: "t"
         case .shell: "e"
+        case .debugShell: "E"
         case .inspect: "i"
         case .open: "o"
         case .database: "d"
@@ -56,6 +57,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .logs: "Logs"
         case .followLogs: "Follow its logs in a terminal tab"
         case .shell: "A shell in it, in a terminal tab"
+        case .debugShell: "A debug shell beside it — tools for an image with none"
         case .inspect: "Inspect"
         case .open: "Open its first port in the browser"
         case .database: "Open a database container in the Database panel"

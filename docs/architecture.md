@@ -1363,6 +1363,12 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   checkout's stack (View menu, palette; no keys). A tab running
   `docker exec -it …` (or attach, debug, an interactive run, Compose's
   exec and run) is a `TabKind.container`, its icon the shippingbox.
+- **A debug shell** (`E`, `DockerCommands.debugShell`): for an image
+  with no shell of its own (distroless, scratch), a toolbox container
+  beside it in a tab — `--pid` and `--network` its own, its volumes
+  mounted, its files at `/proc/1/root`; Docker Debug's work without its
+  subscription. The toolbox is `docker.debugImage` (netshoot), pulled in
+  the tab where the user sees it.
 - **What runs in a terminal** (`DockerCommands`, pure): compose up, down,
   pull and logs, a shell in a container, its logs followed — typed into a
   new tab in the project's folder, where the user sees them and can run

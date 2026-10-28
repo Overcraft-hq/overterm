@@ -160,7 +160,8 @@ reaches — Docker Desktop, OrbStack, Colima — on a page of their own,
 grouped by compose project, kept current as they start, stop and crash.
 <kbd>⇧⌥⌘P</kbd> finds any container or project by name from anywhere.
 Single keys while the list has the keyboard: `s` starts or stops, `r`
-restarts, `e` opens a shell in a tab, `t` follows its logs, `o` opens its
+restarts, `e` opens a shell in a tab, `E` a debug shell beside an image
+with none, `t` follows its logs, `o` opens its
 port, `u` and `D` bring a project up and down — in a terminal tab, where you
 see the command. Filter with `status:running project:api port:5432`;
 `?` lists the keys. `n` runs an image with a window that writes the

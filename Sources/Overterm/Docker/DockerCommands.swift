@@ -32,6 +32,15 @@ enum DockerCommands {
         prefix(for: endpoint) + "docker exec -it \(quote(container.name)) sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'"
     }
 
+    /// A shell with tools beside a container — for an image with none of
+    /// its own (distroless, scratch): a toolbox container sharing its
+    /// processes and network, its volumes mounted; its own files are at
+    /// `/proc/1/root`. Docker Debug's work, without its subscription.
+    static func debugShell(beside container: ContainerSummary, image: String, endpoint: DockerEndpoint? = nil) -> String {
+        let name = quote(container.name)
+        return prefix(for: endpoint) + "docker run --rm -it --pid container:\(name) --network container:\(name) --volumes-from \(name) \(quote(image))"
+    }
+
     static func followLogs(of container: ContainerSummary, endpoint: DockerEndpoint? = nil) -> String {
         prefix(for: endpoint) + "docker logs -f --tail 200 \(quote(container.name))"
     }

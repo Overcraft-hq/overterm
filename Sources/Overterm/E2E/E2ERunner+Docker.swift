@@ -348,6 +348,10 @@ extension E2ERunner {
         page.selection = [web]
         _ = page.press("e")
         check("e is a shell in it", commands.last?.contains("docker exec -it ot-shop-web-1 sh -c") == true, commands.last ?? "")
+        _ = page.press("E")
+        check(
+            "E is a debug shell beside it",
+            commands.last?.contains("docker run --rm -it --pid container:ot-shop-web-1 --network container:ot-shop-web-1") == true, commands.last ?? "")
         // Run: a container as a docker run, and another like it.
         var copied: [String] = []
         page.actions?.copy = { copied.append($0) }

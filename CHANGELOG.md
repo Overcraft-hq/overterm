@@ -22,6 +22,7 @@ version is tagged `v<version>`.
 - docker: `n` runs an image from a window that writes the `docker run` as you fill it in; any container copies as the `docker run` that would make it again
 - docker: a container's processes, and the files it changed since it started
 - docker: a compose project's file and its resolved config, and the engine's own settings, open in the editor
+- docker: `E` opens a debug shell beside a container whose image has no tools of its own
 
 ## 1.4.6 — 2026-10-29
 

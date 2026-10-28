@@ -337,6 +337,10 @@ final class DockerPageModel: ObservableObject {
             for container in selected.prefix(4) where container.state == .running {
                 actions?.run(DockerCommands.shell(in: container, endpoint: endpoint), nil)
             }
+        case .debugShell:
+            if let container = selected.first(where: { $0.state == .running }) {
+                actions?.run(DockerCommands.debugShell(beside: container, image: Settings.shared.dockerDebugImage, endpoint: endpoint), nil)
+            }
         case .open:
             if let url = selected.lazy.compactMap({ PublishedPort.of($0.Ports ?? []).first?.url }).first { actions?.open(url) }
         case .database:
