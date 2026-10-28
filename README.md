@@ -178,7 +178,8 @@ imports and clones; a container's filesystem and an image save as tars.
 Builds show what buildx kept of each — how long, how much from cache, its
 log, the Dockerfile a click away. Models lists Docker Model Runner's local
 LLMs — which are loaded, what they take — with a chat with one in a tab
-and the OpenAI base URL to give your code. The rail's shippingbox keeps the
+and the OpenAI base URL to give your code. An `ssh://` context reaches a
+remote engine through your own ssh, its ports opening on the host. The rail's shippingbox keeps the
 selected tab's checkout's stack beside the terminal, a container's logs a
 click away in the right-hand pane, and the ports its containers publish
 sit in its panes' headers beside the ones its own processes listen on. A
