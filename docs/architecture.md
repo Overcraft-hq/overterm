@@ -1258,6 +1258,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+  Tab Info lists them too, and the API client's discovery asks them for
+  an OpenAPI document as it asks the tab's own ports.
 - **Files of the Mac in the editor**: a project's compose file (its
   `config_files` label), what Compose makes of it — `docker compose
   config`, variables filled in and overrides merged, written to a copy

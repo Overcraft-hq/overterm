@@ -97,7 +97,11 @@ struct TabInfoView: View {
                 ForEach(model.ports) { port in
                     HStack(spacing: 8) {
                         Text(verbatim: ":\(port.port)").font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        Text(port.process).foregroundStyle(theme.dimText)
+                        if let container = port.container {
+                            Label(container, systemImage: "shippingbox").foregroundStyle(theme.dimText)
+                        } else {
+                            Text(port.process).foregroundStyle(theme.dimText)
+                        }
                         if port.address != "*" && port.address != "127.0.0.1" && port.address != "[::1]" {
                             Text(port.address).font(.system(size: 10)).foregroundStyle(theme.dimText)
                         }

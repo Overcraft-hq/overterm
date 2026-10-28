@@ -473,6 +473,10 @@ extension E2ERunner {
             app.updateContainerPorts(of: tab)
             check("a checkout's container ports reach its tab", await eventually(5) { tab.containerPorts.map(\.port) == [58080] }, "\(tab.containerPorts)")
             check("and don't make it a server", tab.kind != .server)
+            let info = TabInfoModel(tab: tab, inspector: ProcessInspector(), claudeReader: ClaudeUsageReader())
+            await info.refreshPorts()
+            check("Tab Info lists them", info.ports.contains { $0.port == 58080 && $0.container == "ot-shop-web-1" }, "\(info.ports)")
+            check("and the API client looks for an OpenAPI document on them", app.apiWorkspace.ports().contains(58080))
         }
 
         // A checkout's container failing on its own marks the checkout's tab.

@@ -10,7 +10,8 @@ extension TerminalWindowController {
         BrowserBridge.shared.resolveAPI = { [weak self] tag in self?.agentAPI(forPane: tag) }
         apiWorkspace.askAgent = { [weak self] text, folder in self?.askAgentAboutAPI(text, folder: folder) }
         // Where to look for an API being served: the selected tab's ports.
-        apiWorkspace.ports = { [weak self] in self?.store.selected?.ports.map(\.port) ?? [] }
+        // A checkout's API often runs in its compose stack: those ports too.
+        apiWorkspace.ports = { [weak self] in self?.store.selected.map { ($0.ports + $0.containerPorts).map(\.port) } ?? [] }
         editor?.apiWorkspaceChanged()
         sidebarPanel.$panel
             // @Published fires before the value lands.
