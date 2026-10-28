@@ -1231,9 +1231,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   address family, secret-looking env values masked (`DockerStats`).
 - **`docker` itself** (`DockerCLI`): for what the API doesn't answer — a
   runtime's own status while its socket is silent (`docker desktop
-  status`, `orb status`, `colima status`). Found where installers put it (an
-  app from the Dock has none of it on its PATH), run through `Git.run`, told
-  the context or host Overterm uses.
+  status`, `orb status`, `colima status`), and a checkout's compose file as
+  Compose resolves it (`compose config`, run in the checkout:
+  `DockerCLI.run(in:)`). Found where installers put it (an app from the
+  Dock has none of it on its PATH), run through `Git.run`, told the context
+  or host Overterm uses.
 - **The model** (`DockerModel`, one for the app): whether the engine
   answers, its containers, the compose projects among them
   (`ComposeProjects` — Compose's only record is its labels; a checkout's
@@ -1243,6 +1245,42 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   most of the traffic). It starts when the page first shows; a page on
   screen adds a 15 s poll for "Up 2 minutes". An engine that goes away
   empties the lists and is tried again at growing intervals.
+- **A checkout's project before it runs** (`ComposeConfig`, pure;
+  `ComposeFileModel`, one per window): Compose keeps no record of a project
+  until its containers exist. So the selected tab's checkout's compose file
+  is read the way `up` will read it: `docker compose config --format json
+  --no-env-resolution`, in the checkout, without `-f` (Compose before 2.35
+  doesn't know the flag, and is asked again without it). That is the only way
+  to get what `up` gets: the name as Compose settles it
+  (`COMPOSE_PROJECT_NAME` in `.env`, then `name:`, then the folder's,
+  lowercased), the override merged, `include` and `extends` resolved, `.env`
+  filled in, only the active profiles' services. It reaches no engine; that
+  was checked against a socket that counts connections. Only names, images,
+  build folders, published ports, dependencies and replicas are kept, never
+  `environment`: it holds the variables' values. It is read while the
+  rail's panel or the page shows Docker: when one comes up, when the
+  checkout changes and its files did, and when a `.yaml`, `.yml` or `.env`
+  at the checkout's top changes (FSEvents, filtered to the top folder and
+  stamped by size and mtime). An isolated run asks only a scenario's stub.
+  When Compose can't read it, its own words are shown, warnings left out,
+  and the services read last are kept. An answer with no service (each
+  under a profile that isn't on) is no project: its Up could only fail.
+  The project is stopped, its services "Not created"; Up (`u`) is `docker
+  compose up -d` in a tab in the checkout. It names no project: Compose
+  takes the name from the files as they are then, so a name read earlier
+  never pins it. Once one of its containers exists, the project from
+  labels takes its place: one of its name, or one made from its compose
+  file under another (`-p`, the shell's `COMPOSE_PROJECT_NAME`), since its
+  Up would make the same services again, their ports taken
+  (`ComposeProjects.replaces`). On the page, one of that name from another
+  folder does too, and Up from here asks first: Compose would make that
+  stack again from this checkout's files. Show Resolved Config is `docker
+  compose config` as YAML, in the editor: a copy, removed when its tab
+  closes. A copy is a file, so env files' contents aren't asked for, and
+  what Compose filled in from the variables is masked first
+  (`ComposeConfig.masked`): secret-looking values in `environment` and a
+  build's `args`, a URL's password, and `.env`'s secrets wherever they
+  landed.
 - **The page** (`DockerPageModel` per window, `DockerPageView`): sections
   and the engine on the left, the list in the middle, the selected
   container's detail (`ContainerDetailView`, `ContainerSession`) at the
@@ -1440,8 +1478,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   and stats only while that pane shows it — the models that own a session
   start and stop its streams (`ContainerSession.follow`), not the view's
   appearing: SwiftUI swaps a view's instances, and the one leaving
-  stopped what the next had started. With no project running, a
-  compose file at the checkout's top offers `up`. The panel, like the page,
+  stopped what the next had started. Until a project of its name (or one
+  made from its files) runs here, the checkout's compose file is also
+  listed as its stack before it runs (above); when Compose can't be asked,
+  the file still offers `up`. The panel, like the page,
   starts the model and holds its poll only while it is on screen.
 - **Keys** (`DockerKey`, a pure table, `?` shows it): single letters while
   the list's table has the keyboard — `s` start/stop, `r` restart, `p`
@@ -1454,7 +1494,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   they come and go. ↩ shows one on the page, selected and unfolded; ⌥↩ is
   a shell in a running container, a start for a stopped one, `up` for a
   project. Compose Up, Down… and Restart act on the selected tab's
-  checkout's stack (View menu, palette; no keys). A tab running
+  checkout's stack (View menu, palette; no keys). With no stack, Compose
+  Up is the plan's Up — asked first when that name runs from another
+  folder — if the plan was read from the files as they are
+  (`ComposeFileModel.isCurrent`: nothing reads them while Docker is
+  hidden); else `docker compose up -d` in the checkout. A tab running
   `docker exec -it …` (or attach, debug, an interactive run, Compose's
   exec and run) is a `TabKind.container`, its icon the shippingbox.
 - **A debug shell** (`E`, `DockerCommands.debugShell`): for an image
@@ -1471,7 +1515,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **Tests**: `FakeDockerEngine` plays the API on a socket of its own
   (containers, events, logs framed, files as tar); `DockerTransportTests`,
   `DockerModelTests` and the `docker` scenario run against it, which records
-  rather than types what would reach a real `docker`.
+  rather than types what would reach a real `docker`; a stub `docker`
+  answers `compose config` for the scenario, and plays Compose before 2.35
+  too.
 
 ## Simulator
 

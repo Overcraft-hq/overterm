@@ -77,6 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()
         windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
+        // Copies made to be read (a resolved compose config) don't outlive the app.
+        NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }.forEach { $0.removeDockerReadCopies() }
         // shutdown/exit to each language server, so none outlives the app.
         LanguageServers.shared.stopAll()
         // Each database tunnel's ssh, or it outlives the app.

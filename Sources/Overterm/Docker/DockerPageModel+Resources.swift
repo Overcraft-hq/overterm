@@ -281,6 +281,14 @@ extension DockerPageModel {
 
     /// The project's compose file in the editor.
     func editComposeFile(_ project: ComposeProject) {
+        if project.planned, let folder = project.workingDir {
+            guard let file = ComposeProjects.composeFile(in: URL(fileURLWithPath: folder)) else {
+                error = "\(project.name)'s compose file isn't in \((folder as NSString).abbreviatingWithTildeInPath) any more."
+                return
+            }
+            actions?.edit(file)
+            return
+        }
         guard let file = project.configFiles.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
             error = "\(project.name)'s compose file isn't on this Mac\(project.configFiles.first.map { " (\($0))" } ?? "")."
             return
@@ -290,25 +298,32 @@ extension DockerPageModel {
 
     /// What Compose makes of the project's files — variables filled in,
     /// overrides merged — as `docker compose config` writes it, in the
-    /// editor (a copy: editing it changes nothing).
+    /// editor: a copy, so editing it changes nothing, and it goes when its
+    /// tab closes. A copy is a file, and a secret never lands on disk: env
+    /// files' contents aren't asked for, and what Compose filled in from
+    /// the variables is masked (`ComposeConfig.masked`).
     func showResolvedConfig(_ project: ComposeProject) {
         guard let cli = DockerCLI(endpoint: docker.endpoint) else {
             error = "docker isn't on this Mac, so Compose can't be asked."
             return
         }
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
+        // One before it runs is its folder's files, as `up` reads them: no
+        // `-p` (a name read earlier may be stale), no `-f`.
+        let arguments = ["compose"] + (project.planned ? [] : ["-p", project.name] + project.configFiles.flatMap { ["-f", $0] }) + ["config"]
+        let place = (project.planned ? folder : nil) ?? FileManager.default.homeDirectoryForCurrentUser
         Task {
             do {
-                let arguments = ["compose", "-p", project.name] + project.configFiles.flatMap { ["-f", $0] } + ["config"]
-                let yaml = try await cli.run(arguments, timeout: 30)
+                let yaml = try await cli.composeConfig(arguments, in: place, timeout: 30)
+                let masked = ComposeConfig.masked(yaml, secrets: folder.map(ComposeConfig.dotEnvSecrets(in:)) ?? [])
                 let copy = AppEnvironment.supportDirectory.appendingPathComponent("Compose", isDirectory: true)
                     .appendingPathComponent("\(project.name).resolved.yaml")
                 try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try ("# docker compose config — \(project.name)\(folder.map { ", from \($0.path)" } ?? ""). A copy: editing it changes nothing.\n" + yaml)
-                    .write(to: copy, atomically: true, encoding: .utf8)
-                actions?.edit(copy)
+                let header = "# docker compose config — \(project.name)\(folder.map { ", from \($0.path)" } ?? ""). A copy, secrets masked: editing it changes nothing.\n"
+                try (header + masked).write(to: copy, atomically: true, encoding: .utf8)
+                actions?.showCopy(copy)
             } catch {
-                self.error = "Compose config: \(error.localizedDescription)"
+                self.error = "Compose config: \(ComposeConfig.message(error))"
             }
         }
     }

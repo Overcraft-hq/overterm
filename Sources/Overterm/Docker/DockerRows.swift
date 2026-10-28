@@ -139,12 +139,14 @@ struct DockerProjectRow: View {
                 if busy { ProgressView().controlSize(.mini) }
                 if hovering && !compact {
                     button("play.fill", "Up — docker compose up -d, in a tab") { act("up") }
-                    button("stop.fill", "Stop its containers") { act("stop") }
-                    button("arrow.clockwise", "Restart its containers") { act("restart") }
+                    if !project.planned {
+                        button("stop.fill", "Stop its containers") { act("stop") }
+                        button("arrow.clockwise", "Restart its containers") { act("restart") }
+                    }
                 }
-                Text(verbatim: "\(project.running)/\(project.containers.filter { !$0.isOneOff }.count)")
+                Text(verbatim: "\(project.running)/\(project.expected)")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
-                    .help("\(project.running) running")
+                    .help(project.planned ? "Not created yet" : "\(project.running) running")
             } else {
                 Text("Other containers").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text2)
                 Spacer(minLength: 6)
@@ -163,5 +165,54 @@ struct DockerProjectRow: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// A service of a project before it runs: a hollow dot, what it runs — its
+/// image or the folder it is built from, the services it waits for — and,
+/// with room, the host ports it will publish, as words: nothing listens yet.
+struct DockerPlannedServiceRow: View {
+    let service: ComposeService
+    @ObservedObject var theme: ChromeTheme
+    /// The rail's narrow panel: no ports, no status words.
+    var compact = false
+    /// The checkout, for a build folder said from it.
+    var folder: String?
+    /// Under its project's row, as a container is.
+    var indented = true
+
+    var body: some View {
+        let replicas = service.spec?.replicas ?? 1
+        HStack(spacing: 8) {
+            Circle().strokeBorder(theme.text3, lineWidth: 1.2).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    Text(verbatim: service.name).font(.system(size: 12.5)).foregroundStyle(theme.text2).lineLimit(1)
+                    if replicas > 1 {
+                        Text(verbatim: "×\(replicas)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+                    }
+                }
+                Text(verbatim: service.spec?.summary(in: folder) ?? "")
+                    .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 6)
+            if !compact {
+                ForEach((service.spec?.ports ?? []).filter { $0.published != nil }.prefix(3), id: \.self) { port in
+                    Text(verbatim: port.label)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(theme.text3)
+                        .padding(.horizontal, 5)
+                        .frame(height: 17)
+                        .background(RoundedRectangle(cornerRadius: 4).stroke(theme.border))
+                        .help("Published on this port once it runs")
+                }
+                Text("Not created").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).frame(minWidth: 70, alignment: .trailing)
+            }
+        }
+        .padding(.leading, indented ? 18 : 0)
+        .frame(height: 30)
+        .contentShape(Rectangle())
+        .accessibilityIdentifier("docker.planned.\(service.name)")
     }
 }

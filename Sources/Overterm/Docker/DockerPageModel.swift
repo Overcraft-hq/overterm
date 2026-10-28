@@ -27,6 +27,8 @@ struct DockerActions {
     var showTab: (UUID) -> Void = { _ in }
     /// A file on the Mac, in the editor.
     var edit: (URL) -> Void = { _ in }
+    /// A copy made to be read, in the editor; removed when its tab closes.
+    var showCopy: (URL) -> Void = { _ in }
     /// Where to save something: a suggested name, then the place.
     var pickSave: (String, @escaping (URL) -> Void) -> Void = { _, _ in }
     /// A file to read: then the file.
@@ -40,6 +42,9 @@ struct DockerActions {
 struct DockerListGroup: Identifiable, Equatable {
     var project: ComposeProject?
     var containers: [ContainerSummary]
+    /// A project before it runs: its services' rows, since it has no
+    /// containers.
+    var services: [ComposeService] = []
 
     var id: String { project.map { DockerPageModel.projectTag($0.name) } ?? DockerPageModel.looseTag }
 }
@@ -81,7 +86,8 @@ final class DockerPageModel: ObservableObject {
     @Published var filter = ""
     /// Stopped containers hidden.
     @Published var runningOnly = false
-    /// Container ids, and `project:<name>` for a project's own row.
+    /// Container ids, `project:<name>` for a project's own row, and
+    /// `service:<project>/<name>` for a service of one before it runs.
     @Published var selection: Set<String> = []
     @Published var collapsed: Set<String> = []
     /// What the last action said when it failed, until dismissed.
@@ -178,10 +184,32 @@ final class DockerPageModel: ObservableObject {
         session(for: container.Id).follow(detailTab, shown: visible && showDetail)
     }
 
-    /// The one project the detail shows: the selection, if it is one.
+    /// The one project the detail shows: the selection, if it is one (or
+    /// a service of one before it runs).
     var detailedProject: ComposeProject? {
-        guard selection.count == 1, let name = selection.first.flatMap(Self.project(of:)) else { return nil }
-        return docker.projects.first { $0.name == name }
+        guard selection.count == 1, let tag = selection.first, let name = Self.project(of: tag) ?? Self.service(of: tag)?.project else { return nil }
+        return project(named: name)
+    }
+
+    /// The window's: the selected tab's checkout's compose project before
+    /// it runs, which the panel shows too.
+    var checkoutCompose: ComposeFileModel?
+
+    /// That project, listed among the others until one of its name exists —
+    /// from this checkout or another folder: the list has one row a name —
+    /// or one made from its files under another name.
+    var planned: ComposeProject? {
+        guard let plan = checkoutCompose?.project, !docker.projects.contains(where: { ComposeProjects.replaces($0, plan) }) else { return nil }
+        return plan
+    }
+
+    /// Nothing for the list to show: no container, and no project before it
+    /// runs that it would list (Running only leaves that out).
+    var isEmpty: Bool { docker.containers.isEmpty && (planned == nil || runningOnly) }
+
+    /// A project by name: the labels' one, else the one before it runs.
+    func project(named name: String) -> ComposeProject? {
+        docker.projects.first { $0.name == name } ?? planned.flatMap { $0.name == name ? $0 : nil }
     }
 
     /// The project detail's session: one at a time.
@@ -198,6 +226,14 @@ final class DockerPageModel: ObservableObject {
     nonisolated static let looseTag = "loose"
     nonisolated static func projectTag(_ name: String) -> String { "project:" + name }
     nonisolated static func project(of tag: String) -> String? { tag.hasPrefix("project:") ? String(tag.dropFirst("project:".count)) : nil }
+    /// A service row of a project before it runs.
+    nonisolated static func serviceTag(_ service: ComposeService) -> String { "service:" + service.id }
+    nonisolated static func service(of tag: String) -> (project: String, service: String)? {
+        guard tag.hasPrefix("service:") else { return nil }
+        let id = tag.dropFirst("service:".count)
+        guard let slash = id.firstIndex(of: "/") else { return nil }
+        return (String(id[..<slash]), String(id[id.index(after: slash)...]))
+    }
 
     /// The window's, set when it makes the page.
     var actions: DockerActions?
@@ -213,7 +249,12 @@ final class DockerPageModel: ObservableObject {
 
     /// The list as shown: projects first, by name, then the rest; the
     /// filter applied; a project kept while any of its containers matches.
-    nonisolated static func groups(projects: [ComposeProject], loose: [ContainerSummary], filter: DockerFilter, runningOnly: Bool) -> [DockerListGroup] {
+    /// `planned`, the checkout's project before it runs, is among them
+    /// until one of its name exists; nothing of it runs, so Running only
+    /// leaves it out.
+    nonisolated static func groups(
+        projects: [ComposeProject], planned: ComposeProject? = nil, loose: [ContainerSummary], filter: DockerFilter, runningOnly: Bool
+    ) -> [DockerListGroup] {
         func shown(_ containers: [ContainerSummary]) -> [ContainerSummary] {
             containers.filter { (!runningOnly || $0.state.isUp) && filter.matches($0) }
         }
@@ -221,20 +262,27 @@ final class DockerPageModel: ObservableObject {
             let containers = shown(project.services.flatMap(\.containers))
             return containers.isEmpty ? nil : DockerListGroup(project: project, containers: containers)
         }
+        if let planned, !runningOnly, !projects.contains(where: { ComposeProjects.replaces($0, planned) }) {
+            let services = planned.services.filter(filter.matches)
+            if !services.isEmpty {
+                let at = groups.firstIndex { ($0.project?.name ?? "") > planned.name } ?? groups.count
+                groups.insert(DockerListGroup(project: planned, containers: [], services: services), at: at)
+            }
+        }
         let rest = shown(loose)
         if !rest.isEmpty { groups.append(DockerListGroup(project: nil, containers: rest)) }
         return groups
     }
 
     var groups: [DockerListGroup] {
-        Self.groups(projects: docker.projects, loose: docker.loose, filter: DockerFilter(filter), runningOnly: runningOnly)
+        Self.groups(projects: docker.projects, planned: planned, loose: docker.loose, filter: DockerFilter(filter), runningOnly: runningOnly)
     }
 
     /// The rows as the keyboard walks them: a project's row, then its
     /// containers unless folded.
     var rows: [String] {
         groups.flatMap { group in
-            [group.id] + (collapsed.contains(group.id) ? [] : group.containers.map(\.Id))
+            [group.id] + (collapsed.contains(group.id) ? [] : group.containers.map(\.Id) + group.services.map(Self.serviceTag))
         }
     }
 
@@ -247,6 +295,8 @@ final class DockerPageModel: ObservableObject {
             let members: [ContainerSummary] =
                 if let name = Self.project(of: tag) {
                     docker.projects.first { $0.name == name }?.containers.filter { !$0.isOneOff } ?? []
+                } else if Self.service(of: tag) != nil {
+                    []
                 } else if tag == Self.looseTag {
                     docker.loose
                 } else {
@@ -259,15 +309,16 @@ final class DockerPageModel: ObservableObject {
 
     /// The one container the detail shows: the selection, if it is one.
     var detailed: ContainerSummary? {
-        guard selection.count == 1, let tag = selection.first, Self.project(of: tag) == nil else { return nil }
+        guard selection.count == 1, let tag = selection.first, Self.project(of: tag) == nil, Self.service(of: tag) == nil else { return nil }
         return docker.container(tag)
     }
 
     /// The project the selection is in, when it is all in one.
     var selectedProject: ComposeProject? {
-        let names = Set(selection.compactMap { tag in Self.project(of: tag) ?? docker.container(tag)?.composeProject })
+        let names = Set(
+            selection.compactMap { tag in Self.project(of: tag) ?? Self.service(of: tag)?.project ?? docker.container(tag)?.composeProject })
         guard names.count == 1, let name = names.first else { return nil }
-        return docker.projects.first { $0.name == name }
+        return project(named: name)
     }
 
     /// The detail's session: one at a time, the last one closed.
@@ -419,6 +470,7 @@ final class DockerPageModel: ObservableObject {
         let lasting = project.containers.filter { !$0.isOneOff }
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
         let endpoint = docker.endpoint
+        if project.planned { return composePlanned(verb, project, in: folder) }
         switch verb {
         case "up": actions?.run(DockerCommands.compose(project, "up -d", endpoint: endpoint), folder)
         case "logs": actions?.run(DockerCommands.compose(project, "logs -f --tail 100", endpoint: endpoint), folder)
@@ -431,6 +483,30 @@ final class DockerPageModel: ObservableObject {
                 "Take “\(project.name)” down?",
                 "docker compose down stops and removes its containers and networks, in a terminal tab. Its volumes stay.", "Down"
             ) { [weak self] in self?.actions?.run(DockerCommands.compose(project, "down", endpoint: endpoint), folder) }
+        default: break
+        }
+    }
+
+    /// A project before it runs: only `up` and `pull`, in its folder and
+    /// without `-p`, so Compose reads its files as it did for the list.
+    /// Up asks first when a project of its name runs from another folder:
+    /// Compose would make that one again from this checkout's files.
+    private func composePlanned(_ verb: String, _ project: ComposeProject, in folder: URL?) {
+        let endpoint = docker.endpoint
+        switch verb {
+        case "up":
+            let up: () -> Void = { [weak self] in self?.actions?.run(DockerCommands.compose(project, "up -d", endpoint: endpoint), folder) }
+            guard let other = docker.projects.first(where: { $0.name == project.name }), let dir = project.workingDir,
+                ComposeProjects.projects([other], in: dir).isEmpty
+            else {
+                up()
+                return
+            }
+            let there = other.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "another folder"
+            actions?.confirm(
+                "Up “\(project.name)” from this checkout?",
+                "A project of that name runs from \(there). Compose makes it again from this checkout's files and replaces its containers.", "Up", up)
+        case "pull": actions?.run(DockerCommands.compose(project, "pull", endpoint: endpoint), folder)
         default: break
         }
     }

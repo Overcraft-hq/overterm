@@ -67,7 +67,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .database: "Open a database container in the Database panel"
         case .run: "Run an image — the selected one — in a new container; a model, in a chat in a tab"
         case .remove: "Remove (asks first)"
-        case .composeUp: "Compose up, in a terminal tab"
+        case .composeUp: "Compose up, in a terminal tab — one not created yet too"
         case .composeDown: "Compose down, in a terminal tab (asks first)"
         case .filter: "Filter — status:running project:api port:5432"
         case .cleanUp: "Clean Up… — what is unused, listed before it goes"

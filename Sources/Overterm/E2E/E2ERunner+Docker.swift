@@ -360,6 +360,279 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// A checkout's compose project before any of it runs: read through a
+    /// stub `docker` answering `compose config` as Compose would, only while
+    /// Docker shows, again when a compose file changes; listed in the panel
+    /// and on the page as a stopped project, until one of its name exists.
+    private func plannedChecks(_ fake: FakeDockerEngine, socket: String) async {
+        let docker = DockerModel.shared
+        let page = app.dockerPage
+        let panel = app.dockerPanel
+        let compose = panel.checkoutCompose
+        let plan = scratch.appendingPathComponent("ot-plan", isDirectory: true)
+        try? FileManager.default.createDirectory(at: plan, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: plan)
+        let real = FileTreeModel.realPath(plan)
+        func write(_ text: String, _ name: String) {
+            try? text.write(to: plan.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        /// What the stub answers: Compose's JSON, the secrets in it as Compose gives them.
+        func config(worker: Bool = false) -> String {
+            let services =
+                [
+                    #""api":{"build":{"context":"\#(real)","dockerfile":"Dockerfile"},"environment":{"API_TOKEN":"s3cr3t-plan"},"#
+                        + #""ports":[{"mode":"ingress","target":8080,"published":"58081","protocol":"tcp"}]}"#,
+                    #""cache":{"image":"redis:7"}"#,
+                    #""db":{"image":"postgres:16","environment":{"POSTGRES_PASSWORD":"hunter2"},"#
+                        + #""ports":[{"mode":"ingress","target":5432,"published":"55433","protocol":"tcp"}]}"#,
+                    #""web":{"image":"nginx:1.27","deploy":{"replicas":2},"#
+                        + #""depends_on":{"api":{"condition":"service_started","required":true},"db":{"condition":"service_healthy","required":true}}}"#,
+                ] + (worker ? [#""worker":{"image":"busybox"}"#] : [])
+            return #"{"name":"ot-plan","services":{\#(services.joined(separator: ","))}}"#
+        }
+        write("services:\n  web:\n    build: .\n", "compose.yaml")
+        write(config(), ".ot-config.json")
+        let bin = scratch.appendingPathComponent("compose-stub-bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("docker")
+        let script = #"""
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            here="$(pwd -P)"
+            echo "$*|$here" >> "$dir/calls"
+            case "$*" in
+              "compose config --format json --no-env-resolution")
+                if [ -f "$here/.broken" ]; then
+                  echo 'time="2026-10-29T00:00:00Z" level=warning msg="The \"TAG\" variable is not set. Defaulting to a blank string."' >&2
+                  echo "error while interpolating services.api.image: required variable TAG is missing a value" >&2
+                  exit 1
+                fi
+                if [ -f "$here/.old-compose" ]; then echo "unknown flag: --no-env-resolution" >&2; exit 1; fi
+                cat "$here/.ot-config.json" ;;
+              "compose config --format json") cat "$here/.ot-config.json" ;;
+              "compose config --no-env-resolution") cat "$here/.ot-resolved.txt" ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """#
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        defer { DockerCLI.override = nil }
+        /// What the stub was asked in the checkout, in order.
+        func calls() -> [String] {
+            let calls = (try? String(contentsOf: bin.appendingPathComponent("calls"), encoding: .utf8)) ?? ""
+            return calls.split(separator: "\n").filter { $0.hasSuffix("|" + real) }.map { String($0.dropLast(real.count + 1)) }
+        }
+        func reads() -> Int { calls().filter { $0.hasPrefix("compose config --format json") }.count }
+        /// Whether a file under Overterm's own folder holds `text`.
+        func supportHolds(_ text: String) -> Bool {
+            let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
+            let files = FileManager.default.enumerator(at: AppEnvironment.supportDirectory, includingPropertiesForKeys: keys)
+            while let file = files?.nextObject() as? URL {
+                let values = try? file.resourceValues(forKeys: Set(keys))
+                guard values?.isRegularFile == true, (values?.fileSize ?? 0) < 8_000_000, let data = try? Data(contentsOf: file) else { continue }
+                if data.range(of: Data(text.utf8)) != nil { return true }
+            }
+            return false
+        }
+        var commands: [(command: String, folder: URL?)] = []
+        var confirmed: [String] = []
+        let actions = page.actions
+        page.actions?.run = { commands.append(($0, $1)) }
+        page.actions?.confirm = { title, _, _, then in
+            confirmed.append(title)
+            then()
+        }
+        defer { page.actions = actions }
+        let previous = app.store.selected
+        app.newTab(in: plan)
+        let tab = app.store.selected
+        defer {
+            if let previous { app.store.select(previous) }
+            if let tab, tab !== previous { app.closeTabsWithoutAsking([tab]) }
+        }
+
+        check(
+            "a new tab's checkout is the panel's", await eventually(5) { panel.checkout.map(FileTreeModel.realPath) == real },
+            panel.checkout?.path ?? "nil")
+        await pause(0.5)
+        check("its compose file isn't read while nothing shows Docker", reads() == 0 && compose.project == nil, "\(reads()) reads")
+        app.showDockerPanel(nil)
+        check("the panel shows it: Compose reads the file", await eventually(5) { panel.plan?.name == "ot-plan" }, compose.error ?? "nothing")
+        let read = panel.plan
+        check(
+            "a stopped project with its services, none created",
+            read?.services.map(\.name) == ["api", "cache", "db", "web"] && read?.planned == true && read?.containers.isEmpty == true
+                && read?.status == .stopped && read?.expected == 5, "\(read.map { "\($0.services.map(\.name)) \($0.expected)" } ?? "nil")")
+        check("read once", reads() == 1, "\(reads())")
+        let service = { (name: String) in read?.services.first { $0.name == name } }
+        check(
+            "what each runs, its secrets not kept",
+            service("db")?.spec?.image == "postgres:16" && service("db")?.spec?.ports.first?.published == "55433"
+                && service("api")?.spec?.buildContext == real && service("web")?.dependsOn == ["api", "db"]
+                && !String(describing: read).contains("hunter2") && !String(describing: read).contains("s3cr3t-plan"))
+        await capture("panel-planned")
+        if let read { panel.projectVerbs(read).first { $0.key == "u" }?.perform() }
+        check(
+            "the panel's Up is compose up in the checkout, told which engine, the name left to the files",
+            commands.last?.command == "DOCKER_HOST=unix://\(socket) docker compose up -d"
+                && commands.last?.folder.map(FileTreeModel.realPath) == real && confirmed.isEmpty, "\(commands.last.map { "\($0)" } ?? "nothing")")
+        let verbs = read.map { page.verbs(for: $0) } ?? []
+        check(
+            "a planned project's verbs are what can be done before it runs",
+            verbs.filter { $0.place == .button }.map(\.title) == ["Up (in a Tab)", "Pull Images in a Tab"] && !verbs.contains { $0.place == .remove },
+            "\(verbs.map(\.title))")
+
+        // The page lists it among the projects.
+        app.toggleDockerPage(nil)
+        page.section = .containers
+        let tag = DockerPageModel.projectTag("ot-plan")
+        func group() -> DockerListGroup? { page.groups.first { $0.id == tag } }
+        check(
+            "the page lists it among the projects",
+            await eventually(5) { group()?.project?.planned == true && group()?.services.map(\.name) == ["api", "cache", "db", "web"] },
+            "\(page.groups.map(\.id))")
+        await capture("page-planned")
+        page.selection = [tag]
+        check("selected, its detail is the plan", page.detailedProject?.planned == true)
+        await capture("project-planned")
+        let before = commands.count
+        page.press("u")
+        check(
+            "u brings it up from the page",
+            commands.count == before + 1 && commands.last?.command.hasSuffix(" docker compose up -d") == true, "\(commands.map(\.command))")
+        if let db = group()?.services.first(where: { $0.name == "db" }) { page.selection = [DockerPageModel.serviceTag(db)] }
+        page.press("D")
+        check(
+            "a service row stands for its project, and D has nothing to take down",
+            page.selectedProject?.name == "ot-plan" && commands.count == before + 1, "\(page.selection)")
+        page.selection = []
+        page.filter = "image:redis"
+        check("the filter reads its services", group()?.services.map(\.name) == ["cache"], "\(group()?.services.map(\.name) ?? [])")
+        page.filter = ""
+        page.runningOnly = true
+        check("Running only leaves it out", group() == nil)
+        page.runningOnly = false
+
+        // An edit is read again; a file Compose doesn't read isn't.
+        var count = reads()
+        write(config(worker: true), ".ot-config.json")
+        write("services:\n  web:\n    build: .\n  worker:\n    image: busybox\n", "compose.yaml")
+        check(
+            "an edit to the compose file is read again",
+            await eventually(5) { panel.plan?.services.map(\.name).contains("worker") == true } && reads() == count + 1, "\(reads() - count) reads")
+        count = reads()
+        write("# ot-plan\n", "README.md")
+        await pause(1.2)
+        check("a file Compose doesn't read isn't", reads() == count, "\(reads() - count) reads")
+
+        // What Compose says when it can't: its own words, the last services kept.
+        FileManager.default.createFile(atPath: plan.appendingPathComponent(".broken").path, contents: Data())
+        write("services:\n  web:\n    image: ${TAG:?}\n", "compose.yaml")
+        check(
+            "what Compose says when it can't, its warnings left out",
+            await eventually(5) { compose.error == "error while interpolating services.api.image: required variable TAG is missing a value" },
+            compose.error ?? "nothing")
+        check("the services it read last stay", panel.plan?.services.map(\.name).contains("worker") == true)
+        try? FileManager.default.removeItem(at: plan.appendingPathComponent(".broken"))
+        write("services:\n  web:\n    build: .\n", "compose.yaml")
+        check("and a good read clears it", await eventually(5) { compose.error == nil }, compose.error ?? "")
+
+        // Compose before 2.35 doesn't know --no-env-resolution: asked again without it.
+        var asked = calls().count
+        FileManager.default.createFile(atPath: plan.appendingPathComponent(".old-compose").path, contents: Data())
+        write(config(), ".ot-config.json")
+        write("services:\n  web:\n    image: nginx\n", "compose.yaml")
+        check(
+            "Compose before 2.35 is asked again without --no-env-resolution",
+            await eventually(5) { panel.plan?.services.map(\.name) == ["api", "cache", "db", "web"] && compose.error == nil }
+                && Array(calls().dropFirst(asked)) == ["compose config --format json --no-env-resolution", "compose config --format json"],
+            "\(calls().dropFirst(asked)) \(compose.error ?? "")")
+        try? FileManager.default.removeItem(at: plan.appendingPathComponent(".old-compose"))
+
+        // What Compose makes of it, in the editor: a copy, its secrets masked, gone with its tab.
+        write("DB_PASSWORD=hunter2-plan\n", ".env")
+        write(
+            "name: ot-plan\nservices:\n  db:\n    command:\n      - --requirepass\n      - hunter2-plan\n    environment:\n"
+                + "      POSTGRES_PASSWORD: hunter2-plan\n      POSTGRES_DB: shop\n    image: postgres:16\n", ".ot-resolved.txt")
+        _ = await eventually(5) { !compose.reading && compose.isCurrent }
+        asked = calls().count
+        if let mine = panel.plan { page.showResolvedConfig(mine) }
+        let shown = await eventually(10) {
+            self.app.editor?.active?.url?.lastPathComponent == "ot-plan.resolved.yaml"
+                && self.app.editor?.textView?.string.contains("POSTGRES_PASSWORD: ••••••") == true
+        }
+        let text = app.editor?.textView?.string ?? ""
+        check(
+            "its resolved config opens in the editor, what .env filled in masked",
+            shown && !text.contains("hunter2-plan") && text.contains("POSTGRES_DB: shop") && text.contains("      - ••••••"),
+            "\(page.error ?? "") \(text.prefix(400))")
+        check(
+            "asked in the checkout without -p, env files left out", Array(calls().dropFirst(asked)) == ["compose config --no-env-resolution"],
+            "\(calls().dropFirst(asked))")
+        check("nothing under Overterm's folder holds a secret from .env", !supportHolds("hunter2-plan"))
+        let copy = app.editor?.active?.url
+        if let editor = app.editor, let index = editor.buffers.firstIndex(where: { $0.url == copy }) { editor.closeBuffer(at: index) }
+        check(
+            "closing its tab removes the copy", await eventually(3) { copy.map { !FileManager.default.fileExists(atPath: $0.path) } ?? false },
+            copy?.path ?? "no copy")
+        if app.store.showingOverlay != .docker { app.toggleDockerPage(nil) }
+        page.section = .containers
+
+        // Its containers made, the labels' project takes over; gone, the plan is back.
+        let made = fake.add(name: "ot-plan-db-1", image: "postgres:16", project: "ot-plan", workingDir: real, service: "db")
+        check(
+            "once its containers exist, the labels' project takes over",
+            await eventually(5) {
+                panel.here.map(\.name) == ["ot-plan"] && panel.plan == nil
+                    && page.groups.filter { $0.id == tag }.map { $0.project?.planned } == [false]
+            }, "\(page.groups.map(\.id))")
+        try? await docker.remove(made, force: true)
+        check("gone again, the plan is back", await eventually(5) { panel.plan != nil && page.planned != nil })
+
+        // Started from its files under another name (`-p`, the shell's
+        // COMPOSE_PROJECT_NAME): that is its stack, not a second one to make.
+        let custom = fake.add(name: "ot-custom-web-1", image: "nginx:1.27", project: "ot-custom", workingDir: real, service: "web")
+        check(
+            "one made from its files under another name takes its place too",
+            await eventually(5) { panel.here.map(\.name) == ["ot-custom"] && panel.plan == nil && page.planned == nil && group() == nil },
+            "\(panel.here.map(\.name)) \(page.groups.map(\.id))")
+        try? await docker.remove(custom, force: true)
+        _ = await eventually(5) { panel.plan != nil && page.planned != nil }
+
+        // One of its name from another folder: the page's row; Up from here asks.
+        let other = fake.add(name: "ot-plan-db-1", image: "postgres:16", state: .exited, project: "ot-plan", workingDir: "/elsewhere/ot-plan", service: "db")
+        check(
+            "a stack of its name from another folder is the page's row",
+            await eventually(5) { page.planned == nil && page.groups.filter { $0.id == tag }.count == 1 && docker.container(other) != nil })
+        check(
+            "the panel still lists this checkout's, saying where the other runs",
+            panel.plan != nil && panel.planElsewhere?.workingDir == "/elsewhere/ot-plan", panel.planElsewhere?.workingDir ?? "nil")
+        let ran = commands.count
+        if let mine = panel.plan { panel.projectVerbs(mine).first { $0.key == "u" }?.perform() }
+        check(
+            "Up asks first: it would take that stack over",
+            confirmed.last?.contains("ot-plan") == true && commands.count == ran + 1, "\(confirmed)")
+        try? await docker.remove(other, force: true)
+        _ = await eventually(5) { docker.container(other) == nil }
+
+        // Nothing read while nothing shows Docker; shown again, read again.
+        app.hideOverlay()
+        app.sidebarPanel.panel = .files
+        _ = await eventually(3) { !self.app.dockerPanelShown }
+        count = reads()
+        write("services:\n  web:\n    build: .\n  # hidden\n", "compose.yaml")
+        await pause(1.0)
+        check("nothing read while nothing shows Docker", reads() == count, "\(reads() - count) reads")
+        check(
+            "and the menus don't act on what was read before the files changed", panel.plan != nil && panel.currentPlan == nil,
+            "\(panel.currentPlan?.name ?? "nil")")
+        app.showDockerPanel(nil)
+        check("shown again, it is read again", await eventually(5) { reads() == count + 1 }, "\(reads() - count) reads")
+        app.sidebarPanel.panel = .files
+        _ = await eventually(3) { !self.app.dockerPanelShown }
+    }
+
     /// The same engine as a remote one, `ssh://` to a throwaway sshd on
     /// 127.0.0.1 with its socket forwarded — what an ssh context does.
     private func remoteChecks(socket: String, web: String, folder: URL) async {
@@ -809,6 +1082,7 @@ extension E2ERunner {
         app.sidebarPanel.panel = .files
         check("the panel off the rail lets the poll go", await eventually(2) { !app.dockerPanelShown })
         await capturePanel()
+        await plannedChecks(fake, socket: socket)
 
         // ⇧⌥⌘P: the palette, on containers and compose projects.
         app.showDockerSwitcher(nil)

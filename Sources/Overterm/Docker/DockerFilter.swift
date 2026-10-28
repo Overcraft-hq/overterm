@@ -55,6 +55,11 @@ struct DockerFilter: Equatable, Sendable {
     func matches(_ container: ContainerSummary) -> Bool {
         terms.allSatisfy { $0.matches(container) != $0.negated }
     }
+
+    /// A service of a project before it runs: by its compose file's words.
+    func matches(_ service: ComposeService) -> Bool {
+        terms.allSatisfy { $0.matches(service) != $0.negated }
+    }
 }
 
 extension DockerFilter.Term {
@@ -78,6 +83,19 @@ extension DockerFilter.Term {
             return container.Image.lowercased().contains(value)
         case .port:
             return (container.Ports ?? []).contains { "\($0.PrivatePort)" == value || $0.PublicPort.map { "\($0)" == value } == true }
+        }
+    }
+
+    /// Not created: only `stopped` (`down`) is its status.
+    func matches(_ service: ComposeService) -> Bool {
+        let image = service.spec?.image ?? ""
+        switch key {
+        case .text: return [service.name, service.project, image].contains { $0.lowercased().contains(value) }
+        case .status: return value == "stopped" || value == "down"
+        case .project: return service.project.lowercased().contains(value)
+        case .service: return service.name.lowercased().contains(value)
+        case .image: return image.lowercased().contains(value)
+        case .port: return (service.spec?.ports ?? []).contains { "\($0.target)" == value || $0.published == value }
         }
     }
 }

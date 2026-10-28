@@ -69,6 +69,7 @@ extension DockerPageModel {
 
     /// `act`: who starts, stops and restarts its containers (the panel has its own).
     func verbs(for project: ComposeProject, act: ((DockerEngine.ContainerAction, [ContainerSummary]) -> Void)? = nil) -> [DockerVerb] {
+        if project.planned { return verbs(planned: project) }
         let lasting = project.containers.filter { !$0.isOneOff }
         func run(_ verb: String, _ action: DockerEngine.ContainerAction, _ containers: [ContainerSummary]) {
             if let act { act(action, containers) } else { compose(verb, project) }
@@ -90,6 +91,22 @@ extension DockerPageModel {
                 if let folder = project.workingDir { self?.actions?.copy(folder) }
             },
             DockerVerb(title: "Down…", label: "Down", symbol: "eject", place: .remove, key: "D") { [weak self] in self?.compose("down", project) },
+        ]
+    }
+
+    /// A project before it runs: what can be done to nothing yet — no
+    /// stop, restart, logs or down.
+    private func verbs(planned project: ComposeProject) -> [DockerVerb] {
+        [
+            DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) },
+            DockerVerb(title: "Pull Images in a Tab", label: "Pull", symbol: "arrow.down.circle", place: .button) { [weak self] in
+                self?.compose("pull", project)
+            },
+            DockerVerb(title: "Open Compose File", symbol: "doc.text", group: 1) { [weak self] in self?.editComposeFile(project) },
+            DockerVerb(title: "Show Resolved Config", symbol: "doc.text.magnifyingglass", group: 1) { [weak self] in self?.showResolvedConfig(project) },
+            DockerVerb(title: "Copy Folder", symbol: "folder", group: 1) { [weak self] in
+                if let folder = project.workingDir { self?.actions?.copy(folder) }
+            },
         ]
     }
 

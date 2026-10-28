@@ -21,11 +21,14 @@ final class DockerPanelModel: ObservableObject {
     var projectVerbs: (ComposeProject) -> [DockerVerb] = { _ in [] }
 
     let docker: DockerModel
+    /// The checkout's compose project before it runs; the page shows it too.
+    let checkoutCompose: ComposeFileModel
 
     private var streams: AnyCancellable?
 
-    init(docker: DockerModel = .shared) {
+    init(docker: DockerModel = .shared, checkoutCompose: ComposeFileModel? = nil) {
         self.docker = docker
+        self.checkoutCompose = checkoutCompose ?? ComposeFileModel(docker: docker)
         streams = Publishers.CombineLatest3($picked, $tab, $slotVisible)
             .sink { [weak self] _ in
                 // @Published fires before the values land.
@@ -53,6 +56,24 @@ final class DockerPanelModel: ObservableObject {
 
     /// A compose file at the checkout's top, for "Up" when nothing runs.
     var composeFile: URL? { checkout.flatMap(ComposeProjects.composeFile(in:)) }
+
+    /// The checkout's compose project before it runs: until one of its
+    /// name runs here, or one made from its files under another name, when
+    /// the labels' project takes its place.
+    var plan: ComposeProject? {
+        guard let plan = checkoutCompose.project, !here.contains(where: { ComposeProjects.replaces($0, plan) }) else { return nil }
+        return plan
+    }
+
+    /// The plan, when it was read from the files as they are now: what the
+    /// View menu and the palette act on, Docker on screen or not.
+    var currentPlan: ComposeProject? { checkoutCompose.isCurrent ? plan : nil }
+
+    /// A project of the plan's name running from another folder — usually
+    /// another worktree whose file sets `name:`. Its Up asks first.
+    var planElsewhere: ComposeProject? {
+        plan.flatMap { plan in docker.projects.first { $0.name == plan.name } }
+    }
 
     private(set) var session: ContainerSession?
 
@@ -83,6 +104,8 @@ final class DockerPanelModel: ObservableObject {
 struct DockerPanelView: View {
     @ObservedObject var panel: DockerPanelModel
     @ObservedObject var docker: DockerModel
+    /// The panel's, observed for its plan.
+    @ObservedObject var checkoutCompose: ComposeFileModel
     @ObservedObject var settings: Settings
     @ObservedObject var theme: ChromeTheme
     let group: TabGroup?
@@ -119,35 +142,21 @@ struct DockerPanelView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 section("This checkout")
                 let here = panel.here
-                if here.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("No compose project runs here.").font(.system(size: 12)).foregroundStyle(theme.text2)
-                        if let file = panel.composeFile {
-                            Button {
-                                actions.run(DockerCommands.prefix(for: docker.endpoint) + "docker compose up -d", panel.checkout)
-                            } label: {
-                                Label("Up — \(file.lastPathComponent)", systemImage: "play.fill").font(.system(size: 11.5))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(theme.accentText)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                } else {
-                    ForEach(here) { project in
-                        let group = DockerListGroup(project: project, containers: project.containers)
-                        DockerProjectRow(
-                            group: group, folded: panel.collapsed.contains(group.id), busy: false, theme: theme,
-                            fold: { toggle(group.id) }, act: { _ in }, compact: true
-                        )
-                        .padding(.horizontal, 8)
-                        .contextMenu { DockerVerbMenu(verbs: panel.projectVerbs(project)) }
-                        if !panel.collapsed.contains(group.id) {
-                            ForEach(project.containers) { container in row(container, inProject: true) }
-                        }
+                let plan = panel.plan
+                ForEach(here) { project in
+                    let group = DockerListGroup(project: project, containers: project.containers)
+                    DockerProjectRow(
+                        group: group, folded: panel.collapsed.contains(group.id), busy: false, theme: theme,
+                        fold: { toggle(group.id) }, act: { _ in }, compact: true
+                    )
+                    .padding(.horizontal, 8)
+                    .contextMenu { DockerVerbMenu(verbs: panel.projectVerbs(project)) }
+                    if !panel.collapsed.contains(group.id) {
+                        ForEach(project.containers) { container in row(container, inProject: true) }
                     }
                 }
+                if let plan { planned(plan) }
+                if here.isEmpty, plan == nil { nothingHere }
                 if settings.bool("docker.showAllContainers") {
                     let others = panel.others
                     if !others.isEmpty {
@@ -158,6 +167,78 @@ struct DockerPanelView: View {
             }
             .padding(.bottom, 8)
         }
+    }
+
+    /// The checkout's project before it runs: its services as Compose will
+    /// make them, and Up.
+    @ViewBuilder private func planned(_ plan: ComposeProject) -> some View {
+        let group = DockerListGroup(project: plan, containers: [], services: plan.services)
+        let verbs = panel.projectVerbs(plan)
+        DockerProjectRow(
+            group: group, folded: panel.collapsed.contains(group.id), busy: false, theme: theme, fold: { toggle(group.id) }, act: { _ in },
+            compact: true
+        )
+        .padding(.horizontal, 8)
+        .contextMenu { DockerVerbMenu(verbs: verbs) }
+        if !panel.collapsed.contains(group.id) {
+            ForEach(plan.services) { service in
+                DockerPlannedServiceRow(service: service, theme: theme, compact: true, folder: plan.workingDir)
+                    .padding(.horizontal, 12)
+                    .contextMenu { DockerVerbMenu(verbs: verbs) }
+            }
+        }
+        VStack(alignment: .leading, spacing: 5) {
+            if let up = verbs.first(where: { $0.key == "u" }) {
+                Button {
+                    up.perform()
+                } label: {
+                    Label("Up — not created yet", systemImage: "play.fill").font(.system(size: 11.5))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.accentText)
+                .help("docker compose up -d, in a terminal tab in the checkout")
+                .accessibilityIdentifier("docker.panel.up")
+            }
+            if let other = panel.planElsewhere {
+                Text(verbatim: "“\(other.name)” runs from \(other.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "another folder")")
+                    .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.head)
+            }
+            if let error = checkoutCompose.error { composeError(error) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    /// No project here, before it runs or since.
+    private var nothingHere: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if checkoutCompose.reading, let file = panel.composeFile {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(verbatim: "Reading \(file.lastPathComponent)…").font(.system(size: 12)).foregroundStyle(theme.text2)
+                }
+            } else {
+                Text("No compose project runs here.").font(.system(size: 12)).foregroundStyle(theme.text2)
+            }
+            if let error = checkoutCompose.error { composeError(error) }
+            if let file = panel.composeFile {
+                Button {
+                    actions.run(DockerCommands.prefix(for: docker.endpoint) + "docker compose up -d", panel.checkout)
+                } label: {
+                    Label("Up — \(file.lastPathComponent)", systemImage: "play.fill").font(.system(size: 11.5))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.accentText)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    private func composeError(_ error: String) -> some View {
+        Text(verbatim: error).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .help("What docker compose config said; the services are from the last time it could read the file")
     }
 
     private func section(_ title: String) -> some View {

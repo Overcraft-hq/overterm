@@ -35,6 +35,7 @@ version is tagged `v<version>`.
 - docker: Rancher Desktop started, stopped and asked about through `rdctl`
 - docker: Docker Scout looks an image over in a tab
 - docker: every detail has its actions as buttons — the same ones its right-click menu has; a network's puts a container on it or takes one off
+- docker: a checkout's compose project shows before it has run, ready to bring up
 
 ## 1.4.6 — 2026-10-29
 

@@ -33,6 +33,10 @@ final class ProjectSession: ObservableObject {
     }
 
     private func sync() {
+        // Selected before it ran: its command once it exists.
+        if feed.terminalCommand == nil, let project = docker.projects.first(where: { $0.name == name }) {
+            feed.terminalCommand = DockerCommands.compose(project, "logs -f --tail 100", endpoint: docker.endpoint)
+        }
         guard wanted, let project = docker.projects.first(where: { $0.name == name }) else {
             followers.values.forEach { $0.stop() }
             updateFollowing()
@@ -65,13 +69,17 @@ final class ProjectSession: ObservableObject {
 }
 
 /// A compose project, at the side of the list: its state, its verbs, its
-/// services' merged logs and the services themselves.
+/// services' merged logs and the services themselves — before it runs,
+/// its services as its compose files say them.
 struct ProjectDetailView: View {
     let project: ComposeProject
     @ObservedObject var session: ProjectSession
     @ObservedObject var page: DockerPageModel
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
+    /// What Compose said when it last couldn't read the files, for a
+    /// project before it runs.
+    var planError: String? = nil
 
     enum Tab: String, CaseIterable { case logs, services }
 
@@ -83,15 +91,49 @@ struct ProjectDetailView: View {
                     Text(verbatim: project.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                     Spacer(minLength: 0)
                 }
-                Text(
-                    verbatim: [project.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath }, "\(project.running) of \(project.containers.filter { !$0.isOneOff }.count) running"].compactMap
-                    { $0 }.joined(separator: "  —  ")
-                )
-                .font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
+                Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
                 DockerActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
+                if project.planned, let planError {
+                    Text(verbatim: planError).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .help("What docker compose config said; the services are from the last time it could read the file")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            if project.planned {
+                Rectangle().fill(theme.border).frame(height: 1)
+                plannedServices
+            } else {
+                tabs
+            }
+        }
+        .accessibilityIdentifier("docker.project.detail")
+    }
+
+    private var subtitle: String {
+        let folder = project.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath }
+        let count = project.services.count
+        let state =
+            project.planned
+            ? "not created: \(count) service\(count == 1 ? "" : "s")" : "\(project.running) of \(project.expected) running"
+        return [folder, state].compactMap { $0 }.joined(separator: "  —  ")
+    }
+
+    /// Before it runs: its services as Compose will make them.
+    private var plannedServices: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(project.services) { service in
+                    DockerPlannedServiceRow(service: service, theme: theme, folder: project.workingDir, indented: false)
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private var tabs: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 ForEach(Tab.allCases, id: \.self) { tab in
                     Button {
@@ -116,7 +158,6 @@ struct ProjectDetailView: View {
             case .services: services
             }
         }
-        .accessibilityIdentifier("docker.project.detail")
     }
 
     private var services: some View {

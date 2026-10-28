@@ -10,10 +10,20 @@ struct ComposeProject: Identifiable, Equatable, Sendable {
     var workingDir: String?
     var configFiles: [String]
     var services: [ComposeService]
+    /// Made from a checkout's compose files (`ComposeConfig`) before any
+    /// of its containers exist: its services have none, and `up` runs in
+    /// its folder without `-f`.
+    var planned = false
 
     var id: String { name }
     var containers: [ContainerSummary] { services.flatMap(\.containers) }
     var running: Int { containers.filter { $0.state == .running }.count }
+
+    /// The containers it is made of, one-offs left out — for a project
+    /// before it runs, the ones `up` would make, replicas counted.
+    var expected: Int {
+        planned ? services.reduce(0) { $0 + ($1.spec?.replicas ?? 1) } : containers.filter { !$0.isOneOff }.count
+    }
 
     enum Status: Equatable, Sendable { case running, partial, stopped }
 
@@ -44,6 +54,8 @@ struct ComposeService: Identifiable, Equatable, Sendable {
     var containers: [ContainerSummary]
     /// The services it waits for (`com.docker.compose.depends_on`).
     var dependsOn: [String]
+    /// What the compose files say of it, for a project before it runs.
+    var spec: ComposeConfig.Service? = nil
 
     var id: String { project + "/" + name }
 }
@@ -98,10 +110,26 @@ enum ComposeProjects {
         return ports.sorted { $0.port < $1.port }
     }
 
+    /// The names `docker compose` looks for at a folder's top, in its order.
+    static let composeFileNames = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
+
     /// The compose file at a folder's top, as `docker compose` looks for it.
     static func composeFile(in folder: URL) -> URL? {
-        ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
-            .lazy.map { folder.appendingPathComponent($0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+        composeFileNames.lazy.map { folder.appendingPathComponent($0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Whether a project from labels takes the place of a checkout's project
+    /// before it runs (`planned`): it has its name, or it was made from the
+    /// same compose file under another (`-p`, a `COMPOSE_PROJECT_NAME` in
+    /// the shell). The plan's Up would then make a second copy of the same
+    /// services, its ports already taken. Pure.
+    static func replaces(_ project: ComposeProject, _ planned: ComposeProject) -> Bool {
+        if project.name == planned.name { return true }
+        guard let folder = planned.workingDir else { return false }
+        let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+        if project.configFiles.isEmpty { return project.workingDir == base }
+        let files = Set(composeFileNames.map { base + "/" + $0 })
+        return project.configFiles.contains(where: files.contains)
     }
 
     /// `db:service_started:false,cache:service_healthy:true` → db, cache.

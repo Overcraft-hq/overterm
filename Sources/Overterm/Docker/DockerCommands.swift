@@ -18,11 +18,17 @@ enum DockerCommands {
 
     /// A compose verb for a project Compose knows by its labels. `up`,
     /// `pull` and `build` need the files it came from; `down`, `stop`,
-    /// `restart` and `logs` find it by name.
+    /// `restart` and `logs` find it by name. One before it runs (`planned`)
+    /// is its folder's files, where the command runs: no `-p`, no `-f`, so
+    /// Compose names it from the files as they are then — a name read
+    /// earlier may be stale, and `-p` would make a project of it.
     static func compose(_ project: ComposeProject, _ verb: String, endpoint: DockerEndpoint? = nil) -> String {
         let needsFiles = ["up", "pull", "build", "config", "create"].contains(verb.split(separator: " ").first.map(String.init) ?? verb)
-        var parts = ["docker", "compose", "-p", quote(project.name)]
-        if needsFiles { parts += project.configFiles.flatMap { ["-f", quote($0)] } }
+        var parts = ["docker", "compose"]
+        if !project.planned {
+            parts += ["-p", quote(project.name)]
+            if needsFiles { parts += project.configFiles.flatMap { ["-f", quote($0)] } }
+        }
         parts.append(verb)
         return prefix(for: endpoint) + parts.joined(separator: " ")
     }

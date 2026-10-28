@@ -153,6 +153,105 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(filtered.first?.project?.services.count, 2, "the project stays whole; only the rows are filtered")
     }
 
+    /// The checkout's project before it runs, as the page lists it.
+    private func planned(_ name: String = "shop") -> ComposeProject {
+        ComposeConfig(
+            name: name,
+            services: [
+                .init(name: "cache", image: "redis:7", buildContext: nil, dependsOn: [], profiles: [], ports: [], replicas: 1, containerName: nil),
+                .init(
+                    name: "db", image: "postgres:16", buildContext: nil, dependsOn: [], profiles: [],
+                    ports: [.init(published: "55433", target: 5432, proto: "tcp")], replicas: 1, containerName: nil),
+            ]
+        ).project(in: "/w/\(name)")
+    }
+
+    func testAPlannedProjectIsListedUntilOneOfItsNameExists() {
+        let (projects, loose) = ComposeProjects.group([
+            container("blog-app-1", project: "blog", service: "app"), container("zoo-app-1", project: "zoo", service: "app"),
+            container("redis", image: "redis:7"),
+        ])
+        func groups(_ filter: String = "", runningOnly: Bool = false, projects: [ComposeProject] = projects) -> [DockerListGroup] {
+            DockerPageModel.groups(projects: projects, planned: planned(), loose: loose, filter: DockerFilter(filter), runningOnly: runningOnly)
+        }
+        XCTAssertEqual(groups().map(\.id), ["project:blog", "project:shop", "project:zoo", "loose"], "among the projects, by name")
+        let shop = groups().first { $0.id == "project:shop" }
+        XCTAssertEqual(shop?.project?.planned, true)
+        XCTAssertEqual(shop?.services.map(\.name), ["cache", "db"])
+        XCTAssertEqual(shop?.containers, [])
+        let running = ComposeProjects.group([container("shop-web-1", project: "shop", service: "web")]).projects
+        XCTAssertEqual(groups(projects: running).map(\.id), ["project:shop", "loose"])
+        XCTAssertEqual(groups(projects: running).first?.project?.planned, false, "one of its name, from anywhere, is the row")
+        var custom = ComposeProjects.group([container("custom-web-1", project: "custom", service: "web")]).projects
+        custom[0].workingDir = "/w/shop"
+        custom[0].configFiles = ["/w/shop/compose.yaml"]
+        XCTAssertEqual(groups(projects: custom).map(\.id), ["project:custom", "loose"], "one made from its files under another name is too")
+        XCTAssertEqual(groups(runningOnly: true).map(\.id), ["project:blog", "project:zoo", "loose"], "nothing of it runs")
+        XCTAssertEqual(groups("image:redis").first { $0.id == "project:shop" }?.services.map(\.name), ["cache"])
+        XCTAssertEqual(groups("image:redis").map(\.id), ["project:shop", "loose"])
+        XCTAssertFalse(groups("-project:shop").contains { $0.id == "project:shop" })
+        XCTAssertEqual(groups("db").map(\.id), ["project:shop"])
+        XCTAssertEqual(groups("db").first?.services.map(\.name), ["db"])
+        XCTAssertEqual(groups("port:55433").first?.services.map(\.name), ["db"])
+        XCTAssertEqual(groups("status:stopped").first { $0.id == "project:shop" }?.services.count, 2)
+        XCTAssertNil(groups("status:running").first { $0.id == "project:shop" })
+    }
+
+    @MainActor
+    func testAPlannedProjectsVerbsAndKeys() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-plan-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try "services:\n  db:\n    image: postgres:16\n".write(to: folder.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        let real = FileTreeModel.realPath(folder)
+        let docker = DockerModel(endpoint: { nil })
+        let config = try ComposeConfig.parse(#"{"name":"shop","services":{"cache":{"image":"redis:7"},"db":{"image":"postgres:16"}}}"#)
+        let compose = ComposeFileModel(docker: docker, latency: 0.05) { _, _ in #"{"name":"shop","services":{"cache":{"image":"redis:7"},"db":{"image":"postgres:16"}}}"# }
+        defer { compose.update(checkout: nil, shown: false) }
+        let page = DockerPageModel(docker: docker)
+        page.checkoutCompose = compose
+        compose.update(checkout: folder, shown: true)
+        let deadline = Date().addingTimeInterval(5)
+        while compose.project == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        let plan = try XCTUnwrap(page.planned)
+        XCTAssertEqual(plan, config.project(in: real))
+        XCTAssertEqual(page.groups.map(\.id), ["project:shop"], "listed with no container at all")
+        XCTAssertFalse(page.isEmpty, "not “No containers”: the plan is listed")
+        page.runningOnly = true
+        XCTAssertTrue(page.isEmpty, "Running only leaves it out: “No containers”, not a blank list")
+        page.runningOnly = false
+
+        let verbs = page.verbs(for: plan)
+        XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Up (in a Tab)", "Pull Images in a Tab"])
+        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Open Compose File", "Show Resolved Config", "Copy Folder"])
+        XCTAssertTrue(verbs.allSatisfy { $0.place != .remove }, "nothing to take down")
+
+        var commands: [(String, URL?)] = []
+        page.actions = DockerActions(
+            run: { commands.append(($0, $1)) }, confirm: { _, _, _, _ in XCTFail("nothing to ask") }, open: { _ in }, copy: { _ in }, settings: {})
+        page.selection = [DockerPageModel.projectTag("shop")]
+        XCTAssertEqual(page.detailedProject?.planned, true)
+        page.press("u")
+        XCTAssertEqual(commands.map(\.0), ["docker compose up -d"], "no -p: Compose names it from the files then")
+        XCTAssertEqual(commands.first?.1?.path, real, "in the checkout")
+
+        let db = try XCTUnwrap(plan.services.first { $0.name == "db" })
+        page.selection = [DockerPageModel.serviceTag(db)]
+        XCTAssertEqual(page.selectedProject?.name, "shop", "a service row stands for its project")
+        XCTAssertEqual(page.detailedProject?.name, "shop")
+        XCTAssertTrue(page.selectedContainers.isEmpty)
+        XCTAssertNil(page.detailed)
+        page.press("D")
+        page.press("s")
+        page.press("r")
+        XCTAssertEqual(commands.count, 1, "no down, start or restart for what isn't there")
+        XCTAssertEqual(page.rows, ["project:shop", "service:shop/cache", "service:shop/db"])
+
+        XCTAssertEqual(DockerPageModel.serviceTag(db), "service:shop/db")
+        XCTAssertEqual(DockerPageModel.service(of: "service:my app/db").map { [$0.project, $0.service] }, ["my app", "db"])
+        XCTAssertNil(DockerPageModel.service(of: "project:shop"))
+    }
+
     @MainActor
     func testWhatASelectionMeans() {
         let docker = DockerModel(endpoint: { nil })

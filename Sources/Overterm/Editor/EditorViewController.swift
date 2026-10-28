@@ -14,6 +14,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var onToggleZoom: (() -> Void)?
     /// A file was saved (the browser's reload on save).
     var onSaved: (() -> Void)?
+    /// A file's tab closed (a copy made to be read goes with it).
+    var onBufferClosed: ((URL) -> Void)?
     /// Where Go to File looks: the window's checkout.
     var workspaceRoot: (() -> URL?)?
     /// The window's API client: a `.bru` request opens as one, sent through it.
@@ -391,10 +393,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             textView.breakUndoCoalescing()
         }
         bufferWillClose(buffer)
+        // Read first: closing the document forgets its URL.
+        let closed = buffer.url
         buffer.document.close()
         // A new request closed unsaved is gone, as Postman's tab is.
         if let url = buffer.url { apiWorkspace?.discardDraft(url) }
         buffers.remove(at: index)
+        if let closed { onBufferClosed?(closed) }
         if buffers.isEmpty {
             activeIndex = -1
             swapping = true

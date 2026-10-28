@@ -35,6 +35,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Containers' files open in the editor, by their local copy's path.
     var dockerFileCopies: [String: DockerFileCopy] = [:]
     var dockerSaveHooked = false
+    /// Copies made to be read (a resolved compose config), by path: each
+    /// removed when its editor tab closes, or the window does.
+    var dockerReadCopies: Set<String> = []
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
@@ -3675,6 +3678,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
+        removeDockerReadCopies()
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }

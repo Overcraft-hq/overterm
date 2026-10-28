@@ -185,8 +185,10 @@ remote engine through your own ssh, its ports opening on the host. Docker
 Scout looks an image over in a tab. With Docker's MCP Toolkit, the page
 says whether Claude Code and Codex reach its MCP servers, and connects
 them in a tab. The rail's shippingbox keeps the
-selected tab's checkout's stack beside the terminal, a container's logs a
-click away in the right-hand pane, and the ports its containers publish
+selected tab's checkout's stack beside the terminal — before it runs too:
+its compose file's services as Compose will make them, with Up (`u` on
+the page) to start them — a container's logs a click away in the
+right-hand pane, and the ports its containers publish
 sit in its panes' headers beside the ones its own processes listen on. A
 container that crashes, runs out of memory or turns unhealthy marks the
 tab whose checkout it belongs to, as a failed command does. Two

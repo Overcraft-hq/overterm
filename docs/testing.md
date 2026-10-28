@@ -90,6 +90,11 @@ volume of their own — labelled `overterm.test`, made from
 `debian:bookworm-slim` only if it is already there (nothing is pulled),
 and removed after.
 
+`OVERTERM_DOCKER_TESTS=1 swift test --filter ComposeConfigTests` runs your
+`docker compose config` on a project of its own, to check that Compose
+still answers what the plan reads. It reaches no engine: `DOCKER_HOST`
+names a socket that isn't there.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

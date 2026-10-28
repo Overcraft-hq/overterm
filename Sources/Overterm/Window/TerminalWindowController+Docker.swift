@@ -30,6 +30,7 @@ extension TerminalWindowController {
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
                 self.openInEditor(url)
             },
+            showCopy: { [weak self] url in self?.showDockerReadCopy(url) },
             pickSave: { [weak self] name, then in
                 guard let window = self?.window else { return }
                 let panel = NSSavePanel()
@@ -96,6 +97,16 @@ extension TerminalWindowController {
         sidebarPanel.$panel
             .sink { [weak self] panel in DispatchQueue.main.async { self?.updateDockerVisibility(panel: panel) } }
             .store(in: &cancellables)
+        // The checkout's compose project before it runs: the panel's and the page's.
+        dockerPage.checkoutCompose = dockerPanel.checkoutCompose
+        DockerModel.shared.$connection
+            .map(\.isRunning)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                // @Published fires before the value lands.
+                DispatchQueue.main.async { self?.updateComposeFile() }
+            }
+            .store(in: &cancellables)
     }
 
     /// The repository's root, else the tab's own folder. A checkout with a
@@ -105,6 +116,14 @@ extension TerminalWindowController {
         let folder = root ?? store.selected?.workingDirectory.map { URL(fileURLWithPath: $0) }
         if dockerPanel.checkout != folder { dockerPanel.checkout = folder }
         if Settings.shared.dockerEnabled, dockerPanel.composeFile != nil { DockerModel.shared.start() }
+        updateComposeFile()
+    }
+
+    /// The checkout's compose file is read while the panel or the page
+    /// shows Docker in this window, and the engine answers.
+    func updateComposeFile() {
+        let shown = (dockerPanelShown || dockerPage.visible) && Settings.shared.dockerEnabled && DockerModel.shared.connection.isRunning
+        dockerPanel.checkoutCompose.update(checkout: dockerPanel.checkout, shown: shown)
     }
 
     // MARK: Database
@@ -151,6 +170,28 @@ extension TerminalWindowController {
                 reportDockerError("Open \(path)", error)
             }
         }
+    }
+
+    /// A copy made to be read (a resolved compose config), in the editor:
+    /// it goes when its tab closes, or the window does.
+    func showDockerReadCopy(_ url: URL) {
+        guard let editor else { return }
+        dockerReadCopies.insert(url.resolvingSymlinksInPath().path)
+        if editor.onBufferClosed == nil {
+            editor.onBufferClosed = { [weak self] closed in self?.removeDockerReadCopy(closed.resolvingSymlinksInPath().path) }
+        }
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        openInEditor(url)
+    }
+
+    func removeDockerReadCopy(_ path: String) {
+        guard dockerReadCopies.remove(path) != nil else { return }
+        try? FileManager.default.removeItem(atPath: path)
+    }
+
+    func removeDockerReadCopies() {
+        let paths = dockerReadCopies
+        paths.forEach(removeDockerReadCopy)
     }
 
     /// The editor's save goes back into the container too, for a copy.
@@ -273,6 +314,7 @@ extension TerminalWindowController {
         guard shown != dockerPanelShown else { return }
         dockerPanelShown = shown
         if shown { DockerModel.shared.show() } else { DockerModel.shared.hide() }
+        updateComposeFile()
     }
 
     /// The rail's shippingbox: the sidebar, on the Docker panel.
@@ -299,7 +341,9 @@ extension TerminalWindowController {
         case .docker:
             guard let theme else { return nil }
             dockerPage.actions = dockerActions
-            return NSHostingView(rootView: DockerPageView(page: dockerPage, docker: .shared, theme: theme, actions: dockerActions))
+            return NSHostingView(
+                rootView: DockerPageView(
+                    page: dockerPage, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, theme: theme, actions: dockerActions))
         }
     }
 
@@ -343,6 +387,7 @@ extension TerminalWindowController {
             .removeDuplicates()
             .sink { [weak self] visible in
                 self?.dockerPage.visible = visible
+                self?.updateComposeFile()
                 guard visible != shown else { return }
                 shown = visible
                 if visible { DockerModel.shared.show() } else { DockerModel.shared.hide() }
@@ -484,7 +529,9 @@ extension TerminalWindowController {
             items.append(
                 PaletteItem(
                     id: "a.composeUp", group: .action, title: "Compose Up",
-                    subtitle: stack.isEmpty ? dockerPanel.composeFile?.lastPathComponent : stack.map(\.name).joined(separator: ", "), symbol: "play.fill"
+                    subtitle: stack.isEmpty
+                        ? dockerPanel.currentPlan?.name ?? dockerPanel.composeFile?.lastPathComponent : stack.map(\.name).joined(separator: ", "),
+                    symbol: "play.fill"
                 ) { [weak self] _, _ in self?.composeUp(nil) })
         }
         guard docker.connection.isRunning else { return items }
@@ -544,12 +591,17 @@ extension TerminalWindowController {
     }
 
     /// Compose Up: the checkout's projects again from their files, or the
-    /// compose file at its top when none runs.
+    /// compose file at its top when none runs — its project before it
+    /// runs, when it was read from the files as they are.
     @objc func composeUp(_ sender: Any?) {
         let endpoint = DockerModel.shared.endpoint
         let stack = dockerPanelStack()
         if stack.isEmpty {
             guard dockerPanel.composeFile != nil else { return NSSound.beep() }
+            // Read from the files as they are: its Up asks first when its
+            // name runs from another folder. Either way the command names no
+            // project, so Compose takes it from the files.
+            if let plan = dockerPanel.currentPlan { return dockerPage.compose("up", plan) }
             runDockerCommand(DockerCommands.prefix(for: endpoint) + "docker compose up -d", in: dockerPanel.checkout)
         } else {
             for project in stack {

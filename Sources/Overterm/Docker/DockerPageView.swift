@@ -7,6 +7,9 @@ import SwiftUI
 struct DockerPageView: View {
     @ObservedObject var page: DockerPageModel
     @ObservedObject var docker: DockerModel
+    /// The window's checkout's compose project before it runs (the page's
+    /// `planned`), observed so the list follows it.
+    @ObservedObject var checkoutCompose: ComposeFileModel
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
 
@@ -210,7 +213,7 @@ struct DockerPageView: View {
             case .running where page.section == .builds: DockerBuildsView(page: page, theme: theme, actions: actions)
             case .running where page.section == .models: DockerModelsView(page: page, theme: theme, actions: actions)
             case .running:
-                if docker.containers.isEmpty {
+                if page.isEmpty {
                     empty("No containers", "Run one — `docker run`, or `docker compose up` in a checkout — and it shows here.")
                 } else {
                     // The list keeps its place whether or not the detail is
@@ -231,7 +234,8 @@ struct DockerPageView: View {
                             } else if page.showDetail, let project = page.detailedProject {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ProjectDetailView(
-                                    project: project, session: page.projectSession(for: project.name), page: page, theme: theme, actions: actions
+                                    project: project, session: page.projectSession(for: project.name), page: page, theme: theme, actions: actions,
+                                    planError: project.planned ? checkoutCompose.error : nil
                                 )
                                 .id(project.name)
                                 .frame(width: min(520, max(340, geometry.size.width * 0.45)))
@@ -337,6 +341,13 @@ struct DockerPageView: View {
                         .tag(container.Id)
                         .listRowSeparator(.hidden)
                         .contextMenu { containerMenu(container) }
+                    }
+                    // A project before it runs: its services, none created.
+                    ForEach(group.services) { service in
+                        DockerPlannedServiceRow(service: service, theme: theme, folder: group.project?.workingDir)
+                            .tag(DockerPageModel.serviceTag(service))
+                            .listRowSeparator(.hidden)
+                            .contextMenu { projectMenu(group) }
                     }
                 }
             }
