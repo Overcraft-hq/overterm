@@ -332,6 +332,18 @@ extension DockerEngine {
 
     func remove(network id: String) async throws { try await send(.DELETE, "/networks/\(id)") }
 
+    /// A container onto a network, running or not — `docker network connect`.
+    func connect(container id: String, to network: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["Container": id])
+        try await send(.POST, "/networks/\(network)/connect", body: body, headers: [("Content-Type", "application/json")])
+    }
+
+    /// Off it — `docker network disconnect`.
+    func disconnect(container id: String, from network: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["Container": id, "Force": false])
+        try await send(.POST, "/networks/\(network)/disconnect", body: body, headers: [("Content-Type", "application/json")])
+    }
+
     enum Prunable: String, Sendable { case containers, images, volumes, networks, buildCache = "build" }
 
     /// Prunes what is unused; for images, every unused one (`dangling=false`)

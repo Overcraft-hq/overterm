@@ -173,7 +173,9 @@ inspect data and its CPU, memory, network and disk sit beside it. Secrets
 in a container's environment stay masked. Images (pulled with their
 progress, tagged, their layers), volumes with their sizes and who mounts
 them, and networks with who is on them sit in sections of their own, and
-Clean Up lists what nothing uses before anything goes. A volume exports,
+Clean Up lists what nothing uses before anything goes. Every detail has
+its actions as buttons, the same ones its right-click menu has; a
+network's puts a container on it or takes one off. A volume exports,
 imports and clones; a container's filesystem and an image save as tars.
 Builds show what buildx kept of each — how long, how much from cache, its
 log, the Dockerfile a click away. Models lists Docker Model Runner's local

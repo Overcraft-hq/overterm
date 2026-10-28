@@ -121,7 +121,10 @@ struct DockerImagesView: View {
                         )
                         .tag(image.Id)
                         .listRowSeparator(.hidden)
-                        .contextMenu { menu(image) }
+                        .contextMenu {
+                            let selected = docker.images.filter { page.imageSelection.contains($0.Id) }
+                            DockerVerbMenu(verbs: page.verbs(for: image, targets: page.imageSelection.contains(image.Id) ? selected : nil))
+                        }
                     }
                 }
                 .listStyle(.inset)
@@ -182,28 +185,6 @@ struct DockerImagesView: View {
         .padding(.vertical, 4)
         .accessibilityIdentifier("docker.pull.\(pull.image)")
     }
-
-    @ViewBuilder private func menu(_ image: ImageSummary) -> some View {
-        if let name = image.tags.first {
-            Button("Run…") { page.runSpec = DockerRunSpec(image: name) }
-            Button("Pull Again") { page.pull(name) }
-            Button("Run in a Tab") { actions.run(DockerCommands.prefix(for: docker.endpoint) + "docker run --rm -it \(DockerCommands.quote(name))", nil) }
-            if page.hasScout {
-                Menu("Docker Scout") {
-                    Button("Quickview in a Tab") { page.scout("quickview", name) }
-                    Button("Vulnerabilities in a Tab") { page.scout("cves", name) }
-                    Button("Base Image Updates in a Tab") { page.scout("recommendations", name) }
-                }
-            }
-            Divider()
-            Button("Copy Name") { actions.copy(name) }
-        }
-        Button("Copy ID") { actions.copy(image.Id) }
-        Button("Save as tar…") { actions.pickSave("\((image.tags.first ?? image.shortID).replacingOccurrences(of: "/", with: "_")).tar") { page.saveImage(image, to: $0) } }
-        Divider()
-        Button("Remove…") { page.confirmRemove(images: page.imageSelection.contains(image.Id) ? docker.images.filter { page.imageSelection.contains($0.Id) } : [image]) }
-            .disabled(docker.containers(using: image).contains { $0.state.isUp })
-    }
 }
 
 private struct DockerImageDetail: View {
@@ -213,12 +194,12 @@ private struct DockerImageDetail: View {
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var layers: [ImageLayer]?
-    @State private var tagName = ""
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(verbatim: image.tags.first ?? "<none>").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                DockerActionBar(verbs: page.verbs(for: image), theme: theme)
                 DetailBlock(title: "Image", theme: theme) {
                     DetailRow(key: "ID", value: image.shortID, theme: theme)
                     DetailRow(key: "Size", value: bytes(image.Size), theme: theme)
@@ -230,13 +211,6 @@ private struct DockerImageDetail: View {
                     DetailBlock(title: "Used by", theme: theme) {
                         ForEach(users) { DetailRow(key: $0.name, value: DockerStatusStyle.status($0), theme: theme) }
                     }
-                }
-                DetailBlock(title: "Tag", theme: theme) {
-                    TextField("repository:tag", text: $tagName).textFieldStyle(.roundedBorder).font(.system(size: 12))
-                        .onSubmit {
-                            page.tag(image, as: tagName)
-                            tagName = ""
-                        }
                 }
                 DetailBlock(title: "Layers", theme: theme) {
                     if let layers {
@@ -305,35 +279,19 @@ struct DockerVolumesView: View {
                     )
                     .tag(volume.Name)
                     .listRowSeparator(.hidden)
-                    .contextMenu {
-                        Button("Browse in a Tab") {
-                            actions.run(
-                                DockerCommands.prefix(for: docker.endpoint)
-                                    + "docker run --rm -it -v \(DockerCommands.quote(volume.Name)):/volume -w /volume alpine sh", nil)
-                        }
-                        Button("Copy Name") { actions.copy(volume.Name) }
-                        Divider()
-                        Button("Export…") { actions.pickSave("\(volume.shortName).tar") { page.exportVolume(volume, to: $0) } }
-                        Button("Clone…") {
-                            actions.askName("Clone “\(volume.shortName)”", "A new volume with the same files.", volume.shortName + "-copy") {
-                                page.cloneVolume(volume, as: $0)
-                            }
-                        }
-                        Button("Import Into a New Volume…") { importVolume() }
-                        Divider()
-                        Button("Remove…") { page.confirmRemove(volumes: [volume]) }.disabled(!users.isEmpty)
-                    }
+                    .contextMenu { DockerVerbMenu(verbs: page.verbs(for: volume)) }
                 }
             }
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
             .accessibilityIdentifier("docker.volumes")
-            .contextMenu { Button("Import Into a New Volume…") { importVolume() } }
+            .contextMenu { Button("Import Into a New Volume…") { page.importVolumeAsking() } }
             if page.showDetail, page.volumeSelection.count == 1, let volume = docker.volumes.first(where: { page.volumeSelection.contains($0.Name) }) {
                 Rectangle().fill(theme.border).frame(width: 1)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(verbatim: volume.shortName).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                        DockerActionBar(verbs: page.verbs(for: volume), theme: theme)
                         DetailBlock(title: "Volume", theme: theme) {
                             DetailRow(key: "Name", value: volume.Name, theme: theme)
                             DetailRow(key: "Driver", value: volume.Driver, theme: theme)
@@ -365,17 +323,6 @@ struct DockerVolumesView: View {
     }
 }
 
-extension DockerVolumesView {
-    /// A tar an export wrote, into a volume made for it.
-    func importVolume() {
-        actions.pickOpen { file in
-            actions.askName("Import “\(file.lastPathComponent)”", "Into a new volume called:", file.deletingPathExtension().lastPathComponent) {
-                page.importVolume($0, from: file)
-            }
-        }
-    }
-}
-
 // MARK: Networks
 
 struct DockerNetworksView: View {
@@ -402,11 +349,7 @@ struct DockerNetworksView: View {
                     )
                     .tag(network.Id)
                     .listRowSeparator(.hidden)
-                    .contextMenu {
-                        Button("Copy Name") { actions.copy(network.Name) }
-                        Divider()
-                        Button("Remove…") { page.confirmRemove(networks: [network]) }.disabled(network.isBuiltIn || !members.isEmpty)
-                    }
+                    .contextMenu { DockerVerbMenu(verbs: page.verbs(for: network)) }
                 }
             }
             .listStyle(.inset)
@@ -417,6 +360,7 @@ struct DockerNetworksView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(verbatim: network.Name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                        DockerActionBar(verbs: page.verbs(for: network), theme: theme)
                         DetailBlock(title: "Network", theme: theme) {
                             DetailRow(key: "Driver", value: network.Driver ?? "", theme: theme)
                             DetailRow(key: "Subnet", value: network.subnet ?? "—", theme: theme)
@@ -429,7 +373,14 @@ struct DockerNetworksView: View {
                             ForEach(members) { container in
                                 let address =
                                     network.Containers?[container.Id]?.IPv4Address ?? container.NetworkSettings?.Networks?[network.Name]?.IPAddress ?? ""
-                                DetailRow(key: container.name, value: address, theme: theme)
+                                HStack(spacing: 6) {
+                                    DetailRow(key: container.name, value: address, theme: theme)
+                                    if network.Name != "host", network.Name != "none" {
+                                        Button("Disconnect") { page.disconnect(container, from: network) }
+                                            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(theme.accentText)
+                                            .help("Take \(container.name) off \(network.Name)")
+                                    }
+                                }
                             }
                         }
                     }
@@ -632,10 +583,7 @@ struct DockerBuildsView: View {
                         )
                         .tag(build.id)
                         .listRowSeparator(.hidden)
-                        .contextMenu {
-                            Button("Copy Ref") { actions.copy(build.shortRef) }
-                            Button("Remove Record") { page.removeBuild(build) }
-                        }
+                        .contextMenu { DockerVerbMenu(verbs: page.verbs(for: build)) }
                     }
                     if page.builds.isEmpty { Text("No builds yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
                 }
@@ -668,8 +616,8 @@ private struct DockerBuildDetailView: View {
                         .foregroundStyle(build.failed ? TabStatusStyle.failed : TabStatusStyle.done)
                     Text(verbatim: build.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                     Spacer()
-                    if let file = detail?.dockerfileURL { Button("Dockerfile") { actions.edit(file) }.controlSize(.small) }
                 }
+                DockerActionBar(verbs: page.verbs(for: build, detail: detail), theme: theme)
                 if let detail {
                     DetailBlock(title: "Built from", theme: theme) {
                         if let context = detail.context { DetailRow(key: "Context", value: (context as NSString).abbreviatingWithTildeInPath, theme: theme) }
@@ -724,37 +672,42 @@ struct DockerModelsView: View {
             header.padding(.horizontal, 16).padding(.vertical, 10)
             Rectangle().fill(theme.border).frame(height: 1)
             if let contents = page.models {
-                List(selection: $page.modelSelection) {
-                    ForEach(contents.models) { model in
-                        let loaded = contents.running.first { $0.runs(model) }
-                        ResourceRow(
-                            symbol: loaded == nil ? "cpu" : "bolt.fill", title: model.name,
-                            subtitle: model.summary.isEmpty ? model.shortID : model.summary,
-                            figures: [
-                                loaded.map { "loaded · \($0.backend_name)" } ?? "",
-                                RelativeDateTimeFormatter().localizedString(for: Date(timeIntervalSince1970: TimeInterval(model.created)), relativeTo: Date()),
-                            ],
-                            dim: false, theme: theme
-                        )
-                        .tag(model.id)
-                        .listRowSeparator(.hidden)
-                        .contextMenu {
-                            Button("Chat in a Tab") { page.runModel(model) }
-                            Button("Copy Name") { actions.copy(model.reference) }
-                            Divider()
-                            Button("Remove…") { page.confirmRemove(models: [model]) }
-                        }
+                HStack(spacing: 0) {
+                    list(contents)
+                    if page.showDetail, page.modelSelection.count == 1, let model = contents.models.first(where: { page.modelSelection.contains($0.id) }) {
+                        Rectangle().fill(theme.border).frame(width: 1)
+                        DockerModelDetail(model: model, loaded: contents.running.first { $0.runs(model) }, page: page, theme: theme).id(model.id).frame(width: 420)
                     }
-                    if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
                 }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .accessibilityIdentifier("docker.models")
             } else {
                 absent.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .onAppear { page.loadModels() }
+    }
+
+    private func list(_ contents: ModelRunner.Contents) -> some View {
+        List(selection: $page.modelSelection) {
+            ForEach(contents.models) { model in
+                let loaded = contents.running.first { $0.runs(model) }
+                ResourceRow(
+                    symbol: loaded == nil ? "cpu" : "bolt.fill", title: model.name,
+                    subtitle: model.summary.isEmpty ? model.shortID : model.summary,
+                    figures: [
+                        loaded.map { "loaded · \($0.backend_name)" } ?? "",
+                        RelativeDateTimeFormatter().localizedString(for: Date(timeIntervalSince1970: TimeInterval(model.created)), relativeTo: Date()),
+                    ],
+                    dim: false, theme: theme
+                )
+                .tag(model.id)
+                .listRowSeparator(.hidden)
+                .contextMenu { DockerVerbMenu(verbs: page.verbs(for: model)) }
+            }
+            if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("docker.models")
     }
 
     private var header: some View {
@@ -810,5 +763,48 @@ struct DockerModelsView: View {
         }
         .font(.system(size: 12))
         .padding(20)
+    }
+}
+
+/// A model, at the side of the list: what it is, whether it is loaded,
+/// and its verbs.
+private struct DockerModelDetail: View {
+    let model: RunnerModel
+    let loaded: RunningModel?
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(verbatim: model.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                DockerActionBar(verbs: page.verbs(for: model), theme: theme)
+                DetailBlock(title: "Model", theme: theme) {
+                    DetailRow(key: "Name", value: model.reference, theme: theme)
+                    DetailRow(key: "ID", value: model.shortID, theme: theme)
+                    if let parameters = model.config?.parameters { DetailRow(key: "Parameters", value: parameters, theme: theme) }
+                    if let quantization = model.config?.quantization { DetailRow(key: "Quantization", value: quantization, theme: theme) }
+                    if let size = model.config?.size { DetailRow(key: "Size", value: size, theme: theme) }
+                    if let architecture = model.config?.architecture { DetailRow(key: "Architecture", value: architecture, theme: theme) }
+                    if let format = model.config?.format { DetailRow(key: "Format", value: format, theme: theme) }
+                    if let context = model.config?.context_size { DetailRow(key: "Context", value: "\(context) tokens", theme: theme) }
+                    DetailRow(key: "Pulled", value: ago(model.created), theme: theme)
+                }
+                DetailBlock(title: "Loaded", theme: theme) {
+                    if let loaded {
+                        DetailRow(key: "Backend", value: loaded.backend_name, theme: theme)
+                        if let mode = loaded.mode { DetailRow(key: "Mode", value: mode, theme: theme) }
+                    } else {
+                        Text("Not in memory: the first request loads it.").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                    }
+                }
+                if let tags = model.tags, tags.count > 1 {
+                    DetailBlock(title: "Also", theme: theme) { ForEach(tags.dropFirst(), id: \.self) { DetailRow(key: "Tag", value: $0, theme: theme) } }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("docker.model.detail")
     }
 }

@@ -211,6 +211,73 @@ extension E2ERunner {
         check("1 is Containers again", page.section == .containers)
     }
 
+    /// Each detail's verbs — the list its right-click menu draws too — do
+    /// what they say: a volume browsed, an image tagged, a container put on
+    /// a network and taken off it, the panel's container restarted as the
+    /// panel.
+    private func verbsChecks(_ fake: FakeDockerEngine, web: String) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        var commands: [String] = []
+        let actions = page.actions
+        page.actions?.run = { command, _ in commands.append(command) }
+        page.actions?.askName = { _, _, _, then in then("ot/tagged:2") }
+        defer { page.actions = actions }
+        func titles(_ verbs: [DockerVerb], _ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        page.showDetail = true
+
+        // A volume: the used verbs as buttons, the rest behind More.
+        page.press("3")
+        guard let volume = docker.volumes.first(where: { $0.Name == "ot-old-data" }) else { return check("a volume to act on", false) }
+        page.volumeSelection = [volume.Name]
+        let volumeVerbs = page.verbs(for: volume)
+        check(
+            "a volume's detail has its verbs as buttons", titles(volumeVerbs, .button) == ["Browse in a Tab", "Export…", "Clone…"],
+            "\(titles(volumeVerbs, .button))")
+        check("the rest behind More", titles(volumeVerbs, .more) == ["Import Into a New Volume…", "Copy Name", "Copy Mountpoint"])
+        check("and removal last", titles(volumeVerbs, .remove) == ["Remove…"])
+        volumeVerbs.first { $0.title == "Browse in a Tab" }?.perform()
+        check("Browse opens a shell on it in a tab", commands.last?.contains("-v ot-old-data:/volume") == true, commands.last ?? "nothing")
+        await capture("volume")
+
+        // An image: Tag… asks for the name.
+        page.press("2")
+        if let image = docker.images.first(where: { $0.tags.contains("debian:bookworm-slim") }) {
+            page.imageSelection = [image.Id]
+            page.verbs(for: image).first { $0.title == "Tag…" }?.perform()
+            check(
+                "an image's Tag… adds the name asked for",
+                await eventually(5) { docker.images.first { $0.Id == image.Id }?.tags.contains("ot/tagged:2") == true },
+                "\(docker.images.map(\.tags))")
+        }
+
+        // A network: a container put on it from its detail, then taken off.
+        fake.addNetwork("ot-net")
+        page.press("4")
+        docker.load(.networks)
+        guard await eventually(5, { docker.networks.contains { $0.Name == "ot-net" } }),
+            let network = docker.networks.first(where: { $0.Name == "ot-net" }), let container = docker.container(web)
+        else { return check("a network to act on", false) }
+        page.networkSelection = [network.Id]
+        let connect = page.verbs(for: network).first { $0.title == "Connect a Container" }
+        check("Connect lists the containers not on it", connect?.children.map(\.title).contains(container.name) == true, "\(connect?.children.map(\.title) ?? [])")
+        connect?.children.first { $0.title == container.name }?.perform()
+        func members() -> [String] { docker.networks.first { $0.Name == "ot-net" }.map { docker.containers(on: $0).map(\.name) } ?? [] }
+        check("connects one", await eventually(5) { members() == [container.name] }, "\(members()) \(page.error ?? "")")
+        let removal = docker.networks.first { $0.Name == "ot-net" }.flatMap { page.verbs(for: $0).first { $0.place == .remove } }
+        check("a network in use can't be removed, and says why", removal?.unavailable == "\(container.name) is on it.", removal?.unavailable ?? "available")
+        await capture("network")
+        if let network = docker.networks.first(where: { $0.Name == "ot-net" }) { page.disconnect(container, from: network) }
+        check("and Disconnect takes it off", await eventually(5) { members().isEmpty }, "\(members())")
+
+        // The panel: the page's verbs, acting as the panel.
+        let panelVerbs = app.dockerPanel.verbs(container)
+        check("the panel's verbs are the page's", panelVerbs.map(\.title) == page.verbs(for: container).map(\.title))
+        panelVerbs.first { $0.title == "Restart" }?.perform()
+        check("and act through it", await eventually(5) { fake.requests.contains { $0.contains("/containers/\(container.Id)/restart") } })
+        page.press("1")
+    }
+
     /// Model Runner's models: an engine with none says what installs one;
     /// a runner container's are listed, chatted with, removed — its API at
     /// the container's port, never `docker model` (which installs one).
@@ -245,6 +312,11 @@ extension E2ERunner {
         page.modelSelection = Set(page.models?.models.filter { $0.name == "smollm2" }.map(\.id) ?? [])
         _ = page.press("n")
         check("n chats with it in a tab", commands.last?.hasSuffix("docker model run ai/smollm2:latest") == true, commands.last ?? "")
+        page.showDetail = true
+        if let model = page.selectedModels.first {
+            check("a model's detail has Chat and Copy as buttons", page.verbs(for: model).filter { $0.place == .button }.map(\.title) == ["Chat in a Tab", "Copy Name"])
+        }
+        await capture("model")
         _ = page.press("\u{7F}")
         check(
             "⌫ removes it, asked first", await eventually(5) { fake.modelRunnerTags == ["ai/gemma3:latest"] && page.models?.models.count == 1 },
@@ -763,6 +835,7 @@ extension E2ERunner {
         app.showDockerSwitcher(nil)
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
+        await verbsChecks(fake, web: web)
         await modelsChecks(fake)
         await mcpToolkitChecks()
         await agentChecks(fake, web: web)

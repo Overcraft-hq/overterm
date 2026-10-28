@@ -1250,6 +1250,21 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   detail is beside it, or SwiftUI makes its table again and the keyboard
   and the scroll position go with it. The filter is `DockerFilter`
   (`status:running project:api image:postgres port:5432`, `-` negates).
+- **Verbs** (`DockerVerb`, `DockerPageModel+Verbs`): what can be done to a
+  container, a project, an image, a volume, a network, a build or a model
+  is one list, drawn twice — as the buttons under its detail's title
+  (`DockerActionBar`: the used ones labelled, the rest behind ⋯, removal
+  last as a red bin) and as its right-click menu (`DockerVerbMenu`) — so
+  nothing is only in the menu and the two never disagree. A verb that
+  can't be done now (a mounted volume's removal, the shell of a stopped
+  container) is greyed with the reason in its help. Too narrow for the
+  words, the bar keeps them on its first two buttons, then on none
+  (`ViewThatFits`; the right-hand pane). The panel's menus and pane use
+  the page's verbs acting through the panel (`DockerPanelModel.verbs`),
+  whose errors are its own. A network's detail puts a container on it and
+  takes one off (`/networks/{id}/connect`, `…/disconnect`): the engine
+  sends no event a list reads for that (it sends one at every start), so
+  both lists are read again after it.
 - **A container's detail**: Overview (ports, command, health, mounts,
   networks, env with secrets masked), Logs, Inspect, Stats. A session
   (`ContainerSession`) reads logs only while Logs shows and stats only

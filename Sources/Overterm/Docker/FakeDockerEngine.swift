@@ -334,6 +334,8 @@ final class FakeDockerEngine: @unchecked Sendable {
             emitImage("tag", found.Id)
             return .empty(201)
         case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"))
+        case "networks" where named && ["connect", "disconnect"].contains(verb):
+            return other(method, kind, id, named, body, query.merging(["_verb": verb]) { $1 })
         case "images", "volumes", "networks": return other(method, kind, id, named, body, query)
         default: return Self.error(404, "page not found")
         }
@@ -618,6 +620,29 @@ final class FakeDockerEngine: @unchecked Sendable {
         case (.DELETE, "networks", true):
             locked { networks.removeAll { $0.Id == id || $0.Name == id } }
             return .empty(204)
+        case (.POST, "networks", true):
+            // `networks/<id>/connect`, `…/disconnect`: on both records, as the
+            // engine keeps them — the network's and the container's.
+            let verb = query["_verb"] ?? ""
+            struct Request: Decodable { var Container: String }
+            guard let wanted = try? JSONDecoder().decode(Request.self, from: body).Container else { return Self.error(400, "no Container") }
+            return locked { () -> Answer in
+                guard let at = networks.firstIndex(where: { $0.Id == id || $0.Name == id }) else { return Self.error(404, "network \(id) not found") }
+                guard let container = containers.keys.first(where: { $0 == wanted || containers[$0]?.summary.name == wanted }) else {
+                    return Self.error(404, "No such container: \(wanted)")
+                }
+                let name = networks[at].Name
+                var attachments = containers[container]?.summary.NetworkSettings?.Networks ?? [:]
+                if verb == "connect" {
+                    networks[at].Containers = (networks[at].Containers ?? [:]).merging([container: .init(Name: nil, IPv4Address: "172.18.0.9/16")]) { $1 }
+                    attachments[name] = .init(NetworkID: networks[at].Id, IPAddress: "172.18.0.9")
+                } else {
+                    networks[at].Containers?.removeValue(forKey: container)
+                    attachments.removeValue(forKey: name)
+                }
+                containers[container]?.summary.NetworkSettings = .init(Networks: attachments)
+                return .empty(200)
+            }
         default:
             return Self.error(404, "page not found")
         }

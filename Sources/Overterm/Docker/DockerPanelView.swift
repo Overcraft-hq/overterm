@@ -14,6 +14,11 @@ final class DockerPanelModel: ObservableObject {
     @Published var slotVisible = false
     @Published var error: String?
     @Published var collapsed: Set<String> = []
+    /// What can be done to a container or a project here: the page's verbs,
+    /// with the panel starting and stopping (its errors are its own). The
+    /// window sets them.
+    var verbs: (ContainerSummary) -> [DockerVerb] = { _ in [] }
+    var projectVerbs: (ComposeProject) -> [DockerVerb] = { _ in [] }
 
     let docker: DockerModel
 
@@ -137,7 +142,7 @@ struct DockerPanelView: View {
                             fold: { toggle(group.id) }, act: { _ in }, compact: true
                         )
                         .padding(.horizontal, 8)
-                        .contextMenu { projectMenu(project) }
+                        .contextMenu { DockerVerbMenu(verbs: panel.projectVerbs(project)) }
                         if !panel.collapsed.contains(group.id) {
                             ForEach(project.containers) { container in row(container, inProject: true) }
                         }
@@ -170,44 +175,7 @@ struct DockerPanelView: View {
                 .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button(container.state.isUp ? "Stop" : "Start") { panel.act(container.state.isUp ? .stop : .start, on: [container]) }
-            Button("Restart") { panel.act(.restart, on: [container]) }
-            Divider()
-            Button("Open a Shell in a Tab") { actions.run(DockerCommands.shell(in: container, endpoint: docker.endpoint), nil) }
-                .disabled(container.state != .running)
-            Button("Follow Logs in a Tab") { actions.run(DockerCommands.followLogs(of: container, endpoint: docker.endpoint), nil) }
-            if let url = docker.ports(of: container).first?.url {
-                Button("Open \(url.absoluteString)") { actions.open(url) }
-            }
-            if DockerDatabaseGuess.kind(of: container.Image) != nil {
-                Button("Open in Database…") {
-                    Task {
-                        guard let detail = try? await docker.engine?.container(container.Id),
-                            let guess = DockerDatabaseGuess.guess(container, env: detail.env, endpoint: docker.endpoint)
-                        else { return }
-                        actions.openDatabase(guess)
-                    }
-                }
-            }
-            Divider()
-            Button("Copy Name") { actions.copy(container.name) }
-        }
-    }
-
-    @ViewBuilder private func projectMenu(_ project: ComposeProject) -> some View {
-        let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
-        Button("Up (in a Tab)") { actions.run(DockerCommands.compose(project, "up -d", endpoint: docker.endpoint), folder) }
-        Button("Restart") { panel.act(.restart, on: project.containers.filter { !$0.isOneOff }) }
-        Button("Stop") { panel.act(.stop, on: project.containers.filter { $0.state.isUp }) }
-        Divider()
-        Button("Follow Logs in a Tab") { actions.run(DockerCommands.compose(project, "logs -f --tail 100", endpoint: docker.endpoint), folder) }
-        Button("Down…") {
-            actions.confirm(
-                "Take “\(project.name)” down?",
-                "docker compose down stops and removes its containers and networks, in a terminal tab. Its volumes stay.", "Down"
-            ) { actions.run(DockerCommands.compose(project, "down", endpoint: docker.endpoint), folder) }
-        }
+        .contextMenu { DockerVerbMenu(verbs: panel.verbs(container)) }
     }
 
     private func toggle(_ id: String) {
@@ -249,13 +217,7 @@ struct DockerSlotView: View {
     var body: some View {
         if let id = panel.picked, let container = docker.container(id) {
             ContainerDetailView(
-                container: container, session: panel.session(for: id), tab: $panel.tab, theme: theme, actions: actions,
-                act: { panel.act($0, on: [container]) },
-                remove: {
-                    actions.confirm("Remove “\(container.name)”?", "Its volumes stay.", "Remove") {
-                        Task { try? await docker.remove(container.Id, force: true) }
-                    }
-                }
+                container: container, session: panel.session(for: id), tab: $panel.tab, theme: theme, actions: actions, verbs: panel.verbs(container)
             )
             .id(id)
         } else {

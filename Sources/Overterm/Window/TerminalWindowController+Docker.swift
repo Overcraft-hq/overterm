@@ -64,6 +64,17 @@ extension TerminalWindowController {
     /// The panel follows the selected tab's checkout, and holds the
     /// model's poll only while it is on screen.
     func wireDockerPanel() {
+        // The panel's menus and the right-hand pane are the page's verbs —
+        // set before the page first opens — acting through the panel.
+        dockerPage.actions = dockerActions
+        dockerPanel.verbs = { [weak self] container in
+            guard let self else { return [] }
+            return self.dockerPage.verbs(for: container) { [weak self] in self?.dockerPanel.act($0, on: [container]) }
+        }
+        dockerPanel.projectVerbs = { [weak self] project in
+            guard let self else { return [] }
+            return self.dockerPage.verbs(for: project) { [weak self] action, containers in self?.dockerPanel.act(action, on: containers) }
+        }
         // An agent's compose up or down runs in a tab of this window.
         DockerMCP.runInTab = { [weak self] command, folder in self?.runDockerCommand(command, in: folder) }
         // A port a container wanted, held by a process in a tab: any window's.

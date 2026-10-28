@@ -13,9 +13,8 @@ struct ContainerDetailView: View {
     @Binding var tab: ContainerTab
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
-    /// What the page does for the header's buttons.
-    let act: (DockerEngine.ContainerAction) -> Void
-    let remove: () -> Void
+    /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`).
+    let verbs: [DockerVerb]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -76,15 +75,9 @@ struct ContainerDetailView: View {
                 Text(verbatim: container.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                     .textSelection(.enabled)
                 Spacer(minLength: 0)
-                headerButton(container.state.isUp ? "stop.fill" : "play.fill", container.state.isUp ? "Stop (s)" : "Start (s)") {
-                    act(container.state.isUp ? .stop : .start)
-                }
-                headerButton("arrow.clockwise", "Restart (r)") { act(.restart) }
-                headerButton("terminal", "A shell in it (e)") { actions.run(DockerCommands.shell(in: container, endpoint: DockerModel.shared.endpoint), nil) }
-                    .disabled(container.state != .running)
-                headerButton("trash", "Remove (⌫)", remove)
             }
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+            DockerActionBar(verbs: verbs, theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -96,15 +89,6 @@ struct ContainerDetailView: View {
         parts.append(container.Image)
         parts.append(container.Status)
         return parts.joined(separator: "  —  ")
-    }
-
-    private func headerButton(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 24, height: 22).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(theme.text2)
-        .help(help)
     }
 
     private func problem(_ message: String) -> some View {
@@ -134,7 +118,8 @@ struct ContainerDetailView: View {
                 Button("Stop \(name) and Start This") {
                     Task {
                         try? await DockerModel.shared.perform(.stop, on: id)
-                        act(.start)
+                        // Its own Start: whoever shows it says if that fails.
+                        verbs.first { $0.title == "Start" }?.perform()
                     }
                 }
                 .accessibilityIdentifier("docker.conflict.swap")

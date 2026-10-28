@@ -224,8 +224,7 @@ struct DockerPageView: View {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ContainerDetailView(
                                     container: container, session: page.session(for: container.Id), tab: $page.detailTab,
-                                    theme: theme, actions: actions,
-                                    act: { page.act($0, on: [container]) }, remove: { page.confirmRemove([container]) }
+                                    theme: theme, actions: actions, verbs: page.verbs(for: container)
                                 )
                                 .id(container.Id)
                                 .frame(width: min(480, max(320, geometry.size.width * 0.42)))
@@ -386,53 +385,11 @@ struct DockerPageView: View {
     // MARK: Menus
 
     @ViewBuilder private func containerMenu(_ container: ContainerSummary) -> some View {
-        let targets = page.selection.contains(container.Id) ? page.selectedContainers : [container]
-        Button(container.state.isUp ? "Stop" : "Start") { page.act(container.state.isUp ? .stop : .start, on: targets) }
-        Button("Restart") { page.act(.restart, on: targets) }
-        if container.state == .running || container.state == .paused {
-            Button(container.state == .paused ? "Unpause" : "Pause") { page.act(container.state == .paused ? .unpause : .pause, on: targets) }
-        }
-        Divider()
-        Button("Open a Shell in a Tab") { actions.run(DockerCommands.shell(in: container, endpoint: docker.endpoint), nil) }
-            .disabled(container.state != .running)
-        Button("Debug Shell Beside It") {
-            actions.run(DockerCommands.debugShell(beside: container, image: Settings.shared.dockerDebugImage, endpoint: docker.endpoint), nil)
-        }
-        .disabled(container.state != .running)
-        .help("\(Settings.shared.dockerDebugImage), sharing its processes and network; its files at /proc/1/root")
-        Button("Follow Logs in a Tab") { actions.run(DockerCommands.followLogs(of: container, endpoint: docker.endpoint), nil) }
-        if let url = docker.ports(of: container).first?.url {
-            Button("Open \(url.absoluteString)") { actions.open(url) }
-        }
-        if DockerDatabaseGuess.kind(of: container.Image) != nil {
-            Button("Open in Database…") { page.openInDatabase(container) }
-        }
-        Divider()
-        Button("Copy Name") { actions.copy(container.name) }
-        Button("Copy ID") { actions.copy(container.Id) }
-        Button("Copy as docker run") { page.copyRunCommand(container) }
-        Button("Export Filesystem…") { actions.pickSave("\(container.name).tar") { page.exportContainer(container, to: $0) } }
-        Button("Run Another Like It…") { page.runAnother(like: container) }
-        Divider()
-        Button(targets.count > 1 ? "Remove \(targets.count) Containers…" : "Remove…") { page.confirmRemove(targets) }
+        DockerVerbMenu(verbs: page.verbs(for: container, targets: page.selection.contains(container.Id) ? page.selectedContainers : nil))
     }
 
     @ViewBuilder private func projectMenu(_ group: DockerListGroup) -> some View {
-        if let project = group.project {
-            Button("Up (in a Tab)") { page.compose("up", project) }
-            Button("Start") { page.compose("start", project) }
-            Button("Stop") { page.compose("stop", project) }
-            Button("Restart") { page.compose("restart", project) }
-            Divider()
-            Button("Follow Logs in a Tab") { page.compose("logs", project) }
-            Button("Pull Images in a Tab") { page.compose("pull", project) }
-            Divider()
-            Button("Open Compose File") { page.editComposeFile(project) }
-            Button("Show Resolved Config") { page.showResolvedConfig(project) }
-            if let dir = project.workingDir { Button("Copy Folder") { actions.copy(dir) } }
-            Divider()
-            Button("Down…") { page.compose("down", project) }
-        }
+        if let project = group.project { DockerVerbMenu(verbs: page.verbs(for: project)) }
     }
 
     private var cheatSheet: some View {

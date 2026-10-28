@@ -82,16 +82,13 @@ struct ProjectDetailView: View {
                     DockerStatusDot(color: DockerStatusStyle.color(project, idle: theme.text3))
                     Text(verbatim: project.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                     Spacer(minLength: 0)
-                    button("play.fill", "Up — in a tab (u)") { page.compose("up", project) }
-                    button("arrow.clockwise", "Restart its containers") { page.compose("restart", project) }
-                    button("stop.fill", "Stop its containers") { page.compose("stop", project) }
-                    button("eject", "Down — in a tab (D)") { page.compose("down", project) }
                 }
                 Text(
                     verbatim: [project.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath }, "\(project.running) of \(project.containers.filter { !$0.isOneOff }.count) running"].compactMap
                     { $0 }.joined(separator: "  —  ")
                 )
                 .font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
+                DockerActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
