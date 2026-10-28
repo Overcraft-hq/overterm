@@ -25,6 +25,8 @@ struct DockerActions {
     var downloadFile: (ContainerSummary, String) -> Void = { _, _ in }
     /// A tab of the window, brought up.
     var showTab: (UUID) -> Void = { _ in }
+    /// A file on the Mac, in the editor.
+    var edit: (URL) -> Void = { _ in }
 }
 
 /// One block of the containers list: a compose project with its

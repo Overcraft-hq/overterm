@@ -106,6 +106,8 @@ struct DockerPageView: View {
                             Button("\(action.rawValue.capitalized) \(docker.runtime.name)") { actions.run(command, nil) }
                         }
                     }
+                    Button("Edit Engine Settings…") { page.editEngineConfig() }
+                        .help("\(docker.runtime.configFile(context: docker.endpoint?.context)?.path ?? "") — applied when it restarts")
                     Divider()
                     contexts
                     Divider()
@@ -375,6 +377,9 @@ struct DockerPageView: View {
             Divider()
             Button("Follow Logs in a Tab") { page.compose("logs", project) }
             Button("Pull Images in a Tab") { page.compose("pull", project) }
+            Divider()
+            Button("Open Compose File") { page.editComposeFile(project) }
+            Button("Show Resolved Config") { page.showResolvedConfig(project) }
             if let dir = project.workingDir { Button("Copy Folder") { actions.copy(dir) } }
             Divider()
             Button("Down…") { page.compose("down", project) }

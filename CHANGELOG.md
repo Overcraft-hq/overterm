@@ -21,6 +21,7 @@ version is tagged `v<version>`.
 - docker: any context the `docker` CLI knows, picked for Overterm alone; Docker Desktop, OrbStack and Colima started, stopped and restarted from the page
 - docker: `n` runs an image from a window that writes the `docker run` as you fill it in; any container copies as the `docker run` that would make it again
 - docker: a container's processes, and the files it changed since it started
+- docker: a compose project's file and its resolved config, and the engine's own settings, open in the editor
 
 ## 1.4.6 — 2026-10-29
 

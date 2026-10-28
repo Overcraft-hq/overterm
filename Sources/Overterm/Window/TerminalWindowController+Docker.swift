@@ -24,6 +24,11 @@ extension TerminalWindowController {
                 guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
                 self.store.select(tab)
+            },
+            edit: { [weak self] url in
+                guard let self else { return }
+                if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                self.openInEditor(url)
             }
         )
     }

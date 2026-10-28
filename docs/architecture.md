@@ -1258,6 +1258,13 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **Files of the Mac in the editor**: a project's compose file (its
+  `config_files` label), what Compose makes of it — `docker compose
+  config`, variables filled in and overrides merged, written to a copy
+  under Overterm's folder — and the engine's own settings
+  (`DockerRuntime.configFile`: Docker Desktop's `daemon.json`, which is
+  its Settings ▸ Docker Engine; OrbStack's `docker.json`; Colima's
+  profile), applied when the engine restarts.
 - **Run** (`n`, `DockerRunSpec`, pure; `DockerRunSheet`): an image in a
   new container — name, ports, env, volumes, command, restart policy,
   in the background or in the tab — the `docker run` written out as it is

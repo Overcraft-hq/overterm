@@ -58,6 +58,18 @@ enum DockerRuntime: String, Equatable, Sendable {
         return String(context.dropFirst("colima-".count))
     }
 
+    /// Where the engine's own settings live as its runtime keeps them —
+    /// edited in the editor, applied when it restarts. Docker Desktop's
+    /// Settings ▸ Docker Engine is `~/.docker/daemon.json`.
+    func configFile(context: String? = nil, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        switch self {
+        case .dockerDesktop: home.appendingPathComponent(".docker/daemon.json")
+        case .orbStack: home.appendingPathComponent(".orbstack/config/docker.json")
+        case .colima: home.appendingPathComponent(".colima/\(Self.colimaProfile(context) ?? "default")/colima.yaml")
+        case .rancherDesktop, .podman, .engine: nil
+        }
+    }
+
     // MARK: Whether it is up
 
     /// What the runtime says of itself — asked only while its socket is

@@ -358,6 +358,15 @@ final class DockerCLITests: XCTestCase {
         XCTAssertEqual(output.trimmingCharacters(in: .whitespacesAndNewlines), "colima|desktop status --format json")
     }
 
+    func testWhereEachEngineKeepsItsSettings() {
+        let home = URL(fileURLWithPath: "/Users/me")
+        XCTAssertEqual(DockerRuntime.dockerDesktop.configFile(home: home)?.path, "/Users/me/.docker/daemon.json")
+        XCTAssertEqual(DockerRuntime.orbStack.configFile(home: home)?.path, "/Users/me/.orbstack/config/docker.json")
+        XCTAssertEqual(DockerRuntime.colima.configFile(context: "colima-work", home: home)?.path, "/Users/me/.colima/work/colima.yaml")
+        XCTAssertEqual(DockerRuntime.colima.configFile(context: "colima", home: home)?.path, "/Users/me/.colima/default/colima.yaml")
+        XCTAssertNil(DockerRuntime.engine.configFile(home: home))
+    }
+
     func testRuntimesSayWhetherTheyAreUp() {
         XCTAssertEqual(DockerRuntime.dockerDesktop.status(fromOutput: #"{"PauseType":"","SessionID":"x","Status":"running"}"#), .running)
         XCTAssertEqual(DockerRuntime.dockerDesktop.status(fromOutput: #"{"PauseType":"","Status":"stopped"}"#), .stopped)

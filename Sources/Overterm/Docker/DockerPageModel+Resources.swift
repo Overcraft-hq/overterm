@@ -63,6 +63,60 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: Files on the Mac
+
+    /// The project's compose file in the editor.
+    func editComposeFile(_ project: ComposeProject) {
+        guard let file = project.configFiles.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            error = "\(project.name)'s compose file isn't on this Mac\(project.configFiles.first.map { " (\($0))" } ?? "")."
+            return
+        }
+        actions?.edit(URL(fileURLWithPath: file))
+    }
+
+    /// What Compose makes of the project's files — variables filled in,
+    /// overrides merged — as `docker compose config` writes it, in the
+    /// editor (a copy: editing it changes nothing).
+    func showResolvedConfig(_ project: ComposeProject) {
+        guard let cli = DockerCLI(endpoint: docker.endpoint) else {
+            error = "docker isn't on this Mac, so Compose can't be asked."
+            return
+        }
+        let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
+        Task {
+            do {
+                let arguments = ["compose", "-p", project.name] + project.configFiles.flatMap { ["-f", $0] } + ["config"]
+                let yaml = try await cli.run(arguments, timeout: 30)
+                let copy = AppEnvironment.supportDirectory.appendingPathComponent("Compose", isDirectory: true)
+                    .appendingPathComponent("\(project.name).resolved.yaml")
+                try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try ("# docker compose config — \(project.name)\(folder.map { ", from \($0.path)" } ?? ""). A copy: editing it changes nothing.\n" + yaml)
+                    .write(to: copy, atomically: true, encoding: .utf8)
+                actions?.edit(copy)
+            } catch {
+                self.error = "Compose config: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// The engine's own settings in the editor: made `{}` when Docker
+    /// Desktop has none yet; applied when it restarts.
+    func editEngineConfig() {
+        guard let file = docker.runtime.configFile(context: docker.endpoint?.context) else {
+            error = "\(docker.runtime.name) keeps its settings elsewhere."
+            return
+        }
+        if !FileManager.default.fileExists(atPath: file.path), docker.runtime == .dockerDesktop {
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data("{}\n".utf8).write(to: file)
+        }
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            error = "\(file.path) isn't there."
+            return
+        }
+        actions?.edit(file)
+    }
+
     // MARK: Run
 
     /// The Run window's command, in a terminal tab where it pulls and starts.

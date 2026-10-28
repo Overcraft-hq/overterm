@@ -426,6 +426,28 @@ extension E2ERunner {
         try? fake.start()
         check("its return is noticed", await eventually(8) { docker.connection.isRunning && docker.containers.count == 2 })
 
+        // The project's compose file, and what Compose makes of it, in the editor.
+        let composeFile = URL(fileURLWithPath: real).appendingPathComponent("compose.yaml")
+        try? "services:\n  web:\n    image: nginx:1.27\n    ports: [\"${WEB_PORT:-58080}:80\"]\n".write(to: composeFile, atomically: true, encoding: .utf8)
+        if let project = docker.projects.first(where: { $0.name == "ot-shop" }) {
+            page.editComposeFile(project)
+            check(
+                "a project's compose file opens in the editor",
+                await eventually(5) { self.app.editor?.active?.url?.path == composeFile.path }, app.editor?.active?.url?.path ?? "nothing")
+            if DockerCLI.locate("docker") != nil {
+                page.showResolvedConfig(project)
+                check(
+                    "and what Compose makes of it",
+                    await eventually(15) {
+                        self.app.editor?.active?.url?.lastPathComponent == "ot-shop.resolved.yaml"
+                            && self.app.editor?.textView?.string.contains("published: \"58080\"") == true
+                    }, "\(page.error ?? "") \(app.editor?.textView?.string.prefix(300) ?? "")")
+            }
+        }
+        page.editEngineConfig()
+        check("an engine with no settings file of its own says so", page.error?.contains("keeps its settings elsewhere") == true, page.error ?? "")
+        page.error = nil
+
         // A context picked for Overterm reconnects; this run's engine stays its own.
         Settings.shared.set("docker.context", .string("default"))
         check("picking a context reconnects", await eventually(5) { docker.connection.isRunning && docker.containers.count == 2 })
