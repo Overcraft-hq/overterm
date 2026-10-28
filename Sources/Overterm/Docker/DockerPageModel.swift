@@ -92,6 +92,8 @@ final class DockerPageModel: ObservableObject {
     @Published var cleanChoice = DockerPrunePlan.Choice()
     /// What Clean Up freed, said once.
     @Published var cleaned: String?
+    /// The Run window, open on this.
+    @Published var runSpec: DockerRunSpec?
 
     let docker: DockerModel
 
@@ -306,6 +308,10 @@ final class DockerPageModel: ObservableObject {
             return true
         case .cleanUp:
             cleaning = true
+            return true
+        case .run:
+            let image = section == .images ? docker.images.first { imageSelection.contains($0.Id) }?.tags.first : detailed?.Image
+            runSpec = DockerRunSpec(image: image ?? "")
             return true
         default: break
         }

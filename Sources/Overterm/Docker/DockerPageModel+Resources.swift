@@ -63,6 +63,39 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: Run
+
+    /// The Run window's command, in a terminal tab where it pulls and starts.
+    func run(_ spec: DockerRunSpec) {
+        runSpec = nil
+        guard !spec.image.isEmpty else { return }
+        actions?.run(spec.line(prefix: DockerCommands.prefix(for: docker.endpoint)), nil)
+    }
+
+    /// What would make `container` again, as a `docker run` (its image's
+    /// own env and command left out).
+    func runSpec(like container: ContainerSummary) async -> DockerRunSpec? {
+        guard let engine = docker.engine, let detail = try? await engine.container(container.Id) else { return nil }
+        let image = (try? await engine.imageConfig(container.ImageID ?? container.Image)) ?? (env: [], command: [])
+        return DockerRunSpec.from(container, detail, imageEnv: image.env, imageCommand: image.command)
+    }
+
+    func copyRunCommand(_ container: ContainerSummary) {
+        Task {
+            guard let spec = await runSpec(like: container) else { return }
+            actions?.copy(spec.line(prefix: DockerCommands.prefix(for: docker.endpoint)))
+        }
+    }
+
+    /// The Run window, filled in as `container` was made — a new name.
+    func runAnother(like container: ContainerSummary) {
+        Task {
+            guard var spec = await runSpec(like: container) else { return }
+            spec.name = ""
+            runSpec = spec
+        }
+    }
+
     // MARK: Images
 
     /// A public image down, its progress shown as it comes. One the engine

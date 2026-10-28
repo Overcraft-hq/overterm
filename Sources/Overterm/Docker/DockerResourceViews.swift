@@ -144,6 +144,7 @@ struct DockerImagesView: View {
 
     @ViewBuilder private func menu(_ image: ImageSummary) -> some View {
         if let name = image.tags.first {
+            Button("Run…") { page.runSpec = DockerRunSpec(image: name) }
             Button("Pull Again") { page.pull(name) }
             Button("Run in a Tab") { actions.run(DockerCommands.prefix(for: docker.endpoint) + "docker run --rm -it \(DockerCommands.quote(name))", nil) }
             Divider()
@@ -460,6 +461,77 @@ struct DockerDiskSummary: View {
             Text(title).font(.system(size: 11)).foregroundStyle(theme.text2)
             Spacer()
             Text(verbatim: bytes(size)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2)
+        }
+    }
+}
+
+// MARK: Run
+
+/// The Run window: an image in a new container, the command written out
+/// as it is filled in, run in a terminal tab.
+struct DockerRunSheet: View {
+    @State var spec: DockerRunSpec
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var docker: DockerModel
+    let actions: DockerActions
+    @State private var ports = ""
+    @State private var env = ""
+    @State private var volumes = ""
+
+    private var built: DockerRunSpec {
+        var spec = spec
+        spec.ports = DockerRunSpec.lines(ports)
+        spec.env = DockerRunSpec.lines(env)
+        spec.volumes = DockerRunSpec.lines(volumes)
+        return spec
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Run").font(.system(size: 17, weight: .semibold))
+            Form {
+                TextField("Image", text: $spec.image, prompt: Text("postgres:16"))
+                TextField("Name", text: $spec.name, prompt: Text("optional"))
+                field("Ports", $ports, "8080:80 — one a line")
+                field("Environment", $env, "KEY=value — one a line")
+                field("Volumes", $volumes, "name:/data or /host/path:/in — one a line")
+                TextField("Command", text: $spec.command, prompt: Text("the image's own"))
+                Picker("Restart", selection: $spec.restart) {
+                    Text("No").tag("")
+                    Text("Always").tag("always")
+                    Text("Unless stopped").tag("unless-stopped")
+                    Text("On failure").tag("on-failure")
+                }
+                Toggle("In the background", isOn: $spec.detached)
+                Toggle("Remove it when it stops", isOn: $spec.removeWhenStopped)
+            }
+            Text(verbatim: built.line(prefix: DockerCommands.prefix(for: docker.endpoint)))
+                .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("docker.run.command")
+            HStack {
+                Button("Copy") { actions.copy(built.line(prefix: DockerCommands.prefix(for: docker.endpoint))) }
+                Spacer()
+                Button("Cancel") { page.runSpec = nil }.keyboardShortcut(.cancelAction)
+                Button("Run in a Tab") { page.run(built) }.keyboardShortcut(.defaultAction).disabled(spec.image.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+        .onAppear {
+            ports = spec.ports.joined(separator: "\n")
+            env = spec.env.joined(separator: "\n")
+            volumes = spec.volumes.joined(separator: "\n")
+        }
+    }
+
+    private func field(_ title: String, _ text: Binding<String>, _ hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 12))
+            TextEditor(text: text).font(.system(size: 12, design: .monospaced)).frame(height: 44)
+                .overlay(alignment: .topLeading) {
+                    if text.wrappedValue.isEmpty { Text(hint).font(.system(size: 11)).foregroundStyle(.tertiary).padding(4).allowsHitTesting(false) }
+                }
         }
     }
 }

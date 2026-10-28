@@ -163,7 +163,9 @@ Single keys while the list has the keyboard: `s` starts or stops, `r`
 restarts, `e` opens a shell in a tab, `t` follows its logs, `o` opens its
 port, `u` and `D` bring a project up and down — in a terminal tab, where you
 see the command. Filter with `status:running project:api port:5432`;
-`?` lists the keys. A compose project's services' logs are merged as
+`?` lists the keys. `n` runs an image with a window that writes the
+`docker run` as you fill it in; any container copies as the `docker run`
+that would make it again. A compose project's services' logs are merged as
 `compose logs` merges them, each service in its colour. A container's logs are followed as they are written,
 coloured by level and filtered, and picked up again after a restart; its
 inspect data and its CPU, memory, network and disk sit beside it. Secrets

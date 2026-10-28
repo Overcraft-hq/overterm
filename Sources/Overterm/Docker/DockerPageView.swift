@@ -23,6 +23,9 @@ struct DockerPageView: View {
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .overlay { if page.cheatSheet { cheatSheet } }
         .sheet(isPresented: $page.cleaning) { DockerCleanUpSheet(page: page, docker: docker, theme: theme) }
+        .sheet(isPresented: Binding(get: { page.runSpec != nil }, set: { if !$0 { page.runSpec = nil } })) {
+            if let spec = page.runSpec { DockerRunSheet(spec: spec, page: page, docker: docker, actions: actions) }
+        }
         .onChange(of: page.focusList) { _ in focus = .list }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         .onAppear { focus = .list }
@@ -357,6 +360,8 @@ struct DockerPageView: View {
         Divider()
         Button("Copy Name") { actions.copy(container.name) }
         Button("Copy ID") { actions.copy(container.Id) }
+        Button("Copy as docker run") { page.copyRunCommand(container) }
+        Button("Run Another Like It…") { page.runAnother(like: container) }
         Divider()
         Button(targets.count > 1 ? "Remove \(targets.count) Containers…" : "Remove…") { page.confirmRemove(targets) }
     }

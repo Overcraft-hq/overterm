@@ -376,3 +376,48 @@ final class PortConflictsTests: XCTestCase {
             "shop-db-1 publishes it — compose project shop in /w/shop.")
     }
 }
+
+/// The Run window's command, and a container's as a `docker run`. Pure.
+final class DockerRunSpecTests: XCTestCase {
+    func testTheCommand() {
+        var spec = DockerRunSpec(image: "postgres:16")
+        XCTAssertEqual(spec.line(), "docker run -d postgres:16")
+        spec.name = "pg"
+        spec.ports = ["55432:5432"]
+        spec.env = ["POSTGRES_PASSWORD=it's"]
+        spec.volumes = ["pgdata:/var/lib/postgresql/data"]
+        spec.restart = "unless-stopped"
+        spec.removeWhenStopped = true
+        XCTAssertEqual(
+            spec.line(prefix: "DOCKER_CONTEXT=orbstack "),
+            #"DOCKER_CONTEXT=orbstack docker run -d --rm --name pg --restart unless-stopped -p 55432:5432 -e 'POSTGRES_PASSWORD=it'\''s' -v pgdata:/var/lib/postgresql/data postgres:16"#)
+        spec = DockerRunSpec(image: "debian:bookworm-slim", detached: false)
+        spec.command = "bash -lc 'echo hi'"
+        XCTAssertEqual(spec.line(), "docker run -it debian:bookworm-slim bash -lc 'echo hi'", "the command as typed")
+        XCTAssertEqual(DockerRunSpec.lines("8080:80\n\n 9090:90 \n"), ["8080:80", "9090:90"])
+    }
+
+    func testAContainerAsADockerRun() {
+        let container = ContainerSummary(
+            Id: "x", Names: ["/shop-db-1"], Image: "postgres:16", Created: 1,
+            Ports: [DockerPort(IP: "127.0.0.1", PrivatePort: 5432, PublicPort: 55432, Type: "tcp"), DockerPort(IP: "0.0.0.0", PrivatePort: 53, PublicPort: 5353, Type: "udp")],
+            State: "running", Status: "")
+        let detail = ContainerDetail(
+            Id: "x", Name: "/shop-db-1", State: .init(Status: "running"),
+            Config: .init(
+                Image: "postgres:16", Env: ["PATH=/usr/bin", "PG_MAJOR=16", "POSTGRES_PASSWORD=pw"], Cmd: ["postgres"], Tty: false),
+            HostConfig: .init(RestartPolicy: .init(Name: "unless-stopped"), NetworkMode: "shop_default"),
+            Mounts: [
+                DockerMountPoint(Type: "volume", Name: "shop_pgdata", Destination: "/var/lib/postgresql/data", RW: true),
+                DockerMountPoint(Type: "bind", Source: "/w/shop/init.sql", Destination: "/docker-entrypoint-initdb.d/init.sql", RW: false),
+            ])
+        let spec = DockerRunSpec.from(container, detail, imageEnv: ["PATH=/usr/bin", "PG_MAJOR=16"], imageCommand: ["postgres"])
+        XCTAssertEqual(spec.env, ["POSTGRES_PASSWORD=pw"], "the image's own env left out")
+        XCTAssertEqual(spec.ports, ["5353:53/udp", "127.0.0.1:55432:5432"])
+        XCTAssertEqual(spec.volumes, ["shop_pgdata:/var/lib/postgresql/data", "/w/shop/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"])
+        XCTAssertEqual(spec.restart, "unless-stopped")
+        XCTAssertEqual(spec.network, "shop_default")
+        XCTAssertEqual(spec.command, "", "the image's command isn't repeated")
+        XCTAssertEqual(spec.name, "shop-db-1")
+    }
+}

@@ -1258,6 +1258,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **Run** (`n`, `DockerRunSpec`, pure; `DockerRunSheet`): an image in a
+  new container — name, ports, env, volumes, command, restart policy,
+  in the background or in the tab — the `docker run` written out as it is
+  filled in, run in a terminal tab where it pulls and starts. Copy as
+  `docker run` and Run Another Like It read a container's own settings
+  back: its env less what its image sets (the image's inspect data), its
+  published ports, mounts (`:ro` kept), restart policy, network, and its
+  command when it isn't the image's.
 - **Port conflicts** (`PortConflicts`, pure; `ContainerSession.conflict`):
   worktrees of one repository run the same compose file, and its fixed
   host ports (`5432:5432`) leave the second stack's container `created`,

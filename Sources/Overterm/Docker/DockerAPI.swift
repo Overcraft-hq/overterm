@@ -161,6 +161,19 @@ extension DockerEngine {
 
     func imageJSON(_ name: String) async throws -> String { try await prettyJSON(send(.GET, "/images/\(name)/json").body) }
 
+    /// What an image sets itself: its env and its command.
+    func imageConfig(_ name: String) async throws -> (env: [String], command: [String]) {
+        struct Image: Decodable {
+            struct Config: Decodable {
+                var Env: [String]?
+                var Cmd: [String]?
+            }
+            var Config: Config?
+        }
+        let image = try await get(Image.self, "/images/\(name)/json")
+        return (image.Config?.Env ?? [], image.Config?.Cmd ?? [])
+    }
+
     func history(of image: String) async throws -> [ImageLayer] { try await get([ImageLayer].self, "/images/\(image)/history") }
 
     func remove(image id: String, force: Bool = false) async throws {

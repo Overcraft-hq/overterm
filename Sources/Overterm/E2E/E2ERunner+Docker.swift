@@ -341,6 +341,22 @@ extension E2ERunner {
         page.selection = [web]
         _ = page.press("e")
         check("e is a shell in it", commands.last?.contains("docker exec -it ot-shop-web-1 sh -c") == true, commands.last ?? "")
+        // Run: a container as a docker run, and another like it.
+        var copied: [String] = []
+        page.actions?.copy = { copied.append($0) }
+        if let container = docker.container(web) {
+            page.copyRunCommand(container)
+            check(
+                "Copy as docker run writes the container's own settings",
+                await eventually(5) { copied.last?.contains("docker run -d --name ot-shop-web-1") == true && copied.last?.contains("-p 58080:80") == true },
+                copied.last ?? "nothing")
+            page.runAnother(like: container)
+            check("Run Another Like It opens the Run window, without the name", await eventually(5) { page.runSpec?.ports == ["58080:80"] && page.runSpec?.name == "" })
+            check("as a sheet", await eventually(3) { self.window.attachedSheet != nil })
+            if let spec = page.runSpec { page.run(spec) }
+            check("Run goes to a tab", commands.last?.contains("docker run -d -p 58080:80") == true && commands.last?.contains(" nginx:1.27") == true, commands.last ?? "")
+            check("and the sheet away", await eventually(3) { self.window.attachedSheet == nil })
+        }
         page.actions = actions
 
         // d: a database container, in the Database panel's form, filled in.
