@@ -162,6 +162,13 @@ struct DockerPageView: View {
                                 )
                                 .id(container.Id)
                                 .frame(width: min(480, max(320, geometry.size.width * 0.42)))
+                            } else if page.showDetail, let project = page.detailedProject {
+                                Rectangle().fill(theme.border).frame(width: 1)
+                                ProjectDetailView(
+                                    project: project, session: page.projectSession(for: project.name), page: page, theme: theme, actions: actions
+                                )
+                                .id(project.name)
+                                .frame(width: min(520, max(340, geometry.size.width * 0.45)))
                             }
                         }
                     }

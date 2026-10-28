@@ -216,6 +216,23 @@ extension E2ERunner {
         check(
             "with no line twice", page.session?.lines.filter { $0.message == "GET / 200" }.count == 1, "\(page.session?.lines.map(\.message) ?? [])")
 
+        // A project selected: its services' logs merged by time, each named.
+        fake.log(db, "database system is ready to accept connections")
+        fake.log(web, "GET /health 200")
+        page.selection = [DockerPageModel.projectTag("ot-shop")]
+        page.projectTab = .logs
+        let merged = await eventually(5) {
+            let lines = page.projectSession?.feed.lines ?? []
+            return lines.contains { $0.service == "db" && $0.message.contains("ready to accept") } && lines.contains { $0.service == "web" && $0.message == "GET /health 200" }
+        }
+        let stamps = (page.projectSession?.feed.lines ?? []).compactMap(\.timestamp).map(DockerLogFeed.sortable)
+        check("a project's logs merge its services'", merged, "\(page.projectSession?.feed.lines.map { "\($0.service ?? "") \($0.message)" } ?? [])")
+        check("in time order", stamps == stamps.sorted())
+        await capture("project")
+        page.selection = [web]
+        page.detailTab = .logs
+        check("the project's streams close as it goes", await eventually(3) { fake.openStreams == 2 }, fake.streams)
+
         // Stats while their tab shows; Inspect with secrets hidden.
         page.detailTab = .stats
         check("stats are read while their tab shows", await eventually(5) { (page.session?.history.count ?? 0) >= 2 })

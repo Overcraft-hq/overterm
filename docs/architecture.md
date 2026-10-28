@@ -1255,6 +1255,15 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **A project's detail** (`ProjectDetailView`, `ProjectSession`): a
+  compose project's row selected shows its verbs, its services, and their
+  logs merged by time — `docker compose logs -f`, in the app. Logs go
+  through a feed (`DockerLogFeed`: the lines, a revision when they must be
+  drawn again) filled by one follower a container (`DockerLogFollower`:
+  the tail, then the stream, again after a restart from where it stopped,
+  nothing twice); a project's lines are merged in time order, at the end
+  when they are the newest, else merged and drawn again. Each service's
+  name has a colour of its own.
 - **A container's files** (the detail's Files tab, `DockerFiles`, pure):
   a folder at a time, listed by a plain `sh` script run with `exec` —
   `archive` hands a folder over as its whole tree. `exec start` hijacks

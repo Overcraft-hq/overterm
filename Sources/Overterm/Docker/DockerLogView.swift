@@ -102,6 +102,14 @@ enum DockerLogStyle {
         }
     }
 
+    /// A service's colour in merged logs: the same one each time, told
+    /// apart from its neighbours.
+    static func serviceColor(_ service: String) -> NSColor {
+        let palette: [NSColor] = [.systemTeal, .systemPurple, .systemOrange, .systemPink, .systemIndigo, .systemGreen, .systemYellow, .systemBlue]
+        let sum = service.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7fff_ffff }
+        return palette[sum % palette.count]
+    }
+
     /// `2026-10-27T10:00:00.123456789Z` → `10:00:00.123`, local time.
     static func time(_ stamp: String) -> String {
         let trimmed = stamp.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
@@ -123,7 +131,7 @@ enum DockerLogStyle {
             out.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
         }
         if timestamps, let stamp = line.timestamp { add(time(stamp) + "  ", dim) }
-        if let service = line.service { add(service + " | ", dim) }
+        if let service = line.service { add(service + " | ", serviceColor(service)) }
         let levelColor = color(line.level)
         let body = line.stream == .stderr && levelColor == nil ? text.withAlphaComponent(0.85) : text
         add(line.message, levelColor ?? (line.level == .debug || line.level == .trace ? dim : body))

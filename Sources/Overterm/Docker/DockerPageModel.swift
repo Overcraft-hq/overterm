@@ -107,6 +107,7 @@ final class DockerPageModel: ObservableObject {
             }
         // The detail's streams follow what it shows and whether it shows.
         streams = Publishers.CombineLatest4($selection, $detailTab, $visible, $showDetail)
+            .combineLatest($projectTab)
             .sink { [weak self] _ in
                 // @Published fires before the values land.
                 DispatchQueue.main.async { self?.updateStreams() }
@@ -123,12 +124,35 @@ final class DockerPageModel: ObservableObject {
     }
 
     func updateStreams() {
+        if let project = detailedProject {
+            projectSession(for: project.name).follow(shown: visible && showDetail && projectTab == .logs)
+        } else {
+            projectSession?.close()
+            projectSession = nil
+        }
         guard let container = detailed else {
             session?.close()
             session = nil
             return
         }
         session(for: container.Id).follow(detailTab, shown: visible && showDetail)
+    }
+
+    /// The one project the detail shows: the selection, if it is one.
+    var detailedProject: ComposeProject? {
+        guard selection.count == 1, let name = selection.first.flatMap(Self.project(of:)) else { return nil }
+        return docker.projects.first { $0.name == name }
+    }
+
+    /// The project detail's session: one at a time.
+    private(set) var projectSession: ProjectSession?
+
+    func projectSession(for name: String) -> ProjectSession {
+        if let projectSession, projectSession.name == name { return projectSession }
+        projectSession?.close()
+        let made = ProjectSession(name: name, docker: docker)
+        projectSession = made
+        return made
     }
 
     nonisolated static let looseTag = "loose"
@@ -141,6 +165,8 @@ final class DockerPageModel: ObservableObject {
     @Published var showDetail = true
     /// Its tab, kept from one container to the next.
     @Published var detailTab: ContainerTab = .overview
+    /// A project's detail's tab.
+    @Published var projectTab: ProjectDetailView.Tab = .logs
     /// Whether the page is on screen (the window says): a hidden page's
     /// detail reads no logs and no stats.
     @Published var visible = false

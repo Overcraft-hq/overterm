@@ -42,10 +42,10 @@ struct DockerLogFilter: Equatable {
     }
 }
 
-/// The Logs tab: followed, filtered, coloured by level.
+/// The Logs tab: followed, filtered, coloured by level — a container's,
+/// or a compose project's services' merged.
 struct DockerLogsPane: View {
-    let container: ContainerSummary
-    @ObservedObject var session: ContainerSession
+    @ObservedObject var feed: DockerLogFeed
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var filter = DockerLogFilter()
@@ -56,9 +56,9 @@ struct DockerLogsPane: View {
         VStack(spacing: 0) {
             toolbar
             Rectangle().fill(theme.border).frame(height: 1)
-            let shown = filter.isEmpty ? session.lines : session.lines.filter(filter.matches)
-            if session.lines.isEmpty {
-                Text(session.following ? "Nothing written yet." : "No logs.").font(.system(size: 12)).foregroundStyle(theme.text3)
+            let shown = filter.isEmpty ? feed.lines : feed.lines.filter(filter.matches)
+            if feed.lines.isEmpty {
+                Text(feed.following ? "Nothing written yet." : "No logs.").font(.system(size: 12)).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let text = theme.textNS
@@ -66,7 +66,7 @@ struct DockerLogsPane: View {
                 DockerTextView(
                     count: shown.count,
                     // Filtered, it is another text: drawn again, not added to.
-                    revision: session.linesRevision &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ 1)
+                    revision: feed.revision &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ 1)
                         &+ (timestamps ? 0 : 7),
                     render: { range in
                         shown[range].map { DockerLogStyle.line($0, text: text, dim: text.withAlphaComponent(0.45), timestamps: stamps) }
@@ -95,16 +95,16 @@ struct DockerLogsPane: View {
             .fixedSize()
             .help("Lines shown: all, warnings and errors (stderr's unlevelled lines too), or errors")
             HStack(spacing: 4) {
-                DockerStatusDot(color: session.following ? TabStatusStyle.done : theme.text3)
-                Text(session.following ? "Following" : "Stopped").font(.system(size: 11)).foregroundStyle(theme.text3)
+                DockerStatusDot(color: feed.following ? TabStatusStyle.done : theme.text3)
+                Text(feed.following ? "Following" : "Stopped").font(.system(size: 11)).foregroundStyle(theme.text3)
             }
-            .help(session.following ? "New lines appear as they are written" : "The container isn't running; its log is followed again when it starts")
+            .help(feed.following ? "New lines appear as they are written" : "Nothing runs: its log is followed again when it starts")
             Menu {
                 Toggle("Wrap Lines", isOn: $wrap)
                 Toggle("Timestamps", isOn: $timestamps)
                 Divider()
-                Button("Clear") { session.clearLogs() }
-                Button("Follow in a Terminal Tab") { actions.run(DockerCommands.followLogs(of: container, endpoint: DockerModel.shared.endpoint), nil) }
+                Button("Clear") { feed.clear() }
+                if let command = feed.terminalCommand { Button("Follow in a Terminal Tab") { actions.run(command, nil) } }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.system(size: 12))
             }

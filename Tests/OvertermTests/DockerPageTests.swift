@@ -96,13 +96,39 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(shown(DockerLogFilter(text: "AYŞE")).count, 5, "a JSON line's fields are searched too")
     }
 
+    /// A project's services' lines, interleaved by time.
+    func testLinesMergeByTime() {
+        func line(_ at: String, _ service: String) -> DockerLogLine {
+            DockerLogLine(stream: .stdout, timestamp: "2026-10-27T10:00:\(at)Z", level: nil, message: service + at, fields: [], service: service)
+        }
+        let web = [line("01.1", "web"), line("03", "web"), line("05.25", "web")]
+        let db = [line("00.5", "db"), line("03", "db"), line("04", "db")]
+        XCTAssertEqual(DockerLogFeed.merged(web, db).map(\.message), ["db00.5", "web01.1", "web03", "db03", "db04", "web05.25"], "equal times keep their order")
+        XCTAssertEqual(DockerLogFeed.merged([], db).map(\.message), db.map(\.message))
+    }
+
+    @MainActor
+    func testANewestLineIsAddedAndAnOlderOneMerged() {
+        let feed = DockerLogFeed()
+        func line(_ at: String) -> DockerLogLine {
+            DockerLogLine(stream: .stdout, timestamp: "2026-10-27T10:00:\(at)Z", level: nil, message: at, fields: [], service: nil)
+        }
+        feed.merge([line("01"), line("03")])
+        let revision = feed.revision
+        feed.merge([line("04")])
+        XCTAssertEqual(feed.revision, revision, "the newest: added at the end, nothing drawn again")
+        feed.merge([line("02")])
+        XCTAssertEqual(feed.lines.map(\.message), ["01", "02", "03", "04"])
+        XCTAssertGreaterThan(feed.revision, revision, "an older one: merged, drawn again")
+    }
+
     /// Docker trims a fraction's trailing zeros; padded, the times sort.
     func testLogTimesSortAsTheyHappened() {
-        XCTAssertLessThan(ContainerSession.sortable("2026-10-27T10:00:00.115Z"), ContainerSession.sortable("2026-10-27T10:00:00.12Z"))
-        XCTAssertLessThan(ContainerSession.sortable("2026-10-27T10:00:00Z"), ContainerSession.sortable("2026-10-27T10:00:00.000000001Z"))
-        XCTAssertEqual(ContainerSession.sortable("2026-10-27T10:00:00.5Z"), "2026-10-27T10:00:00.500000000Z")
-        XCTAssertEqual(ContainerSession.seconds("1970-01-01T00:01:40.999999Z"), 100)
-        XCTAssertNil(ContainerSession.seconds("yesterday"))
+        XCTAssertLessThan(DockerLogFeed.sortable("2026-10-27T10:00:00.115Z"), DockerLogFeed.sortable("2026-10-27T10:00:00.12Z"))
+        XCTAssertLessThan(DockerLogFeed.sortable("2026-10-27T10:00:00Z"), DockerLogFeed.sortable("2026-10-27T10:00:00.000000001Z"))
+        XCTAssertEqual(DockerLogFeed.sortable("2026-10-27T10:00:00.5Z"), "2026-10-27T10:00:00.500000000Z")
+        XCTAssertEqual(DockerLogFeed.seconds("1970-01-01T00:01:40.999999Z"), 100)
+        XCTAssertNil(DockerLogFeed.seconds("yesterday"))
     }
 
     // MARK: The list
