@@ -167,7 +167,11 @@ see the command. Filter with `status:running project:api port:5432`;
 `?` lists the keys. `n` runs an image with a window that writes the
 `docker run` as you fill it in; any container copies as the `docker run`
 that would make it again. A compose project's services' logs are merged as
-`compose logs` merges them, each service in its colour. A container's logs are followed as they are written,
+`compose logs` merges them, each service in its colour. A project's
+services rebuild and start (`b`), pull and run a one-off, each in a tab
+where you see it, and restart here; its log narrows to one of them. Watch (`w`) is
+there when a service has `develop.watch`, and Up With Profiles… lists the
+profiles its files name. A container's logs are followed as they are written,
 coloured by level and filtered, and picked up again after a restart; its
 inspect data and its CPU, memory, network and disk sit beside it. Secrets
 in a container's environment stay masked. Images (pulled with their

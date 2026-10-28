@@ -43,6 +43,13 @@ extension DockerPageModel {
                 self?.actions?.run(DockerCommands.followLogs(of: container, endpoint: endpoint), nil)
             },
         ]
+        if container.composeProject != nil, !container.isOneOff {
+            verbs.append(
+                DockerVerb(title: "Rebuild and Start Its Service in a Tab", symbol: "hammer", key: "b") { [weak self] in
+                    guard let self else { return }
+                    self.rebuild(Self.rebuilds(of: Set(targets.map(\.Id)), in: self.docker.projects))
+                })
+        }
         if DockerDatabaseGuess.kind(of: container.Image) != nil {
             verbs.append(DockerVerb(title: "Open in Database…", symbol: "cylinder", key: "d", group: 1) { [weak self] in self?.openInDatabase(container) })
         }
@@ -67,21 +74,38 @@ extension DockerPageModel {
 
     // MARK: Compose projects
 
-    /// `act`: who starts, stops and restarts its containers (the panel has its own).
+    /// `act`: who starts, stops and restarts its containers (the panel has
+    /// its own). Watch and Up With Profiles… are there when its files say
+    /// so (`composeFacts(for:)`).
     func verbs(for project: ComposeProject, act: ((DockerEngine.ContainerAction, [ContainerSummary]) -> Void)? = nil) -> [DockerVerb] {
         if project.planned { return verbs(planned: project) }
         let lasting = project.containers.filter { !$0.isOneOff }
+        let facts = composeFacts(for: project)
         func run(_ verb: String, _ action: DockerEngine.ContainerAction, _ containers: [ContainerSummary]) {
             if let act { act(action, containers) } else { compose(verb, project) }
         }
-        return [
-            DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) },
+        var verbs = [
+            DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) }
+        ]
+        if facts?.watched.isEmpty == false {
+            verbs.append(DockerVerb(title: "Watch in a Tab", label: "Watch", symbol: "eye", place: .button, key: "w") { [weak self] in self?.startWatch(project) })
+        }
+        verbs += [
             DockerVerb(title: "Restart", symbol: "arrow.clockwise", place: .button) { run("restart", .restart, lasting) },
             DockerVerb(title: "Stop", symbol: "stop.fill", place: .button) { run("stop", .stop, lasting.filter { $0.state.isUp }) },
             DockerVerb(title: "Follow Logs in a Tab", label: "Logs in a Tab", symbol: "text.alignleft", place: .button) { [weak self] in
                 self?.compose("logs", project)
             },
             DockerVerb(title: "Start", symbol: "play") { run("start", .start, lasting) },
+            DockerVerb(title: "Rebuild and Up in a Tab", symbol: "hammer", key: "b") { [weak self] in
+                self?.rebuild([ComposeRebuild(project: project, services: [])])
+            },
+        ]
+        if let profiles = facts?.profiles, !profiles.isEmpty {
+            verbs.append(
+                DockerVerb(title: "Up With Profiles…", symbol: "square.stack.3d.up") { [weak self] in self?.chooseProfiles(project, profiles) })
+        }
+        verbs += [
             DockerVerb(title: "Pull Images in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.compose("pull", project) },
             DockerVerb(title: "Open Compose File", symbol: "doc.text", group: 1) { [weak self] in self?.editComposeFile(project) },
             DockerVerb(title: "Show Resolved Config", symbol: "doc.text.magnifyingglass", group: 1) { [weak self] in self?.showResolvedConfig(project) },
@@ -92,13 +116,20 @@ extension DockerPageModel {
             },
             DockerVerb(title: "Down…", label: "Down", symbol: "eject", place: .remove, key: "D") { [weak self] in self?.compose("down", project) },
         ]
+        return verbs
     }
 
     /// A project before it runs: what can be done to nothing yet — no
-    /// stop, restart, logs or down.
+    /// stop, restart, logs or down. Watch ups it first, when its plan says
+    /// a service has a `develop.watch`.
     private func verbs(planned project: ComposeProject) -> [DockerVerb] {
-        [
-            DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) },
+        var verbs = [
+            DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) }
+        ]
+        if watches(project) {
+            verbs.append(DockerVerb(title: "Watch in a Tab", label: "Watch", symbol: "eye", place: .button, key: "w") { [weak self] in self?.startWatch(project) })
+        }
+        verbs += [
             DockerVerb(title: "Pull Images in a Tab", label: "Pull", symbol: "arrow.down.circle", place: .button) { [weak self] in
                 self?.compose("pull", project)
             },
@@ -107,6 +138,33 @@ extension DockerPageModel {
             DockerVerb(title: "Copy Folder", symbol: "folder", group: 1) { [weak self] in
                 if let folder = project.workingDir { self?.actions?.copy(folder) }
             },
+        ]
+        return verbs
+    }
+
+    /// A service of a project Compose has made: rebuilt and started, run
+    /// once, pulled, its logs followed — in a tab in the project's folder;
+    /// restarted here, through the engine, as the project's Restart is; its
+    /// logs shown in the project's Logs tab, narrowed to it.
+    func verbs(for service: ComposeService, in project: ComposeProject) -> [DockerVerb] {
+        let lasting = service.containers.filter { !$0.isOneOff }
+        let never = service.containers.isEmpty ? "Nothing of it has run yet." : nil
+        return [
+            DockerVerb(title: "Rebuild and Start in a Tab", label: "Rebuild", symbol: "hammer", place: .button, key: "b") { [weak self] in
+                self?.rebuild([ComposeRebuild(project: project, services: [service.name])])
+            },
+            DockerVerb(
+                title: "Restart", symbol: "arrow.clockwise", place: .button, unavailable: lasting.isEmpty ? "Compose hasn't made it yet." : nil
+            ) { [weak self] in self?.act(.restart, on: lasting) },
+            DockerVerb(title: "Show Its Logs", label: "Logs", symbol: "text.alignleft", place: .button, unavailable: never) { [weak self] in
+                self?.showLogs(of: service, in: project)
+            },
+            DockerVerb(title: "Follow Its Logs in a Tab", symbol: "text.alignleft", unavailable: never) { [weak self] in
+                self?.composeService("logs -f --tail 100", service, project)
+            },
+            DockerVerb(title: "Pull in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.composeService("pull", service, project) },
+            DockerVerb(title: "Run a One-Off in a Tab", symbol: "play.rectangle") { [weak self] in self?.composeService("run --rm", service, project) },
+            DockerVerb(title: "Copy Name", symbol: "doc.on.doc", group: 1) { [weak self] in self?.actions?.copy(service.name) },
         ]
     }
 

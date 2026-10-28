@@ -33,6 +33,9 @@ struct ComposeConfig: Equatable, Sendable {
         /// The containers `up` makes of it.
         var replicas: Int
         var containerName: String?
+        /// It has a `develop.watch` of its own: `compose watch` syncs or
+        /// rebuilds it as its files change, and refuses a project with none.
+        var watched = false
 
         /// What it runs, as a row says it: its image, the folder it is built
         /// from (relative to the checkout), the services it waits for.
@@ -89,10 +92,12 @@ struct ComposeConfig: Equatable, Sendable {
             return Port(published: published?.isEmpty == true ? nil : published, target: target, proto: port["protocol"] as? String ?? "tcp")
         }
         let deploy = json["deploy"] as? [String: Any]
+        let watch = (json["develop"] as? [String: Any])?["watch"] as? [Any]
         return Service(
             name: name, image: json["image"] as? String, buildContext: build, dependsOn: dependsOn.sorted(),
             profiles: json["profiles"] as? [String] ?? [], ports: ports,
-            replicas: number(deploy?["replicas"]) ?? number(json["scale"]) ?? 1, containerName: json["container_name"] as? String)
+            replicas: number(deploy?["replicas"]) ?? number(json["scale"]) ?? 1, containerName: json["container_name"] as? String,
+            watched: watch?.isEmpty == false)
     }
 
     private static func number(_ value: Any?) -> Int? {

@@ -108,6 +108,7 @@ enum MainMenu {
         command(viewMenu, "Compose Up", #selector(TerminalWindowController.composeUp(_:)), "docker.composeUp")
         command(viewMenu, "Compose Down…", #selector(TerminalWindowController.composeDown(_:)), "docker.composeDown")
         command(viewMenu, "Compose Restart", #selector(TerminalWindowController.composeRestart(_:)), "docker.composeRestart")
+        command(viewMenu, "Compose Watch", #selector(TerminalWindowController.composeWatch(_:)), "docker.composeWatch")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).

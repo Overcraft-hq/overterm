@@ -13,17 +13,40 @@ final class DockerLogFeed: ObservableObject {
     /// What follows the same log in a terminal tab, if anything does.
     var terminalCommand: String?
 
-    static let keep = 5000
+    nonisolated static let keep = 5000
+    /// What each service keeps past `keep`, whatever the others write.
+    nonisolated static let keepEach = 1000
 
     /// Lines in the order they came: after the ones there.
     func append(_ added: [DockerLogLine]) {
         guard !added.isEmpty else { return }
-        if lines.count + added.count > Self.keep {
-            lines = Array((lines + added).suffix(Self.keep))
+        if lines.count + added.count > Self.keep, let kept = Self.trimmed(lines + added) {
+            lines = kept
             revision += 1
         } else {
             lines += added
         }
+    }
+
+    /// The last `keep` lines, and each service's last `keepEach` before
+    /// them: in a project's feed a service that logs every request doesn't
+    /// push out a quiet one's lines, which its picker shows alone. Nil when
+    /// none go. Pure.
+    nonisolated static func trimmed(_ lines: [DockerLogLine], keep: Int = keep, keepEach: Int = keepEach) -> [DockerLogLine]? {
+        guard lines.count > keep else { return nil }
+        var each: [String: Int] = [:]
+        var kept = [Bool](repeating: false, count: lines.count)
+        var count = 0
+        for index in lines.indices.reversed() {
+            let service = lines[index].service ?? ""
+            let mine = each[service, default: 0]
+            guard count < keep || mine < keepEach else { continue }
+            kept[index] = true
+            count += 1
+            each[service] = mine + 1
+        }
+        guard count < lines.count else { return nil }
+        return lines.indices.filter { kept[$0] }.map { lines[$0] }
     }
 
     /// Lines from one of several streams, in time order among the rest: at
@@ -37,7 +60,8 @@ final class DockerLogFeed: ObservableObject {
             append(added)
             return
         }
-        lines = Array(Self.merged(lines, added).suffix(Self.keep))
+        let merged = Self.merged(lines, added)
+        lines = Self.trimmed(merged) ?? merged
         revision += 1
     }
 

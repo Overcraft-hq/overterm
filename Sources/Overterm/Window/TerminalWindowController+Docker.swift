@@ -495,10 +495,11 @@ extension TerminalWindowController {
         palette.scope = .container
     }
 
-    /// Containers came or went while the palette shows them.
+    /// Containers came or went while the palette shows them, or what a
+    /// project's files say came in (Compose Watch).
     func watchDockerPalette() -> AnyCancellable {
-        DockerModel.shared.$containers
-            .dropFirst()
+        DockerModel.shared.$containers.dropFirst().map { _ in () }
+            .merge(with: dockerPage.$composeFacts.dropFirst().map { _ in () })
             .sink { [weak self] _ in DispatchQueue.main.async { self?.restockPalette() } }
     }
 
@@ -524,6 +525,14 @@ extension TerminalWindowController {
                     [weak self] _, _ in self?.composeDown(nil)
                 },
             ]
+        }
+        // Asked of Compose while the palette shows; restocked when it answers.
+        let watched = composeWatchable(stack).filter(dockerPage.watches)
+        if !watched.isEmpty {
+            items.append(
+                PaletteItem(id: "a.composeWatch", group: .action, title: "Compose Watch", subtitle: watched.map(\.name).joined(separator: ", "), symbol: "eye") {
+                    [weak self] _, _ in self?.composeWatch(nil)
+                })
         }
         if !stack.isEmpty || dockerPanel.composeFile != nil {
             items.append(
@@ -630,5 +639,25 @@ extension TerminalWindowController {
         let stack = dockerPanelStack()
         guard !stack.isEmpty else { return NSSound.beep() }
         dockerPage.act(.restart, on: stack.flatMap(\.containers).filter { !$0.isOneOff })
+    }
+
+    /// `compose watch` in a tab for each of the stack's projects with a
+    /// service to watch — their files asked about now, Docker on screen or
+    /// not; with no stack, the plan's, as Compose Up does. A beep when none
+    /// has one.
+    @objc func composeWatch(_ sender: Any?) {
+        let projects = composeWatchable(dockerPanelStack())
+        guard !projects.isEmpty else { return NSSound.beep() }
+        Task {
+            var any = false
+            for project in projects where await dockerPage.watch(project) == nil { any = true }
+            if !any { NSSound.beep() }
+        }
+    }
+
+    /// What Compose Watch would watch: the stack, else the plan when it was
+    /// read from the files as they are.
+    private func composeWatchable(_ stack: [ComposeProject]) -> [ComposeProject] {
+        stack.isEmpty ? dockerPanel.currentPlan.map { [$0] } ?? [] : stack
     }
 }

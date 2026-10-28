@@ -66,6 +66,22 @@ final class DockerPageTests: XCTestCase {
             DockerCommands.debugShell(beside: container("api"), image: "nicolaka/netshoot"),
             "docker run --rm -it --pid container:api --network container:api --volumes-from api nicolaka/netshoot")
         XCTAssertEqual(DockerCommands.quote(""), "''")
+        // A service's verbs, profiles: -f wherever Compose reads the files.
+        XCTAssertEqual(
+            DockerCommands.compose(project, "up -d --build", services: ["web"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' up -d --build web")
+        XCTAssertEqual(DockerCommands.compose(project, "run --rm", services: ["web"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' run --rm web")
+        XCTAssertEqual(
+            TabKind.of(agent: nil, title: DockerCommands.compose(project, "run --rm", services: ["web"]), hasPort: false), .container,
+            "the one-off's tab is a container's, its path quoted")
+        XCTAssertEqual(DockerCommands.compose(project, "watch"), "docker compose -p 'my app' -f '/w/my app/compose.yaml' watch")
+        XCTAssertEqual(
+            DockerCommands.compose(project, "up -d", profiles: ["debug", "jobs"]),
+            "docker compose -p 'my app' -f '/w/my app/compose.yaml' --profile debug --profile jobs up -d", "profiles before the verb")
+        XCTAssertEqual(
+            DockerCommands.compose(project, "logs -f --tail 100", services: ["web"]), "docker compose -p 'my app' logs -f --tail 100 web",
+            "logs finds it by name")
+        XCTAssertEqual(DockerCommands.compose(project, "pull", services: ["web"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' pull web")
+        XCTAssertEqual(DockerCommands.compose(project, "restart", services: ["my web"]), "docker compose -p 'my app' restart 'my web'")
     }
 
     // MARK: Keys
@@ -78,6 +94,8 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of(" "), .toggleDetail)
         XCTAssertEqual(DockerKey.of("\u{7F}"), .remove)
         XCTAssertEqual(DockerKey.of("?"), .help)
+        XCTAssertEqual(DockerKey.of("b"), .rebuild)
+        XCTAssertEqual(DockerKey.of("w"), .watch)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -97,6 +115,29 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(shown(DockerLogFilter(level: .errors)), ["db down"])
         XCTAssertEqual(shown(DockerLogFilter(text: "DB")), ["db down"])
         XCTAssertEqual(shown(DockerLogFilter(text: "AYŞE")).count, 5, "a JSON line's fields are searched too")
+
+        func said(_ message: String, by service: String) -> DockerLogLine {
+            DockerLogLine(stream: .stdout, timestamp: nil, level: nil, message: message, fields: [], service: service)
+        }
+        let merged = [said("GET /", by: "web"), said("ready", by: "db"), said("GET /health", by: "web")]
+        let web = DockerLogFilter(service: "web")
+        XCTAssertFalse(web.isEmpty)
+        XCTAssertEqual(merged.filter(web.matches).map(\.message), ["GET /", "GET /health"], "one service's lines")
+        XCTAssertEqual(merged.filter(DockerLogFilter(text: "health", service: "web").matches).map(\.message), ["GET /health"], "with a word too")
+        XCTAssertEqual(merged.filter(DockerLogFilter(text: "ready", service: "web").matches), [])
+
+        // A service picked with nothing to show says so; a word that
+        // matches nothing in all of them is the empty text, as before.
+        func note(_ lines: Int, _ shown: Int, _ filter: DockerLogFilter = DockerLogFilter(), following: Bool = true) -> String? {
+            DockerLogsPane.note(lines: lines, shown: shown, filter: filter, following: following)
+        }
+        XCTAssertEqual(note(0, 0), "Nothing written yet.")
+        XCTAssertEqual(note(0, 0, following: false), "No logs.")
+        XCTAssertNil(note(3, 3))
+        XCTAssertNil(note(3, 0, DockerLogFilter(text: "nope")))
+        XCTAssertEqual(note(3, 0, DockerLogFilter(service: "db")), "Nothing from db yet.")
+        XCTAssertEqual(note(3, 0, DockerLogFilter(level: .errors, service: "db")), "Nothing from db matches.")
+        XCTAssertNil(note(3, 1, DockerLogFilter(service: "db")))
     }
 
     /// A project's services' lines, interleaved by time.
@@ -123,6 +164,28 @@ final class DockerPageTests: XCTestCase {
         feed.merge([line("02")])
         XCTAssertEqual(feed.lines.map(\.message), ["01", "02", "03", "04"])
         XCTAssertGreaterThan(feed.revision, revision, "an older one: merged, drawn again")
+    }
+
+    /// A busy service doesn't push a quiet one's lines out of its
+    /// project's feed: each keeps its last few, whatever the others write.
+    @MainActor
+    func testAQuietServiceKeepsItsLines() {
+        func said(_ message: String, by service: String?) -> DockerLogLine {
+            DockerLogLine(stream: .stdout, timestamp: nil, level: nil, message: message, fields: [], service: service)
+        }
+        let lines = [said("db1", by: "db"), said("db2", by: "db")] + (0..<10).map { said("web\($0)", by: "web") }
+        XCTAssertEqual(DockerLogFeed.trimmed(lines, keep: 5, keepEach: 1)?.map(\.message), ["db2", "web5", "web6", "web7", "web8", "web9"])
+        XCTAssertNil(DockerLogFeed.trimmed(Array(lines.prefix(5)), keep: 5, keepEach: 1), "under keep, nothing goes")
+        XCTAssertNil(DockerLogFeed.trimmed(Array(lines.prefix(7)), keep: 5, keepEach: 2), "over keep, but each service within its own")
+        let one = (0..<8).map { said("\($0)", by: nil) }
+        XCTAssertEqual(DockerLogFeed.trimmed(one, keep: 5, keepEach: 2)?.map(\.message), ["3", "4", "5", "6", "7"], "one container's: the last keep")
+
+        let feed = DockerLogFeed()
+        feed.append([said("ready", by: "db")])
+        feed.append((0..<(DockerLogFeed.keep + 10)).map { said("GET \($0)", by: "web") })
+        XCTAssertEqual(feed.lines.first?.message, "ready", "the quiet one's line stays")
+        XCTAssertEqual(feed.lines.count, DockerLogFeed.keep + 1)
+        XCTAssertEqual(feed.lines.last?.message, "GET \(DockerLogFeed.keep + 9)")
     }
 
     /// Docker trims a fraction's trailing zeros; padded, the times sort.
@@ -250,6 +313,94 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerPageModel.serviceTag(db), "service:shop/db")
         XCTAssertEqual(DockerPageModel.service(of: "service:my app/db").map { [$0.project, $0.service] }, ["my app", "db"])
         XCTAssertNil(DockerPageModel.service(of: "project:shop"))
+    }
+
+    /// `b`: a project's row is all of it, a container its service; a
+    /// one-off is no service's, a container in no project nothing.
+    func testWhatBRebuilds() {
+        var oneOff = container("shop-web-run-1a2b", project: "shop", service: "web")
+        oneOff.Labels?["com.docker.compose.oneoff"] = "True"
+        let projects = ComposeProjects.group([
+            container("shop-web-1", project: "shop", service: "web"), container("shop-db-1", project: "shop", service: "db"),
+            container("api-app-1", project: "api", service: "app"), oneOff, container("redis"),
+        ]).projects
+        let (api, shop) = (projects[0], projects[1])
+        func ids(_ names: String...) -> Set<String> { Set(names.map { $0.hasPrefix("project:") ? $0 : $0 + "-0123456789" }) }
+        XCTAssertEqual(
+            DockerPageModel.rebuilds(of: ids("shop-web-1", "shop-web-run-1a2b", "redis", "project:api"), in: projects),
+            [ComposeRebuild(project: api, services: []), ComposeRebuild(project: shop, services: ["web"])])
+        XCTAssertEqual(DockerPageModel.rebuilds(of: ids("project:shop", "shop-db-1"), in: projects), [ComposeRebuild(project: shop, services: [])])
+        XCTAssertEqual(DockerPageModel.rebuilds(of: ids("shop-web-run-1a2b"), in: projects), [], "a one-off is no service's")
+        XCTAssertEqual(DockerPageModel.rebuilds(of: ids("redis"), in: projects), [])
+    }
+
+    /// A project's services' verbs, and what `b`, a service's Restart and
+    /// Show Its Logs do.
+    @MainActor
+    func testAServicesVerbs() throws {
+        let docker = DockerModel(endpoint: { nil })
+        let page = DockerPageModel(docker: docker)
+        var commands: [(String, URL?)] = []
+        page.actions = DockerActions(run: { commands.append(($0, $1)) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        let shop = ComposeProjects.group([container("shop-web-1", project: "shop", service: "web")]).projects[0]
+        let web = try XCTUnwrap(shop.services.first)
+        let verbs = page.verbs(for: web, in: shop)
+        XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Rebuild and Start in a Tab", "Restart", "Show Its Logs"])
+        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Follow Its Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"])
+        XCTAssertTrue(verbs.allSatisfy { $0.unavailable == nil })
+        for title in ["Rebuild and Start in a Tab", "Run a One-Off in a Tab", "Pull in a Tab", "Follow Its Logs in a Tab"] {
+            verbs.first { $0.title == title }?.perform()
+        }
+        XCTAssertEqual(
+            commands.map(\.0),
+            [
+                "docker compose -p shop -f /w/shop/compose.yaml up -d --build web", "docker compose -p shop -f /w/shop/compose.yaml run --rm web",
+                "docker compose -p shop -f /w/shop/compose.yaml pull web", "docker compose -p shop logs -f --tail 100 web",
+            ])
+        XCTAssertEqual(Set(commands.map(\.1?.path)), ["/w/shop"], "in the project's folder")
+
+        let none = ComposeService(project: "shop", name: "worker", containers: [], dependsOn: [])
+        let idle = page.verbs(for: none, in: shop)
+        XCTAssertEqual(idle.first { $0.title == "Restart" }?.unavailable, "Compose hasn't made it yet.")
+        XCTAssertEqual(idle.first { $0.title == "Show Its Logs" }?.unavailable, "Nothing of it has run yet.")
+
+        // A project's row and its containers: `b` from the list, and the menus.
+        XCTAssertEqual(page.verbs(for: shop).first { $0.key == "b" }?.title, "Rebuild and Up in a Tab")
+        XCTAssertFalse(page.verbs(for: shop).contains { $0.title == "Watch in a Tab" || $0.title == "Up With Profiles…" }, "nothing known of its files")
+        let container = try XCTUnwrap(web.containers.first)
+        XCTAssertEqual(page.verbs(for: container).first { $0.key == "b" }?.title, "Rebuild and Start Its Service in a Tab")
+        XCTAssertNil(page.verbs(for: self.container("redis")).first { $0.key == "b" }, "a container in no project has no service")
+
+        // Show Its Logs: the project's Logs tab, narrowed to it, and its tab's command follows.
+        page.selection = [DockerPageModel.projectTag("shop")]
+        page.projectTab = .services
+        verbs.first { $0.title == "Show Its Logs" }?.perform()
+        XCTAssertEqual(page.projectTab, .logs)
+        XCTAssertTrue(page.showDetail)
+        XCTAssertEqual(page.projectSession?.service, "web")
+    }
+
+    /// A project before it runs is watched from its plan: Compose's own
+    /// reading of the files, nothing asked again.
+    @MainActor
+    func testAPlannedProjectIsWatchedFromItsPlan() async throws {
+        let config = try ComposeConfig.parse(
+            #"{"name":"shop","services":{"db":{"image":"postgres:16"},"web":{"build":{"context":"/w/shop"},"develop":{"watch":[{"path":"/w/shop/src","action":"sync","target":"/app"}]}}}}"#
+        )
+        let plan = config.project(in: "/w/shop")
+        XCTAssertEqual(config.services.filter(\.watched).map(\.name), ["web"])
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        var commands: [(String, URL?)] = []
+        page.actions = DockerActions(run: { commands.append(($0, $1)) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        XCTAssertEqual(page.verbs(for: plan).filter { $0.place == .button }.map(\.title), ["Up (in a Tab)", "Watch in a Tab", "Pull Images in a Tab"])
+        let why = await page.watch(plan)
+        XCTAssertNil(why)
+        XCTAssertEqual(commands.map(\.0), ["docker compose watch"], "no -p, no -f: its folder's files")
+        XCTAssertEqual(commands.first?.1?.path, "/w/shop")
+        let unwatched = try ComposeConfig.parse(#"{"name":"shop","services":{"db":{"image":"postgres:16"}}}"#).project(in: "/w/shop")
+        XCTAssertFalse(page.verbs(for: unwatched).contains { $0.title == "Watch in a Tab" })
+        let refused = await page.watch(unwatched)
+        XCTAssertEqual(refused, "No service of shop has develop.watch: Compose watches only those.")
     }
 
     @MainActor

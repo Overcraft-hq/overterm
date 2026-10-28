@@ -1256,8 +1256,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   lowercased), the override merged, `include` and `extends` resolved, `.env`
   filled in, only the active profiles' services. It reaches no engine; that
   was checked against a socket that counts connections. Only names, images,
-  build folders, published ports, dependencies and replicas are kept, never
-  `environment`: it holds the variables' values. It is read while the
+  build folders, published ports, dependencies, replicas and whether a
+  service has a `develop.watch` are kept, never `environment`: it holds the
+  variables' values. It is read while the
   rail's panel or the page shows Docker: when one comes up, when the
   checkout changes and its files did, and when a `.yaml`, `.yml` or `.env`
   at the checkout's top changes (FSEvents, filtered to the top folder and
@@ -1422,6 +1423,46 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   nothing twice); a project's lines are merged in time order, at the end
   when they are the newest, else merged and drawn again. Each service's
   name has a colour of its own.
+- **A project's services** (the Services tab, `DockerPageModel+Compose`):
+  each service has its verbs on its header and in its right-click menu.
+  Rebuild and Start (`up -d --build <service>`), Pull, Run a One-Off
+  (`run --rm`) and its logs followed go to a terminal tab in the project's
+  folder. Restart goes through the engine, on that service's containers, as
+  the project's does. Show Its Logs narrows the merged log to that service
+  (`DockerLogFilter.service`); every service is still followed, so All
+  services comes back at once. The feed keeps its last 5,000 lines and each
+  service's last 1,000 before them (`DockerLogFeed.trimmed`): a service that
+  logs every request would otherwise push a quiet one's lines out, and the
+  picker would show it blank. A service with nothing to show says so. The
+  choice is kept on the `ProjectSession`,
+  so another project starts with all of them, and the pane's "Follow in a
+  Terminal Tab" follows the same one. `b` rebuilds the selected
+  containers' services, or all of a project's row: one command a project,
+  four at most. A one-off is no service's.
+- **What the files say** (`ComposeFacts`): the labels don't say what a
+  service watches or which profiles there are. So Compose is asked, with
+  `docker compose -p … -f … config --format json` (the services `up`
+  starts, read by `ComposeConfig`, and which of them have `develop.watch`)
+  and `config --profiles`, both with `--no-env-resolution` where Compose
+  knows it. Both read the files and never the engine. They are asked when
+  something on screen draws a project's verbs (the page, the panel's menu,
+  the palette), once a change of its files or its `.env` (their sizes and
+  dates; a link's target's, since that is what is edited), and kept by the
+  page. A failure that is the files' (Compose ran and said no) is kept the
+  same way, so a fixed file is read again, and the Services tab says what
+  Compose said in one dim line. One that isn't (no answer in 15 s, no
+  `docker`, a `docker` that didn't start) is asked again: by a view after
+  30 s, by a key or a menu item at once. A key or a menu item asks on demand. A view's body only starts
+  a read: the answer is published later, never during the update. Nothing
+  is asked for a project none of whose files are on this Mac (a remote
+  engine's), nor in an isolated run without a stub `docker`. A project
+  before it runs is its plan's: `ComposeConfig` already read its JSON.
+  Watch (`w`, `compose watch` in a tab) is offered only when a service has
+  `develop.watch`, because Compose refuses a project with none; it is
+  typed plainly, with no profiles, so it watches exactly the services in
+  that JSON. Up With Profiles… lists the profiles in a sheet, ticked as last
+  time in this run (never on disk), and types `--profile a --profile b up
+  -d`.
 - **A container's files** (the detail's Files tab, `DockerFiles`, pure):
   a folder at a time, listed by a plain `sh` script run with `exec` —
   `archive` hands a folder over as its whole tree. `exec start` hijacks
@@ -1459,8 +1500,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   filtered), `docker_inspect` (state, error, health, ports, mounts, env)
   and `docker_stats` read; `docker_action`, `docker_compose` and
   `docker_exec` act, each asked about in the window first (`allow`; a
-  test answers through `askOverride`), compose up and down in a terminal
-  tab the user sees. Settings ▸ Docker ▸ Agents: reading, and asking to
+  test answers through `askOverride`), compose up, rebuild (`up --build`)
+  and down in a terminal tab the user sees. `docker_compose` takes a
+  `service` too, for all but down. Settings ▸ Docker ▸ Agents: reading, and asking to
   act — on by default, as decided. No secret leaves in an answer: env
   values that look like secrets are masked, and their values taken out of
   logs and exec output.
@@ -1486,21 +1528,27 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **Keys** (`DockerKey`, a pure table, `?` shows it): single letters while
   the list's table has the keyboard — `s` start/stop, `r` restart, `p`
   pause, `e` a shell, `t` logs followed, `o` its port, `u`/`D` compose
-  up/down, `⌫` remove, `/` the filter. The window's key monitor
+  up/down, `b` rebuild, `w` watch, `⌫` remove, `/` the filter. The window's key monitor
   (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
   and an AppKit table would eat letters for type-select.
 - **The switcher** (⇧⌥⌘P): the palette scoped to its Docker group —
   every container and compose project (`dockerPaletteItems`), restocked as
   they come and go. ↩ shows one on the page, selected and unfolded; ⌥↩ is
   a shell in a running container, a start for a stopped one, `up` for a
-  project. Compose Up, Down… and Restart act on the selected tab's
-  checkout's stack (View menu, palette; no keys). With no stack, Compose
+  project. Compose Up, Down…, Restart and Watch act on the selected tab's
+  checkout's stack (View menu, palette; no keys); the palette offers Watch
+  only for a stack with something to watch, and is restocked when Compose
+  answers. With no stack, Compose
   Up is the plan's Up — asked first when that name runs from another
   folder — if the plan was read from the files as they are
   (`ComposeFileModel.isCurrent`: nothing reads them while Docker is
-  hidden); else `docker compose up -d` in the checkout. A tab running
+  hidden); else `docker compose up -d` in the checkout. Compose Watch
+  with no stack is the plan's, the same way. A tab running
   `docker exec -it …` (or attach, debug, an interactive run, Compose's
-  exec and run) is a `TabKind.container`, its icon the shippingbox.
+  exec and run, past Compose's own `-p`/`-f`/`--profile`) is a
+  `TabKind.container`, its icon the shippingbox. The title is read in the
+  shell's words (`TabKind.shellWords`): a path with a space is quoted, and
+  split on spaces its second half would pass for the command.
 - **A debug shell** (`E`, `DockerCommands.debugShell`): for an image
   with no shell of its own (distroless, scratch), a toolbox container
   beside it in a tab — `--pid` and `--network` its own, its volumes
@@ -1508,16 +1556,19 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   subscription. The toolbox is `docker.debugImage` (netshoot), pulled in
   the tab where the user sees it.
 - **What runs in a terminal** (`DockerCommands`, pure): compose up, down,
-  pull and logs, a shell in a container, its logs followed — typed into a
-  new tab in the project's folder, where the user sees them and can run
-  them again. A command is told the engine (`DOCKER_HOST=`) only when the
+  pull and logs, watch, up with profiles, a service rebuilt, pulled, run
+  once or its logs followed, a shell in a container, its logs followed —
+  typed into a new tab in the project's folder, where the user sees them
+  and can run them again. `-f` goes with up, pull, build, run and watch,
+  and with every command that has profiles: those read the files; the
+  rest find the project by name. A command is told the engine (`DOCKER_HOST=`) only when the
   shell wouldn't find the same one by itself.
 - **Tests**: `FakeDockerEngine` plays the API on a socket of its own
   (containers, events, logs framed, files as tar); `DockerTransportTests`,
   `DockerModelTests` and the `docker` scenario run against it, which records
   rather than types what would reach a real `docker`; a stub `docker`
-  answers `compose config` for the scenario, and plays Compose before 2.35
-  too.
+  answers `compose config` for the scenario (a checkout's plan, a
+  project's watch and profiles), and plays Compose before 2.35 too.
 
 ## Simulator
 

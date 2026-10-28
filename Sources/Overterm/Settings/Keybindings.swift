@@ -303,6 +303,7 @@ enum KeyCommands {
         .init("docker.composeUp", "Compose Up (the checkout's stack)", group: "Panels"),
         .init("docker.composeDown", "Compose Down… (the checkout's stack)", group: "Panels"),
         .init("docker.composeRestart", "Compose Restart (the checkout's stack)", group: "Panels"),
+        .init("docker.composeWatch", "Compose Watch (the checkout's stack)", group: "Panels"),
         .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),
         .init("notes.graph", "Graph View", group: "Panels", key: "alt+cmd+k"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),

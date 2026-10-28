@@ -191,6 +191,10 @@ struct DockerPlannedServiceRow: View {
                     if replicas > 1 {
                         Text(verbatim: "×\(replicas)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
                     }
+                    if service.spec?.watched == true {
+                        Image(systemName: "eye").font(.system(size: 9.5)).foregroundStyle(theme.text3)
+                            .help("develop.watch: Watch syncs or rebuilds it as its files change")
+                    }
                 }
                 Text(verbatim: service.spec?.summary(in: folder) ?? "")
                     .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)

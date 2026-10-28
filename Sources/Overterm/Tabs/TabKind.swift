@@ -49,19 +49,76 @@ enum TabKind: String, Equatable {
 
     /// A shell in a container: `docker exec -it`, `docker attach`, an
     /// interactive `docker run`, Compose's `exec` and `run`, `docker debug`
-    /// — Podman's too. Whatever sets `DOCKER_HOST=…` first counts.
+    /// — Podman's too. Whatever sets `DOCKER_HOST=…` first counts, and
+    /// Compose's own options before its command (`-p shop -f compose.yaml`,
+    /// as the Docker page types them). Read in the shell's words: a path
+    /// with a space is quoted, and is one.
     private static func isContainer(_ title: String) -> Bool {
-        var words = title.split(whereSeparator: \.isWhitespace).map(String.init)
+        var words = shellWords(title)
         while let first = words.first, first.contains("="), !first.hasPrefix("-") { words.removeFirst() }
         guard let tool = words.first, tool == "docker" || tool == "podman" else { return false }
         var rest = Array(words.dropFirst())
-        if rest.first == "compose" || rest.first == "container" { rest.removeFirst() }
+        if rest.first == "compose" {
+            rest.removeFirst()
+            while let option = rest.first, option.hasPrefix("-") {
+                rest.removeFirst()
+                if composeOptionsWithValues.contains(option), !rest.isEmpty { rest.removeFirst() }
+            }
+        } else if rest.first == "container" {
+            rest.removeFirst()
+        }
         guard let verb = rest.first else { return false }
         switch verb {
         case "exec", "attach", "debug": return true
         case "run": return rest.contains { $0 == "-it" || $0 == "-ti" || $0 == "-i" || $0 == "--interactive" } || words.contains("compose")
         default: return false
         }
+    }
+
+    /// Compose's global options that take the next word (`--file=x` has
+    /// it in itself).
+    private static let composeOptionsWithValues: Set<String> = [
+        "-p", "--project-name", "-f", "--file", "--profile", "--project-directory", "--env-file", "--ansi", "--progress", "--parallel",
+    ]
+
+    /// A command line's words as the shell splits them: `'…'` (and the
+    /// `'\''` that puts a quote in one), `"…"` and `\ ` keep a space in a
+    /// word, their quotes taken off. Unclosed, the rest is the word.
+    static func shellWords(_ line: String) -> [String] {
+        var words: [String] = []
+        var word = ""
+        var inWord = false
+        var quote: Character?
+        var escaped = false
+        for character in line {
+            if escaped {
+                word.append(character)
+                escaped = false
+            } else if let open = quote {
+                if character == open {
+                    quote = nil
+                } else if character == "\\", open == "\"" {
+                    escaped = true
+                } else {
+                    word.append(character)
+                }
+            } else if character == "'" || character == "\"" {
+                quote = character
+                inWord = true
+            } else if character == "\\" {
+                escaped = true
+                inWord = true
+            } else if character.isWhitespace {
+                if inWord { words.append(word) }
+                word = ""
+                inWord = false
+            } else {
+                word.append(character)
+                inWord = true
+            }
+        }
+        if inWord { words.append(word) }
+        return words
     }
 
     /// `ssh host`, `mosh host`, or a prompt a remote shell set — `user@host`

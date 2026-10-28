@@ -9,7 +9,8 @@ enum ContainerTab: String, CaseIterable, Identifiable {
     var title: String { rawValue.capitalized }
 }
 
-/// What the log shows: a word in it, and how bad a line must be. Pure.
+/// What the log shows: a word in it, how bad a line must be, and — for a
+/// compose project's — whose. Pure.
 struct DockerLogFilter: Equatable {
     enum Level: String, CaseIterable, Identifiable {
         case all, warnings, errors
@@ -26,10 +27,13 @@ struct DockerLogFilter: Equatable {
 
     var text = ""
     var level = Level.all
+    /// One service's lines; nil, every service's.
+    var service: String?
 
-    var isEmpty: Bool { text.isEmpty && level == .all }
+    var isEmpty: Bool { text.isEmpty && level == .all && service == nil }
 
     func matches(_ line: DockerLogLine) -> Bool {
+        if let service, line.service != service { return false }
         switch level {
         case .all: break
         // A line nobody levelled isn't taken for a warning, but stderr's
@@ -48,17 +52,29 @@ struct DockerLogsPane: View {
     @ObservedObject var feed: DockerLogFeed
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
+    /// A compose project's services, for the picker; with `service`, the
+    /// one shown (the project's session keeps it).
+    var services: [String] = []
+    var service: Binding<String?>? = nil
     @State private var filter = DockerLogFilter()
     @State private var wrap = true
     @State private var timestamps = true
+
+    /// The field's and the level's filter, narrowed to the service picked.
+    private var effective: DockerLogFilter {
+        var filter = filter
+        filter.service = service?.wrappedValue
+        return filter
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Rectangle().fill(theme.border).frame(height: 1)
+            let filter = effective
             let shown = filter.isEmpty ? feed.lines : feed.lines.filter(filter.matches)
-            if feed.lines.isEmpty {
-                Text(feed.following ? "Nothing written yet." : "No logs.").font(.system(size: 12)).foregroundStyle(theme.text3)
+            if let note = Self.note(lines: feed.lines.count, shown: shown.count, filter: filter, following: feed.following) {
+                Text(verbatim: note).font(.system(size: 12)).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let text = theme.textNS
@@ -66,7 +82,8 @@ struct DockerLogsPane: View {
                 DockerTextView(
                     count: shown.count,
                     // Filtered, it is another text: drawn again, not added to.
-                    revision: feed.revision &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ 1)
+                    revision: feed.revision
+                        &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ (filter.service?.hashValue ?? 0) &+ 1)
                         &+ (timestamps ? 0 : 7),
                     render: { range in
                         shown[range].map { DockerLogStyle.line($0, text: text, dim: text.withAlphaComponent(0.45), timestamps: stamps) }
@@ -74,6 +91,16 @@ struct DockerLogsPane: View {
                     wrap: wrap, follow: true)
             }
         }
+    }
+
+    /// What the pane says in place of its lines: none at all, or none
+    /// from the service picked — a filter over the project's feed, said
+    /// rather than left blank. Each service keeps its last lines there
+    /// (`DockerLogFeed.keepEach`), so none is none. Nil: the lines. Pure.
+    nonisolated static func note(lines: Int, shown: Int, filter: DockerLogFilter, following: Bool) -> String? {
+        if lines == 0 { return following ? "Nothing written yet." : "No logs." }
+        guard shown == 0, let service = filter.service else { return nil }
+        return filter.text.isEmpty && filter.level == .all ? "Nothing from \(service) yet." : "Nothing from \(service) matches."
     }
 
     private var toolbar: some View {
@@ -94,6 +121,17 @@ struct DockerLogsPane: View {
             .controlSize(.small)
             .fixedSize()
             .help("Lines shown: all, warnings and errors (stderr's unlevelled lines too), or errors")
+            if let service, services.count > 1 {
+                Picker("", selection: service) {
+                    Text("All services").tag(String?.none)
+                    ForEach(services, id: \.self) { Text(verbatim: $0).tag(Optional($0)) }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .help("One service's lines, or all of them merged")
+                .accessibilityIdentifier("docker.logs.service")
+            }
             HStack(spacing: 4) {
                 DockerStatusDot(color: feed.following ? TabStatusStyle.done : theme.text3)
                 Text(feed.following ? "Following" : "Stopped").font(.system(size: 11)).foregroundStyle(theme.text3)

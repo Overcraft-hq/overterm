@@ -16,20 +16,28 @@ enum DockerCommands {
         }
     }
 
-    /// A compose verb for a project Compose knows by its labels. `up`,
-    /// `pull` and `build` need the files it came from; `down`, `stop`,
-    /// `restart` and `logs` find it by name. One before it runs (`planned`)
-    /// is its folder's files, where the command runs: no `-p`, no `-f`, so
-    /// Compose names it from the files as they are then — a name read
-    /// earlier may be stale, and `-p` would make a project of it.
-    static func compose(_ project: ComposeProject, _ verb: String, endpoint: DockerEndpoint? = nil) -> String {
-        let needsFiles = ["up", "pull", "build", "config", "create"].contains(verb.split(separator: " ").first.map(String.init) ?? verb)
+    /// A compose verb for a project Compose knows by its labels, for some
+    /// of its services or all. `up`, `pull`, `build`, `run` and `watch`
+    /// need the files it came from, and so does any command with profiles
+    /// (they are the files'); `down`, `stop`, `restart` and `logs` find it
+    /// by name. One before it runs (`planned`) is its folder's files, where
+    /// the command runs: no `-p`, no `-f`, so Compose names it from the
+    /// files as they are then — a name read earlier may be stale, and `-p`
+    /// would make a project of it. Profiles go before the verb, as Compose
+    /// takes them.
+    static func compose(
+        _ project: ComposeProject, _ verb: String, services: [String] = [], profiles: [String] = [], endpoint: DockerEndpoint? = nil
+    ) -> String {
+        let first = verb.split(separator: " ").first.map(String.init) ?? verb
+        let needsFiles = !profiles.isEmpty || ["up", "pull", "build", "config", "create", "run", "watch"].contains(first)
         var parts = ["docker", "compose"]
         if !project.planned {
             parts += ["-p", quote(project.name)]
             if needsFiles { parts += project.configFiles.flatMap { ["-f", quote($0)] } }
         }
+        parts += profiles.flatMap { ["--profile", quote($0)] }
         parts.append(verb)
+        parts += services.map(quote)
         return prefix(for: endpoint) + parts.joined(separator: " ")
     }
 

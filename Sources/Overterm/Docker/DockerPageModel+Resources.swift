@@ -310,7 +310,7 @@ extension DockerPageModel {
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
         // One before it runs is its folder's files, as `up` reads them: no
         // `-p` (a name read earlier may be stale), no `-f`.
-        let arguments = ["compose"] + (project.planned ? [] : ["-p", project.name] + project.configFiles.flatMap { ["-f", $0] }) + ["config"]
+        let arguments = (project.planned ? ["compose"] : ComposeFacts.arguments(project)) + ["config"]
         let place = (project.planned ? folder : nil) ?? FileManager.default.homeDirectoryForCurrentUser
         Task {
             do {

@@ -8,6 +8,15 @@ import SwiftUI
 final class ProjectSession: ObservableObject {
     let name: String
     let feed = DockerLogFeed()
+    /// The one service the Logs tab shows, or all of them merged; every
+    /// service is followed either way, so all come back at once. A session
+    /// is the project's while it is selected: another starts with all.
+    @Published var service: String? {
+        didSet {
+            guard service != oldValue, let project = docker.projects.first(where: { $0.name == name }) else { return }
+            feed.terminalCommand = terminalCommand(project)
+        }
+    }
 
     private let docker: DockerModel
     private var followers: [String: DockerLogFollower] = [:]
@@ -17,9 +26,7 @@ final class ProjectSession: ObservableObject {
     init(name: String, docker: DockerModel = .shared) {
         self.name = name
         self.docker = docker
-        if let project = docker.projects.first(where: { $0.name == name }) {
-            feed.terminalCommand = DockerCommands.compose(project, "logs -f --tail 100", endpoint: docker.endpoint)
-        }
+        if let project = docker.projects.first(where: { $0.name == name }) { feed.terminalCommand = terminalCommand(project) }
         // A service started (or scaled) is followed; one restarted again
         // from where it stopped.
         watching = docker.$projects
@@ -34,9 +41,7 @@ final class ProjectSession: ObservableObject {
 
     private func sync() {
         // Selected before it ran: its command once it exists.
-        if feed.terminalCommand == nil, let project = docker.projects.first(where: { $0.name == name }) {
-            feed.terminalCommand = DockerCommands.compose(project, "logs -f --tail 100", endpoint: docker.endpoint)
-        }
+        if feed.terminalCommand == nil, let project = docker.projects.first(where: { $0.name == name }) { feed.terminalCommand = terminalCommand(project) }
         guard wanted, let project = docker.projects.first(where: { $0.name == name }) else {
             followers.values.forEach { $0.stop() }
             updateFollowing()
@@ -47,6 +52,11 @@ final class ProjectSession: ObservableObject {
             if !follower.following { follower.start(tail: 200, tty: nil) }
         }
         updateFollowing()
+    }
+
+    /// What "Follow in a Terminal Tab" types: the service shown, or all.
+    private func terminalCommand(_ project: ComposeProject) -> String {
+        DockerCommands.compose(project, "logs -f --tail 100", services: service.map { [$0] } ?? [], endpoint: docker.endpoint)
     }
 
     private func make(_ container: ContainerSummary) -> DockerLogFollower {
@@ -154,23 +164,38 @@ struct ProjectDetailView: View {
             .padding(.bottom, 8)
             Rectangle().fill(theme.border).frame(height: 1)
             switch page.projectTab {
-            case .logs: DockerLogsPane(feed: session.feed, theme: theme, actions: actions)
+            case .logs:
+                DockerLogsPane(feed: session.feed, theme: theme, actions: actions, services: project.services.map(\.name), service: $session.service)
             case .services: services
             }
         }
     }
 
+    /// Each service with its verbs on its header and in its right-click
+    /// menu, an eye on the ones Watch watches, its containers under it.
     private var services: some View {
-        ScrollView {
+        let facts = page.composeFacts(for: project)
+        return ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(project.services) { service in
                     VStack(alignment: .leading, spacing: 4) {
+                        let verbs = page.verbs(for: service, in: project)
                         HStack(spacing: 6) {
                             Text(verbatim: service.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
+                            if facts?.watched.contains(service.name) == true {
+                                Image(systemName: "eye").font(.system(size: 10)).foregroundStyle(theme.text3)
+                                    .help("develop.watch: Watch syncs or rebuilds it as its files change")
+                            }
                             if !service.dependsOn.isEmpty {
                                 Text(verbatim: "after " + service.dependsOn.joined(separator: ", ")).font(.system(size: 11)).foregroundStyle(theme.text3)
+                                    .lineLimit(1)
                             }
+                            Spacer(minLength: 8)
+                            DockerActionBar(verbs: verbs, theme: theme, words: 0)
                         }
+                        .contentShape(Rectangle())
+                        .contextMenu { DockerVerbMenu(verbs: verbs) }
+                        .accessibilityIdentifier("docker.service." + service.name)
                         ForEach(service.containers) { container in
                             Button {
                                 page.selection = [container.Id]
@@ -180,6 +205,11 @@ struct ProjectDetailView: View {
                             .buttonStyle(.plain)
                         }
                     }
+                }
+                if let problem = facts?.problem {
+                    Text(verbatim: "Compose couldn't read its files: " + problem).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .help("What docker compose config said: Watch and Up With Profiles… need it")
                 }
             }
             .padding(16)
@@ -193,5 +223,52 @@ struct ProjectDetailView: View {
         .buttonStyle(.plain)
         .foregroundStyle(theme.text2)
         .help(help)
+    }
+}
+
+/// Up With Profiles…: one toggle a profile the project's files name, and
+/// the command it types. Services in a profile ticked start with the rest;
+/// a service named in no profile always does.
+struct ComposeProfilesSheet: View {
+    @ObservedObject var page: DockerPageModel
+    let endpoint: DockerEndpoint?
+
+    var body: some View {
+        if let choice = page.profileChoice {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(verbatim: "Up “\(choice.project.name)” With Profiles").font(.system(size: 14, weight: .semibold))
+                Text("Services in a profile ticked start with the rest; the ones in none always do.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(choice.profiles, id: \.self) { profile in
+                        Toggle(isOn: ticked(profile)) {
+                            Text(verbatim: profile).font(.system(size: 12.5, design: .monospaced))
+                        }
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                Text(verbatim: choice.command(endpoint: endpoint)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { page.profileChoice = nil }.keyboardShortcut(.cancelAction)
+                    Button("Up") { page.upWithProfiles() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(choice.chosen.isEmpty)
+                        .accessibilityIdentifier("docker.profiles.up")
+                }
+            }
+            .padding(20)
+            .frame(width: 440)
+            .accessibilityIdentifier("docker.profiles")
+        }
+    }
+
+    private func ticked(_ profile: String) -> Binding<Bool> {
+        Binding(
+            get: { page.profileChoice?.chosen.contains(profile) == true },
+            set: { on in
+                if on { page.profileChoice?.chosen.insert(profile) } else { page.profileChoice?.chosen.remove(profile) }
+            })
     }
 }

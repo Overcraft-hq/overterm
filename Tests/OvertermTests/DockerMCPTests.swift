@@ -50,6 +50,23 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertTrue(projects.contains("shop (1/2 running) in /w/shop"), projects)
     }
 
+    /// What `docker_compose` runs: a service narrows it, rebuild is up
+    /// --build, down takes the whole project.
+    func testComposeOneServiceOrRebuild() throws {
+        let deadline = Date().addingTimeInterval(5)
+        while model.projects.first?.services.count != 2, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        let shop = try XCTUnwrap(model.projects.first { $0.name == "shop" })
+        func command(_ action: String, _ service: String? = nil) throws -> String {
+            try DockerMCP.composeCommand(shop, action: action, service: service, endpoint: nil)
+        }
+        XCTAssertEqual(try command("rebuild", "web"), "docker compose -p shop -f /w/shop/compose.yaml up -d --build web")
+        XCTAssertEqual(try command("up"), "docker compose -p shop -f /w/shop/compose.yaml up -d")
+        XCTAssertEqual(try command("restart", "db"), "docker compose -p shop restart db")
+        XCTAssertThrowsError(try command("down", "web")) { XCTAssertTrue("\($0)".contains("down takes the whole project"), "\($0)") }
+        XCTAssertThrowsError(try command("restart", "nope")) { XCTAssertTrue("\($0)".contains("db, web"), "\($0)") }
+        XCTAssertThrowsError(try command("watch")) { XCTAssertTrue("\($0)".contains("up, rebuild, down"), "\($0)") }
+    }
+
     func testLogsKeepSecretsOut() async throws {
         fake.log(web, "booting")
         fake.log(web, "[ERROR] auth with token s3cr3t-value failed", stream: .stderr)

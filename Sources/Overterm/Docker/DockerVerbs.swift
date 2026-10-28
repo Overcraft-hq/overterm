@@ -37,12 +37,21 @@ struct DockerVerb: Identifiable {
 struct DockerActionBar: View {
     let verbs: [DockerVerb]
     @ObservedObject var theme: ChromeTheme
+    /// How many buttons say their words, always: a row's own small bar (a
+    /// project's service) is icons, whatever fits.
+    var words: Int? = nil
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(words: .max)
-            row(words: 2)
-            row(words: 0)
+        Group {
+            if let words {
+                row(words: words)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    row(words: .max)
+                    row(words: 2)
+                    row(words: 0)
+                }
+            }
         }
         .accessibilityIdentifier("docker.actions")
     }
@@ -68,8 +77,11 @@ struct DockerActionBar: View {
                 .help("More")
                 .accessibilityIdentifier("docker.actions.more")
             }
-            Spacer(minLength: 8)
-            ForEach(verbs.filter { $0.place == .remove }) { verb in item(verb, labelled: false, destructive: true) }
+            let remove = verbs.filter { $0.place == .remove }
+            // A bar across a detail puts removal at its far end; a row's
+            // own bar is only as wide as its buttons.
+            if self.words == nil || !remove.isEmpty { Spacer(minLength: 8) }
+            ForEach(remove) { verb in item(verb, labelled: false, destructive: true) }
         }
     }
 

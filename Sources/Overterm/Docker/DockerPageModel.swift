@@ -129,6 +129,17 @@ final class DockerPageModel: ObservableObject {
     @Published var mcpClients: [MCPToolkitClient]?
     /// Whether `docker scout` is there, for the images' menu.
     lazy var hasScout = DockerCLI.hasPlugin("scout")
+    /// What each project's files say, by its name (`ComposeFacts`): read
+    /// when something on screen draws its verbs, again when its files
+    /// change (`DockerPageModel+Compose`).
+    @Published var composeFacts: [String: ComposeFacts] = [:]
+    /// The reads on their way, by project name, with the files' stamp each
+    /// was asked for.
+    var composeFactReads: [String: (stamp: ComposeFacts.Stamp, task: Task<ComposeFacts?, Never>)] = [:]
+    /// Up With Profiles…, open on this.
+    @Published var profileChoice: ComposeProfileChoice?
+    /// The profiles last ticked for each project, this run only.
+    var lastProfiles: [String: Set<String>] = [:]
 
     let docker: DockerModel
 
@@ -438,6 +449,9 @@ final class DockerPageModel: ObservableObject {
             if let project = selectedProject { compose("up", project) }
         case .composeDown:
             if let project = selectedProject { compose("down", project) }
+        case .rebuild: rebuild(Self.rebuilds(of: selection, in: docker.projects))
+        case .watch:
+            if let project = selectedProject { startWatch(project) }
         default: break
         }
         return true
@@ -464,8 +478,8 @@ final class DockerPageModel: ObservableObject {
         }
     }
 
-    /// A project's verbs: `up`, `down` (asked first) and the logs in a
-    /// terminal tab; `start`, `stop`, `restart` on its containers here.
+    /// A project's verbs: `up`, `down` (asked first), `watch` and the logs
+    /// in a terminal tab; `start`, `stop`, `restart` on its containers here.
     func compose(_ verb: String, _ project: ComposeProject) {
         let lasting = project.containers.filter { !$0.isOneOff }
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
@@ -474,6 +488,7 @@ final class DockerPageModel: ObservableObject {
         switch verb {
         case "up": actions?.run(DockerCommands.compose(project, "up -d", endpoint: endpoint), folder)
         case "logs": actions?.run(DockerCommands.compose(project, "logs -f --tail 100", endpoint: endpoint), folder)
+        case "watch": actions?.run(DockerCommands.compose(project, "watch", endpoint: endpoint), folder)
         case "pull": actions?.run(DockerCommands.compose(project, "pull", endpoint: endpoint), folder)
         case "start": act(.start, on: lasting)
         case "stop": act(.stop, on: lasting.filter { $0.state.isUp })
@@ -487,15 +502,17 @@ final class DockerPageModel: ObservableObject {
         }
     }
 
-    /// A project before it runs: only `up` and `pull`, in its folder and
-    /// without `-p`, so Compose reads its files as it did for the list.
-    /// Up asks first when a project of its name runs from another folder:
-    /// Compose would make that one again from this checkout's files.
+    /// A project before it runs: only `up`, `watch` (which ups it first)
+    /// and `pull`, in its folder and without `-p`, so Compose reads its
+    /// files as it did for the list. Up and Watch ask first when a project
+    /// of its name runs from another folder: Compose would make that one
+    /// again from this checkout's files.
     private func composePlanned(_ verb: String, _ project: ComposeProject, in folder: URL?) {
         let endpoint = docker.endpoint
         switch verb {
-        case "up":
-            let up: () -> Void = { [weak self] in self?.actions?.run(DockerCommands.compose(project, "up -d", endpoint: endpoint), folder) }
+        case "up", "watch":
+            let command = DockerCommands.compose(project, verb == "up" ? "up -d" : verb, endpoint: endpoint)
+            let up: () -> Void = { [weak self] in self?.actions?.run(command, folder) }
             guard let other = docker.projects.first(where: { $0.name == project.name }), let dir = project.workingDir,
                 ComposeProjects.projects([other], in: dir).isEmpty
             else {
@@ -503,9 +520,10 @@ final class DockerPageModel: ObservableObject {
                 return
             }
             let there = other.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "another folder"
+            let word = verb == "up" ? "Up" : "Watch"
             actions?.confirm(
-                "Up “\(project.name)” from this checkout?",
-                "A project of that name runs from \(there). Compose makes it again from this checkout's files and replaces its containers.", "Up", up)
+                "\(word) “\(project.name)” from this checkout?",
+                "A project of that name runs from \(there). Compose makes it again from this checkout's files and replaces its containers.", word, up)
         case "pull": actions?.run(DockerCommands.compose(project, "pull", endpoint: endpoint), folder)
         default: break
         }

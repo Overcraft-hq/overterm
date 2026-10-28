@@ -61,6 +61,18 @@ extension E2ERunner {
         check("and back", await eventually(5) { docker.container(web)?.state == .running })
         let exec = await call("docker_exec", ["container": "ot-shop-web-1", "command": "cat /etc/hostname"])
         check("docker_exec says the exit code", exec.text.hasPrefix("exit 127"), exec.text)
+        // One service, rebuilt: in a tab, recorded here.
+        let runInTab = DockerMCP.runInTab
+        var typed: [String] = []
+        DockerMCP.runInTab = { command, _ in typed.append(command) }
+        let rebuilt = await call("docker_compose", ["project": "ot-shop", "action": "rebuild", "service": "web"])
+        check(
+            "docker_compose rebuilds one service, in a tab", !rebuilt.isError && typed.last?.hasSuffix(" up -d --build web") == true,
+            "\(rebuilt.text) \(typed)")
+        check("asked about with the service", asked.contains("compose rebuild") && asked.contains("(web)"), asked)
+        let unknown = await call("docker_compose", ["project": "ot-shop", "action": "restart", "service": "nope"])
+        check("and names the services there are", unknown.isError && unknown.text.contains("db, web"), unknown.text)
+        DockerMCP.runInTab = runInTab
 
         Settings.shared.set("docker.agentWrites", .bool(false))
         let without = await listed()
@@ -278,6 +290,244 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// A compose project's services and what its files say, as a stub
+    /// `docker` answers `compose config` the way Compose v5.6 does: what
+    /// Watch watches and the profiles, read once a change of the files (the
+    /// palette restocked when they come, View ▸ Compose Watch, the panel's
+    /// menu); a service rebuilt, run once, pulled (recorded, never typed),
+    /// restarted through the engine, its logs narrowed to it by the picker.
+    private func composeServicesChecks(_ fake: FakeDockerEngine, web: String) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        guard let project = docker.projects.first(where: { $0.name == "ot-shop" }), let folder = project.workingDir,
+            let db = docker.containers.first(where: { $0.name == "ot-shop-db-1" })?.Id
+        else { return check("a compose project to act on", false, "\(docker.projects.map(\.name))") }
+        let bin = scratch.appendingPathComponent("services-stub-bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("docker")
+        let watched = #""web":{"build":{"context":"\#(folder)","dockerfile":"Dockerfile"},"develop":{"watch":[{"action":"sync","path":"\#(folder)/src","target":"/app/src"}]}}"#
+        let script = #"""
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            echo "$*" >> "$dir/calls"
+            case "$*" in
+              *" config --format json"*)
+                if [ -f "$dir/nowatch" ]; then echo '{"name":"ot-shop","services":{"db":{"image":"postgres:16"},"web":{"image":"nginx:1.27"}}}'
+                else echo '{"name":"ot-shop","services":{"db":{"image":"postgres:16"},\#(watched)}}'; fi ;;
+              *" config --profiles"*) printf 'debug\njobs\n' ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """#
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        defer { DockerCLI.override = nil }
+        /// What the stub was asked about this project.
+        func calls() -> [String] {
+            let calls = (try? String(contentsOf: bin.appendingPathComponent("calls"), encoding: .utf8)) ?? ""
+            return calls.split(separator: "\n").map(String.init).filter { $0.hasPrefix("compose -p ot-shop ") }
+        }
+        var commands: [(command: String, folder: URL?)] = []
+        let actions = page.actions
+        page.actions?.run = { commands.append(($0, $1)) }
+        defer { page.actions = actions }
+        func offersWatch() -> Bool { app.palette.results.contains { $0.id == "a.composeWatch" } }
+
+        // The window's Compose Watch, the page hidden: the palette asks
+        // Compose, and is restocked when it answers — not shown again.
+        app.hideOverlay(focus: false)
+        check("the selected tab's stack is the project", app.dockerPanelStack().map(\.name) == ["ot-shop"], "\(app.dockerPanelStack().map(\.name))")
+        // Saved again: whatever was read before the stub answered is stale.
+        let file = URL(fileURLWithPath: folder).appendingPathComponent("compose.yaml")
+        try? "services:\n  web:\n    build: .\n    develop:\n      watch:\n        - action: sync\n          path: ./src\n          target: /app/src\n  db:\n    image: postgres:16\n"
+            .write(to: file, atomically: true, encoding: .utf8)
+        app.showPalette(nil)
+        let notYet = !offersWatch()
+        let restocked = await eventually(5) { offersWatch() }
+        check(
+            "the palette offers Compose Watch once Compose answers, restocked", notYet && restocked,
+            "\(notYet) \(app.palette.results.map(\.title)) \(String(describing: page.composeFacts["ot-shop"]))")
+        check("for the stack's project", app.palette.results.first { $0.id == "a.composeWatch" }?.subtitle == "ot-shop")
+        app.hidePalette()
+        app.composeWatch(nil)
+        check(
+            "View ▸ Compose Watch is compose watch in a tab, in the project's folder",
+            await eventually(5) { commands.last?.command.hasSuffix("\(folder)/compose.yaml watch") == true } && commands.last?.folder?.path == folder,
+            "\(commands.map(\.command))")
+        app.showOverlay(.docker)
+        let tag = DockerPageModel.projectTag("ot-shop")
+        page.showDetail = true
+        page.selection = [tag]
+        page.projectTab = .services
+        func titles(_ verbs: [DockerVerb], _ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+
+        _ = page.verbs(for: project)
+        check(
+            "a project's files say what Compose watches", await eventually(5) { page.composeFacts["ot-shop"]?.watched == ["web"] },
+            "\(String(describing: page.composeFacts["ot-shop"])) \(calls())")
+        check("and its profiles, as config --profiles lists them", page.composeFacts["ot-shop"]?.profiles == ["debug", "jobs"])
+        for _ in 0..<3 { _ = page.verbs(for: project) }
+        await pause(0.3)
+        check("read once, not at every draw", calls().count == 2, "\(calls())")
+        let verbs = page.verbs(for: project)
+        check("Watch is offered for develop.watch, as a button", verbs.first { $0.title == "Watch in a Tab" }?.place == .button, "\(verbs.map(\.title))")
+        await capture("services")
+        var count = commands.count
+        verbs.first { $0.title == "Watch in a Tab" }?.perform()
+        check(
+            "Watch is compose watch in a tab, in the project's folder",
+            await eventually(5) { commands.count == count + 1 }
+                && commands.last.map { $0.command.contains("docker compose -p ot-shop -f ") && $0.command.hasSuffix("\(folder)/compose.yaml watch") } == true
+                && commands.last?.folder?.path == folder, "\(commands.last.map { "\($0)" } ?? "nothing")")
+        count = commands.count
+        page.press("w")
+        check(
+            "w watches the selected project", await eventually(5) { commands.count == count + 1 } && commands.last?.command.hasSuffix(" watch") == true,
+            "\(commands.map(\.command))")
+
+        verbs.first { $0.title == "Up With Profiles…" }?.perform()
+        check(
+            "Up With Profiles… lists the profiles",
+            await eventually(5) { page.profileChoice?.profiles == ["debug", "jobs"] && self.window.attachedSheet != nil },
+            "\(String(describing: page.profileChoice))")
+        await capture("profiles")
+        page.profileChoice?.chosen = ["jobs"]
+        page.upWithProfiles()
+        let closed = await eventually(3) { self.window.attachedSheet == nil }
+        check(
+            "and ups with the ones ticked",
+            closed && commands.last.map { $0.command.hasSuffix(" --profile jobs up -d") && $0.command.contains(" -f ") } == true,
+            commands.last?.command ?? "nothing")
+
+        // The rail's panel menu: what the files say there too.
+        let panelVerbs = app.dockerPanel.projectVerbs(project)
+        check(
+            "the panel's project menu has Watch, Rebuild and Up, and Up With Profiles…",
+            ["Watch in a Tab", "Rebuild and Up in a Tab", "Up With Profiles…"].allSatisfy { title in panelVerbs.contains { $0.title == title } },
+            "\(panelVerbs.map(\.title))")
+        count = commands.count
+        panelVerbs.first { $0.title == "Watch in a Tab" }?.perform()
+        check(
+            "its Watch is compose watch in a tab", await eventually(5) { commands.count == count + 1 } && commands.last?.command.hasSuffix(" watch") == true,
+            "\(commands.map(\.command))")
+        panelVerbs.first { $0.title == "Rebuild and Up in a Tab" }?.perform()
+        check("its Rebuild and Up is up --build of all of it", commands.last?.command.hasSuffix("/compose.yaml up -d --build") == true, commands.last?.command ?? "")
+
+        // A service's verbs.
+        guard let fresh = docker.projects.first(where: { $0.name == "ot-shop" }), let service = fresh.services.first(where: { $0.name == "web" }) else {
+            return check("its web service", false)
+        }
+        let serviceVerbs = page.verbs(for: service, in: fresh)
+        check(
+            "a service's verbs as buttons, the rest behind More",
+            titles(serviceVerbs, .button) == ["Rebuild and Start in a Tab", "Restart", "Show Its Logs"]
+                && titles(serviceVerbs, .more) == ["Follow Its Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"],
+            "\(serviceVerbs.map(\.title))")
+        serviceVerbs.first { $0.title == "Rebuild and Start in a Tab" }?.perform()
+        check(
+            "Rebuild is up --build of that service alone",
+            commands.last.map { $0.command.hasSuffix(" up -d --build web") && $0.command.contains(" -f ") } == true, commands.last?.command ?? "")
+        count = commands.count
+        page.selection = [web]
+        page.press("b")
+        check(
+            "b rebuilds the selected container's service", commands.count == count + 1 && commands.last?.command.hasSuffix(" up -d --build web") == true,
+            "\(commands.map(\.command))")
+        page.selection = [tag]
+        serviceVerbs.first { $0.title == "Run a One-Off in a Tab" }?.perform()
+        check("Run a One-Off is compose run --rm", commands.last?.command.hasSuffix(" run --rm web") == true, commands.last?.command ?? "")
+        serviceVerbs.first { $0.title == "Pull in a Tab" }?.perform()
+        check("Pull pulls that service's image", commands.last?.command.hasSuffix(" pull web") == true, commands.last?.command ?? "")
+        let before = fake.requests.count
+        serviceVerbs.first { $0.title == "Restart" }?.perform()
+        let restarted = await eventually(5) { fake.requests.dropFirst(before).contains { $0.contains("/containers/\(web)/restart") } }
+        check(
+            "Restart restarts that service's containers, not the rest",
+            restarted && fake.requests.dropFirst(before).filter { $0.contains("/restart") }.allSatisfy { $0.contains(web) },
+            "\(fake.requests.dropFirst(before).filter { $0.contains("/restart") })")
+        _ = await eventually(5) { docker.container(web)?.state == .running }
+
+        // Its logs: the project's, narrowed to it.
+        func logText() -> String {
+            (Self.find(NSTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" })?.string ?? ""
+        }
+        fake.log(web, "web-line-e2e")
+        fake.log(db, "db-line-e2e")
+        serviceVerbs.first { $0.title == "Show Its Logs" }?.perform()
+        check("Show Its Logs opens the project's logs, on that service", page.projectTab == .logs && page.projectSession?.service == "web")
+        // Both lines in the feed first: db's merely late would pass for filtered.
+        func fed() -> [String] { page.projectSession?.feed.lines.map(\.message) ?? [] }
+        let both = await eventually(5) { fed().contains("web-line-e2e") && fed().contains("db-line-e2e") }
+        await pause(0.3)
+        check("filtered to it", both && logText().contains("web-line-e2e") && !logText().contains("db-line-e2e"), "\(fed()) | \(logText().suffix(300))")
+        check(
+            "and the tab it follows in is that service's",
+            page.projectSession?.feed.terminalCommand?.hasSuffix(" logs -f --tail 100 web") == true, page.projectSession?.feed.terminalCommand ?? "nil")
+        // The picker over the log, as a click picks in it.
+        func picker() -> NSPopUpButton? { Self.find(NSPopUpButton.self, in: app.dockerView) { $0.itemTitles.contains("All services") } }
+        func pick(_ title: String) {
+            guard let popup = picker(), let menu = popup.menu else { return }
+            let index = popup.indexOfItem(withTitle: title)
+            if index >= 0 { menu.performActionForItem(at: index) }
+        }
+        func wiring() -> String {
+            guard let popup = picker() else { return "no picker" }
+            return "button \(popup.action.map(NSStringFromSelector) ?? "-"), items \(popup.itemArray.map { $0.action.map(NSStringFromSelector) ?? "-" })"
+        }
+        check(
+            "the log's picker lists the services, on the one shown", picker()?.itemTitles == ["All services", "db", "web"] && picker()?.titleOfSelectedItem == "web",
+            "\(picker()?.itemTitles ?? []) \(picker()?.titleOfSelectedItem ?? "no picker")")
+        pick("db")
+        check(
+            "db picked there shows db's lines alone",
+            await eventually(5) { page.projectSession?.service == "db" && logText().contains("db-line-e2e") && !logText().contains("web-line-e2e") },
+            "\(page.projectSession?.service ?? "all") \(wiring()) | \(logText().suffix(300))")
+        check(
+            "and follows db in a tab", page.projectSession?.feed.terminalCommand?.hasSuffix(" logs -f --tail 100 db") == true,
+            page.projectSession?.feed.terminalCommand ?? "nil")
+        pick("All services")
+        check(
+            "All services merges them again",
+            await eventually(5) { page.projectSession?.service == nil && logText().contains("web-line-e2e") && logText().contains("db-line-e2e") },
+            "\(page.projectSession?.service ?? "all") | \(logText().suffix(300))")
+        // A service with nothing in the feed says so, not a blank pane.
+        page.projectSession?.feed.clear()
+        fake.log(web, "web-after-clear")
+        _ = await eventually(5) { fed() == ["web-after-clear"] }
+        pick("db")
+        check(
+            "a service with nothing to show says so, in place of the text",
+            await eventually(5) {
+                page.projectSession?.service == "db" && Self.find(NSTextView.self, in: self.app.dockerView) { $0.accessibilityIdentifier() == "docker.text" } == nil
+            }, "\(fed()) | \(logText().suffix(100))")
+        pick("All services")
+        check("all of them shown again", await eventually(5) { logText().contains("web-after-clear") }, logText().suffix(100).description)
+
+        // The files changed: read again; nothing to watch, Watch goes.
+        FileManager.default.createFile(atPath: bin.appendingPathComponent("nowatch").path, contents: Data())
+        try? "services:\n  web:\n    image: nginx:1.27\n  db:\n    image: postgres:16\n".write(to: file, atomically: true, encoding: .utf8)
+        _ = page.verbs(for: fresh)
+        check(
+            "a change to its files is read again, and Watch goes without develop.watch",
+            await eventually(5) { page.composeFacts["ot-shop"]?.watched == [] } && calls().count == 4
+                && !page.verbs(for: fresh).contains { $0.title == "Watch in a Tab" }, "\(calls())")
+        page.press("w")
+        check("w says why it can't watch", await eventually(5) { page.error?.contains("develop.watch") == true }, page.error ?? "nothing")
+        page.error = nil
+        check("the panel's Watch goes with it", !app.dockerPanel.projectVerbs(fresh).contains { $0.title == "Watch in a Tab" })
+        app.hideOverlay(focus: false)
+        app.showPalette(nil)
+        check("and the palette's", !offersWatch(), "\(app.palette.results.map(\.title))")
+        app.hidePalette()
+        count = commands.count
+        app.composeWatch(nil)
+        await pause(0.5)
+        check("View ▸ Compose Watch types nothing then", commands.count == count, "\(commands.map(\.command).suffix(2))")
+        app.showOverlay(.docker)
+        page.projectTab = .logs
+        page.press("1")
+    }
+
     /// Model Runner's models: an engine with none says what installs one;
     /// a runner container's are listed, chatted with, removed — its API at
     /// the container's port, never `docker model` (which installs one).
@@ -377,10 +627,11 @@ extension E2ERunner {
             try? text.write(to: plan.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
         /// What the stub answers: Compose's JSON, the secrets in it as Compose gives them.
-        func config(worker: Bool = false) -> String {
+        func config(worker: Bool = false, watch: Bool = false) -> String {
+            let develop = watch ? #""develop":{"watch":[{"action":"sync","path":"\#(real)/src","target":"/app"}]},"# : ""
             let services =
                 [
-                    #""api":{"build":{"context":"\#(real)","dockerfile":"Dockerfile"},"environment":{"API_TOKEN":"s3cr3t-plan"},"#
+                    #""api":{"build":{"context":"\#(real)","dockerfile":"Dockerfile"},"# + develop + #""environment":{"API_TOKEN":"s3cr3t-plan"},"#
                         + #""ports":[{"mode":"ingress","target":8080,"published":"58081","protocol":"tcp"}]}"#,
                     #""cache":{"image":"redis:7"}"#,
                     #""db":{"image":"postgres:16","environment":{"POSTGRES_PASSWORD":"hunter2"},"#
@@ -615,6 +866,28 @@ extension E2ERunner {
             confirmed.last?.contains("ot-plan") == true && commands.count == ran + 1, "\(confirmed)")
         try? await docker.remove(other, force: true)
         _ = await eventually(5) { docker.container(other) == nil }
+
+        // A service of the plan with develop.watch: Compose Watch with no
+        // stack is the plan's, as Compose Up is.
+        write(config(watch: true), ".ot-config.json")
+        write("services:\n  api:\n    build: .\n    develop:\n      watch:\n        - action: sync\n          path: ./src\n          target: /app\n", "compose.yaml")
+        check(
+            "a plan with develop.watch offers Watch",
+            await eventually(5) { panel.currentPlan?.services.contains { $0.spec?.watched == true } == true }
+                && panel.currentPlan.map { page.verbs(for: $0).contains { $0.title == "Watch in a Tab" } } == true,
+            "\(panel.currentPlan?.services.map(\.name) ?? [])")
+        app.showPalette(nil)
+        check(
+            "the palette's Compose Watch is the plan's", app.palette.results.first { $0.id == "a.composeWatch" }?.subtitle == "ot-plan",
+            "\(app.palette.results.map(\.title))")
+        app.hidePalette()
+        let watching = commands.count
+        app.composeWatch(nil)
+        check(
+            "and View ▸ Compose Watch is compose watch in the checkout, the name left to the files",
+            await eventually(5) { commands.count == watching + 1 } && commands.last?.command == "DOCKER_HOST=unix://\(socket) docker compose watch"
+                && commands.last?.folder.map(FileTreeModel.realPath) == real, "\(commands.last.map { "\($0)" } ?? "nothing")")
+        write(config(), ".ot-config.json")
 
         // Nothing read while nothing shows Docker; shown again, read again.
         app.hideOverlay()
@@ -1110,6 +1383,7 @@ extension E2ERunner {
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await composeServicesChecks(fake, web: web)
         await modelsChecks(fake)
         await mcpToolkitChecks()
         await agentChecks(fake, web: web)

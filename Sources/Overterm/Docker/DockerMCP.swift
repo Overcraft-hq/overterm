@@ -87,16 +87,15 @@ enum DockerMCP {
             guard let wanted = string("project"), let project = docker.projects.first(where: { $0.name == wanted }) else {
                 throw BrowserMCP.ToolError(message: "“project” is one of: \(docker.projects.map(\.name).joined(separator: ", ")).")
             }
-            guard let action = string("action"), ["up", "down", "restart", "stop", "start"].contains(action) else {
-                throw BrowserMCP.ToolError(message: "“action” is one of up, down, restart, stop, start.")
-            }
-            let command = DockerCommands.compose(project, action == "up" ? "up -d" : action, endpoint: docker.endpoint)
-            guard await allow("An agent wants to run compose \(action) on “\(project.name)”", command) else {
+            let action = string("action") ?? ""
+            let service = string("service")
+            let command = try composeCommand(project, action: action, service: service, endpoint: docker.endpoint)
+            guard await allow("An agent wants to run compose \(action) on “\(project.name)”" + (service.map { " (\($0))" } ?? ""), command) else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
-            let lasting = project.containers.filter { !$0.isOneOff }
+            let lasting = project.containers.filter { !$0.isOneOff && (service == nil || $0.composeService == service) }
             switch action {
-            case "up", "down":
+            case "up", "rebuild", "down":
                 guard let runInTab else { throw BrowserMCP.ToolError(message: "No window to run it in.") }
                 runInTab(command, project.workingDir.map { URL(fileURLWithPath: $0) })
                 return BrowserMCP.textResult("Running in a terminal tab the user sees: \(command)")
@@ -104,7 +103,7 @@ enum DockerMCP {
                 for container in lasting {
                     if let verb = DockerEngine.ContainerAction(rawValue: action) { try await docker.perform(verb, on: container.Id) }
                 }
-                return BrowserMCP.textResult("\(project.name): \(action) done.")
+                return BrowserMCP.textResult("\(project.name)\(service.map { "/\($0)" } ?? ""): \(action) done.")
             }
         case "docker_exec":
             let target = try container()
@@ -126,6 +125,24 @@ enum DockerMCP {
         default:
             throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
+    }
+
+    /// What `docker_compose` runs: up and rebuild (`up -d --build`) in a
+    /// tab, the rest named for the tab or the question. `service` narrows
+    /// it to one of the project's; down takes the whole project. Pure.
+    static func composeCommand(_ project: ComposeProject, action: String, service: String?, endpoint: DockerEndpoint?) throws -> String {
+        let actions = ["up", "rebuild", "down", "restart", "stop", "start"]
+        guard actions.contains(action) else { throw BrowserMCP.ToolError(message: "“action” is one of \(actions.joined(separator: ", ")).") }
+        if let service {
+            guard action != "down" else {
+                throw BrowserMCP.ToolError(message: "“service” goes with up, rebuild, restart, stop and start; down takes the whole project.")
+            }
+            guard project.services.contains(where: { $0.name == service }) else {
+                throw BrowserMCP.ToolError(message: "“service” is one of: \(project.services.map(\.name).joined(separator: ", ")).")
+            }
+        }
+        let verb = action == "up" ? "up -d" : action == "rebuild" ? "up -d --build" : action
+        return DockerCommands.compose(project, verb, services: service.map { [$0] } ?? [], endpoint: endpoint)
     }
 
     /// The engine, connected — started if nothing had started it yet.
@@ -279,10 +296,12 @@ enum DockerMCP {
                         "action": ["type": "string", "enum": ["start", "stop", "restart", "pause", "unpause", "remove"]],
                     ], required: ["container", "action"]),
                 tool(
-                    "docker_compose", "Compose up, down, restart, stop or start a project. Up and down run in a terminal tab the user sees. The user is asked first.",
+                    "docker_compose",
+                    "Compose up, rebuild (up --build), down, restart, stop or start a project, or one of its services. Up, rebuild and down run in a terminal tab the user sees. The user is asked first.",
                     [
                         "project": ["type": "string", "description": "Its name, from docker_projects."],
-                        "action": ["type": "string", "enum": ["up", "down", "restart", "stop", "start"]],
+                        "action": ["type": "string", "enum": ["up", "rebuild", "down", "restart", "stop", "start"]],
+                        "service": ["type": "string", "description": "Only this service (not with down)."],
                     ], required: ["project", "action"]),
                 tool(
                     "docker_exec", "Run a command in a running container (no TTY, no input) and get its output and exit code. The user is asked first.",

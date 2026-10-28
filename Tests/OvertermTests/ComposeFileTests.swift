@@ -574,3 +574,262 @@ final class ComposeFileModelTests: XCTestCase {
         try await docker.remove(elsewhere, force: true)
     }
 }
+
+/// What a project's files say that its labels don't — what Compose
+/// watches, its profiles — asked of a stub `docker` as Compose v5.6
+/// answers; and the page asking once a change of its files.
+final class ComposeFactsTests: XCTestCase {
+    /// What Compose v5.6.0 printed for `config --format json`, trimmed.
+    static let config = """
+        {"name":"shop","services":{"db":{"image":"postgres:16","environment":{"POSTGRES_PASSWORD":"hunter2"}},\
+        "web":{"build":{"context":"/w/shop","dockerfile":"Dockerfile"},"develop":{"watch":[\
+        {"path":"/w/shop/src","action":"sync","target":"/app/src"},{"path":"/w/shop/package.json","action":"rebuild"}]}},\
+        "api":{"develop":{}},"job":{"develop":{"watch":[]}}}}
+        """
+
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("ot-facts-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        DockerCLI.override = nil
+        try FileManager.default.removeItem(at: root)
+    }
+
+    /// A project as its containers' labels say it, its files in `folder`.
+    private func project(_ name: String = "shop", in folder: String, files: [String] = ["compose.yaml"]) -> ComposeProject {
+        let labels = [
+            "com.docker.compose.project": name, "com.docker.compose.service": "web", "com.docker.compose.container-number": "1",
+            "com.docker.compose.oneoff": "False", "com.docker.compose.project.working_dir": folder,
+            "com.docker.compose.project.config_files": files.map { folder + "/" + $0 }.joined(separator: ","),
+        ]
+        let web = ContainerSummary(Id: "\(name)-web-1-id", Names: ["/\(name)-web-1"], Image: "x", Created: 1, Labels: labels, State: "running", Status: "Up")
+        return ComposeProjects.group([web]).projects[0]
+    }
+
+    /// A stub `docker` in the test's folder: `script` is its case's arms.
+    private func stub(_ script: String) throws -> URL {
+        let tool = root.appendingPathComponent("bin-\(UUID().uuidString.prefix(4))/docker")
+        try FileManager.default.createDirectory(at: tool.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\necho \"$*\" >> \"\(root.path)/calls\"\ncase \"$*\" in\n\(script)\n*) echo \"unexpected: $*\" >&2; exit 1 ;;\nesac\n"
+            .write(to: tool, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        return tool
+    }
+
+    private var calls: [String] {
+        ((try? String(contentsOf: root.appendingPathComponent("calls"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+    }
+
+    private var answering: String {
+        try! Self.config.write(to: root.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+        return """
+            *" config --format json"*) cat "\(root.path)/config.json" ;;
+            *" config --profiles"*) printf 'jobs\\ndebug\\n' ;;
+            """
+    }
+
+    func testWhatComposeWatches() {
+        XCTAssertEqual(ComposeFacts.watched(fromConfig: Self.config), ["web"], "a develop with no watch rule watches nothing")
+        XCTAssertNil(ComposeFacts.watched(fromConfig: "not json"))
+        XCTAssertEqual(ComposeFacts.watched(fromConfig: #"{"name":"x","services":{}}"#), [])
+        let parsed = try? ComposeConfig.parse(Self.config)
+        XCTAssertFalse(String(describing: parsed).contains("hunter2"), "only names are kept")
+    }
+
+    func testProfilesOneALine() {
+        XCTAssertEqual(ComposeFacts.profiles(fromList: "jobs\ndebug\n\n tools \njobs\n"), ["debug", "jobs", "tools"])
+        XCTAssertEqual(ComposeFacts.profiles(fromList: ""), [])
+    }
+
+    func testTheArgumentsNameTheFiles() {
+        let shop = project(in: "/w/shop", files: ["compose.yaml", "compose.override.yaml"])
+        XCTAssertEqual(ComposeFacts.arguments(shop), ["compose", "-p", "shop", "-f", "/w/shop/compose.yaml", "-f", "/w/shop/compose.override.yaml"])
+    }
+
+    func testTheStampFollowsTheFilesAndEnv() throws {
+        let folder = root.path
+        let file = root.appendingPathComponent("compose.yaml")
+        try "services:\n  web:\n    image: nginx\n".write(to: file, atomically: true, encoding: .utf8)
+        let shop = project(in: folder)
+        let first = try XCTUnwrap(ComposeFacts.stamp(shop))
+        XCTAssertEqual(ComposeFacts.stamp(shop), first, "nothing changed, the same")
+        try "COMPOSE_PROFILES=jobs\n".write(to: root.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        let withEnv = try XCTUnwrap(ComposeFacts.stamp(shop))
+        XCTAssertNotEqual(withEnv, first, ".env counts")
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(3600)], ofItemAtPath: file.path)
+        XCTAssertNotEqual(ComposeFacts.stamp(shop), withEnv, "a file saved again counts")
+        XCTAssertNil(ComposeFacts.stamp(project(in: "/nowhere/shop")), "none of its files on this Mac: Compose isn't asked")
+        var planned = shop
+        planned.planned = true
+        XCTAssertNil(ComposeFacts.stamp(planned), "a project before it runs is its plan's")
+    }
+
+    /// Compose names a linked file by the link; it is the target that is
+    /// edited, so the target is what is stamped.
+    func testALinkedFileIsStampedByItsTarget() throws {
+        let folder = root.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("docker"), withIntermediateDirectories: true)
+        let target = folder.appendingPathComponent("docker/compose.dev.yaml")
+        let env = folder.appendingPathComponent(".env.local")
+        try "services:\n  web:\n    image: nginx\n".write(to: target, atomically: true, encoding: .utf8)
+        try "COMPOSE_PROFILES=jobs\n".write(to: env, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("compose.yaml").path, withDestinationPath: "docker/compose.dev.yaml")
+        try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent(".env").path, withDestinationPath: ".env.local")
+        let shop = project(in: folder.path)
+        let first = try XCTUnwrap(ComposeFacts.stamp(shop))
+        XCTAssertEqual(Set(first.files.keys), [folder.path + "/compose.yaml", folder.path + "/.env"], "kept by the names Compose gave")
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(3600)], ofItemAtPath: target.path)
+        let edited = try XCTUnwrap(ComposeFacts.stamp(shop))
+        XCTAssertNotEqual(edited, first, "the linked compose file edited")
+        try "COMPOSE_PROFILES=jobs,debug\n".write(to: env, atomically: true, encoding: .utf8)
+        XCTAssertNotEqual(ComposeFacts.stamp(shop), edited, "the linked .env edited")
+    }
+
+    func testReadAsksComposeForBoth() async throws {
+        let shop = project(in: "/w/shop")
+        let stamp = ComposeFacts.Stamp(files: [:])
+        let facts = await ComposeFacts.read(shop, stamp: stamp, cli: DockerCLI(executable: try stub(answering), endpoint: nil))
+        XCTAssertEqual(facts.watched, ["web"])
+        XCTAssertEqual(facts.profiles, ["debug", "jobs"])
+        XCTAssertNil(facts.problem)
+        XCTAssertEqual(
+            Set(calls),
+            [
+                "compose -p shop -f /w/shop/compose.yaml config --format json --no-env-resolution",
+                "compose -p shop -f /w/shop/compose.yaml config --profiles --no-env-resolution",
+            ], "env files' contents left out")
+
+        let broken = try stub(#"*) echo 'yaml: line 3: did not find expected node content' >&2; exit 1 ;;"#)
+        let failed = await ComposeFacts.read(shop, stamp: stamp, cli: DockerCLI(executable: broken, endpoint: nil))
+        XCTAssertEqual(failed.problem, "yaml: line 3: did not find expected node content", "Compose's own words")
+        XCTAssertEqual(failed.watched, [])
+        XCTAssertEqual(failed.profiles, [])
+        XCTAssertNil(failed.retry, "the files' problem stands until they change")
+    }
+
+    /// No answer in time, or a `docker` that doesn't start, isn't the
+    /// files' problem: it is asked again.
+    func testAProblemThatIsntTheFilesPasses() async throws {
+        let shop = project(in: "/w/shop")
+        let stamp = ComposeFacts.Stamp(files: [:])
+        let slow = try stub(#"*) exec sleep 5 ;;"#)
+        let started = Date()
+        let late = await ComposeFacts.read(shop, stamp: stamp, cli: DockerCLI(executable: slow, endpoint: nil), timeout: 0.3)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 4, "not waited out")
+        XCTAssertEqual(late.problem, "docker compose config didn't answer in time.")
+        XCTAssertNotNil(late.retry)
+        let missing = root.appendingPathComponent("nowhere/docker")
+        let gone = await ComposeFacts.read(shop, stamp: stamp, cli: DockerCLI(executable: missing, endpoint: nil))
+        XCTAssertNotNil(gone.problem)
+        XCTAssertNotNil(gone.retry, "env's 127: no docker there")
+        XCTAssertFalse(ComposeFacts.isTheFiles(GitError(arguments: [], status: -1, stderr: "")))
+        XCTAssertFalse(ComposeFacts.isTheFiles(CancellationError()))
+        XCTAssertTrue(ComposeFacts.isTheFiles(GitError(arguments: [], status: 15, stderr: "")))
+    }
+
+    /// The page asks when a project's verbs are drawn — once, not at every
+    /// draw — and again when its files change; Watch and Up With
+    /// Profiles… are offered from the answer, and do what they say.
+    @MainActor
+    func testThePageAsksOnceAChangeAndOffersWhatTheFilesSay() async throws {
+        let file = root.appendingPathComponent("compose.yaml")
+        try "services:\n  web:\n    build: .\n".write(to: file, atomically: true, encoding: .utf8)
+        DockerCLI.override = try stub(answering)
+        let shop = project(in: root.path)
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        var commands: [(String, URL?)] = []
+        page.actions = DockerActions(run: { commands.append(($0, $1)) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        func titles() -> [String] { page.verbs(for: shop).map(\.title) }
+        func until(_ what: String, _ condition: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while !condition(), Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertTrue(condition(), what)
+        }
+
+        XCTAssertFalse(titles().contains("Watch in a Tab"), "not known yet: a read starts, nothing is published from a body")
+        try await until("read") { page.composeFacts["shop"] != nil }
+        XCTAssertEqual(page.composeFacts["shop"]?.watched, ["web"])
+        _ = titles()
+        _ = titles()
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(calls.count, 2, "read once, not at every draw")
+        let verbs = page.verbs(for: shop)
+        XCTAssertEqual(verbs.first { $0.title == "Watch in a Tab" }?.place, .button)
+        XCTAssertEqual(verbs.first { $0.title == "Watch in a Tab" }?.key, "w")
+        XCTAssertTrue(verbs.contains { $0.title == "Up With Profiles…" })
+
+        let why = await page.watch(shop)
+        XCTAssertNil(why)
+        XCTAssertEqual(commands.last?.0, "docker compose -p shop -f \(root.path)/compose.yaml watch")
+        XCTAssertEqual(commands.last?.1?.path, root.path, "in the project's folder")
+
+        page.chooseProfiles(shop, ["debug", "jobs"])
+        XCTAssertEqual(page.profileChoice?.chosen, [], "nothing ticked the first time")
+        page.upWithProfiles()
+        XCTAssertEqual(commands.count, 1, "nothing ticked, nothing to up")
+        page.profileChoice?.chosen = ["jobs"]
+        XCTAssertEqual(page.profileChoice?.command(endpoint: nil), "docker compose -p shop -f \(root.path)/compose.yaml --profile jobs up -d")
+        page.upWithProfiles()
+        XCTAssertNil(page.profileChoice)
+        XCTAssertEqual(commands.last?.0, "docker compose -p shop -f \(root.path)/compose.yaml --profile jobs up -d")
+        page.chooseProfiles(shop, ["debug", "jobs"])
+        XCTAssertEqual(page.profileChoice?.chosen, ["jobs"], "ticked as last time")
+        page.profileChoice = nil
+
+        // The files changed: asked again; none watched, Watch says why.
+        try #"{"name":"shop","services":{"web":{"image":"nginx"}}}"#.write(to: root.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: file.path)
+        _ = titles()
+        try await until("read again") { page.composeFacts["shop"]?.watched == [] }
+        XCTAssertEqual(calls.count, 4)
+        XCTAssertFalse(titles().contains("Watch in a Tab"))
+        let refused = await page.watch(shop)
+        XCTAssertEqual(refused, "No service of shop has develop.watch: Compose watches only those.")
+        XCTAssertEqual(commands.count, 2, "nothing typed")
+
+        // Compose couldn't read them: kept, said, asked again once they change.
+        DockerCLI.override = try stub(#"*) echo 'yaml: line 3: did not find expected node content' >&2; exit 1 ;;"#)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(120)], ofItemAtPath: file.path)
+        let facts = await page.loadComposeFacts(shop)
+        XCTAssertEqual(facts?.problem, "yaml: line 3: did not find expected node content")
+        let unreadable = await page.watch(shop)
+        XCTAssertEqual(unreadable, "Compose couldn't read shop's files: yaml: line 3: did not find expected node content")
+    }
+
+    /// A problem that isn't the files' is kept a while, not for the
+    /// session: a view asks again once it is due, a key or a menu at once.
+    @MainActor
+    func testAProblemThatIsntTheFilesIsAskedAgain() async throws {
+        try "services:\n  web:\n    build: .\n".write(to: root.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        DockerCLI.override = root.appendingPathComponent("nowhere/docker")
+        let shop = project(in: root.path)
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        page.actions = DockerActions(run: { _, _ in }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        let failed = await page.loadComposeFacts(shop)
+        XCTAssertNotNil(failed?.problem)
+        XCTAssertNotNil(failed?.retry)
+        _ = page.verbs(for: shop)
+        XCTAssertNil(page.composeFactReads["shop"], "not due yet: a view's draw doesn't ask again")
+
+        DockerCLI.override = try stub(answering)
+        let asked = await page.loadComposeFacts(shop)
+        XCTAssertEqual(asked?.watched, ["web"], "a key or a menu item asks at once")
+        XCTAssertNil(asked?.retry)
+        XCTAssertNil(page.composeFacts["shop"]?.problem)
+
+        // Due again: the next draw asks.
+        page.composeFacts["shop"] = ComposeFacts(stamp: try XCTUnwrap(ComposeFacts.stamp(shop)), problem: "late", retry: .distantPast)
+        let before = calls.count
+        XCTAssertFalse(page.verbs(for: shop).contains { $0.title == "Watch in a Tab" })
+        XCTAssertNotNil(page.composeFactReads["shop"], "due: a draw asks again")
+        let deadline = Date().addingTimeInterval(5)
+        while page.composeFacts["shop"]?.problem != nil, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(page.composeFacts["shop"]?.watched, ["web"])
+        XCTAssertEqual(calls.count, before + 2)
+        XCTAssertTrue(page.verbs(for: shop).contains { $0.title == "Watch in a Tab" })
+    }
+}
