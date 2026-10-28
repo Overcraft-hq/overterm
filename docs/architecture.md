@@ -1194,7 +1194,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   context and `/info`, how to start, stop and restart it, and the rest its
   own CLI does for it (`extras`: Docker Desktop's update check, update,
   Kubernetes status, diagnose, logs; OrbStack's and Colima's status) —
-  the engine menu runs them in a terminal tab.
+  the engine menu runs them in a terminal tab. Rancher Desktop is
+  `rdctl`'s: `start` (which opens the app), `shutdown`, and its app's
+  `/v1/backend_state` for whether the VM is up (`DISABLED` is up, with
+  Kubernetes off). Podman answers the same API (podman-compose writes
+  Compose's labels too, but never `oneoff`).
 - **A remote engine** (`ssh://user@host`, a context's or `DOCKER_HOST`;
   `DockerSSH`): the system's ssh forwards a socket here to the engine's on
   the host (`-L local.sock:/var/run/docker.sock`, the local end the user's

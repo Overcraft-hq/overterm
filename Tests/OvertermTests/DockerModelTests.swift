@@ -388,4 +388,21 @@ final class DockerCLITests: XCTestCase {
         XCTAssertNil(DockerRuntime.engine.statusCommand())
         XCTAssertEqual(DockerRuntime.colima.statusCommand(context: "colima-work")?.arguments, ["status", "--json", "--profile", "work"])
     }
+
+    /// Rancher Desktop through rdctl: its app's API says the VM's state.
+    func testRancherDesktopThroughRdctl() {
+        let rancher = DockerRuntime.rancherDesktop
+        XCTAssertEqual(rancher.command(.start), "rdctl start")
+        XCTAssertEqual(rancher.command(.stop), "rdctl shutdown")
+        XCTAssertEqual(rancher.command(.restart), "rdctl shutdown && rdctl start")
+        XCTAssertEqual(rancher.statusCommand()?.tool, "rdctl")
+        XCTAssertEqual(rancher.statusCommand()?.arguments, ["api", "/v1/backend_state"])
+        XCTAssertEqual(rancher.status(fromOutput: #"{"vmState":"STARTED","locked":false}"#), .running)
+        XCTAssertEqual(rancher.status(fromOutput: #"{"vmState":"DISABLED","locked":false}"#), .running, "up, with Kubernetes off")
+        XCTAssertEqual(rancher.status(fromOutput: #"{"vmState":"STARTING","locked":true}"#), .starting)
+        XCTAssertEqual(rancher.status(fromOutput: #"{"vmState":"STOPPED","locked":false}"#), .stopped)
+        XCTAssertEqual(rancher.status(fromOutput: #"{"vmState":"ERROR","locked":false}"#), .unknown)
+        XCTAssertEqual(rancher.status(fromOutput: "Error: connection refused"), .unknown)
+        XCTAssertEqual(rancher.extras().map(\.command), ["rdctl list-settings", "rdctl version"])
+    }
 }

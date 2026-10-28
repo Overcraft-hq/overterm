@@ -32,6 +32,7 @@ version is tagged `v<version>`.
 - docker: an `ssh://` context reaches a remote engine through your own ssh, its ports opening on the host
 - docker: Docker Model Runner's models — which are loaded, what they take — with a chat in a tab and the OpenAI base URL to give your code
 - docker: with Docker's MCP Toolkit, the page says whether your agents reach its MCP servers, and connects them in a tab
+- docker: Rancher Desktop started, stopped and asked about through `rdctl`
 
 ## 1.4.6 — 2026-10-29
 

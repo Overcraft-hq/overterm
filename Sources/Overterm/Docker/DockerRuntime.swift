@@ -48,7 +48,10 @@ enum DockerRuntime: String, Equatable, Sendable {
         case (.podman, .start): return "podman machine start"
         case (.podman, .stop): return "podman machine stop"
         case (.podman, .restart): return "podman machine stop && podman machine start"
-        case (.rancherDesktop, .start): return "open -a 'Rancher Desktop'"
+        // rdctl starts the app when it isn't running.
+        case (.rancherDesktop, .start): return "rdctl start"
+        case (.rancherDesktop, .stop): return "rdctl shutdown"
+        case (.rancherDesktop, .restart): return "rdctl shutdown && rdctl start"
         default: return nil
         }
     }
@@ -70,7 +73,8 @@ enum DockerRuntime: String, Equatable, Sendable {
         case .orbStack: return [("OrbStack's Status", "orb status"), ("OrbStack's Logs", "orb logs")]
         case .colima: return [("Colima's Status", "colima status\(profile)"), ("Colima's Profiles", "colima list")]
         case .podman: return [("Podman Machines", "podman machine list")]
-        case .rancherDesktop, .engine: return []
+        case .rancherDesktop: return [("Rancher Desktop's Settings", "rdctl list-settings"), ("Rancher Desktop's Version", "rdctl version")]
+        case .engine: return []
         }
     }
 
@@ -110,7 +114,9 @@ enum DockerRuntime: String, Equatable, Sendable {
         case .orbStack: ("orb", ["status"])
         case .colima: ("colima", ["status", "--json"] + (Self.colimaProfile(context).map { ["--profile", $0] } ?? []))
         case .podman: ("podman", ["machine", "inspect", "--format", "{{.State}}"])
-        case .rancherDesktop, .engine: nil
+        // Its app's API: refused while the app isn't running.
+        case .rancherDesktop: ("rdctl", ["api", "/v1/backend_state"])
+        case .engine: nil
         }
     }
 
@@ -127,14 +133,21 @@ enum DockerRuntime: String, Equatable, Sendable {
             return (try? JSONSerialization.jsonObject(with: Data(text.utf8))) is [String: Any] ? .running : .stopped
         case .orbStack, .podman:
             return Self.word(text.split(separator: "\n").first.map(String.init) ?? "")
-        case .rancherDesktop, .engine:
+        case .rancherDesktop:
+            // `{"vmState":"STARTED","locked":false}`; DISABLED is up with
+            // Kubernetes off.
+            guard let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any], let state = json["vmState"] as? String else {
+                return .unknown
+            }
+            return state == "DISABLED" ? .running : state == "ERROR" ? .unknown : Self.word(state)
+        case .engine:
             return .unknown
         }
     }
 
     private static func word(_ word: String) -> Status {
         switch word.lowercased() {
-        case "running": .running
+        case "running", "started": .running
         case "starting", "start", "initializing", "booting": .starting
         case "stopped", "stopping", "exited", "stop": .stopped
         case "paused": .paused
