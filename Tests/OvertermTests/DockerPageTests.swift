@@ -424,3 +424,36 @@ final class DockerRunSpecTests: XCTestCase {
         XCTAssertEqual(spec.name, "shop-db-1")
     }
 }
+
+/// Builds as `buildx history` lists and inspects them. Pure.
+final class DockerBuildsTests: XCTestCase {
+    func testTheList() {
+        let output = """
+            {"cached_steps":4,"completed_at":"2026-10-27T23:46:12.690946503Z","completed_steps":16,"created_at":"2026-10-27T23:46:05.810768264Z","name":"cloudgate/images/pricing","ref":"desktop-linux/desktop-linux/7a1qpic0olvq2psgkzi3giark","status":"Completed","total_steps":16}
+            not json
+            {"cached_steps":0,"completed_at":"2026-10-28T09:00:03Z","completed_steps":2,"created_at":"2026-10-28T09:00:00Z","name":"shop/api","ref":"default/default/def456","status":"Error","total_steps":4}
+            """
+        let builds = DockerBuildRecord.parse(output)
+        XCTAssertEqual(builds.map(\.name), ["shop/api", "cloudgate/images/pricing"], "newest first")
+        XCTAssertEqual(builds.last?.shortRef, "7a1qpic0olvq2psgkzi3giark")
+        XCTAssertEqual(builds.last?.duration ?? 0, 6.88, accuracy: 0.01)
+        XCTAssertTrue(builds.first?.failed == true)
+        XCTAssertEqual(DockerBuildRecord.duration(6.88), "6.9 s")
+        XCTAssertEqual(DockerBuildRecord.duration(134), "2 min 14 s")
+    }
+
+    func testADetailMasksItsSecrets() throws {
+        let context = FileManager.default.temporaryDirectory.appendingPathComponent("ot-build-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: context.appendingPathComponent("images/web"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: context) }
+        try Data("FROM scratch\n".utf8).write(to: context.appendingPathComponent("images/web/Dockerfile"))
+        let json = """
+            {"Context":"\(context.path)","Dockerfile":"images/web/Dockerfile","BuildArgs":[{"Name":"NPM_TOKEN","Value":"npm_abc"},{"Name":"GOPROXY","Value":"http://proxy"}],"VCSRepository":"git@github.com:me/shop.git","VCSRevision":"4264981635"}
+            """
+        let detail = try XCTUnwrap(DockerBuildDetail.parse(json))
+        XCTAssertEqual(detail.buildArgs.map { "\($0.key)=\($0.value)" }, ["NPM_TOKEN=••••••", "GOPROXY=http://proxy"])
+        XCTAssertEqual(detail.dockerfileURL?.path, context.appendingPathComponent("images/web/Dockerfile").path)
+        XCTAssertEqual(detail.repository, "git@github.com:me/shop.git")
+        XCTAssertNil(DockerBuildDetail.parse("nope"))
+    }
+}

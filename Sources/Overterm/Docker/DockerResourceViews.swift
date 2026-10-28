@@ -556,3 +556,109 @@ struct DockerRunSheet: View {
         }
     }
 }
+
+// MARK: Builds
+
+/// The builds `buildx history` keeps: what, when, how long, from cache how
+/// much — and a build's log, where it was built from, its Dockerfile.
+struct DockerBuildsView: View {
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: DockerActions
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if let error = page.buildsError {
+                Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text2).padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: $page.buildSelection) {
+                    ForEach(page.builds) { build in
+                        ResourceRow(
+                            symbol: build.failed ? "xmark.octagon" : build.running ? "hourglass" : "checkmark.circle",
+                            title: build.name, subtitle: "\(build.status) · \(build.shortRef.prefix(12))",
+                            figures: [
+                                "\(build.cachedSteps)/\(build.totalSteps) cached", build.duration.map(DockerBuildRecord.duration) ?? "…",
+                                DockerBuildRecord.date(build.createdAt).map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date()) } ?? "",
+                            ],
+                            dim: false, theme: theme
+                        )
+                        .tag(build.id)
+                        .listRowSeparator(.hidden)
+                        .contextMenu {
+                            Button("Copy Ref") { actions.copy(build.shortRef) }
+                            Button("Remove Record") { page.removeBuild(build) }
+                        }
+                    }
+                    if page.builds.isEmpty { Text("No builds yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("docker.builds")
+                if page.showDetail, page.buildSelection.count == 1, let build = page.builds.first(where: { page.buildSelection.contains($0.id) }) {
+                    Rectangle().fill(theme.border).frame(width: 1)
+                    DockerBuildDetailView(build: build, page: page, theme: theme, actions: actions).id(build.id).frame(width: 520)
+                }
+            }
+        }
+        .onAppear { page.loadBuilds() }
+    }
+}
+
+private struct DockerBuildDetailView: View {
+    let build: DockerBuildRecord
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: DockerActions
+    @State private var detail: DockerBuildDetail?
+    @State private var log: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: build.failed ? "xmark.octagon.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(build.failed ? TabStatusStyle.failed : TabStatusStyle.done)
+                    Text(verbatim: build.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                    Spacer()
+                    if let file = detail?.dockerfileURL { Button("Dockerfile") { actions.edit(file) }.controlSize(.small) }
+                }
+                if let detail {
+                    DetailBlock(title: "Built from", theme: theme) {
+                        if let context = detail.context { DetailRow(key: "Context", value: (context as NSString).abbreviatingWithTildeInPath, theme: theme) }
+                        if let file = detail.dockerfile { DetailRow(key: "Dockerfile", value: file, theme: theme) }
+                        if let revision = detail.revision { DetailRow(key: "Commit", value: String(revision.prefix(12)), theme: theme) }
+                        ForEach(Array(detail.buildArgs.enumerated()), id: \.offset) { _, arg in DetailRow(key: arg.key, value: arg.value, theme: theme) }
+                    }
+                    if let error = detail.error { Text(verbatim: error).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled) }
+                }
+            }
+            .padding(16)
+            Rectangle().fill(theme.border).frame(height: 1)
+            if let log {
+                let lines = log.split(separator: "\n", omittingEmptySubsequences: false)
+                DockerTextView(
+                    count: lines.count, revision: log.hashValue,
+                    render: { range in
+                        lines[range].map {
+                            NSAttributedString(string: String($0), attributes: [.font: DockerLogStyle.font, .foregroundColor: Self.color(String($0), theme)])
+                        }
+                    }, wrap: true, follow: true)
+            } else {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: build.id) {
+            detail = await page.buildDetail(build)
+            log = await page.buildLog(build)
+        }
+        .accessibilityIdentifier("docker.build.detail")
+    }
+
+    /// BuildKit's own marks: an error in red, a step's header plain, its
+    /// output dimmer.
+    static func color(_ line: String, _ theme: ChromeTheme) -> NSColor {
+        if line.contains("ERROR") || line.contains("error:") { return NSColor(srgbRed: 0.94, green: 0.36, blue: 0.34, alpha: 1) }
+        if line.range(of: #"^#\d+ \["#, options: .regularExpression) != nil { return theme.textNS }
+        return theme.textNS.withAlphaComponent(0.6)
+    }
+}

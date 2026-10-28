@@ -26,6 +26,7 @@ version is tagged `v<version>`.
 - docker: the ports a checkout's containers publish sit in its panes' headers, in Tab Info and in the API client's discovery
 - docker: a volume exports, imports and clones; a container's filesystem and an image save as tars
 - tasks: New Task can start the new worktree's compose stack with it
+- docker: Builds shows what buildx kept of each — how long, how much from cache, its log, the Dockerfile a click away
 
 ## 1.4.6 — 2026-10-29
 

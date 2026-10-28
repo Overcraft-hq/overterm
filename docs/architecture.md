@@ -1244,6 +1244,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   tab, where the credential helper signs in — Overterm never handles a
   registry password. Tag, remove (asked first; never what a running
   container uses), browse a volume in a tab (a throwaway container).
+- **Builds** (section 5, `DockerBuildRecord`/`DockerBuildDetail`, pure):
+  what `docker buildx history` keeps — Docker Desktop's Builds view reads
+  the same records — through the CLI, read when the section shows. A
+  build's detail is its inspect data (context, Dockerfile, build args
+  masked as env is, the commit it was built from) and its log; its
+  Dockerfile opens in the editor when the context is a folder here. A
+  scenario points `DockerCLI.override` at a stub `docker` answering as
+  buildx would.
 - **Export and import**: a container's filesystem (`/export`, `docker
   export`) and an image (`/images/…/get`, `docker save`) stream to a file
   as they come. A volume goes through a helper: a container created with

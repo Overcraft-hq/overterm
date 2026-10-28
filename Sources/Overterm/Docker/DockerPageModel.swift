@@ -50,7 +50,7 @@ struct DockerListGroup: Identifiable, Equatable {
 @MainActor
 final class DockerPageModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case containers, images, volumes, networks
+        case containers, images, volumes, networks, builds
 
         var id: String { rawValue }
         var title: String { rawValue.capitalized }
@@ -60,6 +60,7 @@ final class DockerPageModel: ObservableObject {
             case .images: "square.stack.3d.down.right"
             case .volumes: "externaldrive"
             case .networks: "point.3.filled.connected.trianglepath.dotted"
+            case .builds: "hammer"
             }
         }
 
@@ -70,6 +71,7 @@ final class DockerPageModel: ObservableObject {
             case .images: .images
             case .volumes: .volumes
             case .networks: .networks
+            case .builds: nil
             }
         }
     }
@@ -103,6 +105,10 @@ final class DockerPageModel: ObservableObject {
     @Published var cleaned: String?
     /// An export or import on its way: what it is.
     @Published var transferring: String?
+    /// Builds, as `buildx history` keeps them.
+    @Published var builds: [DockerBuildRecord] = []
+    @Published var buildSelection: Set<String> = []
+    @Published var buildsError: String?
     /// The Run window, open on this.
     @Published var runSpec: DockerRunSpec?
 
@@ -118,7 +124,10 @@ final class DockerPageModel: ObservableObject {
         // A section on screen is read, and kept current, while it shows.
         wanting = $section.combineLatest($visible)
             .sink { [weak self] section, visible in
-                DispatchQueue.main.async { self?.want(visible ? section.resource : nil) }
+                DispatchQueue.main.async {
+                    self?.want(visible ? section.resource : nil)
+                    if visible, section == .builds { self?.loadBuilds() }
+                }
             }
         // The detail's streams follow what it shows and whether it shows.
         streams = Publishers.CombineLatest4($selection, $detailTab, $visible, $showDetail)
@@ -372,6 +381,7 @@ final class DockerPageModel: ObservableObject {
             case .images: confirmRemove(images: docker.images.filter { imageSelection.contains($0.Id) })
             case .volumes: confirmRemove(volumes: docker.volumes.filter { volumeSelection.contains($0.Name) })
             case .networks: confirmRemove(networks: docker.networks.filter { networkSelection.contains($0.Id) })
+            case .builds: for build in builds where buildSelection.contains(build.id) { removeBuild(build) }
             case .containers: break
             }
             return true

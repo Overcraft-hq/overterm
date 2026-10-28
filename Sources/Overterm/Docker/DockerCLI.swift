@@ -18,12 +18,17 @@ struct DockerCLI: Sendable {
         return (fromPath + known).filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
+    /// A scenario's own `docker` (a script answering as the CLI would),
+    /// found before any other.
+    nonisolated(unsafe) static var override: URL?
+
     /// The first of `folders` holding an executable `tool`.
     static func locate(
         _ tool: String, home: URL = FileManager.default.homeDirectoryForCurrentUser,
         path: String? = ProcessInfo.processInfo.environment["PATH"], isExecutable: (String) -> Bool = FileManager.default.isExecutableFile
     ) -> URL? {
-        folders(home: home, path: path).lazy.map { URL(fileURLWithPath: $0).appendingPathComponent(tool) }.first { isExecutable($0.path) }
+        if tool == "docker", let override { return override }
+        return folders(home: home, path: path).lazy.map { URL(fileURLWithPath: $0).appendingPathComponent(tool) }.first { isExecutable($0.path) }
     }
 
     let executable: URL

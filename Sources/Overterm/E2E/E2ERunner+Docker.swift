@@ -160,6 +160,42 @@ extension E2ERunner {
             page.error ?? "")
         check("and says what it freed", await eventually(3) { page.cleaned?.contains("freed") == true }, page.cleaned ?? "")
         check("its sheet closed", await eventually(2) { self.window.attachedSheet == nil })
+        // Builds, as a stub `docker` answers `buildx history`.
+        let bin = scratch.appendingPathComponent("stub-bin", isDirectory: true)
+        let context = scratch.appendingPathComponent("build-context", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: context, withIntermediateDirectories: true)
+        try? "FROM nginx:1.27\n".write(to: context.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+        let stub = bin.appendingPathComponent("docker")
+        let script = """
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            case "$*" in
+              "buildx history ls --format json")
+                [ -f "$dir/removed" ] || echo '{"cached_steps":2,"completed_at":"2026-10-28T10:00:07Z","completed_steps":5,"created_at":"2026-10-28T10:00:00Z","name":"shop/web","ref":"default/default/abc123","status":"Completed","total_steps":5}'
+                echo '{"cached_steps":0,"completed_at":"2026-10-28T09:00:03Z","completed_steps":2,"created_at":"2026-10-28T09:00:00Z","name":"shop/api","ref":"default/default/def456","status":"Error","total_steps":4}' ;;
+              "buildx history inspect abc123 --format json") echo '{"Context":"\(context.path)","Dockerfile":"Dockerfile","BuildArgs":[{"Name":"NPM_TOKEN","Value":"npm-secret"}],"VCSRevision":"4264981635"}' ;;
+              "buildx history logs abc123") printf '#1 [internal] load build definition\\n#1 DONE 0.0s\\n#2 [web 1/2] RUN make\\n#2 DONE 1.0s\\n' ;;
+              "buildx history rm abc123") touch "$dir/removed" ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        page.press("5")
+        check("5 is Builds, as buildx history keeps them", await eventually(5) { page.builds.map(\.name) == ["shop/web", "shop/api"] }, page.buildsError ?? "\(page.builds)")
+        if let build = page.builds.first {
+            let detail = await page.buildDetail(build)
+            check("a build's detail masks its secrets", detail?.buildArgs.first.map { $0.key == "NPM_TOKEN" && $0.value == "••••••" } == true)
+            check("and finds its Dockerfile", detail?.dockerfileURL?.lastPathComponent == "Dockerfile")
+            let log = await page.buildLog(build)
+            check("its log is read", log.contains("RUN make"), log)
+            page.removeBuild(build)
+            check("a record goes", await eventually(5) { page.builds.map(\.name) == ["shop/api"] })
+        }
+        DockerCLI.override = nil
+
         page.press("2")
         await capture("images")
         page.press("1")

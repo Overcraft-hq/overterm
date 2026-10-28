@@ -63,6 +63,49 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: Builds
+
+    /// The builds `buildx history` keeps, read when the section shows.
+    func loadBuilds() {
+        guard let cli = DockerCLI(endpoint: docker.endpoint) else {
+            buildsError = "docker isn't on this Mac: builds are read with docker buildx."
+            return
+        }
+        Task {
+            do {
+                builds = DockerBuildRecord.parse(try await cli.run(["buildx", "history", "ls", "--format", "json"], timeout: 30))
+                buildsError = nil
+            } catch {
+                buildsError = "docker buildx history: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func buildDetail(_ build: DockerBuildRecord) async -> DockerBuildDetail? {
+        guard let cli = DockerCLI(endpoint: docker.endpoint),
+            let output = try? await cli.run(["buildx", "history", "inspect", build.shortRef, "--format", "json"], timeout: 30)
+        else { return nil }
+        return DockerBuildDetail.parse(output)
+    }
+
+    func buildLog(_ build: DockerBuildRecord) async -> String {
+        guard let cli = DockerCLI(endpoint: docker.endpoint) else { return "" }
+        return (try? await cli.run(["buildx", "history", "logs", build.shortRef], timeout: 60)) ?? "(no log)"
+    }
+
+    func removeBuild(_ build: DockerBuildRecord) {
+        guard let cli = DockerCLI(endpoint: docker.endpoint) else { return }
+        Task {
+            do {
+                _ = try await cli.run(["buildx", "history", "rm", build.shortRef], timeout: 30)
+                buildSelection.remove(build.id)
+                loadBuilds()
+            } catch {
+                self.error = "Remove the build: \(error.localizedDescription)"
+            }
+        }
+    }
+
     // MARK: Export and import
 
     /// An image to make a helper from: it never runs, so any will do —

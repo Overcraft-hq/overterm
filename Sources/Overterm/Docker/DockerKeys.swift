@@ -5,7 +5,7 @@ import Foundation
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, inspect, open, database, remove, composeUp,
-        composeDown, run, filter, cleanUp, containers, images, volumes, networks, help
+        composeDown, run, filter, cleanUp, containers, images, volumes, networks, builds, help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -14,6 +14,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .images: .images
         case .volumes: .volumes
         case .networks: .networks
+        case .builds: .builds
         default: nil
         }
     }
@@ -43,6 +44,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .images: "2"
         case .volumes: "3"
         case .networks: "4"
+        case .builds: "5"
         case .help: "?"
         }
     }
@@ -71,6 +73,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .images: "Images"
         case .volumes: "Volumes"
         case .networks: "Networks"
+        case .builds: "Builds"
         case .help: "These keys"
         }
     }
