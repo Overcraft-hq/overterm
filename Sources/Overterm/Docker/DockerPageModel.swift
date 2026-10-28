@@ -23,6 +23,8 @@ struct DockerActions {
     var openFile: (ContainerSummary, String) -> Void = { _, _ in }
     /// A container's file, to the Mac.
     var downloadFile: (ContainerSummary, String) -> Void = { _, _ in }
+    /// A tab of the window, brought up.
+    var showTab: (UUID) -> Void = { _ in }
 }
 
 /// One block of the containers list: a compose project with its

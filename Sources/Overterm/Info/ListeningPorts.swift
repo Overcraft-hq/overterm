@@ -21,6 +21,14 @@ struct ListeningPort: Identifiable, Hashable {
 enum ListeningPorts {
     static let lsof = URL(fileURLWithPath: "/usr/sbin/lsof")
 
+    /// Whoever on this Mac listens on `port`, if anything does.
+    static func holder(of port: Int) async -> ListeningPort? {
+        let output =
+            (try? await Git.run(
+                lsof, ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-F", "pcn"], in: URL(fileURLWithPath: "/"), success: [0, 1])) ?? ""
+        return parse(output).first { $0.port == port }
+    }
+
     /// The listening TCP sockets of `pids`.
     static func of(_ pids: [pid_t]) async -> [ListeningPort] {
         guard !pids.isEmpty else { return [] }

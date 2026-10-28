@@ -19,7 +19,12 @@ extension TerminalWindowController {
             showContainer: { [weak self] in self?.showContainer($0) },
             openDatabase: { [weak self] in self?.newDatabaseConnection(from: $0) },
             openFile: { [weak self] container, path in self?.openContainerFile(container, path) },
-            downloadFile: { [weak self] container, path in self?.downloadContainerFile(container, path) }
+            downloadFile: { [weak self] container, path in self?.downloadContainerFile(container, path) },
+            showTab: { [weak self] id in
+                guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
+                if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                self.store.select(tab)
+            }
         )
     }
 
@@ -30,6 +35,15 @@ extension TerminalWindowController {
     func wireDockerPanel() {
         // An agent's compose up or down runs in a tab of this window.
         DockerMCP.runInTab = { [weak self] command, folder in self?.runDockerCommand(command, in: folder) }
+        // A port a container wanted, held by a process in a tab: any window's.
+        ContainerSession.tabHolding = { port in
+            for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
+                for tab in controller.store.tabs {
+                    if let held = tab.ports.first(where: { $0.port == port }) { return (tab.id, tab.title, held.process) }
+                }
+            }
+            return nil
+        }
         diff.$root
             .combineLatest(store.$selectedID)
             .sink { [weak self] root, _ in

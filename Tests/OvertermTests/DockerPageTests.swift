@@ -350,3 +350,29 @@ final class DockerDatabaseGuessTests: XCTestCase {
         XCTAssertEqual(DockerDatabaseGuess.kind(of: "bitnami/postgresql:16")?.0, .postgres)
     }
 }
+
+/// Who has the port a container couldn't start on. Pure.
+final class PortConflictsTests: XCTestCase {
+    func testThePortFromTheEnginesWords() {
+        XCTAssertEqual(PortConflicts.port(in: "driver failed programming external connectivity on endpoint shop-db-1 (abc): Bind for 0.0.0.0:5432 failed: port is already allocated"), 5432)
+        XCTAssertEqual(PortConflicts.port(in: "Error starting userland proxy: listen tcp4 0.0.0.0:8080: bind: address already in use"), 8080)
+        XCTAssertEqual(
+            PortConflicts.port(in: "ports are not available: exposing port TCP 0.0.0.0:3000 -> 127.0.0.1:0: listen tcp 0.0.0.0:3000: bind: address already in use"), 3000)
+        XCTAssertEqual(PortConflicts.port(in: "Bind for [::]:9000 failed: port is already allocated"), 9000)
+        XCTAssertNil(PortConflicts.port(in: "OCI runtime create failed: exec: \"nope\": executable file not found"))
+    }
+
+    func testTheContainerHoldingIt() {
+        func container(_ id: String, state: String, port: Int?) -> ContainerSummary {
+            ContainerSummary(
+                Id: id, Names: ["/" + id], Image: "x", Created: 1, Ports: port.map { [DockerPort(IP: "0.0.0.0", PrivatePort: 80, PublicPort: $0, Type: "tcp")] },
+                State: state, Status: "")
+        }
+        let all = [container("me", state: "created", port: nil), container("old", state: "exited", port: 5432), container("main-db", state: "running", port: 5432)]
+        XCTAssertEqual(PortConflicts.container(holding: 5432, among: all, except: "me")?.Id, "main-db", "a stopped one holds nothing")
+        XCTAssertNil(PortConflicts.container(holding: 5432, among: all, except: "main-db"))
+        XCTAssertEqual(
+            ContainerDetailView.holderText(.container(id: "x", name: "shop-db-1", project: "shop", folder: "/w/shop")),
+            "shop-db-1 publishes it — compose project shop in /w/shop.")
+    }
+}

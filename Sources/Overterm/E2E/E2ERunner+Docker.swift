@@ -360,6 +360,28 @@ extension E2ERunner {
         _ = await eventually(2) { self.window.attachedSheet == nil }
         try? await docker.remove(pgID, force: true)
 
+        // Another worktree's stack couldn't get 58080: who has it, and the way out.
+        let other = scratch.appendingPathComponent("ot-shop-2", isDirectory: true)
+        try? FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        let clash = fake.add(
+            name: "ot-shop-2-web-1", image: "nginx:1.27", state: .created, project: "ot-shop-2", workingDir: FileTreeModel.realPath(other), service: "web")
+        fake.set(clash, state: .created, error: "driver failed programming external connectivity: Bind for 0.0.0.0:58080 failed: port is already allocated")
+        _ = await eventually(5) { docker.container(clash) != nil }
+        page.selection = [clash]
+        let holder = await eventually(5) {
+            if case .container(let id, _, let project, _) = page.session?.conflict?.holder { return id == web && project == "ot-shop" }
+            return false
+        }
+        check("a port taken by another worktree's stack says whose", holder, "\(String(describing: page.session?.conflict))")
+        try? await docker.perform(.stop, on: web)
+        page.act(.start, on: docker.container(clash).map { [$0] } ?? [])
+        check(
+            "stopping that one starts this one",
+            await eventually(5) { docker.container(clash)?.state == .running && docker.container(web)?.state == .exited })
+        try? await docker.remove(clash, force: true)
+        try? await docker.perform(.start, on: web)
+        _ = await eventually(5) { docker.container(web)?.state == .running }
+
         // Remove asks first.
         page.selection = [loose]
         _ = page.press("\u{7F}")

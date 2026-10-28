@@ -1255,6 +1255,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   projects of a tab's checkout publish is shown beside its own ports, with
   a shippingbox; Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
+- **Port conflicts** (`PortConflicts`, pure; `ContainerSession.conflict`):
+  worktrees of one repository run the same compose file, and its fixed
+  host ports (`5432:5432`) leave the second stack's container `created`,
+  Docker saying only "port is already allocated" (or, for a process,
+  "address already in use"). The detail says who holds the port — another
+  container (its project and folder, usually another worktree's), a
+  process in one of the windows' tabs, or one outside them (lsof) — and
+  offers the way out: stop that one and start this one, or show the tab.
 - **A project's detail** (`ProjectDetailView`, `ProjectSession`): a
   compose project's row selected shows its verbs, its services, and their
   logs merged by time — `docker compose logs -f`, in the app. Logs go

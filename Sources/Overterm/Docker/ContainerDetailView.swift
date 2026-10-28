@@ -26,7 +26,11 @@ struct ContainerDetailView: View {
             case .overview:
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        if let message = session.detail?.State.Error, !message.isEmpty { problem(message) }
+                        if let conflict = session.conflict {
+                            portConflict(conflict)
+                        } else if let message = session.detail?.State.Error, !message.isEmpty {
+                            problem(message)
+                        }
                         if let error = session.error { problem(error) }
                         overview
                     }
@@ -112,6 +116,49 @@ struct ContainerDetailView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(TabStatusStyle.failed.opacity(0.12)))
+    }
+
+    /// Its port is taken: by whom, and the way out.
+    private func portConflict(_ conflict: DockerPortConflict) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.failed)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: "Port \(conflict.port) is taken").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: Self.holderText(conflict.holder)).font(.system(size: 12)).foregroundStyle(theme.text2)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+            }
+            switch conflict.holder {
+            case .container(let id, let name, _, _):
+                Button("Stop \(name) and Start This") {
+                    Task {
+                        try? await DockerModel.shared.perform(.stop, on: id)
+                        act(.start)
+                    }
+                }
+                .accessibilityIdentifier("docker.conflict.swap")
+            case .tab(let id, _, _):
+                Button("Show the Tab") { actions.showTab(id) }
+            case .process, .unknown:
+                EmptyView()
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(TabStatusStyle.failed.opacity(0.12)))
+        .accessibilityIdentifier("docker.conflict")
+    }
+
+    static func holderText(_ holder: DockerPortConflict.Holder) -> String {
+        switch holder {
+        case .container(_, let name, let project, let folder):
+            let whose = project.map { " — compose project \($0)" + (folder.map { " in \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? "") } ?? ""
+            return "\(name) publishes it\(whose)."
+        case .tab(_, let title, let process): return "\(process) listens on it, in the tab “\(title)”."
+        case .process(let pid, let command): return "\(command) (pid \(pid)) listens on it, outside Overterm's tabs."
+        case .unknown: return "Something else holds it."
+        }
     }
 
     // MARK: Overview

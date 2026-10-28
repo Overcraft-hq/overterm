@@ -26,6 +26,11 @@ final class ContainerSession: ObservableObject {
     @Published private(set) var entries: [DockerFiles.Entry] = []
     @Published private(set) var filesError: String?
     @Published private(set) var listing = false
+    /// It couldn't start: its host port is taken, and by whom.
+    @Published private(set) var conflict: DockerPortConflict?
+    /// The windows' tab holding a port: its id, title and process (the app
+    /// sets it).
+    static var tabHolding: (Int) -> (UUID, String, String)? = { _ in nil }
 
     static let tail = 500
 
@@ -79,10 +84,29 @@ final class ContainerSession: ObservableObject {
                 self?.detail = detail
                 self?.error = nil
                 if self?.json != nil { self?.loadJSON() }
+                await self?.findConflict(detail)
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.error = error.localizedDescription
             }
+        }
+    }
+
+    /// Who has the port its start failed on, when that is why.
+    private func findConflict(_ detail: ContainerDetail) async {
+        guard detail.State.Running != true, let port = detail.State.Error.flatMap(PortConflicts.port(in:)) else {
+            if conflict != nil { conflict = nil }
+            return
+        }
+        if let holder = PortConflicts.container(holding: port, among: docker.containers, except: id) {
+            conflict = DockerPortConflict(
+                port: port, holder: .container(id: holder.Id, name: holder.name, project: holder.composeProject, folder: holder.composeWorkingDir))
+        } else if let (tab, title, process) = Self.tabHolding(port) {
+            conflict = DockerPortConflict(port: port, holder: .tab(id: tab, title: title, process: process))
+        } else if let process = await ListeningPorts.holder(of: port) {
+            conflict = DockerPortConflict(port: port, holder: .process(pid: process.pid, command: process.process))
+        } else {
+            conflict = DockerPortConflict(port: port, holder: .unknown)
         }
     }
 
