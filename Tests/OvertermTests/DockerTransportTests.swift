@@ -246,6 +246,10 @@ final class DockerTransportTests: XCTestCase {
             XCTAssertEqual(String(decoding: back, as: UTF8.self), "hello\n")
             let missing = try await real.exec(made.Id, ["no-such-command"])
             XCTAssertTrue([126, 127].contains(missing.exitCode), "\(missing)")
+            let top = try await real.top(made.Id)
+            XCTAssertTrue(top.processes.contains { $0.joined(separator: " ").contains("sleep 120") }, "\(top)")
+            let changes = try await real.changes(made.Id)
+            XCTAssertTrue(changes.contains { $0.Path == "/tmp/overterm.txt" && $0.Kind == .added }, "\(changes)")
         } catch {
             try? await real.remove(container: made.Id, force: true)
             throw error

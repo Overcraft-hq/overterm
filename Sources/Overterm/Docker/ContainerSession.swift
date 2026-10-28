@@ -26,6 +26,11 @@ final class ContainerSession: ObservableObject {
     @Published private(set) var entries: [DockerFiles.Entry] = []
     @Published private(set) var filesError: String?
     @Published private(set) var listing = false
+    /// Its processes, as `top` says them, while Stats shows.
+    @Published private(set) var processes: (titles: [String], rows: [[String]])?
+    /// What changed in its filesystem since it started (Files ▸ Changes).
+    @Published private(set) var changes: [DockerEngine.Change]?
+
     /// It couldn't start: its host port is taken, and by whom.
     @Published private(set) var conflict: DockerPortConflict?
     /// The windows' tab holding a port: its id, title and process (the app
@@ -120,6 +125,14 @@ final class ContainerSession: ObservableObject {
 
     // MARK: Files
 
+    func loadChanges() {
+        Task { [weak self, docker, id] in
+            guard let engine = docker.engine else { return }
+            let changes = (try? await engine.changes(id)) ?? []
+            self?.changes = changes.sorted { $0.Path < $1.Path }
+        }
+    }
+
     /// A folder of the container, listed (a running one: `exec`).
     func open(_ folder: String) {
         self.folder = folder
@@ -185,11 +198,15 @@ final class ContainerSession: ObservableObject {
         sampling = Task { [weak self, docker, id] in
             guard let engine = docker.engine else { return }
             do {
+                var tick = 0
                 for try await sample in engine.stats(id) {
                     guard let self else { return }
                     let usage = DockerUsage(sample)
                     self.usage = usage
                     self.history = Array((self.history + [usage]).suffix(60))
+                    // Its processes every other sample: `ps` in the container is no free read.
+                    if tick % 2 == 0, let top = try? await engine.top(id) { self.processes = (top.titles, top.processes) }
+                    tick += 1
                 }
             } catch {}
             self?.sampling = nil

@@ -1293,7 +1293,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`Containers/<name>/<path>`, `.` and `..` left out) and is written back
   through `archive` when the editor saves it — asked first when it
   changed in the container since it was opened (its stat's size and
-  mtime), and kept with its mode.
+  mtime), and kept with its mode. Its Changes view is the engine's
+  `/changes`: what was added, modified and deleted since it started, a
+  file a click from the editor. Stats shows its processes (`top`, every
+  other sample while the tab shows).
 - **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
   MySQL, MariaDB or ClickHouse container as a connection — the kind from
   its image, user, password and database from the variables its image's

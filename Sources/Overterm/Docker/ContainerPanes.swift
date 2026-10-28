@@ -125,10 +125,19 @@ struct DockerFilesPane: View {
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var path = ""
+    @State private var showingChanges = false
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
+                Picker("", selection: $showingChanges) {
+                    Text("Folders").tag(false)
+                    Text("Changes").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+                .help("What it wrote, added and deleted since it started")
+                .onChange(of: showingChanges) { on in if on { session.loadChanges() } }
+                .padding(.trailing, 8)
                 ForEach(DockerFiles.crumbs(session.folder ?? "/"), id: \.path) { crumb in
                     Button(crumb.name == "/" ? "/" : crumb.name + " ›") { session.open(crumb.path) }
                         .buttonStyle(.plain).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
@@ -150,7 +159,9 @@ struct DockerFilesPane: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
             Rectangle().fill(theme.border).frame(height: 1)
-            if let error = session.filesError {
+            if showingChanges {
+                changes
+            } else if let error = session.filesError {
                 Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text2).padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer()
@@ -178,6 +189,42 @@ struct DockerFilesPane: View {
                 .accessibilityIdentifier("docker.files")
             }
         }
+    }
+
+    /// Since it started: added, modified, deleted — a file a click from
+    /// the editor.
+    private var changes: some View {
+        List {
+            if let changes = session.changes {
+                if changes.isEmpty { Text("Nothing changed since it started.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+                ForEach(changes, id: \.Path) { change in
+                    let (mark, color): (String, Color) =
+                        switch change.Kind {
+                        case .added: ("A", TabStatusStyle.done)
+                        case .modified: ("M", TabStatusStyle.waiting)
+                        case .deleted: ("D", TabStatusStyle.failed)
+                        }
+                    Button {
+                        if change.Kind != .deleted { actions.openFile(container, change.Path) }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(verbatim: mark).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(color).frame(width: 14)
+                            Text(verbatim: change.Path).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
+                                .truncationMode(.head)
+                            Spacer()
+                        }
+                        .frame(height: 20)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("docker.changes")
     }
 
     /// A folder's path lists it; anything else opens as a file.
@@ -279,6 +326,7 @@ struct DockerStatsPane: View {
                         tile("Processes", "\(usage.processes)", detail: " ", values: [])
                     }
                     .fixedSize(horizontal: false, vertical: true)
+                    if let top = session.processes { processes(top) }
                 }
                 .padding(16)
             } else {
@@ -289,6 +337,33 @@ struct DockerStatsPane: View {
     }
 
     static func bytes(_ count: Int) -> String { DockerBytes.string(count, memory: true) }
+
+    /// `top`'s table: its own columns, its command last and widest.
+    private func processes(_ top: (titles: [String], rows: [[String]])) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Processes").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                GridRow {
+                    ForEach(Array(top.titles.enumerated()), id: \.offset) { _, title in
+                        Text(verbatim: title).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.text3)
+                    }
+                }
+                ForEach(Array(top.rows.prefix(100).enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
+                            Text(verbatim: cell).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text)
+                                .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                                .frame(maxWidth: index == row.count - 1 ? .infinity : nil, alignment: .leading)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.rowHover.opacity(0.6)))
+        .accessibilityIdentifier("docker.processes")
+    }
 
     private func tile(_ title: String, _ value: String, detail: String, values: [Double]) -> some View {
         VStack(alignment: .leading, spacing: 4) {

@@ -236,6 +236,9 @@ extension E2ERunner {
         // Stats while their tab shows; Inspect with secrets hidden.
         page.detailTab = .stats
         check("stats are read while their tab shows", await eventually(5) { (page.session?.history.count ?? 0) >= 2 })
+        check(
+            "its processes, as top says them", await eventually(5) { page.session?.processes?.rows.contains { $0.last == "nginx: worker process" } == true },
+            "\(String(describing: page.session?.processes))")
         await capture("stats")
         check("CPU as docker stats works it out", abs((page.session?.usage?.cpuPercent ?? 0) - 8) < 0.01, "\(page.session?.usage?.cpuPercent ?? -1)")
         page.press("i")
@@ -254,6 +257,10 @@ extension E2ERunner {
         check(
             "Files lists its working folder", await eventually(5) { page.session?.entries.map(\.name) == ["etc", "usr"] },
             "\(page.session?.entries.map(\.name) ?? []) \(page.session?.filesError ?? "")")
+        page.session?.loadChanges()
+        check(
+            "what changed since it started", await eventually(5) { page.session?.changes?.contains { $0.Path == "/etc/nginx/nginx.conf" && $0.Kind == .added } == true },
+            "\(page.session?.changes?.map(\.Path) ?? [])")
         page.session?.open("/etc/nginx")
         check("a folder opens, folders first", await eventually(5) { page.session?.entries.map(\.name) == ["conf.d", "nginx.conf"] })
         if let container = docker.container(web) { app.openContainerFile(container, "/etc/nginx/nginx.conf") }

@@ -86,6 +86,18 @@ extension DockerEngine {
         return (top.Titles, top.Processes)
     }
 
+    /// What changed in its filesystem since it started.
+    struct Change: Decodable, Equatable, Sendable {
+        enum Kind: Int, Decodable, Sendable { case modified = 0, added = 1, deleted = 2 }
+        var Path: String
+        var Kind: Kind
+    }
+
+    func changes(_ id: String) async throws -> [Change] {
+        // The engine answers `null` for none.
+        (try await get([Change]?.self, "/containers/\(id)/changes")) ?? []
+    }
+
     // MARK: Running a command in it
 
     struct ExecResult: Equatable, Sendable {
