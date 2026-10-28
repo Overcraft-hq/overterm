@@ -121,6 +121,8 @@ final class DockerPageModel: ObservableObject {
     /// Claude Code and Codex as Docker's MCP Toolkit sees them, read each
     /// time the page shows; nil without the Toolkit.
     @Published var mcpClients: [MCPToolkitClient]?
+    /// Whether `docker scout` is there, for the images' menu.
+    lazy var hasScout = DockerCLI.hasPlugin("scout")
 
     let docker: DockerModel
 

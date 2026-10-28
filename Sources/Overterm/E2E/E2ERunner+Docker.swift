@@ -200,6 +200,13 @@ extension E2ERunner {
 
         page.press("2")
         await capture("images")
+        // Docker Scout sends an image's packages away: only asked, in a tab.
+        var scouted: [String] = []
+        let actions = page.actions
+        page.actions?.run = { command, _ in scouted.append(command) }
+        page.scout("cves", "redis:7")
+        page.actions = actions
+        check("Scout on an image is a tab's command", scouted.last?.hasSuffix("docker scout cves redis:7") == true, scouted.last ?? "nothing")
         page.press("1")
         check("1 is Containers again", page.section == .containers)
     }

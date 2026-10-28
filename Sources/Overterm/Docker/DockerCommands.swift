@@ -41,6 +41,14 @@ enum DockerCommands {
         return prefix(for: endpoint) + "docker run --rm -it --pid container:\(name) --network container:\(name) --volumes-from \(name) \(quote(image))"
     }
 
+    /// Docker Scout on an image: `quickview` (its vulnerabilities, its base
+    /// image's), `cves` (each, by package), `recommendations` (a newer
+    /// base). It sends the image's packages to Docker's service, so only
+    /// when asked, where the user sees it work.
+    static func scout(_ verb: String, image: String, endpoint: DockerEndpoint? = nil) -> String {
+        prefix(for: endpoint) + "docker scout \(verb) \(quote(image))"
+    }
+
     static func followLogs(of container: ContainerSummary, endpoint: DockerEndpoint? = nil) -> String {
         prefix(for: endpoint) + "docker logs -f --tail 200 \(quote(container.name))"
     }

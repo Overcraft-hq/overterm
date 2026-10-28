@@ -389,6 +389,21 @@ final class DockerCLITests: XCTestCase {
         XCTAssertEqual(DockerRuntime.colima.statusCommand(context: "colima-work")?.arguments, ["status", "--json", "--profile", "work"])
     }
 
+    func testPluginsAreFoundWhereTheCLILooks() {
+        let home = URL(fileURLWithPath: "/Users/me")
+        var looked: [String] = []
+        XCTAssertFalse(
+            DockerCLI.hasPlugin("scout", home: home) {
+                looked.append($0); return false
+            })
+        XCTAssertTrue(looked.contains("/Users/me/.docker/cli-plugins/docker-scout"), "\(looked)")
+        XCTAssertTrue(looked.contains("/Applications/Docker.app/Contents/Resources/cli-plugins/docker-scout"))
+        XCTAssertTrue(DockerCLI.hasPlugin("scout", home: home) { $0 == "/opt/homebrew/lib/docker/cli-plugins/docker-scout" })
+        XCTAssertEqual(DockerCommands.scout("cves", image: "ghcr.io/acme/web:1.2"), "docker scout cves ghcr.io/acme/web:1.2")
+        let context = DockerEndpoint(address: .unix("/c.sock"), context: "colima", source: "docker.context")
+        XCTAssertEqual(DockerCommands.scout("quickview", image: "my image", endpoint: context), "DOCKER_CONTEXT=colima docker scout quickview 'my image'")
+    }
+
     /// Rancher Desktop through rdctl: its app's API says the VM's state.
     func testRancherDesktopThroughRdctl() {
         let rancher = DockerRuntime.rancherDesktop

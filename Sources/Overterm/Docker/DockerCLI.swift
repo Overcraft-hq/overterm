@@ -31,6 +31,24 @@ struct DockerCLI: Sendable {
         return folders(home: home, path: path).lazy.map { URL(fileURLWithPath: $0).appendingPathComponent(tool) }.first { isExecutable($0.path) }
     }
 
+    /// Where the CLI looks for its plugins (`docker-scout`, `docker-mcp`):
+    /// `~/.docker/cli-plugins`, Docker Desktop's, the system's.
+    static func pluginFolders(home: URL, dockerConfig: URL = DockerEndpoint.home) -> [String] {
+        [
+            dockerConfig.appendingPathComponent("cli-plugins").path, home.appendingPathComponent(".docker/cli-plugins").path,
+            "/Applications/Docker.app/Contents/Resources/cli-plugins", "/usr/local/lib/docker/cli-plugins", "/opt/homebrew/lib/docker/cli-plugins",
+            "/usr/local/libexec/docker/cli-plugins", "/usr/libexec/docker/cli-plugins",
+        ]
+    }
+
+    /// Whether `docker <name>` is a plugin that is there.
+    static func hasPlugin(
+        _ name: String, home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        isExecutable: (String) -> Bool = FileManager.default.isExecutableFile
+    ) -> Bool {
+        pluginFolders(home: home).contains { isExecutable(URL(fileURLWithPath: $0).appendingPathComponent("docker-" + name).path) }
+    }
+
     let executable: URL
     let endpoint: DockerEndpoint?
 

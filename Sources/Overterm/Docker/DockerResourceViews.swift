@@ -188,6 +188,13 @@ struct DockerImagesView: View {
             Button("Run…") { page.runSpec = DockerRunSpec(image: name) }
             Button("Pull Again") { page.pull(name) }
             Button("Run in a Tab") { actions.run(DockerCommands.prefix(for: docker.endpoint) + "docker run --rm -it \(DockerCommands.quote(name))", nil) }
+            if page.hasScout {
+                Menu("Docker Scout") {
+                    Button("Quickview in a Tab") { page.scout("quickview", name) }
+                    Button("Vulnerabilities in a Tab") { page.scout("cves", name) }
+                    Button("Base Image Updates in a Tab") { page.scout("recommendations", name) }
+                }
+            }
             Divider()
             Button("Copy Name") { actions.copy(name) }
         }

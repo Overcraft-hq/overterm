@@ -136,6 +136,14 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: Scout
+
+    /// Docker Scout on an image, in a terminal tab: it signs in, sends the
+    /// image's packages to Docker's service and prints as it goes.
+    func scout(_ verb: String, _ image: String) {
+        actions?.run(DockerCommands.scout(verb, image: image, endpoint: docker.endpoint), nil)
+    }
+
     // MARK: MCP Toolkit
 
     func loadMCPToolkit() {

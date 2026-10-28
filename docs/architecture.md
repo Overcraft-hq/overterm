@@ -1295,6 +1295,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   first and is the runner's `DELETE /models/…`. The header copies the
   OpenAI-compatible base URL for a container and, for a runner
   container, for this Mac; agents get the same in `docker_models`.
+- **Docker Scout**: an image's menu runs `docker scout quickview`, `cves`
+  or `recommendations` in a terminal tab, when the plugin is there
+  (`DockerCLI.hasPlugin`, the CLI's plugin folders) — never by itself: it
+  sends the image's packages to Docker's service, signed in as the user.
 - **MCP Toolkit** (`DockerMCPToolkit`, pure but for `read`): whether
   Claude Code and Codex reach Docker's MCP gateway — `docker mcp client
   ls --global --json`, which reads their config files and nothing else,
