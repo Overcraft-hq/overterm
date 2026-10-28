@@ -7,9 +7,13 @@ struct NewTaskView: View {
     /// Settings ▸ Agents: what to start, and where the worktree goes.
     let defaultAgent: Agent?
     let location: Settings.WorktreeLocation
-    /// Called with (branch, base, agent) — agent nil means a plain shell.
-    /// Returns an error message to show, or nil when the task was created.
-    let onCreate: (String, String, Agent?) async -> String?
+    /// The repository's compose file, when Docker is on and it has one:
+    /// the new worktree's stack can be started with it.
+    var composeFile: String?
+    /// Called with (branch, base, agent, start the stack) — agent nil means
+    /// a plain shell. Returns an error message to show, or nil when the
+    /// task was created.
+    let onCreate: (String, String, Agent?, Bool) async -> String?
     let onCancel: () -> Void
 
     @State private var branch = ""
@@ -17,6 +21,7 @@ struct NewTaskView: View {
     @State private var agent: Agent?
     @State private var error: String?
     @State private var working = false
+    @State private var startStack = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -31,6 +36,10 @@ struct NewTaskView: View {
                 Picker("Start", selection: $agent) {
                     ForEach(Agent.allCases) { Text($0.name).tag(Agent?.some($0)) }
                     Text("Shell only").tag(Agent?.none)
+                }
+                if let composeFile {
+                    Toggle("Start its compose stack (\(composeFile))", isOn: $startStack)
+                        .help("docker compose up -d in the new worktree, in a tab. Its project is the worktree's folder, so it runs beside the other worktrees' stacks — unless their ports collide.")
                 }
             }
 
@@ -67,7 +76,7 @@ struct NewTaskView: View {
         let branch = branch.trimmingCharacters(in: .whitespaces)
         let base = base.trimmingCharacters(in: .whitespaces)
         Task { @MainActor in
-            error = await onCreate(branch, base.isEmpty ? "HEAD" : base, agent)
+            error = await onCreate(branch, base.isEmpty ? "HEAD" : base, agent, startStack)
             working = false
         }
     }

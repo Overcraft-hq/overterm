@@ -378,6 +378,29 @@ extension E2ERunner {
         page.selection = [web]
         _ = page.press("e")
         check("e is a shell in it", commands.last?.contains("docker exec -it ot-shop-web-1 sh -c") == true, commands.last ?? "")
+        // New Task can start the new worktree's own stack.
+        let repo = scratch.appendingPathComponent("ot-stack-repo", isDirectory: true)
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? "services:\n  web:\n    image: nginx:1.27\n".write(to: repo.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["add", "."], in: repo)
+        try? await git(["-c", "user.email=e2e@overterm", "-c", "user.name=e2e", "commit", "-q", "-m", "stack"], in: repo)
+        var stackFolder: URL?
+        let recorder = page.actions?.run
+        page.actions?.run = { command, folder in
+            commands.append(command)
+            stackFolder = folder
+        }
+        do {
+            try await app.createTask(repo: repo, branch: "feat/stack", base: "main", agent: nil, startStack: true)
+            check(
+                "New Task starts the new worktree's stack",
+                commands.last?.hasSuffix("docker compose up -d") == true && stackFolder.map { ComposeProjects.composeFile(in: $0) != nil } == true
+                    && stackFolder?.path != repo.path, "\(commands.last ?? "") in \(stackFolder?.path ?? "nothing")")
+        } catch {
+            check("New Task with its stack", false, error.localizedDescription)
+        }
+        page.actions?.run = recorder ?? { _, _ in }
         _ = page.press("E")
         check(
             "E is a debug shell beside it",

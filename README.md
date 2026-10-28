@@ -195,7 +195,8 @@ about in the window each time, and Settings ▸ Docker can take them away.
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started
-in it. **Merged worktrees** are marked and cleaned up in one click, keeping
+in it — and, with a compose file in the repository, can start the worktree's
+own stack. **Merged worktrees** are marked and cleaned up in one click, keeping
 anything with changes, a tab or unpushed commits. **Pull requests** and CI
 (through your `gh`) sit on the worktree, in the strip, and in a pane of their
 own. **Claude sessions** lists every conversation ever run in the repository,

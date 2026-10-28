@@ -98,6 +98,12 @@ enum ComposeProjects {
         return ports.sorted { $0.port < $1.port }
     }
 
+    /// The compose file at a folder's top, as `docker compose` looks for it.
+    static func composeFile(in folder: URL) -> URL? {
+        ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
+            .lazy.map { folder.appendingPathComponent($0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     /// `db:service_started:false,cache:service_healthy:true` → db, cache.
     static func dependencies(_ label: String?) -> [String] {
         (label ?? "").split(separator: ",").compactMap { $0.split(separator: ":").first.map(String.init) }.filter { !$0.isEmpty }

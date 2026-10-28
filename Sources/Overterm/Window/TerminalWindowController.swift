@@ -1798,10 +1798,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 defaultBase: base ?? (Settings.shared.taskBase.isEmpty ? worktrees.main?.branch ?? "HEAD" : Settings.shared.taskBase),
                 defaultAgent: Settings.shared.defaultTaskAgent,
                 location: Settings.shared.worktreeLocation,
-                onCreate: { [weak self] branch, base, agent in
+                composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
+                onCreate: { [weak self] branch, base, agent, startStack in
                     guard let self else { return nil }
                     do {
-                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent)
+                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack)
                         close()
                         return nil
                     } catch {
@@ -2962,11 +2963,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What New Task does once the sheet is filled in: the worktree, then a
     /// tab in it named after the branch, with the agent started.
-    func createTask(repo: URL, branch: String, base: String, agent: Agent?) async throws {
+    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false) async throws {
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
         newTab(in: path, agent: agent)
         store.selected?.customTitle = branch
         await worktrees.refresh()
+        // Its own stack, in a tab beside it (the page's run, which a scenario records).
+        if startStack, ComposeProjects.composeFile(in: path) != nil {
+            let command = DockerCommands.prefix(for: DockerModel.shared.endpoint) + "docker compose up -d"
+            if let run = dockerPage.actions?.run { run(command, path) } else { runDockerCommand(command, in: path) }
+        }
     }
 
     // MARK: Snippets

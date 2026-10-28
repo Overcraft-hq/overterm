@@ -1283,6 +1283,12 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   back: its env less what its image sets (the image's inspect data), its
   published ports, mounts (`:ro` kept), restart policy, network, and its
   command when it isn't the image's.
+- **New Task's stack**: with Docker on and a compose file at the
+  repository's top (`ComposeProjects.composeFile`), New Task offers to
+  start the new worktree's own stack — `docker compose up -d` in a tab in
+  it. Its project is the worktree's folder, so it runs beside the other
+  worktrees' stacks; where their ports collide, the conflict below says
+  so.
 - **Port conflicts** (`PortConflicts`, pure; `ContainerSession.conflict`):
   worktrees of one repository run the same compose file, and its fixed
   host ports (`5432:5432`) leave the second stack's container `created`,

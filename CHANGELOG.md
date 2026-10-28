@@ -25,6 +25,7 @@ version is tagged `v<version>`.
 - docker: `E` opens a debug shell beside a container whose image has no tools of its own
 - docker: the ports a checkout's containers publish sit in its panes' headers, in Tab Info and in the API client's discovery
 - docker: a volume exports, imports and clones; a container's filesystem and an image save as tars
+- tasks: New Task can start the new worktree's compose stack with it
 
 ## 1.4.6 — 2026-10-29
 

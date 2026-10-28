@@ -47,11 +47,7 @@ final class DockerPanelModel: ObservableObject {
     }
 
     /// A compose file at the checkout's top, for "Up" when nothing runs.
-    var composeFile: URL? {
-        guard let checkout else { return nil }
-        return ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
-            .lazy.map { checkout.appendingPathComponent($0) }.first { FileManager.default.fileExists(atPath: $0.path) }
-    }
+    var composeFile: URL? { checkout.flatMap(ComposeProjects.composeFile(in:)) }
 
     private(set) var session: ContainerSession?
 
