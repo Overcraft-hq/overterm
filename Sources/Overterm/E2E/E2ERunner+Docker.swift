@@ -121,6 +121,30 @@ extension E2ERunner {
         check("4 is Networks, Docker's own last", await eventually(5) { docker.networks.map(\.Name) == ["ot-shop_default", "bridge"] })
         check("with who is on them", docker.networks.first.map { docker.containers(on: $0).map(\.name) } == ["ot-shop-web-1"])
 
+        // Export and import: a volume through a helper that never runs, a
+        // container's filesystem, an image.
+        fake.setVolumeFile("ot-old-data", "data.txt", Data("kept\n".utf8))
+        let volumeTar = scratch.appendingPathComponent("ot-old-data.tar")
+        if let volume = docker.volumes.first(where: { $0.Name == "ot-old-data" }) { page.exportVolume(volume, to: volumeTar) }
+        check(
+            "a volume exports as a tar",
+            await eventually(5) { DockerTar.entries(of: (try? Data(contentsOf: volumeTar)) ?? Data()).contains { $0.name == "volume/data.txt" } },
+            page.error ?? "")
+        page.importVolume("ot-imported", from: volumeTar)
+        check("and imports into a new volume", await eventually(5) { fake.volumeContents("ot-imported")["data.txt"] == Data("kept\n".utf8) }, page.error ?? "")
+        if let volume = docker.volumes.first(where: { $0.Name == "ot-old-data" }) { page.cloneVolume(volume, as: "ot-clone") }
+        check("a clone has its files", await eventually(5) { fake.volumeContents("ot-clone")["data.txt"] == Data("kept\n".utf8) }, page.error ?? "")
+        let containerTar = scratch.appendingPathComponent("web.tar")
+        if let container = docker.containers.first(where: { $0.name == "ot-shop-web-1" }) { page.exportContainer(container, to: containerTar) }
+        check(
+            "a container's filesystem exports",
+            await eventually(5) { DockerTar.entries(of: (try? Data(contentsOf: containerTar)) ?? Data()).contains { $0.name == "etc/nginx/nginx.conf" } })
+        let imageTar = scratch.appendingPathComponent("image.tar")
+        if let image = docker.images.first { page.saveImage(image, to: imageTar) }
+        check("an image saves", await eventually(5) { ((try? Data(contentsOf: imageTar))?.count ?? 0) > 0 })
+        check("its helpers are gone", await eventually(5) { !docker.containers.contains { $0.name.hasPrefix("helper-") } })
+        page.cleaned = nil
+
         // Clean Up: listed, then done.
         page.press("c")
         check("c opens Clean Up", await eventually(2) { self.window.attachedSheet != nil })
@@ -312,6 +336,12 @@ extension E2ERunner {
                 keyCode: 1)
         }
         check("⌘S is not the list's", key("s", .command).map { !app.handleDockerKey($0) } == true)
+        // The editor focuses itself a moment after a file opens: under load
+        // that can land after the page came back. The list has it now.
+        _ = await eventually(5) {
+            if !self.app.dockerListHasKeyboard() { self.app.focusDockerList() }
+            return self.app.dockerListHasKeyboard()
+        }
         let typed = key("s").map { app.handleDockerKey($0) } == true
         let started = await eventually(5) { docker.container(web)?.state == .running }
         check("typed s starts it again", typed && started, "\(docker.container(web)?.State ?? "")")

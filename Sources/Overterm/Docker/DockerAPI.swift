@@ -167,6 +167,68 @@ extension DockerEngine {
             headers: [("Content-Type", "application/x-tar")])
     }
 
+    // MARK: Export and import
+
+    /// A stream's bytes into a file as they come — a container's
+    /// filesystem, an image, a volume can be gigabytes. Returns the bytes.
+    @discardableResult
+    func download(_ path: String, _ query: [String: String] = [:], to file: URL) async throws -> Int {
+        FileManager.default.createFile(atPath: file.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        var written = 0
+        do {
+            for try await data in stream(path, query) {
+                try handle.write(contentsOf: data)
+                written += data.count
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: file)
+            throw error
+        }
+        return written
+    }
+
+    /// Its filesystem as a tar (`docker export`).
+    @discardableResult
+    func export(container id: String, to file: URL) async throws -> Int { try await download("/containers/\(id)/export", to: file) }
+
+    /// An image as a tar `docker load` takes back (`docker save`).
+    @discardableResult
+    func save(image name: String, to file: URL) async throws -> Int { try await download("/images/\(name)/get", to: file) }
+
+    /// A container made and never started, `volume` at /volume — enough for
+    /// the archive endpoint to read and write the volume: nothing runs, so
+    /// any image on the Mac will do. Labelled, and removed by the caller.
+    func helper(mounting volume: String, image: String) async throws -> String {
+        struct Created: Decodable { var Id: String }
+        let body = try JSONSerialization.data(withJSONObject: [
+            "Image": image, "Cmd": ["true"], "Labels": ["overterm.helper": "1"],
+            "HostConfig": ["Binds": ["\(volume):/volume"]],
+        ])
+        let response = try await send(.POST, "/containers/create", body: body, headers: [("Content-Type", "application/json")])
+        return try JSONDecoder().decode(Created.self, from: response.body).Id
+    }
+
+    /// A volume's files as a tar, `volume/` at its top.
+    @discardableResult
+    func export(volume name: String, to file: URL, using image: String) async throws -> Int {
+        let helper = try await helper(mounting: name, image: image)
+        defer { Task { try? await remove(container: helper, force: true) } }
+        return try await download("/containers/\(helper)/archive", ["path": "/volume"], to: file)
+    }
+
+    /// A volume made (if it isn't there) and filled from a tar `export`
+    /// wrote.
+    func `import`(volume name: String, from file: URL, using image: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["Name": name, "Labels": ["overterm.imported": "1"]])
+        try await send(.POST, "/volumes/create", body: body, headers: [("Content-Type", "application/json")])
+        let helper = try await helper(mounting: name, image: image)
+        defer { Task { try? await remove(container: helper, force: true) } }
+        let tar = try Data(contentsOf: file, options: .mappedIfSafe)
+        try await send(.PUT, "/containers/\(helper)/archive", ["path": "/"], body: tar, headers: [("Content-Type", "application/x-tar")])
+    }
+
     // MARK: Images, volumes, networks
 
     func images() async throws -> [ImageSummary] { try await get([ImageSummary].self, "/images/json") }

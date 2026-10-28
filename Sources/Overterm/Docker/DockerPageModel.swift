@@ -27,6 +27,12 @@ struct DockerActions {
     var showTab: (UUID) -> Void = { _ in }
     /// A file on the Mac, in the editor.
     var edit: (URL) -> Void = { _ in }
+    /// Where to save something: a suggested name, then the place.
+    var pickSave: (String, @escaping (URL) -> Void) -> Void = { _, _ in }
+    /// A file to read: then the file.
+    var pickOpen: (@escaping (URL) -> Void) -> Void = { _ in }
+    /// A name asked for: title, what it is for, the first guess, then it.
+    var askName: (String, String, String, @escaping (String) -> Void) -> Void = { _, _, _, _ in }
 }
 
 /// One block of the containers list: a compose project with its
@@ -92,8 +98,11 @@ final class DockerPageModel: ObservableObject {
     /// Clean Up's sheet, and what it would remove.
     @Published var cleaning = false
     @Published var cleanChoice = DockerPrunePlan.Choice()
-    /// What Clean Up freed, said once.
+    /// What Clean Up freed, said once — and what an export or an import
+    /// did.
     @Published var cleaned: String?
+    /// An export or import on its way: what it is.
+    @Published var transferring: String?
     /// The Run window, open on this.
     @Published var runSpec: DockerRunSpec?
 

@@ -161,6 +161,14 @@ struct DockerPageView: View {
             header
             if let error = page.error { banner(error) }
             if let cleaned = page.cleaned { note(cleaned) }
+            if let transferring = page.transferring {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(verbatim: transferring + "…").font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Spacer()
+                }
+                .padding(.horizontal, 20).padding(.vertical, 6)
+            }
             Rectangle().fill(theme.border).frame(height: 1)
             switch docker.connection {
             case .running where page.section == .images: DockerImagesView(page: page, docker: docker, theme: theme, actions: actions)
@@ -368,6 +376,7 @@ struct DockerPageView: View {
         Button("Copy Name") { actions.copy(container.name) }
         Button("Copy ID") { actions.copy(container.Id) }
         Button("Copy as docker run") { page.copyRunCommand(container) }
+        Button("Export Filesystem…") { actions.pickSave("\(container.name).tar") { page.exportContainer(container, to: $0) } }
         Button("Run Another Like It…") { page.runAnother(like: container) }
         Divider()
         Button(targets.count > 1 ? "Remove \(targets.count) Containers…" : "Remove…") { page.confirmRemove(targets) }

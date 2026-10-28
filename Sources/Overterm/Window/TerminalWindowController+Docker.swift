@@ -29,6 +29,32 @@ extension TerminalWindowController {
                 guard let self else { return }
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
                 self.openInEditor(url)
+            },
+            pickSave: { [weak self] name, then in
+                guard let window = self?.window else { return }
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = name
+                panel.beginSheetModal(for: window) { response in
+                    guard response == .OK, let url = panel.url else { return }
+                    MainActor.assumeIsolated { then(url) }
+                }
+            },
+            pickOpen: { [weak self] then in
+                guard let window = self?.window else { return }
+                let panel = NSOpenPanel()
+                panel.allowedContentTypes = [.init(filenameExtension: "tar") ?? .data]
+                panel.beginSheetModal(for: window) { response in
+                    guard response == .OK, let url = panel.url else { return }
+                    MainActor.assumeIsolated { then(url) }
+                }
+            },
+            askName: { [weak self] title, detail, initial, then in
+                self?.askForName(title: title, detail: detail, initial: initial, action: "OK") { name in
+                    let trimmed = name.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { return "A name, please." }
+                    then(trimmed)
+                    return nil
+                }
             }
         )
     }

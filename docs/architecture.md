@@ -1244,6 +1244,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   tab, where the credential helper signs in — Overterm never handles a
   registry password. Tag, remove (asked first; never what a running
   container uses), browse a volume in a tab (a throwaway container).
+- **Export and import**: a container's filesystem (`/export`, `docker
+  export`) and an image (`/images/…/get`, `docker save`) stream to a file
+  as they come. A volume goes through a helper: a container created with
+  the volume at `/volume` and never started — the archive endpoint mounts
+  it anyway (the live test checks that against the real engine) — so any
+  image on the Mac will do and nothing runs; it is labelled and removed
+  after. Export reads `/volume`, import makes the volume and writes the
+  tar back at `/`, a clone is both.
 - **Clean Up** (`c`, `DockerPrunePlan`, pure): what the engine's prunes
   would remove, listed before anything goes — the prunes say what they
   removed only afterwards. It follows their rules: stopped containers

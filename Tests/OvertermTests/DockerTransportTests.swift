@@ -257,6 +257,38 @@ final class DockerTransportTests: XCTestCase {
         try await real.remove(container: made.Id, force: true)
     }
 
+    /// A volume in and out through a helper container that never starts —
+    /// the engine mounts it for the archive endpoint. A volume of our own,
+    /// labelled, from an image already here; removed after.
+    func testAVolumeExportsAndImportsOnTheRealEngine() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_DOCKER_TESTS"] == "1", "OVERTERM_DOCKER_TESTS=1 runs it")
+        let real = DockerEngine(endpoint: .current())
+        try await real.ping()
+        let image = "debian:bookworm-slim"
+        guard (try? await real.send(.GET, "/images/\(image)/json")) != nil else { throw XCTSkip("\(image) isn't on this Mac; nothing is pulled") }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-volume-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let name = "overterm-test-\(UUID().uuidString.prefix(8).lowercased())"
+        var tar = DockerTar.header(name: "volume/", size: 0, mode: 0o755, modified: Date(), type: "5")!
+        tar += DockerTar.archive(name: "volume/hello.txt", data: Data("hi from a volume\n".utf8))!
+        let source = folder.appendingPathComponent("in.tar")
+        try tar.write(to: source)
+        do {
+            try await real.import(volume: name, from: source, using: image)
+            let out = folder.appendingPathComponent("out.tar")
+            let bytes = try await real.export(volume: name, to: out, using: image)
+            XCTAssertGreaterThan(bytes, 0)
+            let entries = DockerTar.entries(of: try Data(contentsOf: out))
+            XCTAssertEqual(entries.first { $0.name == "volume/hello.txt" }.map { String(decoding: $0.data, as: UTF8.self) }, "hi from a volume\n", "\(entries.map(\.name))")
+        } catch {
+            try? await real.remove(volume: name, force: true)
+            throw error
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        try await real.remove(volume: name, force: true)
+    }
+
     func testImagesVolumesNetworksAndPrunes() async throws {
         fake.addImage("postgres:16", size: 400 << 20, containers: 1)
         fake.addImage("node:20", size: 1 << 30)

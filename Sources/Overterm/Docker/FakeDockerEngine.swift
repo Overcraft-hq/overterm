@@ -19,6 +19,8 @@ final class FakeDockerEngine: @unchecked Sendable {
         /// Each line with the time it was written, as the engine keeps it.
         var logs: [(stream: DockerLogChunk.Stream, text: String, time: String)] = []
         var error: String = ""
+        /// A volume mounted where (`HostConfig.Binds`): the helper's.
+        var binds: [String: String] = [:]
     }
 
     let socket: String
@@ -27,6 +29,8 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var images: [ImageSummary] = []
     private var volumes: [VolumeSummary] = []
     private var networks: [NetworkSummary] = []
+    /// What each volume holds, by path in it.
+    private var volumeFiles: [String: [String: Data]] = [:]
     /// Bytes of build cache not in use.
     var buildCache = 0
     private var execs: [String: (container: String, command: [String])] = [:]
@@ -279,6 +283,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             return Self.json(PruneReport(SpaceReclaimed: freed, CachesDeleted: freed > 0 ? ["cache"] : []))
         case "containers" where verb == "prune", "images" where verb == "prune", "volumes" where verb == "prune", "networks" where verb == "prune":
             return Self.json(prune(kind, all: (query["filters"] ?? "").contains("\"dangling\":[\"false\"]") || (query["filters"] ?? "").contains("\"all\"")))
+        case "containers" where !named && verb == "create" && method == .POST: return create(body, query)
         case "containers": return named ? container(method, id, verb, query, body) : containerList(query)
         case "exec": return exec(method, id, verb)
         case "images" where named && verb == "history": return image(id).map { Self.json(Self.history(of: $0)) } ?? Self.error(404, "No such image: \(id)")
@@ -290,7 +295,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             emitImage("tag", found.Id)
             return .empty(201)
         case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"))
-        case "images", "volumes", "networks": return other(method, kind, id, named)
+        case "images", "volumes", "networks": return other(method, kind, id, named, body)
         default: return Self.error(404, "page not found")
         }
     }
@@ -379,15 +384,38 @@ final class FakeDockerEngine: @unchecked Sendable {
                 linkTarget: "")
             return .raw(200, Data(), [("X-Docker-Container-Path-Stat", (try? JSONEncoder().encode(stat))?.base64EncodedString() ?? "")])
         case (.GET, "archive"):
+            // A volume's mount point: its files, under the folder's own name.
+            if let volume = container.binds[path] {
+                let files = locked { volumeFiles[volume] ?? [:] }
+                let top = (path as NSString).lastPathComponent
+                var archive = DockerTar.header(name: top + "/", size: 0, mode: 0o755, modified: Date(), type: "5") ?? Data()
+                for (name, data) in files.sorted(by: { $0.key < $1.key }) {
+                    archive += (DockerTar.archive(name: top + "/" + name, data: data) ?? Data()).dropLast(2 * DockerTar.block)
+                }
+                archive += Data(count: 2 * DockerTar.block)
+                return .raw(200, archive, [("Content-Type", "application/x-tar")])
+            }
             guard let data = container.files[path], let archive = DockerTar.archive(name: (path as NSString).lastPathComponent, data: data) else {
                 return Self.error(404, "Could not find the file \(path) in container \(id)")
             }
             return .raw(200, archive, [("Content-Type", "application/x-tar")])
         case (.PUT, "archive"):
+            let folder = query["path"] ?? "/"
             for entry in DockerTar.entries(of: body) where entry.kind == .file {
-                setFile(id, ((query["path"] ?? "/") as NSString).appendingPathComponent(entry.name), entry.data)
+                let full = (folder as NSString).appendingPathComponent(entry.name)
+                // Into a mounted volume, when it lands under its mount point.
+                if let (mount, volume) = container.binds.first(where: { full.hasPrefix($0.key + "/") }) {
+                    locked { volumeFiles[volume, default: [:]][String(full.dropFirst(mount.count + 1))] = entry.data }
+                } else {
+                    setFile(id, full, entry.data)
+                }
             }
             return .empty(200)
+        case (.GET, "export"):
+            let archive = container.files.sorted { $0.key < $1.key }.reduce(into: Data()) { out, file in
+                out += (DockerTar.archive(name: String(file.key.dropFirst()), data: file.value) ?? Data()).dropLast(2 * DockerTar.block)
+            }
+            return .raw(200, archive + Data(count: 2 * DockerTar.block), [("Content-Type", "application/x-tar")])
         default:
             return Self.error(404, "page not found")
         }
@@ -432,6 +460,29 @@ final class FakeDockerEngine: @unchecked Sendable {
         return (0, lines.values.sorted().map { $0 + "\n" }.joined(), "")
     }
 
+    /// A container made, not started: what the helper is.
+    private func create(_ body: Data, _ query: [String: String]) -> Answer {
+        struct Request: Decodable {
+            struct Host: Decodable { var Binds: [String]? }
+            var Image: String
+            var HostConfig: Host?
+        }
+        guard let request = try? JSONDecoder().decode(Request.self, from: body) else { return Self.error(400, "bad request") }
+        let id = add(name: query["name"] ?? "helper-\(UUID().uuidString.prefix(6).lowercased())", image: request.Image, state: .created)
+        var binds: [String: String] = [:]
+        for bind in request.HostConfig?.Binds ?? [] {
+            let parts = bind.split(separator: ":").map(String.init)
+            if parts.count >= 2 { binds[parts[1]] = parts[0] }
+        }
+        locked { containers[id]?.binds = binds }
+        return .json(201, Data(#"{"Id":"\#(id)","Warnings":[]}"#.utf8))
+    }
+
+    /// What a volume holds now, for a test.
+    func volumeContents(_ name: String) -> [String: Data] { locked { volumeFiles[name] ?? [:] } }
+
+    func setVolumeFile(_ name: String, _ path: String, _ data: Data) { locked { volumeFiles[name, default: [:]][path] = data } }
+
     private func image(_ idOrName: String) -> ImageSummary? {
         locked { images.first { $0.Id == idOrName || $0.tags.contains(idOrName) || $0.shortID == idOrName } }
     }
@@ -473,10 +524,17 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    private func other(_ method: HTTPMethod, _ kind: String, _ id: String, _ named: Bool) -> Answer {
+    private func other(_ method: HTTPMethod, _ kind: String, _ id: String, _ named: Bool, _ body: Data) -> Answer {
         switch (method, kind, named) {
         case (.GET, "images", false): return Self.json(locked { images })
         case (.GET, "volumes", false): return Self.json(VolumeList(Volumes: locked { volumes }, Warnings: nil))
+        case (.POST, "volumes", false):
+            struct Request: Decodable { var Name: String }
+            guard let name = try? JSONDecoder().decode(Request.self, from: body).Name else { return Self.error(400, "no Name") }
+            if locked({ !volumes.contains { $0.Name == name } }) { addVolume(name, size: 0, refCount: 0) }
+            return .json(201, Data(#"{"Name":"\#(name)","Driver":"local","Mountpoint":"/var/lib/docker/volumes/\#(name)/_data"}"#.utf8))
+        case (.GET, "images", true):
+            return .raw(200, Data("a saved image".utf8) + Data(count: 2 * DockerTar.block), [("Content-Type", "application/x-tar")])
         case (.GET, "networks", false): return Self.json(locked { networks })
         case (.DELETE, "images", true):
             locked { images.removeAll { $0.Id == id || $0.tags.contains(id) } }

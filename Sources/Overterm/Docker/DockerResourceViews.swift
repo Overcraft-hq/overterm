@@ -151,6 +151,7 @@ struct DockerImagesView: View {
             Button("Copy Name") { actions.copy(name) }
         }
         Button("Copy ID") { actions.copy(image.Id) }
+        Button("Save as tar…") { actions.pickSave("\((image.tags.first ?? image.shortID).replacingOccurrences(of: "/", with: "_")).tar") { page.saveImage(image, to: $0) } }
         Divider()
         Button("Remove…") { page.confirmRemove(images: page.imageSelection.contains(image.Id) ? docker.images.filter { page.imageSelection.contains($0.Id) } : [image]) }
             .disabled(docker.containers(using: image).contains { $0.state.isUp })
@@ -264,6 +265,14 @@ struct DockerVolumesView: View {
                         }
                         Button("Copy Name") { actions.copy(volume.Name) }
                         Divider()
+                        Button("Export…") { actions.pickSave("\(volume.shortName).tar") { page.exportVolume(volume, to: $0) } }
+                        Button("Clone…") {
+                            actions.askName("Clone “\(volume.shortName)”", "A new volume with the same files.", volume.shortName + "-copy") {
+                                page.cloneVolume(volume, as: $0)
+                            }
+                        }
+                        Button("Import Into a New Volume…") { importVolume() }
+                        Divider()
                         Button("Remove…") { page.confirmRemove(volumes: [volume]) }.disabled(!users.isEmpty)
                     }
                 }
@@ -271,6 +280,7 @@ struct DockerVolumesView: View {
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
             .accessibilityIdentifier("docker.volumes")
+            .contextMenu { Button("Import Into a New Volume…") { importVolume() } }
             if page.showDetail, page.volumeSelection.count == 1, let volume = docker.volumes.first(where: { page.volumeSelection.contains($0.Name) }) {
                 Rectangle().fill(theme.border).frame(width: 1)
                 ScrollView {
@@ -302,6 +312,17 @@ struct DockerVolumesView: View {
                 .id(volume.Name)
                 .frame(width: 420)
                 .accessibilityIdentifier("docker.volume.detail")
+            }
+        }
+    }
+}
+
+extension DockerVolumesView {
+    /// A tar an export wrote, into a volume made for it.
+    func importVolume() {
+        actions.pickOpen { file in
+            actions.askName("Import “\(file.lastPathComponent)”", "Into a new volume called:", file.deletingPathExtension().lastPathComponent) {
+                page.importVolume($0, from: file)
             }
         }
     }

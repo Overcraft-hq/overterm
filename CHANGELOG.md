@@ -24,6 +24,7 @@ version is tagged `v<version>`.
 - docker: a compose project's file and its resolved config, and the engine's own settings, open in the editor
 - docker: `E` opens a debug shell beside a container whose image has no tools of its own
 - docker: the ports a checkout's containers publish sit in its panes' headers, in Tab Info and in the API client's discovery
+- docker: a volume exports, imports and clones; a container's filesystem and an image save as tars
 
 ## 1.4.6 — 2026-10-29
 

@@ -63,6 +63,81 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: Export and import
+
+    /// An image to make a helper from: it never runs, so any will do —
+    /// a small one if there is one.
+    func helperImage() async -> String? {
+        guard let images = try? await docker.engine?.images(), !images.isEmpty else { return nil }
+        let small = ["busybox", "alpine", "debian", "ubuntu"]
+        for name in small {
+            if let image = images.first(where: { $0.tags.contains { $0.hasPrefix(name + ":") } }) { return image.Id }
+        }
+        return images.min { $0.Size < $1.Size }?.Id
+    }
+
+    private func transfer(_ what: String, _ work: @escaping () async throws -> String) {
+        transferring = what
+        Task {
+            do {
+                cleaned = try await work()
+            } catch {
+                self.error = "\(what): \(error.localizedDescription)"
+            }
+            transferring = nil
+        }
+    }
+
+    func exportContainer(_ container: ContainerSummary, to file: URL) {
+        transfer("Exporting \(container.name)") { [docker] in
+            guard let engine = docker.engine else { throw DockerError.unreachable("Docker isn't running.") }
+            let bytes = try await engine.export(container: container.Id, to: file)
+            return "\(container.name)'s filesystem: \(DockerBytes.string(bytes)) in \(file.lastPathComponent)."
+        }
+    }
+
+    func saveImage(_ image: ImageSummary, to file: URL) {
+        let name = image.tags.first ?? image.Id
+        transfer("Saving \(name)") { [docker] in
+            guard let engine = docker.engine else { throw DockerError.unreachable("Docker isn't running.") }
+            let bytes = try await engine.save(image: name, to: file)
+            return "\(name): \(DockerBytes.string(bytes)) in \(file.lastPathComponent) — docker load takes it back."
+        }
+    }
+
+    func exportVolume(_ volume: VolumeSummary, to file: URL) {
+        transfer("Exporting \(volume.shortName)") { [weak self, docker] in
+            guard let engine = docker.engine, let image = await self?.helperImage() else { throw Self.noHelper }
+            let bytes = try await engine.export(volume: volume.Name, to: file, using: image)
+            return "\(volume.shortName): \(DockerBytes.string(bytes)) in \(file.lastPathComponent)."
+        }
+    }
+
+    func importVolume(_ name: String, from file: URL) {
+        transfer("Importing into \(name)") { [weak self, docker] in
+            guard let engine = docker.engine, let image = await self?.helperImage() else { throw Self.noHelper }
+            try await engine.import(volume: name, from: file, using: image)
+            docker.load(.volumes)
+            return "\(file.lastPathComponent) is in the volume \(name)."
+        }
+    }
+
+    /// A copy under another name: exported, then imported.
+    func cloneVolume(_ volume: VolumeSummary, as name: String) {
+        transfer("Cloning \(volume.shortName)") { [weak self, docker] in
+            guard let engine = docker.engine, let image = await self?.helperImage() else { throw Self.noHelper }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-clone-\(UUID().uuidString).tar")
+            defer { try? FileManager.default.removeItem(at: file) }
+            try await engine.export(volume: volume.Name, to: file, using: image)
+            try await engine.import(volume: name, from: file, using: image)
+            docker.load(.volumes)
+            return "\(volume.shortName) copied into \(name)."
+        }
+    }
+
+    nonisolated static let noHelper = DockerError(
+        status: 0, message: "A volume is read through a container that never runs, and it needs any image on this Mac — pull one (busybox).")
+
     // MARK: Files on the Mac
 
     /// The project's compose file in the editor.
