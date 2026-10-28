@@ -1278,6 +1278,19 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Dockerfile opens in the editor when the context is a folder here. A
   scenario points `DockerCLI.override` at a stub `docker` answering as
   buildx would.
+- **Models** (section 6, `ModelRunner`, pure but for `read`): Docker
+  Model Runner's models — pulled, loaded, on disk — read from the
+  runner's own API and never `docker model`: on Docker Engine (OrbStack,
+  Colima) every one of its commands, `list` and `status` too, installs a
+  runner first — pulls its image, makes a container and a volume.
+  Docker Desktop's runner answers over the engine's socket under
+  `/exp/vDD4.40` (503 while it is off); an engine's is a
+  `docker/model-runner` container already there, at its published port;
+  a remote engine's isn't read. Enabling, installing, a pull and a chat
+  (`n`, `docker model run`) go to a terminal tab; a removal is asked
+  first and is the runner's `DELETE /models/…`. The header copies the
+  OpenAI-compatible base URL for a container and, for a runner
+  container, for this Mac; agents get the same in `docker_models`.
 - **Export and import**: a container's filesystem (`/export`, `docker
   export`) and an image (`/images/…/get`, `docker save`) stream to a file
   as they come. A volume goes through a helper: a container created with

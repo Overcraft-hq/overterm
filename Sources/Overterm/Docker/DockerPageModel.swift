@@ -50,7 +50,7 @@ struct DockerListGroup: Identifiable, Equatable {
 @MainActor
 final class DockerPageModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case containers, images, volumes, networks, builds
+        case containers, images, volumes, networks, builds, models
 
         var id: String { rawValue }
         var title: String { rawValue.capitalized }
@@ -61,6 +61,7 @@ final class DockerPageModel: ObservableObject {
             case .volumes: "externaldrive"
             case .networks: "point.3.filled.connected.trianglepath.dotted"
             case .builds: "hammer"
+            case .models: "cpu"
             }
         }
 
@@ -71,7 +72,7 @@ final class DockerPageModel: ObservableObject {
             case .images: .images
             case .volumes: .volumes
             case .networks: .networks
-            case .builds: nil
+            case .builds, .models: nil
             }
         }
     }
@@ -111,6 +112,12 @@ final class DockerPageModel: ObservableObject {
     @Published var buildsError: String?
     /// The Run window, open on this.
     @Published var runSpec: DockerRunSpec?
+    /// Docker Model Runner's: where it is, then what it has — nil while
+    /// it isn't answering (`loadModels`).
+    @Published var modelsPlace: ModelRunner.Place?
+    @Published var models: ModelRunner.Contents?
+    @Published var modelsError: String?
+    @Published var modelSelection: Set<String> = []
 
     let docker: DockerModel
 
@@ -127,6 +134,7 @@ final class DockerPageModel: ObservableObject {
                 DispatchQueue.main.async {
                     self?.want(visible ? section.resource : nil)
                     if visible, section == .builds { self?.loadBuilds() }
+                    if visible, section == .models { self?.loadModels() }
                 }
             }
         // The detail's streams follow what it shows and whether it shows.
@@ -329,6 +337,9 @@ final class DockerPageModel: ObservableObject {
         case .cleanUp:
             cleaning = true
             return true
+        case .run where section == .models:
+            for model in selectedModels.prefix(1) { runModel(model) }
+            return true
         case .run:
             let image = section == .images ? docker.images.first { imageSelection.contains($0.Id) }?.tags.first : detailed?.Image
             runSpec = DockerRunSpec(image: image ?? "")
@@ -382,6 +393,7 @@ final class DockerPageModel: ObservableObject {
             case .volumes: confirmRemove(volumes: docker.volumes.filter { volumeSelection.contains($0.Name) })
             case .networks: confirmRemove(networks: docker.networks.filter { networkSelection.contains($0.Id) })
             case .builds: for build in builds where buildSelection.contains(build.id) { removeBuild(build) }
+            case .models: confirmRemove(models: selectedModels)
             case .containers: break
             }
             return true

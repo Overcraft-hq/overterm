@@ -63,6 +63,79 @@ extension DockerPageModel {
         }
     }
 
+    // MARK: Models
+
+    var selectedModels: [RunnerModel] { models?.models.filter { modelSelection.contains($0.id) } ?? [] }
+
+    /// Model Runner's models, read when the section shows — from the
+    /// runner's own API, never `docker model` (which installs a runner
+    /// on an engine that has none).
+    func loadModels() {
+        guard let engine = docker.engine else { return }
+        let place = ModelRunner.place(runtime: docker.runtime, remote: docker.publishedHost != nil, containers: docker.containers)
+        modelsPlace = place
+        Task {
+            do {
+                let contents = try await ModelRunner.read(place, engine: engine)
+                if contents != models { models = contents }
+                modelsError = nil
+            } catch {
+                models = nil
+                modelsError = "Model Runner: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// A chat with it, in a terminal tab.
+    func runModel(_ model: RunnerModel) {
+        actions?.run(DockerCommands.prefix(for: docker.endpoint) + "docker model run " + DockerCommands.quote(model.reference), nil)
+    }
+
+    /// A model by name, pulled in a terminal tab where its layers show.
+    func pullModel() {
+        actions?.askName("Pull a Model", "From Docker Hub (ai/…) or Hugging Face (hf.co/…):", "ai/smollm2") { [weak self] name in
+            guard let self, !name.isEmpty else { return }
+            self.actions?.run(DockerCommands.prefix(for: self.docker.endpoint) + "docker model pull " + DockerCommands.quote(name), nil)
+        }
+    }
+
+    /// What starts the runner where it isn't answering: Docker Desktop's
+    /// setting, the engine's container, or its install — in a terminal
+    /// tab, but for a container that is only stopped.
+    func startModelRunner() {
+        switch modelsPlace {
+        case .desktop: actions?.run("docker desktop enable model-runner", nil)
+        case .stopped(let id, _):
+            Task {
+                try? await docker.perform(.start, on: id)
+                loadModels()
+            }
+        case .absent(let command?): actions?.run(DockerCommands.prefix(for: docker.endpoint) + command, nil)
+        default: break
+        }
+    }
+
+    func confirmRemove(models: [RunnerModel]) {
+        guard !models.isEmpty, let engine = docker.engine, let place = modelsPlace else { return }
+        let names = models.map(\.name)
+        actions?.confirm(
+            models.count == 1 ? "Remove “\(names[0])”?" : "Remove \(models.count) models?",
+            "Its files leave Model Runner's store; pulling it again downloads it all.", "Remove"
+        ) { [weak self] in
+            Task {
+                for model in models {
+                    do {
+                        try await ModelRunner.remove(model, place: place, engine: engine)
+                        self?.modelSelection.remove(model.id)
+                    } catch {
+                        self?.error = "Remove \(model.name): \(error.localizedDescription)"
+                    }
+                }
+                self?.loadModels()
+            }
+        }
+    }
+
     // MARK: Builds
 
     /// The builds `buildx history` keeps, read when the section shows.

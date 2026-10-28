@@ -30,6 +30,7 @@ version is tagged `v<version>`.
 - docker: Docker Hub is searched as you type the image to pull
 - docker: Docker Desktop's update check, diagnose and Kubernetes status in the engine menu, in a terminal tab
 - docker: an `ssh://` context reaches a remote engine through your own ssh, its ports opening on the host
+- docker: Docker Model Runner's models — which are loaded, what they take — with a chat in a tab and the OpenAI base URL to give your code
 
 ## 1.4.6 — 2026-10-29
 

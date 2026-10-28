@@ -204,6 +204,48 @@ extension E2ERunner {
         check("1 is Containers again", page.section == .containers)
     }
 
+    /// Model Runner's models: an engine with none says what installs one;
+    /// a runner container's are listed, chatted with, removed — its API at
+    /// the container's port, never `docker model` (which installs one).
+    private func modelsChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        var commands: [String] = []
+        let actions = page.actions
+        page.actions?.run = { command, _ in commands.append(command) }
+        page.actions?.confirm = { _, _, _, then in then() }
+        defer { page.actions = actions }
+        page.press("6")
+        check("6 is Models", page.section == .models)
+        check(
+            "an engine with no runner says so",
+            await eventually(5) { page.modelsPlace == .absent(command: "docker model install-runner") && page.models == nil },
+            "\(String(describing: page.modelsPlace))")
+        page.startModelRunner()
+        check("and installs one only when asked, in a tab", commands.last?.hasSuffix("docker model install-runner") == true, commands.last ?? "")
+        guard let port = try? fake.listenTCP() else { return check("the runner's port", false) }
+        fake.setModelRunner([.init(tag: "ai/smollm2:latest", loaded: true), .init(tag: "ai/gemma3:latest")])
+        let runner = fake.add(
+            name: "docker-model-runner", image: "docker/model-runner:latest",
+            ports: [DockerPort(IP: "127.0.0.1", PrivatePort: 12434, PublicPort: port, Type: "tcp")])
+        check("a runner's container is found", await eventually(5) { docker.container(runner) != nil })
+        page.loadModels()
+        check(
+            "and its models listed", await eventually(5) { page.models?.models.map(\.name) == ["gemma3", "smollm2"] },
+            "\(page.models?.models.map(\.name) ?? []) \(page.modelsError ?? "")")
+        check("which of them is loaded", page.models?.running.map(\.model_name) == ["ai/smollm2:latest"])
+        check("where a program reaches them", ModelRunner.endpoints(page.modelsPlace ?? .remote)?.mac == "http://localhost:\(port)/engines/v1")
+        page.modelSelection = Set(page.models?.models.filter { $0.name == "smollm2" }.map(\.id) ?? [])
+        _ = page.press("n")
+        check("n chats with it in a tab", commands.last?.hasSuffix("docker model run ai/smollm2:latest") == true, commands.last ?? "")
+        _ = page.press("\u{7F}")
+        check(
+            "⌫ removes it, asked first", await eventually(5) { fake.modelRunnerTags == ["ai/gemma3:latest"] && page.models?.models.count == 1 },
+            "\(fake.modelRunnerTags ?? [])")
+        try? await docker.remove(runner, force: true)
+        page.press("1")
+    }
+
     /// The same engine as a remote one, `ssh://` to a throwaway sshd on
     /// 127.0.0.1 with its socket forwarded — what an ssh context does.
     private func remoteChecks(socket: String, web: String, folder: URL) async {
@@ -679,6 +721,7 @@ extension E2ERunner {
         app.showDockerSwitcher(nil)
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
+        await modelsChecks(fake)
         await agentChecks(fake, web: web)
         await remoteChecks(socket: socket, web: web, folder: folder)
         app.hideOverlay()

@@ -703,3 +703,105 @@ private struct DockerBuildDetailView: View {
         return theme.textNS.withAlphaComponent(0.6)
     }
 }
+
+/// Docker Model Runner's models: what is pulled, what is loaded, what they
+/// take; a chat with one in a terminal tab (`n`), a pull, a removal asked
+/// first (⌫), the OpenAI endpoint to give a program.
+struct DockerModelsView: View {
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: DockerActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header.padding(.horizontal, 16).padding(.vertical, 10)
+            Rectangle().fill(theme.border).frame(height: 1)
+            if let contents = page.models {
+                List(selection: $page.modelSelection) {
+                    ForEach(contents.models) { model in
+                        let loaded = contents.running.first { $0.runs(model) }
+                        ResourceRow(
+                            symbol: loaded == nil ? "cpu" : "bolt.fill", title: model.name,
+                            subtitle: model.summary.isEmpty ? model.shortID : model.summary,
+                            figures: [
+                                loaded.map { "loaded · \($0.backend_name)" } ?? "",
+                                RelativeDateTimeFormatter().localizedString(for: Date(timeIntervalSince1970: TimeInterval(model.created)), relativeTo: Date()),
+                            ],
+                            dim: false, theme: theme
+                        )
+                        .tag(model.id)
+                        .listRowSeparator(.hidden)
+                        .contextMenu {
+                            Button("Chat in a Tab") { page.runModel(model) }
+                            Button("Copy Name") { actions.copy(model.reference) }
+                            Divider()
+                            Button("Remove…") { page.confirmRemove(models: [model]) }
+                        }
+                    }
+                    if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("docker.models")
+            } else {
+                absent.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear { page.loadModels() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text(verbatim: status).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1)
+            Spacer()
+            if let endpoints = page.modelsPlace.flatMap(ModelRunner.endpoints), page.models != nil {
+                Menu("Endpoint") {
+                    Button("Copy for a Container — \(endpoints.containers)") { actions.copy(endpoints.containers) }
+                    if let mac = endpoints.mac { Button("Copy for This Mac — \(mac)") { actions.copy(mac) } }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("The OpenAI-compatible API: point a program's base URL here")
+            }
+            Button("Pull…") { page.pullModel() }.controlSize(.small).disabled(page.models == nil)
+            Button {
+                page.loadModels()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help("Read again")
+        }
+    }
+
+    private var status: String {
+        if let error = page.modelsError { return error }
+        guard let contents = page.models else { return "Docker Model Runner" }
+        let size = contents.usage.map { " · \(DockerBytes.string(Int($0.models_disk_usage))) on disk" } ?? ""
+        let loaded = contents.running.isEmpty ? "" : " · \(contents.running.count) loaded"
+        return "\(contents.models.count) \(contents.models.count == 1 ? "model" : "models")\(loaded)\(size)"
+    }
+
+    /// Why there is no list, and what would make one.
+    @ViewBuilder private var absent: some View {
+        VStack(spacing: 10) {
+            switch page.modelsPlace {
+            case .desktop:
+                Text("Docker Desktop's Model Runner is off.").foregroundStyle(theme.text2)
+                Button("Enable Model Runner") { page.startModelRunner() }.help("docker desktop enable model-runner, in a terminal tab")
+            case .stopped(_, let name):
+                Text(verbatim: "Model Runner's container, \(name), is stopped.").foregroundStyle(theme.text2)
+                Button("Start It") { page.startModelRunner() }
+            case .absent(let command?):
+                Text("This engine has no Model Runner.").foregroundStyle(theme.text2)
+                Button("Install Model Runner") { page.startModelRunner() }.help("\(command), in a terminal tab — it pulls the runner's image")
+            case .remote:
+                Text("A remote engine's Model Runner isn't read from this Mac.").foregroundStyle(theme.text2)
+            case .absent(nil), .container, nil:
+                Text("Model Runner isn't answering.").foregroundStyle(theme.text2)
+            }
+        }
+        .font(.system(size: 12))
+        .padding(20)
+    }
+}

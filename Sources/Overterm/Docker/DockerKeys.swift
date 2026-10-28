@@ -5,7 +5,7 @@ import Foundation
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, inspect, open, database, remove, composeUp,
-        composeDown, run, filter, cleanUp, containers, images, volumes, networks, builds, help
+        composeDown, run, filter, cleanUp, containers, images, volumes, networks, builds, models, help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -15,6 +15,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .volumes: .volumes
         case .networks: .networks
         case .builds: .builds
+        case .models: .models
         default: nil
         }
     }
@@ -45,6 +46,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .volumes: "3"
         case .networks: "4"
         case .builds: "5"
+        case .models: "6"
         case .help: "?"
         }
     }
@@ -63,7 +65,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .inspect: "Inspect"
         case .open: "Open its first port in the browser"
         case .database: "Open a database container in the Database panel"
-        case .run: "Run an image — the selected one — in a new container"
+        case .run: "Run an image — the selected one — in a new container; a model, in a chat in a tab"
         case .remove: "Remove (asks first)"
         case .composeUp: "Compose up, in a terminal tab"
         case .composeDown: "Compose down, in a terminal tab (asks first)"
@@ -74,6 +76,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .volumes: "Volumes"
         case .networks: "Networks"
         case .builds: "Builds"
+        case .models: "Models — Docker Model Runner's"
         case .help: "These keys"
         }
     }

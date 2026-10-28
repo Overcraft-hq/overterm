@@ -39,7 +39,25 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var logFollowers: [String: [Channel]] = [:]
     private var samplers: [ObjectIdentifier: Channel] = [:]
     private var channel: Channel?
+    private var tcpChannel: Channel?
     private var asked: [String] = []
+    /// Docker Model Runner, as Docker Desktop's answers under
+    /// `/exp/vDD4.40` on the socket and a runner container's at the root
+    /// (`listenTCP`): nil is off, answered 503.
+    private var runnerModels: [FakeRunnerModel]?
+
+    struct FakeRunnerModel: Sendable {
+        var tag: String
+        var parameters = "360M"
+        var quantization = "Q4_K_M"
+        var size = "256.35 MiB"
+        var loaded = false
+        /// The same for the same tag, as a digest is.
+        var id: String {
+            let hash = tag.utf8.reduce(UInt64(7)) { $0 &* 31 &+ UInt64($1) }
+            return "sha256:" + String(String(hash, radix: 16).reversed()).padding(toLength: 64, withPad: "0", startingAt: 0)
+        }
+    }
 
     init(socket: String) {
         self.socket = socket
@@ -66,10 +84,29 @@ final class FakeDockerEngine: @unchecked Sendable {
         channel = try bootstrap.bind(unixDomainSocketPath: socket).wait()
     }
 
+    /// The same answers on 127.0.0.1 too, at a port of the system's: what a
+    /// container publishing it would be. Returns the port.
+    func listenTCP() throws -> Int {
+        let bootstrap = ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+            .childChannelInitializer { channel in
+                channel.eventLoop.makeCompletedFuture {
+                    try channel.pipeline.syncOperations.configureHTTPServerPipeline(withPipeliningAssistance: false, withErrorHandling: true)
+                    try channel.pipeline.syncOperations.addHandler(Handler(engine: self))
+                }
+            }
+        let bound = try bootstrap.bind(host: "127.0.0.1", port: 0).wait()
+        tcpChannel = bound
+        return bound.localAddress?.port ?? 0
+    }
+
+    func setModelRunner(_ models: [FakeRunnerModel]?) { locked { runnerModels = models } }
+    var modelRunnerTags: [String]? { locked { runnerModels?.map(\.tag) } }
+
     func stop() {
         let open = locked { Array(eventStreams.values) + Array(samplers.values) + logFollowers.values.flatMap { $0 } }
         open.forEach { $0.close(promise: nil) }
         try? channel?.close().wait()
+        try? tcpChannel?.close().wait()
         try? FileManager.default.removeItem(atPath: socket)
     }
 
@@ -264,6 +301,8 @@ final class FakeDockerEngine: @unchecked Sendable {
             return Self.error(400, "starting container with non-empty request body was deprecated since API v1.22 and removed in v1.24")
         }
         guard let url = URLComponents(string: "http://docker" + uri) else { return .notFound }
+        let runnerPath = url.path.hasPrefix(ModelRunner.desktopPrefix) ? String(url.path.dropFirst(ModelRunner.desktopPrefix.count)) : url.path
+        if runnerPath == "/models" || runnerPath.hasPrefix("/models/") || runnerPath.hasPrefix("/engines/") { return modelRunner(method, runnerPath) }
         let query = Dictionary((url.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
         var parts = url.path.split(separator: "/").map(String.init)
         if parts.first?.hasPrefix("v1.") == true { parts.removeFirst() }
@@ -297,6 +336,32 @@ final class FakeDockerEngine: @unchecked Sendable {
         case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"))
         case "images", "volumes", "networks": return other(method, kind, id, named, body, query)
         default: return Self.error(404, "page not found")
+        }
+    }
+
+    private func modelRunner(_ method: HTTPMethod, _ path: String) -> Answer {
+        guard let models = locked({ runnerModels }) else { return Self.error(503, "service unavailable") }
+        func data(_ object: Any) -> Answer { .json(200, (try? JSONSerialization.data(withJSONObject: object)) ?? Data()) }
+        switch (method, path) {
+        case (.GET, "/models"):
+            return data(
+                models.map { model in
+                    [
+                        "id": model.id, "tags": [model.tag], "created": 1_760_000_000,
+                        "config": ["format": "gguf", "parameters": model.parameters, "quantization": model.quantization, "size": model.size, "architecture": "llama"],
+                    ] as [String: Any]
+                })
+        case (.GET, "/engines/ps"):
+            return data(models.filter(\.loaded).map { ["backend_name": "llama.cpp", "model_name": $0.tag, "mode": "completion"] })
+        case (.GET, "/engines/df"):
+            return data(["models_disk_usage": models.count * 268_000_000, "default_backend_disk_usage": 0])
+        case (.DELETE, _) where path.hasPrefix("/models/"):
+            let name = String(path.dropFirst("/models/".count)).removingPercentEncoding ?? ""
+            guard models.contains(where: { $0.tag == name }) else { return Self.error(404, "model not found") }
+            locked { runnerModels?.removeAll { $0.tag == name } }
+            return .empty(200)
+        default:
+            return Self.error(404, "page not found")
         }
     }
 

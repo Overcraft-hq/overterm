@@ -82,6 +82,7 @@ struct DockerPageView: View {
         case .volumes: docker.volumes.isEmpty ? nil : docker.volumes.count
         case .networks: docker.networks.isEmpty ? nil : docker.networks.count
         case .builds: page.builds.isEmpty ? nil : page.builds.count
+        case .models: page.models.map(\.models.count)
         }
     }
 
@@ -187,6 +188,7 @@ struct DockerPageView: View {
             case .running where page.section == .volumes: DockerVolumesView(page: page, docker: docker, theme: theme, actions: actions)
             case .running where page.section == .networks: DockerNetworksView(page: page, docker: docker, theme: theme, actions: actions)
             case .running where page.section == .builds: DockerBuildsView(page: page, theme: theme, actions: actions)
+            case .running where page.section == .models: DockerModelsView(page: page, theme: theme, actions: actions)
             case .running:
                 if docker.containers.isEmpty {
                     empty("No containers", "Run one — `docker run`, or `docker compose up` in a checkout — and it shows here.")

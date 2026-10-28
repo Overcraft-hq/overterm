@@ -67,6 +67,8 @@ enum DockerMCP {
                     format: "%@: CPU %.1f%% (of one core), memory %@ of %@, network in %@ out %@, %d processes", target.name, usage.cpuPercent,
                     DockerBytes.string(usage.memoryBytes, memory: true), DockerBytes.string(usage.memoryLimit, memory: true),
                     DockerBytes.string(usage.networkIn), DockerBytes.string(usage.networkOut), usage.processes))
+        case "docker_models":
+            return BrowserMCP.textResult(try await describeModels(docker, engine: engine))
         case "docker_action":
             let target = try container()
             guard let action = string("action"), ["start", "stop", "restart", "pause", "unpause", "remove"].contains(action) else {
@@ -213,6 +215,31 @@ enum DockerMCP {
         return lines.joined(separator: "\n")
     }
 
+    /// Model Runner's models and where a program reaches them — read
+    /// from the runner, never `docker model` (which would install one).
+    static func describeModels(_ docker: DockerModel, engine: DockerEngine) async throws -> String {
+        let place = ModelRunner.place(runtime: docker.runtime, remote: docker.publishedHost != nil, containers: docker.containers)
+        switch place {
+        case .remote: return "The engine is remote; its Model Runner isn't read from here."
+        case .stopped(_, let name): return "Model Runner's container, \(name), is stopped."
+        case .absent: return "This engine has no Docker Model Runner. The user can install it (docker model install-runner)."
+        case .desktop, .container: break
+        }
+        guard let contents = try await ModelRunner.read(place, engine: engine) else {
+            return "Docker Desktop's Model Runner is off. The user can turn it on (docker desktop enable model-runner)."
+        }
+        var lines: [String] = []
+        if let endpoints = ModelRunner.endpoints(place) {
+            lines.append("OpenAI-compatible API — from a container: \(endpoints.containers)" + (endpoints.mac.map { "; from this Mac: \($0)" } ?? ""))
+        }
+        if contents.models.isEmpty { lines.append("No models pulled.") }
+        for model in contents.models {
+            let loaded = contents.running.first { $0.runs(model) }.map { " — loaded in \($0.backend_name)" } ?? ""
+            lines.append("- \(model.reference)" + (model.summary.isEmpty ? "" : " (\(model.summary))") + loaded)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: Tools
 
     static var tools: [[String: Any]] {
@@ -238,6 +265,10 @@ enum DockerMCP {
             tool(
                 "docker_stats", "A running container's CPU, memory and network now.",
                 ["container": ["type": "string", "description": "Its name, from docker_containers."]], required: ["container"]),
+            tool(
+                "docker_models",
+                "Docker Model Runner's local LLMs: which are pulled and loaded, and the OpenAI-compatible base URL to use from a container or this Mac.",
+                [:]),
         ]
         if Settings.shared.dockerAgentWrites {
             tools += [
@@ -265,7 +296,7 @@ enum DockerMCP {
     }
 
     static let instructions =
-        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing."
+        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [
