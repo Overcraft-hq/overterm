@@ -35,7 +35,8 @@ enum DockerMCP {
             let all = arguments["all"] as? Bool ?? true
             let project = string("project")
             let list = docker.containers.filter { (all || $0.state.isUp) && (project == nil || $0.composeProject == project) }
-            return BrowserMCP.textResult(describe(list, remoteHost: docker.publishedHost))
+            await docker.readPlatforms(for: list)
+            return BrowserMCP.textResult(describe(list, remoteHost: docker.publishedHost) { docker.emulation(of: $0) })
         case "docker_projects":
             let ports = ComposePortStore.shared
             return BrowserMCP.textResult(
@@ -55,7 +56,17 @@ enum DockerMCP {
             return BrowserMCP.textResult(bounded(DockerSecrets.redact(text.isEmpty ? "(no lines)" : text, values: secrets)))
         case "docker_inspect":
             let target = try container()
-            return BrowserMCP.textResult(describe(target, try await engine.container(target.Id), remoteHost: docker.publishedHost))
+            let detail = try await engine.container(target.Id)
+            // What it runs: its own word (API 1.48), else its image's.
+            var platform = detail.ImageManifestDescriptor?.dockerPlatform
+            if platform == nil {
+                await docker.readPlatforms(for: [target])
+                platform = docker.platform(of: target)
+            }
+            return BrowserMCP.textResult(
+                describe(
+                    target, detail, remoteHost: docker.publishedHost, platform: platform,
+                    emulation: DockerEmulation(image: platform, engine: docker.enginePlatform)))
         case "docker_stats":
             let target = try container()
             guard target.state == .running else { return BrowserMCP.textResult("\(target.name) isn't running.") }
@@ -192,13 +203,18 @@ enum DockerMCP {
         text.count > max ? String(text.suffix(max)) + "\n… (the last \(max) characters)" : text
     }
 
-    static func describe(_ containers: [ContainerSummary], remoteHost: String? = nil) -> String {
+    /// `emulation`: what runs translated here (an amd64 image on Apple
+    /// silicon), said on its line.
+    static func describe(
+        _ containers: [ContainerSummary], remoteHost: String? = nil, emulation: (ContainerSummary) -> DockerEmulation? = { _ in nil }
+    ) -> String {
         guard !containers.isEmpty else { return "No containers." }
         return containers.map { container in
             var line = "- \(container.name): \(container.Image), \(container.Status)"
             if let project = container.composeProject { line += " — compose \(project)/\(container.composeService ?? "")" }
             let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
             if !ports.isEmpty { line += " — ports " + ports.map(\.spoken).joined(separator: ", ") }
+            if let emulated = emulation(container) { line += " — emulated: \(emulated.image.description) on this \(emulated.engine.description) engine" }
             return line
         }.joined(separator: "\n")
     }
@@ -232,9 +248,21 @@ enum DockerMCP {
         }.joined(separator: "\n")
     }
 
-    /// What Inspect says, as an agent needs it: secrets masked.
-    static func describe(_ container: ContainerSummary, _ detail: ContainerDetail, remoteHost: String? = nil) -> String {
+    /// What Inspect says, as an agent needs it: secrets masked. `platform`:
+    /// its image's, and `emulation` when this engine translates it — what
+    /// runs it natively said with it.
+    static func describe(
+        _ container: ContainerSummary, _ detail: ContainerDetail, remoteHost: String? = nil, platform: DockerPlatform? = nil,
+        emulation: DockerEmulation? = nil
+    ) -> String {
         var lines = ["\(container.name): \(container.Image)", "State: \(container.Status)"]
+        if let emulation {
+            lines.append(
+                "Platform: \(emulation.image.description) — emulated on this \(emulation.engine.description) engine (Rosetta or QEMU): slower; "
+                    + "its image's \(emulation.engine.description) variant, if it has one, runs natively.")
+        } else if let platform {
+            lines.append("Platform: \(platform.description)")
+        }
         if let error = detail.State.Error, !error.isEmpty { lines.append("Error: \(error)") }
         if detail.State.OOMKilled == true { lines.append("Killed: out of memory") }
         if let health = detail.State.Health, let status = health.Status {
@@ -299,7 +327,8 @@ enum DockerMCP {
                     "level": ["type": "string", "description": "error or warning: only those (and stderr's unlevelled lines for warning)."],
                 ], required: ["container"]),
             tool(
-                "docker_inspect", "Why a container is as it is: its state and error, health check, command, ports, mounts, networks, env (secrets masked).",
+                "docker_inspect",
+                "Why a container is as it is: its state and error, health check, platform (emulated or not), command, ports, mounts, networks, env (secrets masked).",
                 ["container": ["type": "string", "description": "Its name, from docker_containers."]], required: ["container"]),
             tool(
                 "docker_stats", "A running container's CPU, memory and network now.",
@@ -337,7 +366,7 @@ enum DockerMCP {
     }
 
     static let instructions =
-        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use."
+        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_inspect says when a container runs emulated (an amd64 image on Apple silicon: slow). docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [

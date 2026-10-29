@@ -62,6 +62,34 @@ final class DockerModel: ObservableObject {
     /// Each listed event as it comes — what the attention marks read.
     let events = PassthroughSubject<DockerEvent, Never>()
 
+    /// Each image's platform, by its id, as its inspect last said: read
+    /// only for what shows (`wantPlatform`) or an agent asks about
+    /// (`readPlatforms`), once an id till the next image event.
+    @Published private(set) var platforms: [String: DockerPlatform] = [:]
+    /// Each container's, by its id, as its image's said when first read
+    /// for it — a container's platform never changes, but in the
+    /// containerd image store an id is the image's index, and a pull can
+    /// add the engine's own platform to it. One that says its own
+    /// (`ContainerSummary.ownPlatform`, API 1.48) isn't kept here.
+    @Published private(set) var containerPlatforms: [String: DockerPlatform] = [:]
+    /// One more at each burst of image events: what shows an image asks
+    /// again (`platformKey`).
+    @Published private(set) var platformEpoch = 0
+    /// Asked since the last image event, misses too: not read again till
+    /// the next.
+    private var platformsAsked: Set<String> = []
+    private var platformsWaiting: Set<String> = []
+    /// Being read now: an agent asking about one waits for it.
+    private var platformsInFlight: Set<String> = []
+    /// Read since the last image event: what a container listed meanwhile
+    /// is kept to (`pinPlatforms`).
+    private var platformsFresh: Set<String> = []
+    /// One more at each image event, at once: a read begun before one may
+    /// say what an index held then.
+    private var imageGeneration = 0
+    private var platformsReading: Task<Void, Never>?
+    private var platformRefresh: Task<Void, Never>?
+
     private(set) var engine: DockerEngine?
     private let resolve: @MainActor () -> DockerEndpoint?
     private let retries: [Duration]
@@ -179,7 +207,9 @@ final class DockerModel: ObservableObject {
                 for try await event in events {
                     self.events.send(event)
                     switch event.Type {
-                    case "image": reloadWanted(.images)
+                    case "image":
+                        reloadWanted(.images)
+                        imageChanged()
                     case "volume": reloadWanted(.volumes)
                     case "network": reloadWanted(.networks)
                     default: scheduleReload()
@@ -251,6 +281,16 @@ final class DockerModel: ObservableObject {
         if !containers.isEmpty { containers = [] }
         if !projects.isEmpty { projects = [] }
         if !loose.isEmpty { loose = [] }
+        platformsReading?.cancel()
+        platformsReading = nil
+        platformRefresh?.cancel()
+        platformRefresh = nil
+        platformsAsked = []
+        platformsWaiting = []
+        platformsInFlight = []
+        platformsFresh = []
+        if !platforms.isEmpty { platforms = [:] }
+        if !containerPlatforms.isEmpty { containerPlatforms = [:] }
     }
 
     // MARK: Reading
@@ -262,6 +302,7 @@ final class DockerModel: ObservableObject {
         let sorted = list.sorted { $0.name < $1.name }
         guard sorted != containers else { return }
         containers = sorted
+        pinPlatforms()
         let grouped = ComposeProjects.group(sorted)
         if grouped.projects != projects { projects = grouped.projects }
         if grouped.loose != loose { loose = grouped.loose }
@@ -356,6 +397,140 @@ final class DockerModel: ObservableObject {
             }
         }
     }
+
+    // MARK: Platforms
+
+    /// What the engine runs on: `/info`'s, read once a connection.
+    var enginePlatform: DockerPlatform? { info.flatMap { DockerPlatform(engine: $0.Architecture, os: $0.OSType) } }
+
+    /// What a container runs: what it says itself (API 1.48), what its
+    /// image said when first read for it, else what its image says now.
+    func platform(of container: ContainerSummary) -> DockerPlatform? {
+        container.ownPlatform ?? containerPlatforms[container.Id] ?? container.ImageID.flatMap { platforms[$0] }
+    }
+
+    /// Known for good: nothing needs reading for it again.
+    private func settled(_ container: ContainerSummary) -> Bool { container.ownPlatform != nil || containerPlatforms[container.Id] != nil }
+
+    /// What a view asking for an image's platform keys its task by: the
+    /// epoch in it asks again after an image event.
+    func platformKey(_ imageID: String?) -> String { "\(imageID ?? "")#\(platformEpoch)" }
+
+    /// A container's: the epoch's only until it is settled.
+    func platformKey(of container: ContainerSummary) -> String { settled(container) ? container.Id : platformKey(container.ImageID) }
+
+    /// A row or a detail shows the container: its image's platform is
+    /// read, unless it is settled.
+    func wantPlatform(of container: ContainerSummary) {
+        guard !settled(container) else { return }
+        wantPlatform(of: container.ImageID)
+    }
+
+    /// A row or a detail shows the image: its platform is read, with the
+    /// others asked for meanwhile (a screen's rows appear together), unless
+    /// it was since the last image event.
+    func wantPlatform(of imageID: String?) {
+        guard let id = imageID, !id.isEmpty, engine != nil, enginePlatform != nil, platformsAsked.insert(id).inserted else { return }
+        platformsWaiting.insert(id)
+        guard platformsReading == nil else { return }
+        platformsReading = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(30))
+            await self?.readWaitingPlatforms()
+        }
+    }
+
+    private func readWaitingPlatforms() async {
+        while !Task.isCancelled, let engine, !platformsWaiting.isEmpty {
+            let ids = platformsWaiting
+            platformsWaiting = []
+            platformsInFlight.formUnion(ids)
+            let generation = imageGeneration
+            let found = await engine.platforms(ofImages: ids.sorted())
+            // Cancelled: `clear` emptied the sets.
+            guard !Task.isCancelled, self.engine === engine else { return }
+            platformsInFlight.subtract(ids)
+            merge(found, read: ids, generation: generation)
+        }
+        if !Task.isCancelled { platformsReading = nil }
+    }
+
+    /// What was read for `ids`: a miss removes what was known, an image
+    /// gone since. The containers made from them are kept to it, unless an
+    /// image event came while they were read.
+    private func merge(_ found: [String: DockerPlatform], read ids: Set<String>, generation: Int) {
+        var next = platforms
+        for id in ids { next[id] = found[id] }
+        if next != platforms { platforms = next }
+        guard generation == imageGeneration else { return }
+        platformsFresh.formUnion(ids)
+        pinPlatforms()
+    }
+
+    /// The containers not yet settled whose image was read since the last
+    /// image event: kept to what it said. The gone forgotten.
+    private func pinPlatforms() {
+        var next = containerPlatforms
+        for container in containers where container.ownPlatform == nil && next[container.Id] == nil {
+            guard let image = container.ImageID, platformsFresh.contains(image), let platform = platforms[image] else { continue }
+            next[container.Id] = platform
+        }
+        let listed = Set(containers.map(\.Id))
+        next = next.filter { listed.contains($0.key) }
+        if next != containerPlatforms { containerPlatforms = next }
+    }
+
+    /// The platforms of `ids`, read where they weren't since the last image
+    /// event — an agent asking waits for them, and for a view's read of
+    /// them on its way. Misses aren't asked again till the next event.
+    @discardableResult
+    func readPlatforms(of ids: [String]) async -> [String: DockerPlatform] {
+        let wanted = Set(ids.filter { !$0.isEmpty })
+        guard engine != nil, enginePlatform != nil else { return [:] }
+        for id in wanted where platformsAsked.insert(id).inserted { platformsWaiting.insert(id) }
+        var awaited: Task<Void, Never>?
+        while !platformsWaiting.isDisjoint(with: wanted) || !platformsInFlight.isDisjoint(with: wanted), !Task.isCancelled {
+            if platformsReading == nil { platformsReading = Task { [weak self] in await self?.readWaitingPlatforms() } }
+            // The same read again: it ended without them (the engine went).
+            guard let reading = platformsReading, reading != awaited else { break }
+            awaited = reading
+            await reading.value
+        }
+        return platforms.filter { wanted.contains($0.key) }
+    }
+
+    /// What `containers` run, read where it isn't settled: an agent waits.
+    func readPlatforms(for containers: [ContainerSummary]) async {
+        await readPlatforms(of: containers.filter { !settled($0) }.compactMap(\.ImageID))
+    }
+
+    /// An image event: in the containerd image store an id is the image's
+    /// index, and a pull can add a platform to it. What was read is no
+    /// longer fresh, at once; what shows asks again once a burst (a prune
+    /// removes dozens). No epoch when nothing was asked.
+    private func imageChanged() {
+        let asked = !platforms.isEmpty || !platformsAsked.isEmpty
+        imageGeneration += 1
+        platformsFresh = []
+        // Those waiting are read after it.
+        platformsAsked = platformsWaiting
+        guard asked, platformRefresh == nil else { return }
+        platformRefresh = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            self.platformRefresh = nil
+            self.platformEpoch += 1
+        }
+    }
+
+    /// An image that runs emulated here; nil when it runs natively or
+    /// isn't known yet.
+    func emulation(ofImage id: String?) -> DockerEmulation? {
+        DockerEmulation(image: id.flatMap { platforms[$0] }, engine: enginePlatform)
+    }
+
+    /// A container that runs emulated: by what it runs (`platform(of:)`),
+    /// not by what its image's index offers now.
+    func emulation(of container: ContainerSummary) -> DockerEmulation? { DockerEmulation(image: platform(of: container), engine: enginePlatform) }
 
     /// What uses an image: containers made from it, stopped ones too.
     func containers(using image: ImageSummary) -> [ContainerSummary] {

@@ -94,6 +94,24 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertFalse(inspect.contains("hunter2") || inspect.contains("s3cr3t"), inspect)
     }
 
+    /// An amd64 image on this arm64 engine: inspect says it runs
+    /// emulated and what runs it natively; the list marks it.
+    func testAnEmulatedContainerSaysSo() async throws {
+        let legacy = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "legacy", image: "legacy:1", imageID: legacy)
+        let deadline = Date().addingTimeInterval(5)
+        while model.container("legacy") == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        let inspect = try await text("docker_inspect", ["container": "legacy"])
+        XCTAssertTrue(inspect.contains("Platform: linux/amd64 — emulated on this linux/arm64 engine"), inspect)
+        XCTAssertTrue(inspect.contains("linux/arm64 variant, if it has one, runs natively"), inspect)
+        let list = try await text("docker_containers")
+        XCTAssertTrue(list.contains("legacy: legacy:1") && list.contains("emulated: linux/amd64"), list)
+        let web = list.split(separator: "\n").first { $0.contains("shop-web-1") } ?? ""
+        XCTAssertFalse(web.contains("emulated"), "an image the engine doesn't hold says nothing: \(web)")
+        let shop = try await text("docker_inspect", ["container": "shop-web-1"])
+        XCTAssertFalse(shop.contains("Platform:"), shop)
+    }
+
     func testStatsAndMistakes() async throws {
         let stats = try await text("docker_stats", ["container": "shop-web-1"])
         XCTAssertTrue(stats.contains("CPU 8.0%"), stats)

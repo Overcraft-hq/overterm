@@ -1,8 +1,8 @@
 import Foundation
 
 /// What a compose project's files say that its containers' labels don't:
-/// which services `compose watch` would watch, and the profiles the files
-/// name. Asked of `docker compose config`, which reads the files and never
+/// which services `compose watch` would watch, which it builds, and the
+/// profiles the files name. Asked of `docker compose config`, which reads the files and never
 /// the engine; its JSON is read by `ComposeConfig`, which keeps no
 /// variable's value, and only names are kept here. Pure, but for `stamp`
 /// and `read`.
@@ -17,6 +17,10 @@ struct ComposeFacts: Equatable, Sendable {
     /// The services `up` starts that have a `develop.watch` of their own,
     /// sorted: what `compose watch` watches.
     var watched: [String] = []
+    /// The services the files build (`build:`), sorted — whatever name
+    /// `image:` gives what they build, and wherever its tag has moved
+    /// since: an image's name doesn't say. Nil when Compose couldn't say.
+    var built: [String]? = nil
     /// Every profile the files name, sorted (`config --profiles`).
     var profiles: [String] = []
     /// What Compose said when it couldn't read them, its first line.
@@ -88,7 +92,12 @@ struct ComposeFacts: Equatable, Sendable {
         var passing = false
         switch await config {
         case .success(let json):
-            if let watched = watched(fromConfig: json) { facts.watched = watched } else { problems.append("Compose's config wasn't JSON.") }
+            if let config = try? ComposeConfig.parse(json) {
+                facts.watched = config.services.filter(\.watched).map(\.name)
+                facts.built = config.services.filter { $0.buildContext != nil }.map(\.name)
+            } else {
+                problems.append("Compose's config wasn't JSON.")
+            }
         case .failure(let error):
             problems.append(problem(error))
             passing = passing || !isTheFiles(error)

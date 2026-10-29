@@ -38,6 +38,27 @@ struct ContainerSummary: Codable, Identifiable, Hashable, Sendable {
     /// The networks it is on, stopped or not — what keeps a network from
     /// being pruned.
     var NetworkSettings: SummaryNetworks?
+    /// API 1.48+, in the containerd image store: the manifest it was made
+    /// from, with its platform — what it runs, whatever its image's index
+    /// has gained since (`DockerModel.platform(of:)`).
+    var ImageManifestDescriptor: ManifestDescriptor? = nil
+
+    /// An OCI descriptor, as far as its platform.
+    struct ManifestDescriptor: Codable, Hashable, Sendable {
+        var platform: Platform?
+
+        struct Platform: Codable, Hashable, Sendable {
+            var architecture: String?
+            var os: String?
+            var variant: String?
+        }
+
+        var dockerPlatform: DockerPlatform? { platform.flatMap { DockerPlatform(os: $0.os, architecture: $0.architecture, variant: $0.variant) } }
+    }
+
+    /// What it runs, as it says itself; nil before API 1.48 and in the
+    /// classic image store, where its image's id is the platform's own.
+    var ownPlatform: DockerPlatform? { ImageManifestDescriptor?.dockerPlatform }
 
     struct HealthSummary: Codable, Hashable, Sendable {
         var Status: String?
@@ -104,6 +125,8 @@ struct ContainerDetail: Codable, Sendable {
     var HostConfig: HostConfigDetail?
     var Mounts: [DockerMountPoint]?
     var NetworkSettings: Network?
+    /// As the list's (`ContainerSummary.ImageManifestDescriptor`).
+    var ImageManifestDescriptor: ContainerSummary.ManifestDescriptor? = nil
 
     struct StateDetail: Codable, Sendable {
         var Status: String
@@ -324,6 +347,10 @@ struct EngineInfo: Codable, Sendable {
     var Containers: Int?
     var ContainersRunning: Int?
     var Images: Int?
+    /// The host's `uname -m`: aarch64 on Apple silicon, x86_64 (`DockerPlatform(engine:)`).
+    var Architecture: String? = nil
+    /// Go's: linux, windows.
+    var OSType: String? = nil
 }
 
 /// One line of `GET /events`.

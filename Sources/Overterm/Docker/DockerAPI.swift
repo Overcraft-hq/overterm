@@ -19,11 +19,18 @@ extension DockerEngine {
 
     // MARK: Containers
 
+    /// At 1.48 where the engine speaks it: each says the platform it runs
+    /// (`ImageManifestDescriptor`, the containerd store's).
     func containers(all: Bool = true) async throws -> [ContainerSummary] {
-        try await get([ContainerSummary].self, "/containers/json", all ? ["all": "1"] : [:])
+        try await get([ContainerSummary].self, "/containers/json", all ? ["all": "1"] : [:], version: version(wanting: Self.manifestVersion))
     }
 
-    func container(_ id: String) async throws -> ContainerDetail { try await get(ContainerDetail.self, "/containers/\(id)/json") }
+    func container(_ id: String) async throws -> ContainerDetail {
+        try await get(ContainerDetail.self, "/containers/\(id)/json", version: version(wanting: Self.manifestVersion))
+    }
+
+    /// Where a container first says what it runs.
+    static let manifestVersion = "1.48"
 
     /// Inspect as the engine wrote it, indented, for the Inspect tab.
     func containerJSON(_ id: String) async throws -> String {
@@ -250,6 +257,36 @@ extension DockerEngine {
 
     func history(of image: String) async throws -> [ImageLayer] { try await get([ImageLayer].self, "/images/\(image)/history") }
 
+    /// What an image is built for, as its inspect says: `/images/json`
+    /// doesn't. In the containerd store an id is the image's index, and
+    /// this is the platform it would run here — the engine's own once
+    /// the index holds it.
+    func platform(ofImage id: String) async throws -> DockerPlatform? {
+        struct Image: Decodable {
+            var Os: String?
+            var Architecture: String?
+            var Variant: String?
+        }
+        let image = try await get(Image.self, "/images/\(id)/json")
+        return DockerPlatform(os: image.Os, architecture: image.Architecture, variant: image.Variant)
+    }
+
+    /// Several images' platforms, eight asked at a time; one that can't be
+    /// read (gone, or no architecture said) is left out.
+    func platforms(ofImages ids: [String]) async -> [String: DockerPlatform] {
+        var found: [String: DockerPlatform] = [:]
+        for start in stride(from: 0, to: ids.count, by: 8) {
+            let chunk = ids[start..<min(start + 8, ids.count)]
+            await withTaskGroup(of: (String, DockerPlatform?).self) { group in
+                for id in chunk { group.addTask { (id, try? await self.platform(ofImage: id)) } }
+                for await (id, platform) in group {
+                    if let platform { found[id] = platform }
+                }
+            }
+        }
+        return found
+    }
+
     func remove(image id: String, force: Bool = false) async throws {
         try await send(.DELETE, "/images/\(id)", ["force": force ? "1" : "0"])
     }
@@ -283,10 +320,14 @@ extension DockerEngine {
         try await get([SearchResult].self, "/images/search", ["term": term, "limit": "\(limit)"])
     }
 
-    /// A public image's pull, its progress line by line.
-    func pull(_ image: String) -> AsyncThrowingStream<PullProgress, Error> {
+    /// A public image's pull, its progress line by line. `platform`
+    /// (`linux/arm64`, os[/arch[/variant]]): that variant of it, rather than
+    /// the engine's own.
+    func pull(_ image: String, platform: String? = nil) -> AsyncThrowingStream<PullProgress, Error> {
         let (name, tag) = Self.split(image)
-        let bytes = transport.stream(.POST, path("/images/create", ["fromImage": name, "tag": tag]), body: nil, headers: [])
+        var query = ["fromImage": name, "tag": tag]
+        if let platform { query["platform"] = platform }
+        let bytes = transport.stream(.POST, path("/images/create", query), body: nil, headers: [])
         return AsyncThrowingStream { continuation in
             let task = Task {
                 var splitter = DockerLineSplitter()

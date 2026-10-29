@@ -24,6 +24,8 @@ struct DockerPageView: View {
         }
         .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
+        // Hidden, its views live on: what they read waits for this.
+        .environment(\.dockerShown, page.visible)
         .overlay { if page.cheatSheet { cheatSheet } }
         .sheet(isPresented: $page.cleaning) { DockerCleanUpSheet(page: page, docker: docker, theme: theme) }
         .sheet(isPresented: Binding(get: { page.runSpec != nil }, set: { if !$0 { page.runSpec = nil } })) {
@@ -185,8 +187,11 @@ struct DockerPageView: View {
     private var engineDetail: String {
         switch docker.connection {
         case .running(let api):
-            return [docker.info?.ServerVersion.map { "Engine \($0)" }, "API \(api)", docker.endpoint?.context, docker.publishedHost.map { "on \($0)" }]
-                .compactMap { $0 }.joined(separator: " · ")
+            return [
+                docker.info?.ServerVersion.map { "Engine \($0)" }, "API \(api)", docker.enginePlatform?.short, docker.endpoint?.context,
+                docker.publishedHost.map { "on \($0)" },
+            ]
+            .compactMap { $0 }.joined(separator: " · ")
         case .connecting: return "Connecting…"
         case .down: return docker.runtimeStatus == .starting ? "Starting…" : "Not answering"
         case .off: return "Off"
@@ -230,7 +235,7 @@ struct DockerPageView: View {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ContainerDetailView(
                                     container: container, session: page.session(for: container.Id), tab: $page.detailTab,
-                                    theme: theme, actions: actions, verbs: { page.verbs(for: container) }
+                                    docker: docker, theme: theme, actions: actions, verbs: { page.verbs(for: container) }
                                 )
                                 .id(container.Id)
                                 .frame(width: min(480, max(320, geometry.size.width * 0.42)))
@@ -338,8 +343,8 @@ struct DockerPageView: View {
                 if !page.collapsed.contains(group.id) {
                     ForEach(group.containers) { container in
                         DockerContainerRow(
-                            container: container, inProject: group.project != nil, busy: page.busy.contains(container.Id), theme: theme,
-                            open: actions.open, remoteHost: docker.publishedHost
+                            container: container, inProject: group.project != nil, busy: page.busy.contains(container.Id), docker: docker,
+                            theme: theme, open: actions.open, remoteHost: docker.publishedHost
                         )
                         .tag(container.Id)
                         .listRowSeparator(.hidden)

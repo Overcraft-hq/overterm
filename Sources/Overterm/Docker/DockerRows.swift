@@ -60,6 +60,115 @@ struct DockerPortPill: View {
     }
 }
 
+/// Whether the Docker view it is in is on screen. The page's overlay is
+/// hidden, not removed, and the sidebar's panel stays while the sidebar is
+/// collapsed: their views live on, and what one reads for itself (an
+/// image's platform) asks only while this says so. Each host sets it — the
+/// page, the panel, the right-hand pane; anywhere else nothing shows.
+private struct DockerShownKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var dockerShown: Bool {
+        get { self[DockerShownKey.self] }
+        set { self[DockerShownKey.self] = newValue }
+    }
+}
+
+/// What a container runs, or an image is built for, when this engine runs
+/// it emulated: a small orange `amd64`. Showing it is what asks for the
+/// platform (`DockerModel.wantPlatform`), so only what is on screen is
+/// read (`dockerShown`); an image's asks again after an image event (the
+/// key's epoch), a container's only until it is known for good. Nothing
+/// when it runs natively — a view of no size, not an EmptyView, whose task
+/// may not run.
+struct DockerEmulationBadge: View {
+    enum Subject {
+        case container(ContainerSummary)
+        /// By its id.
+        case image(String?)
+    }
+
+    let subject: Subject
+    @ObservedObject var docker: DockerModel
+    @Environment(\.dockerShown) private var shown
+
+    private var emulation: DockerEmulation? {
+        switch subject {
+        case .container(let container): docker.emulation(of: container)
+        case .image(let id): docker.emulation(ofImage: id)
+        }
+    }
+
+    /// None while it is off screen: nothing asks, and showing it again
+    /// asks once.
+    private var key: String {
+        guard shown else { return "" }
+        switch subject {
+        case .container(let container): return docker.platformKey(of: container)
+        case .image(let id): return docker.platformKey(id)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if let emulation {
+                Text(verbatim: emulation.image.short)
+                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(TabStatusStyle.waiting)
+                    .padding(.horizontal, 4)
+                    .frame(height: 14)
+                    .background(Capsule().fill(TabStatusStyle.waiting.opacity(0.14)))
+                    .fixedSize()
+                    .help(emulation.help)
+                    .accessibilityIdentifier("docker.emulated")
+            } else {
+                Color.clear.frame(width: 0, height: 0)
+            }
+        }
+        .task(id: key) {
+            guard shown else { return }
+            switch subject {
+            case .container(let container): docker.wantPlatform(of: container)
+            case .image(let id): docker.wantPlatform(of: id)
+            }
+        }
+    }
+}
+
+/// An emulated container's or image's box: why it is slow, what runs it
+/// natively, and the verb that does — the port-conflict box's way.
+struct DockerEmulationNote: View {
+    let emulation: DockerEmulation
+    let text: String
+    let verb: DockerVerb?
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "cpu").foregroundStyle(TabStatusStyle.waiting)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: emulation.title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text2)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                }
+            }
+            if let verb {
+                Button(verb.title) { verb.perform() }
+                    .disabled(verb.unavailable != nil)
+                    .help(verb.help)
+                    .accessibilityIdentifier("docker.emulation.fix")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(TabStatusStyle.waiting.opacity(0.12)))
+        .accessibilityIdentifier("docker.emulation")
+    }
+}
+
 /// A container in a list: its dot, what it is called there, its image,
 /// its ports, how long it has been up (or how it ended).
 struct DockerContainerRow: View {
@@ -67,6 +176,8 @@ struct DockerContainerRow: View {
     /// In a project's block, it goes by its service.
     let inProject: Bool
     let busy: Bool
+    /// Whose platforms the badge reads.
+    let docker: DockerModel
     @ObservedObject var theme: ChromeTheme
     let open: (URL) -> Void
     /// The rail's narrow panel: no ports, no status words.
@@ -85,7 +196,10 @@ struct DockerContainerRow: View {
         HStack(spacing: 8) {
             DockerStatusDot(color: DockerStatusStyle.color(container, idle: theme.text3))
             VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(container.state.isUp ? theme.text : theme.text2).lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(container.state.isUp ? theme.text : theme.text2).lineLimit(1)
+                    DockerEmulationBadge(subject: .container(container), docker: docker)
+                }
                 Text(verbatim: container.Image).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             }
             .layoutPriority(1)

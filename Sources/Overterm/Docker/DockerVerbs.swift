@@ -21,6 +21,9 @@ struct DockerVerb: Identifiable {
     var group = 0
     /// A submenu instead (Docker Scout's, the containers to connect).
     var children: [DockerVerb] = []
+    /// What a detail's box says of it, the box whose button it is: an
+    /// emulated container's why and what this does (`DockerEmulationNote`).
+    var note: String?
     var perform: @MainActor () -> Void = {}
 
     var id: String { title }

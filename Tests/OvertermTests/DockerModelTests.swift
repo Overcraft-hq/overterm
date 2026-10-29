@@ -199,6 +199,261 @@ final class DockerModelTests: XCTestCase {
         XCTAssertEqual(model.projects(in: URL(fileURLWithPath: "/Users/me")).map(\.name), ["other"])
     }
 
+    /// An image's platform is read when something asks for it, once an
+    /// id, never at a reload; an image event makes what asks ask again.
+    func testPlatformsAreReadForWhatAsksAndOnce() async throws {
+        let amd = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        let arm = fake.addImage("fresh:1", size: 1)
+        fake.add(name: "old", image: "legacy:1", imageID: amd)
+        fake.add(name: "new", image: "fresh:1", imageID: arm)
+        fake.add(name: "lost", image: "gone:1", imageID: "sha256:" + String(repeating: "c", count: 64))
+        model.start()
+        try await eventually("listed") { model.containers.count == 3 }
+        XCTAssertEqual(model.enginePlatform?.description, "linux/arm64")
+        func inspects() -> Int { fake.requests.filter { $0.contains("/images/sha256:") && $0.hasSuffix("/json") }.count }
+        XCTAssertEqual(inspects(), 0, "nothing asked, nothing read")
+        let old = try XCTUnwrap(model.container("old"))
+        let new = try XCTUnwrap(model.container("new"))
+        let lost = try XCTUnwrap(model.container("lost"))
+        model.wantPlatform(of: amd)
+        model.wantPlatform(of: arm)
+        model.wantPlatform(of: amd)
+        try await eventually("both read") { model.platforms.count == 2 }
+        XCTAssertEqual(model.emulation(of: old)?.image.short, "amd64")
+        XCTAssertNil(model.emulation(of: new))
+        XCTAssertEqual(inspects(), 2)
+        await model.reload()
+        await model.reload()
+        model.wantPlatform(of: amd)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(inspects(), 2, "once an id")
+        model.wantPlatform(of: lost.ImageID)
+        model.wantPlatform(of: lost.ImageID)
+        try await eventually("a miss read") { inspects() == 3 }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(inspects(), 3, "a miss isn't read twice")
+        XCTAssertNil(model.emulation(of: lost))
+
+        // Its arm64 variant pulled: an image event, and what asks again is read again.
+        try await eventually("listening") { fake.listening == 1 }
+        let epoch = model.platformEpoch
+        for try await _ in try XCTUnwrap(model.engine).pull("legacy:1", platform: "linux/arm64") {}
+        try await eventually("the epoch moved on") { model.platformEpoch > epoch }
+        model.wantPlatform(of: amd)
+        try await eventually("read again") { inspects() == 4 }
+        XCTAssertEqual(model.emulation(of: old)?.image.short, "amd64", "it was made from the old image, which is still amd64")
+        model.stop()
+        XCTAssertTrue(model.platforms.isEmpty)
+    }
+
+    /// An agent waits for the platforms it asks about; what is known isn't
+    /// read again.
+    func testAnAgentReadsThePlatformsItAsksAbout() async throws {
+        let amd = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "old", image: "legacy:1", imageID: amd)
+        model.start()
+        try await eventually("listed") { model.containers.count == 1 }
+        let read = await model.readPlatforms(of: [amd, "sha256:nope"])
+        XCTAssertEqual(read[amd]?.short, "amd64")
+        XCTAssertEqual(read.count, 1)
+        _ = await model.readPlatforms(of: [amd, "sha256:nope"])
+        XCTAssertEqual(fake.requests.filter { $0.contains("/images/sha256:") }.count, 2, "each read once")
+    }
+
+    /// An emulated compose service's verb: whose files can't be read here
+    /// recreated alone with --build, nothing pulled, in a tab in its
+    /// folder; a native one has none. An image's own pulls through the
+    /// engine.
+    func testAnEmulatedContainersVerbsRunItNatively() async throws {
+        let amd = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        let arm = fake.addImage("fresh:1", size: 1)
+        fake.add(name: "shop-api-1", image: "legacy:1", project: "shop", workingDir: "/w/shop", service: "api", imageID: amd)
+        fake.add(name: "new", image: "fresh:1", imageID: arm)
+        model.start()
+        try await eventually("listed") { model.containers.count == 2 }
+        let page = DockerPageModel(docker: model)
+        var ran: [(String, URL?)] = []
+        page.actions = DockerActions(run: { ran.append(($0, $1)) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        let api = try XCTUnwrap(model.container("shop-api-1"))
+        let new = try XCTUnwrap(model.container("new"))
+        XCTAssertFalse(page.verbs(for: api).contains { $0.title.contains("arm64") }, "nothing known, nothing offered")
+        model.wantPlatform(of: amd)
+        model.wantPlatform(of: arm)
+        try await eventually("read") { model.platforms.count == 2 }
+        let verb = try XCTUnwrap(page.verbs(for: api).first { $0.title == "Recreate as arm64 in a Tab" })
+        XCTAssertEqual(verb.place, .more)
+        XCTAssertNil(verb.unavailable)
+        XCTAssertTrue(verb.note?.contains("built again, if its compose file builds it") == true, verb.note ?? "no note")
+        verb.perform()
+        try await eventually("typed") { !ran.isEmpty }
+        XCTAssertEqual(
+            ran.last?.0, "DOCKER_DEFAULT_PLATFORM=linux/arm64 docker compose -p shop -f /w/shop/compose.yaml up -d --no-deps --force-recreate --build api",
+            "its files not on this Mac: not known whether it is built, nothing pulled")
+        XCTAssertEqual(ran.last?.1?.path, "/w/shop")
+        XCTAssertFalse(page.verbs(for: new).contains { $0.title.contains("arm64") })
+
+        let image = ImageSummary(Id: amd, RepoTags: ["legacy:1"], Created: 1, Size: 1)
+        let pull = try XCTUnwrap(page.verbs(for: image).first { $0.title == "Pull the arm64 Variant" })
+        pull.perform()
+        try await eventually("pulled") { page.pulls["legacy:1 (linux/arm64)"]?.done == true }
+        XCTAssertNil(page.pulls["legacy:1 (linux/arm64)"]?.error)
+        XCTAssertTrue(fake.requests.contains { $0.contains("/images/create?") && $0.contains("platform=linux/arm64") })
+        XCTAssertFalse(page.verbs(for: ImageSummary(Id: arm, RepoTags: ["fresh:1"], Created: 1, Size: 1)).contains { $0.title.contains("Variant") })
+    }
+
+    /// What a service's files build is theirs to say, not its image's name:
+    /// one with build: and an image: name is built again, never pulled from
+    /// a registry; another is pulled, then recreated. The verb waits for
+    /// the files' answer.
+    func testAServiceItsFilesBuildIsBuiltAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ot-built-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.path
+        try "services:\n  api:\n    build: .\n    image: ghcr.io/org/api:dev\n  db:\n    image: legacy:1\n"
+            .write(to: root.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        let config = #"{"name":"shop","services":{"api":{"build":{"context":"\#(folder)"},"image":"ghcr.io/org/api:dev"},"db":{"image":"legacy:1"}}}"#
+        let stub = root.appendingPathComponent("docker")
+        try "#!/bin/sh\ncase \"$*\" in\n*\" config --format json\"*) echo '\(config)' ;;\n*\" config --profiles\"*) ;;\n*) exit 1 ;;\nesac\n"
+            .write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        defer { DockerCLI.override = nil }
+        let built = fake.addImage("ghcr.io/org/api:dev", size: 1, architecture: "amd64")
+        let pulled = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "shop-api-1", image: "ghcr.io/org/api:dev", project: "shop", workingDir: folder, service: "api", imageID: built)
+        fake.add(name: "shop-db-1", image: "legacy:1", project: "shop", workingDir: folder, service: "db", imageID: pulled)
+        model.start()
+        try await eventually("listed") { model.containers.count == 2 }
+        await model.readPlatforms(for: model.containers)
+        let page = DockerPageModel(docker: model)
+        var ran: [(String, URL?)] = []
+        page.actions = DockerActions(run: { ran.append(($0, $1)) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        let api = try XCTUnwrap(model.container("shop-api-1"))
+        let db = try XCTUnwrap(model.container("shop-db-1"))
+
+        // At once, before the files have answered: the verb waits for them.
+        let early = try XCTUnwrap(page.verbs(for: db).first { $0.symbol == "cpu" })
+        XCTAssertEqual(early.title, "Recreate as arm64 in a Tab")
+        early.perform()
+        try await eventually("typed") { ran.count == 1 }
+        let files = "docker compose -p shop -f \(folder)/compose.yaml"
+        XCTAssertEqual(
+            ran.last?.0, "docker pull --platform linux/arm64 legacy:1 && DOCKER_DEFAULT_PLATFORM=linux/arm64 \(files) up -d --no-deps --force-recreate db",
+            "pulled, as its files say")
+        XCTAssertEqual(ran.last?.1?.path, folder)
+        XCTAssertEqual(page.composeFacts["shop"]?.built, ["api"])
+
+        let rebuild = try XCTUnwrap(page.verbs(for: api).first { $0.title == "Rebuild as arm64 in a Tab" }, "\(page.verbs(for: api).map(\.title))")
+        XCTAssertTrue(rebuild.note?.contains("Compose built it for amd64") == true, rebuild.note ?? "no note")
+        rebuild.perform()
+        try await eventually("typed") { ran.count == 2 }
+        XCTAssertEqual(ran.last?.0, "DOCKER_DEFAULT_PLATFORM=linux/arm64 \(files) up -d --no-deps --force-recreate --build api", "built again, nothing pulled")
+    }
+
+    /// The containerd image store before API 1.48: an image's id is its
+    /// index, whose inspect says arm64 once a pull adds it. A container
+    /// made before still runs amd64 — kept to what its image said first —
+    /// while the image now says arm64; one made after runs arm64.
+    func testAContainerKeepsThePlatformItWasMadeFor() async throws {
+        fake.containerdStore = true
+        let index = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "old", image: "legacy:1", imageID: index)
+        model.start()
+        try await eventually("listed") { model.containers.count == 1 }
+        let old = try XCTUnwrap(model.container("old"))
+        XCTAssertNil(old.ownPlatform, "API 1.47 says none")
+        XCTAssertEqual(model.platformKey(of: old), model.platformKey(index), "not known yet: the image's, with its epoch")
+        model.wantPlatform(of: old)
+        try await eventually("read") { model.emulation(of: old) != nil }
+        XCTAssertEqual(model.platformKey(of: old), old.Id, "known for good: no epoch")
+
+        try await eventually("listening") { fake.listening == 1 }
+        let epoch = model.platformEpoch
+        for try await _ in try XCTUnwrap(model.engine).pull("legacy:1", platform: "linux/arm64") {}
+        try await eventually("the epoch moved on") { model.platformEpoch > epoch }
+        let images = try await XCTUnwrap(model.engine).images()
+        XCTAssertEqual(images.filter { $0.tags.contains("legacy:1") }.map(\.Id), [index], "the same index")
+        // The image's row asks again; the container's doesn't.
+        model.wantPlatform(of: old)
+        model.wantPlatform(of: index)
+        try await eventually("the image read again") { model.platforms[index]?.architecture == "arm64" }
+        XCTAssertNil(model.emulation(ofImage: index), "its index holds arm64 now")
+        XCTAssertEqual(model.emulation(of: try XCTUnwrap(model.container("old")))?.image.short, "amd64", "made before: still amd64")
+        let platform = await model.readPlatforms(of: [index])
+        XCTAssertEqual(platform[index]?.short, "arm64")
+
+        fake.add(name: "new", image: "legacy:1", imageID: index)
+        try await eventually("the new one listed") { model.container("new") != nil }
+        let new = try XCTUnwrap(model.container("new"))
+        XCTAssertNil(model.emulation(of: new), "made after: arm64")
+        XCTAssertEqual(model.platformKey(of: new), new.Id, "kept to what its image said, read since the last image event")
+        XCTAssertEqual(model.emulation(of: try XCTUnwrap(model.container("old")))?.image.short, "amd64")
+    }
+
+    /// From API 1.48 a container in the containerd store says what it
+    /// runs: nothing is read for it, and a pull into its image's index
+    /// changes nothing. Every other call keeps its version.
+    func testAContainerSaysWhatItRunsFromAPI148() async throws {
+        fake.containerdStore = true
+        fake.apiVersion = "1.51"
+        let index = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "old", image: "legacy:1", imageID: index)
+        model.start()
+        try await eventually("listed") { model.containers.count == 1 }
+        XCTAssertEqual(model.connection, .running("1.47"))
+        XCTAssertTrue(fake.requests.contains("GET /v1.48/containers/json?all=1"), "\(fake.requests)")
+        let old = try XCTUnwrap(model.container("old"))
+        XCTAssertEqual(old.ownPlatform?.description, "linux/amd64")
+        XCTAssertEqual(model.emulation(of: old)?.image.short, "amd64")
+        XCTAssertEqual(model.platformKey(of: old), old.Id)
+        model.wantPlatform(of: old)
+        await model.readPlatforms(for: [old])
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(fake.requests.contains { $0.contains("/images/") }, "nothing to read: \(fake.requests)")
+        for try await _ in try XCTUnwrap(model.engine).pull("legacy:1", platform: "linux/arm64") {}
+        await model.reload()
+        XCTAssertEqual(model.emulation(of: try XCTUnwrap(model.container("old")))?.image.short, "amd64")
+    }
+
+    /// An agent asking for a platform a view's read has on its way waits
+    /// for that read, rather than answering without it — and doesn't read
+    /// it again.
+    func testAnAgentWaitsForAReadOnItsWay() async throws {
+        let amd = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "old", image: "legacy:1", imageID: amd)
+        model.start()
+        try await eventually("listed") { model.containers.count == 1 }
+        fake.imageInspectDelay = 300
+        func inspects() -> Int { fake.requests.filter { $0.hasSuffix("/images/\(amd)/json") }.count }
+        model.wantPlatform(of: amd)
+        try await eventually("on its way") { inspects() == 1 }
+        XCTAssertTrue(model.platforms.isEmpty, "not answered yet")
+        let read = await model.readPlatforms(of: [amd])
+        XCTAssertEqual(read[amd]?.short, "amd64", "waited for it")
+        XCTAssertEqual(inspects(), 1, "read once")
+        await model.readPlatforms(for: model.containers)
+        XCTAssertNotNil(model.emulation(of: try XCTUnwrap(model.container("old"))))
+        XCTAssertEqual(inspects(), 1)
+    }
+
+    /// An Intel engine emulates arm64 images.
+    func testAnIntelEngineEmulatesArm() async throws {
+        fake.architecture = "x86_64"
+        let arm = fake.addImage("fresh:1", size: 1)
+        let amd = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        fake.add(name: "new", image: "fresh:1", imageID: arm)
+        fake.add(name: "old", image: "legacy:1", imageID: amd)
+        model.start()
+        try await eventually("listed") { model.containers.count == 2 }
+        XCTAssertEqual(model.enginePlatform?.short, "amd64")
+        model.wantPlatform(of: arm)
+        model.wantPlatform(of: amd)
+        try await eventually("read") { model.platforms.count == 2 }
+        XCTAssertEqual(model.emulation(of: try XCTUnwrap(model.container("new")))?.image.short, "arm64")
+        XCTAssertNil(model.emulation(of: try XCTUnwrap(model.container("old"))))
+    }
+
     func testNoEndpointIsOff() async throws {
         let off = DockerModel(endpoint: { nil })
         off.start()

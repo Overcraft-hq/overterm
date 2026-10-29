@@ -42,12 +42,18 @@ private struct ResourceRow: View {
     let figures: [String]
     let dim: Bool
     @ObservedObject var theme: ChromeTheme
+    /// An image's row: its badge when this engine runs it emulated.
+    var imageID: String? = nil
+    var docker: DockerModel? = nil
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(theme.text3).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(dim ? theme.text2 : theme.text).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 5) {
+                    Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(dim ? theme.text2 : theme.text).lineLimit(1).truncationMode(.middle)
+                    if let imageID, let docker { DockerEmulationBadge(subject: .image(imageID), docker: docker) }
+                }
                 Text(verbatim: subtitle).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             }
             .layoutPriority(1)
@@ -115,9 +121,11 @@ struct DockerImagesView: View {
                         let users = docker.containers(using: image)
                         ResourceRow(
                             symbol: image.isDangling ? "square.dashed" : "square.stack.3d.down.right",
-                            title: image.tags.first ?? "<none>", subtitle: image.shortID + (image.tags.count > 1 ? " · +\(image.tags.count - 1) tags" : ""),
+                            title: image.tags.first ?? "<none>",
+                            subtitle: [image.shortID, docker.platforms[image.Id]?.description, image.tags.count > 1 ? "+\(image.tags.count - 1) tags" : nil]
+                                .compactMap { $0 }.joined(separator: " · "),
                             figures: [users.isEmpty ? "unused" : "\(users.count) container\(users.count == 1 ? "" : "s")", bytes(image.Size), ago(image.Created)],
-                            dim: users.isEmpty, theme: theme
+                            dim: users.isEmpty, theme: theme, imageID: image.Id, docker: docker
                         )
                         .tag(image.Id)
                         .listRowSeparator(.hidden)
@@ -198,10 +206,22 @@ private struct DockerImageDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(verbatim: image.tags.first ?? "<none>").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                DockerActionBar(verbs: page.verbs(for: image), theme: theme)
+                HStack(spacing: 8) {
+                    Text(verbatim: image.tags.first ?? "<none>").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
+                        .textSelection(.enabled)
+                    DockerEmulationBadge(subject: .image(image.Id), docker: docker)
+                }
+                let verbs = page.verbs(for: image)
+                DockerActionBar(verbs: verbs, theme: theme)
+                if let emulation = docker.emulation(ofImage: image.Id) {
+                    DockerEmulationNote(
+                        emulation: emulation, text: emulation.imageAdvice, verb: verbs.first { $0.title == emulation.imageVerbTitle }, theme: theme)
+                }
                 DetailBlock(title: "Image", theme: theme) {
                     DetailRow(key: "ID", value: image.shortID, theme: theme)
+                    if let platform = docker.platforms[image.Id] {
+                        DetailRow(key: "Platform", value: platform.description + (docker.emulation(ofImage: image.Id) != nil ? " — emulated here" : ""), theme: theme)
+                    }
                     DetailRow(key: "Size", value: bytes(image.Size), theme: theme)
                     DetailRow(key: "Created", value: ago(image.Created), theme: theme)
                     ForEach(image.tags.dropFirst(), id: \.self) { DetailRow(key: "Also", value: $0, theme: theme) }

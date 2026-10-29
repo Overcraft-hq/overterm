@@ -176,7 +176,11 @@ there when a service has `develop.watch`, and Up With Profiles… lists the
 profiles its files name. A container's logs are followed as they are written,
 coloured by level and filtered, and picked up again after a restart; its
 inspect data and its CPU, memory, network and disk sit beside it. Secrets
-in a container's environment stay masked. Images (pulled with their
+in a container's environment stay masked. On Apple silicon, a container
+running an amd64 image — emulated, and slow — says `amd64` on its row; its
+detail says why and runs it natively in a tab: built again for arm64 when
+its compose file builds it, else from its image's arm64 variant. Images
+show their platform. Images (pulled with their
 progress, tagged, their layers), volumes with their sizes and who mounts
 them, and networks with who is on them sit in sections of their own, and
 Clean Up lists what nothing uses before anything goes. Every detail has

@@ -437,23 +437,35 @@ extension DockerPageModel {
 
     /// A public image down, its progress shown as it comes. One the engine
     /// may not pull alone (a private registry) says so; a terminal tab,
-    /// where the credential helper signs in, can.
-    func pull(_ name: String) {
+    /// where the credential helper signs in, can. `platform`: that variant
+    /// of it (an emulated image's native one), shown as `image (platform)`;
+    /// an image without one says so.
+    func pull(_ name: String, platform: DockerPlatform? = nil) {
         let image = name.trimmingCharacters(in: .whitespaces)
-        guard !image.isEmpty, let engine = docker.engine, pulls[image]?.done != false else { return }
-        pulls[image] = DockerPull(image: image)
+        let key = platform.map { "\(image) (\($0.description))" } ?? image
+        guard !image.isEmpty, let engine = docker.engine, pulls[key]?.done != false else { return }
+        pulls[key] = DockerPull(image: key)
         Task {
             do {
-                for try await progress in engine.pull(image) { pulls[image]?.add(progress) }
-                pulls[image]?.done = true
+                for try await progress in engine.pull(image, platform: platform?.description) { pulls[key]?.add(progress) }
+                pulls[key]?.done = true
                 docker.load(.images)
             } catch {
-                let message = error.localizedDescription
-                let auth = message.contains("unauthorized") || message.contains("denied") || message.contains("authentication")
-                pulls[image]?.error = auth ? "\(message) — pull it in a terminal tab (docker pull \(image)), where your credentials are." : message
-                pulls[image]?.done = true
+                pulls[key]?.error = Self.pullError(error.localizedDescription, image: image, platform: platform)
+                pulls[key]?.done = true
             }
         }
+    }
+
+    /// What a pull's failure says: where credentials are, or that no such
+    /// variant exists (the classic store's words, then containerd's).
+    nonisolated static func pullError(_ message: String, image: String, platform: DockerPlatform?) -> String {
+        if let platform, message.contains("no matching manifest") || message.contains("no match for platform") {
+            return "\(image) has no \(platform.description) variant — build one for it, or use another image."
+        }
+        let auth = message.contains("unauthorized") || message.contains("denied") || message.contains("authentication")
+        let command = platform.map { "docker pull --platform \($0.description) \(image)" } ?? "docker pull \(image)"
+        return auth ? "\(message) — pull it in a terminal tab (\(command)), where your credentials are." : message
     }
 
     func dismissPull(_ image: String) { pulls[image] = nil }

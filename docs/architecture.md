@@ -1341,6 +1341,44 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   the engine's own `/images/search` (as `docker search` does) and suggests
   images with their stars and the official mark. Tag, remove (asked first; never what a running
   container uses), browse a volume in a tab (a throwaway container).
+- **Emulation** (`DockerPlatform`, `DockerEmulation`, pure): an image built
+  for another architecture than the engine's — amd64 on Apple silicon —
+  runs translated (Rosetta or QEMU), often several times slower. The
+  engine's architecture is `/info`'s (`uname -m`: `aarch64`, `x86_64`),
+  read once a connection; an image's is its inspect data's `Architecture`
+  and `Variant`. `/images/json` doesn't say it. It is read only for what
+  is on screen: the badge (`DockerEmulationBadge`) on a container's row,
+  an image's row and a detail asks as it appears, eight images at a time,
+  once an id (`DockerModel.platforms`). The page's overlay is hidden, not
+  removed, and the sidebar's panel stays while it is collapsed, so their
+  views live on: each host says whether it is on screen
+  (`\.dockerShown`), and a badge off screen asks nothing.
+- **What a container runs** is not what its image says now. In the
+  containerd image store (Docker Desktop's default) an id is the image's
+  index, a pull can add the engine's own platform to it, and inspect then
+  describes that one — while the container made before still runs amd64.
+  From API 1.48 a container says its own (`ImageManifestDescriptor` in
+  `/containers/json` and inspect): the list and inspect are asked at 1.48
+  when the engine speaks it, every other call at 1.47. Before that, a
+  container is kept to what its image said when first read for it
+  (`containerPlatforms`) — read since the last image event, never after
+  one, which may have changed the index. After an image event an image's
+  row asks again (`platformEpoch`); a container's, once known, never does.
+  An agent asking waits for the read, a view's on its way too.
+- **Running it natively**: a container marked says `amd64` on its row; its
+  detail says why, and its verb runs it natively in a terminal tab. A
+  service its compose files build (`ComposeFacts.built`, from `docker
+  compose config`) is built again with DOCKER_DEFAULT_PLATFORM and never
+  pulled: `image:` may name what `build:` makes, and a pull would put a
+  registry's image in place of the checkout's. Its image's name can't
+  tell: a tag moves on. Any other service's image is pulled for the
+  engine's platform, then the service recreated alone (Compose applies
+  DOCKER_DEFAULT_PLATFORM only to the services it builds). The verb waits
+  for the files' answer; files that can't be read get `--build` and no
+  pull. A lone container's image is only pulled: making it again is Run
+  Another Like It's. An image's own verb pulls its variant through the
+  engine (`/images/create?platform=`), and one with no such variant says
+  so.
 - **Builds** (section 5, `DockerBuildRecord`/`DockerBuildDetail`, pure):
   what `docker buildx history` keeps — Docker Desktop's Builds view reads
   the same records — through the CLI, read when the section shows. A
@@ -1651,8 +1689,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **Agents** (`DockerMCP`, on BrowserBridge's server beside the
   browser's, the API client's, the notes' and the databases' tools):
   `docker_containers`, `docker_projects`, `docker_logs` (levels read,
-  filtered), `docker_inspect` (state, error, health, ports, mounts, env)
-  and `docker_stats` read; `docker_action`, `docker_compose` and
+  filtered), `docker_inspect` (state, error, health, platform — emulated
+  or not, and what runs it natively — ports, mounts, env) and
+  `docker_stats` read; `docker_containers` marks what runs emulated,
+  reading the platforms it needs first; `docker_action`, `docker_compose` and
   `docker_exec` act, each asked about in the window first (`allow`; a
   test answers through `askOverride`), compose up, rebuild (`up --build`)
   and down in a terminal tab the user sees. `docker_compose` takes a
@@ -1718,7 +1758,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   rest find the project by name. A command is told the engine (`DOCKER_HOST=`) only when the
   shell wouldn't find the same one by itself.
 - **Tests**: `FakeDockerEngine` plays the API on a socket of its own
-  (containers, events, logs framed, files as tar); `DockerTransportTests`,
+  (containers, events, logs framed, files as tar; `/info`'s Architecture
+  and each image's platform, a platform pull of `amd64only/…` refused;
+  `containerdStore` for the containerd store's indexes and, at
+  `apiVersion` 1.48, each container's own platform);
+  `DockerTransportTests`,
   `DockerModelTests` and the `docker` scenario run against it, which records
   rather than types what would reach a real `docker`; a stub `docker`
   answers `compose config` for the scenario (a checkout's plan, a

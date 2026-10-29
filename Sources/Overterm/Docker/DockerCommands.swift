@@ -84,6 +84,40 @@ enum DockerCommands {
         prefix(for: endpoint) + "docker logs -f --tail 200 \(quote(container.name))"
     }
 
+    /// An image's variant for a platform: `docker pull --platform linux/arm64 …`.
+    static func pull(_ image: String, platform: DockerPlatform, endpoint: DockerEndpoint? = nil) -> String {
+        prefix(for: endpoint) + "docker pull --platform \(platform.description) \(quote(image))"
+    }
+
+    /// What runs an emulated container natively (`DockerEmulation`): a
+    /// service its files build (`built`, `ComposeFacts.built`), built
+    /// again for `platform` — never pulled, whatever `image:` names it;
+    /// any other service's image pulled for it, then the service recreated
+    /// alone; a container on its own, its image pulled — making it again
+    /// is Run Another Like It's. Compose applies DOCKER_DEFAULT_PLATFORM
+    /// only to the services it builds, so a pulled one is pulled first:
+    /// the recreate then makes it from the image now there. Not known
+    /// whether it builds (`built` nil): recreated with `--build`, nothing
+    /// pulled — a pull could put a registry's image in place of a local
+    /// build. `reference`: inspect's name for an image the list says by
+    /// id. `files`: the project's, as `ComposePortStore.files(for:)` says
+    /// them. Nil when its image has no name left to pull.
+    static func native(
+        _ container: ContainerSummary, reference: String? = nil, project: ComposeProject?, platform: DockerPlatform, built: Bool?,
+        endpoint: DockerEndpoint? = nil, files: [String]? = nil
+    ) -> String? {
+        let env = "DOCKER_DEFAULT_PLATFORM=\(platform.description) "
+        if let project, let service = container.composeService, DockerEmulation.isService(container) {
+            if built != false {
+                return env + compose(project, "up -d --no-deps --force-recreate --build", services: [service], endpoint: endpoint, files: files)
+            }
+            guard let name = DockerPlatform.nameToPull(container, reference: reference) else { return nil }
+            return pull(name, platform: platform, endpoint: endpoint) + " && " + env
+                + compose(project, "up -d --no-deps --force-recreate", services: [service], endpoint: endpoint, files: files)
+        }
+        return DockerPlatform.nameToPull(container, reference: reference).map { pull($0, platform: platform, endpoint: endpoint) }
+    }
+
     /// A word as the shell reads it: as it is when it is plain, else in
     /// single quotes.
     static func quote(_ word: String) -> String {

@@ -264,8 +264,15 @@ final class DockerEngine: Sendable {
         guard response.status == 200 else { throw DockerError(status: response.status, message: response.errorMessage) }
         let server = response.header("API-Version") ?? Self.clientVersion
         let version = Self.older(server, Self.clientVersion)
-        negotiated.set(version)
+        negotiated.set(version, server: server)
         return version
+    }
+
+    /// A call's version when it wants a later one than every call's —
+    /// `/containers/json` at 1.48 says what each container runs — and the
+    /// engine speaks it; else the negotiated one.
+    func version(wanting wanted: String) -> String {
+        negotiated.server.map { Self.older($0, wanted) } ?? negotiated.value ?? Self.clientVersion
     }
 
     /// `1.44` vs `1.47`: the lower.
@@ -275,9 +282,10 @@ final class DockerEngine: Sendable {
         return pa.lexicographicallyPrecedes(pb) ? a : b
     }
 
-    func path(_ path: String, _ query: [String: String] = [:]) -> String {
+    /// `version`: the call's own (`version(wanting:)`), else the negotiated one.
+    func path(_ path: String, _ query: [String: String] = [:], version: String? = nil) -> String {
         var components = URLComponents()
-        components.path = "/v\(negotiated.value ?? Self.clientVersion)" + path
+        components.path = "/v\(version ?? negotiated.value ?? Self.clientVersion)" + path
         if !query.isEmpty {
             components.queryItems = query.keys.sorted().map { URLQueryItem(name: $0, value: query[$0]) }
         }
@@ -288,8 +296,8 @@ final class DockerEngine: Sendable {
 
     /// A call whose answer is JSON; an error status throws the engine's
     /// message.
-    func get<T: Decodable>(_ type: T.Type, _ path: String, _ query: [String: String] = [:]) async throws -> T {
-        let response = try await send(.GET, path, query)
+    func get<T: Decodable>(_ type: T.Type, _ path: String, _ query: [String: String] = [:], version: String? = nil) async throws -> T {
+        let response = try await send(.GET, path, query, version: version)
         do {
             return try JSONDecoder().decode(T.self, from: response.body)
         } catch {
@@ -300,9 +308,10 @@ final class DockerEngine: Sendable {
     /// The raw answer, after its status was checked.
     @discardableResult
     func send(
-        _ method: HTTPMethod, _ path: String, _ query: [String: String] = [:], body: Data? = nil, headers: [(String, String)] = []
+        _ method: HTTPMethod, _ path: String, _ query: [String: String] = [:], body: Data? = nil, headers: [(String, String)] = [],
+        version: String? = nil
     ) async throws -> DockerResponse {
-        let response = try await transport.send(method, self.path(path, query), body: body, headers: headers)
+        let response = try await transport.send(method, self.path(path, query, version: version), body: body, headers: headers)
         guard (200..<300).contains(response.status) || response.status == 304 else {
             throw DockerError(status: response.status, message: response.errorMessage)
         }
@@ -314,10 +323,12 @@ final class DockerEngine: Sendable {
     }
 }
 
-/// The version `ping` settled on, read from any thread.
+/// The version `ping` settled on, and the engine's own, read from any
+/// thread.
 private final class NegotiatedVersion: @unchecked Sendable {
     private let lock = NSLock()
     private var version: String?
+    private var serverVersion: String?
 
     var value: String? {
         lock.lock()
@@ -325,9 +336,16 @@ private final class NegotiatedVersion: @unchecked Sendable {
         return version
     }
 
-    func set(_ version: String) {
+    var server: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return serverVersion
+    }
+
+    func set(_ version: String, server: String) {
         lock.lock()
         self.version = version
+        serverVersion = server
         lock.unlock()
     }
 }

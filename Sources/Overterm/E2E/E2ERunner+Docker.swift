@@ -1091,6 +1091,233 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// Emulation: amd64 images on the fake's arm64 engine, in the
+    /// containerd store (Docker Desktop's), where an image's id is its
+    /// index. A row shown asks for its image's platform, once; an emulated
+    /// container says so on its row and its detail, whose box runs it
+    /// natively in a tab — a service its files build built again, one they
+    /// pull pulled and recreated, a lone container's image pulled. An
+    /// image's own box pulls the variant through the engine: the image
+    /// then says arm64, the containers made before still amd64. Hidden,
+    /// the page asks nothing; the sidebar's panel asks for what it shows.
+    /// What is drawn is read off the window. Commands recorded, pulls the
+    /// fake's, Compose a stub.
+    private func emulationChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        fake.containerdStore = true
+        defer { fake.containerdStore = false }
+        var commands: [(command: String, folder: URL?)] = []
+        let actions = page.actions
+        page.actions?.run = { commands.append(($0, $1)) }
+        defer { page.actions = actions }
+        let legacy = fake.addImage("ot/legacy:1", size: 30 << 20, architecture: "amd64")
+        let native = fake.addImage("ot/native:1", size: 20 << 20, architecture: "arm64", variant: "v8")
+        let spare = fake.addImage("ot/spare:1", size: 10 << 20, architecture: "amd64")
+        // Its api is built (build: with an image: name), its worker pulled:
+        // as its files say, which a stub Compose reads.
+        let folder = scratch.appendingPathComponent("ot-legacy", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let real = FileTreeModel.realPath(folder)
+        try? "services:\n  api:\n    build: .\n    image: ot/legacy:1\n  worker:\n    image: ot/legacy:1\n"
+            .write(to: folder.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        let bin = scratch.appendingPathComponent("emulation-stub-bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("docker")
+        let config = #"{"name":"ot-legacy","services":{"api":{"build":{"context":"\#(real)"},"image":"ot/legacy:1"},"worker":{"image":"ot/legacy:1"}}}"#
+        let script = #"""
+            #!/bin/sh
+            case "$*" in
+              *"-p ot-legacy "*" config --format json"*) echo '\#(config)' ;;
+              *"-p ot-legacy "*" config --profiles"*) ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """#
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        defer { DockerCLI.override = nil }
+        let api = fake.add(name: "ot-legacy-api-1", image: "ot/legacy:1", project: "ot-legacy", workingDir: real, service: "api", imageID: legacy)
+        let worker = fake.add(name: "ot-legacy-worker-1", image: "ot/legacy:1", project: "ot-legacy", workingDir: real, service: "worker", imageID: legacy)
+        let tool = fake.add(name: "ot-legacy-tool", image: "ot/legacy:1", imageID: legacy)
+        let fresh = fake.add(name: "ot-native", image: "ot/native:1", imageID: native)
+        var late: String?
+        var images = [legacy, native, spare]
+        defer {
+            page.filter = ""
+            page.imageSelection = []
+            page.selection = []
+        }
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.press("1")
+        page.selection = []
+        // Only these rows: the list is shorter than the window.
+        page.filter = "image:ot/"
+        guard await eventually(5, { [api, worker, tool, fresh].allSatisfy { docker.container($0) != nil } }) else {
+            return check("four containers to look at", false, "\(docker.containers.map(\.name))")
+        }
+        func summary(_ id: String) -> ContainerSummary? { docker.container(id) }
+        func inspects(_ image: String) -> Int { fake.requests.filter { $0.hasSuffix("/images/\(image)/json") }.count }
+        func allInspects() -> Int { fake.requests.filter { $0.contains("/images/sha256:") && $0.hasSuffix("/json") }.count }
+        /// A check of what is drawn: failed, what the window shows.
+        func drawn(_ name: String, _ line: (text: String, frame: CGRect)?, _ ok: (String) -> Bool = { _ in true }) async {
+            let passed = line.map { ok($0.text) } ?? false
+            var detail = line?.text ?? ""
+            if line == nil { detail = await readWindow().map(\.text).joined(separator: " | ") }
+            check(name, passed, detail)
+        }
+
+        check("the engine says its platform", docker.enginePlatform?.description == "linux/arm64", "\(docker.info?.Architecture ?? "none")")
+        check(
+            "an amd64 container on an arm64 engine is marked once its row shows",
+            await eventually(5) { summary(api).flatMap(docker.emulation(of:))?.image.description == "linux/amd64" }, "\(docker.platforms)")
+        await drawn("its row says amd64", await shownText { $0.contains("amd64") })
+        check(
+            "a native one isn't", await eventually(5) { docker.platforms[native] != nil } && summary(fresh).flatMap(docker.emulation(of:)) == nil,
+            "\(docker.platforms[native]?.description ?? "not read")")
+        await docker.reload()
+        await docker.reload()
+        page.selection = [api]
+        page.detailTab = .overview
+        await pause(0.3)
+        check("an image is read once, not at every reload", inspects(legacy) == 1, "\(inspects(legacy)) reads")
+
+        guard let apiSummary = summary(api), let workerSummary = summary(worker), let toolSummary = summary(tool), let freshSummary = summary(fresh) else {
+            return check("the containers are still there", false)
+        }
+        // Built, as its files say once Compose has read them — not by its image's name.
+        let rebuildTitle = "Rebuild as arm64 in a Tab"
+        check(
+            "a service its files build offers to build it again as arm64",
+            await eventually(5) { page.verbs(for: apiSummary).contains { $0.title == rebuildTitle } },
+            "\(page.verbs(for: apiSummary).map(\.title)) \(String(describing: page.composeFacts["ot-legacy"]))")
+        check(
+            "and so does the panel's menu", app.dockerPanel.verbs(apiSummary).contains { $0.title == rebuildTitle },
+            "\(app.dockerPanel.verbs(apiSummary).map(\.title))")
+        await drawn("its detail says it runs emulated", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        await drawn("and its Platform row", await shownText { $0.contains("emulated here") }) { $0.contains("linux/amd64") }
+        await capture("emulated")
+        let button = await shownText { $0.contains("Rebuild as arm64") }
+        if let button { await click(at: CGPoint(x: button.frame.midX, y: button.frame.midY)) }
+        let clicked = button != nil ? await eventually(5) { !commands.isEmpty } : false
+        check("its box's button is that verb", clicked, button?.text ?? "no button read")
+        if !clicked { page.verbs(for: apiSummary).first { $0.title == rebuildTitle }?.perform() }
+        check(
+            "which builds the service again for arm64, nothing pulled",
+            await eventually(5) { !commands.isEmpty }
+                && commands.last.map {
+                    $0.command.hasPrefix("DOCKER_DEFAULT_PLATFORM=linux/arm64 ") && !$0.command.contains("docker pull")
+                        && $0.command.hasSuffix(" -p ot-legacy -f \(real)/compose.yaml up -d --no-deps --force-recreate --build api")
+                } == true,
+            "\(button?.text ?? "no button read"): \(commands.last?.command ?? "nothing")")
+        check("in its folder", commands.last?.folder.map(FileTreeModel.realPath) == real, commands.last?.folder?.path ?? "none")
+        var count = commands.count
+        page.verbs(for: workerSummary).first { $0.title == "Recreate as arm64 in a Tab" }?.perform()
+        check(
+            "a service its files pull pulls the variant and recreates the service alone",
+            await eventually(5) { commands.count > count }
+                && commands.last?.command.contains("docker pull --platform linux/arm64 ot/legacy:1 && DOCKER_DEFAULT_PLATFORM=linux/arm64 ") == true
+                && commands.last?.command.hasSuffix(" up -d --no-deps --force-recreate worker") == true,
+            "\(page.verbs(for: workerSummary).map(\.title)): \(commands.last?.command ?? "nothing")")
+        count = commands.count
+        page.verbs(for: toolSummary).first { $0.title == "Pull the arm64 Variant in a Tab" }?.perform()
+        check(
+            "a lone container's pulls the variant",
+            commands.count > count && commands.last?.command.hasSuffix("docker pull --platform linux/arm64 ot/legacy:1") == true, commands.last?.command ?? "nothing")
+        check("a native container has none", !page.verbs(for: freshSummary).contains { $0.title.contains("arm64") })
+        page.selection = []
+
+        // The images: their platforms, the image's own box.
+        page.press("2")
+        page.filter = "ot/"
+        check(
+            "the image list knows each one's platform, an image no container uses too",
+            await eventually(5) { docker.platforms[spare]?.description == "linux/amd64" && docker.emulation(ofImage: legacy) != nil },
+            "\(docker.platforms)")
+        await drawn("and says it under its name", await shownText { $0.contains("linux/amd64") })
+        page.imageSelection = [legacy]
+        await drawn("an emulated image's detail says so", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        // Vision may read the row's two halves as two lines: the platform is
+        // then beside it, at the same height.
+        let platformRow = await shownText { $0.contains("emulated here") }
+        var platformBeside = platformRow?.text.contains("linux/amd64") == true
+        if !platformBeside, let row = platformRow {
+            platformBeside = await readWindow().contains { $0.text.contains("linux/amd64") && abs($0.frame.midY - row.frame.midY) < row.frame.height }
+        }
+        check("with its Platform row", platformBeside, platformRow?.text ?? "not drawn")
+        await capture("emulated-image")
+        let read = inspects(legacy)
+        let pullButton = await shownText { $0.contains("Pull the arm64") }
+        if let pullButton { await click(at: CGPoint(x: pullButton.frame.midX, y: pullButton.frame.midY)) }
+        let key = "ot/legacy:1 (linux/arm64)"
+        let pulled = await eventually(5) {
+            fake.requests.contains { $0.hasPrefix("POST /v1.47/images/create?") && $0.contains("platform=linux/arm64") }
+                && page.pulls[key]?.done == true && page.pulls[key]?.error == nil
+        }
+        check("its box's button pulls the arm64 variant through the engine", pullButton != nil && pulled, "\(pullButton?.text ?? "no button read"): \(page.pulls[key]?.summary ?? "no pull")")
+        check(
+            "the image then says arm64: its index holds the variant now",
+            await eventually(5) { inspects(legacy) > read && docker.platforms[legacy]?.architecture == "arm64" && docker.emulation(ofImage: legacy) == nil },
+            "\(inspects(legacy)) reads, \(docker.platforms[legacy]?.description ?? "none")")
+        await pause(0.3)
+        let gone = await readWindow()
+        check("and its box is gone", !gone.contains { $0.text.hasPrefix("Emulated:") }, gone.map(\.text).joined(separator: " | "))
+        page.imageSelection = []
+
+        // The containers made from it before still run amd64, and say so.
+        page.press("1")
+        page.filter = "image:ot/"
+        check(
+            "while the containers made from it before still run amd64",
+            await eventually(5) { [api, worker, tool].allSatisfy { summary($0).flatMap(docker.emulation(of:)) != nil } },
+            "\(docker.containerPlatforms)")
+        await drawn("their rows say so", await shownText { $0.contains("amd64") })
+        page.pull("amd64only/tool:1", platform: docker.enginePlatform)
+        let refused = "amd64only/tool:1 (linux/arm64)"
+        check(
+            "an image with no arm64 variant says so",
+            await eventually(5) { page.pulls[refused]?.error?.contains("no linux/arm64 variant") == true }, page.pulls[refused]?.error ?? "")
+
+        // Hidden, the page asks nothing: not at an image event, nor for a
+        // container new since. The sidebar's panel asks for what it shows.
+        page.press("2")
+        page.filter = "ot/"
+        _ = await eventually(3) { docker.images.contains { $0.Id == legacy } }
+        await pause(0.4)
+        app.hideOverlay(focus: false)
+        let sidebar = app.sidebarPanel.panel
+        if sidebar == .docker { app.sidebarPanel.panel = .files }
+        _ = await eventually(3) { !self.app.dockerPanelShown && !self.app.dockerPanel.slotVisible }
+        let before = allInspects()
+        if let engine = docker.engine {
+            do { for try await _ in engine.pull("ot/other:1") {} } catch { check("an image pulled", false, error.localizedDescription) }
+        }
+        let lateImage = fake.addImage("ot/late:1", size: 5 << 20, architecture: "amd64")
+        images += [lateImage]
+        late = fake.add(name: "ot-late", image: "ot/late:1", imageID: lateImage)
+        _ = await eventually(3) { late.flatMap(docker.container) != nil }
+        await pause(0.8)
+        check(
+            "hidden, the page asks nothing again at an image event, nor for what is new",
+            allInspects() == before && !self.app.dockerPanelShown, "\(allInspects() - before) reads, panel shown \(app.dockerPanelShown)")
+        app.showDockerPanel(nil)
+        check(
+            "the sidebar's panel asks for what it shows",
+            await eventually(5) { late.flatMap(docker.container).flatMap(docker.emulation(of:)) != nil }, "\(allInspects() - before) reads")
+        app.sidebarPanel.panel = sidebar == .docker ? .docker : .files
+        let panelRead = allInspects()
+        app.showOverlay(.docker)
+        check("shown again, the page's rows ask again", await eventually(5) { allInspects() > panelRead }, "\(allInspects() - panelRead) reads")
+
+        page.dismissPull(key)
+        page.dismissPull(refused)
+        for id in [api, worker, tool, fresh] + [late].compactMap({ $0 }) { try? await docker.remove(id, force: true) }
+        for image in images { try? await docker.engine?.remove(image: image, force: true) }
+        if let other = docker.images.first(where: { $0.tags.contains("ot/other:1") }) { try? await docker.engine?.remove(image: other.Id, force: true) }
+        page.filter = ""
+        page.press("1")
+    }
+
     /// Model Runner's models: an engine with none says what installs one;
     /// a runner container's are listed, chatted with, removed — its API at
     /// the container's port, never `docker model` (which installs one).
@@ -2037,6 +2264,7 @@ extension E2ERunner {
         await askAgentChecks(fake, web: web, folder: folder, real: real)
         await worktreePortsChecks(fake, socket: socket)
         await composeServicesChecks(fake, web: web)
+        await emulationChecks(fake)
         await modelsChecks(fake)
         await mcpToolkitChecks()
         await agentChecks(fake, web: web)

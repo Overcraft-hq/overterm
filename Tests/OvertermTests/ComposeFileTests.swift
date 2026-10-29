@@ -710,6 +710,7 @@ final class ComposeFactsTests: XCTestCase {
         let stamp = ComposeFacts.Stamp(files: [:])
         let facts = await ComposeFacts.read(shop, stamp: stamp, cli: DockerCLI(executable: try stub(answering), endpoint: nil))
         XCTAssertEqual(facts.watched, ["web"])
+        XCTAssertEqual(facts.built, ["web"], "the services with a build:")
         XCTAssertEqual(facts.profiles, ["debug", "jobs"])
         XCTAssertNil(facts.problem)
         XCTAssertEqual(
@@ -723,6 +724,7 @@ final class ComposeFactsTests: XCTestCase {
         let failed = await ComposeFacts.read(shop, stamp: stamp, cli: DockerCLI(executable: broken, endpoint: nil))
         XCTAssertEqual(failed.problem, "yaml: line 3: did not find expected node content", "Compose's own words")
         XCTAssertEqual(failed.watched, [])
+        XCTAssertNil(failed.built, "not known: neither built nor pulled")
         XCTAssertEqual(failed.profiles, [])
         XCTAssertNil(failed.retry, "the files' problem stands until they change")
     }

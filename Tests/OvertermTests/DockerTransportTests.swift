@@ -33,6 +33,13 @@ final class DockerTransportTests: XCTestCase {
         let version = try await engine.ping()
         XCTAssertEqual(version, "1.47")
         XCTAssertTrue(engine.path("/info").hasPrefix("/v1.47/"))
+        XCTAssertEqual(engine.version(wanting: "1.48"), "1.47", "an engine of 1.47: no later")
+        fake.apiVersion = "1.51"
+        let newer = try await engine.ping()
+        XCTAssertEqual(newer, "1.47", "every call as Overterm is written")
+        XCTAssertEqual(engine.version(wanting: "1.48"), "1.48", "a call that wants a later one, as far as it wants")
+        _ = try await engine.containers()
+        XCTAssertTrue(fake.requests.contains("GET /v1.48/containers/json?all=1"), "\(fake.requests)")
     }
 
     func testListsAndDetails() async throws {
@@ -323,15 +330,114 @@ final class DockerTransportTests: XCTestCase {
         XCTAssertEqual(remaining.map(\.Name), ["shop_pgdata"])
     }
 
+    /// What an image is built for, from its inspect, and the engine's own
+    /// machine from `/info`.
+    func testAnImageSaysItsPlatform() async throws {
+        let info = try await engine.info()
+        XCTAssertEqual(info.Architecture, "aarch64")
+        XCTAssertEqual(info.OSType, "linux")
+        let legacy = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        let arm = fake.addImage("arm:1", size: 1, architecture: "arm", variant: "v7")
+        let platform = try await engine.platform(ofImage: legacy)
+        XCTAssertEqual(platform, DockerPlatform(os: "linux", architecture: "amd64", variant: nil))
+        let armPlatform = try await engine.platform(ofImage: arm)
+        XCTAssertEqual(armPlatform?.description, "linux/arm/v7")
+        do {
+            _ = try await engine.platform(ofImage: "sha256:nope")
+            XCTFail("no such image")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 404)
+        }
+        let both = await engine.platforms(ofImages: [legacy, arm, "sha256:nope"])
+        XCTAssertEqual(Set(both.keys), [legacy, arm])
+    }
+
+    /// A pull for a platform asks the engine for it; the tag then names
+    /// that image. One with no such variant says so.
+    func testAPullForAPlatform() async throws {
+        let legacy = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        for try await _ in engine.pull("legacy:1", platform: "linux/arm64") {}
+        XCTAssertTrue(fake.requests.contains { $0.hasSuffix("/images/create?fromImage=legacy&platform=linux/arm64&tag=1") }, "\(fake.requests)")
+        let images = try await engine.images()
+        let tagged = try XCTUnwrap(images.first { $0.tags.contains("legacy:1") })
+        XCTAssertNotEqual(tagged.Id, legacy)
+        let pulled = try await engine.platform(ofImage: tagged.Id)
+        XCTAssertEqual(pulled?.architecture, "arm64")
+        XCTAssertEqual(images.first { $0.Id == legacy }?.isDangling, true, "the old one is <none>")
+        do {
+            for try await _ in engine.pull("amd64only/tool:1", platform: "linux/arm64") {}
+            XCTFail("no arm64 variant")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("no matching manifest"), error.localizedDescription)
+        }
+    }
+
+    /// The fake's ids are the whole tag's: long tags alike in their first
+    /// 32 bytes are two images, and a platform pull of one leaves the
+    /// other platform's image `<none>`.
+    func testLongTagsAreImagesOfTheirOwn() async throws {
+        let a = fake.addImage("registry.example.com/team/service-a:1", size: 1)
+        let b = fake.addImage("registry.example.com/team/service-b:1", size: 1)
+        XCTAssertNotEqual(a, b)
+        let long = "ghcr.io/overcraft-hq/overterm-api:1"
+        let amd = fake.addImage(long, size: 1, architecture: "amd64")
+        for try await _ in engine.pull(long, platform: "linux/arm64") {}
+        let images = try await engine.images()
+        XCTAssertTrue(images.contains { $0.Id == a } && images.contains { $0.Id == b }, "both listed")
+        let tagged = try XCTUnwrap(images.first { $0.tags.contains(long) })
+        XCTAssertNotEqual(tagged.Id, amd)
+        XCTAssertEqual(images.first { $0.Id == amd }?.isDangling, true, "the old one is <none>")
+        let old = try await engine.platform(ofImage: amd)
+        XCTAssertEqual(old?.architecture, "amd64")
+        XCTAssertEqual(FakeDockerEngine.imageID("legacy:1"), FakeDockerEngine.imageID("legacy:1"))
+        XCTAssertEqual(FakeDockerEngine.imageID(long).count, "sha256:".count + 64)
+    }
+
+    /// The containerd store: a pull adds its platform to the tag's index,
+    /// whose inspect then says the host's. From API 1.48 a container says
+    /// the platform it was made for, in the list and in inspect; the
+    /// classic store's never does.
+    func testTheContainerdStore() async throws {
+        fake.containerdStore = true
+        fake.apiVersion = "1.48"
+        let index = fake.addImage("legacy:1", size: 1, architecture: "amd64")
+        let made = fake.add(name: "old", image: "legacy:1", imageID: index)
+        for try await _ in engine.pull("legacy:1", platform: "linux/arm64") {}
+        let images = try await engine.images()
+        XCTAssertEqual(images.filter { $0.tags.contains("legacy:1") }.map(\.Id), [index], "one index")
+        XCTAssertFalse(images.contains { $0.isDangling })
+        let now = try await engine.platform(ofImage: index)
+        XCTAssertEqual(now?.architecture, "arm64", "the host's, once the index holds it")
+        let before = try await engine.containers()
+        XCTAssertNil(before.first { $0.Id == made }?.ownPlatform, "not pinged: 1.47, which doesn't say")
+        _ = try await engine.ping()
+        let listed = try await engine.containers()
+        XCTAssertEqual(listed.first { $0.Id == made }?.ownPlatform?.description, "linux/amd64", "what it was made for")
+        let detail = try await engine.container(made)
+        XCTAssertEqual(detail.ImageManifestDescriptor?.dockerPlatform?.short, "amd64")
+        let after = fake.add(name: "new", image: "legacy:1", imageID: index)
+        let again = try await engine.containers()
+        XCTAssertEqual(again.first { $0.Id == after }?.ownPlatform?.short, "arm64", "made after: the host's")
+
+        fake.containerdStore = false
+        let classic = try await engine.containers()
+        XCTAssertNil(classic.first { $0.Id == made }?.ownPlatform, "the classic store's say none")
+    }
+
     /// Read-only, against the Docker this Mac runs — only when asked.
     func testTheRealEngineAnswers() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_DOCKER_TESTS"] == "1", "OVERTERM_DOCKER_TESTS=1 runs it")
         let real = DockerEngine(endpoint: .current())
         let version = try await real.ping()
         XCTAssertFalse(version.isEmpty)
-        _ = try await real.info()
+        let info = try await real.info()
+        XCTAssertNotNil(DockerPlatform(engine: info.Architecture), info.Architecture ?? "no Architecture")
         _ = try await real.containers()
-        _ = try await real.images()
+        let images = try await real.images()
+        if let first = images.first {
+            let platform = try await real.platform(ofImage: first.Id)
+            XCTAssertNotNil(platform, first.Id)
+        }
         _ = try await real.volumes()
         _ = try await real.networks()
         // Its runtime says it is up, through its own command.

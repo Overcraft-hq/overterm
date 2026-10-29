@@ -12,6 +12,9 @@ final class DockerPanelModel: ObservableObject {
     @Published var tab: ContainerTab = .logs
     /// Whether that pane shows it now (the window says).
     @Published var slotVisible = false
+    /// Whether the sidebar shows the panel now (the window says): its
+    /// views live on while it is collapsed.
+    @Published var panelVisible = false
     @Published var error: String?
     @Published var collapsed: Set<String> = []
     /// What can be done to a container or a project here: the page's verbs,
@@ -134,6 +137,7 @@ struct DockerPanelView: View {
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
+        .environment(\.dockerShown, panel.panelVisible)
         .accessibilityIdentifier("docker.panel")
     }
 
@@ -251,7 +255,7 @@ struct DockerPanelView: View {
         Button {
             show(container)
         } label: {
-            DockerContainerRow(container: container, inProject: inProject, busy: false, theme: theme, open: actions.open, compact: true)
+            DockerContainerRow(container: container, inProject: inProject, busy: false, docker: docker, theme: theme, open: actions.open, compact: true)
                 .padding(.horizontal, 8)
                 .background(RoundedRectangle(cornerRadius: 6).fill(panel.picked == container.Id && panel.slotVisible ? theme.rowSel : .clear))
                 .padding(.horizontal, 4)
@@ -299,9 +303,11 @@ struct DockerSlotView: View {
     var body: some View {
         if let id = panel.picked, let container = docker.container(id) {
             ContainerDetailView(
-                container: container, session: panel.session(for: id), tab: $panel.tab, theme: theme, actions: actions, verbs: { panel.verbs(container) }
+                container: container, session: panel.session(for: id), tab: $panel.tab, docker: docker, theme: theme, actions: actions,
+                verbs: { panel.verbs(container) }
             )
             .id(id)
+            .environment(\.dockerShown, panel.slotVisible)
         } else {
             Text("Pick a container in the Docker panel.").font(.system(size: 12)).foregroundStyle(theme.text3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

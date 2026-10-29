@@ -394,6 +394,7 @@ extension TerminalWindowController {
         let shown = sidebarItem?.isCollapsed == false && (panel ?? sidebarPanel.panel) == .docker && Settings.shared.dockerEnabled
         guard shown != dockerPanelShown else { return }
         dockerPanelShown = shown
+        dockerPanel.panelVisible = shown
         if shown { DockerModel.shared.show() } else { DockerModel.shared.hide() }
         updateComposeFile()
     }

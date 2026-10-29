@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NIOCore
 import NIOHTTP1
@@ -32,6 +33,15 @@ final class FakeDockerEngine: @unchecked Sendable {
         /// Its health check's last outputs, oldest first.
         var probes: [String] = []
         var failingStreak = 0
+        /// What it was made for: its image's platform then.
+        var platform: ImagePlatform?
+    }
+
+    /// What an image is built for, as its inspect says it.
+    struct ImagePlatform: Equatable, Sendable {
+        var os = "linux"
+        var architecture: String
+        var variant: String?
     }
 
     let socket: String
@@ -44,6 +54,22 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var volumeFiles: [String: [String: Data]] = [:]
     /// Bytes of build cache not in use.
     var buildCache = 0
+    /// What `/info` says the host is (`uname -m`): Apple silicon's.
+    var architecture = "aarch64"
+    /// What `/_ping` says it speaks: from 1.48 a container says the
+    /// platform it runs (in the containerd store).
+    var apiVersion = "1.47"
+    /// The containerd image store's ways, Docker Desktop's default since
+    /// 4.34: an image's id is its index's, the same for each platform
+    /// pulled into it, and its inspect says the host's platform once the
+    /// index holds it. Else the classic store's: an id a platform.
+    var containerdStore = false
+    /// How long an image's inspect takes, in milliseconds: a remote
+    /// engine's round trip.
+    var imageInspectDelay = 0
+    /// Each image's platforms, by id: one in the classic store, what its
+    /// index holds in the containerd store.
+    private var imagePlatforms: [String: [ImagePlatform]] = [:]
     private var execs: [String: (container: String, command: [String])] = [:]
     private var exitCodes: [String: Int] = [:]
     private var eventStreams: [ObjectIdentifier: Channel] = [:]
@@ -148,12 +174,13 @@ final class FakeDockerEngine: @unchecked Sendable {
             }
         }
         let status = Self.status(state, health: health)
+        let platform = imageID.flatMap { id in locked { imagePlatforms[id].map(bestPlatform) } }
         let summary = ContainerSummary(
             Id: id, Names: ["/" + name], Image: image, ImageID: imageID ?? "sha256:" + String(repeating: "a", count: 64), Command: "sleep infinity",
             Created: Int(Date().timeIntervalSince1970), Ports: ports, Labels: labels, State: state.rawValue, Status: status,
             Mounts: volumes.map { DockerMountPoint(Type: "volume", Name: $0, Destination: "/data") },
             Health: health.map { .init(Status: $0, FailingStreak: 0) })
-        locked { containers[id] = Container(summary: summary, env: env) }
+        locked { containers[id] = Container(summary: summary, env: env, platform: platform) }
         emit("create", id)
         return id
     }
@@ -254,16 +281,55 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    /// An image; untagged (`<none>`) when `tag` is nil. Its id back.
+    /// An image; untagged (`<none>`) when `tag` is nil. Its id back — the
+    /// same for the same tag and platform (in the containerd store, for
+    /// the same tag). Built for arm64 unless said. In the classic store
+    /// the tag moves to it from another image, as a pull moves it; in the
+    /// containerd store the platform joins the tag's index.
     @discardableResult
-    func addImage(_ tag: String?, size: Int, containers: Int = 0) -> String {
-        let seed = tag ?? UUID().uuidString
+    func addImage(_ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil) -> String {
+        let platform = ImagePlatform(architecture: architecture, variant: variant)
+        let index = locked { containerdStore }
+        let name = tag ?? UUID().uuidString
         let image = ImageSummary(
-            Id: "sha256:" + String(seed.utf8.map { String(format: "%02x", $0) }.joined().prefix(64)).padding(toLength: 64, withPad: "0", startingAt: 0),
+            Id: Self.imageID(index || architecture == "arm64" ? name : architecture + (variant.map { "/" + $0 } ?? "") + "@" + name),
             RepoTags: tag.map { [$0] } ?? ["<none>:<none>"], RepoDigests: [], Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size,
             Containers: containers, Labels: [:])
-        locked { images.append(image) }
+        locked {
+            if index, images.contains(where: { $0.Id == image.Id }) {
+                if imagePlatforms[image.Id]?.contains(platform) != true { imagePlatforms[image.Id, default: []].append(platform) }
+                return
+            }
+            images.removeAll { $0.Id == image.Id }
+            if let tag {
+                for at in images.indices where images[at].RepoTags?.contains(tag) == true {
+                    let left = (images[at].RepoTags ?? []).filter { $0 != tag }
+                    images[at].RepoTags = left.isEmpty ? ["<none>:<none>"] : left
+                }
+            }
+            images.append(image)
+            imagePlatforms[image.Id] = [platform]
+        }
         return image.Id
+    }
+
+    /// The same for the same seed, as a digest is: its bytes as they are
+    /// when they fit (a test reads them), else its SHA-256 — two long tags
+    /// alike in their first 32 bytes are two images.
+    static func imageID(_ seed: String) -> String {
+        let bytes = Array(seed.utf8)
+        let hex =
+            bytes.count <= 32
+            ? bytes.map { String(format: "%02x", $0) }.joined().padding(toLength: 64, withPad: "0", startingAt: 0)
+            : SHA256.hash(data: Data(bytes)).map { String(format: "%02x", $0) }.joined()
+        return "sha256:" + hex
+    }
+
+    /// What an image runs here: the host's platform when it has it, else
+    /// its first — as the containerd store picks from an index.
+    private func bestPlatform(_ platforms: [ImagePlatform]) -> ImagePlatform {
+        let own = DockerPlatform(engine: architecture)?.architecture
+        return platforms.first { $0.architecture == own } ?? platforms.first ?? ImagePlatform(architecture: "arm64")
     }
 
     func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil, anonymous: Bool = false) {
@@ -330,7 +396,7 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     // MARK: Answers
 
-    enum Answer {
+    enum Answer: Sendable {
         case json(Int, Data)
         case empty(Int)
         case raw(Int, Data, [(String, String)])
@@ -353,14 +419,14 @@ final class FakeDockerEngine: @unchecked Sendable {
         if runnerPath == "/models" || runnerPath.hasPrefix("/models/") || runnerPath.hasPrefix("/engines/") { return modelRunner(method, runnerPath) }
         let query = Dictionary((url.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
         var parts = url.path.split(separator: "/").map(String.init)
-        if parts.first?.hasPrefix("v1.") == true { parts.removeFirst() }
+        let version = parts.first?.hasPrefix("v1.") == true ? String(parts.removeFirst().dropFirst()) : apiVersion
         guard let kind = parts.first else { return .notFound }
         // `containers/<id>/logs` → id and `logs`; `containers/json` → no id.
         let named = ["containers", "images", "volumes", "networks", "exec"].contains(kind) && parts.count > 1 && !["json", "prune", "create"].contains(parts[1])
         let id = named ? parts[1] : ""
         let verb = named ? parts.dropFirst(2).joined(separator: "/") : parts.dropFirst().joined(separator: "/")
         switch kind {
-        case "_ping": return .raw(200, Data("OK".utf8), [("API-Version", "1.47"), ("Docker-Experimental", "false")])
+        case "_ping": return .raw(200, Data("OK".utf8), [("API-Version", locked { apiVersion }), ("Docker-Experimental", "false")])
         case "info": return info()
         case "events": return .events
         case "system" where verb == "df": return diskUsage()
@@ -371,17 +437,17 @@ final class FakeDockerEngine: @unchecked Sendable {
         case "containers" where verb == "prune", "images" where verb == "prune", "volumes" where verb == "prune", "networks" where verb == "prune":
             return Self.json(prune(kind, all: (query["filters"] ?? "").contains("\"dangling\":[\"false\"]") || (query["filters"] ?? "").contains("\"all\"")))
         case "containers" where !named && verb == "create" && method == .POST: return create(body, query)
-        case "containers": return named ? container(method, id, verb, query, body) : containerList(query)
+        case "containers": return named ? container(method, id, verb, query, body, version: version) : containerList(query, version: version)
         case "exec": return exec(method, id, verb)
         case "images" where named && verb == "history": return image(id).map { Self.json(Self.history(of: $0)) } ?? Self.error(404, "No such image: \(id)")
-        case "images" where named && verb == "json": return image(id).map { Self.json($0) } ?? Self.error(404, "No such image: \(id)")
+        case "images" where named && verb == "json": return image(id).map(imageInspect) ?? Self.error(404, "No such image: \(id)")
         case "images" where named && verb == "tag":
             guard let found = image(id) else { return Self.error(404, "No such image: \(id)") }
             let name = (query["repo"] ?? "") + ":" + (query["tag"] ?? "latest")
             locked { if let at = images.firstIndex(where: { $0.Id == found.Id }) { images[at].RepoTags = (images[at].RepoTags ?? []) + [name] } }
             emitImage("tag", found.Id)
             return .empty(201)
-        case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"))
+        case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"), platform: query["platform"])
         case "networks" where named && ["connect", "disconnect"].contains(verb):
             return other(method, kind, id, named, body, query.merging(["_verb": verb]) { $1 })
         case "images", "volumes", "networks": return other(method, kind, id, named, body, query)
@@ -422,11 +488,31 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     private func info() -> Answer {
-        let (count, running, imageCount) = locked { (containers.count, containers.values.filter { $0.summary.state == .running }.count, images.count) }
+        let (count, running, imageCount, machine) = locked {
+            (containers.count, containers.values.filter { $0.summary.state == .running }.count, images.count, architecture)
+        }
         return Self.json(
             EngineInfo(
                 Name: "fake", OperatingSystem: "Overterm's fake engine", ServerVersion: "29.0.0", NCPU: 4, MemTotal: 8 << 30, Containers: count,
-                ContainersRunning: running, Images: imageCount))
+                ContainersRunning: running, Images: imageCount, Architecture: machine, OSType: "linux"))
+    }
+
+    /// An image's inspect: its summary's fields and its platform, the
+    /// variant only when it has one (the engine leaves an empty one out).
+    /// How long a request waits for its answer, in milliseconds: an
+    /// image's inspect `imageInspectDelay`, the rest none.
+    func delay(of uri: String) -> Int {
+        let parts = (URLComponents(string: "http://docker" + uri)?.path ?? "").split(separator: "/").map(String.init).filter { !$0.hasPrefix("v1.") }
+        return parts.count == 3 && parts[0] == "images" && parts[2] == "json" ? locked { imageInspectDelay } : 0
+    }
+
+    private func imageInspect(_ image: ImageSummary) -> Answer {
+        var object = ((try? JSONEncoder().encode(image)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) ?? [:]
+        let platform = locked { imagePlatforms[image.Id].map(bestPlatform) } ?? ImagePlatform(architecture: "arm64")
+        object["Os"] = platform.os
+        object["Architecture"] = platform.architecture
+        if let variant = platform.variant { object["Variant"] = variant }
+        return .json(200, (try? JSONSerialization.data(withJSONObject: object)) ?? Data())
     }
 
     private func diskUsage() -> Answer {
@@ -438,20 +524,32 @@ final class FakeDockerEngine: @unchecked Sendable {
         return Self.json(usage)
     }
 
-    private func containerList(_ query: [String: String]) -> Answer {
+    private func containerList(_ query: [String: String], version: String) -> Answer {
         let all = query["all"] == "1"
-        let list = locked { containers.values.map(\.summary) }
+        let list = locked { containers.values.map { summary(of: $0, version: version) } }
         return Self.json(list.filter { all || $0.state == .running }.sorted { $0.name < $1.name })
     }
 
-    private func container(_ method: HTTPMethod, _ id: String, _ verb: String, _ query: [String: String], _ body: Data) -> Answer {
+    /// As the engine lists it at `version`: from 1.48, in the containerd
+    /// store, with the platform it was made for.
+    private func summary(of container: Container, version: String) -> ContainerSummary {
+        var summary = container.summary
+        if containerdStore, DockerEngine.older(version, DockerEngine.manifestVersion) == DockerEngine.manifestVersion, let platform = container.platform {
+            summary.ImageManifestDescriptor = .init(platform: .init(architecture: platform.architecture, os: platform.os, variant: platform.variant))
+        }
+        return summary
+    }
+
+    private func container(_ method: HTTPMethod, _ id: String, _ verb: String, _ query: [String: String], _ body: Data, version: String) -> Answer {
         let found = locked { containers[id] ?? containers.values.first { $0.summary.name == id } }
         guard let container = found else { return Self.error(404, "No such container: \(id)") }
         let id = container.summary.Id
         let path = query["path"] ?? ""
         switch (method, verb) {
         case (.GET, "json"):
-            return Self.json(Self.detail(container))
+            var detail = Self.detail(container)
+            detail.ImageManifestDescriptor = locked { summary(of: container, version: version) }.ImageManifestDescriptor
+            return Self.json(detail)
         case (.POST, "start"), (.POST, "stop"), (.POST, "restart"), (.POST, "pause"), (.POST, "unpause"), (.POST, "kill"):
             let state: ContainerState =
                 switch verb {
@@ -611,12 +709,22 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// A pull, as the engine streams one: a few layers downloading, then
-    /// the image there. `private/…` names are refused, as a registry that
-    /// wants credentials does.
-    private func pull(_ name: String) -> Answer {
+    /// the image there — for `platform` (os/arch/variant) when asked, else
+    /// the engine's own. `private/…` names are refused, as a registry that
+    /// wants credentials does; `amd64only/…` have no variant but amd64.
+    private func pull(_ name: String, platform: String? = nil) -> Answer {
         if name.hasPrefix("private/") {
             return .json(
                 200, Data(#"{"errorDetail":{"message":"pull access denied"},"error":"pull access denied for private, repository does not exist or may require 'docker login'"}"#.utf8 + [0x0A]))
+        }
+        let parts = (platform ?? "").split(separator: "/").map(String.init)
+        let own = DockerPlatform(engine: locked { architecture })
+        let arch = parts.count > 1 ? parts[1] : own?.architecture ?? "arm64"
+        let variant = parts.count > 2 ? parts[2] : parts.count > 1 ? nil : own?.variant
+        if name.hasPrefix("amd64only/"), arch != "amd64" {
+            // The classic store's words; containerd's say "no match for platform in manifest".
+            let message = "no matching manifest for linux/\(arch)\((arch == "arm64" ? "v8" : variant).map { "/" + $0 } ?? "") in the manifest list entries"
+            return .json(200, Data(#"{"errorDetail":{"message":"\#(message)"},"error":"\#(message)"}"#.utf8 + [0x0A]))
         }
         let lines = [
             #"{"status":"Pulling from library/\#(name)","id":"latest"}"#, #"{"status":"Pulling fs layer","progressDetail":{},"id":"l1"}"#,
@@ -624,7 +732,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             #"{"status":"Download complete","progressDetail":{},"id":"l1"}"#, #"{"status":"Pull complete","progressDetail":{},"id":"l1"}"#,
             #"{"status":"Status: Downloaded newer image for \#(name)"}"#,
         ]
-        addImage(name, size: 2048)
+        addImage(name, size: 2048, architecture: arch, variant: variant)
         emitImage("pull", name)
         return .raw(200, Data(lines.joined(separator: "\n").utf8 + [0x0A]), [("Content-Type", "application/json")])
     }
@@ -813,6 +921,16 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
     }
 
     private func respond(_ context: ChannelHandlerContext, _ request: HTTPRequestHead) {
+        let chunked = request.headers["Transfer-Encoding"].contains { $0.lowercased().contains("chunked") }
+        let answer = engine.answer(request.method, request.uri, body: body, chunked: chunked)
+        // Asked now, answered later: a slow engine.
+        let delay = engine.delay(of: request.uri)
+        guard delay > 0 else { return send(answer, context, request) }
+        let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
+        context.eventLoop.scheduleTask(in: .milliseconds(Int64(delay))) { [self] in send(answer, bound.value, request) }
+    }
+
+    private func send(_ answer: FakeDockerEngine.Answer, _ context: ChannelHandlerContext, _ request: HTTPRequestHead) {
         let channel = context.channel
         func headers(_ pairs: [(String, String)]) -> HTTPHeaders {
             var headers = HTTPHeaders(pairs)
@@ -831,8 +949,7 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
             head.headers.add(name: "Transfer-Encoding", value: "chunked")
             context.writeAndFlush(wrapOutboundOut(.head(head)), promise: nil)
         }
-        let chunked = request.headers["Transfer-Encoding"].contains { $0.lowercased().contains("chunked") }
-        switch engine.answer(request.method, request.uri, body: body, chunked: chunked) {
+        switch answer {
         case .json(let status, let data): whole(status, data, [("Content-Type", "application/json")])
         case .empty(let status): whole(status, Data())
         case .raw(let status, let data, let extra): whole(status, data, extra)

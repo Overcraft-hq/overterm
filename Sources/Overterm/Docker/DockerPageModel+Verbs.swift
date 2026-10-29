@@ -69,6 +69,18 @@ extension DockerPageModel {
                     self.rebuild(Self.rebuilds(of: Set(targets.map(\.Id)), in: self.docker.projects))
                 })
         }
+        // An amd64 image on Apple silicon: built again, or its image's own
+        // variant, in a tab.
+        if let emulation = docker.emulation(of: container) {
+            let built = builds(container)
+            let native = nativeCommand(for: container, detail: detail)
+            verbs.append(
+                DockerVerb(
+                    title: emulation.verbTitle(for: container, built: built), symbol: "cpu",
+                    unavailable: native == nil ? "Its image goes by its id now: there is no name to pull." : nil, group: 1,
+                    note: emulation.summary + " " + emulation.advice(for: container, built: built)
+                ) { [weak self] in self?.runNatively(container, detail: detail) })
+        }
         if DockerDatabaseGuess.kind(of: container, reference: reference) != nil {
             verbs.append(DockerVerb(title: "Open in Database…", symbol: "cylinder", key: "d", group: 1) { [weak self] in self?.openInDatabase(container) })
         }
@@ -89,6 +101,45 @@ extension DockerPageModel {
             ) { [weak self] in self?.confirmRemove(targets) },
         ]
         return verbs
+    }
+
+    // MARK: Emulation
+
+    /// What runs an emulated container natively (`DockerCommands.native`),
+    /// its project's files as the store says them; nil when it runs
+    /// natively, or its image has no name left to pull.
+    func nativeCommand(for container: ContainerSummary, detail: ContainerDetail? = nil) -> (command: String, folder: URL?)? {
+        guard let emulation = docker.emulation(of: container) else { return nil }
+        let project = container.composeProject.flatMap { name in docker.projects.first { $0.name == name } }
+        let command = DockerCommands.native(
+            container, reference: imageReference(of: container, detail: detail), project: project, platform: emulation.engine, built: builds(container),
+            endpoint: docker.endpoint, files: project.map { ports.files(for: $0) })
+        return command.map { ($0, project?.workingDir.map { URL(fileURLWithPath: $0) }) }
+    }
+
+    /// Whether its project's files build its service (`ComposeFacts.built`):
+    /// an image's name can't say — `image:` names what `build:` makes, and
+    /// a tag moves on. Nil while they aren't read, or can't be; false for
+    /// a container that is no service.
+    func builds(_ container: ContainerSummary) -> Bool? {
+        guard DockerEmulation.isService(container), let name = container.composeProject, let service = container.composeService else { return false }
+        guard let project = docker.projects.first(where: { $0.name == name }) else { return nil }
+        return composeFacts(for: project)?.built.map { $0.contains(service) }
+    }
+
+    /// Its verb: in a tab in its project's folder, once its files have
+    /// said what they build and the project's override is as they are now.
+    func runNatively(_ container: ContainerSummary, detail: ContainerDetail? = nil) {
+        let run: @MainActor @Sendable () -> Void = { [weak self] in
+            guard let self, let native = self.nativeCommand(for: container, detail: detail) else { return }
+            self.actions?.run(native.command, native.folder)
+        }
+        guard DockerEmulation.isService(container), let name = container.composeProject, let project = docker.projects.first(where: { $0.name == name })
+        else { return run() }
+        Task { [weak self] in
+            await self?.loadComposeFacts(project)
+            self?.withCurrentPorts(project, run)
+        }
     }
 
     // MARK: Compose projects
@@ -242,6 +293,10 @@ extension DockerPageModel {
                 DockerVerb(title: "Run in a Tab", symbol: "terminal") { [weak self] in
                     self?.actions?.run(DockerCommands.prefix(for: endpoint) + "docker run --rm -it \(DockerCommands.quote(name))", nil)
                 })
+            // Built for another architecture: the engine's own variant.
+            if let emulation = docker.emulation(ofImage: image.Id) {
+                verbs.append(DockerVerb(title: emulation.imageVerbTitle, symbol: "cpu") { [weak self] in self?.pull(name, platform: emulation.engine) })
+            }
             if hasScout {
                 verbs.append(
                     DockerVerb(

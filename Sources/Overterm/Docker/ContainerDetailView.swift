@@ -11,6 +11,8 @@ struct ContainerDetailView: View {
     /// SwiftUI swaps a view's instances, and one leaving stopped what the
     /// next had started.
     @Binding var tab: ContainerTab
+    /// Its image's platform: emulated or not.
+    @ObservedObject var docker: DockerModel
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`):
@@ -33,6 +35,13 @@ struct ContainerDetailView: View {
                             problem(message)
                         }
                         if let error = session.error { problem(error) }
+                        if let emulation = docker.emulation(of: container) {
+                            // The verb's words: only the page knows what its files build.
+                            let fix = verbs().first { $0.note != nil }
+                            DockerEmulationNote(
+                                emulation: emulation, text: fix?.note ?? emulation.summary + " " + emulation.advice(for: container, built: nil), verb: fix,
+                                theme: theme)
+                        }
                         overview
                     }
                     .padding(16)
@@ -77,6 +86,7 @@ struct ContainerDetailView: View {
                 DockerStatusDot(color: DockerStatusStyle.color(container, idle: theme.text3))
                 Text(verbatim: container.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                     .textSelection(.enabled)
+                DockerEmulationBadge(subject: .container(container), docker: docker)
                 Spacer(minLength: 0)
             }
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
@@ -167,6 +177,9 @@ struct ContainerDetailView: View {
             block("Container") {
                 row("ID", String(detail.Id.prefix(12)), copy: detail.Id)
                 row("Command", ((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " "))
+                if let platform = docker.platform(of: container) {
+                    row("Platform", platform.description + (docker.emulation(of: container) != nil ? " — emulated here" : ""))
+                }
                 if let dir = detail.Config.WorkingDir, !dir.isEmpty { row("Working dir", dir) }
                 if let user = detail.Config.User, !user.isEmpty { row("User", user) }
                 if let policy = detail.HostConfig?.RestartPolicy?.Name, !policy.isEmpty, policy != "no" { row("Restart", policy) }
