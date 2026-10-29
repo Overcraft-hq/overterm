@@ -22,6 +22,8 @@ final class DockerPanelModel: ObservableObject {
     /// window sets them.
     var verbs: (ContainerSummary) -> [DockerVerb] = { _ in [] }
     var projectVerbs: (ComposeProject) -> [DockerVerb] = { _ in [] }
+    /// A test run on the page, by its session (the window sets it).
+    var showRun: (String) -> Void = { _ in }
 
     let docker: DockerModel
     /// The checkout's compose project before it runs; the page shows it too.
@@ -51,11 +53,15 @@ final class DockerPanelModel: ObservableObject {
     /// The checkout's compose projects: its stack.
     var here: [ComposeProject] { checkout.map { docker.projects(in: $0) } ?? [] }
 
-    /// What else runs: containers of other projects, or of none.
+    /// What else runs: containers of other projects, or of none. Not
+    /// Testcontainers': a test run's dozen would bury the rest (`runs`).
     var others: [ContainerSummary] {
         let mine = Set(here.flatMap(\.containers).map(\.Id))
-        return docker.containers.filter { $0.state.isUp && !mine.contains($0.Id) }
+        return docker.containers.filter { $0.state.isUp && !mine.contains($0.Id) && !Testcontainers.isMember($0) }
     }
+
+    /// The test runs with something running, the newest first: one row.
+    var runs: [TestcontainersSession] { docker.testcontainers.filter { $0.running > 0 } }
 
     /// A compose file at the checkout's top, for "Up" when nothing runs.
     var composeFile: URL? { checkout.flatMap(ComposeProjects.composeFile(in:)) }
@@ -163,9 +169,11 @@ struct DockerPanelView: View {
                 if here.isEmpty, plan == nil { nothingHere }
                 if settings.bool("docker.showAllContainers") {
                     let others = panel.others
-                    if !others.isEmpty {
+                    let runs = panel.runs
+                    if !others.isEmpty || !runs.isEmpty {
                         section("Running elsewhere")
                         ForEach(others) { container in row(container, inProject: false) }
+                        if let newest = runs.first { testRuns(runs, newest: newest) }
                     }
                 }
             }
@@ -211,6 +219,32 @@ struct DockerPanelView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    /// Testcontainers' runs, summed up in one row: the newest on the page.
+    /// Two lines, as a container's row: the rail is narrow, and one line
+    /// cut the count off.
+    private func testRuns(_ runs: [TestcontainersSession], newest: TestcontainersSession) -> some View {
+        let running = runs.reduce(0) { $0 + $1.running }
+        return Button {
+            panel.showRun(newest.id)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "testtube.2").font(.system(size: 10.5)).foregroundStyle(theme.text3).frame(width: 10)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: "Testcontainers").font(.system(size: 12.5)).foregroundStyle(theme.text).lineLimit(1)
+                    Text(verbatim: "\(running) running in \(runs.count) run\(runs.count == 1 ? "" : "s")")
+                        .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(height: 30)
+            .padding(.horizontal, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("On the Docker page")
+        .accessibilityIdentifier("docker.panel.testcontainers")
     }
 
     /// No project here, before it runs or since.

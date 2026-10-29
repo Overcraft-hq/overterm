@@ -1301,7 +1301,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   right — the list keeps its place in the view tree whether or not the
   detail is beside it, or SwiftUI makes its table again and the keyboard
   and the scroll position go with it. The filter is `DockerFilter`
-  (`status:running project:api image:postgres port:5432`, `-` negates).
+  (`status:running project:api image:postgres port:5432 is:test`, `-`
+  negates).
 - **Verbs** (`DockerVerb`, `DockerPageModel+Verbs`): what can be done to a
   container, a project, an image, a volume, a network, a build or a model
   is one list, drawn twice — as the buttons under its detail's title
@@ -1568,6 +1569,36 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   nothing twice); a project's lines are merged in time order, at the end
   when they are the newest, else merged and drawn again. Each service's
   name has a colour of its own.
+- **Testcontainers** (`Testcontainers`, pure; `DockerPageModel+Testcontainers`):
+  a test run's containers say so in their labels — `org.testcontainers=true`
+  and the run's session, which Java and Go write as
+  `org.testcontainers.sessionId` and Node, Python and .NET as
+  `org.testcontainers.session-id`. Reading only one key would miss three
+  libraries. Ryuk, the reaper (`testcontainers/ryuk`), carries no session
+  where Java and Python start it, so its name says it instead
+  (`testcontainers-ryuk-<session>`; Go's `reaper_<session>`). They are
+  taken out before the compose projects are grouped (`DockerModel.reload`):
+  Go's compose module labels a stack both ways, and a test's stack is not
+  a checkout's — not its panel, its pane headers' ports, nor
+  `docker_projects`. The list keeps them last, a block a run, newest first,
+  folded the first time a run shows: `DockerPageModel.folding` seeds
+  `collapsed` once a session, from the runs the model emits (a turn later,
+  a new run would show unfolded for a frame). A filter doesn't unfold one;
+  revealing one of its containers does. A run's row stands for its
+  containers less Ryuk, so `s` and Stop All leave Ryuk to remove them when
+  the run ends. Its age is `UsageFormat.age` in a `TimelineView` — once a
+  minute, only while it shows. Remove All (⌫ on the row, asked first) does
+  what Ryuk does at a run's end, in its order: the containers forced out
+  with their anonymous volumes (`?force=1&v=1`), then the networks, the
+  volumes and the images labelled with the session — each list read once,
+  at the yes — and Ryuk last, only when everything else went. Ryuk prunes
+  all four kinds once the run is over; killed before the rest goes, it
+  would leave a built image or a named volume on the engine for good, and
+  kept, it still removes what couldn't go. A 404, or Ryuk's own removal
+  racing ours ("already in progress"), counts as gone. Containers kept for reuse carry no session and are a
+  block of their own. `is:test` and `session:` filter them; in the rail's
+  panel, "Running elsewhere" sums the runs up in one row; an agent's
+  `docker_containers` says which run a container is for.
 - **A project's services** (the Services tab, `DockerPageModel+Compose`):
   each service has its verbs on its header and in its right-click menu.
   Rebuild and Start (`up -d --build <service>`), Pull, Run a One-Off

@@ -39,6 +39,24 @@ final class DockerMCPTests: XCTestCase {
         return ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
     }
 
+    /// Which Testcontainers run a container is for, on its line.
+    func testContainersSayTheirTestRun() {
+        func summary(_ name: String, image: String = "postgres:16-alpine", _ labels: [String: String]) -> ContainerSummary {
+            ContainerSummary(Id: name + "-id", Names: ["/" + name], Image: image, Created: 1, Labels: labels, State: "running", Status: "Up 1 minute")
+        }
+        let told = DockerMCP.describe([
+            summary("tc-pg", ["org.testcontainers": "true", "org.testcontainers.sessionId": "3f2a9c1e-0b5d-4c8e-9a7f-2d6e1b0c4a11"]),
+            summary("testcontainers-ryuk-3f2a9c1e", image: "testcontainers/ryuk:0.14.0", ["org.testcontainers": "true"]),
+            summary("tc-kept", ["org.testcontainers": "true", "org.testcontainers.hash": "a1b2"]),
+            summary("plain", [:]),
+        ])
+        let lines = told.split(separator: "\n").map(String.init)
+        XCTAssertTrue(lines[0].hasSuffix(" — Testcontainers run 3f2a9c1e"), lines[0])
+        XCTAssertTrue(lines[1].contains("Testcontainers' reaper (Ryuk)"), lines[1])
+        XCTAssertTrue(lines[2].contains("Testcontainers, kept for reuse"), lines[2])
+        XCTAssertFalse(lines[3].contains("Testcontainers"), lines[3])
+    }
+
     func testContainersAndProjects() async throws {
         let list = try await text("docker_containers")
         XCTAssertTrue(list.contains("shop-web-1: nginx:1.27"), list)

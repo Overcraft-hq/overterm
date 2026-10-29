@@ -247,6 +247,11 @@ struct DockerPageView: View {
                                 )
                                 .id(project.name)
                                 .frame(width: min(520, max(340, geometry.size.width * 0.45)))
+                            } else if page.showDetail, let session = page.detailedSession {
+                                Rectangle().fill(theme.border).frame(width: 1)
+                                TestcontainersSessionView(session: session, page: page, theme: theme, actions: actions)
+                                    .id(DockerPageModel.sessionTag(session.id))
+                                    .frame(width: min(480, max(320, geometry.size.width * 0.42)))
                             }
                         }
                     }
@@ -346,7 +351,8 @@ struct DockerPageView: View {
                     if !page.collapsed.contains(group.id) {
                         ForEach(group.containers) { container in
                             DockerContainerRow(
-                                container: container, inProject: group.project != nil, busy: page.busy.contains(container.Id), docker: docker,
+                                container: container, inProject: group.project != nil || group.session != nil, busy: page.busy.contains(container.Id),
+                                docker: docker,
                                 theme: theme, open: actions.open, remoteHost: docker.publishedHost, usage: page.usage(of: container), columns: true
                             )
                             .tag(container.Id)
@@ -414,7 +420,11 @@ struct DockerPageView: View {
     }
 
     @ViewBuilder private func projectMenu(_ group: DockerListGroup) -> some View {
-        if let project = group.project { DockerVerbMenu(verbs: page.verbs(for: project)) }
+        if let project = group.project {
+            DockerVerbMenu(verbs: page.verbs(for: project))
+        } else if let session = group.session {
+            DockerVerbMenu(verbs: page.verbs(for: session))
+        }
     }
 
     private var cheatSheet: some View {

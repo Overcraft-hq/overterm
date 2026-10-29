@@ -44,6 +44,18 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(names("http://x"), [], "an unknown key is just text")
         XCTAssertEqual(names("status:"), names(""), "an empty value is nothing")
         XCTAssertEqual(names("-"), ["shop-web-1", "shop-db-1"], "a lone dash is text")
+
+        // Testcontainers': by what marks them, and by their run.
+        var pg = container("tc-pg", image: "postgres:16-alpine")
+        pg.Labels = ["org.testcontainers": "true", "org.testcontainers.sessionId": "3f2a9c1e-0b5d-4c8e-9a7f-2d6e1b0c4a11"]
+        func found(_ text: String) -> [String] { [web, db, redis, pg].filter(DockerFilter(text).matches).map(\.name) }
+        XCTAssertEqual(found("is:test"), ["tc-pg"])
+        XCTAssertEqual(found("is:tc"), ["tc-pg"])
+        XCTAssertEqual(found("status:testcontainers"), ["tc-pg"])
+        XCTAssertEqual(found("-is:test"), ["shop-web-1", "shop-db-1", "redis"])
+        XCTAssertEqual(found("session:3F2A"), ["tc-pg"], "any case")
+        XCTAssertEqual(found("tc:3f2a"), ["tc-pg"])
+        XCTAssertEqual(found("session:ffff"), [])
     }
 
     // MARK: Commands
@@ -228,6 +240,25 @@ final class DockerPageTests: XCTestCase {
         let filtered = DockerPageModel.groups(projects: projects, loose: loose, filter: DockerFilter("db"), runningOnly: false)
         XCTAssertEqual(filtered.map(\.id), ["project:shop"])
         XCTAssertEqual(filtered.first?.project?.services.count, 2, "the project stays whole; only the rows are filtered")
+    }
+
+    func testTestcontainersRunsComeLast() {
+        let tc = ["org.testcontainers": "true", "org.testcontainers.sessionId": "A"]
+        var pg = container("tc-pg", image: "postgres:16-alpine")
+        pg.Labels = tc
+        var done = container("tc-old", state: "exited", status: "Exited (143) 1 hour ago")
+        done.Labels = ["org.testcontainers": "true", "org.testcontainers.sessionId": "B"]
+        let (sessions, rest) = Testcontainers.sessions([container("shop-web-1", project: "shop", service: "web"), container("redis"), pg, done])
+        let (projects, loose) = ComposeProjects.group(rest)
+        func groups(_ filter: String = "", runningOnly: Bool = false) -> [DockerListGroup] {
+            DockerPageModel.groups(projects: projects, loose: loose, sessions: sessions, filter: DockerFilter(filter), runningOnly: runningOnly)
+        }
+        XCTAssertEqual(groups().map(\.id), ["project:shop", "loose", "testcontainers:A", "testcontainers:B"])
+        XCTAssertEqual(groups(runningOnly: true).map(\.id), ["project:shop", "loose", "testcontainers:A"], "a run with nothing up goes")
+        XCTAssertEqual(groups("-is:test").map(\.id), ["project:shop", "loose"])
+        XCTAssertEqual(groups("is:test").map(\.id), ["testcontainers:A", "testcontainers:B"])
+        XCTAssertEqual(groups().last?.id, DockerPageModel.sessionTag("B"))
+        XCTAssertEqual(groups().first { $0.session?.id == "A" }?.containers.map(\.name), ["tc-pg"])
     }
 
     func testSortingPutsTheBusiestFirst() {
@@ -486,6 +517,12 @@ final class DockerPageTests: XCTestCase {
         XCTAssertNil(page.detailed, "a project's row isn't a container")
         XCTAssertEqual(DockerPageModel.project(of: "project:my app"), "my app")
         XCTAssertNil(DockerPageModel.project(of: "abc123"))
+        XCTAssertEqual(DockerPageModel.session(of: "testcontainers:abc"), "abc")
+        XCTAssertNil(DockerPageModel.session(of: "project:x"))
+        page.selection = [DockerPageModel.sessionTag("abc")]
+        XCTAssertNil(page.detailed, "a run's row isn't a container")
+        XCTAssertNil(page.detailedSession, "nor a run the model doesn't list")
+        XCTAssertTrue(page.selectedContainers.isEmpty)
         XCTAssertFalse(page.press("x"), "a key that means nothing goes on to the list")
         XCTAssertTrue(page.press("?"))
         XCTAssertTrue(page.cheatSheet)

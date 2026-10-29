@@ -415,6 +415,82 @@ struct DockerNetworksView: View {
     }
 }
 
+// MARK: Testcontainers
+
+/// A Testcontainers run, beside the list: what made it and when, its
+/// reaper, its containers a click each, and its verbs. It reads nothing:
+/// all of it is the list's.
+struct TestcontainersSessionView: View {
+    let session: TestcontainersSession
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: DockerActions
+
+    private var library: String? {
+        session.lang.map { lang in [lang, session.version].compactMap { $0 }.joined(separator: " ") }
+    }
+
+    private var subtitle: String {
+        [
+            library, session.id.isEmpty ? "kept for reuse" : "session " + session.shortID, "started " + UsageFormat.age(session.startedDate),
+            "\(session.running) of \(session.members.count) running",
+        ]
+        .compactMap { $0 }.joined(separator: "  —  ")
+    }
+
+    private var reaper: String {
+        // Its name is the session again: its image says more.
+        if let reaper = session.reaper { return "\(reaper.Image), \(DockerStatusStyle.status(reaper))" }
+        return session.id.isEmpty ? "none — kept for reuse, they outlive their runs" : "none — nothing removes these but you"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        DockerStatusDot(color: DockerStatusStyle.color(session, idle: theme.text3))
+                        Text("Testcontainers").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
+                    }
+                    // Its age once a minute, only while it shows.
+                    TimelineView(.everyMinute) { _ in
+                        Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(2)
+                    }
+                }
+                DockerActionBar(verbs: page.verbs(for: session), theme: theme)
+                DetailBlock(title: "Run", theme: theme) {
+                    DetailRow(key: "Session", value: session.id.isEmpty ? "none — kept for reuse" : session.id, theme: theme)
+                    DetailRow(key: "Library", value: library ?? "—", theme: theme)
+                    TimelineView(.everyMinute) { _ in
+                        DetailRow(
+                            key: "Started",
+                            value: UsageFormat.age(session.startedDate) + ", " + session.startedDate.formatted(date: .abbreviated, time: .shortened),
+                            theme: theme)
+                    }
+                    DetailRow(key: "Reaper", value: reaper, theme: theme)
+                }
+                DetailBlock(title: "Containers", theme: theme) {
+                    ForEach(session.containers) { container in
+                        Button {
+                            page.collapsed.remove(DockerPageModel.sessionTag(session.id))
+                            page.selection = [container.Id]
+                        } label: {
+                            DockerContainerRow(
+                                container: container, inProject: true, busy: page.busy.contains(container.Id), docker: page.docker, theme: theme,
+                                open: actions.open, remoteHost: page.docker.publishedHost, indented: false)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show \(container.name)")
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("docker.testcontainers.detail")
+    }
+}
+
 // MARK: Clean Up
 
 /// What Clean Up would remove, chosen and listed before anything goes.

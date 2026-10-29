@@ -199,6 +199,133 @@ final class DockerModelTests: XCTestCase {
         XCTAssertEqual(model.projects(in: URL(fileURLWithPath: "/Users/me")).map(\.name), ["other"])
     }
 
+    private let tc = ["org.testcontainers": "true", "org.testcontainers.lang": "java", "org.testcontainers.version": "1.21.3"]
+
+    /// Testcontainers' containers are their runs', not the list's: a test's
+    /// compose stack (Go's compose module) isn't the checkout's.
+    func testTestcontainersAreTakenOutOfTheList() async throws {
+        shop()
+        fake.add(name: "tc-pg", image: "postgres:16-alpine", labels: tc.merging(["org.testcontainers.sessionId": "A"]) { $1 })
+        fake.add(name: "testcontainers-ryuk-A", image: "testcontainers/ryuk:0.14.0", labels: tc)
+        fake.add(
+            name: "tc-stack-db-1", project: "tc-stack", workingDir: "/Users/me/shop/src/test", service: "db",
+            labels: ["org.testcontainers": "true", "org.testcontainers.lang": "go", "org.testcontainers.sessionId": "B"])
+        model.start()
+        try await eventually("listed") { model.containers.count == 6 }
+        XCTAssertEqual(model.projects.map(\.name), ["shop"])
+        XCTAssertEqual(model.loose.map(\.name), ["redis"])
+        XCTAssertEqual(Set(model.testcontainers.map(\.id)), ["A", "B"])
+        XCTAssertEqual(model.testcontainers.first { $0.id == "A" }?.reaper?.name, "testcontainers-ryuk-A")
+        XCTAssertEqual(model.projects(in: URL(fileURLWithPath: "/Users/me/shop")).map(\.name), ["shop"], "no tc-stack in the checkout's stack")
+        model.stop()
+        XCTAssertTrue(model.testcontainers.isEmpty)
+    }
+
+    /// Remove All, as Ryuk does it when a run ends: the containers with
+    /// their anonymous volumes, then the networks, volumes and images
+    /// labelled with the session, Ryuk last; another run's and the rest
+    /// stay.
+    func testRemoveAllTakesARunsContainersNetworksVolumesImagesAndRyukLast() async throws {
+        let session = tc.merging(["org.testcontainers.sessionId": "A"]) { $1 }
+        let other = tc.merging(["org.testcontainers.sessionId": "B"]) { $1 }
+        let pg = fake.add(name: "tc-pg", image: "postgres:16-alpine", labels: session, created: 100)
+        let kafka = fake.add(name: "tc-kafka", image: "confluentinc/cp-kafka:7.6.0", labels: session, created: 110)
+        let ryuk = fake.add(name: "testcontainers-ryuk-A", image: "testcontainers/ryuk:0.14.0", labels: tc, created: 90)
+        fake.addNetwork("tc-net", labels: session)
+        fake.addNetwork("keep")
+        fake.addVolume("tc-data", size: 1 << 20, refCount: 0, labels: session)
+        fake.addVolume("tc-other-run", size: 1 << 20, refCount: 0, labels: other)
+        fake.addVolume("keep-data", size: 1 << 20, refCount: 0)
+        let built = fake.addImage("localhost/testcontainers/0f1e2d3c4b5a6978:latest", size: 5 << 20, labels: session)
+        let otherBuilt = fake.addImage("localhost/testcontainers/aaaabbbbccccdddd:latest", size: 5 << 20, labels: other)
+        let pulled = fake.addImage("postgres:16-alpine", size: 90 << 20)
+        model.start()
+        try await eventually("the run listed") { model.testcontainers.first?.containers.count == 3 }
+        let page = DockerPageModel(docker: model)
+        page.remove(session: model.testcontainers[0])
+        XCTAssertTrue(page.busy.contains(DockerPageModel.sessionTag("A")), "busy while it goes")
+        try await eventually("all of it gone") { page.busy.isEmpty }
+        XCTAssertNil(fake.summary(pg))
+        XCTAssertNil(fake.summary(kafka))
+        XCTAssertNil(fake.summary(ryuk))
+        XCTAssertEqual(fake.networkNames, ["keep"])
+        XCTAssertEqual(Set(fake.volumeNames), ["tc-other-run", "keep-data"])
+        XCTAssertEqual(Set(fake.imageIDs), [otherBuilt, pulled])
+        let requests = fake.requests
+        XCTAssertTrue(requests.contains("DELETE /v1.47/containers/\(pg)?force=1&v=1"), "\(requests.filter { $0.hasPrefix("DELETE") })")
+        func index(_ prefix: String) -> Int { requests.firstIndex { $0.hasPrefix("DELETE /v1.47/" + prefix) } ?? -1 }
+        XCTAssertGreaterThan(index("networks/"), index("containers/\(pg)"), "the containers first")
+        XCTAssertGreaterThan(index("networks/"), index("containers/\(kafka)"))
+        XCTAssertGreaterThan(index("volumes/tc-data"), index("networks/"), "then the networks, the volumes, the images")
+        XCTAssertGreaterThan(index("images/\(built)"), index("volumes/tc-data"))
+        XCTAssertGreaterThan(index("containers/\(ryuk)"), index("images/\(built)"), "Ryuk last")
+        for list in ["networks", "volumes", "images/json"] {
+            XCTAssertEqual(requests.filter { $0.hasPrefix("GET /v1.47/" + list) }.count, 1, "\(list) read once")
+        }
+        XCTAssertNil(page.error)
+        XCTAssertTrue(model.testcontainers.isEmpty)
+    }
+
+    /// What won't go keeps Ryuk, which still removes it when the run ends;
+    /// the page says what, and how many more.
+    func testRemoveAllKeepsRyukWhenSomethingWontGo() async throws {
+        let session = tc.merging(["org.testcontainers.sessionId": "A"]) { $1 }
+        let pg = fake.add(name: "tc-pg", labels: session, created: 100)
+        let stuck = fake.add(name: "tc-x", labels: session, created: 110)
+        let ryuk = fake.add(name: "testcontainers-ryuk-A", image: "testcontainers/ryuk:0.14.0", labels: tc, created: 90)
+        fake.addVolume("tc-data", size: 0, refCount: 1, labels: session)
+        fake.refuseRemoval(of: "tc-x", 500, "could not kill container: tried to kill container, but did not receive an exit event")
+        fake.refuseRemoval(of: "tc-data", 409, "remove tc-data: volume is in use - [\(stuck)]")
+        model.start()
+        try await eventually("the run listed") { model.testcontainers.first?.containers.count == 3 }
+        let page = DockerPageModel(docker: model)
+        page.remove(session: model.testcontainers[0])
+        try await eventually("done") { page.busy.isEmpty }
+        XCTAssertNil(fake.summary(pg), "what could go went")
+        XCTAssertNotNil(fake.summary(stuck))
+        XCTAssertNotNil(fake.summary(ryuk), "Ryuk kept, to remove the rest when the run ends")
+        XCTAssertFalse(fake.requests.contains { $0.hasPrefix("DELETE /v1.47/containers/\(ryuk)") }, "not even asked")
+        XCTAssertEqual(
+            page.error, "Remove All: tc-x: could not kill container: tried to kill container, but did not receive an exit event (and 1 more)")
+        XCTAssertEqual(model.testcontainers.first?.containers.map(\.name), ["tc-x", "testcontainers-ryuk-A"])
+    }
+
+    /// Ryuk's own removal racing ours: a container's "already in progress",
+    /// or a volume gone, is one removed, and Ryuk still goes last.
+    func testRemoveAllCountsARemovalAlreadyInProgressAsDone() async throws {
+        let session = tc.merging(["org.testcontainers.sessionId": "A"]) { $1 }
+        let pg = fake.add(name: "tc-pg", labels: session, created: 100)
+        let ryuk = fake.add(name: "testcontainers-ryuk-A", image: "testcontainers/ryuk:0.14.0", labels: tc, created: 90)
+        fake.addVolume("tc-data", size: 0, refCount: 0, labels: session)
+        fake.refuseRemoval(of: pg, 409, "removal of container \(pg) is already in progress")
+        fake.refuseRemoval(of: "tc-data", 404, "get tc-data: no such volume")
+        model.start()
+        try await eventually("the run listed") { model.testcontainers.first?.containers.count == 2 }
+        let page = DockerPageModel(docker: model)
+        page.remove(session: model.testcontainers[0])
+        try await eventually("done") { page.busy.isEmpty }
+        XCTAssertNil(page.error, "\(page.error ?? "")")
+        XCTAssertNil(fake.summary(ryuk), "Ryuk still last")
+    }
+
+    /// One gone before its turn (Ryuk's own AutoRemove) counts as removed.
+    func testRemoveAllCountsAContainerAlreadyGoneAsRemoved() async throws {
+        let pg = fake.add(name: "tc-pg", labels: tc.merging(["org.testcontainers.sessionId": "A"]) { $1 })
+        model.start()
+        try await eventually("the run listed") { model.testcontainers.count == 1 }
+        var session = model.testcontainers[0]
+        session.containers.append(
+            ContainerSummary(
+                Id: "0badc0ffee", Names: ["/tc-gone"], Image: "redis:7", Created: 1, Labels: tc.merging(["org.testcontainers.sessionId": "A"]) { $1 },
+                State: "running", Status: "Up 1 minute"))
+        let page = DockerPageModel(docker: model)
+        page.remove(session: session)
+        try await eventually("done") { page.busy.isEmpty }
+        XCTAssertNil(fake.summary(pg))
+        XCTAssertTrue(fake.requests.contains("DELETE /v1.47/containers/0badc0ffee?force=1&v=1"))
+        XCTAssertNil(page.error, "a 404 is a container gone")
+    }
+
     /// An image's platform is read when something asks for it, once an
     /// id, never at a reload; an image event makes what asks ask again.
     func testPlatformsAreReadForWhatAsksAndOnce() async throws {

@@ -95,6 +95,9 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var channel: Channel?
     private var tcpChannels: [Channel] = []
     private var asked: [String] = []
+    /// Removals refused, by the container's id or name, or the volume's,
+    /// image's or network's: what the engine answers instead.
+    private var refusals: [String: (status: Int, message: String)] = [:]
     /// Docker Model Runner, as Docker Desktop's answers under
     /// `/exp/vDD4.40` on the socket and a runner container's at the root
     /// (`listenTCP`): nil is off, answered 503.
@@ -171,12 +174,14 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     // MARK: State, as a test sets it
 
-    /// A container; a compose service when `project` is given.
+    /// A container; a compose service when `project` is given. `labels`
+    /// go over Compose's (Testcontainers' own); `created` is now unless
+    /// said.
     @discardableResult
     func add(
         name: String, image: String = "debian:bookworm-slim", state: ContainerState = .running, project: String? = nil, workingDir: String? = nil,
         service: String? = nil, ports: [DockerPort] = [], env: [String] = [], health: String? = nil, imageID: String? = nil,
-        volumes: [String] = [], configFiles: [String]? = nil
+        volumes: [String] = [], configFiles: [String]? = nil, labels extra: [String: String] = [:], created: Int? = nil
     ) -> String {
         let id = String((name + UUID().uuidString).utf8.map { String(format: "%02x", $0) }.joined().prefix(64))
         var labels: [String: String] = [:]
@@ -190,11 +195,12 @@ final class FakeDockerEngine: @unchecked Sendable {
                 labels["com.docker.compose.project.config_files"] = (configFiles ?? [workingDir + "/compose.yaml"]).joined(separator: ",")
             }
         }
+        labels.merge(extra) { $1 }
         let status = Self.status(state, health: health)
         let platform = imageID.flatMap { id in locked { imagePlatforms[id].map(bestPlatform) } }
         let summary = ContainerSummary(
             Id: id, Names: ["/" + name], Image: image, ImageID: imageID ?? "sha256:" + String(repeating: "a", count: 64), Command: "sleep infinity",
-            Created: Int(Date().timeIntervalSince1970), Ports: ports, Labels: labels, State: state.rawValue, Status: status,
+            Created: created ?? Int(Date().timeIntervalSince1970), Ports: ports, Labels: labels, State: state.rawValue, Status: status,
             Mounts: volumes.map { DockerMountPoint(Type: "volume", Name: $0, Destination: "/data") },
             Health: health.map { .init(Status: $0, FailingStreak: 0) })
         locked { containers[id] = Container(summary: summary, env: env, platform: platform) }
@@ -315,14 +321,16 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// the tag moves to it from another image, as a pull moves it; in the
     /// containerd store the platform joins the tag's index.
     @discardableResult
-    func addImage(_ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil) -> String {
+    func addImage(
+        _ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil, labels: [String: String] = [:]
+    ) -> String {
         let platform = ImagePlatform(architecture: architecture, variant: variant)
         let index = locked { containerdStore }
         let name = tag ?? UUID().uuidString
         let image = ImageSummary(
             Id: Self.imageID(index || architecture == "arm64" ? name : architecture + (variant.map { "/" + $0 } ?? "") + "@" + name),
             RepoTags: tag.map { [$0] } ?? ["<none>:<none>"], RepoDigests: [], Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size,
-            Containers: containers, Labels: [:])
+            Containers: containers, Labels: labels)
         locked {
             if index, images.contains(where: { $0.Id == image.Id }) {
                 if imagePlatforms[image.Id]?.contains(platform) != true { imagePlatforms[image.Id, default: []].append(platform) }
@@ -360,21 +368,44 @@ final class FakeDockerEngine: @unchecked Sendable {
         return platforms.first { $0.architecture == own } ?? platforms.first ?? ImagePlatform(architecture: "arm64")
     }
 
-    func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil, anonymous: Bool = false) {
+    func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil, anonymous: Bool = false, labels extra: [String: String] = [:]) {
         var labels = project.map { ["com.docker.compose.project": $0] } ?? [:]
         if anonymous { labels["com.docker.volume.anonymous"] = "" }
+        labels.merge(extra) { $1 }
         let volume = VolumeSummary(
             Name: name, Driver: "local", Mountpoint: "/var/lib/docker/volumes/\(name)/_data", CreatedAt: nil,
             Labels: labels, Scope: "local", UsageData: .init(Size: size, RefCount: refCount))
         locked { volumes.append(volume) }
     }
 
-    func addNetwork(_ name: String, members: [String] = []) {
+    func addNetwork(_ name: String, members: [String] = [], labels: [String: String] = [:]) {
         let network = NetworkSummary(
             Name: name, Id: name + "-id", Driver: name == "host" || name == "none" ? name : "bridge", Scope: "local",
-            Containers: Dictionary(uniqueKeysWithValues: members.map { ($0, .init(Name: nil, IPv4Address: "172.18.0.2/16")) }), Labels: [:],
+            Containers: Dictionary(uniqueKeysWithValues: members.map { ($0, .init(Name: nil, IPv4Address: "172.18.0.2/16")) }), Labels: labels,
             IPAM: .init(Driver: "default", Config: [.init(Subnet: "172.18.0.0/16", Gateway: "172.18.0.1")]))
         locked { networks.append(network) }
+    }
+
+    /// The networks there are now, by name.
+    var networkNames: [String] { locked { networks.map(\.Name) } }
+    /// The volumes there are now, by name.
+    var volumeNames: [String] { locked { volumes.map(\.Name) } }
+    /// The images there are now, by id.
+    var imageIDs: [String] { locked { images.map(\.Id) } }
+
+    /// A removal the engine refuses from now on, as it answers one —
+    /// `409 "removal of container … is already in progress"`, a driver's
+    /// `500`: by the container's id or name, the volume's name, the
+    /// image's id or the network's name.
+    func refuseRemoval(of name: String, _ status: Int, _ message: String) { locked { refusals[name] = (status, message) } }
+
+    /// The refusal for any of these names, when a test set one.
+    private func refusal(_ names: String...) -> Answer? {
+        let refused = locked { () -> (status: Int, message: String)? in
+            for name in names { if let refusal = refusals[name] { return refusal } }
+            return nil
+        }
+        return refused.map { Self.error($0.status, $0.message) }
     }
 
     var containerIDs: [String] { locked { Array(containers.keys) } }
@@ -594,6 +625,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             set(id, state: state, exitCode: verb == "kill" ? 137 : 143)
             return .empty(204)
         case (.DELETE, ""):
+            if let refused = refusal(id, container.summary.name) { return refused }
             if container.summary.state == .running, query["force"] != "1" {
                 return Self.error(409, "cannot remove container \(container.summary.name): container is running: stop the container before removing or force remove")
             }
@@ -807,13 +839,16 @@ final class FakeDockerEngine: @unchecked Sendable {
             return .raw(200, Data("a saved image".utf8) + Data(count: 2 * DockerTar.block), [("Content-Type", "application/x-tar")])
         case (.GET, "networks", false): return Self.json(locked { networks })
         case (.DELETE, "images", true):
+            if let refused = refusal(id) { return refused }
             locked { images.removeAll { $0.Id == id || $0.tags.contains(id) } }
             emitImage("delete", id)
             return Self.json([PruneReport.ImageDeleted(Untagged: nil, Deleted: id)])
         case (.DELETE, "volumes", true):
+            if let refused = refusal(id) { return refused }
             locked { volumes.removeAll { $0.Name == id } }
             return .empty(204)
         case (.DELETE, "networks", true):
+            if let refused = refusal(id, locked({ networks.first { $0.Id == id }?.Name }) ?? id) { return refused }
             locked { networks.removeAll { $0.Id == id || $0.Name == id } }
             return .empty(204)
         case (.POST, "networks", true):

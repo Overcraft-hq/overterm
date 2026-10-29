@@ -23,6 +23,12 @@ enum DockerStatusStyle {
         }
     }
 
+    /// A test run: green while anything of it runs. Never red — a test's
+    /// containers end 143 or 137 when its run is done with them.
+    static func color(_ session: TestcontainersSession, idle: Color) -> Color {
+        session.running > 0 ? TabStatusStyle.done : idle
+    }
+
     /// What the row says of it: Docker's own words, less what the dot and
     /// the health already say.
     static func status(_ container: ContainerSummary) -> String {
@@ -188,8 +194,13 @@ struct DockerContainerRow: View {
     var usage: DockerUsage? = nil
     /// The page's CPU and memory columns, at the end of the row.
     var columns = false
+    /// Set in from the left: in a block, unless said otherwise (a run's
+    /// detail lists its containers flush).
+    var indented: Bool? = nil
 
     var title: String {
+        // A test run's reaper, among the run's containers.
+        if inProject, Testcontainers.isReaper(container) { return "Ryuk" }
         guard inProject, let service = container.composeService else { return container.name }
         if container.isOneOff { return "\(service) (run)" }
         let number = Int(container.labels["com.docker.compose.container-number"] ?? "") ?? 1
@@ -221,7 +232,7 @@ struct DockerContainerRow: View {
             // whatever the ports and the status take.
             if columns { DockerUsageCells(usage: usage, reads: container.state.hasStats, theme: theme) }
         }
-        .padding(.leading, inProject ? 18 : 0)
+        .padding(.leading, (indented ?? inProject) ? 18 : 0)
         .frame(height: 30)
         .contentShape(Rectangle())
         .accessibilityIdentifier("docker.container.\(container.name)")
@@ -229,7 +240,9 @@ struct DockerContainerRow: View {
 }
 
 /// A compose project's own row: fold, state, name, where it was started,
-/// how much of it runs; up, stop and restart on hover.
+/// how much of it runs; up, stop and restart on hover. A Testcontainers
+/// run's: its library and session, how long ago it started, how much of
+/// it runs.
 struct DockerProjectRow: View {
     let group: DockerListGroup
     let folded: Bool
@@ -271,6 +284,21 @@ struct DockerProjectRow: View {
                 Text(verbatim: "\(project.running)/\(project.expected)")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
                     .help(project.planned ? "Not created yet" : "\(project.running) running")
+            } else if let session = group.session {
+                DockerStatusDot(color: DockerStatusStyle.color(session, idle: theme.text3))
+                Image(systemName: "testtube.2").font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                Text("Testcontainers").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: session.subtitle).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Spacer(minLength: 6)
+                if busy { ProgressView().controlSize(.mini) }
+                // Only while it is on screen, once a minute; the rest of the
+                // row follows the list.
+                TimelineView(.everyMinute) { _ in
+                    Text(verbatim: UsageFormat.age(session.startedDate)).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                }
+                Text(verbatim: "\(session.running)/\(session.members.count)")
+                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                    .help("\(session.running) running" + (session.reaper == nil ? "" : "; Ryuk removes them when the run ends"))
             } else {
                 Text("Other containers").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text2)
                 Spacer(minLength: 6)
@@ -281,7 +309,12 @@ struct DockerProjectRow: View {
         .frame(height: 28)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .accessibilityIdentifier("docker.project.\(group.project?.name ?? "other")")
+        .accessibilityIdentifier(accessibilityID)
+    }
+
+    private var accessibilityID: String {
+        if let session = group.session { return "docker.testcontainers." + (session.id.isEmpty ? "reused" : session.shortID) }
+        return "docker.project.\(group.project?.name ?? "other")"
     }
 
     private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {

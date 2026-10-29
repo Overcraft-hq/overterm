@@ -62,7 +62,9 @@ extension DockerPageModel {
                 self?.actions?.run(DockerCommands.followLogs(of: container, endpoint: endpoint), nil)
             },
         ]
-        if container.composeProject != nil, !container.isOneOff {
+        // A test's compose stack (Go's compose module) is its run's, not a
+        // project's: nothing to rebuild it from.
+        if container.composeProject != nil, !container.isOneOff, !Testcontainers.isMember(container) {
             verbs.append(
                 DockerVerb(title: "Rebuild and Start Its Service in a Tab", symbol: "hammer", key: "b") { [weak self] in
                     guard let self else { return }
@@ -266,6 +268,26 @@ extension DockerPageModel {
             DockerVerb(title: "Pull in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.composeService("pull", service, project) },
             DockerVerb(title: "Run a One-Off in a Tab", symbol: "play.rectangle") { [weak self] in self?.composeService("run --rm", service, project) },
             DockerVerb(title: "Copy Name", symbol: "doc.on.doc", group: 1) { [weak self] in self?.actions?.copy(service.name) },
+        ]
+    }
+
+    // MARK: Testcontainers runs
+
+    /// A test run's: Stop All leaves Ryuk, so it still removes them when the
+    /// run ends; Remove All is what Ryuk does then (`remove(session:)`).
+    func verbs(for session: TestcontainersSession) -> [DockerVerb] {
+        let up = session.members.filter { $0.state.isUp }
+        return [
+            DockerVerb(title: "Stop All", symbol: "stop.fill", place: .button, unavailable: up.isEmpty ? "Nothing in it runs." : nil) { [weak self] in
+                self?.act(.stop, on: up)
+            },
+            DockerVerb(
+                title: "Copy Session ID", label: "Copy ID", symbol: "number", place: .button,
+                unavailable: session.id.isEmpty ? "These belong to no run — kept for reuse." : nil
+            ) { [weak self] in self?.actions?.copy(session.id) },
+            DockerVerb(title: "Remove All…", label: "Remove All", symbol: "trash", place: .remove, key: "⌫") { [weak self] in
+                self?.confirmRemove(session: session)
+            },
         ]
     }
 

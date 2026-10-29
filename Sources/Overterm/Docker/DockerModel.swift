@@ -2,9 +2,9 @@ import Combine
 import Foundation
 
 /// Docker for the app, one like `DatabaseModel`: whether the engine
-/// answers, its containers and the compose projects among them, kept
-/// current by the engine's events. Images, volumes and networks are read
-/// when a list asks for them.
+/// answers, its containers, and the compose projects and Testcontainers'
+/// runs among them, kept current by the engine's events. Images, volumes
+/// and networks are read when a list asks for them.
 ///
 /// While nothing shows Docker, only the event stream (idle until something
 /// changes) and a list per change run. A list on screen (`show`) adds a
@@ -44,6 +44,10 @@ final class DockerModel: ObservableObject {
     @Published private(set) var projects: [ComposeProject] = []
     /// The containers in no compose project.
     @Published private(set) var loose: [ContainerSummary] = []
+    /// Testcontainers' runs (`Testcontainers`), taken out of `projects` and
+    /// `loose` before those are grouped: a test's compose stack (Go's
+    /// compose module labels it both ways) is its run's, not a checkout's.
+    @Published private(set) var testcontainers: [TestcontainersSession] = []
 
     /// What a section lists besides containers, read only while one shows
     /// it (`want`), then kept current by its events.
@@ -285,6 +289,7 @@ final class DockerModel: ObservableObject {
         if !containers.isEmpty { containers = [] }
         if !projects.isEmpty { projects = [] }
         if !loose.isEmpty { loose = [] }
+        if !testcontainers.isEmpty { testcontainers = [] }
         platformsReading?.cancel()
         platformsReading = nil
         platformRefresh?.cancel()
@@ -308,7 +313,9 @@ final class DockerModel: ObservableObject {
         guard sorted != containers else { return }
         containers = sorted
         pinPlatforms()
-        let grouped = ComposeProjects.group(sorted)
+        let tests = Testcontainers.sessions(sorted)
+        let grouped = ComposeProjects.group(tests.rest)
+        if tests.sessions != testcontainers { testcontainers = tests.sessions }
         if grouped.projects != projects { projects = grouped.projects }
         if grouped.loose != loose { loose = grouped.loose }
     }

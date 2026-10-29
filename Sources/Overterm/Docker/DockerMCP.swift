@@ -212,11 +212,21 @@ enum DockerMCP {
         return containers.map { container in
             var line = "- \(container.name): \(container.Image), \(container.Status)"
             if let project = container.composeProject { line += " — compose \(project)/\(container.composeService ?? "")" }
+            if let run = testRun(of: container) { line += " — " + run }
             let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
             if !ports.isEmpty { line += " — ports " + ports.map(\.spoken).joined(separator: ", ") }
             if let emulated = emulation(container) { line += " — emulated: \(emulated.image.description) on this \(emulated.engine.description) engine" }
             return line
         }.joined(separator: "\n")
+    }
+
+    /// The test run a container of Testcontainers' is for, as its line
+    /// says it; nil for one that isn't Testcontainers'.
+    static func testRun(of container: ContainerSummary) -> String? {
+        guard let run = Testcontainers.groupID(of: container) else { return nil }
+        if Testcontainers.isReaper(container) { return "Testcontainers' reaper (Ryuk)" }
+        if !run.isEmpty { return "Testcontainers run \(run.prefix(8))" }
+        return Testcontainers.isReused(container) ? "Testcontainers, kept for reuse" : "Testcontainers, in no run"
     }
 
     /// Each project, its services and their containers — and, for a stack
@@ -310,7 +320,8 @@ enum DockerMCP {
     static var tools: [[String: Any]] {
         var tools = [
             tool(
-                "docker_containers", "The user's Docker containers: name, image, status, compose project and service, published ports.",
+                "docker_containers",
+                "The user's Docker containers: name, image, status, compose project and service, the Testcontainers run it belongs to, published ports.",
                 [
                     "project": ["type": "string", "description": "Only this compose project's."],
                     "all": ["type": "boolean", "description": "Stopped ones too (default true)."],

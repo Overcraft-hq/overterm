@@ -52,15 +52,21 @@ struct DockerActions {
 }
 
 /// One block of the containers list: a compose project with its
-/// containers, or the containers in none (`project` nil).
+/// containers, a Testcontainers run with its, or the containers in none
+/// (both nil).
 struct DockerListGroup: Identifiable, Equatable {
     var project: ComposeProject?
     var containers: [ContainerSummary]
     /// A project before it runs: its services' rows, since it has no
     /// containers.
     var services: [ComposeService] = []
+    /// A test run's block (`project` nil).
+    var session: TestcontainersSession? = nil
 
-    var id: String { project.map { DockerPageModel.projectTag($0.name) } ?? DockerPageModel.looseTag }
+    var id: String {
+        if let session { return DockerPageModel.sessionTag(session.id) }
+        return project.map { DockerPageModel.projectTag($0.name) } ?? DockerPageModel.looseTag
+    }
 }
 
 /// The containers list's order: by name (projects, then the rest), or the
@@ -118,10 +124,16 @@ final class DockerPageModel: ObservableObject {
     @Published var filter = ""
     /// Stopped containers hidden.
     @Published var runningOnly = false
-    /// Container ids, `project:<name>` for a project's own row, and
-    /// `service:<project>/<name>` for a service of one before it runs.
+    /// Container ids, `project:<name>` for a project's own row,
+    /// `service:<project>/<name>` for a service of one before it runs, and
+    /// `testcontainers:<session>` for a test run's row.
     @Published var selection: Set<String> = []
+    /// The blocks folded: a test run's is, the first time it shows
+    /// (`folding`).
     @Published var collapsed: Set<String> = []
+    /// The test runs listed so far, by tag: one not seen before is folded.
+    private var seenSessions: Set<String> = []
+    private var foldingRuns: AnyCancellable?
     /// What the last action said when it failed, until dismissed.
     @Published var error: String?
     /// Containers (and projects) with an action on its way.
@@ -220,6 +232,27 @@ final class DockerPageModel: ObservableObject {
                 // @Published fires before the values land.
                 DispatchQueue.main.async { self?.updateStreams() }
             }
+        // A test run folded as it first shows: at once, with the emitted
+        // runs (@Published fires before they land) — a turn later, it
+        // would show unfolded for a frame.
+        foldingRuns = docker.$testcontainers.sink { [weak self] sessions in
+            guard let self else { return }
+            let (collapsed, seen) = Self.folding(self.collapsed, seen: self.seenSessions, sessions: sessions)
+            self.seenSessions = seen
+            if collapsed != self.collapsed { self.collapsed = collapsed }
+        }
+    }
+
+    /// The folds after a list of runs: one not seen before folded, one gone
+    /// forgotten, one the user unfolded left so; projects' untouched. Pure.
+    nonisolated static func folding(
+        _ collapsed: Set<String>, seen: Set<String>, sessions: [TestcontainersSession]
+    ) -> (collapsed: Set<String>, seen: Set<String>) {
+        let tags = Set(sessions.map { sessionTag($0.id) })
+        var collapsed = collapsed
+        collapsed.formUnion(tags.subtracting(seen))
+        collapsed.subtract(seen.subtracting(tags))
+        return (collapsed, tags)
     }
 
     private func want(_ resource: DockerModel.Resource?) {
@@ -327,6 +360,11 @@ final class DockerPageModel: ObservableObject {
         guard let slash = id.firstIndex(of: "/") else { return nil }
         return (String(id[..<slash]), String(id[id.index(after: slash)...]))
     }
+    /// A Testcontainers run's row, by its session ("" for those in none).
+    nonisolated static func sessionTag(_ id: String) -> String { "testcontainers:" + id }
+    nonisolated static func session(of tag: String) -> String? {
+        tag.hasPrefix("testcontainers:") ? String(tag.dropFirst("testcontainers:".count)) : nil
+    }
 
     /// The window's, set when it makes the page.
     var actions: DockerActions?
@@ -345,14 +383,15 @@ final class DockerPageModel: ObservableObject {
     /// read for nobody.
     @Published var windowVisible = true
 
-    /// The list as shown: projects first, by name, then the rest; the
-    /// filter applied; a project kept while any of its containers matches.
-    /// `planned`, the checkout's project before it runs, is among them
-    /// until one of its name exists; nothing of it runs, so Running only
-    /// leaves it out. By CPU or memory, the busiest first (`sorted`).
+    /// The list as shown: projects first, by name, then the rest, then
+    /// Testcontainers' runs, newest first; the filter applied; a block kept
+    /// while any of its containers matches. `planned`, the checkout's
+    /// project before it runs, is among them until one of its name exists;
+    /// nothing of it runs, so Running only leaves it out. By CPU or memory,
+    /// the busiest first (`sorted`).
     nonisolated static func groups(
-        projects: [ComposeProject], planned: ComposeProject? = nil, loose: [ContainerSummary], filter: DockerFilter, runningOnly: Bool,
-        sort: DockerListSort = .name, usage: [String: DockerUsage] = [:]
+        projects: [ComposeProject], planned: ComposeProject? = nil, loose: [ContainerSummary], sessions: [TestcontainersSession] = [],
+        filter: DockerFilter, runningOnly: Bool, sort: DockerListSort = .name, usage: [String: DockerUsage] = [:]
     ) -> [DockerListGroup] {
         func shown(_ containers: [ContainerSummary]) -> [ContainerSummary] {
             containers.filter { (!runningOnly || $0.state.isUp) && filter.matches($0) }
@@ -370,6 +409,10 @@ final class DockerPageModel: ObservableObject {
         }
         let rest = shown(loose)
         if !rest.isEmpty { groups.append(DockerListGroup(project: nil, containers: rest)) }
+        for session in sessions {
+            let containers = shown(session.containers)
+            if !containers.isEmpty { groups.append(DockerListGroup(project: nil, containers: containers, session: session)) }
+        }
         return sort == .name ? groups : sorted(groups, by: sort, usage: usage)
     }
 
@@ -401,8 +444,8 @@ final class DockerPageModel: ObservableObject {
 
     var groups: [DockerListGroup] {
         Self.groups(
-            projects: docker.projects, planned: planned, loose: docker.loose, filter: DockerFilter(filter), runningOnly: runningOnly, sort: sort,
-            usage: usage)
+            projects: docker.projects, planned: planned, loose: docker.loose, sessions: docker.testcontainers, filter: DockerFilter(filter),
+            runningOnly: runningOnly, sort: sort, usage: usage)
     }
 
     /// The rows as the keyboard walks them: a project's row, then its
@@ -414,7 +457,8 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// The containers the selection means: a project's row stands for all
-    /// of its containers.
+    /// of its containers, a test run's for its own — not Ryuk, which still
+    /// removes them when the run ends.
     var selectedContainers: [ContainerSummary] {
         var seen = Set<String>()
         var result: [ContainerSummary] = []
@@ -424,6 +468,8 @@ final class DockerPageModel: ObservableObject {
                     docker.projects.first { $0.name == name }?.containers.filter { !$0.isOneOff } ?? []
                 } else if Self.service(of: tag) != nil {
                     []
+                } else if let id = Self.session(of: tag) {
+                    docker.testcontainers.first { $0.id == id }?.members ?? []
                 } else if tag == Self.looseTag {
                     docker.loose
                 } else {
@@ -436,8 +482,15 @@ final class DockerPageModel: ObservableObject {
 
     /// The one container the detail shows: the selection, if it is one.
     var detailed: ContainerSummary? {
-        guard selection.count == 1, let tag = selection.first, Self.project(of: tag) == nil, Self.service(of: tag) == nil else { return nil }
+        guard selection.count == 1, let tag = selection.first, Self.project(of: tag) == nil, Self.service(of: tag) == nil, Self.session(of: tag) == nil
+        else { return nil }
         return docker.container(tag)
+    }
+
+    /// The one test run the detail shows: the selection, if it is its row.
+    var detailedSession: TestcontainersSession? {
+        guard selection.count == 1, let tag = selection.first, let id = Self.session(of: tag) else { return nil }
+        return docker.testcontainers.first { $0.id == id }
     }
 
     /// The project the selection is in, when it is all in one.
@@ -583,7 +636,9 @@ final class DockerPageModel: ObservableObject {
             if let url = selected.compactMap({ docker.ports(of: $0).first?.url }).first { actions?.open(url) }
         case .database:
             if let container = selected.first { openInDatabase(container) }
-        case .remove: confirmRemove(selected)
+        case .remove:
+            // A run's row: all of it, as Ryuk would remove it.
+            if let session = detailedSession { confirmRemove(session: session) } else { confirmRemove(selected) }
         case .composeUp:
             if let project = selectedProject { compose("up", project) }
         case .composeUpFreePorts:

@@ -506,7 +506,8 @@ enum SettingsSchema {
             kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess"),
         SettingSpec(
             key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
-            help: "Under the selected tab's checkout's stack, the containers of other projects and of none that are running.",
+            help:
+                "Under the selected tab's checkout's stack, the containers of other projects and of none that are running — Testcontainers' test runs in one row.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
     ]
 

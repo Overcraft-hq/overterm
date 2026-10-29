@@ -10,12 +10,15 @@ import Foundation
 ///     service:db             its service (`s:`)
 ///     image:postgres         the image (`i:`)
 ///     port:5432              published or exposed
+///     is:test                Testcontainers' (`tc`, `tests`, `testcontainers`)
+///     session:3f2a           one Testcontainers run, by its session's start
+///                            (`tc:`)
 ///     -status:exited         not exited
 ///
 /// Pure.
 struct DockerFilter: Equatable, Sendable {
     struct Term: Equatable, Sendable {
-        enum Key: String, Sendable { case text, status, project, service, image, port }
+        enum Key: String, Sendable { case text, status, project, service, image, port, session }
         var key: Key
         var value: String
         var negated: Bool
@@ -48,6 +51,7 @@ struct DockerFilter: Equatable, Sendable {
         case "service", "s": .service
         case "image", "i": .image
         case "port": .port
+        case "session", "tc": .session
         default: nil
         }
     }
@@ -73,6 +77,7 @@ extension DockerFilter.Term {
             case "up": return container.state.isUp
             case "stopped", "down": return !container.state.isUp
             case "healthy", "unhealthy", "starting": return container.health == value
+            case "test", "tests", "tc", "testcontainers": return Testcontainers.isMember(container)
             default: return container.State.lowercased() == value
             }
         case .project:
@@ -83,6 +88,8 @@ extension DockerFilter.Term {
             return container.Image.lowercased().contains(value)
         case .port:
             return (container.Ports ?? []).contains { "\($0.PrivatePort)" == value || $0.PublicPort.map { "\($0)" == value } == true }
+        case .session:
+            return Testcontainers.session(of: container)?.lowercased().hasPrefix(value) == true
         }
     }
 
@@ -96,6 +103,7 @@ extension DockerFilter.Term {
         case .service: return service.name.lowercased().contains(value)
         case .image: return image.lowercased().contains(value)
         case .port: return (service.spec?.ports ?? []).contains { "\($0.target)" == value || $0.published == value }
+        case .session: return false
         }
     }
 }

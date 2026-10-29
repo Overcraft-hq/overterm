@@ -170,11 +170,14 @@ with none, `q` a database's own client — psql, mysql, redis-cli,
 mongosh — signed in from its environment without the password on the
 command line, `t` follows its logs, `o` opens its
 port, `u` and `D` bring a project up and down — in a terminal tab, where you
-see the command. Filter with `status:running project:api port:5432`;
+see the command. Filter with `status:running project:api port:5432 is:test`;
 `?` lists the keys. `n` runs an image with a window that writes the
 `docker run` as you fill it in; any container copies as the `docker run`
 that would make it again. A compose project's services' logs are merged as
-`compose logs` merges them, each service in its colour. A project's
+`compose logs` merges them, each service in its colour. Containers
+Testcontainers makes for a test run sit apart at the bottom, folded, a run
+each — how many, since when — and Remove All clears a run's containers,
+networks, volumes and images as Ryuk would, asked first. A project's
 services rebuild and start (`b`), pull and run a one-off, each in a tab
 where you see it, and restart here; its log narrows to one of them. Watch (`w`) is
 there when a service has `develop.watch`, and Up With Profiles… lists the
@@ -203,7 +206,8 @@ them in a tab. The rail's shippingbox keeps the
 selected tab's checkout's stack beside the terminal — before it runs too:
 its compose file's services as Compose will make them, with Up (`u` on
 the page) to start them — a container's logs a click away in the
-right-hand pane, and the ports its containers publish
+right-hand pane, what runs elsewhere under it (Testcontainers' test runs
+in one row), and the ports its containers publish
 sit in its panes' headers beside the ones its own processes listen on. A
 container that crashes, runs out of memory or turns unhealthy marks the
 tab whose checkout it belongs to, as a failed command does. One that

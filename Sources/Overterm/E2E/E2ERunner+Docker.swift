@@ -383,6 +383,154 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// A Testcontainers run, as Java's makes one: its containers apart from
+    /// the rest, at the list's end, folded at first, Ryuk among them by its
+    /// name; found by `is:test` and `session:`, and unfolded when one of
+    /// them is revealed; the panel sums it up in a row, which opens it on
+    /// the page. Its row is its own detail, and Remove All asks first, then
+    /// does what Ryuk does when a run ends — containers with their
+    /// anonymous volumes, the networks, volumes and images labelled with
+    /// the run, Ryuk last. All of it through the fake: nothing typed.
+    private func testcontainersChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let session = "3f2a9c1e-0b5d-4c8e-9a7f-2d6e1b0c4a11"
+        let tc = ["org.testcontainers": "true", "org.testcontainers.lang": "java", "org.testcontainers.version": "1.21.3"]
+        let labelled = tc.merging(["org.testcontainers.sessionId": session]) { $1 }
+        let started = Int(Date().timeIntervalSince1970) - 300
+        let pg = fake.add(name: "ot-tc-pg", image: "postgres:16-alpine", labels: labelled, created: started)
+        let kafka = fake.add(name: "ot-tc-kafka", image: "confluentinc/cp-kafka:7.6.0", labels: labelled, created: started + 20)
+        // As Java starts it: no session of its own, its name says it.
+        let ryuk = fake.add(name: "testcontainers-ryuk-\(session)", image: "testcontainers/ryuk:0.14.0", labels: tc, created: started)
+        fake.addNetwork("ot-tc-net", labels: labelled)
+        fake.addNetwork("ot-keep-net")
+        let (volumes, images) = (Set(fake.volumeNames), Set(fake.imageIDs))
+        fake.addVolume("ot-tc-data", size: 1 << 20, refCount: 0, labels: labelled)
+        // As Java's ImageFromDockerfile names and labels what it builds.
+        let built = fake.addImage("localhost/testcontainers/ot-tc-built:latest", size: 5 << 20, labels: labelled)
+        page.filter = ""
+        page.runningOnly = false
+        page.selection = []
+        let tag = DockerPageModel.sessionTag(session)
+        func shown() -> Set<String> { Set(page.groups.flatMap(\.containers).map(\.Id)) }
+        /// A check of what is drawn: failed, what the window shows.
+        func drawn(_ name: String, _ line: (text: String, frame: CGRect)?) async {
+            var detail = line?.text ?? ""
+            if line == nil { detail = await readWindow().map(\.text).joined(separator: " | ") }
+            check(name, line != nil, detail)
+        }
+
+        check(
+            "Testcontainers' containers are a run of their own, after the rest", await eventually(5) { page.groups.last?.id == tag },
+            "\(page.groups.map(\.id))")
+        let loose = page.groups.first { $0.id == DockerPageModel.looseTag }?.containers.map(\.Id) ?? []
+        check("not among the other containers", !loose.contains(pg) && !loose.contains(kafka) && !loose.contains(ryuk), "\(loose)")
+        let run = page.groups.last?.session
+        check("its reaper with them, found by its name", run?.reaper?.Id == ryuk, run?.reaper?.name ?? "none")
+        check(
+            "with a count and when it started",
+            run.map { $0.members.count == 2 && $0.started == started && UsageFormat.age($0.startedDate) == "5 min ago" } == true,
+            run.map { "\($0.members.count) \($0.started) vs \(started)" } ?? "no run")
+        check("folded at first", page.collapsed.contains(tag) && !page.rows.contains(pg), "\(page.rows)")
+        // Its row's own words, and the session's start drawn: Vision reads
+        // "java" as "iava" and the 1 of "3f2a9c1e" as an l.
+        check("its row says the library and the session", run?.subtitle == "java · 3f2a9c1e", run?.subtitle ?? "no run")
+        await drawn("and draws them", await shownText { $0.contains("3f2a9c") })
+        await drawn("and how long ago the run started", await shownText { $0.contains("5 min ago") })
+        page.toggleFold(tag)
+        check("unfolded with a click", page.rows.contains(pg) && page.rows.contains(kafka), "\(page.rows)")
+        // Its row's own word: Vision reads a short title over its image's
+        // line unreliably.
+        let ryukRow = (page.groups.last?.containers.first { $0.Id == ryuk }).flatMap { container in
+            app.theme.map { DockerContainerRow(container: container, inProject: true, busy: false, docker: DockerModel.shared, theme: $0, open: { _ in }) }
+        }
+        check("Ryuk among them, by its own name", page.rows.last == ryuk && ryukRow?.title == "Ryuk", ryukRow?.title ?? "no row")
+        page.toggleFold(tag)
+        page.filter = "is:test"
+        check("is:test keeps only them", page.groups.map(\.id) == [tag], "\(page.groups.map(\.id))")
+        page.filter = "-is:test"
+        check("-is:test hides them", !page.groups.contains { $0.id == tag } && !page.groups.isEmpty, "\(page.groups.map(\.id))")
+        page.filter = "session:3f2a"
+        check("session: finds the run", shown() == [pg, kafka, ryuk], "\(shown().count)")
+        page.filter = ""
+
+        app.revealOnDockerPage(pg)
+        check("a container of it revealed unfolds its run", !page.collapsed.contains(tag) && page.selection == [pg], "\(page.selection)")
+        check(
+            "the panel's elsewhere leaves them out, and says them in one row",
+            !app.dockerPanel.others.contains { $0.Id == pg || $0.Id == ryuk } && app.dockerPanel.runs.map(\.id) == [session],
+            "\(app.dockerPanel.others.map(\.name)) \(app.dockerPanel.runs.map(\.id))")
+        // The panel's row, drawn; a click on it shows the run on the page
+        // — folded first, so it is the reveal that unfolds it.
+        page.collapsed.insert(tag)
+        app.hideOverlay(focus: false)
+        let sidebar = app.sidebarPanel.panel
+        app.showDockerPanel(nil)
+        await drawn("the panel's row says how many run, in how many runs", await shownText { $0.contains("2 running in 1 run") })
+        page.selection = []
+        app.dockerPanel.showRun(session)
+        check(
+            "a click on it shows the run on the page, unfolded and selected",
+            app.store.showingOverlay == .docker && page.selection == [tag] && !page.collapsed.contains(tag), "\(page.selection) \(page.collapsed)")
+        app.sidebarPanel.panel = sidebar
+
+        page.showDetail = true
+        page.selection = [tag]
+        check("a run selected is its own detail", page.detailedSession?.id == session && page.detailed == nil)
+        check("the selection means its containers, not Ryuk", Set(page.selectedContainers.map(\.Id)) == [pg, kafka], "\(page.selectedContainers.map(\.name))")
+        let verbs = page.detailedSession.map { page.verbs(for: $0) } ?? []
+        func titles(_ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        check(
+            "its verbs as buttons, Remove All last", titles(.button) == ["Stop All", "Copy Session ID"] && titles(.remove) == ["Remove All…"],
+            "\(verbs.map(\.title))")
+        await drawn("its detail has them", await shownText { $0.contains("Stop All") })
+        await capture("testcontainers")
+
+        // Asked, with what goes; nothing yet.
+        let actions = page.actions
+        var asked: (title: String, detail: String, button: String)?
+        page.actions?.confirm = { title, detail, button, _ in asked = (title, detail, button) }
+        verbs.first { $0.title == "Remove All…" }?.perform()
+        page.actions = actions
+        check(
+            "Remove All says what goes",
+            asked.map {
+                $0.title == "Remove this run's 2 containers?" && $0.detail.contains("then the networks, volumes and images labelled with the run")
+                    && $0.detail.contains("Ryuk itself last") && $0.button == "Remove All"
+            } == true && fake.summary(pg) != nil, asked.map { "\($0.title) \($0.detail) \($0.button)" } ?? "not asked")
+
+        // Folded again, so the end checks that a run gone takes its fold.
+        page.collapsed.insert(tag)
+        page.selection = [tag]
+        page.press("\u{7F}")
+        check("⌫ on a run asks first", await eventually(3) { self.window.attachedSheet != nil })
+        let clicked = clickSheetButton("Remove All")
+        let gone = await eventually(5) { fake.summary(pg) == nil && fake.summary(kafka) == nil && fake.summary(ryuk) == nil }
+        check("and removes all of it on yes", clicked && gone, "clicked \(clicked), gone \(gone), \(page.error ?? "")")
+        check(
+            "with their anonymous volumes, as Ryuk does", fake.requests.contains { $0.hasPrefix("DELETE /v1.47/containers/\(pg)?force=1&v=1") },
+            "\(fake.requests.filter { $0.hasPrefix("DELETE") })")
+        check(
+            "then what the run labelled — its networks, volumes and images — not others",
+            await eventually(5) {
+                !fake.networkNames.contains("ot-tc-net") && fake.networkNames.contains("ot-keep-net") && Set(fake.volumeNames) == volumes
+                    && Set(fake.imageIDs) == images
+            }, "\(fake.networkNames) \(Set(fake.volumeNames).subtracting(volumes)) \(Set(fake.imageIDs).subtracting(images))")
+        let index = { (path: String) in fake.requests.lastIndex { $0.hasPrefix("DELETE /v1.47/" + path) } ?? -1 }
+        check(
+            "Ryuk last",
+            index("containers/\(ryuk)")
+                > max(
+                    index("containers/\(pg)"), index("containers/\(kafka)"), index("networks/ot-tc-net-id"), index("volumes/ot-tc-data"),
+                    index("images/\(built)")),
+            "\(fake.requests.filter { $0.hasPrefix("DELETE") })")
+        check(
+            "the run leaves the list, its fold forgotten",
+            await eventually(5) { !page.groups.contains { $0.id == tag } && !page.collapsed.contains(tag) && page.selection.isEmpty && page.error == nil },
+            "\(page.groups.map(\.id)) \(page.error ?? "")")
+        try? await DockerModel.shared.engine?.remove(network: "ot-keep-net")
+        page.selection = []
+    }
+
     /// A container that failed, to an agent: Ask Why opens Overterm's own
     /// Ask Agent sheet with how it ended, its health check, its last lines
     /// and its compose service, secrets out of all of it; ⌘L hands lines
@@ -2358,6 +2506,7 @@ extension E2ERunner {
         await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await testcontainersChecks(fake)
         await askAgentChecks(fake, web: web, folder: folder, real: real)
         await worktreePortsChecks(fake, socket: socket)
         await composeServicesChecks(fake, web: web)

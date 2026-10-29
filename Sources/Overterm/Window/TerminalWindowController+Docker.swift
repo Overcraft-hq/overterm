@@ -83,6 +83,7 @@ extension TerminalWindowController {
             guard let self else { return [] }
             return self.dockerPage.verbs(for: project) { [weak self] action, containers in self?.dockerPanel.act(action, on: containers) }
         }
+        dockerPanel.showRun = { [weak self] session in self?.revealOnDockerPage(DockerPageModel.sessionTag(session)) }
         // An agent's compose up or down runs in a tab of this window.
         DockerMCP.runInTab = { [weak self] command, folder in self?.runDockerCommand(command, in: folder) }
         // A port a container wanted, held by a process in a tab: any window's.
@@ -690,14 +691,17 @@ extension TerminalWindowController {
         return items
     }
 
-    /// The page, with this container (or `project:<name>`) selected and
-    /// in view: the filter cleared, its project unfolded.
+    /// The page, with this container (or `project:<name>`, or a test run's
+    /// `testcontainers:<session>`) selected and in view: the filter
+    /// cleared, its project or its run unfolded.
     func revealOnDockerPage(_ tag: String) {
         dockerPage.filter = ""
         if let container = DockerModel.shared.container(tag) {
             dockerPage.runningOnly = dockerPage.runningOnly && container.state.isUp
             if let project = container.composeProject { dockerPage.collapsed.remove(DockerPageModel.projectTag(project)) }
+            if let run = Testcontainers.groupID(of: container) { dockerPage.collapsed.remove(DockerPageModel.sessionTag(run)) }
         }
+        if DockerPageModel.session(of: tag) != nil { dockerPage.collapsed.remove(tag) }
         dockerPage.selection = [tag]
         if store.showingOverlay != .docker { showOverlay(.docker) }
         focusDockerList()

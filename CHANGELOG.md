@@ -42,6 +42,7 @@ version is tagged `v<version>`.
 - docker: ask an agent why a container failed — its state, last logs and compose service, secrets left out; selected log lines with ⌘L
 - docker: a container running under emulation on Apple silicon says so, with what to do
 - docker: CPU and memory columns in the container list
+- docker: Testcontainers' containers apart, by test run, removed together
 
 ## 1.4.6 — 2026-10-29
 

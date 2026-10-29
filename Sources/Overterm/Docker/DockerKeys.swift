@@ -79,7 +79,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .composeDown: "Compose down, in a terminal tab (asks first)"
         case .rebuild: "Rebuild and start its service — a project's row, all of them — in a terminal tab"
         case .watch: "Compose watch, in a terminal tab — when a service has develop.watch"
-        case .filter: "Filter — status:running project:api port:5432"
+        case .filter: "Filter — status:running project:api port:5432 is:test"
         case .cleanUp: "Clean Up… — what is unused, listed before it goes"
         case .containers: "Containers"
         case .images: "Images"
