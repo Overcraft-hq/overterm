@@ -106,6 +106,83 @@ final class DockerModelTests: XCTestCase {
         XCTAssertNil(model.container("redis"))
     }
 
+    /// A database's own client: who to sign in as read from its inspect by
+    /// name, and only when asked; a stopped one's says why it can't.
+    func testAClientSignsInByItsEnvsNames() async throws {
+        fake.add(name: "shop-db-1", image: "postgres:16", env: ["POSTGRES_USER=shop", "POSTGRES_PASSWORD=hunter2"])
+        fake.add(name: "old-db", image: "postgres:16", state: .exited)
+        model.start()
+        try await eventually("listed") { model.containers.count == 2 }
+        let db = try XCTUnwrap(model.container("shop-db-1"))
+        let old = try XCTUnwrap(model.container("old-db"))
+        let page = DockerPageModel(docker: model)
+        var ran: [String] = []
+        page.actions = DockerActions(run: { command, _ in ran.append(command) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        let expected = #"docker exec -it shop-db-1 sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -U "$POSTGRES_USER" -d "$POSTGRES_USER"'"#
+        page.openClient(db)
+        try await eventually("psql in a tab") { ran == [expected] }
+        XCTAssertFalse(ran.contains { $0.contains("hunter2") }, "no secret on the tab's command line")
+        page.openClient(old)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(ran.count, 1, "a stopped one opens nothing")
+        let verb = page.verbs(for: old).first { $0.title == "Open psql in a Tab" }
+        XCTAssertEqual(verb?.place, .button)
+        XCTAssertEqual(verb?.label, "psql")
+        XCTAssertEqual(verb?.unavailable, "It isn't running.")
+        let live = try XCTUnwrap(page.verbs(for: db).first { $0.key == "q" })
+        XCTAssertNil(live.unavailable)
+    }
+
+    /// A pull moved its tag on to a newer image: Docker lists the image by
+    /// its ID. Its client is known still by the name inspect keeps — read
+    /// when q is pressed, or already by its open detail, never to draw.
+    func testAnImageListedByItsIDKeepsItsClient() async throws {
+        let id = fake.add(name: "shop-db-1", image: "postgres:16", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 5432, PublicPort: 55432, Type: "tcp")])
+        fake.supersedeImage(of: id)
+        model.start()
+        try await eventually("listed by its ID") { model.container(id)?.Image.hasPrefix("sha256:") == true }
+        let db = try XCTUnwrap(model.container(id))
+        let page = DockerPageModel(docker: model)
+        var ran: [String] = []
+        page.actions = DockerActions(run: { command, _ in ran.append(command) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        XCTAssertNil(DockerClient.kind(of: db), "the ID says nothing")
+        XCTAssertFalse(page.verbs(for: db).contains { $0.key == "q" || $0.key == "d" }, "inspect isn't read to draw")
+        page.selection = [id]
+        XCTAssertTrue(page.press("q"))
+        try await eventually("q reads inspect, then opens psql") { ran == ["docker exec -it shop-db-1 psql -U postgres -d postgres"] }
+        let session = page.session(for: id)
+        try await eventually("its detail read") { session.detail != nil }
+        XCTAssertEqual(page.verbs(for: db).first { $0.key == "q" }?.label, "psql", "its open detail names it")
+        XCTAssertTrue(page.verbs(for: db).contains { $0.key == "d" }, "and Open in Database")
+        let panel = DockerPageModel(docker: model)
+        XCTAssertEqual(panel.verbs(for: db, detail: session.detail).first { $0.key == "q" }?.label, "psql", "or the panel's, given")
+        XCTAssertNil(panel.verbs(for: db, detail: nil).first { $0.key == "q" })
+    }
+
+    /// Off the page — its verb in the panel's menu, or the right-hand
+    /// pane — a client that can't be opened says so in an alert too.
+    func testAClientThatCantOpenSaysWhyOffThePage() async throws {
+        let id = fake.add(name: "shop-db-1", image: "postgres:16")
+        model.start()
+        try await eventually("listed") { model.container(id) != nil }
+        let db = try XCTUnwrap(model.container(id))
+        try await model.remove(id, force: true)
+        let page = DockerPageModel(docker: model)
+        var ran: [String] = []
+        var alerts: [String] = []
+        page.actions = DockerActions(run: { command, _ in ran.append(command) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        page.actions?.alert = { title, _ in alerts.append(title) }
+        page.openClient(db)
+        try await eventually("an alert") { alerts == ["psql in shop-db-1"] }
+        XCTAssertEqual(page.error?.hasPrefix("psql in shop-db-1: "), true)
+        XCTAssertEqual(ran, [], "nothing typed")
+        page.visible = true
+        page.error = nil
+        page.openClient(db)
+        try await eventually("on the page") { page.error != nil }
+        XCTAssertEqual(alerts.count, 1, "on screen, the page says it")
+    }
+
     /// Compose writes the folder resolved (`/private/var/…`); the tab's
     /// folder may not be.
     func testACheckoutsProjectsAreFoundByItsRealPath() async throws {

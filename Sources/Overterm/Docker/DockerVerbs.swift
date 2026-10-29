@@ -32,8 +32,10 @@ struct DockerVerb: Identifiable {
 
 /// A detail's verbs under its title: the used ones as labelled buttons,
 /// the rest behind ⋯, removal last as a red bin — those two as icons
-/// always, so the words fit a detail's 420 pt. Narrower, the first two
-/// keep their words; narrower still (the right-hand pane), all icons.
+/// always, so the words fit a detail's 420 pt. Narrower, the last
+/// buttons give up their words first, one at a time down to the first
+/// two: a database's fifth button, its client, doesn't cost Shell its
+/// word. Narrower still (the right-hand pane), all icons.
 struct DockerActionBar: View {
     let verbs: [DockerVerb]
     @ObservedObject var theme: ChromeTheme
@@ -48,6 +50,8 @@ struct DockerActionBar: View {
             } else {
                 ViewThatFits(in: .horizontal) {
                     row(words: .max)
+                    row(words: 4)
+                    row(words: 3)
                     row(words: 2)
                     row(words: 0)
                 }

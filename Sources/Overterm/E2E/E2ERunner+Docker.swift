@@ -1617,6 +1617,56 @@ extension E2ERunner {
                 && app.dockerDatabaseDraft?.password == "hunter2", "\(String(describing: draft))")
         if let sheet = window.attachedSheet { window.endSheet(sheet) }
         _ = await eventually(2) { self.window.attachedSheet == nil }
+        // q: its own client in a tab, signed in inside the container.
+        var clients: [String] = []
+        let saved = page.actions
+        page.actions?.run = { command, _ in clients.append(command) }
+        if let pg = docker.container(pgID) {
+            let verb = page.verbs(for: pg).first { $0.title == "Open psql in a Tab" }
+            check("a database container has its client as a button", verb?.place == .button && verb?.label == "psql", "\(page.verbs(for: pg).map(\.title))")
+        }
+        page.selection = [pgID]
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.showDetail = true
+        // A window wide enough for the detail at its widest, whatever the
+        // run opened with: narrower, the last buttons say no words.
+        let openedFrame = window.frame
+        if let area = (window.screen ?? NSScreen.main)?.visibleFrame {
+            let size = CGSize(width: min(1_400, area.width), height: min(880, area.height))
+            window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height), display: true)
+        }
+        let drawn = await shownText { $0.contains("psql") }
+        let seen = drawn == nil ? await readWindow().map(\.text).joined(separator: " | ") + " at \(window.frame.size)" : ""
+        check("its detail draws it, by the client's name", drawn != nil, seen)
+        window.setFrame(openedFrame, display: true)
+        _ = page.press("q")
+        let psql = #"DOCKER_HOST=unix://\#(socket) docker exec -it ot-pg sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'"#
+        check("q opens psql in it, signed in by its env's names", await eventually(5) { clients.last == psql }, clients.last ?? "nothing")
+        check("with no secret on the tab's command line", clients.last?.contains("hunter2") == false)
+        // A pull moved its tag on: the list names its image by ID, and
+        // the inspect its detail read names it still.
+        fake.supersedeImage(of: pgID)
+        let byID = await eventually(5) { docker.container(pgID).map(DockerClient.listsImageByID) == true }
+        let kept = docker.container(pgID).map { page.verbs(for: $0).contains { $0.label == "psql" } } == true
+        check("an image listed by its ID keeps its client", byID && kept, docker.container(pgID)?.Image ?? "gone")
+        clients.removeAll()
+        _ = page.press("q")
+        check("and q opens it still", await eventually(5) { clients.last == psql }, clients.last ?? "nothing")
+        let cache = fake.add(name: "ot-cache", image: "redis:7", env: ["REDIS_PASSWORD=s3cr3t-cache"])
+        _ = await eventually(5) { docker.container(cache) != nil }
+        docker.container(cache).flatMap { container in page.verbs(for: container).first { $0.title == "Open redis-cli in a Tab" } }?.perform()
+        let redis = #"docker exec -it ot-cache sh -c 'export REDISCLI_AUTH="$REDIS_PASSWORD"; exec redis-cli'"#
+        check(
+            "redis-cli signs in through REDISCLI_AUTH",
+            await eventually(5) { clients.last?.hasSuffix(redis) == true } && clients.last?.contains("s3cr3t") == false, clients.last ?? "nothing")
+        fake.set(cache, state: .exited)
+        _ = await eventually(5) { docker.container(cache)?.state == .exited }
+        check(
+            "a stopped one's client says why it can't",
+            docker.container(cache).flatMap { container in page.verbs(for: container).first { $0.label == "redis-cli" } }?.unavailable == "It isn't running.")
+        check("a container that is no database has no client", docker.container(web).map { page.verbs(for: $0).contains { $0.key == "q" } } == false)
+        try? await docker.remove(cache, force: true)
+        page.actions = saved
         try? await docker.remove(pgID, force: true)
 
         // Another worktree's stack couldn't get 58080: who has it, and the way out.

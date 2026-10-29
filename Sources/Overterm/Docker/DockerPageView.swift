@@ -230,7 +230,7 @@ struct DockerPageView: View {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ContainerDetailView(
                                     container: container, session: page.session(for: container.Id), tab: $page.detailTab,
-                                    theme: theme, actions: actions, verbs: page.verbs(for: container)
+                                    theme: theme, actions: actions, verbs: { page.verbs(for: container) }
                                 )
                                 .id(container.Id)
                                 .frame(width: min(480, max(320, geometry.size.width * 0.42)))

@@ -38,6 +38,7 @@ version is tagged `v<version>`.
 - docker: a checkout's compose project shows before it has run, ready to bring up
 - docker: a compose service rebuilt, restarted or pulled on its own; Watch, and Up with profiles
 - docker: a worktree's stack comes up on free ports when another worktree's holds them — the repository stays untouched
+- docker: a database container's own client in a tab — psql, mysql, redis-cli, mongosh… — its password never on the command line
 
 ## 1.4.6 — 2026-10-29
 

@@ -49,18 +49,62 @@ extension DockerPageModel {
     /// Its connection, guessed from its image, env and published port,
     /// in the Database panel's form — nothing saved until the form is.
     func openInDatabase(_ container: ContainerSummary) {
-        guard DockerDatabaseGuess.kind(of: container.Image) != nil else {
-            error = "\(container.name) isn't a database Overterm knows (PostgreSQL, MySQL, MariaDB, ClickHouse)."
+        let unknown = "\(container.name) isn't a database Overterm knows (PostgreSQL, MySQL, MariaDB, ClickHouse)."
+        guard DockerDatabaseGuess.kind(of: container, reference: imageReference(of: container)) != nil || DockerClient.listsImageByID(container) else {
+            error = unknown
             return
         }
         Task {
             guard let detail = try? await docker.engine?.container(container.Id) else { return }
-            guard let guess = DockerDatabaseGuess.guess(container, env: detail.env, endpoint: docker.endpoint) else {
+            // An image listed by its ID is known by the name inspect keeps.
+            guard DockerDatabaseGuess.kind(of: container, reference: detail.Config.Image) != nil else {
+                error = unknown
+                return
+            }
+            guard let guess = DockerDatabaseGuess.guess(container, env: detail.env, endpoint: docker.endpoint, reference: detail.Config.Image) else {
                 error = "\(container.name) publishes no port on this Mac: the Database panel can't reach it."
                 return
             }
             actions?.openDatabase(guess)
         }
+    }
+
+    /// Its own client in a terminal tab (`DockerClient`): who to sign in as
+    /// is read from its env by name — inspect, only when asked — and
+    /// expanded by its own shell, so the tab's command line holds no secret.
+    /// An image listed by its ID is known once inspect names it. A failure
+    /// is said on the page, and in an alert when the page isn't on screen
+    /// (the panel's menu, the right-hand pane).
+    func openClient(_ container: ContainerSummary) {
+        let known = clientKind(of: container)
+        guard container.state == .running, known != nil || DockerClient.listsImageByID(container), let engine = docker.engine else { return }
+        let endpoint = docker.endpoint
+        Task {
+            do {
+                let detail = try await engine.container(container.Id)
+                guard let kind = DockerClient.kind(of: container, reference: detail.Config.Image) else { return }
+                actions?.run(DockerClient.command(kind, in: container, env: DockerClient.names(in: detail.env), endpoint: endpoint), nil)
+            } catch {
+                let what = known.map { "\($0.program) in \(container.name)" } ?? "\(container.name)'s client"
+                self.error = "\(what): \(error.localizedDescription)"
+                if !visible { actions?.alert(what, error.localizedDescription) }
+            }
+        }
+    }
+
+    /// Its own client's kind, as far as what is read says
+    /// (`DockerClient.kind`).
+    func clientKind(of container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerClient.Kind? {
+        DockerClient.kind(of: container, reference: imageReference(of: container, detail: detail))
+    }
+
+    /// The name a container's image was made from, when the list says only
+    /// its ID: inspect's, as read already for its detail — the page's, or
+    /// `detail` (the panel's). Never read for this.
+    func imageReference(of container: ContainerSummary, detail: ContainerDetail? = nil) -> String? {
+        guard DockerClient.listsImageByID(container) else { return nil }
+        for known in [detail, session?.detail] where known?.Id == container.Id { return known?.Config.Image }
+        return nil
     }
 
     // MARK: Models

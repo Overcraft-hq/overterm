@@ -21,6 +21,8 @@ final class FakeDockerEngine: @unchecked Sendable {
         var error: String = ""
         /// A volume mounted where (`HostConfig.Binds`): the helper's.
         var binds: [String: String] = [:]
+        /// The name it was made from, when the list says its image's ID.
+        var reference: String?
     }
 
     let socket: String
@@ -199,6 +201,18 @@ final class FakeDockerEngine: @unchecked Sendable {
             default: state.rawValue
             }
         emit(action, id, extra: state == .exited ? ["exitCode": "\(exitCode)"] : [:])
+    }
+
+    /// The tag it was made from now names a newer image (a pull): the
+    /// list says its image's ID, as Docker's does; inspect still says the
+    /// name (`Config.Image`).
+    func supersedeImage(of id: String) {
+        locked {
+            guard let container = containers[id], container.reference == nil else { return }
+            containers[id]?.reference = container.summary.Image
+            containers[id]?.summary.Image = container.summary.ImageID ?? container.summary.Image
+        }
+        emit("update", id)
     }
 
     func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
@@ -693,7 +707,7 @@ final class FakeDockerEngine: @unchecked Sendable {
                 Dead: false, Pid: summary.state == .running ? 42 : 0, ExitCode: summary.exitCode ?? 0, Error: container.error, StartedAt: nil,
                 FinishedAt: nil, Health: summary.Health.map { .init(Status: $0.Status, FailingStreak: 0, Log: []) }),
             Config: .init(
-                Image: summary.Image, Env: container.env, Cmd: ["sleep", "infinity"], Entrypoint: nil, WorkingDir: "/", User: "",
+                Image: container.reference ?? summary.Image, Env: container.env, Cmd: ["sleep", "infinity"], Entrypoint: nil, WorkingDir: "/", User: "",
                 Labels: summary.Labels, ExposedPorts: nil, Tty: container.tty, Hostname: String(summary.Id.prefix(12))),
             HostConfig: .init(RestartPolicy: .init(Name: "no", MaximumRetryCount: 0), NetworkMode: "bridge", Memory: 0, NanoCpus: 0),
             Mounts: summary.Mounts, NetworkSettings: .init(Networks: ["bridge": .init(IPAddress: "172.17.0.2", Gateway: "172.17.0.1", MacAddress: nil)]))

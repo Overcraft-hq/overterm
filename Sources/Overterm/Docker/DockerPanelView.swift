@@ -299,7 +299,7 @@ struct DockerSlotView: View {
     var body: some View {
         if let id = panel.picked, let container = docker.container(id) {
             ContainerDetailView(
-                container: container, session: panel.session(for: id), tab: $panel.tab, theme: theme, actions: actions, verbs: panel.verbs(container)
+                container: container, session: panel.session(for: id), tab: $panel.tab, theme: theme, actions: actions, verbs: { panel.verbs(container) }
             )
             .id(id)
         } else {

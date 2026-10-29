@@ -108,6 +108,7 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("w"), .watch)
         XCTAssertEqual(DockerKey.of("U"), .composeUpFreePorts)
         XCTAssertEqual(DockerKey.of("u"), .composeUp)
+        XCTAssertEqual(DockerKey.of("q"), .client)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -601,6 +602,10 @@ final class DockerDatabaseGuessTests: XCTestCase {
         XCTAssertEqual(user.connection.user, "app", "the app's own user over root")
         XCTAssertEqual(user.password, "pw")
         XCTAssertEqual(user.connection.database, "shop")
+        let unmade = try XCTUnwrap(
+            DockerDatabaseGuess.guess(container("mysql:8", ports: port), env: [("MYSQL_ROOT_PASSWORD", "r00t"), ("MYSQL_USER", "app")]))
+        XCTAssertEqual(unmade.connection.user, "root", "no password, no app user: the image didn't make it")
+        XCTAssertEqual(unmade.password, "r00t")
         let clickhouse = try XCTUnwrap(
             DockerDatabaseGuess.guess(
                 container("clickhouse/clickhouse-server:24", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 8123, PublicPort: 58123, Type: "tcp")]), env: []))
@@ -613,6 +618,334 @@ final class DockerDatabaseGuessTests: XCTestCase {
         XCTAssertNil(DockerDatabaseGuess.guess(container("redis:7", ports: pg), env: []))
         XCTAssertNil(DockerDatabaseGuess.kind(of: "nginx"))
         XCTAssertEqual(DockerDatabaseGuess.kind(of: "bitnami/postgresql:16")?.0, .postgres)
+        for tool in ["postgrest/postgrest", "prometheuscommunity/postgres-exporter", "clickhouse/clickhouse-keeper"] {
+            XCTAssertNil(DockerDatabaseGuess.kind(of: tool), "\(tool) is a tool beside a database, not one")
+        }
+        XCTAssertEqual(DockerDatabaseGuess.kind(of: "percona/percona-server:8")?.0, .mysql)
+        XCTAssertEqual(DockerDatabaseGuess.kind(of: "percona/percona-server:8")?.port, 3306)
+        // A worktree's project carries its branch; Compose names a built image after it.
+        XCTAssertNil(DockerDatabaseGuess.guess(container("shop-wt-postgres-upgrade-api", ports: pg, project: "shop-wt-postgres-upgrade"), env: []))
+    }
+
+    func testAGuessOfAnImageListedByItsID() throws {
+        var listed = container("sha256:" + String(repeating: "b", count: 64), ports: pg)
+        listed.ImageID = listed.Image
+        XCTAssertNil(DockerDatabaseGuess.guess(listed, env: []))
+        XCTAssertEqual(DockerDatabaseGuess.guess(listed, env: [], reference: "postgres:16")?.connection.kind, .postgres)
+    }
+}
+
+/// A database container's own client in a terminal tab: which, from its
+/// image's name; signed in by its env's names, expanded inside. Pure — and
+/// the scripts run for real under a shell, with stub clients.
+final class DockerClientTests: XCTestCase {
+    private func db(_ image: String = "postgres:16", name: String = "shop-db-1") -> ContainerSummary {
+        ContainerSummary(Id: "x", Names: ["/" + name], Image: image, Created: 1, State: "running", Status: "")
+    }
+
+    private func command(_ kind: DockerClient.Kind, _ env: Set<String> = []) -> String { DockerClient.command(kind, in: db(), env: env) }
+
+    func testImagesAreKnownByTheirNames() {
+        let known: [DockerClient.Kind: [String]] = [
+            .postgres: [
+                "postgres:16-alpine", "bitnami/postgresql:16", "postgis/postgis:16-3.4", "timescale/timescaledb-ha:pg16", "pgvector/pgvector:pg17",
+                "supabase/postgres:15.8.1", "docker.io/library/postgres@sha256:abc", "localhost:5000/postgres:16", "percona/percona-distribution-postgresql:16",
+            ],
+            .mysql: ["mysql:8.4", "percona/percona-server:8.0", "container-registry.oracle.com/mysql/community-server:9.1"],
+            .mariadb: ["mariadb:11", "MariaDB:10.3"],
+            .redis: ["redis:7-alpine", "redis/redis-stack-server"],
+            .valkey: ["valkey/valkey:8"],
+            .mongo: ["mongo:7", "mongodb/mongodb-community-server:7.0-ubi8", "percona/percona-server-mongodb:7.0"],
+            .clickhouse: ["clickhouse/clickhouse-server:24.8"],
+            .cassandra: ["cassandra:5", "scylladb/scylla:6.2"],
+            .neo4j: ["neo4j:5"],
+            .mssql: ["mcr.microsoft.com/mssql/server:2022-latest"],
+        ]
+        for (kind, images) in known {
+            for image in images { XCTAssertEqual(DockerClient.kind(of: image), kind, image) }
+        }
+        let none = [
+            "nginx:1.27", "postgrest/postgrest", "prometheuscommunity/postgres-exporter", "mongo-express", "rediscommander/redis-commander", "redis/redisinsight",
+            "clickhouse/clickhouse-keeper", "dpage/pgadmin4", "mysql/mysql-router", "supabase/postgres-meta", "bitnami/redis-sentinel", "percona/pmm-server",
+            "oliver006/redis_exporter", "sha256:0123abcd", "",
+        ]
+        for image in none { XCTAssertNil(DockerClient.kind(of: image), image) }
+        XCTAssertEqual(DockerClient.words(of: "docker.io/library/postgres:16@sha256:abc"), ["library", "postgres"])
+        XCTAssertEqual(DockerClient.components(of: "localhost:5000/acme/shop-api:dev"), ["acme", "shop-api"])
+        XCTAssertEqual(DockerClient.words(of: "localhost:5000/timescale/timescaledb-ha:pg16"), ["timescale", "timescaledb", "ha"])
+        XCTAssertEqual(
+            DockerClient.Kind.allCases.map(\.program),
+            [
+                "psql", "mysql", "mariadb", "redis-cli", "valkey-cli", "mongosh", "clickhouse-client", "cqlsh", "cypher-shell", "sqlcmd",
+            ])
+    }
+
+    private func service(_ image: String, project: String, service: String, imageID: String? = nil) -> ContainerSummary {
+        ContainerSummary(
+            Id: "x", Names: ["/\(project)-\(service)-1"], Image: image, ImageID: imageID, Created: 1,
+            Labels: ["com.docker.compose.project": project, "com.docker.compose.service": service], State: "running", Status: "")
+    }
+
+    /// New Task names a worktree's project after its branch, and Compose a
+    /// built image after the project and the service: the project's name
+    /// says nothing about the image.
+    func testAComposeProjectsNameSaysNothingOfItsImages() {
+        let branch = "shop-wt-fix-redis-timeout"
+        XCTAssertNil(DockerClient.kind(of: service("\(branch)-api", project: branch, service: "api")), "a built service is no Redis")
+        XCTAssertNil(DockerClient.kind(of: service("\(branch)_api", project: branch, service: "api")), "Compose v1's name")
+        XCTAssertNil(DockerClient.kind(of: service("localhost:5000/\(branch)-worker:dev", project: branch, service: "jobs")))
+        XCTAssertEqual(DockerClient.kind(of: service("redis:7", project: branch, service: "cache")), .redis)
+        XCTAssertEqual(
+            DockerClient.kind(of: service("admin-panel-postgres", project: "admin-panel", service: "postgres")), .postgres,
+            "a built database, in a project named for a tool")
+        XCTAssertNil(DockerClient.kind(of: service("admin-panel-web", project: "admin-panel", service: "web")))
+        XCTAssertEqual(
+            DockerClient.kind(of: service("clickhouse/clickhouse-server:24.8", project: "clickhouse", service: "server")), .clickhouse,
+            "the project's name, not the image's namespace")
+        XCTAssertEqual(DockerClient.kind(of: service("redis/redis-stack-server", project: "redis", service: "redis")), .redis)
+        XCTAssertEqual(DockerClient.kind(of: service("postgres:16", project: "postgres", service: "db")), .postgres)
+        XCTAssertEqual(DockerClient.kind(of: db("mongo:7")), .mongo, "no project")
+    }
+
+    /// Docker lists a container's image by its ID once the tag it was made
+    /// from names a newer image: inspect's name says then.
+    func testAnImageListedByItsIDIsKnownByInspectsName() {
+        let id = "sha256:" + String(repeating: "b", count: 64)
+        var listed = db(id)
+        XCTAssertTrue(DockerClient.listsImageByID(listed))
+        XCTAssertNil(DockerClient.kind(of: listed))
+        XCTAssertEqual(DockerClient.kind(of: listed, reference: "postgres:16"), .postgres)
+        XCTAssertNil(
+            DockerClient.kind(of: service(id, project: "shop-wt-redis", service: "api", imageID: id), reference: "shop-wt-redis-api"),
+            "the same rule for inspect's name")
+        listed.Image = "postgres:16"
+        listed.ImageID = id
+        XCTAssertFalse(DockerClient.listsImageByID(listed))
+        XCTAssertEqual(DockerClient.kind(of: listed, reference: "redis:7"), .postgres, "the list's name, while it has one")
+    }
+
+    func testOnlyTheNamesOfTheEnvGoOn() {
+        XCTAssertEqual(DockerClient.names(in: [("POSTGRES_USER", "shop"), ("POSTGRES_PASSWORD", ""), ("PATH", "/bin")]), ["POSTGRES_USER", "PATH"])
+        XCTAssertEqual(DockerClient.word("POSTGRES_PASSWORD", "POSTGRESQL_PASSWORD", in: ["POSTGRESQL_PASSWORD"]), #""$POSTGRESQL_PASSWORD""#)
+        XCTAssertEqual(
+            DockerClient.word("POSTGRES_PASSWORD", "POSTGRESQL_PASSWORD", in: ["POSTGRES_PASSWORD_FILE", "POSTGRESQL_PASSWORD"]),
+            #""$(cat "$POSTGRES_PASSWORD_FILE")""#, "a name's secret file before the next name")
+        XCTAssertNil(DockerClient.word("POSTGRES_PASSWORD", in: ["PGPASSWORD"]))
+    }
+
+    func testPostgres() {
+        XCTAssertEqual(
+            command(.postgres, ["POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"]),
+            #"docker exec -it shop-db-1 sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'"#)
+        XCTAssertEqual(command(.postgres, ["POSTGRES_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec psql -U postgres -d postgres'"#)
+        XCTAssertEqual(command(.postgres), "docker exec -it shop-db-1 psql -U postgres -d postgres", "nothing to expand: no shell")
+        XCTAssertEqual(command(.postgres, ["POSTGRES_USER"]), #"docker exec -it shop-db-1 sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_USER"'"#, "the image's own default")
+        XCTAssertEqual(
+            command(.postgres, ["POSTGRES_PASSWORD_FILE"]),
+            #"docker exec -it shop-db-1 sh -c 'export PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE")"; exec psql -U postgres -d postgres'"#)
+        XCTAssertEqual(
+            command(.postgres, ["POSTGRESQL_USERNAME", "POSTGRESQL_PASSWORD", "POSTGRESQL_DATABASE"]),
+            #"docker exec -it shop-db-1 sh -c 'export PGPASSWORD="$POSTGRESQL_PASSWORD"; exec psql -U "$POSTGRESQL_USERNAME" -d "$POSTGRESQL_DATABASE"'"#, "Bitnami's")
+        XCTAssertEqual(
+            command(.postgres, ["POSTGRESQL_USERNAME", "POSTGRESQL_PASSWORD"]),
+            #"docker exec -it shop-db-1 sh -c 'export PGPASSWORD="$POSTGRESQL_PASSWORD"; exec psql -U "$POSTGRESQL_USERNAME" -d postgres'"#,
+            "Bitnami's database is postgres whoever the user")
+        XCTAssertEqual(
+            command(.postgres, ["POSTGRES_USER_FILE"]), #"docker exec -it shop-db-1 sh -c 'exec psql -U "$(cat "$POSTGRES_USER_FILE")" -d "$(cat "$POSTGRES_USER_FILE")"'"#)
+    }
+
+    func testMySQLAndMariaDB() {
+        XCTAssertEqual(command(.mysql, ["MYSQL_ROOT_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'exec mysql -u root -p"$MYSQL_ROOT_PASSWORD"'"#)
+        XCTAssertEqual(
+            command(.mysql, ["MYSQL_ROOT_PASSWORD", "MYSQL_USER", "MYSQL_PASSWORD", "MYSQL_DATABASE"]),
+            #"docker exec -it shop-db-1 sh -c 'exec mysql -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"'"#, "the app's own user over root")
+        XCTAssertEqual(
+            command(.mysql, ["MYSQL_ROOT_PASSWORD", "MYSQL_DATABASE"]), #"docker exec -it shop-db-1 sh -c 'exec mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'"#)
+        XCTAssertEqual(command(.mysql, ["MYSQL_ALLOW_EMPTY_PASSWORD"]), "docker exec -it shop-db-1 mysql -u root")
+        XCTAssertEqual(command(.mysql, ["MYSQL_RANDOM_ROOT_PASSWORD"]), "docker exec -it shop-db-1 mysql -u root -p", "asks for it")
+        XCTAssertEqual(command(.mysql, ["MYSQL_USER"]), "docker exec -it shop-db-1 mysql -u root -p", "no password: the image made no user")
+        XCTAssertEqual(
+            command(.mysql, ["MYSQL_USER", "MYSQL_ROOT_PASSWORD", "MYSQL_DATABASE"]),
+            #"docker exec -it shop-db-1 sh -c 'exec mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'"#, "root, whose password is there")
+        XCTAssertEqual(
+            command(.mariadb, ["MARIADB_USER", "MARIADB_ROOT_PASSWORD"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "$(command -v mariadb || echo mysql)" -u root -p"$MARIADB_ROOT_PASSWORD"'"#)
+        XCTAssertEqual(
+            command(.mariadb, ["MARIADB_ROOT_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'exec "$(command -v mariadb || echo mysql)" -u root -p"$MARIADB_ROOT_PASSWORD"'"#)
+        XCTAssertEqual(
+            command(.mariadb, ["MYSQL_ROOT_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'exec "$(command -v mariadb || echo mysql)" -u root -p"$MYSQL_ROOT_PASSWORD"'"#,
+            "MariaDB's images take MySQL's names too")
+        XCTAssertEqual(
+            command(.mariadb, ["MARIADB_ALLOW_EMPTY_ROOT_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'exec "$(command -v mariadb || echo mysql)" -u root'"#)
+        XCTAssertEqual(
+            command(.mariadb, ["MARIADB_USER", "MARIADB_PASSWORD", "MARIADB_DATABASE"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "$(command -v mariadb || echo mysql)" -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE"'"#)
+    }
+
+    func testRedisAndValkey() {
+        XCTAssertEqual(command(.redis), "docker exec -it shop-db-1 redis-cli")
+        XCTAssertEqual(command(.redis, ["REDIS_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'export REDISCLI_AUTH="$REDIS_PASSWORD"; exec redis-cli'"#)
+        XCTAssertEqual(
+            command(.redis, ["REDIS_PASSWORD", "REDIS_PORT_NUMBER"]),
+            #"docker exec -it shop-db-1 sh -c 'export REDISCLI_AUTH="$REDIS_PASSWORD"; exec redis-cli -p "$REDIS_PORT_NUMBER"'"#)
+        XCTAssertEqual(command(.valkey), "docker exec -it shop-db-1 valkey-cli")
+        XCTAssertEqual(command(.valkey, ["VALKEY_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'export REDISCLI_AUTH="$VALKEY_PASSWORD"; exec valkey-cli'"#)
+        XCTAssertEqual(command(.valkey, ["REDIS_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'export REDISCLI_AUTH="$REDIS_PASSWORD"; exec valkey-cli'"#)
+    }
+
+    func testMongo() {
+        let mongosh = #""$(command -v mongosh || echo mongo)""#
+        XCTAssertEqual(command(.mongo), "docker exec -it shop-db-1 sh -c 'exec \(mongosh)'")
+        XCTAssertEqual(
+            command(.mongo, ["MONGO_INITDB_ROOT_USERNAME", "MONGO_INITDB_ROOT_PASSWORD"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "#
+                + mongosh + #" -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin'"#)
+        XCTAssertEqual(
+            command(.mongo, ["MONGO_INITDB_ROOT_USERNAME", "MONGO_INITDB_ROOT_PASSWORD", "MONGO_INITDB_DATABASE"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "#
+                + mongosh + #" -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$MONGO_INITDB_DATABASE"'"#)
+        XCTAssertEqual(
+            command(.mongo, ["MONGODB_ROOT_PASSWORD"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "# + mongosh + #" -u root -p "$MONGODB_ROOT_PASSWORD" --authenticationDatabase admin'"#, "Bitnami's root")
+        XCTAssertEqual(
+            command(.mongo, ["MONGO_INITDB_ROOT_USERNAME_FILE", "MONGO_INITDB_ROOT_PASSWORD_FILE"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "#
+                + mongosh + #" -u "$(cat "$MONGO_INITDB_ROOT_USERNAME_FILE")" -p "$(cat "$MONGO_INITDB_ROOT_PASSWORD_FILE")" --authenticationDatabase admin'"#)
+        XCTAssertEqual(
+            command(.mongo, ["MONGO_INITDB_ROOT_USERNAME"]),
+            #"docker exec -it shop-db-1 sh -c 'exec "# + mongosh + #" -u "$MONGO_INITDB_ROOT_USERNAME" --authenticationDatabase admin'"#, "asks for it")
+    }
+
+    func testClickHouse() {
+        XCTAssertEqual(command(.clickhouse), "docker exec -it shop-db-1 clickhouse-client")
+        XCTAssertEqual(
+            command(.clickhouse, ["CLICKHOUSE_USER", "CLICKHOUSE_PASSWORD", "CLICKHOUSE_DB"]),
+            #"docker exec -it shop-db-1 sh -c 'exec clickhouse-client --database "$CLICKHOUSE_DB"'"#, "it reads its own variables")
+        XCTAssertEqual(command(.clickhouse, ["CLICKHOUSE_USER", "CLICKHOUSE_PASSWORD"]), "docker exec -it shop-db-1 clickhouse-client")
+        XCTAssertEqual(
+            command(.clickhouse, ["CLICKHOUSE_PASSWORD_FILE"]),
+            #"docker exec -it shop-db-1 sh -c 'export CLICKHOUSE_PASSWORD="$(cat "$CLICKHOUSE_PASSWORD_FILE")"; exec clickhouse-client'"#)
+        XCTAssertEqual(
+            command(.clickhouse, ["CLICKHOUSE_ADMIN_USER", "CLICKHOUSE_ADMIN_PASSWORD"]),
+            #"docker exec -it shop-db-1 sh -c 'export CLICKHOUSE_USER="$CLICKHOUSE_ADMIN_USER"; export CLICKHOUSE_PASSWORD="$CLICKHOUSE_ADMIN_PASSWORD"; exec clickhouse-client'"#,
+            "Bitnami's")
+    }
+
+    func testCassandraNeo4jAndSQLServer() {
+        XCTAssertEqual(command(.cassandra), "docker exec -it shop-db-1 cqlsh")
+        XCTAssertEqual(command(.cassandra, ["CASSANDRA_USER", "CASSANDRA_PASSWORD"]), #"docker exec -it shop-db-1 sh -c 'exec cqlsh -u "$CASSANDRA_USER"'"#, "cqlsh asks")
+        XCTAssertEqual(command(.neo4j), "docker exec -it shop-db-1 cypher-shell")
+        let split = #"[ "$NEO4J_AUTH" = none ] || export NEO4J_USERNAME="${NEO4J_AUTH%%/*}" NEO4J_PASSWORD="${NEO4J_AUTH#*/}""#
+        XCTAssertEqual(command(.neo4j, ["NEO4J_AUTH"]), "docker exec -it shop-db-1 sh -c '\(split); exec cypher-shell'")
+        XCTAssertEqual(
+            command(.neo4j, ["NEO4J_AUTH_FILE"]), #"docker exec -it shop-db-1 sh -c 'NEO4J_AUTH="$(cat "$NEO4J_AUTH_FILE")"; "# + split + "; exec cypher-shell'")
+        let sqlcmd = #"c=/opt/mssql-tools18/bin/sqlcmd; [ -x "$c" ] || c=/opt/mssql-tools/bin/sqlcmd"#
+        let run = #"exec "$c" -S localhost -U sa -C"#
+        XCTAssertEqual(command(.mssql), "docker exec -it shop-db-1 sh -c '\(sqlcmd); \(run)'")
+        XCTAssertEqual(command(.mssql, ["MSSQL_SA_PASSWORD"]), "docker exec -it shop-db-1 sh -c '\(sqlcmd); export SQLCMDPASSWORD=\"$MSSQL_SA_PASSWORD\"; \(run)'")
+        XCTAssertEqual(command(.mssql, ["SA_PASSWORD"]), "docker exec -it shop-db-1 sh -c '\(sqlcmd); export SQLCMDPASSWORD=\"$SA_PASSWORD\"; \(run)'")
+    }
+
+    /// Every name any client reads.
+    private static let everyName: Set<String> = [
+        "POSTGRES_USER", "POSTGRESQL_USERNAME", "POSTGRES_DB", "POSTGRESQL_DATABASE", "POSTGRES_PASSWORD", "POSTGRESQL_PASSWORD", "MYSQL_USER", "MYSQL_PASSWORD",
+        "MYSQL_ROOT_PASSWORD", "MYSQL_DATABASE", "MYSQL_ALLOW_EMPTY_PASSWORD", "MARIADB_USER", "MARIADB_PASSWORD", "MARIADB_ROOT_PASSWORD", "MARIADB_DATABASE",
+        "MARIADB_ALLOW_EMPTY_ROOT_PASSWORD", "REDIS_PASSWORD", "REDIS_PORT_NUMBER", "VALKEY_PASSWORD", "VALKEY_PORT_NUMBER", "MONGO_INITDB_ROOT_USERNAME",
+        "MONGODB_ROOT_USER", "MONGO_INITDB_ROOT_PASSWORD", "MONGODB_ROOT_PASSWORD", "MONGO_INITDB_DATABASE", "MONGODB_DATABASE", "CLICKHOUSE_USER",
+        "CLICKHOUSE_ADMIN_USER", "CLICKHOUSE_PASSWORD", "CLICKHOUSE_ADMIN_PASSWORD", "CLICKHOUSE_DB", "CASSANDRA_USER", "NEO4J_AUTH", "MSSQL_SA_PASSWORD",
+        "SA_PASSWORD",
+    ]
+
+    func testTheCommandsReachTheEngineAndAreQuoted() {
+        let endpoint = DockerEndpoint(address: .unix("/tmp/fake.sock"), context: nil, source: "OVERTERM_DOCKER_HOST")
+        XCTAssertEqual(
+            DockerClient.command(.postgres, in: db(), env: [], endpoint: endpoint), "DOCKER_HOST=unix:///tmp/fake.sock docker exec -it shop-db-1 psql -U postgres -d postgres")
+        XCTAssertEqual(DockerClient.command(.redis, in: db("redis:7", name: "it's"), env: []), #"docker exec -it 'it'\''s' redis-cli"#)
+        let files = Set(Self.everyName.map { $0 + "_FILE" })
+        for env in [Self.everyName, files, []] {
+            for kind in DockerClient.Kind.allCases {
+                let arguments = DockerClient.arguments(kind, env: env)
+                let command = DockerClient.command(kind, in: db(), env: env)
+                if arguments.first == "sh" {
+                    XCTAssertEqual(arguments.count, 3, "\(kind)")
+                    XCTAssertFalse(arguments[2].contains("'"), "\(kind): one single-quoted word")
+                    XCTAssertTrue(command.hasSuffix(" sh -c '\(arguments[2])'"), command)
+                } else {
+                    XCTAssertTrue(arguments.allSatisfy { DockerCommands.quote($0) == $0 }, "\(kind): \(arguments)")
+                }
+            }
+        }
+    }
+
+    /// The scripts as the container's shell runs them — sh and dash, with
+    /// stub clients that print what they were given and the variables
+    /// they sign in with — and a password no shell would like.
+    func testTheContainersShellSignsIn() async throws {
+        let files = FileManager.default
+        let folder = files.temporaryDirectory.appendingPathComponent("ot-clients-\(UUID().uuidString)")
+        let bin = folder.appendingPathComponent("bin"), old = folder.appendingPathComponent("old")
+        try files.createDirectory(at: bin, withIntermediateDirectories: true)
+        try files.createDirectory(at: old, withIntermediateDirectories: true)
+        defer { try? files.removeItem(at: folder) }
+        let stub = #"""
+            #!/bin/sh
+            echo "${0##*/}"
+            for a in "$@"; do printf '%s\n' "$a"; done
+            env | grep -E '^(PGPASSWORD|REDISCLI_AUTH|CLICKHOUSE_USER|CLICKHOUSE_PASSWORD|NEO4J_USERNAME|NEO4J_PASSWORD)=' | sort
+
+            """#
+        func write(_ name: String, in place: URL) throws {
+            let file = place.appendingPathComponent(name)
+            try stub.write(to: file, atomically: true, encoding: .utf8)
+            try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        }
+        for name in ["psql", "mysql", "mariadb", "redis-cli", "valkey-cli", "mongosh", "clickhouse-client", "cypher-shell"] { try write(name, in: bin) }
+        try write("mysql", in: old)
+        let password = #"p@ss w$rd'""#
+        let secret = folder.appendingPathComponent("secret")
+        try (password + "\n").write(to: secret, atomically: true, encoding: .utf8)
+        let shells = ["/bin/sh", "/bin/dash"].filter { files.isExecutableFile(atPath: $0) }
+        XCTAssertFalse(shells.isEmpty)
+
+        func signs(_ kind: DockerClient.Kind, _ env: [String: String], in place: URL? = nil, _ expected: [String], line: UInt = #line) async throws {
+            // The names as openClient makes them, from inspect's values.
+            let names = DockerClient.names(in: env.map { ($0.key, $0.value) })
+            let arguments = DockerClient.arguments(kind, env: names)
+            let command = DockerClient.command(kind, in: db(), env: names)
+            XCTAssertFalse(command.contains("p@ss") || command.contains("pa/ss") || command.contains(secret.path), "only names: \(command)", line: line)
+            let variables = ["PATH=\((place ?? bin).path):/usr/bin:/bin"] + env.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+            for shell in shells {
+                let words = arguments.first == "sh" ? [shell] + arguments.dropFirst() : arguments
+                let output = try await Git.run(URL(fileURLWithPath: "/usr/bin/env"), ["-i"] + variables + words, in: folder)
+                XCTAssertEqual(output.split(separator: "\n", omittingEmptySubsequences: false).dropLast().map(String.init), expected, "\(kind) under \(shell)", line: line)
+            }
+        }
+
+        try await signs(.postgres, ["POSTGRES_USER": "shop", "POSTGRES_PASSWORD": password, "POSTGRES_DB": "orders"], ["psql", "-U", "shop", "-d", "orders", "PGPASSWORD=" + password])
+        try await signs(.postgres, ["POSTGRES_PASSWORD_FILE": secret.path], ["psql", "-U", "postgres", "-d", "postgres", "PGPASSWORD=" + password])
+        try await signs(.postgres, [:], ["psql", "-U", "postgres", "-d", "postgres"])
+        // An empty value is no name: nothing exported.
+        try await signs(.postgres, ["POSTGRES_USER": "shop", "POSTGRES_PASSWORD": ""], ["psql", "-U", "shop", "-d", "shop"])
+        try await signs(
+            .postgres, ["POSTGRESQL_USERNAME": "shop", "POSTGRESQL_PASSWORD": password], ["psql", "-U", "shop", "-d", "postgres", "PGPASSWORD=" + password])
+        try await signs(.mysql, ["MYSQL_USER": "app", "MYSQL_ROOT_PASSWORD": password], ["mysql", "-u", "root", "-p" + password])
+        try await signs(.mysql, ["MYSQL_USER": "shop", "MYSQL_PASSWORD": password, "MYSQL_DATABASE": "orders"], ["mysql", "-u", "shop", "-p" + password, "orders"])
+        try await signs(.mariadb, ["MARIADB_ROOT_PASSWORD": password], ["mariadb", "-u", "root", "-p" + password])
+        try await signs(.mariadb, ["MARIADB_ROOT_PASSWORD": password], in: old, ["mysql", "-u", "root", "-p" + password])
+        try await signs(.redis, ["REDIS_PASSWORD": password, "REDIS_PORT_NUMBER": "6380"], ["redis-cli", "-p", "6380", "REDISCLI_AUTH=" + password])
+        try await signs(.valkey, ["VALKEY_PASSWORD": password], ["valkey-cli", "REDISCLI_AUTH=" + password])
+        try await signs(
+            .mongo, ["MONGO_INITDB_ROOT_USERNAME": "admin", "MONGO_INITDB_ROOT_PASSWORD": password, "MONGO_INITDB_DATABASE": "shop"],
+            ["mongosh", "-u", "admin", "-p", password, "--authenticationDatabase", "admin", "shop"])
+        try await signs(.mongo, ["MONGO_INITDB_ROOT_PASSWORD_FILE": secret.path], ["mongosh", "-u", "root", "-p", password, "--authenticationDatabase", "admin"])
+        try await signs(
+            .clickhouse, ["CLICKHOUSE_ADMIN_USER": "boss", "CLICKHOUSE_ADMIN_PASSWORD": password], ["clickhouse-client", "CLICKHOUSE_PASSWORD=" + password, "CLICKHOUSE_USER=boss"])
+        try await signs(
+            .clickhouse, ["CLICKHOUSE_USER": "boss", "CLICKHOUSE_PASSWORD": password, "CLICKHOUSE_DB": "shop"],
+            ["clickhouse-client", "--database", "shop", "CLICKHOUSE_PASSWORD=" + password, "CLICKHOUSE_USER=boss"])
+        try await signs(.neo4j, ["NEO4J_AUTH": "neo4j/pa/ss"], ["cypher-shell", "NEO4J_PASSWORD=pa/ss", "NEO4J_USERNAME=neo4j"])
+        try await signs(.neo4j, ["NEO4J_AUTH": "neo4j/" + password], ["cypher-shell", "NEO4J_PASSWORD=" + password, "NEO4J_USERNAME=neo4j"])
+        try await signs(.neo4j, ["NEO4J_AUTH": "none"], ["cypher-shell"])
     }
 }
 

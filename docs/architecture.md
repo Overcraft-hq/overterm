@@ -1556,6 +1556,40 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   the password goes to the keychain as any connection's does. A port not
   published can't be reached from the Mac (the containers live in a VM),
   and says so.
+- **A database's own client** (`q`, `DockerClient`, pure): a running
+  PostgreSQL, MySQL, MariaDB, Redis, Valkey, MongoDB, ClickHouse,
+  Cassandra or Scylla, Neo4j or SQL Server container opens its own
+  client — psql, mysql, redis-cli, mongosh… — in a terminal tab,
+  `docker exec -it` into it. The image says which, by the words of its
+  name; one named for a tool beside a database (an exporter, a UI,
+  PostgREST, a keeper) is not one, and `DockerDatabaseGuess` reads the
+  same table. A compose project's name leading an image's is dropped
+  first: Compose names a built image `<project>-<service>`, and New
+  Task's worktree carries its branch into the project — a branch about
+  Redis gave every built service a redis-cli. Docker lists an image by
+  its ID once its tag names a newer one (a pull); then the name inspect
+  keeps (`Config.Image`) says, when a detail has read it or `q` reads
+  it. The env says who to sign in as, and only by name: Overterm
+  reads which variables the container has, and the command says
+  `"$POSTGRES_PASSWORD"` inside `sh -c '…'`, which the container's own
+  shell expands — so no secret is on the tab's command line, in the
+  shell's history or in Overterm. A client is given it the way it takes
+  it off argv where there is one (PGPASSWORD, REDISCLI_AUTH,
+  SQLCMDPASSWORD, clickhouse-client's own variables); mysql and mongosh
+  take it on argv inside the container, as the images' documentation
+  does, and blank it there. A `_FILE` variable — a Docker secret — is
+  read inside too. The users are the ones the image made: MySQL's app
+  user only with its password (else root), Bitnami's PostgreSQL database
+  `postgres` whoever the user. With no password in the env, mysql,
+  mariadb, sqlcmd, cypher-shell — and mongosh and cqlsh given a user —
+  ask for one; psql asks if the server wants one (the official image
+  trusts its socket); redis-cli and clickhouse-client connect without,
+  as a server with no password expects. A client renamed between
+  versions (mariadb, mongosh) falls back to the old name, decided in the
+  container. Nothing to expand, no shell: an image without one still
+  gets its client. Inspect is read when the button is pressed, never to
+  draw it; a failure off the page (the panel's menu, the right-hand
+  pane) is an alert, as the page isn't there to say it.
 - **A failing container marks its tab** (`DockerAttention`, pure;
   `TabActivity.containerFailed`): a container of a tab's checkout that
   exits non-zero, runs out of memory or turns unhealthy marks the tab

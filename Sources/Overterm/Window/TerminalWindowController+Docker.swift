@@ -74,7 +74,9 @@ extension TerminalWindowController {
         dockerPage.actions = dockerActions
         dockerPanel.verbs = { [weak self] container in
             guard let self else { return [] }
-            return self.dockerPage.verbs(for: container) { [weak self] in self?.dockerPanel.act($0, on: [container]) }
+            return self.dockerPage.verbs(for: container, detail: self.dockerPanel.session?.detail) { [weak self] in
+                self?.dockerPanel.act($0, on: [container])
+            }
         }
         dockerPanel.projectVerbs = { [weak self] project in
             guard let self else { return [] }

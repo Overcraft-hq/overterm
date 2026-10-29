@@ -13,8 +13,10 @@ struct ContainerDetailView: View {
     @Binding var tab: ContainerTab
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
-    /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`).
-    let verbs: [DockerVerb]
+    /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`):
+    /// asked as it draws, so its inspect arriving can add one (an image
+    /// listed by its ID, named there).
+    let verbs: () -> [DockerVerb]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,7 +79,7 @@ struct ContainerDetailView: View {
                 Spacer(minLength: 0)
             }
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
-            DockerActionBar(verbs: verbs, theme: theme).padding(.top, 4)
+            DockerActionBar(verbs: verbs(), theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -120,7 +122,7 @@ struct ContainerDetailView: View {
                         Task {
                             try? await DockerModel.shared.perform(.stop, on: id)
                             // Its own Start: whoever shows it says if that fails.
-                            verbs.first { $0.title == "Start" }?.perform()
+                            verbs().first { $0.title == "Start" }?.perform()
                         }
                     }
                     .accessibilityIdentifier("docker.conflict.swap")

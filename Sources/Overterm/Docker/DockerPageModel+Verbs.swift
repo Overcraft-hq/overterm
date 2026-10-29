@@ -6,10 +6,12 @@ extension DockerPageModel {
     // MARK: Containers
 
     /// `targets`: what a menu acts on — the selection when the container is
-    /// in it. `act`: who starts and stops it, and says when that failed (the
-    /// panel has its own).
+    /// in it. `detail`: its inspect, when someone else's detail has read it
+    /// (the panel's; the page's own is known). `act`: who starts and stops
+    /// it, and says when that failed (the panel has its own).
     func verbs(
-        for container: ContainerSummary, targets: [ContainerSummary]? = nil, act: ((DockerEngine.ContainerAction) -> Void)? = nil
+        for container: ContainerSummary, targets: [ContainerSummary]? = nil, detail: ContainerDetail? = nil,
+        act: ((DockerEngine.ContainerAction) -> Void)? = nil
     ) -> [DockerVerb] {
         let targets = targets ?? [container]
         let act = act ?? { [weak self] action in self?.act(action, on: targets) }
@@ -25,6 +27,14 @@ extension DockerPageModel {
                 [weak self] in self?.actions?.run(DockerCommands.shell(in: container, endpoint: endpoint), nil)
             },
         ]
+        // A database's own client, signed in from its env (DockerClient).
+        let reference = imageReference(of: container, detail: detail)
+        if let client = DockerClient.kind(of: container, reference: reference) {
+            verbs.append(
+                DockerVerb(
+                    title: "Open \(client.program) in a Tab", label: client.program, symbol: "cylinder", place: .button, key: "q", unavailable: notRunning
+                ) { [weak self] in self?.openClient(container) })
+        }
         if let url = docker.ports(of: container).first?.url {
             verbs.append(
                 DockerVerb(title: "Open \(url.absoluteString)", label: "Open", symbol: "safari", place: .button, key: "o") { [weak self] in
@@ -50,7 +60,7 @@ extension DockerPageModel {
                     self.rebuild(Self.rebuilds(of: Set(targets.map(\.Id)), in: self.docker.projects))
                 })
         }
-        if DockerDatabaseGuess.kind(of: container.Image) != nil {
+        if DockerDatabaseGuess.kind(of: container, reference: reference) != nil {
             verbs.append(DockerVerb(title: "Open in Database…", symbol: "cylinder", key: "d", group: 1) { [weak self] in self?.openInDatabase(container) })
         }
         verbs += [

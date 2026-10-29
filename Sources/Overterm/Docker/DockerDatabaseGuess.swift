@@ -17,17 +17,24 @@ enum DockerDatabaseGuess {
         var password: String?
     }
 
-    /// The kind an image is, and the port it serves on inside.
+    /// The kind an image is, and the port it serves on inside: the same
+    /// table as its own client's (`DockerClient`), so a tool named after a
+    /// database — PostgREST, an exporter, a keeper — is none.
     static func kind(of image: String) -> (DatabaseKind, port: Int)? {
-        let name = image.lowercased().split(separator: "/").last.map { String($0.split(separator: ":").first ?? "") } ?? ""
-        if ["postgres", "postgis", "timescaledb", "pgvector", "timescaledb-ha", "supabase-postgres"].contains(where: name.hasPrefix) { return (.postgres, 5432) }
-        if ["mysql", "mariadb", "percona"].contains(where: name.hasPrefix) { return (.mysql, 3306) }
-        if name.hasPrefix("clickhouse") { return (.clickhouse, 8123) }
-        return nil
+        DockerClient.kind(of: image)?.database
     }
 
-    static func guess(_ container: ContainerSummary, env: [(key: String, value: String)], endpoint: DockerEndpoint? = nil) -> Guess? {
-        guard let (kind, inside) = kind(of: container.Image),
+    /// A container's, by the same rule as its client's: a compose
+    /// project's name in its image says nothing, and an image listed by
+    /// its ID is known by `reference` (inspect's `Config.Image`).
+    static func kind(of container: ContainerSummary, reference: String? = nil) -> (DatabaseKind, port: Int)? {
+        DockerClient.kind(of: container, reference: reference)?.database
+    }
+
+    static func guess(
+        _ container: ContainerSummary, env: [(key: String, value: String)], endpoint: DockerEndpoint? = nil, reference: String? = nil
+    ) -> Guess? {
+        guard let (kind, inside) = kind(of: container, reference: reference),
             let published = PublishedPort.of(container.Ports ?? []).first(where: { $0.containerPort == inside && $0.proto == "tcp" })
         else { return nil }
         let values = Dictionary(env.map { ($0.key, $0.value) }, uniquingKeysWith: { $1 })
@@ -55,9 +62,10 @@ enum DockerDatabaseGuess {
             // A local container speaks no TLS.
             connection.sslMode = .disable
         case .mysql:
-            if let user = first("MYSQL_USER", "MARIADB_USER") {
+            // The image makes the app's user only given its password too.
+            if let user = first("MYSQL_USER", "MARIADB_USER"), let own = first("MYSQL_PASSWORD", "MARIADB_PASSWORD") {
                 connection.user = user
-                password = first("MYSQL_PASSWORD", "MARIADB_PASSWORD")
+                password = own
             } else {
                 connection.user = "root"
                 password = first("MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD")

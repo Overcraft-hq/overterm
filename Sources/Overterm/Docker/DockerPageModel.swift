@@ -457,6 +457,9 @@ final class DockerPageModel: ObservableObject {
             if let container = selected.first(where: { $0.state == .running }) {
                 actions?.run(DockerCommands.debugShell(beside: container, image: Settings.shared.dockerDebugImage, endpoint: endpoint), nil)
             }
+        case .client:
+            let client = selected.first { $0.state == .running && (clientKind(of: $0) != nil || DockerClient.listsImageByID($0)) }
+            if let client { openClient(client) }
         case .open:
             if let url = selected.compactMap({ docker.ports(of: $0).first?.url }).first { actions?.open(url) }
         case .database:
