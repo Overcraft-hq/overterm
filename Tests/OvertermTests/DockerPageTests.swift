@@ -230,6 +230,39 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(filtered.first?.project?.services.count, 2, "the project stays whole; only the rows are filtered")
     }
 
+    func testSortingPutsTheBusiestFirst() {
+        func usage(_ cpu: Double, _ memory: Int) -> DockerUsage {
+            DockerUsage(cpuPercent: cpu, memoryBytes: memory, memoryLimit: 1 << 30, networkIn: 0, networkOut: 0, diskRead: 0, diskWrite: 0, processes: 0)
+        }
+        let web = container("shop-web-1", project: "shop", service: "web")
+        let db = container("shop-db-1", project: "shop", service: "db")
+        let old = container("shop-old-1", project: "shop", service: "old", state: "exited", status: "Exited (0) 1 hour ago")
+        let redis = container("redis", image: "redis:7")
+        let (projects, loose) = ComposeProjects.group([web, db, old, redis])
+        // A stopped one's entry, left from before it stopped, counts for nothing.
+        let used = [web.Id: usage(40, 32 << 20), db.Id: usage(12.5, 96 << 20), old.Id: usage(99, 900 << 20), redis.Id: usage(90, 8 << 20)]
+        func groups(_ sort: DockerListSort, _ usage: [String: DockerUsage] = used) -> [DockerListGroup] {
+            DockerPageModel.groups(projects: projects, loose: loose, filter: DockerFilter(""), runningOnly: false, sort: sort, usage: usage)
+        }
+        XCTAssertEqual(groups(.cpu).map(\.id), ["loose", "project:shop"], "90% alone beats 52.5% together")
+        XCTAssertEqual(groups(.cpu).last?.containers.map(\.name), ["shop-web-1", "shop-db-1", "shop-old-1"], "the stopped one last")
+        XCTAssertEqual(groups(.memory).map(\.id), ["project:shop", "loose"])
+        XCTAssertEqual(groups(.memory).first?.containers.map(\.name), ["shop-db-1", "shop-web-1", "shop-old-1"])
+        XCTAssertEqual(groups(.name).map(\.id), ["project:shop", "loose"])
+        XCTAssertEqual(groups(.name).first?.containers.map(\.name), ["shop-db-1", "shop-old-1", "shop-web-1"], "as without a sort")
+        let unread = groups(.cpu, [db.Id: usage(12.5, 96 << 20)])
+        XCTAssertEqual(unread.first?.containers.map(\.name), ["shop-db-1", "shop-old-1", "shop-web-1"], "what isn't read yet after, in its order")
+        XCTAssertEqual(unread.map(\.id), ["project:shop", "loose"])
+    }
+
+    func testAColumnClickedAgainSortsByNameAgain() {
+        XCTAssertEqual(DockerListSort.name.clicked(.cpu), .cpu)
+        XCTAssertEqual(DockerListSort.cpu.clicked(.memory), .memory, "another column: by it")
+        XCTAssertEqual(DockerListSort.memory.clicked(.memory), .name, "the same again: back by name")
+        XCTAssertEqual(DockerListSort.cpu.clicked(.name), .name)
+        XCTAssertEqual(DockerListSort.name.clicked(.name), .name)
+    }
+
     /// The checkout's project before it runs, as the page lists it.
     private func planned(_ name: String = "shop") -> ComposeProject {
         ComposeConfig(

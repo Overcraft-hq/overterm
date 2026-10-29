@@ -476,6 +476,17 @@ extension TerminalWindowController {
             }
     }
 
+    /// The list's CPU and memory are read only while the window is on
+    /// screen at all: under another app's, minimized or the app hidden, it
+    /// reads none (`DockerPageModel.windowVisible`). An isolated run stays
+    /// in the background (AppDelegate), often under the user's own windows:
+    /// there the window says nothing about the run, and counts as shown.
+    func updateDockerWindowVisible() {
+        guard !AppEnvironment.isIsolated, let window else { return }
+        let shown = window.occlusionState.contains(.visible)
+        if dockerPage.windowVisible != shown { dockerPage.windowVisible = shown }
+    }
+
     /// Letters act on the list while its table has the keyboard; in the
     /// filter field they are text. SwiftUI's own key handling is macOS 14.
     func installDockerKeys() {

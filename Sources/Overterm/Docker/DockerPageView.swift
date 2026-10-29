@@ -332,35 +332,41 @@ struct DockerPageView: View {
     private var list: some View {
         let groups = page.groups
         return List(selection: $page.selection) {
-            ForEach(groups) { group in
-                DockerProjectRow(
-                    group: group, folded: page.collapsed.contains(group.id), busy: page.busy.contains(group.id), theme: theme,
-                    fold: { page.toggleFold(group.id) }, act: { verb in if let project = group.project { page.compose(verb, project) } }
-                )
-                .tag(group.id)
-                .listRowSeparator(.hidden)
-                .contextMenu { projectMenu(group) }
-                if !page.collapsed.contains(group.id) {
-                    ForEach(group.containers) { container in
-                        DockerContainerRow(
-                            container: container, inProject: group.project != nil, busy: page.busy.contains(container.Id), docker: docker,
-                            theme: theme, open: actions.open, remoteHost: docker.publishedHost
-                        )
-                        .tag(container.Id)
-                        .listRowSeparator(.hidden)
-                        .contextMenu { containerMenu(container) }
-                    }
-                    // A project before it runs: its services, none created.
-                    ForEach(group.services) { service in
-                        DockerPlannedServiceRow(service: service, theme: theme, folder: group.project?.workingDir)
-                            .tag(DockerPageModel.serviceTag(service))
+            // The columns' names in the list's own header: the rows' insets.
+            Section {
+                ForEach(groups) { group in
+                    DockerProjectRow(
+                        group: group, folded: page.collapsed.contains(group.id), busy: page.busy.contains(group.id), theme: theme,
+                        fold: { page.toggleFold(group.id) }, act: { verb in if let project = group.project { page.compose(verb, project) } },
+                        usage: page.usage(of: group), columns: true
+                    )
+                    .tag(group.id)
+                    .listRowSeparator(.hidden)
+                    .contextMenu { projectMenu(group) }
+                    if !page.collapsed.contains(group.id) {
+                        ForEach(group.containers) { container in
+                            DockerContainerRow(
+                                container: container, inProject: group.project != nil, busy: page.busy.contains(container.Id), docker: docker,
+                                theme: theme, open: actions.open, remoteHost: docker.publishedHost, usage: page.usage(of: container), columns: true
+                            )
+                            .tag(container.Id)
                             .listRowSeparator(.hidden)
-                            .contextMenu { projectMenu(group) }
+                            .contextMenu { containerMenu(container) }
+                        }
+                        // A project before it runs: its services, none created.
+                        ForEach(group.services) { service in
+                            DockerPlannedServiceRow(service: service, theme: theme, folder: group.project?.workingDir, columns: true)
+                                .tag(DockerPageModel.serviceTag(service))
+                                .listRowSeparator(.hidden)
+                                .contextMenu { projectMenu(group) }
+                        }
                     }
                 }
-            }
-            if groups.isEmpty {
-                Text("Nothing matches “\(page.filter)”.").font(.system(size: 12)).foregroundStyle(theme.text3).padding(.vertical, 8)
+                if groups.isEmpty {
+                    Text("Nothing matches “\(page.filter)”.").font(.system(size: 12)).foregroundStyle(theme.text3).padding(.vertical, 8)
+                }
+            } header: {
+                DockerListColumns(sort: $page.sort, theme: theme)
             }
         }
         .listStyle(.inset)

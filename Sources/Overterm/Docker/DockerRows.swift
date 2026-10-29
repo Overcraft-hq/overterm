@@ -184,6 +184,10 @@ struct DockerContainerRow: View {
     var compact = false
     /// A remote engine's host, where its ports are (`DockerModel.publishedHost`).
     var remoteHost: String?
+    /// What it uses now, for the page's columns.
+    var usage: DockerUsage? = nil
+    /// The page's CPU and memory columns, at the end of the row.
+    var columns = false
 
     var title: String {
         guard inProject, let service = container.composeService else { return container.name }
@@ -213,6 +217,9 @@ struct DockerContainerRow: View {
                     .frame(minWidth: 70, alignment: .trailing)
             }
             if busy { ProgressView().controlSize(.mini) }
+            // Last and of fixed widths: they line up down the list,
+            // whatever the ports and the status take.
+            if columns { DockerUsageCells(usage: usage, reads: container.state.hasStats, theme: theme) }
         }
         .padding(.leading, inProject ? 18 : 0)
         .frame(height: 30)
@@ -232,6 +239,9 @@ struct DockerProjectRow: View {
     /// `up`, `stop`, `restart`, `down`.
     let act: (String) -> Void
     var compact = false
+    /// Its containers' use added up, for the page's columns.
+    var usage: DockerUsage? = nil
+    var columns = false
     @State private var hovering = false
 
     var body: some View {
@@ -266,6 +276,7 @@ struct DockerProjectRow: View {
                 Spacer(minLength: 6)
                 Text(verbatim: "\(group.containers.count)").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
             }
+            if columns { DockerUsageCells(usage: usage, reads: group.containers.contains { $0.state.hasStats }, theme: theme) }
         }
         .frame(height: 28)
         .contentShape(Rectangle())
@@ -294,6 +305,9 @@ struct DockerPlannedServiceRow: View {
     var folder: String?
     /// Under its project's row, as a container is.
     var indented = true
+    /// The page's CPU and memory columns: blank, so its words line up
+    /// with the containers'.
+    var columns = false
 
     var body: some View {
         let replicas = service.spec?.replicas ?? 1
@@ -327,10 +341,85 @@ struct DockerPlannedServiceRow: View {
                 }
                 Text("Not created").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).frame(minWidth: 70, alignment: .trailing)
             }
+            if columns { DockerUsageCells(usage: nil, reads: false, theme: theme) }
         }
         .padding(.leading, indented ? 18 : 0)
         .frame(height: 30)
         .contentShape(Rectangle())
         .accessibilityIdentifier("docker.planned.\(service.name)")
+    }
+}
+
+/// A row's CPU and memory on the page's list, as `docker stats` says them:
+/// a dash while a running one waits for its second read, nothing for one
+/// that isn't running. Memory turns orange near its limit.
+struct DockerUsageCells: View {
+    static let cpuWidth: CGFloat = 52
+    static let memoryWidth: CGFloat = 70
+
+    let usage: DockerUsage?
+    /// Whether it is read at all: running or paused.
+    let reads: Bool
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            cell(usage?.cpuLabel, width: Self.cpuWidth, color: theme.text2)
+                .help("Of one CPU, as docker stats says it — 200% is two CPUs flat out")
+            cell(usage?.memoryLabel, width: Self.memoryWidth, color: usage?.nearMemoryLimit == true ? TabStatusStyle.waiting : theme.text2)
+                .help(memoryHelp)
+        }
+        .accessibilityIdentifier("docker.usage")
+    }
+
+    private func cell(_ label: String?, width: CGFloat, color: Color) -> some View {
+        Text(verbatim: reads ? label ?? "—" : "")
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(label == nil ? theme.text3 : color)
+            .lineLimit(1)
+            .frame(width: width, alignment: .trailing)
+    }
+
+    private var memoryHelp: String {
+        guard let usage else { return "Memory in use, as docker stats works it out" }
+        guard usage.memoryLimit > 0 else { return "In use: \(usage.memoryLabel)" }
+        return "\(usage.memoryLabel) of \(DockerBytes.string(usage.memoryLimit, memory: true)) — " + String(format: "%.0f%%", usage.memoryPercent)
+    }
+}
+
+/// The page's list header: the columns' names; CPU and Memory sort by
+/// themselves, the busiest first, and again (or Name) back by name.
+struct DockerListColumns: View {
+    @Binding var sort: DockerListSort
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            column("Name", .name, help: "By name: projects, then the rest")
+            Spacer(minLength: 6)
+            column("CPU", .cpu, help: "Sort by CPU, the busiest first (again: by name)")
+                .frame(width: DockerUsageCells.cpuWidth, alignment: .trailing)
+            column("Memory", .memory, help: "Sort by memory, the biggest first (again: by name)")
+                .frame(width: DockerUsageCells.memoryWidth, alignment: .trailing)
+        }
+        .frame(height: 22)
+    }
+
+    private func column(_ title: String, _ order: DockerListSort, help: String) -> some View {
+        let active = sort == order
+        return Button {
+            sort = sort.clicked(order)
+        } label: {
+            HStack(spacing: 3) {
+                Text(title)
+                if active && order != .name { Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)) }
+            }
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(active ? theme.text : theme.text3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityIdentifier("docker.sort.\(order.rawValue)")
     }
 }

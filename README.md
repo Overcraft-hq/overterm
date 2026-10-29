@@ -158,6 +158,11 @@ only if you allow agents to ask (Settings ▸ Database).
 <kbd>⌥⌘P</kbd>: the containers of the engine your terminal's `docker`
 reaches — Docker Desktop, OrbStack, Colima — on a page of their own,
 grouped by compose project, kept current as they start, stop and crash.
+Each running container's CPU and memory sit in the list — a compose
+project's added up — and a click on either column sorts by it, the
+busiest first (again: by name). They are read only while the list is on
+screen: not on another section, nor with the window minimized, hidden or
+under another app's.
 <kbd>⇧⌥⌘P</kbd> finds any container or project by name from anywhere.
 Single keys while the list has the keyboard: `s` starts or stops, `r`
 restarts, `e` opens a shell in a tab, `E` a debug shell beside an image

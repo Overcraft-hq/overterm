@@ -46,6 +46,61 @@ struct DockerUsage: Equatable, Sendable {
         diskWrite = io.filter { $0.op?.lowercased() == "write" }.reduce(0) { $0 + ($1.value ?? 0) }
         processes = sample.pids_stats?.current ?? 0
     }
+
+    /// Against an earlier read's CPU rather than the sample's own
+    /// `precpu_stats` — what a one-shot read needs.
+    init(_ sample: ContainerStatsSample, since earlier: ContainerStatsSample.CPU) {
+        var paired = sample
+        paired.precpu_stats = earlier
+        self.init(paired)
+    }
+
+    /// A project's, or a block's: its containers' use added up. No limit:
+    /// theirs aren't one.
+    static func sum(_ usages: [DockerUsage]) -> DockerUsage? {
+        guard !usages.isEmpty else { return nil }
+        return DockerUsage(
+            cpuPercent: usages.reduce(0) { $0 + $1.cpuPercent }, memoryBytes: usages.reduce(0) { $0 + $1.memoryBytes }, memoryLimit: 0,
+            networkIn: usages.reduce(0) { $0 + $1.networkIn }, networkOut: usages.reduce(0) { $0 + $1.networkOut },
+            diskRead: usages.reduce(0) { $0 + $1.diskRead }, diskWrite: usages.reduce(0) { $0 + $1.diskWrite },
+            processes: usages.reduce(0) { $0 + $1.processes })
+    }
+
+    /// The list's cells: `12.5%`, from 100 whole (`250%`) — not the
+    /// locale's comma; memory as the detail says it.
+    var cpuLabel: String { String(format: cpuPercent >= 99.95 ? "%.0f%%" : "%.1f%%", cpuPercent) }
+    var memoryLabel: String { DockerBytes.string(memoryBytes, memory: true) }
+    /// Within a tenth of its limit: the kernel kills it there.
+    var nearMemoryLimit: Bool { memoryLimit > 0 && memoryPercent >= 90 }
+}
+
+/// One-shot reads carry no `precpu_stats`: a container's CPU is its read
+/// set against the one before it, as `docker stats` sets a sample against
+/// `precpu_stats` — over the seconds between. Pure.
+struct DockerUsageReadings: Sendable {
+    private var last: [String: ContainerStatsSample.CPU] = [:]
+
+    /// Read once, waiting for its second.
+    func has(_ id: String) -> Bool { last[id] != nil }
+
+    /// Its use since the read before — nil for its first read, after a
+    /// restart (its counter went back), or for an empty read (it stopped;
+    /// forgotten). The read is kept to set the next against.
+    mutating func add(_ sample: ContainerStatsSample, for id: String) -> DockerUsage? {
+        guard let cpu = sample.cpu_stats, (cpu.system_cpu_usage ?? 0) > 0 else {
+            last[id] = nil
+            return nil
+        }
+        let earlier = last[id]
+        last[id] = cpu
+        guard let earlier, (cpu.cpu_usage?.total_usage ?? 0) >= (earlier.cpu_usage?.total_usage ?? 0),
+            (cpu.system_cpu_usage ?? 0) > (earlier.system_cpu_usage ?? 0)
+        else { return nil }
+        return DockerUsage(sample, since: earlier)
+    }
+
+    /// Only these are kept: the rest stopped or went.
+    mutating func keep(_ ids: Set<String>) { last = last.filter { ids.contains($0.key) } }
 }
 
 /// A container's published ports, once each: the engine lists a port

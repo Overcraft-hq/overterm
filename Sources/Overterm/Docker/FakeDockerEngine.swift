@@ -35,6 +35,23 @@ final class FakeDockerEngine: @unchecked Sendable {
         var failingStreak = 0
         /// What it was made for: its image's platform then.
         var platform: ImagePlatform?
+        /// What its one-shot stats say (`setUsage`): CPU as `docker stats`
+        /// gives it, memory in use less the page cache.
+        var cpuPercent: Double = 8
+        var memoryUsed = 48 << 20
+        /// Its CPU counters, moved on at each one-shot read. Not from
+        /// zero: a lifetime's average (2%) isn't the rate, so a read set
+        /// against `precpu_stats` instead of the read before is wrong.
+        var cpuTotal = 5_000_000_000
+        var systemTotal = 1_000_000_000_000
+        /// How its one-shot stats answer (`setStatsAnswer`).
+        var statsAnswer = StatsAnswer.read
+    }
+
+    /// A one-shot stats read's answer: the sample, the engine's 500, or
+    /// none at all — a container whose shim stopped answering.
+    enum StatsAnswer: Sendable {
+        case read, failing, never
     }
 
     /// What an image is built for, as its inspect says it.
@@ -271,6 +288,17 @@ final class FakeDockerEngine: @unchecked Sendable {
         emit("update", id)
     }
 
+    /// What its one-shot stats say from now on.
+    func setUsage(_ id: String, cpuPercent: Double, memory: Int) {
+        locked {
+            containers[id]?.cpuPercent = cpuPercent
+            containers[id]?.memoryUsed = memory
+        }
+    }
+
+    /// How its one-shot stats answer from now on.
+    func setStatsAnswer(_ id: String, _ answer: StatsAnswer) { locked { containers[id]?.statsAnswer = answer } }
+
     func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
 
     func setFile(_ id: String, _ path: String, _ data: Data) {
@@ -404,6 +432,9 @@ final class FakeDockerEngine: @unchecked Sendable {
         case events
         case follow(String, Data)
         case stats(String)
+        /// Asked, never answered: the connection stays open till the
+        /// client closes it.
+        case never
         case notFound
     }
 
@@ -579,6 +610,15 @@ final class FakeDockerEngine: @unchecked Sendable {
         case (.GET, "changes"):
             let changes = container.files.keys.sorted().map { #"{"Path":"\#($0)","Kind":1}"# }
             return .json(200, Data(("[" + changes.joined(separator: ",") + "]").utf8))
+        case (.GET, "stats") where query["stream"] == "false" && !container.summary.state.hasStats:
+            // As the engine answers for a stopped or restarting one: empty.
+            return Self.json(Self.emptyStats)
+        case (.GET, "stats") where query["stream"] == "false" && ["1", "true"].contains(query["one-shot"] ?? ""):
+            switch container.statsAnswer {
+            case .read: return .json(200, oneShotSample(id))
+            case .failing: return Self.error(500, "failed to get stats: task \(id) not found")
+            case .never: return .never
+            }
         case (.GET, "stats") where query["stream"] == "false":
             return .json(200, statsSample(id, tick: 1))
         case (.GET, "stats"):
@@ -878,6 +918,32 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
+    /// The engine's sample for a container it has none for: its zero
+    /// time, zero counters, no system usage.
+    static let emptyStats = ContainerStatsSample(
+        read: "0001-01-01T00:00:00Z", cpu_stats: .init(cpu_usage: .init(total_usage: 0)), precpu_stats: .init(cpu_usage: .init(total_usage: 0)),
+        memory_stats: .init())
+
+    /// A one-shot read, as the engine answers it: the counters now, its
+    /// `precpu_stats` zeros. Each read moves them on by what `setUsage`
+    /// said over a tenth of a second of four CPUs, so a read set against
+    /// the one before it gives exactly that.
+    private func oneShotSample(_ id: String) -> Data {
+        let (cpu, system, memory) = locked { () -> (Int, Int, Int) in
+            guard var container = containers[id] else { return (0, 0, 0) }
+            container.cpuTotal += Int(container.cpuPercent * 250_000)
+            container.systemTotal += 100_000_000
+            containers[id] = container
+            return (container.cpuTotal, container.systemTotal, container.memoryUsed)
+        }
+        let sample = ContainerStatsSample(
+            read: Self.timestamp(), cpu_stats: .init(cpu_usage: .init(total_usage: cpu), system_cpu_usage: system, online_cpus: 4),
+            precpu_stats: .init(cpu_usage: .init(total_usage: 0)),
+            memory_stats: .init(usage: memory + (16 << 20), limit: 1 << 30, stats: ["inactive_file": 16 << 20]),
+            networks: ["eth0": .init(rx_bytes: 1000, tx_bytes: 500)], blkio_stats: nil, pids_stats: .init(current: 3))
+        return (try? JSONEncoder().encode(sample)) ?? Data()
+    }
+
     /// One sample, the CPU's numbers moving on each time.
     func statsSample(_ id: String, tick: Int) -> Data {
         let sample = ContainerStatsSample(
@@ -954,6 +1020,7 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
         case .empty(let status): whole(status, Data())
         case .raw(let status, let data, let extra): whole(status, data, extra)
         case .notFound: whole(404, Data(#"{"message":"page not found"}"#.utf8))
+        case .never: break
         case .events:
             open("application/json")
             engine.listen(channel)

@@ -110,6 +110,9 @@ enum ContainerState: String, Sendable, CaseIterable {
     case created, running, paused, restarting, removing, exited, dead, unknown
 
     var isUp: Bool { self == .running || self == .paused || self == .restarting }
+    /// Running or paused: the engine has stats for it (a stopped or
+    /// restarting one's are empty).
+    var hasStats: Bool { self == .running || self == .paused }
 }
 
 /// `GET /containers/{id}/json`: what Inspect, Mounts and the detail read.

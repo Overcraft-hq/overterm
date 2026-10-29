@@ -1328,6 +1328,33 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   padded to nine digits: Docker trims a fraction's zeros). Lines go into an
   NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
   Inspect is the engine's JSON with the env's secret values taken out.
+- **CPU and memory in the list** (`DockerUsageMonitor`, one for the app;
+  `DockerUsageReadings`, pure): each running or paused container's use,
+  a compose project's added up, sorted by either at a click on its
+  column — read only while a page's Containers section is on screen, and
+  stopped when the last such page goes (another section, the page hidden,
+  the window closed: `DockerPageModel.close`, or the window under another
+  app's, minimized or hidden: its occlusion, `windowVisible`; an isolated
+  run's window, often under the user's own, counts as shown). Every 3 s
+  each container is read once, four at a time, with
+  `/containers/{id}/stats?stream=false&one-shot=true` (API 1.41): it
+  answers at once but carries no `precpu_stats`, so the CPU is the read
+  set against the one before it, over the seconds between; `stream=false`
+  alone has the engine wait for two of its own samples, a second or two a
+  call. A container read for the first time is read again a second later,
+  so its columns fill quickly. A read has 5 s: one that hangs (moby's
+  stats have, for a container whose shim stopped answering) is cancelled,
+  which closes its connection, and the round ends — else nothing is read
+  again and every cell keeps its last number. A failed read keeps what it
+  showed one round, then a dash, never an old number as if current; it
+  doesn't hurry the next round as a first read does. `docker stats
+  --no-stream` was the other way, and lost: a process every interval, the
+  same calls without one-shot (all at once, each waiting), numbers
+  printed for people (`2.352MiB / 982.5MiB`) and read back, and over
+  `ssh://` an ssh a call.
+  A page takes the values only while it wants them (`DockerPageModel.usage`):
+  a hidden page in another window draws nothing again for them. The
+  detail's Stats tab keeps its own stream, a sample a second.
 - **Images, volumes, networks** (the page's sections 2–4,
   `DockerResourceViews`): read only while their section shows
   (`DockerModel.want`) and then kept current by their own events (the
@@ -1761,7 +1788,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (containers, events, logs framed, files as tar; `/info`'s Architecture
   and each image's platform, a platform pull of `amd64only/…` refused;
   `containerdStore` for the containerd store's indexes and, at
-  `apiVersion` 1.48, each container's own platform);
+  `apiVersion` 1.48, each container's own platform; one-shot stats from a
+  use a test sets, `setUsage`, and a stopped container's empty, as the
+  engine answers them — or a 500, or no answer at all, `setStatsAnswer`);
   `DockerTransportTests`,
   `DockerModelTests` and the `docker` scenario run against it, which records
   rather than types what would reach a real `docker`; a stub `docker`

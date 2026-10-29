@@ -84,6 +84,14 @@ extension DockerEngine {
         decodedLines(stream("/containers/\(id)/stats", ["stream": "1"]), as: ContainerStatsSample.self)
     }
 
+    /// One sample, taken as it is asked (`one-shot`, API 1.41): it comes at
+    /// once, with no `precpu_stats` — the list sets it against its own read
+    /// before (`DockerUsageReadings`). `stream=false` alone has the engine
+    /// wait for two of its samples, a second or two.
+    func oneShotStats(_ id: String) async throws -> ContainerStatsSample {
+        try await get(ContainerStatsSample.self, "/containers/\(id)/stats", ["stream": "false", "one-shot": "true"])
+    }
+
     func top(_ id: String) async throws -> (titles: [String], processes: [[String]]) {
         struct Top: Decodable {
             var Titles: [String]

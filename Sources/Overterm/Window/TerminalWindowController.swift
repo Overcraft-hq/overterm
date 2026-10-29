@@ -3691,6 +3691,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         peek.relayout()
     }
 
+    func windowDidChangeOcclusionState(_ notification: Notification) { updateDockerWindowVisible() }
+
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let dockerKeys { NSEvent.removeMonitor(dockerKeys) }
@@ -3704,6 +3706,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
+        dockerPage.close()
         removeDockerReadCopies()
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }

@@ -62,6 +62,10 @@ final class DockerModel: ObservableObject {
     /// Each listed event as it comes — what the attention marks read.
     let events = PassthroughSubject<DockerEvent, Never>()
 
+    /// What its running containers use, while a page's Containers section
+    /// shows.
+    lazy var usage = DockerUsageMonitor(docker: self)
+
     /// Each image's platform, by its id, as its inspect last said: read
     /// only for what shows (`wantPlatform`) or an agent asks about
     /// (`readPlatforms`), once an id till the next image event.
@@ -291,6 +295,7 @@ final class DockerModel: ObservableObject {
         platformsFresh = []
         if !platforms.isEmpty { platforms = [:] }
         if !containerPlatforms.isEmpty { containerPlatforms = [:] }
+        usage.reset()
     }
 
     // MARK: Reading

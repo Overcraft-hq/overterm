@@ -249,6 +249,60 @@ final class DockerEngineTests: XCTestCase {
         XCTAssertEqual(DockerUsage(ContainerStatsSample()).cpuPercent, 0, "the first sample has nothing before it")
     }
 
+    /// A one-shot read: the counters now, `precpu_stats` zeros, as the
+    /// engine sends them.
+    private func oneShot(cpu: Int, system: Int?, memory: Int = 100 << 20) -> ContainerStatsSample {
+        ContainerStatsSample(
+            read: nil, cpu_stats: .init(cpu_usage: .init(total_usage: cpu), system_cpu_usage: system, online_cpus: 4),
+            precpu_stats: .init(cpu_usage: .init(total_usage: 0)),
+            memory_stats: .init(usage: memory, limit: 1 << 30, stats: ["inactive_file": 20 << 20]))
+    }
+
+    func testOneShotReadsAreSetAgainstTheReadBefore() throws {
+        var readings = DockerUsageReadings()
+        XCTAssertNil(readings.add(oneShot(cpu: 5_000_000_000, system: 1_000_000_000_000), for: "web"), "its first read has nothing before it")
+        XCTAssertTrue(readings.has("web"))
+        XCTAssertEqual(DockerUsage(oneShot(cpu: 5_000_000_000, system: 1_000_000_000_000)).cpuPercent, 2, accuracy: 0.001, "its lifetime's")
+        let second = try XCTUnwrap(readings.add(oneShot(cpu: 5_000_000_000 + 250_000 * 125 / 10, system: 1_000_000_000_000 + 100_000_000), for: "web"))
+        XCTAssertEqual(second.cpuPercent, 12.5, accuracy: 0.001, "over the time between, not its lifetime")
+        XCTAssertEqual(second.memoryBytes, 80 << 20)
+        XCTAssertNil(readings.add(oneShot(cpu: 1_000, system: 1_000_000_000_000 + 200_000_000), for: "web"), "a restart's counter went back")
+        let after = try XCTUnwrap(readings.add(oneShot(cpu: 1_000 + 10_000_000, system: 1_000_000_000_000 + 300_000_000), for: "web"))
+        XCTAssertEqual(after.cpuPercent, 40, accuracy: 0.001, "set against the restart's")
+        XCTAssertNil(readings.add(oneShot(cpu: 0, system: nil), for: "web"), "an empty read: it stopped")
+        XCTAssertFalse(readings.has("web"), "and is forgotten")
+        _ = readings.add(oneShot(cpu: 1, system: 1), for: "db")
+        readings.keep([])
+        XCTAssertFalse(readings.has("db"))
+    }
+
+    func testListLabels() {
+        func usage(cpu: Double = 0, memory: Int = 0, limit: Int = 0) -> DockerUsage {
+            DockerUsage(cpuPercent: cpu, memoryBytes: memory, memoryLimit: limit, networkIn: 0, networkOut: 0, diskRead: 0, diskWrite: 0, processes: 0)
+        }
+        XCTAssertEqual(usage(cpu: 12.54).cpuLabel, "12.5%")
+        XCTAssertEqual(usage(cpu: 250).cpuLabel, "250%")
+        XCTAssertEqual(usage(cpu: 0).cpuLabel, "0.0%")
+        XCTAssertEqual(usage(cpu: 99.96).cpuLabel, "100%")
+        // In 1024s, as docker stats counts it: 96 MiB, not "100,7 MB".
+        let memory = usage(memory: 96 << 20).memoryLabel
+        XCTAssertTrue(memory.hasPrefix("96") && memory.hasSuffix("MB"), memory)
+        XCTAssertTrue(usage(memory: 950 << 20, limit: 1 << 30).nearMemoryLimit)
+        XCTAssertFalse(usage(memory: 500 << 20, limit: 1 << 30).nearMemoryLimit)
+        XCTAssertFalse(usage(memory: 950 << 20).nearMemoryLimit, "no limit, nothing to be near")
+    }
+
+    func testSumsAddUp() throws {
+        XCTAssertNil(DockerUsage.sum([]))
+        let web = DockerUsage(cpuPercent: 40, memoryBytes: 32 << 20, memoryLimit: 1 << 30, networkIn: 1, networkOut: 2, diskRead: 3, diskWrite: 4, processes: 5)
+        let db = DockerUsage(cpuPercent: 12.5, memoryBytes: 96 << 20, memoryLimit: 1 << 30, networkIn: 1, networkOut: 2, diskRead: 3, diskWrite: 4, processes: 5)
+        let sum = try XCTUnwrap(DockerUsage.sum([web, db]))
+        XCTAssertEqual(sum.cpuPercent, 52.5, accuracy: 0.001)
+        XCTAssertEqual(sum.memoryBytes, 128 << 20)
+        XCTAssertEqual(sum.memoryLimit, 0, "their limits aren't one")
+        XCTAssertEqual(sum.processes, 10)
+    }
+
     func testSizesAreNumbers() {
         XCTAssertFalse(DockerBytes.string(0).lowercased().contains("zero"), DockerBytes.string(0))
         XCTAssertTrue(DockerBytes.string(0).contains("0"))

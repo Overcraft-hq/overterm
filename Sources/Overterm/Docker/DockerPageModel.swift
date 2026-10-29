@@ -63,6 +63,24 @@ struct DockerListGroup: Identifiable, Equatable {
     var id: String { project.map { DockerPageModel.projectTag($0.name) } ?? DockerPageModel.looseTag }
 }
 
+/// The containers list's order: by name (projects, then the rest), or the
+/// busiest first.
+enum DockerListSort: String, CaseIterable, Sendable {
+    case name, cpu, memory
+
+    /// The order after a click on `column`'s name in the header: by it,
+    /// the busiest first; clicked again, or Name, back by name.
+    func clicked(_ column: DockerListSort) -> DockerListSort { column == self ? .name : column }
+
+    func value(_ usage: DockerUsage) -> Double {
+        switch self {
+        case .name: 0
+        case .cpu: usage.cpuPercent
+        case .memory: Double(usage.memoryBytes)
+        }
+    }
+}
+
 /// A window's Docker page: which section, what the filter says, what is
 /// selected, which projects are folded. The containers are the app's
 /// (`DockerModel`).
@@ -158,11 +176,20 @@ final class DockerPageModel: ObservableObject {
     let ports: ComposePortStore
     /// What `docker compose version --short` said, once it has.
     var composeVersion: String?
+    /// The containers list's order, this window's, this run's.
+    @Published var sort: DockerListSort = .name
+    /// The monitor's values (`DockerModel.usage`), while this page's
+    /// Containers section shows — empty otherwise, so a hidden page in
+    /// another window draws nothing again for them.
+    @Published private(set) var usage: [String: DockerUsage] = [:]
+    private var wantsUsage = false
+    private var usageFeed: AnyCancellable?
 
     let docker: DockerModel
 
     private var streams: AnyCancellable?
     private var wanting: AnyCancellable?
+    private var usageWanting: AnyCancellable?
     private var showing: AnyCancellable?
     /// The resource this page holds the model to (`DockerModel.want`).
     private var wanted: DockerModel.Resource?
@@ -178,6 +205,11 @@ final class DockerPageModel: ObservableObject {
                     if visible, section == .builds { self?.loadBuilds() }
                     if visible, section == .models { self?.loadModels() }
                 }
+            }
+        // The list's CPU and memory: only while someone can see them.
+        usageWanting = $section.combineLatest($visible, $windowVisible)
+            .sink { [weak self] section, visible, windowVisible in
+                DispatchQueue.main.async { self?.wantUsage(visible && windowVisible && section == .containers) }
             }
         showing = $visible.removeDuplicates().filter { $0 }
             .sink { [weak self] _ in DispatchQueue.main.async { self?.loadMCPToolkit() } }
@@ -198,6 +230,37 @@ final class DockerPageModel: ObservableObject {
         // Their sizes on the left, whichever section shows.
         if visible, docker.diskUsage == nil { docker.load(.volumes) }
     }
+
+    /// The list's CPU and memory, read while its section shows.
+    private func wantUsage(_ wants: Bool) {
+        guard wants != wantsUsage else { return }
+        wantsUsage = wants
+        if wants {
+            docker.usage.want()
+            // The emitted value: @Published fires before it lands.
+            usageFeed = docker.usage.$byContainer.sink { [weak self] in self?.usage = $0 }
+        } else {
+            usageFeed = nil
+            docker.usage.unwant()
+            if !usage.isEmpty { usage = [:] }
+        }
+    }
+
+    /// Its window closes: everything it reads stops now, not at the sinks'
+    /// next turn of the run loop, which may find the page gone — and the
+    /// monitor wanted for good.
+    func close() {
+        visible = false
+        want(nil)
+        wantUsage(false)
+        updateStreams()
+    }
+
+    /// What a container uses now, while it runs or is paused.
+    func usage(of container: ContainerSummary) -> DockerUsage? { container.state.hasStats ? usage[container.Id] : nil }
+
+    /// A block's: its containers' added up.
+    func usage(of group: DockerListGroup) -> DockerUsage? { DockerUsage.sum(group.containers.compactMap { usage(of: $0) }) }
 
     func updateStreams() {
         if let project = detailedProject {
@@ -276,14 +339,20 @@ final class DockerPageModel: ObservableObject {
     /// Whether the page is on screen (the window says): a hidden page's
     /// detail reads no logs and no stats.
     @Published var visible = false
+    /// Whether its window is on screen at all — not under another app's,
+    /// minimized or hidden (its occlusion, which the window says). The
+    /// list's CPU and memory heed it: read every few seconds, they aren't
+    /// read for nobody.
+    @Published var windowVisible = true
 
     /// The list as shown: projects first, by name, then the rest; the
     /// filter applied; a project kept while any of its containers matches.
     /// `planned`, the checkout's project before it runs, is among them
     /// until one of its name exists; nothing of it runs, so Running only
-    /// leaves it out.
+    /// leaves it out. By CPU or memory, the busiest first (`sorted`).
     nonisolated static func groups(
-        projects: [ComposeProject], planned: ComposeProject? = nil, loose: [ContainerSummary], filter: DockerFilter, runningOnly: Bool
+        projects: [ComposeProject], planned: ComposeProject? = nil, loose: [ContainerSummary], filter: DockerFilter, runningOnly: Bool,
+        sort: DockerListSort = .name, usage: [String: DockerUsage] = [:]
     ) -> [DockerListGroup] {
         func shown(_ containers: [ContainerSummary]) -> [ContainerSummary] {
             containers.filter { (!runningOnly || $0.state.isUp) && filter.matches($0) }
@@ -301,11 +370,39 @@ final class DockerPageModel: ObservableObject {
         }
         let rest = shown(loose)
         if !rest.isEmpty { groups.append(DockerListGroup(project: nil, containers: rest)) }
-        return groups
+        return sort == .name ? groups : sorted(groups, by: sort, usage: usage)
+    }
+
+    /// The busiest first: each block's containers by what they use, those
+    /// with nothing read (stopped, or not read yet) after them in the order
+    /// they came; then the blocks by what theirs add up to — "Other
+    /// containers" among them like any project.
+    nonisolated static func sorted(_ groups: [DockerListGroup], by sort: DockerListSort, usage: [String: DockerUsage]) -> [DockerListGroup] {
+        func value(_ container: ContainerSummary) -> Double? { container.state.hasStats ? usage[container.Id].map(sort.value) : nil }
+        let ordered = groups.map { group -> (group: DockerListGroup, total: Double) in
+            var group = group
+            let values = group.containers.map(value)
+            group.containers = zip(group.containers, values).enumerated()
+                .sorted { a, b in
+                    switch (a.element.1, b.element.1) {
+                    case (let x?, let y?) where x != y: x > y
+                    case (.some, nil): true
+                    case (nil, .some): false
+                    default: a.offset < b.offset
+                    }
+                }
+                .map { $0.element.0 }
+            return (group, values.compactMap { $0 }.reduce(0, +))
+        }
+        return ordered.enumerated()
+            .sorted { a, b in a.element.total != b.element.total ? a.element.total > b.element.total : a.offset < b.offset }
+            .map { $0.element.group }
     }
 
     var groups: [DockerListGroup] {
-        Self.groups(projects: docker.projects, planned: planned, loose: docker.loose, filter: DockerFilter(filter), runningOnly: runningOnly)
+        Self.groups(
+            projects: docker.projects, planned: planned, loose: docker.loose, filter: DockerFilter(filter), runningOnly: runningOnly, sort: sort,
+            usage: usage)
     }
 
     /// The rows as the keyboard walks them: a project's row, then its

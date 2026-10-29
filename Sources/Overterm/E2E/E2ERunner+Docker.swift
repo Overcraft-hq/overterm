@@ -85,6 +85,97 @@ extension E2ERunner {
         DockerMCP.askOverride = nil
     }
 
+    /// The list's CPU and memory: each running container's, read while
+    /// Containers shows and only then; a project's added up; sorted by
+    /// either. web, db and ot-elsewhere run.
+    private func usageChecks(_ fake: FakeDockerEngine, web: String, db: String, elsewhere: String) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        if app.store.showingOverlay != .docker { app.toggleDockerPage(nil) }
+        page.section = .containers
+        page.sort = .name
+        func reads(_ id: String? = nil) -> Int {
+            fake.requests.filter { request in request.contains("/stats?one-shot=true&stream=false") && (id.map { request.contains($0) } ?? true) }
+                .count
+        }
+        func near(_ a: Double?, _ b: Double) -> Bool { abs((a ?? -1) - b) < 0.01 }
+        fake.setUsage(web, cpuPercent: 40, memory: 32 << 20)
+        fake.setUsage(db, cpuPercent: 12.5, memory: 96 << 20)
+        fake.setUsage(elsewhere, cpuPercent: 90, memory: 8 << 20)
+        let read = await eventually(5) {
+            near(page.usage[web]?.cpuPercent, 40) && near(page.usage[db]?.cpuPercent, 12.5) && page.usage[db]?.memoryBytes == 96 << 20
+                && near(page.usage[elsewhere]?.cpuPercent, 90)
+        }
+        check(
+            "the list reads what each running container uses", read,
+            page.usage.map { "\(docker.container($0.key)?.name ?? $0.key) \($0.value.cpuLabel) \($0.value.memoryLabel)" }.joined(separator: ", "))
+        check("as one-shot reads", reads(web) > 0, fake.requests.filter { $0.contains("/stats") }.suffix(3).joined(separator: " | "))
+        let shop = page.groups.first { $0.id == DockerPageModel.projectTag("ot-shop") }
+        let summed = shop.flatMap { page.usage(of: $0) }
+        check(
+            "a project's row adds its containers up", near(summed?.cpuPercent, 52.5) && summed?.memoryBytes == 128 << 20,
+            summed.map { "\($0.cpuLabel) \($0.memoryLabel)" } ?? "nothing")
+        // The two blocks this run has; others (none read) would come after.
+        func order() -> [String] { page.groups.map(\.id).filter { $0 == "loose" || $0 == DockerPageModel.projectTag("ot-shop") } }
+        func shopOrder() -> [String] { page.groups.first { $0.id == DockerPageModel.projectTag("ot-shop") }?.containers.map(\.Id) ?? [] }
+        // As the header's clicks change it.
+        page.sort = page.sort.clicked(.cpu)
+        check(
+            "sorted by CPU, the busiest first", page.sort == .cpu && order() == ["loose", "project:ot-shop"] && shopOrder() == [web, db],
+            "\(page.sort) \(page.groups.map(\.id)) \(shopOrder().compactMap { docker.container($0)?.name })")
+        await capture("usage")
+        page.sort = page.sort.clicked(.memory)
+        check(
+            "by memory, a project by what its containers add up to",
+            page.sort == .memory && order() == ["project:ot-shop", "loose"] && shopOrder() == [db, web],
+            "\(page.sort) \(page.groups.map(\.id)) \(shopOrder().compactMap { docker.container($0)?.name })")
+        // From CPU, whose order isn't the names': clicked again, by name.
+        page.sort = page.sort.clicked(.cpu)
+        page.sort = page.sort.clicked(.cpu)
+        check(
+            "CPU clicked again sorts by name again", page.sort == .name && order() == ["project:ot-shop", "loose"] && shopOrder() == [db, web],
+            "\(page.sort) \(page.groups.map(\.id)) \(shopOrder().compactMap { docker.container($0)?.name })")
+
+        fake.set(elsewhere, state: .exited)
+        check("a stopped container drops out", await eventually(5) { page.usage[elsewhere] == nil })
+        await pause(0.4)
+        let stoppedReads = reads(elsewhere)
+        await pause(0.8)
+        check("and isn't read", reads(elsewhere) == stoppedReads, "\(reads(elsewhere) - stoppedReads) more")
+        fake.set(elsewhere, state: .running)
+        _ = await eventually(5) { docker.container(elsewhere)?.state == .running }
+
+        page.press("2")
+        await pause(0.4)
+        var count = reads()
+        await pause(0.8)
+        check(
+            "another section stops the reads", reads() == count && page.usage.isEmpty && !docker.usage.isPolling,
+            "\(reads() - count) more, \(page.usage.count) kept, polling \(docker.usage.isPolling)")
+        page.press("1")
+        check("Containers again reads them again", await eventually(5) { page.usage[web] != nil })
+        // What the window says when it is under another app's, minimized
+        // or hidden (an isolated run's window says nothing: it is set).
+        page.windowVisible = false
+        await pause(0.4)
+        count = reads()
+        await pause(0.8)
+        check(
+            "a window nobody can see reads nothing", reads() == count && page.usage.isEmpty && !docker.usage.isPolling,
+            "\(reads() - count) more, \(page.usage.count) kept, polling \(docker.usage.isPolling)")
+        page.windowVisible = true
+        check("on screen again, it reads them again", await eventually(5) { page.usage[web] != nil })
+        app.toggleDockerPage(nil)
+        await pause(0.4)
+        count = reads()
+        await pause(0.8)
+        check(
+            "a hidden page reads nothing", app.store.showingOverlay != .docker && reads() == count && !docker.usage.isPolling,
+            "\(reads() - count) more, polling \(docker.usage.isPolling)")
+        app.toggleDockerPage(nil)
+        _ = await eventually(3) { page.visible }
+    }
+
     /// Images, volumes, networks, Clean Up — on the page, which shows.
     private func resourcesChecks(_ fake: FakeDockerEngine) async {
         let page = app.dockerPage
@@ -1734,6 +1825,8 @@ extension E2ERunner {
         page.selection = [web]
         page.detailTab = .logs
         check("its logs come over the same ssh", await eventually(5) { page.session?.lines.isEmpty == false })
+        page.section = .containers
+        check("and what they use, over the same ssh", await eventually(5) { page.usage[web] != nil }, "polling \(docker.usage.isPolling)")
         docker.use(DockerEndpoint(address: .unix(socket), context: nil, source: "OVERTERM_DOCKER_HOST"))
         let forwarded = DockerSSHForward.localSocket(for: target)
         check("switched away, its ssh is closed", await eventually(3) { !FileManager.default.fileExists(atPath: forwarded) })
@@ -1757,6 +1850,9 @@ extension E2ERunner {
         let loose = fake.add(name: "ot-scratch", image: "debian:bookworm-slim", state: .exited)
         let docker = DockerModel.shared
         docker.use(DockerEndpoint(address: .unix(socket), context: nil, source: "OVERTERM_DOCKER_HOST"))
+        // The list's CPU and memory, read faster than a person needs.
+        docker.usage.interval = .milliseconds(300)
+        docker.usage.first = .milliseconds(100)
 
         // ⌥⌘P: the page, over the body, in its turn with Settings.
         let page = app.dockerPage
@@ -2259,6 +2355,7 @@ extension E2ERunner {
         app.showDockerSwitcher(nil)
         app.showDockerSwitcher(nil)
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
+        await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
         await askAgentChecks(fake, web: web, folder: folder, real: real)
@@ -2277,6 +2374,8 @@ extension E2ERunner {
         check("⌥⌘P again goes back to the terminal", app.store.showingOverlay == nil && app.store.openOverlays.contains(.docker))
         app.closeOverlay(.docker)
         check("its ✕ closes it", !app.store.openOverlays.contains(.docker) && app.dockerView?.isHidden == true)
+        docker.usage.interval = .seconds(3)
+        docker.usage.first = .seconds(1)
         docker.use(nil)
         check("an isolated run left alone reaches no Docker", await eventually(3) { docker.connection == .off })
     }
