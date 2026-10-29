@@ -266,6 +266,22 @@ enum FileTreeDrag {
         provider.suggestedName = url.lastPathComponent
         return provider
     }
+
+    /// The file URLs a drop holds, handed over on the main thread once
+    /// every one is read: a bucket's upload, a container's copy.
+    static func urls(_ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void) {
+        let lock = NSLock()
+        nonisolated(unsafe) var urls: [URL] = []
+        let group = DispatchGroup()
+        for provider in providers {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL { lock.withLock { urls.append(url) } }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { MainActor.assumeIsolated { done(lock.withLock { urls }) } }
+    }
 }
 
 private struct FileRowView: View {

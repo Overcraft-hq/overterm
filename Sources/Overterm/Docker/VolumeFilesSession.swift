@@ -54,8 +54,10 @@ final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
     }
 
     /// A folder of the volume. Listed only while the tab shows: a session
-    /// that doesn't makes nothing.
+    /// that doesn't makes nothing. Another folder's entries go at once, as
+    /// a container's do (`ContainerSession.open`).
     func open(_ folder: String) {
+        if folder != self.folder { entries = [] }
         self.folder = folder
         guard shown else { return }
         loading?.cancel()

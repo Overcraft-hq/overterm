@@ -34,6 +34,9 @@ struct DockerActions {
     var pickSave: (String, @escaping (URL) -> Void) -> Void = { _, _ in }
     /// A file to read: then the file.
     var pickOpen: (@escaping (URL) -> Void) -> Void = { _ in }
+    /// Files and folders of the Mac to copy in, several at once: what the
+    /// panel says, then them (Copy Here…).
+    var pickFiles: (_ message: String, _ then: @escaping ([URL]) -> Void) -> Void = { _, _ in }
     /// A name asked for: title, what it is for, the first guess, then it.
     var askName: (String, String, String, @escaping (String) -> Void) -> Void = { _, _, _, _ in }
     /// Asks — what, why, the buttons' words (Cancel is added) — then the

@@ -1233,10 +1233,17 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   unix socket with SwiftNIO's HTTP/1.1 (one connection a call, ~30 ms),
   the API version settled with `/_ping`. Streams — events, followed logs,
   stats, a pull — are `AsyncThrowingStream`s that close their connection
-  when the reader leaves. Pure helpers beside it: log frames demuxed across
-  any cut and lines read for their level (`DockerFrames`), a plain ustar
-  writer for `archive` (macOS's `tar` adds xattrs the engine fails on),
-  stats as `docker stats` works them out, ports once rather than once per
+  when the reader leaves. A request's body can be written as it is read,
+  its length said first: each piece is flushed before the next is read,
+  so the socket sets the pace (a folder copied in). A response's body can
+  be read the same way (`receive`, NIO's async channel): the socket is
+  read further only as the reader takes the pieces, so a folder copied
+  out to a slow disk slows the engine down rather than piling up in
+  memory, as a stream's unbounded buffer would. Pure helpers beside
+  it: log frames demuxed across any cut and lines read for their level
+  (`DockerFrames`), a plain ustar writer and an incremental reader for
+  `archive` (macOS's `tar` adds xattrs the engine fails on), stats as
+  `docker stats` works them out, ports once rather than once per
   address family, secret-looking env values masked (`DockerStats`). A `;`
   in a query is encoded: Go refuses one there, and a commit's comment may
   hold one.
@@ -1710,6 +1717,59 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `/changes`: what was added, modified and deleted since it started, a
   file a click from the editor. Stats shows its processes (`top`, every
   other sample while the tab shows).
+- **Files dragged in and out** (`DockerFileTransfers`, `DockerFileDrag`;
+  a container's Files tab and a volume's): files and folders dropped from
+  Finder, or picked with Copy Here…, go into the folder shown, or a folder
+  row they are dropped on, as one plain ustar archive made as it is sent
+  (`DockerTar.Plan`, `DockerTarWriter`). Its length is said first, so
+  nothing is held in memory and a bar follows it. A file that changes size
+  while it goes fails the copy: the length was said. The archive is sent
+  with `noOverwriteDirNonDir`, as `docker cp` sends it: a file never
+  replaces a folder, nor a folder a file. Names already there are asked
+  about first: from the list when it is the folder shown and listed, else
+  a stat each, at most 20 — while a folder is being listed, the list is
+  another folder's, or this one's before the last copy (a folder's
+  entries go as soon as another is opened, so no row names a file that
+  isn't there). Files of the same name are replaced. A folder there is
+  merged into without the dropped folder's own entry: the engine gives a
+  folder it merges into the entry's owner and mode, so node's
+  `/home/node/app` would become root's. The folder is looked at before
+  anything is sent, so a path that isn't
+  there or isn't a folder is said at once — and the engine, refusing
+  partway (a read-only rootfs), may close before reading it all: the
+  write's failure then waits for its answer, which is what is said.
+  Links stay links, but one that points above the drop is left out: the
+  engine refuses the whole archive for it. Owners are root's, as with
+  `docker cp` without `-a`; `copyUIDGID` fails on engines before moby 29
+  for a numeric `USER`. GNU's long names and links are used past ustar's
+  name and prefix. A file over ustar's 8 GB is refused, with `docker cp`
+  in a tab as the way. A stopped or distroless container still takes a
+  drop: the archive endpoint needs no shell and nothing running.
+  A row dragged out is a file promise. SwiftUI's drags can't promise a
+  file, so the row's drag is AppKit's (`DockerFileDragSourceView`): it
+  takes only a left press, opening the row on a click, so the menu, the
+  pointer and the scroll wheel still reach SwiftUI. The list is a lazy
+  stack in a scroll view, as a bucket's folders are, rather than a
+  `List`, whose table has row drags of its own. Finder names the place,
+  and the archive's GET is read into it as it comes, the next piece only
+  once this one is written (`DockerTar.Reader`, `DockerTarExtractor`), a
+  folder's tree kept inside it: `..`, absolute names and anything under a
+  link it wrote are left out, a folder entry of a link's name replaces the
+  link, and what is there is looked at without following one — a folder's
+  mode set through a link would change the folder outside. Modes and
+  times are kept, owners never, a folder's mode set last so one that
+  can't be written still gets what is in it. Save to the Mac… streams the
+  same way, folders too; over something the user said to replace, it is
+  written beside it first and swapped in once whole, with its own mode
+  and times (the swap keeps the old item's by default). The promise's
+  delegate isn't the main actor's: AppKit asks it to write on its own
+  queue. The copies are the app's (`DockerFileTransfers`), not a
+  detail's: one outlives its container being deselected. Each is a row in
+  its pane's strip, a container's matched by its id so a rename keeps it
+  — a finished one goes after 3 s, a failed one keeps the engine's words
+  until OK. A volume's go through a helper made for the copy and removed
+  after (`DockerEngine.reaching`), so the tab's own helper coming and
+  going can't take it away under one.
 - **A volume's files** (the volume detail's Files tab, `VolumeFilesSession`,
   `DockerVolumeFiles` pure; the list is `DockerFolderList`, a container's
   too): its folders are listed as a container's are, by the same `sh`

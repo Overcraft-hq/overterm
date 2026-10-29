@@ -123,6 +123,27 @@ final class DockerModelTests: XCTestCase {
         session.close()
     }
 
+    /// Another folder opened: the last one's entries go at once, so no row
+    /// names a file that isn't there while it is listed. The same folder
+    /// listed again keeps them meanwhile.
+    func testAnotherFoldersEntriesGoAtOnce() async throws {
+        let id = fake.add(name: "web")
+        fake.setFile(id, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))
+        fake.setFile(id, "/etc/hosts", Data("127.0.0.1 localhost\n".utf8))
+        model.start()
+        try await eventually("the container") { model.container(id) != nil }
+        let session = ContainerSession(id: id, docker: model)
+        defer { session.close() }
+        session.open("/etc/nginx")
+        try await eventually("its folder") { session.entries.map(\.name) == ["nginx.conf"] && !session.listing }
+        session.open("/etc/nginx")
+        XCTAssertEqual(session.entries.map(\.name), ["nginx.conf"], "the same folder: kept while it is listed again")
+        session.open("/etc")
+        XCTAssertTrue(session.entries.isEmpty, "\(session.entries.map(\.name))")
+        XCTAssertTrue(session.listing)
+        try await eventually("the other folder") { session.entries.map(\.name) == ["nginx", "hosts"] }
+    }
+
     /// A database's own client: who to sign in as read from its inspect by
     /// name, and only when asked; a stopped one's says why it can't.
     func testAClientSignsInByItsEnvsNames() async throws {
@@ -726,6 +747,7 @@ final class VolumeFilesSessionTests: XCTestCase {
         try await eventually("its top") { session.entries.map(\.name) == ["base", "PG_VERSION"] }
         XCTAssertEqual(fake.helperIDs.count, 1)
         session.open("/base")
+        XCTAssertTrue(session.entries.isEmpty, "the top's entries go at once")
         try await eventually("a folder") { session.entries.map(\.name) == ["1"] }
         let first = fake.helperIDs
         session.follow(shown: false)

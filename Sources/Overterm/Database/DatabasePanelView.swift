@@ -417,7 +417,7 @@ private struct StorageFolder: View {
         }
         .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
             guard !session.connection.readOnly else { return false }
-            Self.urls(providers) { urls in
+            FileTreeDrag.urls(providers) { urls in
                 model.expanded.insert(treeKey)
                 Task { await session.upload(urls, to: bucket, prefix: prefix) }
             }
@@ -470,20 +470,6 @@ private struct StorageFolder: View {
                 }
             }
         }
-    }
-
-    static func urls(_ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void) {
-        let lock = NSLock()
-        nonisolated(unsafe) var urls: [URL] = []
-        let group = DispatchGroup()
-        for provider in providers {
-            group.enter()
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url { lock.withLock { urls.append(url) } }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) { MainActor.assumeIsolated { done(lock.withLock { urls }) } }
     }
 
     private func copy(_ text: String) {

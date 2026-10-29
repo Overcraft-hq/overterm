@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import Vision
 
 /// The Docker page against the fake engine (FakeDockerEngine) on a socket
@@ -506,6 +507,18 @@ extension E2ERunner {
         check("and makes none again", fake.helperIDs.isEmpty, "\(fake.helperIDs)")
         page.volumeTab = .files
         check("Files again, a helper again", await eventually(5) { fake.helperIDs.count == 1 && names() == ["conf", "data.txt"] }, "\(fake.helperIDs)")
+        // A drop into a volume's folder: through a helper made for the
+        // copy, gone after it — the tab's own stays.
+        let browsing = fake.helperIDs
+        let dropped = scratch.appendingPathComponent("volume-drop/notes.txt")
+        try? FileManager.default.createDirectory(at: dropped.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data("from the Mac\n".utf8).write(to: dropped)
+        page.volumeFiles?.copyIn([dropped], into: "/", of: .volume(volume), actions: app.dockerActions)
+        check(
+            "a volume takes a drop too", await eventually(5) { fake.volumeContents(volume)["notes.txt"] == Data("from the Mac\n".utf8) },
+            DockerFileTransfers.shared.transfers(for: .volume(volume)).first?.error ?? "\(fake.volumeContents(volume).keys.sorted())")
+        check("listed again with it", await eventually(5) { names() == ["conf", "data.txt", "notes.txt"] }, "\(names())")
+        check("and the copy's helper is gone", await eventually(5) { fake.helperIDs == browsing }, "\(fake.helperIDs) \(browsing)")
         DockerHelpers.removeAll(waiting: 2)
         check("what is left at quit is removed", fake.helperIDs.isEmpty, "\(fake.helperIDs)")
         page.volumeTab = .overview
@@ -538,6 +551,159 @@ extension E2ERunner {
         page.volumeSelection = []
         page.volumeTab = .overview
         page.press("1")
+    }
+
+    /// Files dragged into and out of a container's Files tab, on the page.
+    /// A scenario can't drag, so what a drop and a drag run is called: a
+    /// copy in through the session (asked first when a name is there), a
+    /// promise written through its delegate as Finder asks for it. What
+    /// the rows are is looked at, and a click on one, queued as a person's
+    /// is, still opens it. Nothing goes to a terminal tab.
+    private func filesTransferChecks(_ fake: FakeDockerEngine, web: String) async {
+        let page = app.dockerPage
+        let html = "/usr/share/nginx/html"
+        guard let container = DockerModel.shared.container(web) else { return check("the container for its files", false) }
+        let source = DockerFileSource.of(container)
+        let transfers = DockerFileTransfers.shared
+        let root = scratch.appendingPathComponent("files-dnd", isDirectory: true)
+        func write(_ text: String, _ path: String, mode: Int = 0o644) -> URL {
+            let url = root.appendingPathComponent(path)
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data(text.utf8).write(to: url)
+            try? FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+            return url
+        }
+        func text(_ url: URL) -> String? { (try? Data(contentsOf: url)).map { String(decoding: $0, as: UTF8.self) } }
+        func names() -> [String] { page.session?.entries.map(\.name) ?? [] }
+        // The rows drawn: a lazy stack keeps the views of rows it took
+        // away, hidden, to use again.
+        func sources() -> [DockerFileDragSourceView] {
+            var found: [DockerFileDragSourceView] = []
+            func walk(_ view: NSView) {
+                if let source = view as? DockerFileDragSourceView, !source.isHiddenOrHasHiddenAncestor { found.append(source) }
+                view.subviews.forEach(walk)
+            }
+            if let view = app.dockerView { walk(view) }
+            return found
+        }
+
+        // The rows: an AppKit drag source over each file and folder.
+        let rows = await eventually(3) { Set(sources().map(\.item.path)) == ["/etc/nginx/conf.d", "/etc/nginx/nginx.conf"] }
+        check("a Files row is an AppKit drag source", rows, "\(sources().map(\.item.path))")
+        check("and the way up isn't one", !sources().contains { $0.item.path == "/etc" })
+        if let conf = sources().first(where: { $0.item.path == "/etc/nginx/conf.d" }) {
+            let frame = conf.convert(conf.bounds, to: nil)
+            await click(at: CGPoint(x: frame.midX, y: frame.midY))
+            check(
+                "a click on a folder row still opens it", await eventually(5) { page.session?.folder == "/etc/nginx/conf.d" && names() == ["default.conf"] },
+                "\(page.session?.folder ?? "nil") \(names())")
+        }
+        page.session?.open("/etc/nginx")
+        _ = await eventually(5) { names() == ["conf.d", "nginx.conf"] }
+
+        // Out: the promise Finder would be handed, written as Finder asks.
+        let out = root.appendingPathComponent("out", isDirectory: true)
+        try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        let (folder, folderPromise) = DockerFileDragSourceView.provider(for: DockerFileItem(source: source, path: "/etc/nginx", isFolder: true))
+        check(
+            "a drag out promises a folder as a folder",
+            folder.fileType == UTType.folder.identifier && folderPromise.filePromiseProvider(folder, fileNameForType: folder.fileType) == "nginx",
+            folder.fileType)
+        var folderDone = false
+        var folderError: String?
+        folderPromise.filePromiseProvider(folder, writePromiseTo: out.appendingPathComponent("nginx")) { error in
+            folderDone = true
+            folderError = error?.localizedDescription
+        }
+        check(
+            "and its row is in the pane's strip", await eventually(3) { transfers.transfers(for: source).contains { $0.direction == .out && $0.name == "nginx" } },
+            "\(transfers.transfers(for: source))")
+        let tree = await eventually(5) {
+            folderDone && text(out.appendingPathComponent("nginx/nginx.conf")) == "worker_processes 1;\n"
+                && text(out.appendingPathComponent("nginx/conf.d/default.conf")) == "server {}\n"
+        }
+        check("and writes it through the archive", tree && folderError == nil, folderError ?? "\(folderDone)")
+        let (file, filePromise) = DockerFileDragSourceView.provider(for: DockerFileItem(source: source, path: "/etc/nginx/nginx.conf", isFolder: false))
+        var fileDone = false
+        filePromise.filePromiseProvider(file, writePromiseTo: out.appendingPathComponent("nginx.conf")) { _ in fileDone = true }
+        check(
+            "a file comes out as the container has it",
+            await eventually(5) { fileDone && text(out.appendingPathComponent("nginx.conf")) == "worker_processes 1;\n" })
+        check("copies out go from the strip once done", await eventually(6) { transfers.transfers(for: source).isEmpty }, "\(transfers.transfers(for: source))")
+
+        // In: a drop on the folder shown.
+        page.session?.open(html)
+        _ = await eventually(5) { names() == ["index.html"] }
+        _ = write("<h1>site</h1>\n", "drop/site/index.html")
+        _ = write("body {}\n", "drop/site/css/app.css")
+        _ = write("#!/bin/sh\nnginx -s reload\n", "drop/site/run.sh", mode: 0o755)
+        _ = write("finder", "drop/site/.DS_Store")
+        // A few MB, so the bar has somewhere between to be.
+        _ = write(String(repeating: "0123456789abcdef", count: 4 << 16), "drop/site/big.bin")
+        let notes = write("notes\n", "drop/notes.txt")
+        var actions = app.dockerActions
+        var asked: [String] = []
+        var accept = false
+        actions.confirm = { title, _, _, then in
+            asked.append(title)
+            if accept { then() }
+        }
+        // Every value the row's bar is given while it runs.
+        var bar: [(done: Int, total: Int)] = []
+        let watching = transfers.$transfers.sink { rows in
+            for row in rows where row.direction == .into && row.running && row.source.target == source.target {
+                if let total = row.total { bar.append((row.done, total)) }
+            }
+        }
+        page.session?.copyIn([root.appendingPathComponent("drop/site"), notes], into: html, of: source, actions: actions)
+        let copied = await eventually(5) {
+            fake.file(web, html + "/site/css/app.css") == Data("body {}\n".utf8) && fake.file(web, html + "/notes.txt") == Data("notes\n".utf8)
+        }
+        check("a drop copies files and folders into the folder shown", copied, transfers.transfers(for: source).first?.error ?? "\(asked)")
+        check(
+            "sent as docker cp sends it",
+            fake.requests.contains { $0.hasPrefix("PUT ") && $0.contains("/containers/\(web)/archive") && $0.contains("noOverwriteDirNonDir=true") },
+            "\(fake.requests.filter { $0.hasPrefix("PUT") })")
+        check("an executable stays executable", fake.fileMode(web, html + "/site/run.sh") == 0o755, "\(fake.fileMode(web, html + "/site/run.sh") ?? -1)")
+        check(".DS_Store stays on the Mac", fake.file(web, html + "/site/.DS_Store") == nil)
+        check("nothing there was asked about", asked.isEmpty, "\(asked)")
+        check("the folder is listed again with them", await eventually(5) { names() == ["site", "index.html", "notes.txt"] }, "\(names())")
+        let shown = await eventually(3) {
+            transfers.transfers(for: source).contains { $0.direction == .into && $0.finished && $0.total != nil && $0.done == $0.total }
+        }
+        let gone = await eventually(6) { transfers.transfers(for: source).isEmpty }
+        watching.cancel()
+        let moved = bar.contains { $0.done > 0 && $0.done < $0.total }
+        check("the copy shows its progress, then goes", moved && shown && gone, "\(bar) \(transfers.transfers(for: source))")
+
+        // A name there already: asked first, replaced only when said.
+        let index = write("<h1>new</h1>\n", "drop2/index.html")
+        page.session?.copyIn([index], into: html, of: source, actions: actions)
+        check("one already there is asked about first", await eventually(5) { asked.contains { $0.contains("“index.html”") } }, "\(asked)")
+        await pause(0.3)
+        check("and isn't replaced unasked", fake.file(web, html + "/index.html") == Data("<h1>hi</h1>\n".utf8))
+        accept = true
+        page.session?.copyIn([index], into: html, of: source, actions: actions)
+        check("and is replaced when you say so", await eventually(5) { fake.file(web, html + "/index.html") == Data("<h1>new</h1>\n".utf8) })
+        _ = await eventually(6) { transfers.transfers(for: source).isEmpty }
+
+        // Refused by the engine: its words stay in the strip until OK.
+        fake.setReadOnly(web, true)
+        page.session?.copyIn([notes], into: html, of: source, actions: actions)
+        let refused = await eventually(5) { transfers.transfers(for: source).first?.error?.contains("read-only") == true }
+        let since = Date()
+        check("the engine's refusal stays to be read", refused, "\(transfers.transfers(for: source))")
+        let drawn = await shownText { $0.contains("read-only") }
+        let seen = drawn == nil ? await readWindow().map(\.text).joined(separator: " | ") : ""
+        check("in the Files tab's strip", drawn != nil, seen)
+        await pause(max(0, 4 - Date().timeIntervalSince(since)))
+        check("past the time a finished copy has", transfers.transfers(for: source).first?.error != nil)
+        await capture("files")
+        fake.setReadOnly(web, false)
+        if let row = transfers.transfers(for: source).first { transfers.dismiss(row.id) }
+        check("and goes at OK", transfers.transfers(for: source).isEmpty)
+        page.session?.open("/etc/nginx")
+        _ = await eventually(5) { names() == ["conf.d", "nginx.conf"] }
     }
 
     /// A container's Settings… (`,`), Rename… and Save as Image…, from its
@@ -2449,6 +2615,7 @@ extension E2ERunner {
             "\(page.session?.changes?.map(\.Path) ?? [])")
         page.session?.open("/etc/nginx")
         check("a folder opens, folders first", await eventually(5) { page.session?.entries.map(\.name) == ["conf.d", "nginx.conf"] })
+        await filesTransferChecks(fake, web: web)
         if let container = docker.container(web) { app.openContainerFile(container, "/etc/nginx/nginx.conf") }
         let opened = await eventually(5) { self.app.editor?.active?.url?.path.hasSuffix("Containers/ot-shop-web-1/etc/nginx/nginx.conf") == true }
         check("a file opens in the editor", opened, app.editor?.active?.url?.path ?? "nothing")

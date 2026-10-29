@@ -49,6 +49,19 @@ extension TerminalWindowController {
                     MainActor.assumeIsolated { then(url) }
                 }
             },
+            pickFiles: { [weak self] message, then in
+                guard let window = self?.window else { return }
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = true
+                panel.canChooseDirectories = true
+                panel.allowsMultipleSelection = true
+                panel.prompt = "Copy"
+                panel.message = message
+                panel.beginSheetModal(for: window) { response in
+                    guard response == .OK else { return }
+                    MainActor.assumeIsolated { then(panel.urls) }
+                }
+            },
             askName: { [weak self] title, detail, initial, then in
                 self?.askForName(title: title, detail: detail, initial: initial, action: "OK") { name in
                     let trimmed = name.trimmingCharacters(in: .whitespaces)
@@ -268,21 +281,18 @@ extension TerminalWindowController {
         }
     }
 
-    /// A container's or a volume's file to the Mac, where the user says.
+    /// A container's or a volume's file or folder to the Mac, where the
+    /// user says: streamed from the archive as it comes, never held whole,
+    /// its progress in the Files tab's strip (`DockerFileTransfers`). Over
+    /// something the user said to replace, it is swapped in once whole.
     func downloadDockerFile(_ source: DockerFileSource, _ path: String) {
-        guard let window, let engine = DockerModel.shared.engine else { return }
+        guard let window, DockerModel.shared.engine != nil else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = (path as NSString).lastPathComponent
         panel.beginSheetModal(for: window) { response in
             guard response == .OK, let url = panel.url else { return }
             MainActor.assumeIsolated {
-                Task { [weak self] in
-                    do {
-                        try await engine.reaching(source, path) { id, at in try await engine.read(id, file: at) }.write(to: url)
-                    } catch {
-                        self?.reportDockerError("Save \(path)", Self.said(error, in: source))
-                    }
-                }
+                DockerFileTransfers.shared.copyOut(path, of: source, to: url, replacing: FileManager.default.fileExists(atPath: url.path))
             }
         }
     }

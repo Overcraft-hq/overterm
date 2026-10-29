@@ -92,6 +92,15 @@ enum DockerFileSource: Hashable, Sendable {
 
     static func of(_ container: ContainerSummary) -> DockerFileSource { .container(id: container.Id, name: container.name) }
 
+    /// What it is, whatever it is called now: a container by its id (a
+    /// rename keeps it), a volume by its name, which never changes.
+    var target: String {
+        switch self {
+        case .container(let id, _): "container " + id
+        case .volume(let name): "volume " + name
+        }
+    }
+
     /// As a sentence says it: `web`, `the volume pgdata`.
     var title: String {
         switch self {

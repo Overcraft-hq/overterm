@@ -140,8 +140,12 @@ final class ContainerSession: ObservableObject {
         }
     }
 
-    /// A folder of the container, listed (a running one: `exec`).
+    /// A folder of the container, listed (a running one: `exec`). Another
+    /// folder's entries go at once: under its path, a row would name a
+    /// file that isn't there — opened, dragged out, or taken for one a
+    /// drop replaces.
     func open(_ folder: String) {
+        if folder != self.folder { entries = [] }
         self.folder = folder
         listing = true
         Task { [weak self, docker, id] in
@@ -155,7 +159,7 @@ final class ContainerSession: ObservableObject {
                 guard self?.folder == folder else { return }
                 self?.entries = []
                 let stopped = (error as? DockerError)?.status == 409
-                self?.filesError = stopped ? "It isn't running: start it to see its folders. A file can still be opened by its path." : error.localizedDescription
+                self?.filesError = stopped ? "It isn't running: start it to see its folders. A file can still be opened by its path, and files dropped here still go in." : error.localizedDescription
             }
             self?.listing = false
         }

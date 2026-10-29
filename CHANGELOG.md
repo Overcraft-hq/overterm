@@ -45,6 +45,7 @@ version is tagged `v<version>`.
 - docker: Testcontainers' containers apart, by test run, removed together
 - docker: a container's memory, CPUs and restart policy changed in place; renamed; saved as an image
 - docker: a volume's files browsed, opened and saved back, as a container's are
+- docker: files dragged from Finder into a container, and out of it
 
 ## 1.4.6 — 2026-10-29
 

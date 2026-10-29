@@ -232,7 +232,9 @@ you. `d` on a
 PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
 its connection filled in from the container. A container's files are a
 tab of its own: browse its folders, open a config in the editor, and the
-save goes back into the container. A volume's files are a tab too: a
+save goes back into the container. Drop files or folders from Finder on it
+to copy them in, or drag one out to Finder to copy it out, each with its
+progress. A volume's files are a tab too: a
 database's config opened and saved back, its owner kept, through a small
 container Overterm runs only while the tab shows.
 

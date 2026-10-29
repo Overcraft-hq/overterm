@@ -17,6 +17,15 @@ final class FakeDockerEngine: @unchecked Sendable {
         var files: [String: Data] = [:]
         /// When each was last written, as the archive's stat says it.
         var mtimes: [String: String] = [:]
+        /// What an archive put in besides files' bytes: their modes, its
+        /// folders (an empty one too), its links — as a listing and a GET
+        /// give them back.
+        var modes: [String: Int] = [:]
+        var folders: Set<String> = []
+        var links: [String: String] = [:]
+        /// `--read-only`: an archive into it is refused, as the engine
+        /// refuses it.
+        var readOnly = false
         /// Each line with the time it was written, as the engine keeps it.
         var logs: [(stream: DockerLogChunk.Stream, text: String, time: String)] = []
         var error: String = ""
@@ -160,6 +169,10 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var channel: Channel?
     private var tcpChannels: [Channel] = []
     private var asked: [String] = []
+    /// Requests whose whole answer the client has taken off the socket.
+    private var delivered: [String] = []
+    /// Requests whose bodies are never read, by a part of their URI.
+    private var stalling: [String] = []
     /// Removals refused, by the container's id or name, or the volume's,
     /// image's or network's: what the engine answers instead.
     private var refusals: [String: (status: Int, message: String)] = [:]
@@ -381,6 +394,23 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
 
+    /// A file's mode, as an archive set it (0o644 unless one did).
+    func fileMode(_ id: String, _ path: String) -> Int? {
+        locked { containers[id]?.files[path] == nil ? nil : containers[id]?.modes[path] ?? 0o644 }
+    }
+
+    /// A folder's mode, when an archive's entry for it set one: a folder
+    /// merged into keeps none of its own here.
+    func folderMode(_ id: String, _ path: String) -> Int? {
+        locked { containers[id].flatMap { $0.files[path] == nil && $0.links[path] == nil ? $0.modes[path] : nil } }
+    }
+
+    /// A link an archive made, its target.
+    func link(_ id: String, _ path: String) -> String? { locked { containers[id]?.links[path] } }
+
+    /// Its rootfs read-only from now on (`--read-only`), or not.
+    func setReadOnly(_ id: String, _ readOnly: Bool) { locked { containers[id]?.readOnly = readOnly } }
+
     /// Its limits and restart policy now.
     func hostConfig(_ id: String) -> ContainerDetail.HostConfigDetail? { locked { containers[id]?.hostConfig } }
 
@@ -523,6 +553,33 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// Every request so far, `GET /v1.47/containers/json?all=1`.
     var requests: [String] { locked { asked } }
+
+    /// The requests whose whole answer has been written to the client: one
+    /// that reads only as fast as it writes to disk takes a big file's
+    /// later than it is asked.
+    var answered: [String] { locked { delivered } }
+
+    fileprivate func answerWritten(_ method: HTTPMethod, _ uri: String) { locked { delivered.append("\(method.rawValue) \(uri)") } }
+
+    /// From now on, a request whose URI has `fragment` is never read past
+    /// its head: a client writing its body waits, as for an engine that
+    /// has stopped taking it.
+    func stall(_ fragment: String) { locked { stalling.append(fragment) } }
+
+    fileprivate func stalls(_ uri: String) -> Bool { locked { stalling.contains { uri.contains($0) } } }
+
+    /// The next `count` requests' connections are closed unanswered, as a
+    /// busy engine's socket can drop a new one.
+    func drop(_ count: Int) { locked { dropping = count } }
+    private var dropping = 0
+
+    fileprivate func takeDrop() -> Bool {
+        locked {
+            guard dropping > 0 else { return false }
+            dropping -= 1
+            return true
+        }
+    }
 
     /// Who is waiting for events now.
     var listening: Int { locked { eventStreams.count } }
@@ -816,10 +873,20 @@ final class FakeDockerEngine: @unchecked Sendable {
             }
             return .raw(200, Data(), [("X-Docker-Container-Path-Stat", (try? JSONEncoder().encode(stat))?.base64EncodedString() ?? "")])
         case (.HEAD, "archive"):
-            guard let data = container.files[path] else { return Self.error(404, "Could not find the file \(path) in container \(id)") }
-            let stat = DockerTar.PathStat(
-                name: (path as NSString).lastPathComponent, size: data.count, mode: 0o644, mtime: container.mtimes[path] ?? "2026-01-01T00:00:00Z",
-                linkTarget: "")
+            let at = Self.normal(path)
+            let name = at == "/" ? "/" : (at as NSString).lastPathComponent
+            let stat: DockerTar.PathStat
+            if let data = container.files[at] {
+                stat = DockerTar.PathStat(
+                    name: name, size: data.count, mode: UInt32(container.modes[at] ?? 0o644), mtime: container.mtimes[at] ?? "2026-01-01T00:00:00Z",
+                    linkTarget: "")
+            } else if let target = container.links[at] {
+                stat = DockerTar.PathStat(name: name, size: target.utf8.count, mode: UInt32(1 << 27 | 0o777), mtime: "2026-01-01T00:00:00Z", linkTarget: target)
+            } else if Self.isFolder(at, in: container) {
+                stat = DockerTar.PathStat(name: name, size: 4096, mode: UInt32(1 << 31 | 0o755), mtime: "2026-01-01T00:00:00Z", linkTarget: "")
+            } else {
+                return Self.error(404, "Could not find the file \(path) in container \(id)")
+            }
             return .raw(200, Data(), [("X-Docker-Container-Path-Stat", (try? JSONEncoder().encode(stat))?.base64EncodedString() ?? "")])
         case (.GET, "archive"):
             // In a mounted volume: the mount point its whole tree, under the
@@ -830,29 +897,17 @@ final class FakeDockerEngine: @unchecked Sendable {
                 }
                 return .raw(200, archive, [("Content-Type", "application/x-tar")])
             }
-            guard let data = container.files[path], let archive = DockerTar.archive(name: (path as NSString).lastPathComponent, data: data) else {
-                return Self.error(404, "Could not find the file \(path) in container \(id)")
-            }
-            return .raw(200, archive, [("Content-Type", "application/x-tar")])
-        case (.PUT, "archive"):
-            let folder = query["path"] ?? "/"
-            for entry in DockerTar.entries(of: body) where entry.kind == .file {
-                let full = (folder as NSString).appendingPathComponent(entry.name)
-                // Into a mounted volume, when it lands under its mount point,
-                // owned as the entry says (no copyUIDGID: the tar's owner).
-                if let (mount, volume) = container.binds.first(where: { full.hasPrefix($0.key + "/") }) {
-                    let inside = String(full.dropFirst(mount.count + 1))
-                    let now = Self.timestamp()
-                    locked {
-                        volumeFiles[volume, default: [:]][inside] = entry.data
-                        volumeMtimes[volume, default: [:]][inside] = now
-                        volumeOwners[volume, default: [:]][inside] = (entry.uid, entry.gid)
-                    }
-                } else {
-                    setFile(id, full, entry.data)
+            let at = Self.normal(path)
+            if let data = container.files[at] {
+                guard let archive = DockerTar.archive(name: (at as NSString).lastPathComponent, data: data, mode: container.modes[at] ?? 0o644) else {
+                    return Self.error(500, "\(at): the name is too long")
                 }
+                return .raw(200, archive, [("Content-Type", "application/x-tar")])
             }
-            return .empty(200)
+            guard Self.isFolder(at, in: container) else { return Self.error(404, "Could not find the file \(path) in container \(id)") }
+            return .raw(200, Self.folderArchive(at, of: container), [("Content-Type", "application/x-tar")])
+        case (.PUT, "archive"):
+            return put(body, into: Self.normal(query["path"] ?? "/"), of: container, noOverwrite: query["noOverwriteDirNonDir"] == "true")
         case (.GET, "export"):
             let archive = container.files.sorted { $0.key < $1.key }.reduce(into: Data()) { out, file in
                 out += (DockerTar.archive(name: String(file.key.dropFirst()), data: file.value) ?? Data()).dropLast(2 * DockerTar.block)
@@ -861,6 +916,157 @@ final class FakeDockerEngine: @unchecked Sendable {
         default:
             return Self.error(404, "page not found")
         }
+    }
+
+    /// An archive into `folder`, as moby's `Unpack` takes it: the folder
+    /// must be there and be one, the rootfs writable; a same-named folder
+    /// is merged, anything else replaced — but with `noOverwriteDirNonDir`
+    /// (what `docker cp` sends) a file never replaces a folder, nor a
+    /// folder a file, in its words. Entries before the one refused stay
+    /// written, as there. Into a mounted volume: its files, owned as the
+    /// entry says (no copyUIDGID: the tar's owner).
+    private func put(_ body: Data, into folder: String, of container: Container, noOverwrite: Bool) -> Answer {
+        let id = container.summary.Id
+        if let refused = refusal(into: folder, of: container) { return refused }
+        for entry in DockerTar.entries(of: body) {
+            let full = Self.normal((folder as NSString).appendingPathComponent(entry.name))
+            if let (mount, volume) = container.binds.first(where: { full.hasPrefix($0.key + "/") }) {
+                guard entry.kind == .file else { continue }
+                let inside = String(full.dropFirst(mount.count + 1))
+                let now = Self.timestamp()
+                locked {
+                    volumeFiles[volume, default: [:]][inside] = entry.data
+                    volumeMtimes[volume, default: [:]][inside] = now
+                    volumeOwners[volume, default: [:]][inside] = (entry.uid, entry.gid)
+                }
+                continue
+            }
+            // A volume's mount point itself (an import's `volume/`).
+            if container.binds.keys.contains(full) { continue }
+            let now = locked { containers[id] } ?? container
+            let isFolder = Self.isFolder(full, in: now)
+            let isOther = now.files[full] != nil || now.links[full] != nil
+            if entry.kind == .directory {
+                if isOther {
+                    if noOverwrite { return Self.error(500, "cannot overwrite non-directory \"\(full)\" with directory \"\(folder)\"") }
+                    locked { Self.remove(full, from: &containers[id]) }
+                }
+                // Merged into one there, but given the entry's mode (and
+                // owner), as moby's `createTarFile` does.
+                locked {
+                    _ = containers[id]?.folders.insert(full)
+                    containers[id]?.modes[full] = entry.mode & 0o7777
+                }
+                continue
+            }
+            guard entry.kind == .file || entry.kind == .symlink else { continue }
+            if isFolder {
+                if noOverwrite { return Self.error(500, "cannot overwrite directory \"\(full)\" with non-directory \"\(folder)\"") }
+                locked { Self.remove(full, from: &containers[id]) }
+            }
+            locked { Self.remove(full, from: &containers[id], folder: false) }
+            if entry.kind == .file {
+                setFile(id, full, entry.data)
+                locked { containers[id]?.modes[full] = entry.mode & 0o7777 }
+            } else {
+                locked { containers[id]?.links[full] = entry.linkTarget }
+            }
+        }
+        return .empty(200)
+    }
+
+    /// What moby refuses an archive for before it reads any of it: a
+    /// folder that isn't there or isn't one, a read-only rootfs.
+    private func refusal(into folder: String, of container: Container) -> Answer? {
+        let id = container.summary.Id
+        let inVolume = volumePath(folder, in: container)
+        if let (volume, inside) = inVolume, folder != "/" {
+            guard let stat = volumeStat(volume, inside) else { return Self.error(404, "Could not find the file \(folder) in container \(id)") }
+            guard stat.isDirectory else { return Self.error(400, "extraction point is not a directory") }
+        } else if inVolume == nil {
+            guard Self.isFolder(folder, in: container) else {
+                return container.files[folder] != nil
+                    ? Self.error(400, "extraction point is not a directory") : Self.error(404, "Could not find the file \(folder) in container \(id)")
+            }
+            guard !container.readOnly else { return Self.error(400, "container rootfs is marked read-only") }
+        }
+        return nil
+    }
+
+    /// An answer at a request's head, its body unread — moby refuses an
+    /// archive (`refusal`) before reading it, and closes: a client still
+    /// writing a big one hears it after its write fails. Nil: read the
+    /// body, then answer.
+    func early(_ method: HTTPMethod, _ uri: String) -> Answer? {
+        guard method == .PUT, let url = URLComponents(string: "http://docker" + uri) else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init).filter { !$0.hasPrefix("v1.") }
+        guard parts.count == 3, parts[0] == "containers", parts[2] == "archive" else { return nil }
+        guard let container = locked({ containers[parts[1]] }) else { return nil }
+        let folder = Self.normal(url.queryItems?.first { $0.name == "path" }?.value ?? "/")
+        guard let refused = refusal(into: folder, of: container) else { return nil }
+        locked { asked.append("\(method.rawValue) \(uri)") }
+        return refused
+    }
+
+    /// `/a/b/` → `/a/b`; `/` stays.
+    static func normal(_ path: String) -> String {
+        var path = path
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return path.isEmpty ? "/" : path
+    }
+
+    /// `/`, a folder an archive made, or one that has something in it.
+    private static func isFolder(_ path: String, in container: Container) -> Bool {
+        let path = normal(path)
+        guard path != "/", !container.folders.contains(path) else { return true }
+        let under = path + "/"
+        return container.files.keys.contains { $0.hasPrefix(under) } || container.folders.contains { $0.hasPrefix(under) }
+            || container.links.keys.contains { $0.hasPrefix(under) }
+    }
+
+    /// What is at `path` gone: a file, a link, or (`folder`) a folder and
+    /// all in it.
+    private static func remove(_ path: String, from container: inout Container?, folder: Bool = true) {
+        guard var changed = container else { return }
+        changed.files[path] = nil
+        changed.modes[path] = nil
+        changed.links[path] = nil
+        if folder {
+            let under = path + "/"
+            changed.folders.remove(path)
+            changed.folders = changed.folders.filter { !$0.hasPrefix(under) }
+            changed.files = changed.files.filter { !$0.key.hasPrefix(under) }
+            changed.modes = changed.modes.filter { !$0.key.hasPrefix(under) }
+            changed.links = changed.links.filter { !$0.key.hasPrefix(under) }
+        }
+        container = changed
+    }
+
+    /// A folder's GET, as moby gives it: rebased to the folder's own name,
+    /// its own entry first, each folder before what is in it, files with
+    /// their modes, links as links.
+    private static func folderArchive(_ path: String, of container: Container) -> Data {
+        let top = path == "/" ? "." : (path as NSString).lastPathComponent
+        let under = path == "/" ? "/" : path + "/"
+        var folders = Set(container.folders.filter { $0.hasPrefix(under) })
+        // The folders a file is in, from its own path's parts: never walked up.
+        for file in Array(container.files.keys) + Array(container.links.keys) where file.hasPrefix(under) {
+            let parts = file.dropFirst(under.count).split(separator: "/")
+            for depth in 1..<max(parts.count, 1) { folders.insert(under + parts[..<depth].joined(separator: "/")) }
+        }
+        func name(_ full: String) -> String { top + "/" + full.dropFirst(under.count) }
+        var entries: [(String, Data)] = []
+        for folder in folders { entries.append((name(folder) + "/", DockerTar.header(name: name(folder) + "/", size: 0, mode: 0o755, modified: Date(), type: "5") ?? Data())) }
+        for (file, data) in container.files where file.hasPrefix(under) {
+            let entry = DockerTar.archive(name: name(file), data: data, mode: container.modes[file] ?? 0o644) ?? Data()
+            entries.append((name(file), entry.dropLast(2 * DockerTar.block)))
+        }
+        for (link, target) in container.links where link.hasPrefix(under) {
+            entries.append((name(link), DockerTar.header(name: name(link), size: 0, mode: 0o777, modified: Date(), type: "2", link: target) ?? Data()))
+        }
+        var archive = DockerTar.header(name: top + "/", size: 0, mode: 0o755, modified: Date(), type: "5") ?? Data()
+        for (_, entry) in entries.sorted(by: { $0.0 < $1.0 }) { archive += entry }
+        return archive + Data(count: 2 * DockerTar.block)
     }
 
     /// `docker update`, as moby v27 checks it, in its words: every 0 (or
@@ -998,18 +1204,28 @@ final class FakeDockerEngine: @unchecked Sendable {
         if let container = locked({ containers[id] }), let (volume, inside) = volumePath(folder, in: container) {
             return list(locked { volumeFiles[volume] ?? [:] }, under: inside.isEmpty ? "" : inside + "/", folder: folder, top: inside.isEmpty)
         }
-        return list(locked { containers[id]?.files ?? [:] }, under: folder.hasSuffix("/") ? folder : folder + "/", folder: folder, top: folder == "/")
+        guard let container = locked({ containers[id] }) else { return (2, "", "No such folder: \(folder)\n") }
+        let prefix = folder.hasSuffix("/") ? folder : folder + "/"
+        return list(
+            container.files, under: prefix, folder: folder, top: Self.isFolder(folder, in: container), folders: container.folders, links: container.links)
     }
 
-    /// The listing script's answer for `files` under `prefix`.
-    private func list(_ files: [String: Data], under prefix: String, folder: String, top: Bool) -> (Int, String, String) {
+    /// The listing script's answer for `files` under `prefix` — and the
+    /// folders and links an archive made.
+    private func list(
+        _ files: [String: Data], under prefix: String, folder: String, top: Bool, folders: Set<String> = [], links: [String: String] = [:]
+    ) -> (Int, String, String) {
         var lines: [String: String] = [:]
-        for (path, data) in files where path.hasPrefix(prefix) {
+        for path in Array(files.keys) + Array(folders) + Array(links.keys) where path.hasPrefix(prefix) {
             let rest = path.dropFirst(prefix.count)
             if let slash = rest.firstIndex(of: "/") {
                 let name = String(rest[..<slash])
                 lines[name] = "d\t-\t\(name)"
-            } else {
+            } else if folders.contains(path) {
+                lines[String(rest)] = "d\t-\t\(rest)"
+            } else if links[path] != nil {
+                lines[String(rest)] = "l\t-\t\(rest)"
+            } else if lines[String(rest)] == nil, let data = files[path] {
                 lines[String(rest)] = "f\t\(data.count)\t\(rest)"
             }
         }
@@ -1404,6 +1620,9 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
     private var head: HTTPRequestHead?
     private var body = Data()
     private var statsTask: RepeatedTask?
+    /// Answered at its head (`FakeDockerEngine.early`): its body is
+    /// passed over, and the connection closes once the answer is out.
+    private var answeredEarly = false
 
     init(engine: FakeDockerEngine) {
         self.engine = engine
@@ -1412,12 +1631,29 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
         case .head(let head):
+            // Dropped: what follows in the same read (its end) is no request.
+            if engine.takeDrop() {
+                self.head = nil
+                answeredEarly = true
+                context.close(promise: nil)
+                return
+            }
             self.head = head
             body = Data()
+            answeredEarly = false
+            if engine.stalls(head.uri) {
+                _ = context.channel.setOption(ChannelOptions.autoRead, value: false)
+                return
+            }
+            if let answer = engine.early(head.method, head.uri) {
+                answeredEarly = true
+                send(answer, context, head)
+            }
         case .body(var buffer):
+            guard !answeredEarly else { return }
             if let bytes = buffer.readBytes(length: buffer.readableBytes) { body.append(contentsOf: bytes) }
         case .end:
-            guard let head else { return }
+            guard let head, !answeredEarly else { return }
             respond(context, head)
         }
     }
@@ -1452,7 +1688,11 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
             head.headers.add(name: "Content-Length", value: "\(request.method == .HEAD ? 0 : data.count)")
             context.write(wrapOutboundOut(.head(head)), promise: nil)
             if request.method != .HEAD, !data.isEmpty { context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: data)))), promise: nil) }
-            context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in channel.close(promise: nil) }
+            let engine = engine
+            context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { result in
+                if case .success = result { engine.answerWritten(request.method, request.uri) }
+                channel.close(promise: nil)
+            }
         }
         func open(_ contentType: String) {
             var head = HTTPResponseHead(version: request.version, status: .ok, headers: headers([("Content-Type", contentType)]))

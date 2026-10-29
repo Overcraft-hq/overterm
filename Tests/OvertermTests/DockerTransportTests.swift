@@ -205,6 +205,301 @@ final class DockerTransportTests: XCTestCase {
         }
     }
 
+    // MARK: Files and folders in and out
+
+    /// What `sent` heard, from wherever it was called.
+    private final class Heard: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [Int] = []
+        private var pairs: [(Int, Int?)] = []
+        func add(_ value: Int) { lock.withLock { values.append(value) } }
+        func add(_ done: Int, _ total: Int?) { lock.withLock { pairs.append((done, total)) } }
+        var all: [Int] { lock.withLock { values } }
+        var last: (Int, Int?)? { lock.withLock { pairs.last } }
+    }
+
+    /// site/{index.html, css/app.css, run.sh, .DS_Store, empty/,
+    /// link → index.html, big.bin (3 MiB)} and notes.txt, under `folder`.
+    private func drop(in folder: URL) throws -> [URL] {
+        let files = FileManager.default
+        let site = folder.appendingPathComponent("site")
+        try files.createDirectory(at: site.appendingPathComponent("css"), withIntermediateDirectories: true)
+        try files.createDirectory(at: site.appendingPathComponent("empty"), withIntermediateDirectories: true)
+        try Data("<h1>site</h1>\n".utf8).write(to: site.appendingPathComponent("index.html"))
+        try Data("body {}\n".utf8).write(to: site.appendingPathComponent("css/app.css"))
+        try Data("#!/bin/sh\n".utf8).write(to: site.appendingPathComponent("run.sh"))
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: site.appendingPathComponent("run.sh").path)
+        try Data("finder".utf8).write(to: site.appendingPathComponent(".DS_Store"))
+        try Data((0..<(3 << 20)).map { UInt8($0 % 251) }).write(to: site.appendingPathComponent("big.bin"))
+        try files.createSymbolicLink(atPath: site.appendingPathComponent("link").path, withDestinationPath: "index.html")
+        let notes = folder.appendingPathComponent("notes.txt")
+        try Data("notes\n".utf8).write(to: notes)
+        return [site, notes]
+    }
+
+    private func scratch() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-files-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        return folder
+    }
+
+    func testFilesAndFoldersAreCopiedIn() async throws {
+        let id = fake.add(name: "web")
+        fake.setFile(id, "/srv/keep", Data("kept\n".utf8))
+        let plan = try DockerTar.Plan.make(try drop(in: try scratch()))
+        let heard = Heard()
+        try await engine.copyIn(plan, into: "/srv", of: id) { heard.add($0) }
+        XCTAssertEqual(fake.file(id, "/srv/site/css/app.css"), Data("body {}\n".utf8))
+        XCTAssertEqual(fake.file(id, "/srv/notes.txt"), Data("notes\n".utf8))
+        XCTAssertEqual(fake.file(id, "/srv/keep"), Data("kept\n".utf8), "what was there stays")
+        XCTAssertEqual(fake.fileMode(id, "/srv/site/run.sh"), 0o755)
+        XCTAssertEqual(fake.link(id, "/srv/site/link"), "index.html")
+        XCTAssertNil(fake.file(id, "/srv/site/.DS_Store"))
+        let listed = try await engine.list(id, folder: "/srv/site")
+        XCTAssertTrue(listed.contains { $0.name == "empty" && $0.kind == .folder }, "\(listed.map(\.name))")
+        XCTAssertTrue(listed.contains { $0.name == "link" && $0.kind == .link })
+        XCTAssertTrue(fake.requests.contains("PUT /v1.47/containers/\(id)/archive?noOverwriteDirNonDir=true&path=/srv"), "\(fake.requests)")
+        let sent = heard.all
+        XCTAssertGreaterThanOrEqual(sent.count, 3, "a piece at a time: \(sent)")
+        XCTAssertEqual(sent, sent.sorted())
+        XCTAssertEqual(sent.last, plan.length)
+    }
+
+    func testCopyingInSaysWhatTheEngineSays() async throws {
+        let id = fake.add(name: "web")
+        fake.setFile(id, "/srv/keep", Data("kept\n".utf8))
+        fake.setFile(id, "/srv/site/x", Data("x".utf8))
+        let folder = try scratch()
+        let notes = folder.appendingPathComponent("notes.txt")
+        try Data("notes\n".utf8).write(to: notes)
+        let plan = try DockerTar.Plan.make([notes])
+        do {
+            try await engine.copyIn(plan, into: "/nope", of: id)
+            XCTFail("no such folder")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 404)
+        }
+        XCTAssertFalse(fake.requests.contains { $0.hasPrefix("PUT") }, "said before anything is sent")
+        do {
+            try await engine.copyIn(plan, into: "/srv/keep", of: id)
+            XCTFail("a file isn't a folder")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("isn't a folder"), error.localizedDescription)
+        }
+        // A file where a folder of its name is: refused, as docker cp is.
+        let site = folder.appendingPathComponent("over/site")
+        try FileManager.default.createDirectory(at: site.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("a file".utf8).write(to: site)
+        do {
+            try await engine.copyIn(try DockerTar.Plan.make([site]), into: "/srv", of: id)
+            XCTFail("a file over a folder")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("cannot overwrite directory"), error.localizedDescription)
+        }
+        XCTAssertEqual(fake.file(id, "/srv/site/x"), Data("x".utf8))
+        fake.setReadOnly(id, true)
+        do {
+            try await engine.copyIn(plan, into: "/srv", of: id)
+            XCTFail("a read-only rootfs")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 400)
+            XCTAssertTrue(error.message.contains("read-only"), error.message)
+        }
+        // Refused at its head, as moby does, and closed while a big one is
+        // still being written: the write fails, and the engine's answer is
+        // what is said — not a broken pipe.
+        let big = folder.appendingPathComponent("big.bin")
+        try Data(count: 8 << 20).write(to: big)
+        do {
+            try await engine.copyIn(try DockerTar.Plan.make([big]), into: "/srv", of: id)
+            XCTFail("a read-only rootfs, refused before the body")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 400, error.message)
+            XCTAssertEqual(error.message, "container rootfs is marked read-only")
+        }
+    }
+
+    /// A streamed send stopped partway — between two pieces, or while a
+    /// piece waits for an engine that has stopped reading: the connection
+    /// closed, and the caller hears it was cancelled, at once, not after
+    /// waiting for an answer.
+    func testAStreamedSendCanBeStopped() async throws {
+        let id = fake.add(name: "web")
+        fake.setFile(id, "/srv/keep", Data("kept\n".utf8))
+        fake.setFile(id, "/stuck/keep", Data("kept\n".utf8))
+        fake.stall("path=/stuck")
+        let engine = engine!
+        for folder in ["/srv", "/stuck"] {
+            let heard = Heard()
+            let sending = Task {
+                try await engine.send(
+                    .PUT, "/containers/\(id)/archive", ["path": folder], length: 256 << 20,
+                    body: {
+                        heard.add(1)
+                        // Slow, and deaf to the cancel: the send itself stops.
+                        try? await Task.sleep(for: .milliseconds(20))
+                        return Data(count: 1 << 20)
+                    })
+            }
+            let pieces = folder == "/srv" ? 3 : 1
+            let deadline = Date().addingTimeInterval(5)
+            while heard.all.count < pieces, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertGreaterThanOrEqual(heard.all.count, pieces, "pieces went")
+            // Its first piece waiting on the socket.
+            if folder == "/stuck" { try await Task.sleep(for: .milliseconds(200)) }
+            let cancelled = Date()
+            sending.cancel()
+            do {
+                _ = try await sending.value
+                XCTFail("it finished")
+            } catch is CancellationError {
+            } catch {
+                XCTFail("\(folder): \(error)")
+            }
+            XCTAssertLessThan(Date().timeIntervalSince(cancelled), 2, "it didn't wait for an answer")
+            XCTAssertLessThan(heard.all.count, 256, "and read no more")
+            if folder == "/stuck" { XCTAssertEqual(heard.all.count, 1, "the engine took none") }
+        }
+    }
+
+    /// A GET read only as fast as it is taken: while the taker waits, the
+    /// engine can't write the rest — the archive isn't piled up in memory.
+    func testAReadKeepsThePaceOfItsReader() async throws {
+        let id = fake.add(name: "db")
+        let size = 32 << 20
+        fake.setFile(id, "/data/big.bin", Data(count: size))
+        func written() -> Bool { fake.answered.contains { $0.hasPrefix("GET ") && $0.contains("/archive?path=/data/big.bin") } }
+        var taken = 0
+        var waited = false
+        try await engine.receive("/containers/\(id)/archive", ["path": "/data/big.bin"]) { piece in
+            taken += piece.count
+            guard !waited else { return }
+            waited = true
+            try await Task.sleep(for: .milliseconds(400))
+            XCTAssertFalse(written(), "the engine waits for a slow reader")
+            XCTAssertLessThan(taken, 4 << 20)
+        }
+        XCTAssertEqual(taken, size + 3 * DockerTar.block, "all of it, in the end: a header, the file, the end blocks")
+        let deadline = Date().addingTimeInterval(2)
+        while !written(), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(written())
+        do {
+            try await engine.receive("/containers/\(id)/archive", ["path": "/nope"]) { _ in XCTFail("no body for an error") }
+            XCTFail("no such path")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 404)
+        }
+    }
+
+    /// A read whose connection went before any of its answer came — a busy
+    /// engine's — is asked once more; twice is an error, and a POST is never
+    /// sent again.
+    func testADroppedReadIsAskedAgain() async throws {
+        let id = fake.add(name: "db")
+        fake.setFile(id, "/data/a.txt", Data("a\n".utf8))
+        fake.drop(1)
+        var taken = 0
+        try await engine.receive("/containers/\(id)/archive", ["path": "/data/a.txt"]) { taken += $0.count }
+        XCTAssertGreaterThan(taken, 0, "the second asking answered")
+        fake.drop(2)
+        do {
+            try await engine.receive("/containers/\(id)/archive", ["path": "/data/a.txt"]) { _ in }
+            XCTFail("dropped twice")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 0)
+        }
+        func starts() -> Int { fake.requests.filter { $0.hasPrefix("POST ") && $0.contains("/containers/\(id)/start") }.count }
+        let before = starts()
+        fake.drop(1)
+        do {
+            try await engine.transport.receive(.POST, engine.path("/containers/\(id)/start"), headers: []) { _ in }
+            XCTFail("a dropped POST is the caller's to send again")
+        } catch {}
+        XCTAssertEqual(starts(), before, "never sent a second time")
+    }
+
+    func testAFileAndAFolderAreCopiedOut() async throws {
+        let id = fake.add(name: "nginx")
+        fake.setFile(id, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))
+        fake.setFile(id, "/etc/nginx/conf.d/default.conf", Data("server {}\n".utf8))
+        let folder = try scratch()
+        let script = folder.appendingPathComponent("in/reload.sh")
+        try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("nginx -s reload\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o750], ofItemAtPath: script.path)
+        try await engine.copyIn(try DockerTar.Plan.make([script]), into: "/etc/nginx", of: id)
+
+        let tree = folder.appendingPathComponent("out-nginx")
+        let summary = try await engine.copyOut("/etc/nginx", of: id, to: tree)
+        XCTAssertEqual(try String(contentsOf: tree.appendingPathComponent("nginx.conf"), encoding: .utf8), "worker_processes 1;\n")
+        XCTAssertEqual(try String(contentsOf: tree.appendingPathComponent("conf.d/default.conf"), encoding: .utf8), "server {}\n")
+        let mode = try FileManager.default.attributesOfItem(atPath: tree.appendingPathComponent("reload.sh").path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o750, "its mode kept")
+        XCTAssertEqual(summary.files, 3)
+        XCTAssertEqual(summary.skipped, [])
+
+        let heard = Heard()
+        let file = folder.appendingPathComponent("x.conf")
+        _ = try await engine.copyOut("/etc/nginx/nginx.conf", of: id, to: file) { heard.add($0, $1) }
+        XCTAssertEqual(try Data(contentsOf: file), Data("worker_processes 1;\n".utf8))
+        let last = try XCTUnwrap(heard.last)
+        XCTAssertEqual(last.1, 20)
+        XCTAssertGreaterThanOrEqual(last.0, last.1 ?? .max)
+
+        let none = folder.appendingPathComponent("none")
+        do {
+            _ = try await engine.copyOut("/nope", of: id, to: none)
+            XCTFail("no such path")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 404)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: none.path), "nothing left where it would have gone")
+    }
+
+    /// The same against the user's own engine, only with
+    /// OVERTERM_DOCKER_TESTS=1: a folder with a 200-byte name, an
+    /// executable and a link inside it in, then out again, on a container
+    /// of its own (from an image already there; nothing pulled), removed
+    /// after.
+    func testCopyInAndOutOnTheRealEngine() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_DOCKER_TESTS"] == "1", "OVERTERM_DOCKER_TESTS=1 runs it")
+        let real = DockerEngine(endpoint: .current())
+        try await real.ping()
+        let image = "debian:bookworm-slim"
+        guard (try? await real.send(.GET, "/images/\(image)/json")) != nil else { throw XCTSkip("\(image) isn't on this Mac; nothing is pulled") }
+        let folder = try scratch()
+        let long = String(repeating: "l", count: 200)
+        let site = folder.appendingPathComponent("site")
+        try FileManager.default.createDirectory(at: site.appendingPathComponent(long), withIntermediateDirectories: true)
+        try Data("deep\n".utf8).write(to: site.appendingPathComponent(long + "/deep.txt"))
+        try Data("#!/bin/sh\necho hi\n".utf8).write(to: site.appendingPathComponent("run.sh"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: site.appendingPathComponent("run.sh").path)
+        try FileManager.default.createSymbolicLink(atPath: site.appendingPathComponent("link").path, withDestinationPath: "run.sh")
+        let create = try JSONSerialization.data(withJSONObject: ["Image": image, "Cmd": ["sleep", "120"], "Labels": ["overterm.test": "1"]])
+        struct Created: Decodable { var Id: String }
+        let made = try JSONDecoder().decode(
+            Created.self,
+            from: try await real.send(
+                .POST, "/containers/create", ["name": "overterm-test-\(UUID().uuidString.prefix(8))"], body: create,
+                headers: [("Content-Type", "application/json")]
+            ).body)
+        do {
+            try await real.perform(.start, on: made.Id)
+            try await real.copyIn(try DockerTar.Plan.make([site]), into: "/tmp", of: made.Id)
+            let out = folder.appendingPathComponent("back")
+            _ = try await real.copyOut("/tmp/site", of: made.Id, to: out)
+            XCTAssertEqual(try String(contentsOf: out.appendingPathComponent(long + "/deep.txt"), encoding: .utf8), "deep\n")
+            let mode = try FileManager.default.attributesOfItem(atPath: out.appendingPathComponent("run.sh").path)[.posixPermissions] as? NSNumber
+            XCTAssertEqual(mode?.intValue, 0o755)
+            XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: out.appendingPathComponent("link").path), "run.sh")
+        } catch {
+            try? await real.remove(container: made.Id, force: true)
+            throw error
+        }
+        try await real.remove(container: made.Id, force: true)
+    }
+
     func testAFolderIsListedThroughExec() async throws {
         let id = fake.add(name: "web")
         fake.setFile(id, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))

@@ -44,9 +44,23 @@ struct DockerError: LocalizedError, Equatable, Sendable {
 /// the same over the fake engine's socket in the tests.
 protocol DockerTransport: Sendable {
     func send(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> DockerResponse
+    /// A request whose body is written as `body` hands it over, its
+    /// `length` said first: a folder's archive is read from disk as it
+    /// goes, never held whole. `sent` hears the bytes written so far.
+    func send(
+        _ method: HTTPMethod, _ path: String, length: Int, body: @escaping @Sendable () async throws -> Data?, headers: [(String, String)],
+        sent: @escaping @Sendable (Int) -> Void
+    ) async throws -> DockerResponse
     /// A response read as it arrives — events, a followed log, stats —
     /// until the engine ends it or the consumer stops iterating.
     func stream(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error>
+    /// A response's body handed to `consume` a piece at a time, the socket
+    /// read further only as it takes them: a folder's archive written to a
+    /// disk slower than the engine sends slows the engine down, and a few
+    /// pieces wait in memory at most — never the archive. An error status
+    /// throws the engine's message; a connection closed before the end
+    /// throws too.
+    func receive(_ method: HTTPMethod, _ path: String, headers: [(String, String)], consume: (Data) async throws -> Void) async throws
 }
 
 /// HTTP/1.1 over the engine's unix socket (or `tcp://`, or an `ssh://`
@@ -57,21 +71,25 @@ struct NIODockerTransport: DockerTransport {
     let address: DockerEndpoint.Address
 
     private func connect(_ handler: ChannelHandler & Sendable) async throws -> Channel {
-        let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
-            .connectTimeout(.seconds(3))
-            .channelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture {
-                    try channel.pipeline.syncOperations.addHTTPClientHandlers()
-                    try channel.pipeline.syncOperations.addHandler(handler)
-                }
+        try await connect { channel in
+            channel.eventLoop.makeCompletedFuture {
+                try channel.pipeline.syncOperations.addHTTPClientHandlers()
+                try channel.pipeline.syncOperations.addHandler(handler)
+                return channel
             }
+        }
+    }
+
+    /// A connection to the engine, its pipeline made by `initializer`.
+    private func connect<Output: Sendable>(_ initializer: @escaping @Sendable (Channel) -> EventLoopFuture<Output>) async throws -> Output {
+        let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton).connectTimeout(.seconds(3))
         do {
             switch address {
-            case .unix(let path): return try await bootstrap.connect(unixDomainSocketPath: path).get()
-            case .tcp(let host, let port): return try await bootstrap.connect(host: host, port: port).get()
+            case .unix(let path): return try await bootstrap.connect(unixDomainSocketPath: path, channelInitializer: initializer)
+            case .tcp(let host, let port): return try await bootstrap.connect(host: host, port: port, channelInitializer: initializer)
             case .ssh(let target):
                 let socket = try await DockerSSHForwards.shared.socket(for: target)
-                return try await bootstrap.connect(unixDomainSocketPath: socket).get()
+                return try await bootstrap.connect(unixDomainSocketPath: socket, channelInitializer: initializer)
             case .unsupported(let host): throw DockerError.unreachable("\(host) isn't an address Overterm reaches yet.")
             }
         } catch let error as DockerError {
@@ -81,12 +99,17 @@ struct NIODockerTransport: DockerTransport {
         }
     }
 
-    private func write(_ channel: Channel, _ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) {
+    private static func head(_ method: HTTPMethod, _ path: String, _ headers: [(String, String)]) -> HTTPRequestHead {
         var head = HTTPRequestHead(version: .http1_1, method: method, uri: path)
         head.headers.add(name: "Host", value: "docker")
         head.headers.add(name: "Connection", value: "close")
         head.headers.add(name: "User-Agent", value: "Overterm")
         for (name, value) in headers { head.headers.add(name: name, value: value) }
+        return head
+    }
+
+    private func write(_ channel: Channel, _ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) {
+        var head = Self.head(method, path, headers)
         // Always said, 0 for none: left out, NIO sends a POST chunked, and the
         // engine (Go) takes a body of unknown length as one — "starting
         // container with non-empty request body" refused every start.
@@ -102,6 +125,58 @@ struct NIODockerTransport: DockerTransport {
         write(channel, method, path, body: body, headers: headers)
         return try await withTaskCancellationHandler {
             try await collector.response.futureResult(on: channel.eventLoop).get()
+        } onCancel: {
+            channel.close(promise: nil)
+        }
+    }
+
+    /// Each piece written and flushed before the next is read: the
+    /// socket's pace is the disk's. The engine may answer before it has
+    /// read everything — a read-only rootfs, a file over a folder — and
+    /// close; the write then fails, and its answer is what is said.
+    func send(
+        _ method: HTTPMethod, _ path: String, length: Int, body: @escaping @Sendable () async throws -> Data?, headers: [(String, String)],
+        sent: @escaping @Sendable (Int) -> Void
+    ) async throws -> DockerResponse {
+        let collector = ResponseCollector()
+        let channel = try await connect(collector)
+        return try await withTaskCancellationHandler {
+            var head = Self.head(method, path, headers)
+            head.headers.add(name: "Content-Length", value: "\(length)")
+            var total = 0
+            do {
+                try await channel.writeAndFlush(HTTPClientRequestPart.head(head)).get()
+                while true {
+                    let chunk: Data?
+                    do {
+                        chunk = try await body()
+                    } catch {
+                        // Ours, not the engine's: nothing more is coming.
+                        channel.close(promise: nil)
+                        throw BodyFailure(error: error)
+                    }
+                    guard let chunk else { break }
+                    try Task.checkCancellation()
+                    try await channel.writeAndFlush(HTTPClientRequestPart.body(.byteBuffer(ByteBuffer(bytes: chunk)))).get()
+                    total += chunk.count
+                    sent(total)
+                }
+                try await channel.writeAndFlush(HTTPClientRequestPart.end(nil)).get()
+            } catch let failure as BodyFailure {
+                throw failure.error
+            } catch {
+                if Task.isCancelled || error is CancellationError {
+                    channel.close(promise: nil)
+                    throw CancellationError()
+                }
+                // Answered and closed before it read it all: the answer
+                // says why — waited for a few seconds at most.
+                let deadline = channel.eventLoop.scheduleTask(in: .seconds(5)) { channel.close(promise: nil) }
+                defer { deadline.cancel() }
+                if let answer = try? await collector.response.futureResult(on: channel.eventLoop).get() { return answer }
+                throw error
+            }
+            return try await collector.response.futureResult(on: channel.eventLoop).get()
         } onCancel: {
             channel.close(promise: nil)
         }
@@ -125,6 +200,90 @@ struct NIODockerTransport: DockerTransport {
             }
         }
     }
+
+    /// NIO's async channel: its reads wait while the pieces it holds are
+    /// ten, and go on below two — `consume` is the pace.
+    ///
+    /// A read whose connection went before any of its answer came — an
+    /// engine (or a socket) busy enough to drop a new connection — is asked
+    /// once more: a GET or a HEAD changes nothing, and nothing of it was
+    /// consumed.
+    func receive(_ method: HTTPMethod, _ path: String, headers: [(String, String)], consume: (Data) async throws -> Void) async throws {
+        let answered = Answered()
+        do {
+            try await receiveOnce(method, path, headers: headers, answered: answered, consume: consume)
+        } catch let error as DockerError where error.status == 0 && !answered.value && (method == .GET || method == .HEAD) && !Task.isCancelled {
+            try await receiveOnce(method, path, headers: headers, answered: answered, consume: consume)
+        }
+    }
+
+    /// Whether a response's head came.
+    private final class Answered {
+        var value = false
+    }
+
+    private func receiveOnce(
+        _ method: HTTPMethod, _ path: String, headers: [(String, String)], answered: Answered, consume: (Data) async throws -> Void
+    ) async throws {
+        let connection = try await connect { channel in
+            channel.eventLoop.makeCompletedFuture {
+                try channel.pipeline.syncOperations.addHTTPClientHandlers()
+                return try NIOAsyncChannel<HTTPClientResponsePart, HTTPClientRequestPart>(wrappingChannelSynchronously: channel)
+            }
+        }
+        try await withTaskCancellationHandler {
+            do {
+                try await connection.executeThenClose { inbound, outbound in
+                    var head = Self.head(method, path, headers)
+                    if method != .GET && method != .HEAD { head.headers.add(name: "Content-Length", value: "0") }
+                    try await outbound.write(.head(head))
+                    try await outbound.write(.end(nil))
+                    var status = 0
+                    var errorBody = Data()
+                    for try await part in inbound {
+                        switch part {
+                        case .head(let head):
+                            status = Int(head.status.code)
+                            answered.value = true
+                        case .body(let buffer):
+                            guard status < 400 else {
+                                errorBody.append(contentsOf: buffer.readableBytesView)
+                                continue
+                            }
+                            do {
+                                try await consume(Data(buffer.readableBytesView))
+                            } catch {
+                                throw BodyFailure(error: error)
+                            }
+                        case .end:
+                            guard status < 400 else {
+                                throw DockerError(status: status, message: DockerResponse(status: status, headers: [], body: errorBody).errorMessage)
+                            }
+                            return
+                        }
+                    }
+                    try Task.checkCancellation()
+                    throw DockerError.unreachable("Docker closed the connection.")
+                }
+            } catch let failure as BodyFailure {
+                throw failure.error
+            } catch let error as DockerError {
+                throw error
+            } catch {
+                if Task.isCancelled || error is CancellationError { throw CancellationError() }
+                throw DockerError.unreachable(error.localizedDescription)
+            }
+        } onCancel: {
+            connection.channel.close(promise: nil)
+        }
+    }
+}
+
+/// What a streamed body's own side threw — a file that changed as it was
+/// read, a disk that filled as it was written: said as it is, not taken
+/// for the engine's.
+private struct BodyFailure: Error {
+    var error: Error
 }
 
 /// A stream's channel and whether its consumer has gone, under one lock.
@@ -329,8 +488,26 @@ final class DockerEngine: Sendable {
         return response
     }
 
+    /// The same with a body written as it is read (`DockerTransport`), its
+    /// length said first.
+    @discardableResult
+    func send(
+        _ method: HTTPMethod, _ path: String, _ query: [String: String] = [:], length: Int, body: @escaping @Sendable () async throws -> Data?,
+        headers: [(String, String)] = [], sent: @escaping @Sendable (Int) -> Void = { _ in }
+    ) async throws -> DockerResponse {
+        let response = try await transport.send(method, self.path(path, query), length: length, body: body, headers: headers, sent: sent)
+        guard (200..<300).contains(response.status) else { throw DockerError(status: response.status, message: response.errorMessage) }
+        return response
+    }
+
     func stream(_ path: String, _ query: [String: String] = [:]) -> AsyncThrowingStream<Data, Error> {
         transport.stream(.GET, self.path(path, query), body: nil, headers: [])
+    }
+
+    /// A GET's body a piece at a time, the next read only once `consume`
+    /// has taken this one (`DockerTransport.receive`).
+    func receive(_ path: String, _ query: [String: String] = [:], consume: (Data) async throws -> Void) async throws {
+        try await transport.receive(.GET, self.path(path, query), headers: [], consume: consume)
     }
 }
 
