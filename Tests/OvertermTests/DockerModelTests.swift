@@ -1247,4 +1247,86 @@ final class DockerCLITests: XCTestCase {
         XCTAssertEqual(rancher.status(fromOutput: "Error: connection refused"), .unknown)
         XCTAssertEqual(rancher.extras().map(\.command), ["rdctl list-settings", "rdctl version"])
     }
+
+    // MARK: Lines as they come
+
+    /// A stub `docker` in a folder of its own; every loop in one is bounded,
+    /// so a failing test leaks nothing.
+    private func stub(_ body: String) throws -> (folder: URL, cli: DockerCLI) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-lines-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let tool = folder.appendingPathComponent("docker")
+        try Data("#!/bin/sh\n\(body)\n".utf8).write(to: tool)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        return (folder, DockerCLI(executable: tool, endpoint: nil))
+    }
+
+    func testLinesComeAsTheyAreWritten() async throws {
+        let (folder, cli) = try stub(#"printf 'one\ntw' >&2; n=0; while [ ! -f "$1" ] && [ $n -lt 100 ]; do sleep 0.05; n=$((n+1)); done; printf 'o\n' >&2"#)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let flag = folder.appendingPathComponent("go")
+        var lines = cli.lines([flag.path]).makeAsyncIterator()
+        let first = try await lines.next()
+        XCTAssertEqual(first, ["one"], "before the rest is written")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: flag.path))
+        FileManager.default.createFile(atPath: flag.path, contents: Data())
+        let second = try await lines.next()
+        XCTAssertEqual(second, ["two"], "the half line, finished")
+        let end = try await lines.next()
+        XCTAssertNil(end)
+    }
+
+    func testAFailureSaysItsLastWords() async throws {
+        let (folder, cli) = try stub(#"echo 'ERROR: no record found for ref "zzz"' >&2; exit 1"#)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var said: [String] = []
+        do {
+            for try await lines in cli.lines(["buildx", "history", "logs"]) { said += lines }
+            XCTFail("an exit of 1 throws")
+        } catch let error as GitError {
+            XCTAssertEqual(error.status, 1)
+            XCTAssertTrue(error.stderr.contains("no record found"), error.stderr)
+        }
+        XCTAssertEqual(said, [#"ERROR: no record found for ref "zzz""#])
+    }
+
+    func testStoppingStopsTheProcess() async throws {
+        let (folder, cli) = try stub(#"echo $$ > "$1"; echo ready >&2; n=0; while [ $n -lt 200 ]; do sleep 0.05; n=$((n+1)); done"#)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pidFile = folder.appendingPathComponent("pid")
+        let stream = cli.lines([pidFile.path])
+        let reader = Task {
+            var said: [String] = []
+            for try await lines in stream { said += lines }
+            return said
+        }
+        func pid() -> Int32? { (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) } }
+        var waited = 0
+        while pid() == nil, waited < 100 {
+            try await Task.sleep(for: .milliseconds(30))
+            waited += 1
+        }
+        let running = try XCTUnwrap(pid())
+        XCTAssertEqual(kill(running, 0), 0, "it runs")
+        try await Task.sleep(for: .milliseconds(100))
+        reader.cancel()
+        _ = try? await reader.value
+        var gone = false
+        for _ in 0..<60 {
+            if kill(running, 0) == -1 && errno == ESRCH {
+                gone = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(gone, "stopping the loop terminated it")
+    }
+
+    func testItReadsStdoutWhenAsked() async throws {
+        let (folder, cli) = try stub("echo out; echo err >&2")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var said: [String] = []
+        for try await lines in cli.lines([], from: .stdout) { said += lines }
+        XCTAssertEqual(said, ["out"])
+    }
 }

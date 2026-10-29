@@ -1418,14 +1418,46 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Another Like It's. An image's own verb pulls its variant through the
   engine (`/images/create?platform=`), and one with no such variant says
   so.
-- **Builds** (section 5, `DockerBuildRecord`/`DockerBuildDetail`, pure):
-  what `docker buildx history` keeps — Docker Desktop's Builds view reads
-  the same records — through the CLI, read when the section shows. A
-  build's detail is its inspect data (context, Dockerfile, build args
-  masked as env is, the commit it was built from) and its log; its
-  Dockerfile opens in the editor when the context is a folder here. A
-  scenario points `DockerCLI.override` at a stub `docker` answering as
-  buildx would.
+- **Builds** (section 5; `DockerBuildRecord`/`DockerBuildDetail` and
+  `DockerBuildProgress`, pure; `DockerBuildSession`): what `docker buildx
+  history` keeps — Docker Desktop's Builds view reads the same records —
+  through the CLI. The list is read every 3 s while the section shows and
+  its window can be seen (10 s over ssh, where each read is a
+  connection). So a build started anywhere — a tab, an agent, compose —
+  is there while it runs, and selected when nothing is, once.
+  A build's steps are BuildKit's own account: `buildx history logs
+  --progress rawjson <ref>` replays a finished record's stored progress
+  and follows a running one to its end. BuildKit answers from the record
+  once it is written and from the running job before, replayed from its
+  start either way. The JSON is on stderr, a SolveStatus a line, read by
+  `DockerCLI.lines` (no thread blocked) and decoded off the main thread.
+  It is folded as the plain printer folds it: a step numbered when it
+  first starts; its time its intervals merged; cached, failed or
+  canceled as BuildKit says; its output in lines (a half line waits for
+  the rest, colour and `\r` redraws out, 2 MB a step); Dockerfile
+  warnings with their line. The detail redraws at most five times a
+  second and reads only while it shows; hidden, the follow's process is
+  terminated, and shown again it reads from the start.
+  Overterm never starts a build to watch it: compose has no rawjson (its
+  `--progress json` is its own), and BuildKit records every build anyway.
+  Build args are masked as env is, and a secret one's value is taken out
+  of step names, output and Copy Log too — BuildKit expands an ARG into a
+  RUN step's name. So nothing of the steps is drawn or copied until
+  `buildx history inspect` has said the build args (`secretsKnown`); it is
+  asked again until it answers. buildx 0.20 has no `inspect --format`,
+  and its plain table is read instead (`parsePlain`). BuildKit ends the
+  stream before it writes the record's end, so the inspect is asked again
+  after the end until it says how the build ended, and once more when the
+  list says the record is over. Whether a build runs is the record's say
+  (the list) or the inspect's, never a guess. A follow that breaks off
+  keeps the steps it read and says why over them; a step still open then
+  is drawn as not known, not running. A list read that fails stands in
+  for the list and the detail, and the follow stops with them; Read Again
+  brings both back, and the poll. The steps are a table, but not the
+  list: the page's keys act only on its first table, and ⌫ asks before a
+  record goes. Log in a Tab (`t`) is the plain alternative. A
+  scenario points `DockerCLI.override` at a stub `docker`; a test process
+  or an isolated run reads builds from nothing else (`buildsCLI`).
 - **Image updates** (`DockerImageUpdates`; `DockerImageReference`, pure):
   Check for Updates — the Images header, an image's menu, a project's, `C`
   — asks each tag's registry what the tag names now. It goes through

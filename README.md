@@ -206,8 +206,10 @@ Settings… (`,`), the `docker update` written out as you go; it renames —
 warning you when Compose would put the old name back — and saves as an
 image, its secrets and Compose's labels left out. A password in its
 command can't be, and it says so before you save.
-Builds show what buildx kept of each — how long, how much from cache, its
-log, the Dockerfile a click away. Models lists Docker Model Runner's local
+Builds show every build buildx keeps, one still running too, step by step
+as BuildKit reports it: how long each took, which came from cache, which
+failed and why, each one's output, Dockerfile warnings with their line,
+the Dockerfile a click away — and the plain log in a tab. Models lists Docker Model Runner's local
 LLMs — which are loaded, what they take — with a chat with one in a tab
 and the OpenAI base URL to give your code. An `ssh://` context reaches a
 remote engine through your own ssh, its ports opening on the host. Docker

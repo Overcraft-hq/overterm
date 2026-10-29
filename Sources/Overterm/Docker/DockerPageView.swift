@@ -282,6 +282,10 @@ struct DockerPageView: View {
             if docker.connection.isRunning, page.section == .containers {
                 Text(verbatim: "\(running) running · \(docker.containers.count)").font(.system(size: 12)).foregroundStyle(theme.text3)
             }
+            if page.section == .builds, case let building = page.builds.filter(\.running).count, building > 0 {
+                Text(verbatim: "\(building) running · \(page.builds.count)").font(.system(size: 12)).foregroundStyle(theme.text3)
+                    .accessibilityIdentifier("docker.builds.running")
+            }
             if docker.connection.isRunning, page.section == .images, let lastRun = updates.lastRun {
                 let counts = updates.counts(of: docker.images)
                 // Its age moves on while it shows, once a minute.

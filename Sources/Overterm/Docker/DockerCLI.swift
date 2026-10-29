@@ -76,6 +76,132 @@ struct DockerCLI: Sendable {
             in: folder, success: success, timeout: timeout)
     }
 
+    enum Output: Sendable { case stdout, stderr }
+
+    /// Runs it and hands over what it writes to `output` (BuildKit's
+    /// progress is stderr) in whole lines as they come. No thread is
+    /// blocked: FileHandle's queue reads, the process's own handler says
+    /// when it ended. Another exit than `success` throws GitError with its
+    /// last four lines. Ending the loop, or cancelling its task, terminates
+    /// the process.
+    func lines(_ arguments: [String], from output: Output = .stderr, success: Set<Int32> = [0]) -> AsyncThrowingStream<[String], Error> {
+        Self.stream(
+            tool: URL(fileURLWithPath: "/usr/bin/env"), arguments: Self.environment(for: endpoint, executable: executable) + [executable.path] + arguments,
+            said: Array(arguments.suffix(6)), output: output, success: success)
+    }
+
+    /// Every closure is made here, outside any actor: the pipe's handler
+    /// and the process's run on queues of their own (CLAUDE.md, Apple
+    /// completion handlers).
+    private nonisolated static func stream(
+        tool: URL, arguments: [String], said: [String], output: Output, success: Set<Int32>
+    ) -> AsyncThrowingStream<[String], Error> {
+        AsyncThrowingStream { continuation in
+            let process = Process()
+            process.executableURL = tool
+            process.arguments = arguments
+            process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+            process.standardInput = FileHandle.nullDevice
+            let pipe = Pipe()
+            switch output {
+            case .stdout:
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
+            case .stderr:
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = pipe
+            }
+            let lines = LineStream(continuation, arguments: said, success: success)
+            let reading = pipe.fileHandleForReading
+            reading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    lines.ended()
+                } else {
+                    lines.feed(data)
+                }
+            }
+            process.terminationHandler = { process in lines.exited(process.terminationStatus) }
+            let running = RunningProcess()
+            continuation.onTermination = { _ in running.cancel() }
+            do {
+                guard try running.start(process) else {
+                    reading.readabilityHandler = nil
+                    return continuation.finish(throwing: CancellationError())
+                }
+            } catch {
+                reading.readabilityHandler = nil
+                continuation.finish(throwing: error)
+            }
+        }
+    }
+
+    /// A line stream's state, shared by the pipe's queue and the process's
+    /// handler: whole lines out, the last four kept for an error, finished
+    /// once both the pipe and the process have ended.
+    private final class LineStream: @unchecked Sendable {
+        private let lock = NSLock()
+        private let continuation: AsyncThrowingStream<[String], Error>.Continuation
+        private let arguments: [String]
+        private let success: Set<Int32>
+        private var splitter = DockerLineSplitter()
+        private var last: [String] = []
+        private var eof = false
+        private var status: Int32?
+        private var finished = false
+
+        init(_ continuation: AsyncThrowingStream<[String], Error>.Continuation, arguments: [String], success: Set<Int32>) {
+            self.continuation = continuation
+            self.arguments = arguments
+            self.success = success
+        }
+
+        func feed(_ data: Data) {
+            lock.withLock { yield(splitter.feed(data)) }
+        }
+
+        /// End of file: the half line left is a last line.
+        func ended() {
+            lock.withLock {
+                yield(splitter.finish().map { [$0] } ?? [])
+                eof = true
+                if status != nil { finish() }
+            }
+        }
+
+        /// The process is gone. A child holding the pipe open (a plugin)
+        /// gets two seconds to let go, as `Git.runBlocking` gives it.
+        func exited(_ code: Int32) {
+            let waiting = lock.withLock {
+                status = code
+                if eof { finish() }
+                return !eof
+            }
+            guard waiting else { return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [self] in lock.withLock { finish() } }
+        }
+
+        /// Under the lock.
+        private func yield(_ data: [Data]) {
+            guard !data.isEmpty, !finished else { return }
+            let lines = data.map { String(decoding: $0, as: UTF8.self) }
+            last = Array((last + lines).suffix(4))
+            continuation.yield(lines)
+        }
+
+        /// Under the lock.
+        private func finish() {
+            guard !finished, let status else { return }
+            finished = true
+            if success.contains(status) {
+                continuation.finish()
+            } else {
+                continuation.finish(throwing: GitError(arguments: arguments, status: status, stderr: last.joined(separator: "\n")))
+            }
+        }
+    }
+
     static func environment(for endpoint: DockerEndpoint?, executable: URL) -> [String] {
         let folder = executable.deletingLastPathComponent().path
         let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"

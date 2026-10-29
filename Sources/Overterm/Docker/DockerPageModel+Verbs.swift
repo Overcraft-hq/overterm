@@ -522,8 +522,12 @@ extension DockerPageModel {
 
     // MARK: Builds
 
-    func verbs(for build: DockerBuildRecord, detail: DockerBuildDetail? = nil) -> [DockerVerb] {
+    /// What the detail's session knows of it — its inspect, its steps —
+    /// when it is the build the detail shows.
+    func verbs(for build: DockerBuildRecord) -> [DockerVerb] {
         let endpoint = docker.endpoint
+        let session = buildSession.flatMap { $0.ref == build.shortRef ? $0 : nil }
+        let detail = session?.detail
         var verbs: [DockerVerb] = []
         if let file = detail?.dockerfileURL {
             verbs.append(
@@ -532,15 +536,30 @@ extension DockerPageModel {
                 })
         }
         verbs += [
-            DockerVerb(title: "Log in a Tab", symbol: "text.alignleft", place: .button) { [weak self] in
-                self?.actions?.run(DockerCommands.prefix(for: endpoint) + "docker buildx history logs \(DockerCommands.quote(build.shortRef))", nil)
+            // The plain alternative: buildx's own printer, a running build
+            // followed to its end.
+            DockerVerb(title: "Log in a Tab", symbol: "text.alignleft", place: .button, key: DockerKey.followLogs.key) { [weak self] in
+                self?.actions?.run(DockerCommands.buildLog(build, endpoint: endpoint), nil)
             },
             DockerVerb(title: "Copy Ref", symbol: "doc.on.doc", place: .button) { [weak self] in self?.actions?.copy(build.shortRef) },
         ]
+        // Only once the build args are known: a step's name can hold a
+        // secret one's value, and this goes to the clipboard.
+        if let session, session.secretsKnown, !session.progress.steps.isEmpty {
+            verbs.append(
+                DockerVerb(title: "Copy Log", symbol: "doc.plaintext") { [weak self, weak session] in
+                    guard let text = session?.plainText else { return }
+                    self?.actions?.copy(text)
+                })
+        }
         if let context = detail?.context {
             verbs.append(DockerVerb(title: "Copy Context", symbol: "folder") { [weak self] in self?.actions?.copy(context) })
         }
-        verbs.append(DockerVerb(title: "Remove Record", label: "Remove", symbol: "trash", place: .remove, key: "⌫") { [weak self] in self?.removeBuild(build) })
+        verbs.append(
+            DockerVerb(
+                title: "Remove Record…", label: "Remove", symbol: "trash", place: .remove, key: DockerKey.remove.key,
+                unavailable: build.running ? "It's still running." : nil
+            ) { [weak self] in self?.confirmRemove(builds: [build]) })
         return verbs
     }
 

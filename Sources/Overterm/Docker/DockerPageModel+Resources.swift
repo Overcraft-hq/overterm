@@ -205,36 +205,111 @@ extension DockerPageModel {
 
     // MARK: Builds
 
-    /// The builds `buildx history` keeps, read when the section shows.
+    /// The builds `buildx history` keeps, read again now.
     func loadBuilds() {
-        guard let cli = DockerCLI(endpoint: docker.endpoint) else {
-            buildsError = "docker isn't on this Mac: builds are read with docker buildx."
-            return
+        Task { await readBuilds() }
+    }
+
+    /// `docker` for builds: a test's stub; in a test process or an
+    /// isolated run only a scenario's stub (`DockerCLI.override`), never the
+    /// user's Docker; else the CLI, told this page's engine.
+    var buildsCLI: DockerCLI? {
+        if let buildsCLIOverride { return buildsCLIOverride }
+        if AppEnvironment.isIsolated || NSClassFromString("XCTestCase") != nil {
+            return DockerCLI.override.map { DockerCLI(executable: $0, endpoint: docker.endpoint) }
         }
-        Task {
-            do {
-                builds = DockerBuildRecord.parse(try await cli.run(["buildx", "history", "ls", "--format", "json"], timeout: 30))
-                buildsError = nil
-            } catch {
-                buildsError = "docker buildx history: \(error.localizedDescription)"
+        return DockerCLI(endpoint: docker.endpoint)
+    }
+
+    /// How often the list is read while the section shows: each read
+    /// spawns the CLI, its plugin and a connection to BuildKit — over ssh,
+    /// a connection of its own.
+    var buildInterval: TimeInterval {
+        if let buildPoll { return buildPoll }
+        if case .ssh = docker.endpoint?.address { return 10 }
+        return 3
+    }
+
+    /// The list read every `buildInterval` while the section shows (`on`),
+    /// so a build started anywhere — a tab, an agent, compose — is there
+    /// while it runs. A read that fails stops it until the section shows
+    /// again, or a read that doesn't (Read Again, a build's end): an old
+    /// buildx says so once, not every few seconds.
+    func watchBuilds(_ on: Bool) {
+        buildsWatched = on
+        guard on != (buildWatch != nil) else { return }
+        buildWatch?.cancel()
+        buildWatch = nil
+        guard on else { return }
+        buildWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = await self?.pollBuilds() else { break }
+                try? await Task.sleep(for: .seconds(interval))
             }
+            // Stopped by a failed read, not by `watchBuilds(false)`: the
+            // next read that works starts it again.
+            if !Task.isCancelled { self?.buildWatch = nil }
         }
     }
 
-    func buildDetail(_ build: DockerBuildRecord) async -> DockerBuildDetail? {
-        guard let cli = DockerCLI(endpoint: docker.endpoint),
-            let output = try? await cli.run(["buildx", "history", "inspect", build.shortRef, "--format", "json"], timeout: 30)
-        else { return nil }
-        return DockerBuildDetail.parse(output)
+    /// One read: the interval to the next, nil to stop.
+    private func pollBuilds() async -> TimeInterval? {
+        await readBuilds() ? buildInterval : nil
     }
 
-    func buildLog(_ build: DockerBuildRecord) async -> String {
-        guard let cli = DockerCLI(endpoint: docker.endpoint) else { return "" }
-        return (try? await cli.run(["buildx", "history", "logs", build.shortRef], timeout: 60)) ?? "(no log)"
+    /// Reads the list; false when it couldn't. The list changes only when
+    /// it did; a running build is selected when nothing is, once.
+    @discardableResult
+    func readBuilds() async -> Bool {
+        guard !readingBuilds else { return true }
+        guard let cli = buildsCLI else {
+            buildsError =
+                AppEnvironment.isIsolated || NSClassFromString("XCTestCase") != nil
+                ? "This run reads builds only from a scenario's stub." : "docker isn't on this Mac: builds are read with docker buildx."
+            return false
+        }
+        readingBuilds = true
+        defer { readingBuilds = false }
+        do {
+            let read = DockerBuildRecord.parse(try await cli.run(["buildx", "history", "ls", "--format", "json"], timeout: 30))
+            if read != builds { builds = read }
+            if buildsError != nil { buildsError = nil }
+            // The detail's build: whether its record still runs.
+            if let session = buildSession, let record = read.first(where: { $0.shortRef == session.ref }) { session.record(running: record.running) }
+            if buildSelection.isEmpty, let running = read.first(where: \.running), !autoSelected.contains(running.id) {
+                autoSelected.insert(running.id)
+                buildSelection = [running.id]
+            }
+            if buildsWatched, buildWatch == nil { watchBuilds(true) }
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            let said = error.localizedDescription
+            buildsError =
+                said.contains("unknown command") || said.contains("is not a docker command")
+                ? "docker buildx history isn't there: a build's history needs buildx 0.20 or later." : "docker buildx history: \(said)"
+            return false
+        }
+    }
+
+    /// Asked first, as every removal is: a record is BuildKit's only account
+    /// of how a build went. A running one's is BuildKit's until it ends.
+    func confirmRemove(builds: [DockerBuildRecord]) {
+        let removable = builds.filter { !$0.running }
+        guard !removable.isEmpty else { return }
+        actions?.confirm(
+            removable.count == 1 ? "Remove the record of “\(removable[0].name)”?" : "Remove \(removable.count) build records?",
+            removable.count == 1
+                ? "Its steps, their output and how it went leave buildx's history. What it built stays."
+                : "Their steps, their output and how they went leave buildx's history. What they built stays.", "Remove"
+        ) { [weak self] in
+            for build in removable { self?.removeBuild(build) }
+        }
     }
 
     func removeBuild(_ build: DockerBuildRecord) {
-        guard let cli = DockerCLI(endpoint: docker.endpoint) else { return }
+        guard let cli = buildsCLI else { return }
         Task {
             do {
                 _ = try await cli.run(["buildx", "history", "rm", build.shortRef], timeout: 30)

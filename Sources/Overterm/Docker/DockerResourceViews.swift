@@ -7,7 +7,7 @@ private func ago(_ seconds: Int) -> String {
 }
 
 /// A key, its value: the details' rows.
-private struct DetailRow: View {
+struct DockerDetailRow: View {
     let key: String
     let value: String
     @ObservedObject var theme: ChromeTheme
@@ -21,7 +21,7 @@ private struct DetailRow: View {
     }
 }
 
-private struct DetailBlock<Content: View>: View {
+struct DockerDetailBlock<Content: View>: View {
     let title: String
     @ObservedObject var theme: ChromeTheme
     @ViewBuilder var content: Content
@@ -35,7 +35,7 @@ private struct DetailBlock<Content: View>: View {
 }
 
 /// A row of a resource list: a glyph, a name, what is under it, figures on the right.
-private struct ResourceRow: View {
+struct DockerResourceRow: View {
     let symbol: String
     let title: String
     let subtitle: String
@@ -129,7 +129,7 @@ struct DockerImagesView: View {
                 List(selection: $page.imageSelection) {
                     ForEach(shown) { image in
                         let users = docker.containers(using: image)
-                        ResourceRow(
+                        DockerResourceRow(
                             symbol: image.isDangling ? "square.dashed" : "square.stack.3d.down.right",
                             title: image.tags.first ?? "<none>",
                             subtitle: [image.shortID, docker.platforms[image.Id]?.description, image.tags.count > 1 ? "+\(image.tags.count - 1) tags" : nil]
@@ -243,23 +243,23 @@ private struct DockerImageDetail: View {
                     DockerEmulationNote(
                         emulation: emulation, text: emulation.imageAdvice, verb: verbs.first { $0.title == emulation.imageVerbTitle }, theme: theme)
                 }
-                DetailBlock(title: "Image", theme: theme) {
-                    DetailRow(key: "ID", value: image.shortID, theme: theme)
+                DockerDetailBlock(title: "Image", theme: theme) {
+                    DockerDetailRow(key: "ID", value: image.shortID, theme: theme)
                     if let platform = docker.platforms[image.Id] {
-                        DetailRow(key: "Platform", value: platform.description + (docker.emulation(ofImage: image.Id) != nil ? " — emulated here" : ""), theme: theme)
+                        DockerDetailRow(key: "Platform", value: platform.description + (docker.emulation(ofImage: image.Id) != nil ? " — emulated here" : ""), theme: theme)
                     }
-                    DetailRow(key: "Size", value: bytes(image.Size), theme: theme)
-                    DetailRow(key: "Created", value: ago(image.Created), theme: theme)
-                    ForEach(image.tags.dropFirst(), id: \.self) { DetailRow(key: "Also", value: $0, theme: theme) }
+                    DockerDetailRow(key: "Size", value: bytes(image.Size), theme: theme)
+                    DockerDetailRow(key: "Created", value: ago(image.Created), theme: theme)
+                    ForEach(image.tags.dropFirst(), id: \.self) { DockerDetailRow(key: "Also", value: $0, theme: theme) }
                 }
                 if !image.tags.isEmpty {
-                    DetailBlock(title: "Registry", theme: theme) {
+                    DockerDetailBlock(title: "Registry", theme: theme) {
                         TimelineView(.everyMinute) { _ in
                             VStack(alignment: .leading, spacing: 6) {
                                 ForEach(image.tags, id: \.self) { tag in
                                     let line = registryLine(tag)
-                                    DetailRow(key: tag, value: line.words, theme: theme)
-                                    if let digests = line.digests { DetailRow(key: "", value: digests, theme: theme) }
+                                    DockerDetailRow(key: tag, value: line.words, theme: theme)
+                                    if let digests = line.digests { DockerDetailRow(key: "", value: digests, theme: theme) }
                                 }
                             }
                         }
@@ -268,11 +268,11 @@ private struct DockerImageDetail: View {
                 }
                 let users = docker.containers(using: image)
                 if !users.isEmpty {
-                    DetailBlock(title: "Used by", theme: theme) {
-                        ForEach(users) { DetailRow(key: $0.name, value: DockerStatusStyle.status($0), theme: theme) }
+                    DockerDetailBlock(title: "Used by", theme: theme) {
+                        ForEach(users) { DockerDetailRow(key: $0.name, value: DockerStatusStyle.status($0), theme: theme) }
                     }
                 }
-                DetailBlock(title: "Layers", theme: theme) {
+                DockerDetailBlock(title: "Layers", theme: theme) {
                     if let layers {
                         ForEach(Array(layers.enumerated()), id: \.offset) { _, layer in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -358,7 +358,7 @@ struct DockerVolumesView: View {
             List(selection: $page.volumeSelection) {
                 ForEach(shown) { volume in
                     let users = docker.containers(mounting: volume)
-                    ResourceRow(
+                    DockerResourceRow(
                         symbol: volume.isAnonymous ? "externaldrive.badge.questionmark" : "externaldrive",
                         title: volume.shortName,
                         subtitle: [volume.isAnonymous ? "anonymous" : nil, volume.composeProject.map { "compose: \($0)" }, volume.Driver]
@@ -447,24 +447,24 @@ private struct DockerVolumeDetail: View {
 
     private var overview: some View {
         VStack(alignment: .leading, spacing: 16) {
-            DetailBlock(title: "Volume", theme: theme) {
-                DetailRow(key: "Name", value: volume.Name, theme: theme)
-                DetailRow(key: "Driver", value: volume.Driver, theme: theme)
-                DetailRow(key: "Size", value: volume.UsageData.map { bytes($0.Size) } ?? "—", theme: theme)
-                DetailRow(key: "In the VM at", value: volume.Mountpoint, theme: theme)
-                if let created = volume.CreatedAt { DetailRow(key: "Created", value: ContainerDetailView.date(created), theme: theme) }
+            DockerDetailBlock(title: "Volume", theme: theme) {
+                DockerDetailRow(key: "Name", value: volume.Name, theme: theme)
+                DockerDetailRow(key: "Driver", value: volume.Driver, theme: theme)
+                DockerDetailRow(key: "Size", value: volume.UsageData.map { bytes($0.Size) } ?? "—", theme: theme)
+                DockerDetailRow(key: "In the VM at", value: volume.Mountpoint, theme: theme)
+                if let created = volume.CreatedAt { DockerDetailRow(key: "Created", value: ContainerDetailView.date(created), theme: theme) }
             }
             let users = docker.containers(mounting: volume)
-            DetailBlock(title: "Mounted by", theme: theme) {
+            DockerDetailBlock(title: "Mounted by", theme: theme) {
                 if users.isEmpty { Text("Nothing").font(.system(size: 11.5)).foregroundStyle(theme.text3) }
                 ForEach(users) { container in
                     let at = (container.Mounts ?? []).first { $0.Name == volume.Name }?.Destination ?? ""
-                    DetailRow(key: container.name, value: at, theme: theme)
+                    DockerDetailRow(key: container.name, value: at, theme: theme)
                 }
             }
             let labels = (volume.Labels ?? [:]).filter { !$0.key.hasPrefix("com.docker.compose.") }
             if !labels.isEmpty {
-                DetailBlock(title: "Labels", theme: theme) { ForEach(labels.keys.sorted(), id: \.self) { DetailRow(key: $0, value: labels[$0] ?? "", theme: theme) } }
+                DockerDetailBlock(title: "Labels", theme: theme) { ForEach(labels.keys.sorted(), id: \.self) { DockerDetailRow(key: $0, value: labels[$0] ?? "", theme: theme) } }
             }
         }
     }
@@ -488,7 +488,7 @@ struct DockerNetworksView: View {
             List(selection: $page.networkSelection) {
                 ForEach(shown) { network in
                     let members = docker.containers(on: network)
-                    ResourceRow(
+                    DockerResourceRow(
                         symbol: network.isBuiltIn ? "lock" : "point.3.filled.connected.trianglepath.dotted", title: network.Name,
                         subtitle: [network.Driver, network.Scope, network.isBuiltIn ? "Docker's own" : nil].compactMap { $0 }.joined(separator: " · "),
                         figures: [members.isEmpty ? "empty" : "\(members.count) container\(members.count == 1 ? "" : "s")", network.subnet ?? ""],
@@ -508,20 +508,20 @@ struct DockerNetworksView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(verbatim: network.Name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                         DockerActionBar(verbs: page.verbs(for: network), theme: theme)
-                        DetailBlock(title: "Network", theme: theme) {
-                            DetailRow(key: "Driver", value: network.Driver ?? "", theme: theme)
-                            DetailRow(key: "Subnet", value: network.subnet ?? "—", theme: theme)
-                            DetailRow(key: "Gateway", value: network.IPAM?.Config?.first?.Gateway ?? "—", theme: theme)
-                            if network.Internal == true { DetailRow(key: "Internal", value: "no way out", theme: theme) }
+                        DockerDetailBlock(title: "Network", theme: theme) {
+                            DockerDetailRow(key: "Driver", value: network.Driver ?? "", theme: theme)
+                            DockerDetailRow(key: "Subnet", value: network.subnet ?? "—", theme: theme)
+                            DockerDetailRow(key: "Gateway", value: network.IPAM?.Config?.first?.Gateway ?? "—", theme: theme)
+                            if network.Internal == true { DockerDetailRow(key: "Internal", value: "no way out", theme: theme) }
                         }
-                        DetailBlock(title: "On it", theme: theme) {
+                        DockerDetailBlock(title: "On it", theme: theme) {
                             let members = docker.containers(on: network)
                             if members.isEmpty { Text("Nothing").font(.system(size: 11.5)).foregroundStyle(theme.text3) }
                             ForEach(members) { container in
                                 let address =
                                     network.Containers?[container.Id]?.IPv4Address ?? container.NetworkSettings?.Networks?[network.Name]?.IPAddress ?? ""
                                 HStack(spacing: 6) {
-                                    DetailRow(key: container.name, value: address, theme: theme)
+                                    DockerDetailRow(key: container.name, value: address, theme: theme)
                                     if network.Name != "host", network.Name != "none" {
                                         Button("Disconnect") { page.disconnect(container, from: network) }
                                             .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(theme.accentText)
@@ -585,18 +585,18 @@ struct TestcontainersSessionView: View {
                     }
                 }
                 DockerActionBar(verbs: page.verbs(for: session), theme: theme)
-                DetailBlock(title: "Run", theme: theme) {
-                    DetailRow(key: "Session", value: session.id.isEmpty ? "none — kept for reuse" : session.id, theme: theme)
-                    DetailRow(key: "Library", value: library ?? "—", theme: theme)
+                DockerDetailBlock(title: "Run", theme: theme) {
+                    DockerDetailRow(key: "Session", value: session.id.isEmpty ? "none — kept for reuse" : session.id, theme: theme)
+                    DockerDetailRow(key: "Library", value: library ?? "—", theme: theme)
                     TimelineView(.everyMinute) { _ in
-                        DetailRow(
+                        DockerDetailRow(
                             key: "Started",
                             value: UsageFormat.age(session.startedDate) + ", " + session.startedDate.formatted(date: .abbreviated, time: .shortened),
                             theme: theme)
                     }
-                    DetailRow(key: "Reaper", value: reaper, theme: theme)
+                    DockerDetailRow(key: "Reaper", value: reaper, theme: theme)
                 }
-                DetailBlock(title: "Containers", theme: theme) {
+                DockerDetailBlock(title: "Containers", theme: theme) {
                     ForEach(session.containers) { container in
                         Button {
                             page.collapsed.remove(DockerPageModel.sessionTag(session.id))
@@ -779,109 +779,6 @@ struct DockerRunSheet: View {
     }
 }
 
-// MARK: Builds
-
-/// The builds `buildx history` keeps: what, when, how long, from cache how
-/// much — and a build's log, where it was built from, its Dockerfile.
-struct DockerBuildsView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
-
-    var body: some View {
-        HStack(spacing: 0) {
-            if let error = page.buildsError {
-                Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text2).padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(selection: $page.buildSelection) {
-                    ForEach(page.builds) { build in
-                        ResourceRow(
-                            symbol: build.failed ? "xmark.octagon" : build.running ? "hourglass" : "checkmark.circle",
-                            title: build.name, subtitle: "\(build.status) · \(build.shortRef.prefix(12))",
-                            figures: [
-                                "\(build.cachedSteps)/\(build.totalSteps) cached", build.duration.map(DockerBuildRecord.duration) ?? "…",
-                                DockerBuildRecord.date(build.createdAt).map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: Date()) } ?? "",
-                            ],
-                            dim: false, theme: theme
-                        )
-                        .tag(build.id)
-                        .listRowSeparator(.hidden)
-                        .contextMenu { DockerVerbMenu(verbs: page.verbs(for: build)) }
-                    }
-                    if page.builds.isEmpty { Text("No builds yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
-                }
-                .listStyle(.inset)
-                .scrollContentBackground(.hidden)
-                .accessibilityIdentifier("docker.builds")
-                if page.showDetail, page.buildSelection.count == 1, let build = page.builds.first(where: { page.buildSelection.contains($0.id) }) {
-                    Rectangle().fill(theme.border).frame(width: 1)
-                    DockerBuildDetailView(build: build, page: page, theme: theme, actions: actions).id(build.id).frame(width: 520)
-                }
-            }
-        }
-        .onAppear { page.loadBuilds() }
-    }
-}
-
-private struct DockerBuildDetailView: View {
-    let build: DockerBuildRecord
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
-    @State private var detail: DockerBuildDetail?
-    @State private var log: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: build.failed ? "xmark.octagon.fill" : "checkmark.circle.fill")
-                        .foregroundStyle(build.failed ? TabStatusStyle.failed : TabStatusStyle.done)
-                    Text(verbatim: build.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                    Spacer()
-                }
-                DockerActionBar(verbs: page.verbs(for: build, detail: detail), theme: theme)
-                if let detail {
-                    DetailBlock(title: "Built from", theme: theme) {
-                        if let context = detail.context { DetailRow(key: "Context", value: (context as NSString).abbreviatingWithTildeInPath, theme: theme) }
-                        if let file = detail.dockerfile { DetailRow(key: "Dockerfile", value: file, theme: theme) }
-                        if let revision = detail.revision { DetailRow(key: "Commit", value: String(revision.prefix(12)), theme: theme) }
-                        ForEach(Array(detail.buildArgs.enumerated()), id: \.offset) { _, arg in DetailRow(key: arg.key, value: arg.value, theme: theme) }
-                    }
-                    if let error = detail.error { Text(verbatim: error).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled) }
-                }
-            }
-            .padding(16)
-            Rectangle().fill(theme.border).frame(height: 1)
-            if let log {
-                let lines = log.split(separator: "\n", omittingEmptySubsequences: false)
-                DockerTextView(
-                    count: lines.count, revision: log.hashValue,
-                    render: { range in
-                        lines[range].map {
-                            NSAttributedString(string: String($0), attributes: [.font: DockerLogStyle.font, .foregroundColor: Self.color(String($0), theme)])
-                        }
-                    }, wrap: true, follow: true)
-            } else {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .task(id: build.id) {
-            detail = await page.buildDetail(build)
-            log = await page.buildLog(build)
-        }
-        .accessibilityIdentifier("docker.build.detail")
-    }
-
-    /// BuildKit's own marks: an error in red, a step's header plain, its
-    /// output dimmer.
-    static func color(_ line: String, _ theme: ChromeTheme) -> NSColor {
-        if line.contains("ERROR") || line.contains("error:") { return NSColor(srgbRed: 0.94, green: 0.36, blue: 0.34, alpha: 1) }
-        if line.range(of: #"^#\d+ \["#, options: .regularExpression) != nil { return theme.textNS }
-        return theme.textNS.withAlphaComponent(0.6)
-    }
-}
-
 /// Docker Model Runner's models: what is pulled, what is loaded, what they
 /// take; a chat with one in a terminal tab (`n`), a pull, a removal asked
 /// first (⌫), the OpenAI endpoint to give a program.
@@ -913,7 +810,7 @@ struct DockerModelsView: View {
         List(selection: $page.modelSelection) {
             ForEach(contents.models) { model in
                 let loaded = contents.running.first { $0.runs(model) }
-                ResourceRow(
+                DockerResourceRow(
                     symbol: loaded == nil ? "cpu" : "bolt.fill", title: model.name,
                     subtitle: model.summary.isEmpty ? model.shortID : model.summary,
                     figures: [
@@ -1002,27 +899,27 @@ private struct DockerModelDetail: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text(verbatim: model.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                 DockerActionBar(verbs: page.verbs(for: model), theme: theme)
-                DetailBlock(title: "Model", theme: theme) {
-                    DetailRow(key: "Name", value: model.reference, theme: theme)
-                    DetailRow(key: "ID", value: model.shortID, theme: theme)
-                    if let parameters = model.config?.parameters { DetailRow(key: "Parameters", value: parameters, theme: theme) }
-                    if let quantization = model.config?.quantization { DetailRow(key: "Quantization", value: quantization, theme: theme) }
-                    if let size = model.config?.size { DetailRow(key: "Size", value: size, theme: theme) }
-                    if let architecture = model.config?.architecture { DetailRow(key: "Architecture", value: architecture, theme: theme) }
-                    if let format = model.config?.format { DetailRow(key: "Format", value: format, theme: theme) }
-                    if let context = model.config?.context_size { DetailRow(key: "Context", value: "\(context) tokens", theme: theme) }
-                    DetailRow(key: "Pulled", value: ago(model.created), theme: theme)
+                DockerDetailBlock(title: "Model", theme: theme) {
+                    DockerDetailRow(key: "Name", value: model.reference, theme: theme)
+                    DockerDetailRow(key: "ID", value: model.shortID, theme: theme)
+                    if let parameters = model.config?.parameters { DockerDetailRow(key: "Parameters", value: parameters, theme: theme) }
+                    if let quantization = model.config?.quantization { DockerDetailRow(key: "Quantization", value: quantization, theme: theme) }
+                    if let size = model.config?.size { DockerDetailRow(key: "Size", value: size, theme: theme) }
+                    if let architecture = model.config?.architecture { DockerDetailRow(key: "Architecture", value: architecture, theme: theme) }
+                    if let format = model.config?.format { DockerDetailRow(key: "Format", value: format, theme: theme) }
+                    if let context = model.config?.context_size { DockerDetailRow(key: "Context", value: "\(context) tokens", theme: theme) }
+                    DockerDetailRow(key: "Pulled", value: ago(model.created), theme: theme)
                 }
-                DetailBlock(title: "Loaded", theme: theme) {
+                DockerDetailBlock(title: "Loaded", theme: theme) {
                     if let loaded {
-                        DetailRow(key: "Backend", value: loaded.backend_name, theme: theme)
-                        if let mode = loaded.mode { DetailRow(key: "Mode", value: mode, theme: theme) }
+                        DockerDetailRow(key: "Backend", value: loaded.backend_name, theme: theme)
+                        if let mode = loaded.mode { DockerDetailRow(key: "Mode", value: mode, theme: theme) }
                     } else {
                         Text("Not in memory: the first request loads it.").font(.system(size: 11.5)).foregroundStyle(theme.text3)
                     }
                 }
                 if let tags = model.tags, tags.count > 1 {
-                    DetailBlock(title: "Also", theme: theme) { ForEach(tags.dropFirst(), id: \.self) { DetailRow(key: "Tag", value: $0, theme: theme) } }
+                    DockerDetailBlock(title: "Also", theme: theme) { ForEach(tags.dropFirst(), id: \.self) { DockerDetailRow(key: "Tag", value: $0, theme: theme) } }
                 }
             }
             .padding(16)

@@ -59,6 +59,13 @@ struct DockerLineSplitter: Sendable {
         }
         return lines
     }
+
+    /// The half line left at the end, if any — emptied: what a stream that
+    /// ended without a last newline still said.
+    mutating func finish() -> Data? {
+        defer { pending = Data() }
+        return pending.isEmpty ? nil : pending
+    }
 }
 
 /// A log line, read: when, how bad, and its text as a person reads it —

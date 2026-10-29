@@ -62,13 +62,13 @@ enum DockerKey: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .details: "Logs of the selected container"
+        case .details: "Logs of the selected container; a build's steps"
         case .toggleDetail: "Show or hide the detail"
         case .startStop: "Start or stop"
         case .restart: "Restart"
         case .pause: "Pause or unpause"
         case .logs: "Logs"
-        case .followLogs: "Follow its logs in a terminal tab"
+        case .followLogs: "Follow its logs in a terminal tab — a build's as plain progress"
         case .shell: "A shell in it, in a terminal tab"
         case .debugShell: "A debug shell beside it — tools for an image with none"
         case .client: "Its own client — psql, mysql, redis-cli, mongosh… — in a terminal tab, signed in from its env"

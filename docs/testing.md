@@ -103,6 +103,15 @@ scenario's one real `docker` call there is `compose … config` on the
 override it wrote, with `DOCKER_HOST` at the fake engine's socket: config
 reads files, not the engine.
 
+Builds come from recorded shapes: `Fixtures/buildkit-rawjson-*.jsonl`
+are BuildKit's `--progress rawjson` lines — SolveStatus as
+client/graph.go's json tags and Go's encoder write them — and
+`DockerBuildProgressTests` folds them as the plain printer does. The
+scenario's and `DockerBuildSessionTests`' `buildx history` is a stub
+`docker` (`DockerCLI.override`, `DockerCLI(executable:)`); a page in a
+test process reads builds from nothing else (`buildsCLI`). No test runs
+buildx.
+
 What SwiftUI draws itself has no AppKit view to find: a bordered
 `Button`, a plain `Text`. A `Text` with `.textSelection(.enabled)` is an
 `NSTextField`, which `find` reads. In-process accessibility stays empty

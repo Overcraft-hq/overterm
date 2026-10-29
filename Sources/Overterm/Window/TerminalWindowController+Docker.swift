@@ -552,13 +552,15 @@ extension TerminalWindowController {
         return dockerPage.press(characters)
     }
 
-    /// The page shows in this window and its list — a table under it, not a
-    /// text field's editor — is the first responder.
+    /// The page shows in this window and its list — the page's first table,
+    /// the one `focusDockerList` gives the keyboard, not a text field's
+    /// editor — is the first responder. A table in a detail (a build's
+    /// steps) is not the list: there ⌫ would remove the selected build.
     func dockerListHasKeyboard(_ event: NSEvent? = nil) -> Bool {
         guard store.showingOverlay == .docker, event?.window ?? window === window, let page = dockerView,
             let table = window?.firstResponder as? NSTableView
         else { return false }
-        return table.isDescendant(of: page)
+        return table.isDescendant(of: page) && Self.firstTable(in: page) === table
     }
 
     func dockerSettingsChanged(_ keys: Set<String> = ["docker.enabled"]) {

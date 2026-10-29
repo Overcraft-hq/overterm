@@ -84,6 +84,11 @@ enum DockerCommands {
         prefix(for: endpoint) + "docker logs -f --tail 200 \(quote(container.name))"
     }
 
+    /// A build's log as plain progress — a running one's followed to its end.
+    static func buildLog(_ build: DockerBuildRecord, endpoint: DockerEndpoint? = nil) -> String {
+        prefix(for: endpoint) + "docker buildx history logs " + quote(build.shortRef)
+    }
+
     /// An image's variant for a platform: `docker pull --platform linux/arm64 …`.
     static func pull(_ image: String, platform: DockerPlatform, endpoint: DockerEndpoint? = nil) -> String {
         prefix(for: endpoint) + "docker pull --platform \(platform.description) \(quote(image))"

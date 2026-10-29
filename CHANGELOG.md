@@ -47,6 +47,7 @@ version is tagged `v<version>`.
 - docker: a volume's files browsed, opened and saved back, as a container's are
 - docker: files dragged from Finder into a container, and out of it
 - docker: Check for Updates asks the registries whether your images have newer builds, and pulls them
+- docker: a build shown as it runs, step by step with its time and cache
 
 ## 1.4.6 — 2026-10-29
 

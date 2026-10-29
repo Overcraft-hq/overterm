@@ -287,41 +287,7 @@ extension E2ERunner {
             page.error ?? "")
         check("and says what it freed", await eventually(3) { page.cleaned?.contains("freed") == true }, page.cleaned ?? "")
         check("its sheet closed", await eventually(2) { self.window.attachedSheet == nil })
-        // Builds, as a stub `docker` answers `buildx history`.
-        let bin = scratch.appendingPathComponent("stub-bin", isDirectory: true)
-        let context = scratch.appendingPathComponent("build-context", isDirectory: true)
-        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        try? FileManager.default.createDirectory(at: context, withIntermediateDirectories: true)
-        try? "FROM nginx:1.27\n".write(to: context.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
-        let stub = bin.appendingPathComponent("docker")
-        let script = """
-            #!/bin/sh
-            dir="$(dirname "$0")"
-            case "$*" in
-              "buildx history ls --format json")
-                [ -f "$dir/removed" ] || echo '{"cached_steps":2,"completed_at":"2026-10-28T10:00:07Z","completed_steps":5,"created_at":"2026-10-28T10:00:00Z","name":"shop/web","ref":"default/default/abc123","status":"Completed","total_steps":5}'
-                echo '{"cached_steps":0,"completed_at":"2026-10-28T09:00:03Z","completed_steps":2,"created_at":"2026-10-28T09:00:00Z","name":"shop/api","ref":"default/default/def456","status":"Error","total_steps":4}' ;;
-              "buildx history inspect abc123 --format json") echo '{"Context":"\(context.path)","Dockerfile":"Dockerfile","BuildArgs":[{"Name":"NPM_TOKEN","Value":"npm-secret"}],"VCSRevision":"4264981635"}' ;;
-              "buildx history logs abc123") printf '#1 [internal] load build definition\\n#1 DONE 0.0s\\n#2 [web 1/2] RUN make\\n#2 DONE 1.0s\\n' ;;
-              "buildx history rm abc123") touch "$dir/removed" ;;
-              *) echo "unexpected: $*" >&2; exit 1 ;;
-            esac
-            """
-        try? script.write(to: stub, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
-        DockerCLI.override = stub
-        page.press("5")
-        check("5 is Builds, as buildx history keeps them", await eventually(5) { page.builds.map(\.name) == ["shop/web", "shop/api"] }, page.buildsError ?? "\(page.builds)")
-        if let build = page.builds.first {
-            let detail = await page.buildDetail(build)
-            check("a build's detail masks its secrets", detail?.buildArgs.first.map { $0.key == "NPM_TOKEN" && $0.value == "••••••" } == true)
-            check("and finds its Dockerfile", detail?.dockerfileURL?.lastPathComponent == "Dockerfile")
-            let log = await page.buildLog(build)
-            check("its log is read", log.contains("RUN make"), log)
-            page.removeBuild(build)
-            check("a record goes", await eventually(5) { page.builds.map(\.name) == ["shop/api"] })
-        }
-        DockerCLI.override = nil
+
 
         page.press("2")
         await capture("images")
@@ -334,6 +300,235 @@ extension E2ERunner {
         check("Scout on an image is a tab's command", scouted.last?.hasSuffix("docker scout cves redis:7") == true, scouted.last ?? "nothing")
         page.press("1")
         check("1 is Containers again", page.section == .containers)
+    }
+
+    /// Builds, as a stub `docker` answers `buildx history`: a recorded one
+    /// replayed from its record, then one started elsewhere listed and
+    /// followed while it runs — let go while the page is hidden, read from
+    /// its start when it shows again — until its step fails.
+    private func buildsChecks() async {
+        let page = app.dockerPage
+        let dir = scratch.appendingPathComponent("builds-stub", isDirectory: true)
+        let context = scratch.appendingPathComponent("build-context", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: context, withIntermediateDirectories: true)
+        try? "FROM nginx:1.27\n".write(to: context.appendingPathComponent("Dockerfile"), atomically: true, encoding: .utf8)
+        let stamps = ISO8601DateFormatter()
+        stamps.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func json(_ object: Any) -> String { String(decoding: (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data(), as: UTF8.self) }
+        // BuildKit's rawjson: one SolveStatus a line, its bytes base64.
+        func solveStatus(vertexes: [[String: Any]] = [], logs: [[String: Any]] = []) -> String {
+            var status: [String: Any] = [:]
+            if !vertexes.isEmpty { status["vertexes"] = vertexes }
+            if !logs.isEmpty { status["logs"] = logs }
+            return json(status)
+        }
+        func vertex(_ digest: String, _ name: String, started: Date, completed: Date? = nil, cached: Bool = false, error: String? = nil) -> [String: Any] {
+            var vertex: [String: Any] = ["digest": "sha256:" + digest, "name": name, "started": stamps.string(from: started)]
+            if let completed { vertex["completed"] = stamps.string(from: completed) }
+            if cached { vertex["cached"] = true }
+            if let error { vertex["error"] = error }
+            return vertex
+        }
+        func log(_ digest: String, _ text: String, stream: Int = 1, at: Date) -> [String: Any] {
+            ["vertex": "sha256:" + digest, "stream": stream, "data": Data(text.utf8).base64EncodedString(), "timestamp": stamps.string(from: at)]
+        }
+        func write(_ text: String, _ name: String) { try? text.write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        let t0 = Date()
+        func at(_ seconds: Double) -> Date { t0.addingTimeInterval(seconds) }
+        write(
+            [
+                solveStatus(vertexes: [vertex("b1", "[internal] load build definition from Dockerfile", started: at(0), completed: at(0.02))]),
+                solveStatus(vertexes: [vertex("b2", "[web 1/2] FROM docker.io/library/nginx:1.27", started: at(0.1), completed: at(0.1), cached: true)]),
+                solveStatus(vertexes: [vertex("b3", "[web 2/2] RUN make", started: at(0.2))]),
+                solveStatus(logs: [log("b3", "built\n", at: at(1))]),
+                solveStatus(vertexes: [vertex("b3", "[web 2/2] RUN make", started: at(0.2), completed: at(1.2))]),
+            ].joined(separator: "\n") + "\n", "abc123.jsonl")
+        let failure = #"process "/bin/sh -c echo $NPM_TOKEN > .npmrc && make" did not complete successfully: exit code: 2"#
+        let make = "[worker 2/2] RUN echo npm-secret > .npmrc && make"
+        write(
+            [
+                solveStatus(vertexes: [vertex("r1", "[internal] load build definition from Dockerfile", started: at(0), completed: at(0.02))]),
+                solveStatus(vertexes: [vertex("r2", "[worker 1/2] FROM docker.io/library/alpine:3.20", started: at(0.1), completed: at(0.1), cached: true)]),
+                solveStatus(vertexes: [vertex("r3", "[deps 1/1] RUN go mod download", started: at(0.2)), vertex("r4", make, started: at(0.2))]),
+                solveStatus(logs: [log("r4", "cc -o worker main.c\n", at: at(0.5))]),
+            ].joined(separator: "\n") + "\n", "run789-1.jsonl")
+        write(
+            [
+                solveStatus(logs: [log("r4", "make: *** [Makefile:2: worker] Error 1\n", stream: 2, at: at(1))]),
+                solveStatus(vertexes: [vertex("r4", make, started: at(0.2), completed: at(1.1), error: failure)]),
+                solveStatus(vertexes: [vertex("r3", "[deps 1/1] RUN go mod download", started: at(0.2), completed: at(1.1), error: "context canceled")]),
+            ].joined(separator: "\n") + "\n", "run789-2.jsonl")
+        let inspect: [String: Any] = ["Context": context.path, "Dockerfile": "Dockerfile", "BuildArgs": [["Name": "NPM_TOKEN", "Value": "npm-secret"]]]
+        write(json(inspect.merging(["VCSRevision": "4264981635"]) { a, _ in a }), "abc123-inspect.json")
+        write(json(inspect.merging(["Status": "running"]) { a, _ in a }), "run789-running.json")
+        let excerpt = "Dockerfile:4\n--------------------\n   3 |     FROM alpine:3.20 AS worker\n   4 | >>> RUN echo $NPM_TOKEN > .npmrc && make\n--------------------\n"
+        let error: [String: Any] = ["Code": 2, "Message": failure, "Name": make, "Sources": Data(excerpt.utf8).base64EncodedString()]
+        write(json(inspect.merging(["Status": "failed", "Error": error]) { a, _ in a }), "run789-failed.json")
+        let now = stamps.string(from: t0)
+        let worker: [String: Any] = [
+            "name": "shop/worker", "ref": "default/default/run789", "created_at": now, "total_steps": 4, "completed_steps": 2, "cached_steps": 1,
+        ]
+        write(json(worker.merging(["status": "Running"]) { a, _ in a }), "worker-running.json")
+        write(json(worker.merging(["status": "Error", "completed_at": stamps.string(from: at(2))]) { a, _ in a }), "worker-failed.json")
+        write(
+            #"{"cached_steps":2,"completed_at":"2026-10-28T10:00:07Z","completed_steps":5,"created_at":"2026-10-28T10:00:00Z","name":"shop/web","ref":"default/default/abc123","status":"Completed","total_steps":5}"#,
+            "web.json")
+        write(
+            #"{"cached_steps":0,"completed_at":"2026-10-28T09:00:03Z","completed_steps":2,"created_at":"2026-10-28T09:00:00Z","name":"shop/api","ref":"default/default/def456","status":"Error","total_steps":4}"#,
+            "api.json")
+        // Every payload through cat: no shell quoting.
+        let script = """
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            case "$*" in
+              "buildx history ls --format json")
+                echo >> "$dir/ls.count"
+                if [ -f "$dir/done" ]; then cat "$dir/worker-failed.json"; echo; elif [ -f "$dir/started" ]; then cat "$dir/worker-running.json"; echo; fi
+                [ -f "$dir/removed" ] || { cat "$dir/web.json"; echo; }
+                cat "$dir/api.json"; echo ;;
+              "buildx history inspect abc123 --format json") cat "$dir/abc123-inspect.json" ;;
+              "buildx history inspect run789 --format json") if [ -f "$dir/done" ]; then cat "$dir/run789-failed.json"; else cat "$dir/run789-running.json"; fi ;;
+              "buildx history logs --progress rawjson abc123") cat "$dir/abc123.jsonl" >&2 ;;
+              "buildx history logs --progress rawjson run789")
+                echo $$ > "$dir/follower.pid"; cat "$dir/run789-1.jsonl" >&2
+                n=0; while [ ! -f "$dir/finish" ] && [ $n -lt 300 ]; do sleep 0.1; n=$((n+1)); done
+                cat "$dir/run789-2.jsonl" >&2; touch "$dir/done" ;;
+              "buildx history rm abc123") touch "$dir/removed" ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """
+        let stub = dir.appendingPathComponent("docker")
+        write(script, "docker")
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        func touch(_ name: String) { FileManager.default.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data()) }
+        func file(_ name: String) -> String { (try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)) ?? "" }
+        func reads() -> Int { file("ls.count").filter { $0 == "\n" }.count }
+        func follower() -> Int32? { Int32(file("follower.pid").trimmingCharacters(in: .whitespacesAndNewlines)) }
+        func logText() -> String { Self.find(NSTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" }?.string ?? "" }
+        func numbers() -> [Int] { page.buildSession?.progress.steps.map(\.number) ?? [] }
+        func step(_ number: Int) -> DockerBuildProgress.Step? { page.buildSession?.progress.steps.first { $0.number == number } }
+        func state(_ number: Int) -> DockerBuildProgress.Step.State? { step(number).flatMap { page.buildSession?.progress.state(of: $0) } }
+
+        DockerCLI.override = stub
+        page.buildPoll = 0.5
+        var commands: [String] = []
+        var copied: [String] = []
+        let actions = page.actions
+        page.actions?.run = { command, _ in commands.append(command) }
+        page.actions?.copy = { copied.append($0) }
+        page.showDetail = true
+        defer {
+            page.actions = actions
+            page.buildPoll = nil
+            DockerCLI.override = nil
+        }
+
+        page.press("5")
+        check("5 is Builds, as buildx history keeps them", await eventually(5) { page.builds.map(\.name) == ["shop/web", "shop/api"] }, page.buildsError ?? "\(page.builds)")
+        guard let recorded = page.builds.first else { return }
+        page.buildSelection = [recorded.id]
+        check(
+            "a recorded build's steps are replayed from its record", await eventually(5) { page.buildSession?.state == .ended && numbers() == [1, 2, 3] },
+            "\(String(describing: page.buildSession?.state)) \(numbers())")
+        check("a cached step says so", state(2) == .cached, "\(String(describing: state(2)))")
+        check(
+            "the step with output is shown, its output in the text",
+            await eventually(3) { page.buildSession?.shownStep?.number == 3 && logText().contains("built") }, logText())
+        check(
+            "a build's detail masks its secrets",
+            await eventually(3) { page.buildSession?.detail?.buildArgs.first.map { $0.key == "NPM_TOKEN" && $0.value == "••••••" } == true })
+        check("and finds its Dockerfile", page.buildSession?.detail?.dockerfileURL?.lastPathComponent == "Dockerfile")
+
+        page.buildSelection = []
+        touch("started")
+        check(
+            "a build started elsewhere is listed within a poll, first",
+            await eventually(5) { page.builds.first.map { $0.name == "shop/worker" && $0.running } == true }, "\(page.builds.map(\.name))")
+        let running = page.builds.first
+        check("and selected, since nothing was", await eventually(3) { page.buildSelection == Set([running?.id].compactMap { $0 }) }, "\(page.buildSelection)")
+        check(
+            "its steps come as BuildKit sends them", await eventually(5) { numbers() == [1, 2, 3, 4] && page.buildSession?.state == .reading },
+            "\(numbers()) \(String(describing: page.buildSession?.state))")
+        check("two run at once", [3, 4].allSatisfy { state($0) == .running }, "\(String(describing: state(3))) \(String(describing: state(4)))")
+        check(
+            "the running one with output is shown, as it writes",
+            await eventually(3) { page.buildSession?.shownStep?.number == 4 && logText().contains("cc -o worker main.c") }, logText())
+        check(
+            "a secret build arg's value is out of a step's name",
+            await eventually(3) {
+                let name = page.buildSession.flatMap { session in step(4).map { session.shown($0.name) } } ?? ""
+                return name.contains("••••••") && !name.contains("npm-secret")
+            })
+        if let running {
+            let removal = page.verbs(for: running).first { $0.place == .remove }
+            check("its removal waits for it to end", removal?.unavailable == "It's still running.", removal?.unavailable ?? "available")
+        }
+        // The steps are a table too, but not the list: ⌫ there would remove
+        // the build.
+        let list = Self.find(NSTableView.self, in: app.dockerView) { _ in true }
+        if let steps = Self.find(NSTableView.self, in: app.dockerView, where: { $0 !== list }) {
+            window.makeFirstResponder(steps)
+            check("the steps' table doesn't take the list's keys", window.firstResponder === steps && !app.dockerListHasKeyboard())
+            app.focusDockerList()
+            check("the list does", await eventually(2) { self.app.dockerListHasKeyboard() })
+        } else {
+            check("the steps are a table", false)
+        }
+        page.press("t")
+        check("t follows its log in a tab, as plain progress", commands.last?.hasSuffix("docker buildx history logs run789") == true, commands.last ?? "nothing")
+        await capture("build")
+
+        let first = follower()
+        app.toggleDockerPage(nil)
+        check(
+            "a hidden page lets the build go",
+            await eventually(3) { first.map { kill($0, 0) != 0 } == true && page.buildSession?.state == .stopped },
+            "pid \(String(describing: first)), \(String(describing: page.buildSession?.state))")
+        let before = reads()
+        await pause(1.5)
+        check("and reads no more builds", reads() == before, "\(before) → \(reads())")
+        app.toggleDockerPage(nil)
+        check(
+            "shown again, it is followed from the start, nothing twice",
+            await eventually(5) { follower() != nil && follower() != first && numbers() == [1, 2, 3, 4] && page.buildSession?.state == .reading },
+            "\(numbers()) \(String(describing: page.buildSession?.state))")
+        check(
+            "its output once", await eventually(3) { step(4)?.log.map(\.text) == ["cc -o worker main.c"] },
+            "\(step(4)?.log.map(\.text) ?? [])")
+        check(
+            "and once in the text", await eventually(3) { logText().components(separatedBy: "cc -o worker main.c").count == 2 }, logText())
+
+        touch("finish")
+        check(
+            "a failed step is red, with BuildKit's error",
+            await eventually(5) { state(4) == .failed && step(4)?.error?.contains("exit code: 2") == true }, "\(String(describing: state(4)))")
+        check("the one beside it was canceled", state(3) == .canceled, "\(String(describing: state(3)))")
+        check(
+            "the failed step is the one shown", await eventually(3) { page.buildSession?.shownStep?.number == 4 && logText().contains("Error 1") }, logText())
+        check("the list says it failed", await eventually(3) { page.builds.first?.failed == true }, "\(page.builds.map(\.status))")
+        check(
+            "with where in the Dockerfile", await eventually(3) { page.buildSession?.detail?.errorSource?.contains(">>> RUN") == true },
+            page.buildSession?.detail?.errorSource ?? "none")
+        if let build = page.detailedBuild { page.verbs(for: build).first { $0.title == "Copy Log" }?.perform() }
+        let log = copied.last ?? ""
+        check(
+            "Copy Log copies the steps as plain progress, secrets out",
+            ["#4 ERROR:", "#2 CACHED", "#3 CANCELED"].allSatisfy(log.contains) && !log.contains("npm-secret"), log)
+        var asked: [String] = []
+        page.actions?.confirm = { title, _, _, then in
+            asked.append(title)
+            then()
+        }
+        page.buildSelection = [recorded.id]
+        page.press("\u{7F}")
+        check("⌫ asks before a record goes", asked == ["Remove the record of “shop/web”?"], "\(asked)")
+        check("a record goes", await eventually(5) { !page.builds.map(\.name).contains("shop/web") }, "\(page.builds.map(\.name))")
+
+        page.buildSelection = []
+        page.press("1")
+        DockerCLI.override = nil
+        check("an isolated run reads builds only from a stub", page.buildsCLI == nil)
     }
 
     /// Each detail's verbs — the list its right-click menu draws too — do
@@ -3225,6 +3420,7 @@ extension E2ERunner {
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
+        await buildsChecks()
         await verbsChecks(fake, web: web)
         await imageUpdatesChecks(fake)
         await volumeFilesChecks(fake)

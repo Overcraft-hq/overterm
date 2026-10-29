@@ -160,10 +160,30 @@ final class DockerPageModel: ObservableObject {
     @Published var cleaned: String?
     /// An export or import on its way: what it is.
     @Published var transferring: String?
-    /// Builds, as `buildx history` keeps them.
+    /// Builds, as `buildx history` keeps them: read every few seconds
+    /// while the section shows, so a build started anywhere is there while
+    /// it runs (`watchBuilds`).
     @Published var builds: [DockerBuildRecord] = []
     @Published var buildSelection: Set<String> = []
     @Published var buildsError: String?
+    /// The detail's build, followed while it shows: one at a time, made
+    /// and closed by `updateBuildStream` alone — never while a view draws.
+    @Published private(set) var buildSession: DockerBuildSession?
+    /// A unit test's stub `docker` for builds.
+    var buildsCLIOverride: DockerCLI?
+    /// A test's interval between reads of the list; nil is 3 s, 10 s over
+    /// ssh, where each read is a connection.
+    var buildPoll: TimeInterval?
+    var buildWatch: Task<Void, Never>?
+    /// The section shows where someone can see it: the list is polled. A
+    /// read that failed stops the poll; the next that doesn't starts it.
+    var buildsWatched = false
+    private var buildStreams: AnyCancellable?
+    private var buildsWanting: AnyCancellable?
+    /// The running builds selected for the user once, when nothing was:
+    /// never again, so it doesn't fight one who moved away.
+    var autoSelected: Set<String> = []
+    var readingBuilds = false
     /// The Run window, open on this.
     @Published var runSpec: DockerRunSpec?
     /// The Settings sheet, open on this.
@@ -227,7 +247,6 @@ final class DockerPageModel: ObservableObject {
             .sink { [weak self] section, visible in
                 DispatchQueue.main.async {
                     self?.want(visible ? section.resource : nil)
-                    if visible, section == .builds { self?.loadBuilds() }
                     if visible, section == .models { self?.loadModels() }
                 }
             }
@@ -244,6 +263,20 @@ final class DockerPageModel: ObservableObject {
             .sink { [weak self] _ in
                 // @Published fires before the values land.
                 DispatchQueue.main.async { self?.updateStreams() }
+            }
+        // Builds' list, read every few seconds: only while someone can see
+        // it — not under another app's window, nor minimized.
+        buildsWanting = $section.combineLatest($visible, $windowVisible)
+            .sink { [weak self] section, visible, windowVisible in
+                DispatchQueue.main.async { self?.watchBuilds(visible && windowVisible && section == .builds) }
+            }
+        // The build the detail shows is followed while it shows — not while
+        // an error stands in for the list and the detail.
+        buildStreams = Publishers.CombineLatest4($buildSelection, $section, $visible, $showDetail)
+            .combineLatest($builds.map { $0.map(\.id) }.removeDuplicates(), $buildsError.map { $0 == nil }.removeDuplicates())
+            .sink { [weak self] _ in
+                // @Published fires before the values land.
+                DispatchQueue.main.async { self?.updateBuildStream() }
             }
         // A volume's Files tab: its helper runs only while the tab shows —
         // and its volume is listed, as the detail is drawn only then.
@@ -309,6 +342,8 @@ final class DockerPageModel: ObservableObject {
         wantUsage(false)
         updateStreams()
         closeVolumeFiles()
+        watchBuilds(false)
+        updateBuildStream()
     }
 
     /// What a container uses now, while it runs or is paused.
@@ -582,6 +617,35 @@ final class DockerPageModel: ObservableObject {
         volumeTab = .files
     }
 
+    /// The one build the detail shows: the selection, if it is one.
+    var detailedBuild: DockerBuildRecord? {
+        guard buildSelection.count == 1, let id = buildSelection.first else { return nil }
+        return builds.first { $0.id == id }
+    }
+
+    /// The detail's session: one at a time, the last one closed. A build
+    /// that ends has the list read again, for its record's end.
+    private func makeBuildSession(for build: DockerBuildRecord) -> DockerBuildSession {
+        if let buildSession, buildSession.ref == build.shortRef { return buildSession }
+        buildSession?.close()
+        let made = DockerBuildSession(ref: build.shortRef, cli: buildsCLI, running: build.running)
+        made.onEnd = { [weak self] in self?.loadBuilds() }
+        buildSession = made
+        return made
+    }
+
+    /// The detailed build is followed while the page, its section and the
+    /// detail all show — an error stands in for the detail when the list
+    /// couldn't be read; another build, or none, closes the last.
+    func updateBuildStream() {
+        guard let build = detailedBuild else {
+            buildSession?.close()
+            buildSession = nil
+            return
+        }
+        makeBuildSession(for: build).follow(shown: visible && showDetail && section == .builds && buildsError == nil)
+    }
+
     func session(for id: String) -> ContainerSession {
         if let session, session.id == id { return session }
         session?.close()
@@ -754,7 +818,7 @@ final class DockerPageModel: ObservableObject {
             case .images: confirmRemove(images: docker.images.filter { imageSelection.contains($0.Id) })
             case .volumes: confirmRemove(volumes: docker.volumes.filter { volumeSelection.contains($0.Name) })
             case .networks: confirmRemove(networks: docker.networks.filter { networkSelection.contains($0.Id) })
-            case .builds: for build in builds where buildSelection.contains(build.id) { removeBuild(build) }
+            case .builds: confirmRemove(builds: builds.filter { buildSelection.contains($0.id) })
             case .models: confirmRemove(models: selectedModels)
             case .containers: break
             }
@@ -765,6 +829,12 @@ final class DockerPageModel: ObservableObject {
         case .files where section == .volumes:
             showDetail = true
             volumeTab = .files
+            return true
+        case .followLogs where section == .builds:
+            if let build = detailedBuild { actions?.run(DockerCommands.buildLog(build, endpoint: docker.endpoint), nil) }
+            return true
+        case .details where section == .builds:
+            showDetail = true
             return true
         case .checkUpdates where section == .images:
             let selected = docker.images.filter { imageSelection.contains($0.Id) }

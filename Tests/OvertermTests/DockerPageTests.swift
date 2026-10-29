@@ -1321,6 +1321,261 @@ final class DockerBuildsTests: XCTestCase {
         XCTAssertEqual(detail.buildArgs.map { "\($0.key)=\($0.value)" }, ["NPM_TOKEN=••••••", "GOPROXY=http://proxy"])
         XCTAssertEqual(detail.dockerfileURL?.path, context.appendingPathComponent("images/web/Dockerfile").path)
         XCTAssertEqual(detail.repository, "git@github.com:me/shop.git")
+        XCTAssertEqual(detail.secrets, ["npm_abc"], "kept to take out of step names, in memory only")
         XCTAssertNil(DockerBuildDetail.parse("nope"))
+
+        // BuildKit expands an ARG into a RUN step's name, which the error names.
+        let sources = Data("Dockerfile:4\n>>> RUN echo $NPM_TOKEN\n".utf8).base64EncodedString()
+        let failed = try XCTUnwrap(
+            DockerBuildDetail.parse(
+                #"{"BuildArgs":[{"Name":"NPM_TOKEN","Value":"npm_abc"}],"Status":"failed","Error":{"Code":2,"Message":"process \"/bin/sh -c echo npm_abc\" did not complete","Name":"[web 2/2] RUN echo npm_abc","Sources":"\#(sources)"}}"#
+            ))
+        XCTAssertEqual(failed.status, "failed")
+        XCTAssertEqual(failed.errorStep, "[web 2/2] RUN echo ••••••")
+        XCTAssertFalse(failed.error?.contains("npm_abc") ?? true, failed.error ?? "")
+        XCTAssertTrue(failed.errorSource?.contains(">>> RUN") == true, failed.errorSource ?? "")
+        XCTAssertEqual(failed.secrets, ["npm_abc"])
+    }
+
+    func testARunningRecord() throws {
+        let output = """
+            {"cached_steps":0,"completed_at":"2026-10-28T10:00:07Z","completed_steps":5,"created_at":"2026-10-28T10:00:00Z","name":"shop/web","ref":"default/default/abc123","status":"Completed","total_steps":5}
+            {"cached_steps":1,"completed_steps":2,"created_at":"2026-10-28T09:00:00.5Z","name":"shop/worker","ref":"default/default/run789","status":"Running","total_steps":4}
+            """
+        let builds = DockerBuildRecord.parse(output)
+        XCTAssertEqual(builds.map(\.name), ["shop/worker", "shop/web"], "a running one first, older or not")
+        let running = try XCTUnwrap(builds.first)
+        XCTAssertTrue(running.running)
+        XCTAssertNil(running.duration)
+        let created = try XCTUnwrap(DockerBuildRecord.date(running.createdAt))
+        XCTAssertEqual(running.elapsed(now: created.addingTimeInterval(12)), 12, accuracy: 0.01)
+        XCTAssertEqual(running.elapsed(now: created.addingTimeInterval(-3)), 0, "a clock ahead of this Mac's")
+    }
+
+    func testTheTabsCommand() {
+        let build = DockerBuildRecord(
+            ref: "default/default/abc123", name: "shop/web", status: "Running", createdAt: "", completedAt: nil, totalSteps: 0, cachedSteps: 0,
+            completedSteps: 0)
+        let orbstack = DockerEndpoint(address: .unix("/o.sock"), context: "orbstack", source: "docker.context")
+        XCTAssertEqual(DockerCommands.buildLog(build, endpoint: orbstack), "DOCKER_CONTEXT=orbstack docker buildx history logs abc123")
+        XCTAssertEqual(DockerCommands.buildLog(build), "docker buildx history logs abc123")
+    }
+
+    /// `buildx history ls` is read every few seconds, but only while the
+    /// Builds section is on screen; a running build is selected once.
+    @MainActor
+    func testTheBuildsSectionReadsOnlyWhileItShows() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-builds-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let tool = folder.appendingPathComponent("docker")
+        let record = #"{"cached_steps":0,"completed_steps":1,"created_at":"2026-10-28T10:00:00Z","name":"shop/worker","ref":"default/default/run789","status":"Running","total_steps":4}"#
+        let script = """
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            case "$*" in
+              "buildx history ls --format json") echo >> "$dir/count"; echo '\(record)' ;;
+              *) exit 0 ;;
+            esac
+            """
+        try Data(script.utf8).write(to: tool)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        func reads() -> Int { ((try? String(contentsOf: folder.appendingPathComponent("count"), encoding: .utf8)) ?? "").filter { $0 == "\n" }.count }
+        func until(_ timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition() {
+                if Date() > deadline { return false }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return true
+        }
+
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        // Before anything shows: never the user's Docker.
+        page.buildsCLIOverride = DockerCLI(executable: tool, endpoint: nil)
+        page.buildPoll = 0.1
+        page.showDetail = false
+        defer { page.close() }
+        page.section = .builds
+        page.visible = true
+        let listed = await until { page.builds.count == 1 }
+        XCTAssertTrue(listed, page.buildsError ?? "nothing listed")
+        let selected = await until { page.buildSelection == ["default/default/run789"] }
+        XCTAssertTrue(selected, "a running build is selected, since nothing was")
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertGreaterThanOrEqual(reads(), 3, "read again while it shows")
+
+        page.visible = false
+        try await Task.sleep(for: .milliseconds(150))
+        let hidden = reads()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(reads(), hidden, "nothing read while hidden")
+
+        page.buildSelection = []
+        page.visible = true
+        let readAgain = await until { reads() > hidden + 1 }
+        XCTAssertTrue(readAgain)
+        XCTAssertEqual(page.buildSelection, [], "selected once only")
+    }
+
+    /// No test, and no isolated run, reaches the user's Docker for builds.
+    @MainActor
+    func testATestReadsBuildsOnlyFromAStub() {
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        XCTAssertNil(DockerCLI.override)
+        XCTAssertNil(page.buildsCLI)
+    }
+
+    /// A running build's record can't be removed; `t` is its log in a tab.
+    @MainActor
+    func testARunningBuildsVerbs() throws {
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        var ran: [String] = []
+        page.actions = DockerActions(run: { command, _ in ran.append(command) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        let running = DockerBuildRecord(
+            ref: "default/default/run789", name: "shop/worker", status: "Running", createdAt: "2026-10-28T10:00:00Z", completedAt: nil, totalSteps: 4,
+            cachedSteps: 0, completedSteps: 1)
+        let verbs = page.verbs(for: running)
+        XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Log in a Tab", "Copy Ref"])
+        XCTAssertEqual(verbs.first { $0.place == .remove }?.unavailable, "It's still running.")
+        XCTAssertNil(verbs.first { $0.title == "Copy Log" }, "nothing read yet to copy")
+        page.builds = [running]
+        page.buildSelection = [running.id]
+        page.section = .builds
+        XCTAssertTrue(page.press("t"))
+        XCTAssertEqual(ran, ["docker buildx history logs run789"])
+    }
+
+    /// ⌫ asks first, as its key says — a record is BuildKit's only account
+    /// of how a build went — and never for one still running.
+    @MainActor
+    func testRemovingARecordAsksFirst() {
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        var asked: [String] = []
+        page.actions = DockerActions(run: { _, _ in }, confirm: { title, _, _, _ in asked.append(title) }, open: { _ in }, copy: { _ in }, settings: {})
+        let done = DockerBuildRecord(
+            ref: "default/default/abc123", name: "shop/web", status: "Completed", createdAt: "2026-10-28T10:00:00Z", completedAt: "2026-10-28T10:00:07Z",
+            totalSteps: 5, cachedSteps: 2, completedSteps: 5)
+        let running = DockerBuildRecord(
+            ref: "default/default/run789", name: "shop/worker", status: "Running", createdAt: "2026-10-28T10:00:00Z", completedAt: nil, totalSteps: 4,
+            cachedSteps: 0, completedSteps: 1)
+        page.builds = [running, done]
+        page.section = .builds
+        page.buildSelection = [running.id]
+        XCTAssertTrue(page.press("\u{7F}"))
+        XCTAssertEqual(asked, [], "a running one's record is BuildKit's")
+        page.buildSelection = [running.id, done.id]
+        XCTAssertTrue(page.press("\u{7F}"))
+        XCTAssertEqual(asked, ["Remove the record of “shop/web”?"])
+        page.verbs(for: done).first { $0.place == .remove }?.perform()
+        XCTAssertEqual(asked.count, 2, "its button asks too")
+    }
+
+    /// buildx 0.20's `history inspect`, which has no `--format`: what the
+    /// steps' secrets are taken from.
+    func testThePlainInspect() throws {
+        let plain = """
+            Context:\t\t/Users/me/shop
+            Dockerfile:\tDockerfile
+            VCS Repository:\tgit@github.com:me/shop.git
+            VCS Revision:\t4264981635
+
+            Started:\t2026-10-28 10:00:00
+            Duration:\t1m 4s
+            Error:\tUnknown process "/bin/sh -c echo npm_abc" did not complete successfully: exit code: 2
+            Build Steps:\t3/5 (40% cached)
+
+            BUILD ARG\tVALUE
+            GOPROXY\t\thttp://proxy
+            NPM_TOKEN\tnpm_abc
+
+            Print build logs: docker buildx history logs abc123
+
+            """
+        let detail = try XCTUnwrap(DockerBuildDetail.parsePlain(plain))
+        XCTAssertEqual(detail.buildArgs.map { "\($0.key)=\($0.value)" }, ["GOPROXY=http://proxy", "NPM_TOKEN=••••••"])
+        XCTAssertEqual(detail.secrets, ["npm_abc"])
+        XCTAssertEqual(detail.context, "/Users/me/shop")
+        XCTAssertEqual(detail.repository, "git@github.com:me/shop.git")
+        XCTAssertEqual(detail.status, "failed")
+        XCTAssertEqual(detail.error, #"process "/bin/sh -c echo ••••••" did not complete successfully: exit code: 2"#)
+
+        let running = try XCTUnwrap(DockerBuildDetail.parsePlain("Context:\t.\nStarted:\t2026-10-28 10:00:00\nDuration:\t4.5s (running)\n"))
+        XCTAssertEqual(running.status, "running")
+        XCTAssertEqual(running.buildArgs.count, 0, "no table: no build args")
+        XCTAssertEqual(DockerBuildDetail.parsePlain("Context:\t.\nStatus:\tCanceled\nDuration:\t2s\n")?.status, "canceled")
+        XCTAssertNil(DockerBuildDetail.parsePlain("ERROR: no record found\n"), "not one: its secrets never taken as none")
+    }
+
+    /// A list read that fails puts its error in place of the list and the
+    /// detail: the follow stops with them. The next read that works — Read
+    /// Again — brings back both, and the poll.
+    @MainActor
+    func testAFailedReadStopsTheFollowUntilOneWorks() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-builds-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/buildkit-rawjson-failed.jsonl")
+        let tool = folder.appendingPathComponent("docker")
+        let record = #"{"cached_steps":0,"completed_steps":1,"created_at":"2026-10-28T10:00:00Z","name":"shop/worker","ref":"default/default/run789","status":"Running","total_steps":4}"#
+        let script = """
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            case "$*" in
+              "buildx history ls --format json")
+                echo >> "$dir/count"
+                if [ -f "$dir/fail" ]; then echo 'error: timed out' >&2; exit 1; fi
+                echo '\(record)' ;;
+              "buildx history inspect run789 --format json") echo '{"Status":"running"}' ;;
+              "buildx history logs --progress rawjson run789")
+                echo $$ > "$dir/pid"; head -n 6 '\(fixture.path)' >&2
+                n=0; while [ $n -lt 200 ]; do sleep 0.05; n=$((n+1)); done ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """
+        try Data(script.utf8).write(to: tool)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        func reads() -> Int { ((try? String(contentsOf: folder.appendingPathComponent("count"), encoding: .utf8)) ?? "").filter { $0 == "\n" }.count }
+        func pid() -> Int32? {
+            (try? String(contentsOf: folder.appendingPathComponent("pid"), encoding: .utf8)).flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+        func until(_ timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition() {
+                if Date() > deadline { return false }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return true
+        }
+
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        page.buildsCLIOverride = DockerCLI(executable: tool, endpoint: nil)
+        page.buildPoll = 0.1
+        defer { page.close() }
+        page.section = .builds
+        page.visible = true
+        let following = await until { page.buildSession?.state == .reading && page.buildSession?.progress.steps.count == 7 && pid() != nil }
+        XCTAssertTrue(following, "\(String(describing: page.buildSession?.state))")
+        XCTAssertEqual(page.buildSession?.ref, "run789", "made by the page, not by a view")
+        XCTAssertTrue(page.buildSession?.recordRunning == true)
+        let first = try XCTUnwrap(pid())
+
+        FileManager.default.createFile(atPath: folder.appendingPathComponent("fail").path, contents: Data())
+        let failed = await until { page.buildsError != nil && page.buildSession?.state == .stopped }
+        XCTAssertTrue(failed, "\(page.buildsError ?? "no error"), \(String(describing: page.buildSession?.state))")
+        let gone = await until { kill(first, 0) == -1 && errno == ESRCH }
+        XCTAssertTrue(gone, "nothing read for a detail the error stands in for")
+        let stopped = await until { page.buildWatch == nil }
+        XCTAssertTrue(stopped, "the poll stops at a read that failed")
+        let before = reads()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(reads(), before, "and reads no more")
+
+        try FileManager.default.removeItem(at: folder.appendingPathComponent("fail"))
+        page.loadBuilds()
+        let back = await until { page.buildsError == nil && page.buildSession?.state == .reading && pid() != first }
+        XCTAssertTrue(back, "\(page.buildsError ?? "no error"), \(String(describing: page.buildSession?.state))")
+        let polled = await until { reads() >= before + 4 }
+        XCTAssertTrue(polled, "the poll again: \(before) → \(reads())")
     }
 }
