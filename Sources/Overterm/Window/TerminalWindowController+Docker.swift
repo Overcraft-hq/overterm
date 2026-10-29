@@ -94,7 +94,9 @@ extension TerminalWindowController {
         }
         dockerPanel.projectVerbs = { [weak self] project in
             guard let self else { return [] }
-            return self.dockerPage.verbs(for: project) { [weak self] action, containers in self?.dockerPanel.act(action, on: containers) }
+            return self.dockerPage.verbs(
+                for: project, act: { [weak self] action, containers in self?.dockerPanel.act(action, on: containers) },
+                report: { [weak self] in self?.dockerPanel.error = $0 })
         }
         dockerPanel.showRun = { [weak self] session in self?.revealOnDockerPage(DockerPageModel.sessionTag(session)) }
         // An agent's compose up or down runs in a tab of this window.
@@ -465,7 +467,8 @@ extension TerminalWindowController {
             dockerPage.actions = dockerActions
             return NSHostingView(
                 rootView: DockerPageView(
-                    page: dockerPage, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, theme: theme, actions: dockerActions))
+                    page: dockerPage, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, updates: dockerPage.updates, theme: theme,
+                    actions: dockerActions))
         }
     }
 

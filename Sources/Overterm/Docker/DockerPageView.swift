@@ -10,6 +10,9 @@ struct DockerPageView: View {
     /// The window's checkout's compose project before it runs (the page's
     /// `planned`), observed so the list follows it.
     @ObservedObject var checkoutCompose: ComposeFileModel
+    /// What the registries said: the Images header's count, the projects'
+    /// marks.
+    @ObservedObject var updates: DockerImageUpdates
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
 
@@ -218,7 +221,8 @@ struct DockerPageView: View {
             }
             Rectangle().fill(theme.border).frame(height: 1)
             switch docker.connection {
-            case .running where page.section == .images: DockerImagesView(page: page, docker: docker, theme: theme, actions: actions)
+            case .running where page.section == .images:
+                DockerImagesView(page: page, docker: docker, updates: updates, theme: theme, actions: actions)
             case .running where page.section == .volumes: DockerVolumesView(page: page, docker: docker, theme: theme, actions: actions)
             case .running where page.section == .networks: DockerNetworksView(page: page, docker: docker, theme: theme, actions: actions)
             case .running where page.section == .builds: DockerBuildsView(page: page, theme: theme, actions: actions)
@@ -245,8 +249,8 @@ struct DockerPageView: View {
                             } else if page.showDetail, let project = page.detailedProject {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ProjectDetailView(
-                                    project: project, session: page.projectSession(for: project.name), page: page, ports: page.ports, theme: theme,
-                                    actions: actions, planError: project.planned ? checkoutCompose.error : nil
+                                    project: project, session: page.projectSession(for: project.name), page: page, ports: page.ports,
+                                    updates: updates, theme: theme, actions: actions, planError: project.planned ? checkoutCompose.error : nil
                                 )
                                 .id(project.name)
                                 .frame(width: min(520, max(340, geometry.size.width * 0.45)))
@@ -278,10 +282,23 @@ struct DockerPageView: View {
             if docker.connection.isRunning, page.section == .containers {
                 Text(verbatim: "\(running) running · \(docker.containers.count)").font(.system(size: 12)).foregroundStyle(theme.text3)
             }
+            if docker.connection.isRunning, page.section == .images, let lastRun = updates.lastRun {
+                let counts = updates.counts(of: docker.images)
+                // Its age moves on while it shows, once a minute.
+                TimelineView(.everyMinute) { _ in
+                    Text(verbatim: DockerImageUpdates.headline(counts) + " · checked " + UsageFormat.age(lastRun))
+                        .font(.system(size: 12)).foregroundStyle(counts.available > 0 ? theme.accentText : theme.text3).lineLimit(1)
+                        .help(
+                            "What each image's registry said at the last check. Not checked: asked of no registry yet. Differs: its registry has another image, and this one may have been built here."
+                        )
+                }
+                .accessibilityIdentifier("docker.updates")
+            }
             Spacer(minLength: 12)
             if page.section == .containers {
                 Toggle("Running only", isOn: $page.runningOnly).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
             }
+            if docker.connection.isRunning, page.section == .images { updateButtons }
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(theme.text3)
                 TextField("Filter  /", text: $page.filter)
@@ -308,6 +325,35 @@ struct DockerPageView: View {
         }
         .padding(.horizontal, 20)
         .frame(height: 56)
+    }
+
+    /// Check for Updates — every image, whatever the filter shows — and,
+    /// once some have one, Pull Updates. Checking, how far it is.
+    @ViewBuilder private var updateButtons: some View {
+        if updates.running {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(verbatim: "Checking \(updates.done) of \(updates.total)…").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Button("Stop") { updates.cancel() }
+                    .font(.system(size: 12))
+                    .help("Stops asking: what was asked stays")
+                    .accessibilityIdentifier("docker.checkUpdates.stop")
+            }
+        } else {
+            Button("Check for Updates") { page.checkUpdates(images: docker.images) }
+                .font(.system(size: 12))
+                .disabled(docker.images.isEmpty)
+                .help(
+                    "Asks each image's registry through docker buildx imagetools — over the network; each counts as a pull on Docker Hub (\(DockerKey.checkUpdates.key))"
+                )
+                .accessibilityIdentifier("docker.checkUpdates")
+        }
+        if !updates.running, !updates.images(withUpdates: docker.images).isEmpty {
+            Button("Pull Updates") { page.pullUpdates(images: docker.images) }
+                .font(.system(size: 12))
+                .help("Pulls each image whose registry has a newer one: Docker Hub's through the engine, another registry's in a terminal tab, where docker signs in")
+                .accessibilityIdentifier("docker.pullUpdates")
+        }
     }
 
     /// What went well, said once.
@@ -346,7 +392,7 @@ struct DockerPageView: View {
                     DockerProjectRow(
                         group: group, folded: page.collapsed.contains(group.id), busy: page.busy.contains(group.id), theme: theme,
                         fold: { page.toggleFold(group.id) }, act: { verb in if let project = group.project { page.compose(verb, project) } },
-                        usage: page.usage(of: group), columns: true
+                        usage: page.usage(of: group), columns: true, updates: group.project.map { updates.summary(of: $0).available.count } ?? 0
                     )
                     .tag(group.id)
                     .listRowSeparator(.hidden)

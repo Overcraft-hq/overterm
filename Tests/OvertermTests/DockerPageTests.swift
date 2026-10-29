@@ -83,6 +83,9 @@ final class DockerPageTests: XCTestCase {
             DockerCommands.compose(project, "up -d --build", services: ["web"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' up -d --build web")
         XCTAssertEqual(DockerCommands.compose(project, "run --rm", services: ["web"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' run --rm web")
         XCTAssertEqual(
+            DockerCommands.compose(project, "pull", services: ["web", "my svc"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' pull web 'my svc'",
+            "Pull Updates: the services with one")
+        XCTAssertEqual(
             TabKind.of(agent: nil, title: DockerCommands.compose(project, "run --rm", services: ["web"]), hasPort: false), .container,
             "the one-off's tab is a container's, its path quoted")
         XCTAssertEqual(DockerCommands.compose(project, "watch"), "docker compose -p 'my app' -f '/w/my app/compose.yaml' watch")
@@ -124,6 +127,8 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("a"), .askAgent)
         XCTAssertEqual(DockerKey.of(","), .settings)
         XCTAssertEqual(DockerKey.of("f"), .files)
+        XCTAssertEqual(DockerKey.of("C"), .checkUpdates, "C checks for updates, c cleans up")
+        XCTAssertEqual(DockerKey.of("c"), .cleanUp)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -366,7 +371,9 @@ final class DockerPageTests: XCTestCase {
 
         let verbs = page.verbs(for: plan)
         XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Up (in a Tab)", "Pull Images in a Tab"])
-        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Up on Free Ports", "Open Compose File", "Show Resolved Config", "Copy Folder"])
+        XCTAssertEqual(
+            verbs.filter { $0.place == .more }.map(\.title), ["Check for Updates", "Up on Free Ports", "Open Compose File", "Show Resolved Config", "Copy Folder"])
+        XCTAssertNil(verbs.first { $0.title == "Check for Updates" }?.unavailable, "its files name its images")
         XCTAssertTrue(verbs.allSatisfy { $0.place != .remove }, "nothing to take down")
 
         var commands: [(String, URL?)] = []

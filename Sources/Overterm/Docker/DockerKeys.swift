@@ -5,7 +5,8 @@ import Foundation
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, files, open, database, settings, remove,
-        composeUp, composeUpFreePorts, composeDown, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models, help
+        composeUp, composeUpFreePorts, composeDown, checkUpdates, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models,
+        help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -44,6 +45,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .composeUp: "u"
         case .composeUpFreePorts: "U"
         case .composeDown: "D"
+        case .checkUpdates: "C"
         case .rebuild: "b"
         case .watch: "w"
         case .filter: "/"
@@ -81,6 +83,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .composeUp: "Compose up, in a terminal tab — one not created yet too; another checkout's ports or name taken, asked first"
         case .composeUpFreePorts: "Compose up on free ports — this checkout's own, an override in Overterm's folder"
         case .composeDown: "Compose down, in a terminal tab (asks first)"
+        case .checkUpdates: "Check for updates in the registries — the selected images (all if none), a project's"
         case .rebuild: "Rebuild and start its service — a project's row, all of them — in a terminal tab"
         case .watch: "Compose watch, in a terminal tab — when a service has develop.watch"
         case .filter: "Filter — status:running project:api port:5432 is:test"
@@ -96,7 +99,8 @@ enum DockerKey: String, CaseIterable, Sendable {
     }
 
     /// The key a typed character is, if any. Case matters: `D` is compose
-    /// down, `d` the Database panel; `U` up on free ports.
+    /// down, `d` the Database panel; `U` up on free ports; `C` checks for
+    /// updates, `c` cleans up.
     static func of(_ characters: String) -> DockerKey? {
         switch characters {
         case "\r": .details

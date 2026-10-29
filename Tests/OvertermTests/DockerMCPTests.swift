@@ -39,6 +39,43 @@ final class DockerMCPTests: XCTestCase {
         return ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
     }
 
+    /// `docker_image_updates`: the user's last Check for Updates, read —
+    /// never a registry asked for an agent.
+    func testImageUpdatesAreTheUsersLastCheck() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ot-mcp-updates-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tool = root.appendingPathComponent("docker")
+        let newer = "sha256:" + String(repeating: "b", count: 64)
+        try """
+        #!/bin/sh
+        echo "$*" >> "\(root.path)/calls"
+        case "$*" in
+          "buildx imagetools inspect nginx:1.27") printf 'Name:      docker.io/library/nginx:1.27\\nMediaType: application/vnd.docker.distribution.manifest.v2+json\\nDigest:    \(newer)\\n' ;;
+          *) exit 1 ;;
+        esac
+        """.write(to: tool, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+        fake.addImage("nginx:1.27", size: 1, digest: "sha256:" + String(repeating: "a", count: 64))
+        let updates = DockerImageUpdates(docker: model, cli: { _ in DockerCLI(executable: tool, endpoint: nil) })
+        func told(_ arguments: [String: Any] = [:]) async throws -> String {
+            let result = try await DockerMCP.call("docker_image_updates", arguments, docker: model, updates: updates)
+            return ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        }
+        let before = try await told()
+        XCTAssertTrue(before.hasPrefix("Nothing checked yet"), before)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("calls").path), "an agent asks no registry")
+        await updates.check(["nginx:1.27"])
+        let after = try await told()
+        XCTAssertTrue(after.contains("- nginx:1.27: newer in its registry (\(newer))"), after)
+        XCTAssertTrue(after.contains("checked just now"), after)
+        XCTAssertTrue(after.contains("used by shop/web"), after)
+        let shop = try await told(["project": "shop"])
+        XCTAssertTrue(shop.contains("nginx:1.27"), shop)
+        let calls = (try? String(contentsOf: root.appendingPathComponent("calls"), encoding: .utf8)) ?? ""
+        XCTAssertEqual(calls.split(separator: "\n").count, 1, "reading the answers asked nothing")
+    }
+
     /// Which Testcontainers run a container is for, on its line.
     func testContainersSayTheirTestRun() {
         func summary(_ name: String, image: String = "postgres:16-alpine", _ labels: [String: String]) -> ContainerSummary {

@@ -204,6 +204,9 @@ final class DockerPageModel: ObservableObject {
     private var usageFeed: AnyCancellable?
 
     let docker: DockerModel
+    /// What the registries said of the images (Check for Updates): the
+    /// app's, for the app's engine.
+    let updates: DockerImageUpdates
 
     private var streams: AnyCancellable?
     private var volumeStreams: AnyCancellable?
@@ -213,9 +216,12 @@ final class DockerPageModel: ObservableObject {
     /// The resource this page holds the model to (`DockerModel.want`).
     private var wanted: DockerModel.Resource?
 
-    init(docker: DockerModel = .shared, ports: ComposePortStore = .shared) {
+    /// `updates`: the app's for the app's engine; another engine's (a
+    /// test's) gets its own, which asks no registry.
+    init(docker: DockerModel = .shared, ports: ComposePortStore = .shared, updates: DockerImageUpdates? = nil) {
         self.docker = docker
         self.ports = ports
+        self.updates = updates ?? (docker === DockerModel.shared ? .shared : DockerImageUpdates(docker: docker, cli: { _ in nil }))
         // A section on screen is read, and kept current, while it shows.
         wanting = $section.combineLatest($visible)
             .sink { [weak self] section, visible in
@@ -730,6 +736,8 @@ final class DockerPageModel: ObservableObject {
             }
         case .composeDown:
             if let project = selectedProject { compose("down", project) }
+        case .checkUpdates:
+            if let project = selectedProject { checkUpdates(project) }
         case .rebuild: rebuild(Self.rebuilds(of: selection, in: docker.projects))
         case .watch:
             if let project = selectedProject { startWatch(project) }
@@ -757,6 +765,10 @@ final class DockerPageModel: ObservableObject {
         case .files where section == .volumes:
             showDetail = true
             volumeTab = .files
+            return true
+        case .checkUpdates where section == .images:
+            let selected = docker.images.filter { imageSelection.contains($0.Id) }
+            checkUpdates(images: selected.isEmpty ? docker.images : selected)
             return true
         default:
             return false

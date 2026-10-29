@@ -99,6 +99,8 @@ final class FakeDockerEngine: @unchecked Sendable {
     private let lock = NSLock()
     private var containers: [String: Container] = [:]
     private var images: [ImageSummary] = []
+    /// By tag: what its registry names now (`setRegistryDigest`).
+    private var registryDigests: [String: String] = [:]
     private var volumes: [VolumeSummary] = []
     private var networks: [NetworkSummary] = []
     /// What each volume holds, by path in it — when each was written, and
@@ -121,6 +123,11 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// pulled into it, and its inspect says the host's platform once the
     /// index holds it. Else the classic store's: an id a platform.
     var containerdStore = false
+    /// moby's `refreshImage`: a container whose image's name now names
+    /// another image (a pull moved the tag) is listed by its image's ID.
+    /// Off unless a test asks: most of the fake's containers name images
+    /// it doesn't have.
+    var refreshesImages = false
     /// How long an image's inspect takes, in milliseconds: a remote
     /// engine's round trip.
     var imageInspectDelay = 0
@@ -437,6 +444,16 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// Every image, those the list leaves out (a layer's parent) too.
     var allImages: [ImageSummary] { locked { images } }
 
+    /// What a tag (`nginx:1.27`) names in its registry now: a pull of it
+    /// brings that image, or says it is up to date.
+    func setRegistryDigest(_ reference: String, _ digest: String) { locked { registryDigests[reference] = digest } }
+
+    /// The image a container runs, as if made from it.
+    func setImageID(_ id: String, _ imageID: String) {
+        locked { containers[id]?.summary.ImageID = imageID }
+        emit("update", id)
+    }
+
     /// What it runs, as it was made.
     func setCommand(_ id: String, _ cmd: [String], entrypoint: [String]? = nil, healthcheck: [String]? = nil) {
         locked {
@@ -458,22 +475,33 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// same for the same tag and platform (in the containerd store, for
     /// the same tag). Built for arm64 unless said. In the classic store
     /// the tag moves to it from another image, as a pull moves it; in the
-    /// containerd store the platform joins the tag's index.
+    /// containerd store the platform joins the tag's index. `digest`: the
+    /// one its registry gave it, recorded as `RepoDigests` (`nginx@…`), as
+    /// a pull records it; none, it was built or tagged here. Another digest
+    /// is another image. The containerd store records one for every named
+    /// image, a build's too: its own ID, the index's digest.
     @discardableResult
     func addImage(
         _ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil, labels: [String: String] = [:],
-        shell: Bool = true
+        shell: Bool = true, digest: String? = nil
     ) -> String {
         let platform = ImagePlatform(architecture: architecture, variant: variant)
         let index = locked { containerdStore }
-        let name = tag ?? UUID().uuidString
+        let name = (tag ?? UUID().uuidString) + (digest.map { "@" + $0 } ?? "")
+        let id = index ? digest ?? Self.imageID(name) : Self.imageID(architecture == "arm64" ? name : architecture + (variant.map { "/" + $0 } ?? "") + "@" + name)
+        let recorded = index ? id : digest
         let image = ImageSummary(
-            Id: Self.imageID(index || architecture == "arm64" ? name : architecture + (variant.map { "/" + $0 } ?? "") + "@" + name),
-            RepoTags: tag.map { [$0] } ?? ["<none>:<none>"], RepoDigests: [], Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size,
-            Containers: containers, Labels: labels)
+            Id: id, RepoTags: tag.map { [$0] } ?? ["<none>:<none>"],
+            RepoDigests: tag.flatMap { tag in recorded.map { [DockerEngine.split(tag).0 + "@" + $0] } } ?? [],
+            Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size, Containers: containers, Labels: labels)
         locked {
-            if index, images.contains(where: { $0.Id == image.Id }) {
+            if index, let at = images.firstIndex(where: { $0.Id == image.Id }) {
                 if imagePlatforms[image.Id]?.contains(platform) != true { imagePlatforms[image.Id, default: []].append(platform) }
+                // Another name for the same index: one image, both tags.
+                if let tag, images[at].RepoTags?.contains(tag) != true {
+                    images[at].RepoTags = (images[at].RepoTags ?? []).filter { $0 != "<none>:<none>" } + [tag]
+                    images[at].RepoDigests = (images[at].RepoDigests ?? []) + (image.RepoDigests ?? [])
+                }
                 return
             }
             images.removeAll { $0.Id == image.Id }
@@ -777,6 +805,11 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// store, with the platform it was made for.
     private func summary(of container: Container, version: String) -> ContainerSummary {
         var summary = container.summary
+        if refreshesImages, let imageID = summary.ImageID, summary.Image != imageID,
+            let named = images.first(where: { $0.RepoTags?.contains(summary.Image) == true }), named.Id != imageID
+        {
+            summary.Image = imageID
+        }
         if containerdStore, DockerEngine.older(version, DockerEngine.manifestVersion) == DockerEngine.manifestVersion, let platform = container.platform {
             summary.ImageManifestDescriptor = .init(platform: .init(architecture: platform.architecture, os: platform.os, variant: platform.variant))
         }
@@ -1378,6 +1411,25 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// the engine's own. `private/…` names are refused, as a registry that
     /// wants credentials does; `amd64only/…` have no variant but amd64.
     private func pull(_ name: String, platform: String? = nil) -> Answer {
+        // A tag its registry moved on (`setRegistryDigest`): up to date when
+        // what it names here came with that digest, else the new image — the
+        // tag taken off the old one, which keeps its repo digest.
+        if let digest = locked({ registryDigests[name] }) {
+            let repository = DockerEngine.split(name).0
+            let here = locked { images.first { $0.tags.contains(name) } }
+            if here?.RepoDigests?.contains(repository + "@" + digest) == true {
+                emitImage("pull", name)
+                return .raw(200, Data(#"{"status":"Status: Image is up to date for \#(name)"}"#.utf8 + [0x0A]), [("Content-Type", "application/json")])
+            }
+            addImage(name, size: 2048, digest: digest)
+            emitImage("pull", name)
+            let lines = [
+                #"{"status":"Pulling from library/\#(repository)","id":"\#(DockerEngine.split(name).1)"}"#,
+                #"{"status":"Pulling fs layer","progressDetail":{},"id":"l2"}"#, #"{"status":"Pull complete","progressDetail":{},"id":"l2"}"#,
+                #"{"status":"Digest: \#(digest)"}"#, #"{"status":"Status: Downloaded newer image for \#(name)"}"#,
+            ]
+            return .raw(200, Data(lines.joined(separator: "\n").utf8 + [0x0A]), [("Content-Type", "application/json")])
+        }
         if name.hasPrefix("private/") {
             return .json(
                 200, Data(#"{"errorDetail":{"message":"pull access denied"},"error":"pull access denied for private, repository does not exist or may require 'docker login'"}"#.utf8 + [0x0A]))

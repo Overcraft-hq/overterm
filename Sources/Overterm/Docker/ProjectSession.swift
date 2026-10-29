@@ -87,6 +87,9 @@ struct ProjectDetailView: View {
     @ObservedObject var page: DockerPageModel
     /// Observed for the line saying what Up on Free Ports moved.
     @ObservedObject var ports: ComposePortStore
+    /// Observed for the line saying which services' images are newer in
+    /// their registries.
+    @ObservedObject var updates: DockerImageUpdates
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     /// What Compose said when it last couldn't read the files, for a
@@ -104,6 +107,7 @@ struct ProjectDetailView: View {
                     Spacer(minLength: 0)
                 }
                 Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
+                updatesLine
                 if let kept = ports.override(of: project) { ownPorts(kept) }
                 DockerActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
                 if project.planned, let planError {
@@ -139,6 +143,26 @@ struct ProjectDetailView: View {
             "Up on Free Ports moved these for this checkout — \(ports.file(of: kept).path). Every Up from Overterm uses it; ⋯ ▸ Back to the File's Ports forgets it."
         )
         .accessibilityIdentifier("docker.project.ports")
+    }
+
+    /// What Check for Updates found for its services, once it has looked:
+    /// newer in the registry, pulled and waiting for an Up, couldn't ask.
+    @ViewBuilder private var updatesLine: some View {
+        let summary = updates.summary(of: project)
+        if summary.checkedAt != nil {
+            TimelineView(.everyMinute) { _ in
+                if let line = summary.line(ago: { UsageFormat.age($0) }) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "arrow.down.circle").font(.system(size: 10)).foregroundStyle(theme.accentText).accessibilityHidden(true)
+                        Text(verbatim: line).font(.system(size: 11.5))
+                            .foregroundStyle(summary.available.isEmpty && summary.recreate.isEmpty ? theme.text2 : theme.accentText)
+                            .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("docker.project.updates")
+                }
+            }
+        }
     }
 
     private var subtitle: String {

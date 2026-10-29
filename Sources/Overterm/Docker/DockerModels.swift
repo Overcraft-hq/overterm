@@ -110,6 +110,9 @@ struct ContainerSummary: Codable, Identifiable, Hashable, Sendable {
     /// One Overterm made for itself (`DockerHelpers`): a volume's helper.
     /// Never listed — one mounting a volume would make it look in use.
     var isHelper: Bool { labels["overterm.helper"] == "1" }
+    /// Its image's name names another image now: once the tag it was made
+    /// from moved (a pull), the engine lists it by its image's ID.
+    var imageMovedOn: Bool { ImageID != nil && Image == ImageID }
 }
 
 enum ContainerState: String, Sendable, CaseIterable {

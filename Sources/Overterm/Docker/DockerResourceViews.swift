@@ -45,6 +45,9 @@ private struct ResourceRow: View {
     /// An image's row: its badge when this engine runs it emulated.
     var imageID: String? = nil
     var docker: DockerModel? = nil
+    /// A chip before the figures (an image's `update`), and its help.
+    var badge: String? = nil
+    var badgeHelp: String? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -58,6 +61,11 @@ private struct ResourceRow: View {
             }
             .layoutPriority(1)
             Spacer(minLength: 6)
+            if let badge {
+                Text(verbatim: badge).font(.system(size: 10)).foregroundStyle(theme.accentText)
+                    .padding(.horizontal, 5).background(Capsule().stroke(theme.accentText.opacity(0.5)))
+                    .help(badgeHelp ?? "")
+            }
             ForEach(Array(figures.enumerated()), id: \.offset) { _, figure in
                 Text(verbatim: figure).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
             }
@@ -72,6 +80,8 @@ private struct ResourceRow: View {
 struct DockerImagesView: View {
     @ObservedObject var page: DockerPageModel
     @ObservedObject var docker: DockerModel
+    /// What the registries said: a row's `update`, a detail's Registry.
+    @ObservedObject var updates: DockerImageUpdates
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var pullName = ""
@@ -125,7 +135,8 @@ struct DockerImagesView: View {
                             subtitle: [image.shortID, docker.platforms[image.Id]?.description, image.tags.count > 1 ? "+\(image.tags.count - 1) tags" : nil]
                                 .compactMap { $0 }.joined(separator: " · "),
                             figures: [users.isEmpty ? "unused" : "\(users.count) container\(users.count == 1 ? "" : "s")", bytes(image.Size), ago(image.Created)],
-                            dim: users.isEmpty, theme: theme, imageID: image.Id, docker: docker
+                            dim: users.isEmpty, theme: theme, imageID: image.Id, docker: docker,
+                            badge: badge(image).map(\.words), badgeHelp: badge(image)?.help
                         )
                         .tag(image.Id)
                         .listRowSeparator(.hidden)
@@ -140,7 +151,8 @@ struct DockerImagesView: View {
                 .accessibilityIdentifier("docker.images")
                 if page.showDetail, page.imageSelection.count == 1, let image = docker.images.first(where: { page.imageSelection.contains($0.Id) }) {
                     Rectangle().fill(theme.border).frame(width: 1)
-                    DockerImageDetail(image: image, docker: docker, page: page, theme: theme, actions: actions).id(image.Id).frame(width: 420)
+                    DockerImageDetail(image: image, docker: docker, page: page, updates: updates, theme: theme, actions: actions).id(image.Id)
+                        .frame(width: 420)
                 }
             }
         }
@@ -195,10 +207,24 @@ struct DockerImagesView: View {
     }
 }
 
+extension DockerImagesView {
+    /// A row's chip: a newer image in its registry, or another one where
+    /// this one may have been built here.
+    func badge(_ image: ImageSummary) -> (words: String, help: String)? {
+        let states = image.tags.map(updates.state(of:))
+        if states.contains(.available) { return ("update", "Its registry has a newer image under this tag — Pull Update pulls it") }
+        if states.contains(.differs) {
+            return ("differs", "Its registry has another image under this tag. This one was built here, or pulled before it moved on — Pull Again takes the registry's")
+        }
+        return nil
+    }
+}
+
 private struct DockerImageDetail: View {
     let image: ImageSummary
     @ObservedObject var docker: DockerModel
     @ObservedObject var page: DockerPageModel
+    @ObservedObject var updates: DockerImageUpdates
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var layers: [ImageLayer]?
@@ -225,6 +251,20 @@ private struct DockerImageDetail: View {
                     DetailRow(key: "Size", value: bytes(image.Size), theme: theme)
                     DetailRow(key: "Created", value: ago(image.Created), theme: theme)
                     ForEach(image.tags.dropFirst(), id: \.self) { DetailRow(key: "Also", value: $0, theme: theme) }
+                }
+                if !image.tags.isEmpty {
+                    DetailBlock(title: "Registry", theme: theme) {
+                        TimelineView(.everyMinute) { _ in
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(image.tags, id: \.self) { tag in
+                                    let line = registryLine(tag)
+                                    DetailRow(key: tag, value: line.words, theme: theme)
+                                    if let digests = line.digests { DetailRow(key: "", value: digests, theme: theme) }
+                                }
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("docker.image.registry")
                 }
                 let users = docker.containers(using: image)
                 if !users.isEmpty {
@@ -255,6 +295,35 @@ private struct DockerImageDetail: View {
     }
 
     static func step(_ createdBy: String) -> String { DockerImageDetailSteps.step(createdBy) }
+
+    /// Where a tag stands with its registry, with its age; then the
+    /// digests compared — here, then the registry's — on a row of their own.
+    private func registryLine(_ tag: String) -> (words: String, digests: String?) {
+        let check = updates.check(of: tag)
+        let checked = check.map { " — checked " + UsageFormat.age($0.at) } ?? ""
+        let here = DockerImageReference(tag)?.key.flatMap { updates.local[$0] }?.sorted().map(Self.short).joined(separator: ", ") ?? ""
+        let there = check?.remote.map { Self.short($0.digest) } ?? ""
+        switch updates.state(of: tag) {
+        case .local:
+            return (updates.isBuilt(tag) ? "Its project's files build it: no registry to ask." : "Built or tagged here: no registry to ask.", nil)
+        case .unchecked: return ("Not checked — Check for Updates asks its registry.", nil)
+        case .checking: return ("Checking…", nil)
+        case .current: return ("Up to date\(checked).", there)
+        case .available: return ("Newer in its registry\(checked). Pull Update replaces this one.", "\(here) → \(there)")
+        case .differs:
+            return (
+                "Its registry has another image under this name\(checked). This one was built here, or pulled before it moved on — this image store doesn't say which; Pull Again takes the registry's.",
+                "\(here) ≠ \(there)"
+            )
+        case .notInRegistry(let why): return ("Not in its registry\(checked) — built or tagged here. \(why)", nil)
+        case .failed(let why): return ("Couldn't check\(checked): \(why)", nil)
+        }
+    }
+
+    /// `sha256:4c0f…` → `4c0f1a2b3c4d`.
+    private static func short(_ digest: String) -> String {
+        String((digest.split(separator: ":").last.map(String.init) ?? digest).prefix(12))
+    }
 }
 
 /// A layer's command as a Dockerfile says it. Pure.

@@ -462,6 +462,60 @@ extension DockerPageModel {
 
     func dismissPull(_ image: String) { pulls[image] = nil }
 
+    // MARK: Updates
+
+    /// Check for Updates on images: each of their tags' registries asked
+    /// once (`DockerImageUpdates.check`). `report`: where what it says
+    /// goes — the page's banners when nil, the panel's own line else.
+    func checkUpdates(images: [ImageSummary], report: ((String) -> Void)? = nil) {
+        guard !updates.running else { return }
+        Task { await checkUpdates(references: images.flatMap(\.tags), report: report) }
+    }
+
+    /// On a project: its services' images, as its containers name them —
+    /// kept for when they no longer do. What its files build isn't the
+    /// registry's: they are read first (a plan's say it themselves).
+    func checkUpdates(_ project: ComposeProject, report: ((String) -> Void)? = nil) {
+        guard !updates.running else { return }
+        Task {
+            let built = project.planned ? nil : await loadComposeFacts(project)?.built.map(Set.init)
+            await checkUpdates(references: Array(updates.record(project, built: built).values), report: report)
+        }
+    }
+
+    private func checkUpdates(references: [String], report: ((String) -> Void)?) async {
+        guard let outcome = await updates.check(references), !outcome.cancelled else { return }
+        if let failure = outcome.failure {
+            let said = "Check for Updates: " + failure
+            if let report { report(said) } else { error = said }
+        } else if outcome.asked == 0 {
+            let said = "Nothing to ask a registry about: built or tagged here, or not pulled yet."
+            if let report { report(said) } else { cleaned = said }
+        }
+    }
+
+    /// Pull Updates: each tag whose registry names another image now. The
+    /// engine pulls without credentials: Docker Hub's through it, with its
+    /// progress (`pull`); another registry's in a terminal tab, where the
+    /// CLI signs in as it did for the check.
+    func pullUpdates(images: [ImageSummary]) {
+        var seen = Set<String>()
+        var elsewhere: [String] = []
+        for tag in images.flatMap(\.tags) where updates.state(of: tag) == .available {
+            guard let reference = DockerImageReference(tag), let key = reference.key, seen.insert(key).inserted else { continue }
+            if reference.domain == "docker.io" { pull(tag) } else { elsewhere.append(tag) }
+        }
+        if !elsewhere.isEmpty { actions?.run(DockerCommands.pull(elsewhere, endpoint: docker.endpoint), nil) }
+    }
+
+    /// A project's: `docker compose pull <services>` in a tab in its
+    /// folder, its files as the store says them. Up then recreates them.
+    func pullUpdates(_ project: ComposeProject) {
+        let services = updates.summary(of: project).available.map(\.service)
+        guard !services.isEmpty else { return }
+        runCompose(project, "pull", services: services, in: project.workingDir.map { URL(fileURLWithPath: $0) })
+    }
+
     /// Docker Hub's images for a term, through the engine; none when it
     /// can't reach Hub.
     func searchHub(_ term: String) async -> [DockerEngine.SearchResult] {

@@ -377,6 +377,9 @@ final class DockerModel: ObservableObject {
         load(resource)
     }
 
+    /// Whether a section reads it now (and so after each of its events).
+    func isWanted(_ resource: Resource) -> Bool { wanted[resource] != nil }
+
     func unwant(_ resource: Resource) {
         let count = (wanted[resource] ?? 0) - 1
         wanted[resource] = count > 0 ? count : nil

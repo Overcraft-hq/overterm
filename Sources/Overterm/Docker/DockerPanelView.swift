@@ -115,6 +115,8 @@ struct DockerPanelView: View {
     @ObservedObject var docker: DockerModel
     /// The panel's, observed for its plan.
     @ObservedObject var checkoutCompose: ComposeFileModel
+    /// What the registries said: a project's mark.
+    @ObservedObject var updates: DockerImageUpdates
     @ObservedObject var settings: Settings
     @ObservedObject var theme: ChromeTheme
     let group: TabGroup?
@@ -157,7 +159,7 @@ struct DockerPanelView: View {
                     let group = DockerListGroup(project: project, containers: project.containers)
                     DockerProjectRow(
                         group: group, folded: panel.collapsed.contains(group.id), busy: false, theme: theme,
-                        fold: { toggle(group.id) }, act: { _ in }, compact: true
+                        fold: { toggle(group.id) }, act: { _ in }, compact: true, updates: updates.summary(of: project).available.count
                     )
                     .padding(.horizontal, 8)
                     .contextMenu { DockerVerbMenu(verbs: panel.projectVerbs(project)) }
@@ -188,7 +190,7 @@ struct DockerPanelView: View {
         let verbs = panel.projectVerbs(plan)
         DockerProjectRow(
             group: group, folded: panel.collapsed.contains(group.id), busy: false, theme: theme, fold: { toggle(group.id) }, act: { _ in },
-            compact: true
+            compact: true, updates: updates.summary(of: plan).available.count
         )
         .padding(.horizontal, 8)
         .contextMenu { DockerVerbMenu(verbs: verbs) }

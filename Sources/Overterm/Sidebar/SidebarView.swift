@@ -221,7 +221,8 @@ struct SidebarView: View {
                 case .database: DatabasePanelView(model: database, store: database.store, theme: theme, actions: databaseActions)
                 case .docker:
                     DockerPanelView(
-                        panel: dockerPanel, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, settings: .shared, theme: theme, group: group,
+                        panel: dockerPanel, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, updates: .shared, settings: .shared,
+                        theme: theme, group: group,
                         actions: dockerActions,
                         openPage: dockerActions.openPage, show: dockerActions.showContainer)
                 }

@@ -191,7 +191,13 @@ its compose file builds it, else from its image's arm64 variant. Images
 show their platform. Images (pulled with their
 progress, tagged, their layers), volumes with their sizes and who mounts
 them, and networks with who is on them sit in sections of their own, and
-Clean Up lists what nothing uses before anything goes. Every detail has
+Clean Up lists what nothing uses before anything goes. Check for Updates
+(`C`) asks each image's registry, through your own `docker` and signed in
+as you, whether its tag now names another image. It marks the ones that
+do and pulls them: Docker Hub's on the page, another registry's and a
+compose project's in a tab, where `docker` signs in. What your compose
+files build is never asked about, and nothing goes over the network
+until you ask. Every detail has
 its actions as buttons, the same ones its right-click menu has; a
 network's puts a container on it or takes one off. A volume exports,
 imports and clones; a container's filesystem and an image save as tars.

@@ -87,6 +87,9 @@ extension DockerPageModel {
             guard let self else { return facts }
             self.composeFactReads[name] = nil
             if self.composeFacts[name] != facts { self.composeFacts[name] = facts }
+            // What they build isn't the registry's: Check for Updates
+            // leaves it be, from the Images section too.
+            if let built = facts.built { self.updates.record(project, built: Set(built)) }
             return facts
         }
         composeFactReads[name] = (stamp, task)

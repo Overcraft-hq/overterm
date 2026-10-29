@@ -255,6 +255,8 @@ struct DockerProjectRow: View {
     /// Its containers' use added up, for the page's columns.
     var usage: DockerUsage? = nil
     var columns = false
+    /// Its services whose registries name a newer image (Check for Updates).
+    var updates = 0
     @State private var hovering = false
 
     var body: some View {
@@ -281,6 +283,7 @@ struct DockerProjectRow: View {
                         button("arrow.clockwise", "Restart its containers") { act("restart") }
                     }
                 }
+                if updates > 0 { updateMark(project) }
                 Text(verbatim: "\(project.running)/\(project.expected)")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
                     .help(project.planned ? "Not created yet" : "\(project.running) running")
@@ -310,6 +313,23 @@ struct DockerProjectRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityIdentifier(accessibilityID)
+    }
+
+    /// A chip on the page — `update`, `2 updates` — and on the rail's
+    /// narrow panel a glyph, saying the same in its help.
+    @ViewBuilder private func updateMark(_ project: ComposeProject) -> some View {
+        let words = updates == 1 ? "update" : String(updates) + " updates"
+        let help = "Newer in the registry for \(updates == 1 ? "a service" : String(updates) + " services") — Pull Updates pulls them"
+        Group {
+            if compact {
+                Image(systemName: "arrow.down.circle.fill").font(.system(size: 10.5)).foregroundStyle(theme.accentText)
+            } else {
+                Text(verbatim: words).font(.system(size: 10)).foregroundStyle(theme.accentText)
+                    .padding(.horizontal, 5).background(Capsule().stroke(theme.accentText.opacity(0.5)))
+            }
+        }
+        .help(help)
+        .accessibilityIdentifier("docker.project.updates.\(project.name)")
     }
 
     private var accessibilityID: String {

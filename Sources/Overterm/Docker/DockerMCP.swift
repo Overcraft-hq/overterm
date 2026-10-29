@@ -17,7 +17,11 @@ enum DockerMCP {
 
     static let writes: Set<String> = ["docker_action", "docker_update", "docker_compose", "docker_exec"]
 
-    static func call(_ name: String, _ arguments: [String: Any], docker: DockerModel) async throws -> [String: Any] {
+    /// `updates`: what the user's last Check for Updates found — read,
+    /// never asked again: a registry's answer spends the user's pulls.
+    static func call(
+        _ name: String, _ arguments: [String: Any], docker: DockerModel, updates: DockerImageUpdates = .shared
+    ) async throws -> [String: Any] {
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         let engine = try await ready(docker)
         func container() throws -> ContainerSummary {
@@ -79,6 +83,12 @@ enum DockerMCP {
                     DockerBytes.string(usage.networkIn), DockerBytes.string(usage.networkOut), usage.processes))
         case "docker_models":
             return BrowserMCP.textResult(try await describeModels(docker, engine: engine))
+        case "docker_image_updates":
+            let project = string("project")
+            if let project, !docker.projects.contains(where: { $0.name == project }) {
+                throw BrowserMCP.ToolError(message: "“project” is one of: \(docker.projects.map(\.name).joined(separator: ", ")).")
+            }
+            return BrowserMCP.textResult(describeUpdates(updates, docker: docker, project: project))
         case "docker_action":
             let target = try container()
             guard let action = string("action"), ["start", "stop", "restart", "pause", "unpause", "remove"].contains(action) else {
@@ -325,6 +335,51 @@ enum DockerMCP {
         return lines.joined(separator: "\n")
     }
 
+    /// The last Check for Updates' answers, each with what it means, its
+    /// age and who uses the image (`project/service`, else a container's
+    /// name); only `project`'s services' when given.
+    static func describeUpdates(_ updates: DockerImageUpdates, docker: DockerModel, project: String? = nil, now: Date = Date()) -> String {
+        var users: [String: [String]] = [:]
+        for compose in docker.projects {
+            for (service, reference) in updates.references(of: compose).sorted(by: { $0.key < $1.key }) {
+                if let key = DockerImageReference(reference)?.key { users[key, default: []].append(compose.name + "/" + service) }
+            }
+        }
+        for container in docker.containers where container.composeProject == nil {
+            if let key = DockerImageReference(container.Image)?.key { users[key, default: []].append(container.name) }
+        }
+        var keys = updates.checks.keys.sorted()
+        if let project {
+            keys = keys.filter { users[$0]?.contains { $0.hasPrefix(project + "/") } == true }
+        }
+        guard !keys.isEmpty else {
+            return updates.checks.isEmpty
+                ? "Nothing checked yet. The user checks on the Docker page (Images ▸ Check for Updates, or a project's)."
+                : "None of \(project ?? "its")'s images was checked. The user checks on the Docker page (Images ▸ Check for Updates, or a project's)."
+        }
+        var lines = ["The user's last Check for Updates (each image's registry asked through their docker CLI):"]
+        for key in keys {
+            guard let check = updates.checks[key] else { continue }
+            let state: String
+            switch updates.state(of: check.reference) {
+            case .available:
+                state = "newer in its registry (\(check.remote?.digest ?? "")) — pulling it updates it; a compose service then needs an Up"
+            case .differs:
+                state =
+                    "its registry has another image (\(check.remote?.digest ?? "")); this one was built here or pulled before it moved on — the image store doesn't say which"
+            case .current: state = "up to date"
+            case .notInRegistry(let why): state = "not in its registry: built or tagged here (" + why + ")"
+            case .failed(let why): state = "couldn't be checked: " + why
+            case .local:
+                state = updates.local[key] == nil ? "no longer here" : updates.builtKeys.contains(key) ? "built by its project's files" : "built or tagged here now"
+            case .unchecked, .checking: state = "being checked"
+            }
+            let used = users[key].map { " — used by " + $0.joined(separator: ", ") } ?? ""
+            lines.append("- \(check.reference): \(state) — checked \(UsageFormat.age(check.at, now: now))\(used)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Model Runner's models and where a program reaches them — read
     /// from the runner, never `docker model` (which would install one).
     static func describeModels(_ docker: DockerModel, engine: DockerEngine) async throws -> String {
@@ -383,6 +438,10 @@ enum DockerMCP {
                 "docker_models",
                 "Docker Model Runner's local LLMs: which are pulled and loaded, and the OpenAI-compatible base URL to use from a container or this Mac.",
                 [:]),
+            tool(
+                "docker_image_updates",
+                "Which local images have a newer image under the same tag in their registry, as the user's last Check for Updates found — with when it was checked and which compose services use them. It never asks a registry itself.",
+                ["project": ["type": "string", "description": "Only this compose project's images."]]),
         ]
         if Settings.shared.dockerAgentWrites {
             tools += [
@@ -421,7 +480,7 @@ enum DockerMCP {
     }
 
     static let instructions =
-        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_inspect says when a container runs emulated (an amd64 image on Apple silicon: slow). docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use."
+        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_inspect says when a container runs emulated (an amd64 image on Apple silicon: slow). docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use. docker_image_updates says which images are newer in their registries, as of the user's last Check for Updates — it never asks a registry."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [

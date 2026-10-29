@@ -1426,6 +1426,48 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Dockerfile opens in the editor when the context is a folder here. A
   scenario points `DockerCLI.override` at a stub `docker` answering as
   buildx would.
+- **Image updates** (`DockerImageUpdates`; `DockerImageReference`, pure):
+  Check for Updates — the Images header, an image's menu, a project's, `C`
+  — asks each tag's registry what the tag names now. It goes through
+  `docker buildx imagetools inspect <ref>`, so the CLI's own credential
+  helpers sign in and Overterm never sees a password. The answer is
+  compared with the tag's repo digest (`RepoDigests`), an index's children
+  too, for an image pulled by its platform's digest. It reads the default
+  output, not `--format`: a template makes buildx fetch every platform's
+  config. It runs only when asked, since every answer is a GET of the
+  registry's manifest, which Docker Hub counts as a pull; four at a time,
+  a tag once however many names it has. A registry that doesn't answer
+  isn't asked about its other tags: behind a firewall each would wait out
+  its 30 s. Stop ends the check, and what it asked stays. In the classic
+  store a tag with no repo digest for its own name was built or tagged
+  here, and isn't asked. The containerd store records one for every named
+  image, a build's too (its own ID; `/info` says which store), so there it
+  proves nothing. Such a tag is asked, and "no such image", or a 401 to a
+  question asked without credentials, makes it "not in its registry"
+  rather than a failure. Another image in the registry is an update only
+  once an answer has named the one here, or a project's files pull it (an
+  `image:` they don't build); else it "differs", and nothing pulls over
+  it. A service its project's files build is never asked, from the project
+  or the Images section: a project's check reads its files first, and a
+  plan's say it themselves. Answers are kept in memory with their time,
+  for the app's run. The local side is read again when an image changes
+  (an image event, once something has been checked, unless the Images
+  section reads them anyway), so a pull — the page's, or `compose pull` in
+  a tab — makes an update current with no second question. The header
+  counts what wasn't asked: "Up to date" only when every image there was
+  to ask is current. Pull Updates pulls Docker Hub's through the engine,
+  with its progress. The engine pulls without credentials, so another
+  registry's goes to a terminal tab (`docker pull`), where the CLI signs
+  in as it did for the check; a project's runs `docker compose pull
+  <services>` in a tab. Each project's services' images are kept as the
+  engine lists its projects, for the services they have now: once a tag
+  moves, the engine lists a container by its image's ID (moby's
+  `refreshImage`, which the fake imitates when `refreshesImages` is on).
+  Its detail says "Up recreates web" when a container runs another image
+  than its tag names now. No buildx stops the check with how to get it.
+  Agents read the last answers (`docker_image_updates`) and never ask a
+  registry. A scenario's stub `docker` answers as buildx would, and the
+  fake engine's `setRegistryDigest` makes a pull bring a new image.
 - **Models** (section 6, `ModelRunner`, pure but for `read`): Docker
   Model Runner's models — pulled, loaded, on disk — read from the
   runner's own API and never `docker model`: on Docker Engine (OrbStack,

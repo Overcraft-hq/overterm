@@ -406,6 +406,215 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// Check for Updates: each image's registry asked once, only when asked,
+    /// through a stub `docker` answering as buildx would — a newer digest an
+    /// update, the same one current, a registry wanting credentials said so,
+    /// an image built here never asked. Pull Updates pulls Docker Hub's
+    /// through the engine with no second question, another registry's in a
+    /// tab; a project's runs compose pull in a tab, and a pull made there is
+    /// seen as the engine says it — which, once a tag moves, lists a
+    /// container by its image's ID. Agents read the answers.
+    private func imageUpdatesChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        let updates = page.updates
+        var commands: [(command: String, folder: URL?)] = []
+        let actions = page.actions
+        page.actions?.run = { commands.append(($0, $1)) }
+        let web = docker.container("ot-shop-web-1")
+        let db = docker.container("ot-shop-db-1")
+        fake.refreshesImages = true
+        defer {
+            page.actions = actions
+            DockerCLI.override = nil
+            updates.forget()
+            fake.refreshesImages = false
+            for container in [web, db].compactMap({ $0 }) { fake.setImageID(container.Id, container.ImageID ?? "") }
+        }
+        func digest(_ character: Character) -> String { "sha256:" + String(repeating: character, count: 64) }
+        /// A check of what is drawn: failed, what the window shows.
+        func drawn(_ name: String, _ line: (text: String, frame: CGRect)?) async {
+            var detail = line?.text ?? ""
+            if line == nil { detail = await readWindow().map(\.text).joined(separator: " | ") }
+            check(name, line != nil, detail)
+        }
+        page.imageSelection = []
+        let nginx = fake.addImage("nginx:1.27", size: 60 << 20, digest: digest("1"))
+        let postgres = fake.addImage("postgres:16", size: 150 << 20, digest: digest("4"))
+        let thing = fake.addImage("private/thing:1", size: 5 << 20, digest: digest("5"))
+        let elsewhere = fake.addImage("ghcr.io/ot/app:1", size: 12 << 20, digest: digest("7"))
+        let built = fake.addImage("ot/built:dev", size: 8 << 20)
+        fake.setRegistryDigest("nginx:1.27", digest("2"))
+        // The project's containers run the images they were made from.
+        if let web { fake.setImageID(web.Id, nginx) }
+        if let db { fake.setImageID(db.Id, postgres) }
+        let bin = scratch.appendingPathComponent("updates-stub-bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("docker")
+        let script = """
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            echo "$*" >> "$dir/calls"
+            case "$*" in
+              "buildx imagetools inspect nginx:1.27")
+                printf 'Name:      docker.io/library/nginx:1.27\\nMediaType: application/vnd.oci.image.index.v1+json\\nDigest:    %s\\n           \\nManifests: \\n  Name:        docker.io/library/nginx:1.27@\(digest("6"))\\n  MediaType:   application/vnd.oci.image.manifest.v1+json\\n  Platform:    linux/arm64\\n' "$(cat "$dir/nginx-digest")" ;;
+              "buildx imagetools inspect postgres:16")
+                printf 'Name:      docker.io/library/postgres:16\\nMediaType: application/vnd.docker.distribution.manifest.v2+json\\nDigest:    \(digest("4"))\\n' ;;
+              "buildx imagetools inspect ghcr.io/ot/app:1")
+                printf 'Name:      ghcr.io/ot/app:1\\nMediaType: application/vnd.oci.image.manifest.v1+json\\nDigest:    \(digest("8"))\\n' ;;
+              "buildx imagetools inspect private/thing:1")
+                echo 'ERROR: failed to authorize: failed to fetch oauth token: unexpected status from GET request to https://auth.docker.io/token: 401 Unauthorized' >&2; exit 1 ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        // Other reads go through the same stub (a project's files): only
+        // the registries' questions are counted.
+        func asked() -> [String] {
+            ((try? String(contentsOf: bin.appendingPathComponent("calls"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+                .filter { $0.hasPrefix("buildx imagetools inspect ") }
+        }
+        func image(_ id: String) -> ImageSummary? { docker.images.first { $0.Id == id } }
+        func shop() -> ComposeProject? { docker.projects.first { $0.name == "ot-shop" } }
+        /// The chip's word, as Vision reads it ("(update )"): not the
+        /// header's "2 updates", nor a button's "Update".
+        func chip(_ text: String) -> Bool { text.contains("update") && !text.contains("updates") }
+
+        page.press("2")
+        guard await eventually(5, { [nginx, postgres, thing, elsewhere, built].allSatisfy { image($0) != nil } }) else {
+            return check("images to check", false, "\(docker.images.map(\.tags))")
+        }
+        DockerCLI.override = nil
+        page.checkUpdates(images: docker.images)
+        check(
+            "an isolated run asks no registry without a stub", await eventually(3) { page.error?.contains("asks no registry") == true } && updates.checks.isEmpty,
+            page.error ?? "no error")
+        page.error = nil
+        try? digest("2").write(to: bin.appendingPathComponent("nginx-digest"), atomically: true, encoding: .utf8)
+        DockerCLI.override = stub
+        await pause(0.3)
+        check("nothing is asked of a registry until asked", asked().isEmpty, "\(asked())")
+
+        page.press("C")
+        let ran = await eventually(10) { updates.lastRun != nil && !updates.running }
+        check(
+            "C asks each image's registry once — not what was built here",
+            ran && asked().sorted() == ["ghcr.io/ot/app:1", "nginx:1.27", "postgres:16", "private/thing:1"].map { "buildx imagetools inspect " + $0 },
+            "\(asked())")
+        check("a newer digest in its registry is an update", updates.state(of: "nginx:1.27") == .available, "\(updates.state(of: "nginx:1.27"))")
+        check("the same digest is current, a single manifest too", updates.state(of: "postgres:16") == .current, "\(updates.state(of: "postgres:16"))")
+        let refused = updates.state(of: "private/thing:1")
+        check("a registry that wants credentials says so", { if case .failed(let why) = refused { why.contains("docker login") } else { false } }(), "\(refused)")
+        check("an image built here isn't asked", updates.state(of: "ot/built:dev") == .local)
+        let headline = DockerImageUpdates.headline(updates.counts(of: docker.images))
+        check("the header counts them", headline == "2 updates · 1 couldn't be checked", headline)
+        await drawn("and draws it", await shownText { $0.contains("2 updates") && $0.contains("be checked") })
+        check(
+            "their rows are marked", Set(updates.images(withUpdates: docker.images).map(\.Id)) == [nginx, elsewhere],
+            "\(updates.images(withUpdates: docker.images).map(\.tags))")
+        await drawn("with a chip", await shownText(5, chip))
+        check(
+            "nothing pulled yet: Up recreates nothing", shop().map { updates.summary(of: $0).recreate.isEmpty } == true,
+            "\(shop().map(updates.summary(of:)).map { "\($0)" } ?? "no project")")
+        if let image = image(nginx) {
+            let verbs = page.verbs(for: image)
+            check(
+                "its detail offers Pull Update as a button",
+                verbs.contains { $0.title == "Pull Update" && $0.place == .button } && !verbs.contains { $0.title == "Pull Again" }, "\(verbs.map(\.title))")
+        }
+        if let image = image(elsewhere) {
+            let verbs = page.verbs(for: image)
+            check("another registry's in a tab, where docker signs in", verbs.contains { $0.title == "Pull Update in a Tab" }, "\(verbs.map(\.title))")
+        }
+        check(
+            "the answers are kept with their time",
+            updates.checks["docker.io/library/nginx:1.27"].map { abs($0.at.timeIntervalSinceNow) < 60 } == true && updates.lastRun != nil)
+        page.imageSelection = [nginx]
+        page.showDetail = true
+        await drawn("its detail's Registry says it is newer", await shownText { $0.contains("Newer in its registry") })
+        _ = docker.images.map { page.verbs(for: $0) }
+        check("and reading them asks nothing", asked().count == 4, "\(asked())")
+        await capture("updates")
+
+        page.pullUpdates(images: docker.images)
+        check(
+            "Pull Updates pulls Docker Hub's through the engine, and it is current",
+            await eventually(5) { page.pulls["nginx:1.27"]?.done == true && updates.state(of: "nginx:1.27") == .current },
+            "\(page.pulls["nginx:1.27"]?.summary ?? "no pull") \(updates.state(of: "nginx:1.27"))")
+        check(
+            "and another registry's in a tab", commands.last.map { $0.command.hasSuffix("docker pull ghcr.io/ot/app:1") && $0.folder == nil } == true,
+            "\(commands.last?.command ?? "nothing")")
+        check(
+            "the old image is left untagged, as Docker leaves it",
+            await eventually(3) { docker.images.contains { $0.isDangling && $0.RepoDigests?.contains("nginx@" + digest("1")) == true } })
+        check("with no second question to its registry", asked().count == 4, "\(asked())")
+        check(
+            "the project's container is listed by its image's ID now, as the engine lists it",
+            await eventually(5) { docker.container("ot-shop-web-1").map { $0.Image == nginx } == true }, docker.container("ot-shop-web-1")?.Image ?? "none")
+        check(
+            "and the project says Up recreates web — what its services name was kept",
+            shop().map { updates.summary(of: $0).recreate == ["web"] } == true, "\(shop().map(updates.summary(of:)).map { "\($0)" } ?? "no project")")
+        page.dismissPull("nginx:1.27")
+        page.imageSelection = []
+
+        // A project's: its services' images, as its containers name them.
+        try? digest("3").write(to: bin.appendingPathComponent("nginx-digest"), atomically: true, encoding: .utf8)
+        fake.setRegistryDigest("nginx:1.27", digest("3"))
+        page.press("1")
+        page.selection = [DockerPageModel.projectTag("ot-shop")]
+        page.showDetail = true
+        let before = updates.lastRun
+        page.press("C")
+        let again = await eventually(10) { updates.lastRun != before && !updates.running }
+        check(
+            "C on a project asks of its services' images",
+            again && asked().dropFirst(4).sorted() == ["buildx imagetools inspect nginx:1.27", "buildx imagetools inspect postgres:16"], "\(asked())")
+        guard let project = shop() else { return check("a project to check", false) }
+        let summary = updates.summary(of: project)
+        check("the project says which service has one", summary.available.map(\.service) == ["web"], "\(summary)")
+        await drawn("its row has a chip", await shownText(5, chip))
+        await drawn("its detail says which", await shownText { $0.contains("Newer in the registry") })
+        let pullVerb = page.verbs(for: project).first { $0.title == "Pull Updates in a Tab" }
+        check("Pull Updates is a button on the project", pullVerb?.place == .button)
+        pullVerb?.perform()
+        check(
+            "which is compose pull of that service, in its folder",
+            await eventually(3) {
+                commands.last.map { $0.command.contains("docker compose -p ot-shop -f ") && $0.command.hasSuffix(" pull web") } == true
+            } && commands.last?.folder?.path == project.workingDir, "\(commands.last.map { "\($0.command) in \($0.folder?.path ?? "-")" } ?? "nothing")")
+        if let engine = docker.engine {
+            do { for try await _ in engine.pull("nginx:1.27") {} } catch { check("the tab's pull", false, "\(error)") }
+        }
+        check(
+            "a pull made in a tab is seen without asking again",
+            await eventually(5) { shop().map { updates.summary(of: $0).available.isEmpty } == true } && asked().count == 6, "\(asked())")
+        let pulled = shop().map(updates.summary(of:))
+        check(
+            "and the project says Up recreates web alone — db runs its image",
+            pulled?.recreate == ["web"] && pulled?.line { _ in "now" }?.contains("Up recreates web") == true, "\(String(describing: pulled))")
+        await drawn("its detail says so", await shownText { $0.contains("Up recreates") })
+
+        let message: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": "docker_image_updates", "arguments": [:]]]
+        let answer = await BrowserMCP.handle(message, browser: { nil })
+        let told = (((answer?["result"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "\(answer ?? [:])"
+        check(
+            "agents read what the check found", told.contains("nginx:1.27") && told.contains("private/thing:1") && told.contains("ot-shop/web") && asked().count == 6,
+            told)
+
+        await capture("updates-project")
+        page.press("1")
+        page.selection = []
+        // Out of the later checks' way.
+        for id in docker.images.filter({ image in
+            image.tags.contains { ["nginx:1.27", "postgres:16", "private/thing:1", "ghcr.io/ot/app:1", "ot/built:dev"].contains($0) }
+                || (image.isDangling && image.RepoDigests?.isEmpty == false)
+        }).map(\.Id) {
+            try? await docker.engine?.remove(image: id, force: true)
+        }
+        docker.load(.images)
+    }
+
     /// A volume's Files tab: its folders listed through a helper that
     /// runs only while the tab shows — as root, without a network, out of
     /// every list — a file to the editor and saved back with its owner
@@ -3017,6 +3226,7 @@ extension E2ERunner {
         await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await imageUpdatesChecks(fake)
         await volumeFilesChecks(fake)
         await settingsChecks(fake, web: web)
         await testcontainersChecks(fake)

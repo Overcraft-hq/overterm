@@ -163,10 +163,13 @@ extension DockerPageModel {
     // MARK: Compose projects
 
     /// `act`: who starts, stops and restarts its containers (the panel has
-    /// its own). Watch and Up With Profiles… are there when its files say
-    /// so (`composeFacts(for:)`).
-    func verbs(for project: ComposeProject, act: ((DockerEngine.ContainerAction, [ContainerSummary]) -> Void)? = nil) -> [DockerVerb] {
-        if project.planned { return verbs(planned: project) }
+    /// its own); `report`: where Check for Updates says what it couldn't
+    /// do (the panel's line; the page's banners when nil). Watch and Up
+    /// With Profiles… are there when its files say so (`composeFacts(for:)`).
+    func verbs(
+        for project: ComposeProject, act: ((DockerEngine.ContainerAction, [ContainerSummary]) -> Void)? = nil, report: ((String) -> Void)? = nil
+    ) -> [DockerVerb] {
+        if project.planned { return verbs(planned: project, report: report) }
         let lasting = project.containers.filter { !$0.isOneOff }
         let facts = composeFacts(for: project)
         func run(_ verb: String, _ action: DockerEngine.ContainerAction, _ containers: [ContainerSummary]) {
@@ -175,6 +178,7 @@ extension DockerPageModel {
         var verbs = [
             DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) }
         ]
+        verbs += pullUpdatesVerbs(project)
         if facts?.watched.isEmpty == false {
             verbs.append(DockerVerb(title: "Watch in a Tab", label: "Watch", symbol: "eye", place: .button, key: "w") { [weak self] in self?.startWatch(project) })
         }
@@ -195,6 +199,7 @@ extension DockerPageModel {
                 DockerVerb(title: "Up With Profiles…", symbol: "square.stack.3d.up") { [weak self] in self?.chooseProfiles(project, profiles) })
         }
         verbs.append(DockerVerb(title: "Pull Images in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.compose("pull", project) })
+        verbs.append(checkUpdatesVerb(project, report: report))
         verbs += ownPortsVerbs(project)
         verbs += [
             DockerVerb(title: "Open Compose File", symbol: "doc.text", group: 1) { [weak self] in self?.editComposeFile(project) },
@@ -207,6 +212,36 @@ extension DockerPageModel {
             DockerVerb(title: "Down…", label: "Down", symbol: "eject", place: .remove, key: "D") { [weak self] in self?.compose("down", project) },
         ]
         return verbs
+    }
+
+    /// Pull Updates, when its registries name newer images for some of
+    /// its services: those pulled in a tab.
+    private func pullUpdatesVerbs(_ project: ComposeProject) -> [DockerVerb] {
+        guard !updates.summary(of: project).available.isEmpty else { return [] }
+        return [
+            DockerVerb(title: "Pull Updates in a Tab", label: "Pull Updates", symbol: "arrow.down.circle.fill", place: .button) { [weak self] in
+                self?.pullUpdates(project)
+            }
+        ]
+    }
+
+    /// Check for Updates (C): its services' images asked of their
+    /// registries — not those its files build. While a check runs, the
+    /// verb stops it.
+    private func checkUpdatesVerb(_ project: ComposeProject, report: ((String) -> Void)?) -> DockerVerb {
+        if updates.running { return stopCheckingVerb }
+        var unavailable: String?
+        if updates.references(of: project).isEmpty {
+            unavailable = updates.built(of: project).isEmpty ? "Its services name no image." : "Its files build its images: no registry to ask."
+        }
+        return DockerVerb(title: "Check for Updates", symbol: "arrow.triangle.2.circlepath", key: DockerKey.checkUpdates.key, unavailable: unavailable) {
+            [weak self] in self?.checkUpdates(project, report: report)
+        }
+    }
+
+    /// A check under way, stopped: what it asked stays.
+    var stopCheckingVerb: DockerVerb {
+        DockerVerb(title: "Stop Checking for Updates", symbol: "stop.circle") { [weak self] in self?.updates.cancel() }
     }
 
     /// Up on Free Ports (U): whatever of the stack's ports is taken moved,
@@ -237,10 +272,11 @@ extension DockerPageModel {
     /// A project before it runs: what can be done to nothing yet — no
     /// stop, restart, logs or down. Watch ups it first, when its plan says
     /// a service has a `develop.watch`.
-    private func verbs(planned project: ComposeProject) -> [DockerVerb] {
+    private func verbs(planned project: ComposeProject, report: ((String) -> Void)?) -> [DockerVerb] {
         var verbs = [
             DockerVerb(title: "Up (in a Tab)", label: "Up", symbol: "play.fill", place: .button, key: "u") { [weak self] in self?.compose("up", project) }
         ]
+        verbs += pullUpdatesVerbs(project)
         if watches(project) {
             verbs.append(DockerVerb(title: "Watch in a Tab", label: "Watch", symbol: "eye", place: .button, key: "w") { [weak self] in self?.startWatch(project) })
         }
@@ -248,6 +284,7 @@ extension DockerPageModel {
             DockerVerb(title: "Pull Images in a Tab", label: "Pull", symbol: "arrow.down.circle", place: .button) { [weak self] in
                 self?.compose("pull", project)
             },
+            checkUpdatesVerb(project, report: report),
             freePortsVerb(project),
         ]
         verbs += ownPortsVerbs(project)
@@ -320,7 +357,17 @@ extension DockerPageModel {
             }
         ]
         if let name {
-            verbs.append(DockerVerb(title: "Pull Again", label: "Pull", symbol: "arrow.down.circle", place: .button) { [weak self] in self?.pull(name) })
+            // Its registry names another image now: that one, as a button —
+            // in a tab when the engine couldn't sign in to its registry.
+            if let newer = image.tags.first(where: { updates.state(of: $0) == .available }) {
+                let hub = DockerImageReference(newer)?.domain == "docker.io"
+                verbs.append(
+                    DockerVerb(title: hub ? "Pull Update" : "Pull Update in a Tab", label: "Update", symbol: "arrow.down.circle.fill", place: .button) {
+                        [weak self] in self?.pullUpdates(images: [image])
+                    })
+            } else {
+                verbs.append(DockerVerb(title: "Pull Again", label: "Pull", symbol: "arrow.down.circle", place: .button) { [weak self] in self?.pull(name) })
+            }
         }
         verbs.append(
             DockerVerb(title: "Tag…", symbol: "tag", place: .button) { [weak self] in
@@ -331,6 +378,15 @@ extension DockerPageModel {
                 DockerVerb(title: "Run in a Tab", symbol: "terminal") { [weak self] in
                     self?.actions?.run(DockerCommands.prefix(for: endpoint) + "docker run --rm -it \(DockerCommands.quote(name))", nil)
                 })
+            // Over the network, so only when asked: a tag built or tagged
+            // here has no registry to ask.
+            verbs.append(
+                updates.running
+                    ? stopCheckingVerb
+                    : DockerVerb(
+                        title: "Check for Updates", symbol: "arrow.triangle.2.circlepath", key: DockerKey.checkUpdates.key,
+                        unavailable: updates.uncheckable(image)
+                    ) { [weak self] in self?.checkUpdates(images: targets ?? [image]) })
             // Built for another architecture: the engine's own variant.
             if let emulation = docker.emulation(ofImage: image.Id) {
                 verbs.append(DockerVerb(title: emulation.imageVerbTitle, symbol: "cpu") { [weak self] in self?.pull(name, platform: emulation.engine) })

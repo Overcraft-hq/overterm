@@ -89,6 +89,11 @@ enum DockerCommands {
         prefix(for: endpoint) + "docker pull --platform \(platform.description) \(quote(image))"
     }
 
+    /// `docker pull a; docker pull b`: each tried, one refused or not.
+    static func pull(_ images: [String], endpoint: DockerEndpoint? = nil) -> String {
+        images.map { prefix(for: endpoint) + "docker pull " + quote($0) }.joined(separator: "; ")
+    }
+
     /// What runs an emulated container natively (`DockerEmulation`): a
     /// service its files build (`built`, `ComposeFacts.built`), built
     /// again for `platform` — never pulled, whatever `image:` names it;
