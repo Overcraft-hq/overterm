@@ -61,7 +61,9 @@ extension E2ERunner {
         app.moveNote(welcome, to: root.appendingPathComponent("Start.md"))
         let planText = { (try? String(contentsOf: plan, encoding: .utf8)) ?? "" }
         check("a rename writes the links to it again", await eventually(3) { planText().contains("Back to [[Start]].") }, planText())
-        check("its tab follows it", editor.active?.url?.lastPathComponent == "Start.md")
+        // The links are written off the main thread and the tab follows when
+        // that is done: seeing the file rewritten doesn't mean the tab has.
+        check("its tab follows it", await eventually(3) { editor.active?.url?.lastPathComponent == "Start.md" }, editor.active?.url?.lastPathComponent ?? "no tab")
         check("and the index knows it", await eventually(3) { notes.index.backlinks(of: "Start.md").contains { $0.source == "Projects/Plan.md" } })
 
         // The lower half: backlinks with their lines, tags, tasks.
