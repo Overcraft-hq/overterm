@@ -37,6 +37,7 @@ version is tagged `v<version>`.
 - docker: every detail has its actions as buttons — the same ones its right-click menu has; a network's puts a container on it or takes one off
 - docker: a checkout's compose project shows before it has run, ready to bring up
 - docker: a compose service rebuilt, restarted or pulled on its own; Watch, and Up with profiles
+- docker: a worktree's stack comes up on free ports when another worktree's holds them — the repository stays untouched
 
 ## 1.4.6 — 2026-10-29
 

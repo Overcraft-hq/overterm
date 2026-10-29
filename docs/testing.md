@@ -95,6 +95,23 @@ and removed after.
 still answers what the plan reads. It reaches no engine: `DOCKER_HOST`
 names a socket that isn't there.
 
+An Up looks at a stack's ports first (`DockerPageModel+Ports`), which
+asks `docker compose` and probes ports: never in a unit test unless the
+test sets `DockerPageModel.checksPortsInTests` and a stub `docker` of its
+own (`ComposeUpTests`), never in a scenario without a stub. The `docker`
+scenario's one real `docker` call there is `compose … config` on the
+override it wrote, with `DOCKER_HOST` at the fake engine's socket: config
+reads files, not the engine.
+
+What SwiftUI draws itself has no AppKit view to find: a bordered
+`Button`, a plain `Text`. A `Text` with `.textSelection(.enabled)` is an
+`NSTextField`, which `find` reads. In-process accessibility stays empty
+without an assistive app, so the `docker` scenario reads a button's label
+off the window's pixels (Vision, `readWindow`) and clicks there with
+events queued for its own window (`click(at:)`) — queued, not sent: a
+mouse-down that tracks the mouse would wait forever for a mouse-up sent
+after it.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

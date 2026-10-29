@@ -93,29 +93,97 @@ enum ComposeProjects {
     }
 
     /// What a checkout's projects publish, as a pane header shows ports:
-    /// running containers' host ports, each once, by number.
-    static func ports(of projects: [ComposeProject]) -> [ListeningPort] {
+    /// running containers' host ports, each once, by number. A port Up on
+    /// Free Ports moved says where it came from (`overrides`, by project).
+    static func ports(of projects: [ComposeProject], overrides: [String: ComposePortOverride] = [:]) -> [ListeningPort] {
         var seen = Set<Int>()
         var ports: [ListeningPort] = []
         for project in projects {
+            let moves = overrides[project.name]?.moves ?? []
             for container in project.containers where container.state == .running {
                 for port in PublishedPort.of(container.Ports ?? []) where port.proto == "tcp" && seen.insert(port.hostPort).inserted {
+                    let moved = moves.first { $0.service == container.composeService && $0.to == port.hostPort && $0.proto == port.proto }
                     ports.append(
                         ListeningPort(
                             pid: 0, process: container.composeService ?? container.name, port: port.hostPort, address: port.hostIP ?? "*",
-                            container: container.name))
+                            container: container.name, movedFrom: moved?.from))
                 }
             }
         }
         return ports.sorted { $0.port < $1.port }
     }
 
-    /// The names `docker compose` looks for at a folder's top, in its order.
-    static let composeFileNames = ["compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"]
+    /// The names `docker compose` looks for at a folder's top, in its order
+    /// (compose-go's `DefaultFileNames`)…
+    static let composeFileNames = ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"]
+    /// …and the override it adds to the first of them found
+    /// (`DefaultOverrideFileNames`).
+    static let overrideFileNames = ["compose.override.yml", "compose.override.yaml", "docker-compose.override.yml", "docker-compose.override.yaml"]
 
     /// The compose file at a folder's top, as `docker compose` looks for it.
     static func composeFile(in folder: URL) -> URL? {
-        composeFileNames.lazy.map { folder.appendingPathComponent($0) }.first { FileManager.default.fileExists(atPath: $0.path) }
+        composeFiles(in: folder).first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// The files `docker compose` reads in `folder` when it is given none,
+    /// in its order: `COMPOSE_FILE` in the folder's `.env` (split on
+    /// `COMPOSE_PATH_SEPARATOR`, else `:`; relative to the folder), else
+    /// the first default name there and the first override name. Passing
+    /// files with `-f` turns that search off, so whoever passes them passes
+    /// these. The shell's own `COMPOSE_FILE` isn't seen.
+    static func composeFiles(in folder: URL) -> [URL] {
+        let env = dotEnv(in: folder)
+        if let list = env["COMPOSE_FILE"], !list.isEmpty {
+            let separator = env["COMPOSE_PATH_SEPARATOR"].flatMap { $0.isEmpty ? nil : $0 } ?? ":"
+            var files: [URL] = []
+            for part in list.components(separatedBy: separator) where !part.isEmpty {
+                let path = (part as NSString).expandingTildeInPath
+                files.append(path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path))
+            }
+            return files.map(\.standardizedFileURL)
+        }
+        var files: [URL] = []
+        for name in composeFileNames {
+            let file = folder.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: file.path) {
+                files.append(file)
+                break
+            }
+        }
+        guard !files.isEmpty else { return [] }
+        for name in overrideFileNames {
+            let file = folder.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: file.path) {
+                files.append(file)
+                break
+            }
+        }
+        return files
+    }
+
+    /// The folder Compose makes a checkout's project of: its first file's,
+    /// as a real path (what the labels' `working_dir` says). Nil with no
+    /// compose file.
+    static func projectFolder(in checkout: URL) -> String? {
+        composeFiles(in: checkout).first.map { FileTreeModel.realPath($0.deletingLastPathComponent()) }
+    }
+
+    /// A compose file's path as Compose takes it, to pass with `-f`: its
+    /// folder a real path, the file as named. A link stays a link: Compose
+    /// resolves none (`filepath.Abs`), so a linked `compose.yaml` keeps
+    /// the checkout as its project folder — its build contexts, its mounts,
+    /// its `.env` and its name. Given the target, they would all be the
+    /// target's folder's.
+    static func composePath(_ file: URL) -> String {
+        let folder = FileTreeModel.realPath(file.deletingLastPathComponent())
+        return (folder.hasSuffix("/") ? folder : folder + "/") + file.lastPathComponent
+    }
+
+    /// The folder's `.env`, as Compose reads it for itself (`COMPOSE_FILE`,
+    /// `COMPOSE_PROFILES`, `COMPOSE_PROJECT_NAME`).
+    static func dotEnv(in folder: URL) -> [String: String] {
+        guard let text = try? String(contentsOf: folder.appendingPathComponent(".env"), encoding: .utf8) else { return [:] }
+        return DotEnv.parse(text)
     }
 
     /// Whether a project from labels takes the place of a checkout's project

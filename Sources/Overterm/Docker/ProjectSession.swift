@@ -85,6 +85,8 @@ struct ProjectDetailView: View {
     let project: ComposeProject
     @ObservedObject var session: ProjectSession
     @ObservedObject var page: DockerPageModel
+    /// Observed for the line saying what Up on Free Ports moved.
+    @ObservedObject var ports: ComposePortStore
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     /// What Compose said when it last couldn't read the files, for a
@@ -102,6 +104,7 @@ struct ProjectDetailView: View {
                     Spacer(minLength: 0)
                 }
                 Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
+                if let kept = ports.override(of: project) { ownPorts(kept) }
                 DockerActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
                 if project.planned, let planError {
                     Text(verbatim: planError).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
@@ -119,6 +122,23 @@ struct ProjectDetailView: View {
             }
         }
         .accessibilityIdentifier("docker.project.detail")
+    }
+
+    /// What Up on Free Ports moved for this checkout, and where it is kept.
+    private func ownPorts(_ kept: ComposePortOverride) -> some View {
+        let summary = kept.summary
+        let text = kept.moves.isEmpty ? summary.prefix(1).uppercased() + summary.dropFirst() : "Own ports: " + summary
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "arrow.left.arrow.right").font(.system(size: 10)).foregroundStyle(theme.accentText).accessibilityHidden(true)
+            Text(verbatim: text).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        // One element that reads as the line does.
+        .accessibilityElement(children: .combine)
+        .help(
+            "Up on Free Ports moved these for this checkout — \(ports.file(of: kept).path). Every Up from Overterm uses it; ⋯ ▸ Back to the File's Ports forgets it."
+        )
+        .accessibilityIdentifier("docker.project.ports")
     }
 
     private var subtitle: String {
@@ -247,7 +267,7 @@ struct ComposeProfilesSheet: View {
                         .toggleStyle(.checkbox)
                     }
                 }
-                Text(verbatim: choice.command(endpoint: endpoint)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                Text(verbatim: choice.command(page.ports, endpoint: endpoint)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()

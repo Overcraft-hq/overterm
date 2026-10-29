@@ -97,6 +97,7 @@ extension DockerPageModel {
                 self?.compose("logs", project)
             },
             DockerVerb(title: "Start", symbol: "play") { run("start", .start, lasting) },
+            freePortsVerb(project),
             DockerVerb(title: "Rebuild and Up in a Tab", symbol: "hammer", key: "b") { [weak self] in
                 self?.rebuild([ComposeRebuild(project: project, services: [])])
             },
@@ -105,8 +106,9 @@ extension DockerPageModel {
             verbs.append(
                 DockerVerb(title: "Up With Profiles…", symbol: "square.stack.3d.up") { [weak self] in self?.chooseProfiles(project, profiles) })
         }
+        verbs.append(DockerVerb(title: "Pull Images in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.compose("pull", project) })
+        verbs += ownPortsVerbs(project)
         verbs += [
-            DockerVerb(title: "Pull Images in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.compose("pull", project) },
             DockerVerb(title: "Open Compose File", symbol: "doc.text", group: 1) { [weak self] in self?.editComposeFile(project) },
             DockerVerb(title: "Show Resolved Config", symbol: "doc.text.magnifyingglass", group: 1) { [weak self] in self?.showResolvedConfig(project) },
             DockerVerb(
@@ -117,6 +119,31 @@ extension DockerPageModel {
             DockerVerb(title: "Down…", label: "Down", symbol: "eject", place: .remove, key: "D") { [weak self] in self?.compose("down", project) },
         ]
         return verbs
+    }
+
+    /// Up on Free Ports (U): whatever of the stack's ports is taken moved,
+    /// without asking — an override in Overterm's folder. With its files
+    /// elsewhere (a remote engine's), or a Compose too old for it (known
+    /// after an Up asked), it says why not (`freePortsUnavailable`).
+    private func freePortsVerb(_ project: ComposeProject) -> DockerVerb {
+        DockerVerb(title: "Up on Free Ports", symbol: "arrow.left.arrow.right", key: "U", unavailable: freePortsUnavailable(project)) { [weak self] in
+            self?.startUp(.project(project), freePorts: .yes)
+        }
+    }
+
+    /// A stack on ports of its own: back to the file's, and the command
+    /// its Up runs (for a shell that should start it the same way).
+    private func ownPortsVerbs(_ project: ComposeProject) -> [DockerVerb] {
+        guard ports.override(of: project) != nil else { return [] }
+        return [
+            DockerVerb(title: "Back to the File's Ports…", symbol: "arrow.uturn.backward") { [weak self] in self?.confirmForgetPorts(project) },
+            DockerVerb(title: "Copy Up Command", symbol: "doc.on.doc", group: 1) { [weak self] in
+                self?.withCurrentPorts(project) { [weak self] in
+                    guard let self else { return }
+                    self.actions?.copy(self.composeCommand(project, "up -d"))
+                }
+            },
+        ]
     }
 
     /// A project before it runs: what can be done to nothing yet — no
@@ -133,6 +160,10 @@ extension DockerPageModel {
             DockerVerb(title: "Pull Images in a Tab", label: "Pull", symbol: "arrow.down.circle", place: .button) { [weak self] in
                 self?.compose("pull", project)
             },
+            freePortsVerb(project),
+        ]
+        verbs += ownPortsVerbs(project)
+        verbs += [
             DockerVerb(title: "Open Compose File", symbol: "doc.text", group: 1) { [weak self] in self?.editComposeFile(project) },
             DockerVerb(title: "Show Resolved Config", symbol: "doc.text.magnifyingglass", group: 1) { [weak self] in self?.showResolvedConfig(project) },
             DockerVerb(title: "Copy Folder", symbol: "folder", group: 1) { [weak self] in

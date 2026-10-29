@@ -237,8 +237,8 @@ struct DockerPageView: View {
                             } else if page.showDetail, let project = page.detailedProject {
                                 Rectangle().fill(theme.border).frame(width: 1)
                                 ProjectDetailView(
-                                    project: project, session: page.projectSession(for: project.name), page: page, theme: theme, actions: actions,
-                                    planError: project.planned ? checkoutCompose.error : nil
+                                    project: project, session: page.projectSession(for: project.name), page: page, ports: page.ports, theme: theme,
+                                    actions: actions, planError: project.planned ? checkoutCompose.error : nil
                                 )
                                 .id(project.name)
                                 .frame(width: min(520, max(340, geometry.size.width * 0.45)))
@@ -329,7 +329,7 @@ struct DockerPageView: View {
         return List(selection: $page.selection) {
             ForEach(groups) { group in
                 DockerProjectRow(
-                    group: group, folded: page.collapsed.contains(group.id), busy: false, theme: theme,
+                    group: group, folded: page.collapsed.contains(group.id), busy: page.busy.contains(group.id), theme: theme,
                     fold: { page.toggleFold(group.id) }, act: { verb in if let project = group.project { page.compose(verb, project) } }
                 )
                 .tag(group.id)

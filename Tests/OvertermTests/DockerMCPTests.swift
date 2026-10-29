@@ -48,6 +48,14 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertFalse(running.contains("shop-db-1"), running)
         let projects = try await text("docker_projects")
         XCTAssertTrue(projects.contains("shop (1/2 running) in /w/shop"), projects)
+        // A stack Overterm put on ports of its own: what moved, and its Up.
+        let moved = ComposePortOverride(
+            folder: "/w/shop", project: "shop", fileName: "shop", baseFiles: ["/w/shop/compose.yaml"],
+            moves: [ComposePortMove(service: "web", target: 80, proto: "tcp", from: 8080, to: 18080)], made: Date())
+        let told = DockerMCP.describe(model.projects, overrides: ["shop": moved]) { _ in "docker compose -p shop -f /w/shop/compose.yaml -f /o/shop.yaml up -d" }
+        XCTAssertTrue(told.contains("Ports of its own (Overterm moved them for this checkout): web 8080 → 18080. Reach them there."), told)
+        XCTAssertTrue(told.contains("Overterm's Up runs: docker compose -p shop -f /w/shop/compose.yaml -f /o/shop.yaml up -d"), told)
+        XCTAssertFalse(DockerMCP.describe(model.projects).contains("of its own"), "none moved: nothing said")
     }
 
     /// What `docker_compose` runs: a service narrows it, rebuild is up

@@ -11,6 +11,9 @@ struct ListeningPort: Identifiable, Hashable {
     let address: String
     /// The container publishing it; its service is `process`, `pid` is 0.
     var container: String? = nil
+    /// The port the compose file asks for, when Up on Free Ports moved it
+    /// here for this checkout (`ComposePorts`).
+    var movedFrom: Int? = nil
 
     var id: String { container.map { "\($0):\(port)" } ?? "\(pid):\(port)" }
 
@@ -27,6 +30,48 @@ enum ListeningPorts {
             (try? await Git.run(
                 lsof, ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-F", "pcn"], in: URL(fileURLWithPath: "/"), success: [0, 1])) ?? ""
         return parse(output).first { $0.port == port }
+    }
+
+    /// Whether something on this Mac holds `port` — what Docker's own bind
+    /// for a published port would run into. A bind with SO_REUSEADDR on
+    /// 0.0.0.0, 127.0.0.1, :: and ::1, each closed at once: a listener on
+    /// one address is only met binding that one, TIME_WAIT doesn't count,
+    /// and nothing listens, so no firewall asks. Any user's socket counts,
+    /// unlike lsof's. A family this Mac can't make counts as free.
+    static func isBound(_ port: Int, proto: String = "tcp") -> Bool {
+        guard (1...65535).contains(port) else { return false }
+        let type = proto == "udp" ? SOCK_DGRAM : SOCK_STREAM
+        for (family, address) in [(AF_INET, "0.0.0.0"), (AF_INET, "127.0.0.1"), (AF_INET6, "::"), (AF_INET6, "::1")] {
+            let fd = socket(family, type, 0)
+            guard fd >= 0 else { continue }
+            defer { close(fd) }
+            var on: Int32 = 1
+            let size = socklen_t(MemoryLayout<Int32>.size)
+            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, size)
+            let result: Int32
+            if family == AF_INET {
+                var socketAddress = sockaddr_in()
+                socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+                socketAddress.sin_family = sa_family_t(AF_INET)
+                socketAddress.sin_port = in_port_t(UInt16(port)).bigEndian
+                inet_pton(AF_INET, address, &socketAddress.sin_addr)
+                result = withUnsafePointer(to: &socketAddress) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+                }
+            } else {
+                setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, size)
+                var socketAddress = sockaddr_in6()
+                socketAddress.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+                socketAddress.sin6_family = sa_family_t(AF_INET6)
+                socketAddress.sin6_port = in_port_t(UInt16(port)).bigEndian
+                inet_pton(AF_INET6, address, &socketAddress.sin6_addr)
+                result = withUnsafePointer(to: &socketAddress) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
+                }
+            }
+            if result != 0, errno == EADDRINUSE { return true }
+        }
+        return false
     }
 
     /// The listening TCP sockets of `pids`.

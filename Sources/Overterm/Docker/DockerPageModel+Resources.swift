@@ -289,7 +289,7 @@ extension DockerPageModel {
             actions?.edit(file)
             return
         }
-        guard let file = project.configFiles.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+        guard let file = project.configFiles.first(where: { !ports.isOurs($0) && FileManager.default.fileExists(atPath: $0) }) else {
             error = "\(project.name)'s compose file isn't on this Mac\(project.configFiles.first.map { " (\($0))" } ?? "")."
             return
         }
@@ -308,11 +308,21 @@ extension DockerPageModel {
             return
         }
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
-        // One before it runs is its folder's files, as `up` reads them: no
-        // `-p` (a name read earlier may be stale), no `-f`.
-        let arguments = (project.planned ? ["compose"] : ComposeFacts.arguments(project)) + ["config"]
-        let place = (project.planned ? folder : nil) ?? FileManager.default.homeDirectoryForCurrentUser
+        let endpoint = docker.endpoint
         Task {
+            // Its override as its files are now, if it has one.
+            await ports.refresh(for: project, endpoint: endpoint)
+            // One before it runs is its folder's files, as `up` reads them:
+            // no `-p` (a name read earlier may be stale), no `-f` — unless
+            // its checkout has ports of its own: then as its Up has them.
+            let kept = ports.override(of: project)
+            let arguments: [String]
+            if project.planned, let kept {
+                arguments = ["compose", "-p", kept.project] + ports.files(for: project).flatMap { ["-f", $0] } + ["config"]
+            } else {
+                arguments = (project.planned ? ["compose"] : ComposeFacts.arguments(project, files: ports.files(for: project))) + ["config"]
+            }
+            let place = (project.planned && kept == nil ? folder : nil) ?? FileManager.default.homeDirectoryForCurrentUser
             do {
                 let yaml = try await cli.composeConfig(arguments, in: place, timeout: 30)
                 let masked = ComposeConfig.masked(yaml, secrets: folder.map(ComposeConfig.dotEnvSecrets(in:)) ?? [])

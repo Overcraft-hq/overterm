@@ -39,7 +39,7 @@ struct NewTaskView: View {
                 }
                 if let composeFile {
                     Toggle("Start its compose stack (\(composeFile))", isOn: $startStack)
-                        .help("docker compose up -d in the new worktree, in a tab. Its project is the worktree's folder, so it runs beside the other worktrees' stacks — unless their ports collide.")
+                        .help("docker compose up -d in the new worktree, in a tab, beside the other worktrees' stacks. A port another one holds is offered elsewhere first.")
                 }
             }
 

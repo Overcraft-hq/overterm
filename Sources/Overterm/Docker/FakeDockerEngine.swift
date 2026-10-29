@@ -39,7 +39,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var logFollowers: [String: [Channel]] = [:]
     private var samplers: [ObjectIdentifier: Channel] = [:]
     private var channel: Channel?
-    private var tcpChannel: Channel?
+    private var tcpChannels: [Channel] = []
     private var asked: [String] = []
     /// Docker Model Runner, as Docker Desktop's answers under
     /// `/exp/vDD4.40` on the socket and a runner container's at the root
@@ -84,9 +84,10 @@ final class FakeDockerEngine: @unchecked Sendable {
         channel = try bootstrap.bind(unixDomainSocketPath: socket).wait()
     }
 
-    /// The same answers on 127.0.0.1 too, at a port of the system's: what a
-    /// container publishing it would be. Returns the port.
-    func listenTCP() throws -> Int {
+    /// The same answers on 127.0.0.1 too, at `port` or one of the system's:
+    /// what a container publishing it would be, or a port a program on this
+    /// Mac holds. Returns the port; each listens until `stop`.
+    func listenTCP(port: Int = 0) throws -> Int {
         let bootstrap = ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .childChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
@@ -94,8 +95,8 @@ final class FakeDockerEngine: @unchecked Sendable {
                     try channel.pipeline.syncOperations.addHandler(Handler(engine: self))
                 }
             }
-        let bound = try bootstrap.bind(host: "127.0.0.1", port: 0).wait()
-        tcpChannel = bound
+        let bound = try bootstrap.bind(host: "127.0.0.1", port: port).wait()
+        locked { tcpChannels.append(bound) }
         return bound.localAddress?.port ?? 0
     }
 
@@ -106,7 +107,11 @@ final class FakeDockerEngine: @unchecked Sendable {
         let open = locked { Array(eventStreams.values) + Array(samplers.values) + logFollowers.values.flatMap { $0 } }
         open.forEach { $0.close(promise: nil) }
         try? channel?.close().wait()
-        try? tcpChannel?.close().wait()
+        let listening = locked {
+            defer { tcpChannels = [] }
+            return tcpChannels
+        }
+        for tcp in listening { try? tcp.close().wait() }
         try? FileManager.default.removeItem(atPath: socket)
     }
 
@@ -117,7 +122,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     func add(
         name: String, image: String = "debian:bookworm-slim", state: ContainerState = .running, project: String? = nil, workingDir: String? = nil,
         service: String? = nil, ports: [DockerPort] = [], env: [String] = [], health: String? = nil, imageID: String? = nil,
-        volumes: [String] = []
+        volumes: [String] = [], configFiles: [String]? = nil
     ) -> String {
         let id = String((name + UUID().uuidString).utf8.map { String(format: "%02x", $0) }.joined().prefix(64))
         var labels: [String: String] = [:]
@@ -128,7 +133,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             labels["com.docker.compose.oneoff"] = "False"
             if let workingDir {
                 labels["com.docker.compose.project.working_dir"] = workingDir
-                labels["com.docker.compose.project.config_files"] = workingDir + "/compose.yaml"
+                labels["com.docker.compose.project.config_files"] = (configFiles ?? [workingDir + "/compose.yaml"]).joined(separator: ",")
             }
         }
         let status = Self.status(state, health: health)

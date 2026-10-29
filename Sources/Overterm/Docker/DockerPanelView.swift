@@ -196,7 +196,7 @@ struct DockerPanelView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.accentText)
-                .help("docker compose up -d, in a terminal tab in the checkout")
+                .help("docker compose up -d, in a terminal tab in the checkout — another worktree's ports or name taken, asked first")
                 .accessibilityIdentifier("docker.panel.up")
             }
             if let other = panel.planElsewhere {
@@ -223,12 +223,13 @@ struct DockerPanelView: View {
             if let error = checkoutCompose.error { composeError(error) }
             if let file = panel.composeFile {
                 Button {
-                    actions.run(DockerCommands.prefix(for: docker.endpoint) + "docker compose up -d", panel.checkout)
+                    if let checkout = panel.checkout { actions.composeUp(.checkout(checkout), .ask) }
                 } label: {
                     Label("Up — \(file.lastPathComponent)", systemImage: "play.fill").font(.system(size: 11.5))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.accentText)
+                .help("docker compose up -d, in a terminal tab in the checkout — another worktree's ports or name taken, asked first")
             }
         }
         .padding(.horizontal, 12)

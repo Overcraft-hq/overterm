@@ -1,4 +1,5 @@
 import AppKit
+import Vision
 
 /// The Docker page against the fake engine (FakeDockerEngine) on a socket
 /// of its own: never the user's Docker. What would reach a real `docker` —
@@ -290,6 +291,372 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// A folder with a stub `docker` answering as Compose 2.29 does: its
+    /// version (the `version` file beside it, which a check may change),
+    /// its JSON for the stack (`config.json`), a line of YAML for Show
+    /// Resolved Config; every call logged (`stub.log`), anything else
+    /// refused. Never an engine.
+    private func composeStub(_ name: String, json: String, version: String = "2.29.7") -> URL {
+        let bin = scratch.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try? json.write(to: bin.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+        try? (version + "\n").write(to: bin.appendingPathComponent("version"), atomically: true, encoding: .utf8)
+        let stub = bin.appendingPathComponent("docker")
+        let script = #"""
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            echo "$*" >> "$dir/stub.log"
+            case "$*" in
+              *"compose version --short"*) cat "$dir/version" ;;
+              *" config "*"--format json"*) cat "$dir/config.json" ;;
+              *" config --no-env-resolution") echo "name: resolved" ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """#
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        return bin
+    }
+
+    /// The lines of text the window shows, read off its pixels as a person
+    /// reads them (Vision), each where it is in the window's points (origin
+    /// bottom left, as an event's location) — for what SwiftUI draws itself,
+    /// which no AppKit view holds and, without an assistive app, no
+    /// accessibility element either.
+    private func readWindow() async -> [(text: String, frame: CGRect)] {
+        guard let image = app.windowImage(window) else { return [] }
+        let pixels = WindowPixels(image: image)
+        let size = window.frame.size
+        return await Task.detached { Self.recognize(pixels, size: size) }.value
+    }
+
+    private struct WindowPixels: @unchecked Sendable {
+        let image: CGImage
+    }
+
+    nonisolated private static func recognize(_ pixels: WindowPixels, size: CGSize) -> [(text: String, frame: CGRect)] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: pixels.image).perform([request])
+        return (request.results ?? []).compactMap { observation in
+            guard let text = observation.topCandidates(1).first?.string else { return nil }
+            let box = observation.boundingBox
+            return (text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
+        }
+    }
+
+    /// The window's line of text that `match` picks, read again until it
+    /// shows (SwiftUI draws a moment later).
+    private func shownText(_ timeout: TimeInterval = 5, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if let line = await readWindow().first(where: { match($0.text) }) { return line }
+            await pause(0.3)
+        } while Date() < deadline
+        return nil
+    }
+
+    /// A click where a person would click, for the window itself. Both
+    /// events are queued, not sent: a mouse-down that tracks the mouse
+    /// until it is up (a disabled button passes it on) takes its mouse-up
+    /// off the queue, where one sent after it would never come.
+    private func click(at point: CGPoint) async {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            NSApp.postEvent(
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!, atStart: false)
+        }
+        await pause(0.2)
+    }
+
+    /// Two worktrees of one repository, one compose file whose `name:` is the
+    /// main checkout's: before New Task's Up of the new worktree's stack,
+    /// its ports are looked at — one published by the main checkout's stack,
+    /// one held by a program on this Mac (the fake's own listener) — and its
+    /// name, which the main checkout's stack has. Up on Free Ports writes an
+    /// override into Overterm's folder, never the repository, and runs the
+    /// stack under a name of its own on free ports; every later Up uses it;
+    /// the detail, the pills and the agents say what moved; Back to the
+    /// File's Ports forgets it. A stub `docker` answers as Compose 2.29 does;
+    /// what would run is recorded, never typed — but for Compose's own
+    /// reading of the override, `config`, which reaches no engine.
+    private func worktreePortsChecks(_ fake: FakeDockerEngine, socket: String) async {
+        let docker = DockerModel.shared
+        let page = app.dockerPage
+        // Below the ephemeral range, as a stack's own ports are: one the
+        // system hands out is next to ports other programs' connections
+        // take any moment, so the free one found beside it wouldn't stay so.
+        var held: Int?
+        for port in stride(from: 31_000 + Int(getpid()) % 500, to: 39_000, by: 37) {
+            if let bound = try? fake.listenTCP(port: port) {
+                held = bound
+                break
+            }
+        }
+        guard let held else { return check("a port held on this Mac", false) }
+        let main = scratch.appendingPathComponent("ot-main", isDirectory: true)
+        try? FileManager.default.createDirectory(at: main, withIntermediateDirectories: true)
+        let mainWeb = fake.add(
+            name: "ot-main-web-1", image: "nginx:1.27", project: "ot-main", workingDir: FileTreeModel.realPath(main), service: "web",
+            ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 80, PublicPort: 38080, Type: "tcp")])
+        let repo = scratch.appendingPathComponent("ot-ports-repo", isDirectory: true)
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        let file =
+            "name: ot-main\nservices:\n  web:\n    image: nginx:1.27\n    ports:\n      - \"38080:80\"\n  db:\n    image: postgres:16\n    ports:\n"
+            + "      - \"127.0.0.1:\(held):5432\"\n"
+        try? file.write(to: repo.appendingPathComponent("compose.yaml"), atomically: true, encoding: .utf8)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["add", "compose.yaml"], in: repo)
+        try? await git(["commit", "-q", "-m", "stack"], in: repo)
+
+        // A stub `docker`: Compose 2.29's version, its JSON for the stack.
+        let json =
+            #"{"name":"ot-main","services":{"db":{"image":"postgres:16","ports":[{"mode":"ingress","host_ip":"127.0.0.1","target":5432,"published":"\#(held)","protocol":"tcp"}]},"#
+            + #""web":{"image":"nginx:1.27","ports":[{"mode":"ingress","target":80,"published":"38080","protocol":"tcp"}]}}}"#
+        let bin = composeStub("ports-stub-bin", json: json)
+        let stub = bin.appendingPathComponent("docker")
+        func log() -> String { (try? String(contentsOf: bin.appendingPathComponent("stub.log"), encoding: .utf8)) ?? "" }
+        DockerCLI.override = stub
+        page.composeVersion = nil
+
+        var commands: [(command: String, folder: URL?)] = []
+        var asked: (title: String, detail: String, buttons: [String])?
+        var confirms = 0
+        var alerts: [String] = []
+        let actions = page.actions
+        page.actions?.run = { commands.append(($0, $1)) }
+        page.actions?.alert = { alerts.append($0 + ": " + $1) }
+        page.actions?.choose = { title, detail, buttons, then in
+            asked = (title, detail, buttons)
+            then(0)
+        }
+        page.actions?.confirm = { _, _, _, then in
+            confirms += 1
+            then()
+        }
+        let previous = app.store.selected
+        defer {
+            page.actions = actions
+            DockerCLI.override = nil
+            page.composeVersion = nil
+            page.error = nil
+            page.cleaned = nil
+            Settings.shared.set("docker.checkPorts", nil)
+        }
+
+        // New Task with its stack: asked first.
+        do {
+            try await app.createTask(repo: repo, branch: "feat/ports", base: "main", agent: nil, startStack: true)
+        } catch {
+            return check("New Task in a repository with a stack", false, error.localizedDescription)
+        }
+        let worktree = TaskCreator.worktreePath(repo: repo, branch: "feat/ports", location: Settings.shared.worktreeLocation)
+        let real = FileTreeModel.realPath(worktree)
+        let base = real + "/compose.yaml"
+        let tab = app.store.selected
+        check(
+            "New Task looks at a stack's ports before its Up", asked?.buttons == ["Up on Free Ports", "Up as Written"],
+            "\(asked.map { "\($0)" } ?? "nothing asked") \(page.error ?? "")")
+        let detail = asked?.detail ?? ""
+        check(
+            "the question says who holds them",
+            detail.contains("38080 (web): ot-main-web-1 publishes it") && detail.contains("\(held) (db): ") && detail.contains("pid \(getpid())"), detail)
+        check("and whose the project's name is", detail.contains("“ot-main” runs in "), detail)
+        check(
+            "Compose is asked from the worktree's own files",
+            log().contains("-f \(base) --profile * config") && log().contains("--no-env-resolution"), log())
+        // The answer looks at the ports once more before it writes anything.
+        _ = await eventually(5) { page.ports.override(in: real) != nil && !commands.isEmpty }
+        guard let kept = page.ports.override(in: real) else { return check("Up on Free Ports keeps an override", false, page.error ?? "") }
+        let name = kept.project
+        let override = page.ports.file(of: kept).path
+        check(
+            "Up on Free Ports runs its own project on its own files",
+            name.hasPrefix("ot-main-")
+                && commands.last?.command
+                    == "DOCKER_HOST=unix://\(socket) docker compose -p \(name) -f \(DockerCommands.quote(base)) -f \(DockerCommands.quote(override)) up -d"
+                && commands.last?.folder.map(FileTreeModel.realPath) == real, "\(commands.last.map { "\($0)" } ?? "nothing")")
+        check(
+            "the override is kept in Overterm's folder",
+            FileManager.default.fileExists(atPath: override) && override.hasPrefix(AppEnvironment.supportDirectory.path), override)
+        let status = (try? await Git.run(["status", "--porcelain"], in: worktree)) ?? "git failed"
+        check("the repository isn't touched", status.isEmpty, status)
+        let yaml = (try? String(contentsOfFile: override, encoding: .utf8)) ?? ""
+        let webTo = kept.moves.first { $0.service == "web" }?.to ?? 0
+        let dbTo = kept.moves.first { $0.service == "db" }?.to ?? 0
+        check(
+            "it replaces the ports it moves",
+            yaml.contains("ports: !override") && yaml.contains(#"published: "\#(webTo)""#) && yaml.contains(#"host_ip: "127.0.0.1""#)
+                && yaml.contains(#"name: "ot-main-"#), yaml)
+        check(
+            "a taken port goes 10 000 up, else to the next one",
+            kept.moves.map(\.from) == [held, 38080] && (webTo == 48080 || ListeningPorts.isBound(48080)) && dbTo > held && !ListeningPorts.isBound(dbTo),
+            "\(kept.moves.map(\.label))")
+        // Compose itself, where there is one: the override moves the port.
+        DockerCLI.override = nil
+        if let compose = DockerCLI.locate("docker") {
+            let cli = DockerCLI(executable: compose, endpoint: DockerEndpoint(address: .unix(socket), context: nil, source: "OVERTERM_DOCKER_HOST"))
+            let read = try? await cli.run(["compose", "-f", base, "-f", override, "config", "--format", "json"], timeout: 30)
+            let merged = read.flatMap { try? ComposeConfig.parse($0) }
+            check(
+                "Compose reads the override as moving the port, not adding one",
+                merged?.name == name && merged?.services.first { $0.name == "web" }?.ports.map(\.published) == ["\(webTo)"]
+                    && merged?.services.first { $0.name == "db" }?.ports.map(\.hostIP) == ["127.0.0.1"], read ?? "no answer")
+        }
+        DockerCLI.override = stub
+
+        // Its containers made: the detail says what moved.
+        let ownWeb = fake.add(
+            name: "\(name)-web-1", image: "nginx:1.27", project: name, workingDir: real, service: "web",
+            ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 80, PublicPort: webTo, Type: "tcp")], configFiles: [base, override])
+        let tag = DockerPageModel.projectTag(name)
+        _ = await eventually(5) { docker.projects.contains { $0.name == name } }
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.section = .containers
+        page.showDetail = true
+        page.selection = [tag]
+        let project = docker.projects.first { $0.name == name }
+        // As the detail draws it, read the way VoiceOver would.
+        let line = "Own ports: db \(held) → \(dbTo) · web 38080 → \(webTo)"
+        var drawn = ""
+        let drawnLine = await eventually(5) {
+            // SwiftUI's selectable Text is an AppKit text field.
+            drawn = Self.find(NSTextField.self, in: self.app.dockerView) { $0.stringValue.hasPrefix("Own ports") }?.stringValue ?? ""
+            return drawn == line
+        }
+        check("the project's detail says what moved", drawnLine, drawn.isEmpty ? "nothing drawn" : drawn)
+        await capture("ports")
+
+        // What its Up runs, copied; what Compose makes of it, with the override.
+        var copied: [String] = []
+        var shownCopies: [URL] = []
+        page.actions?.copy = { copied.append($0) }
+        page.actions?.showCopy = { shownCopies.append($0) }
+        if let project {
+            page.verbs(for: project).first { $0.title == "Copy Up Command" }?.perform()
+            page.showResolvedConfig(project)
+        }
+        let upCommand = "DOCKER_HOST=unix://\(socket) docker compose -p \(name) -f \(DockerCommands.quote(base)) -f \(DockerCommands.quote(override)) up -d"
+        check("Copy Up Command is what its Up runs", await eventually(5) { copied.last == upCommand }, copied.last ?? "nothing copied")
+        check(
+            "Show Resolved Config reads it with its override",
+            await eventually(5) { !shownCopies.isEmpty } && log().contains("compose -p \(name) -f \(base) -f \(override) config --no-env-resolution"),
+            log())
+        for copy in shownCopies { try? FileManager.default.removeItem(at: copy) }
+        asked = nil
+        var count = commands.count
+        page.press("u")
+        check(
+            "its Up uses the same files and asks nothing",
+            await eventually(5) { commands.count == count + 1 } && commands.last?.command.contains("-f \(DockerCommands.quote(override)) up -d") == true
+                && asked == nil, "\(commands.last.map { "\($0)" } ?? "nothing") \(asked?.title ?? "")")
+        fake.set(mainWeb, state: .exited)
+        _ = await eventually(5) { docker.container(mainWeb)?.state == .exited }
+        count = commands.count
+        page.press("u")
+        _ = await eventually(5) { commands.count == count + 1 }
+        check(
+            "a moved port stays put once its first holder has gone",
+            ((try? String(contentsOfFile: override, encoding: .utf8)) ?? "").contains(#"published: "\#(webTo)""#)
+                && page.ports.override(in: real)?.moves == kept.moves, "\(page.ports.override(in: real)?.moves.map(\.label) ?? [])")
+        page.press("D")
+        check("Down finds it by name", commands.last?.command == "DOCKER_HOST=unix://\(socket) docker compose -p \(name) down", commands.last?.command ?? "")
+
+        // The pane header's pill, and the agents.
+        if let tab {
+            check(
+                "the pane header's pill says where it came from",
+                await eventually(5) {
+                    self.app.updateContainerPorts(of: tab)
+                    return tab.containerPorts.contains { $0.port == webTo && $0.movedFrom == 38080 }
+                }, "\(tab.containerPorts.map { "\($0.port) \($0.movedFrom ?? 0)" })")
+        }
+        let told =
+            (try? await DockerMCP.call("docker_projects", [:], docker: .shared))
+            .flatMap { (($0["content"] as? [[String: Any]])?.first?["text"] as? String) } ?? ""
+        check("agents are told the moved ports", told.contains("web 38080 → \(webTo)") && told.contains("Overterm's Up runs: "), told)
+
+        // Back to the file's ports: forgotten, and the next Up asks again.
+        if let project = docker.projects.first(where: { $0.name == name }) {
+            page.verbs(for: project).first { $0.title == "Back to the File's Ports…" }?.perform()
+        }
+        check(
+            "Back to the File's Ports forgets it",
+            confirms == 2 && page.ports.override(in: real) == nil && !FileManager.default.fileExists(atPath: override), "\(confirms) confirmed")
+        fake.set(mainWeb, state: .running)
+        _ = await eventually(5) { docker.container(mainWeb)?.state == .running }
+        page.actions?.choose = actions?.choose ?? { _, _, _, _ in }
+        count = commands.count
+        page.press("u")
+        let sheet = await eventually(5) { self.window.attachedSheet != nil }
+        let clicked = sheet && clickSheetButton("Up as Written")
+        let upped = clicked ? await eventually(5) { commands.count == count + 1 } : false
+        check(
+            "and asks again at the next Up, through the window's own sheet",
+            upped
+                && commands.last?.command.hasSuffix("-p \(name) -f \(DockerCommands.quote(base)) up -d") == true
+                && commands.last?.command.contains("Compose/Ports") == false && page.ports.override(in: real) == nil,
+            "\(sheet) \(commands.last?.command ?? "nothing")")
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+        page.actions?.choose = { title, detail, buttons, then in
+            asked = (title, detail, buttons)
+            then(0)
+        }
+
+        // An older Compose isn't asked to; with the check off, as written.
+        try? "2.20.0\n".write(to: bin.appendingPathComponent("version"), atomically: true, encoding: .utf8)
+        page.composeVersion = nil
+        count = commands.count
+        page.press("U")
+        check(
+            "an older Compose isn't asked to",
+            await eventually(5) { page.error?.contains("2.24.4") == true } && commands.count == count + 1
+                && commands.last?.command.hasSuffix("-p \(name) -f \(DockerCommands.quote(base)) up -d") == true && page.ports.override(in: real) == nil,
+            "\(page.error ?? "") \(commands.last?.command ?? "")")
+        page.error = nil
+        Settings.shared.set("docker.checkPorts", .bool(false))
+        asked = nil
+        await page.up(.checkout(worktree))
+        check(
+            "with the check off, an Up runs as written",
+            commands.last?.command == "DOCKER_HOST=unix://\(socket) docker compose up -d" && commands.last?.folder == worktree && asked == nil,
+            commands.last?.command ?? "")
+        Settings.shared.set("docker.checkPorts", nil)
+
+        // A container of it that couldn't start: its conflict's own Up on
+        // Free Ports, pressed as a person would.
+        try? "2.29.7\n".write(to: bin.appendingPathComponent("version"), atomically: true, encoding: .utf8)
+        page.composeVersion = nil
+        fake.set(ownWeb, state: .created, error: "driver failed programming external connectivity: Bind for 0.0.0.0:38080 failed: port is already allocated")
+        _ = await eventually(5) { docker.container(ownWeb)?.state == .created }
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.selection = [ownWeb]
+        page.detailTab = .overview
+        let conflicted = await eventually(5) {
+            if case .container(let id, _, _, _) = page.session?.conflict?.holder { return id == mainWeb }
+            return false
+        }
+        count = commands.count
+        let button = conflicted ? await shownText { $0.hasPrefix("Up ot-main") } : nil
+        if let button { await click(at: CGPoint(x: button.frame.midX, y: button.frame.midY)) }
+        let movedAgain = button != nil ? await eventually(5) { commands.count == count + 1 } : false
+        check(
+            "a conflict's own Up on Free Ports moves its stack",
+            movedAgain && commands.last?.command == upCommand && page.ports.override(in: real)?.moves.map(\.from) == [held, 38080] && alerts.isEmpty,
+            "\(conflicted) \(button?.text ?? "no button read") \(commands.last?.command ?? "nothing") \(page.error ?? "") \(alerts)")
+        page.ports.forget(real)
+
+        try? await docker.remove(ownWeb, force: true)
+        try? await docker.remove(mainWeb, force: true)
+        page.selection = []
+        if let previous { app.store.select(previous) }
+        if let tab, tab !== previous { app.closeTabsWithoutAsking([tab]) }
+        // The changes pane finds the tab's repository a moment later.
+        _ = await eventually(5) { self.app.diff.root.map(FileTreeModel.realPath) != real && !self.app.dockerPanelStack().isEmpty }
+    }
+
     /// A compose project's services and what its files say, as a stub
     /// `docker` answers `compose config` the way Compose v5.6 does: what
     /// Watch watches and the profiles, read once a change of the files (the
@@ -392,11 +759,14 @@ extension E2ERunner {
             "\(String(describing: page.profileChoice))")
         await capture("profiles")
         page.profileChoice?.chosen = ["jobs"]
+        count = commands.count
         page.upWithProfiles()
         let closed = await eventually(3) { self.window.attachedSheet == nil }
+        let upped = await eventually(5) { commands.count == count + 1 }
         check(
             "and ups with the ones ticked",
-            closed && commands.last.map { $0.command.hasSuffix(" --profile jobs up -d") && $0.command.contains(" -f ") } == true,
+            closed && upped
+                && commands.last.map { $0.command.hasSuffix(" --profile jobs up -d") && $0.command.contains(" -f ") } == true,
             commands.last?.command ?? "nothing")
 
         // The rail's panel menu: what the files say there too.
@@ -410,8 +780,12 @@ extension E2ERunner {
         check(
             "its Watch is compose watch in a tab", await eventually(5) { commands.count == count + 1 } && commands.last?.command.hasSuffix(" watch") == true,
             "\(commands.map(\.command))")
+        count = commands.count
         panelVerbs.first { $0.title == "Rebuild and Up in a Tab" }?.perform()
-        check("its Rebuild and Up is up --build of all of it", commands.last?.command.hasSuffix("/compose.yaml up -d --build") == true, commands.last?.command ?? "")
+        check(
+            "its Rebuild and Up is up --build of all of it",
+            await eventually(5) { commands.count == count + 1 } && commands.last?.command.hasSuffix("/compose.yaml up -d --build") == true,
+            commands.last?.command ?? "")
 
         // A service's verbs.
         guard let fresh = docker.projects.first(where: { $0.name == "ot-shop" }), let service = fresh.services.first(where: { $0.name == "web" }) else {
@@ -423,15 +797,18 @@ extension E2ERunner {
             titles(serviceVerbs, .button) == ["Rebuild and Start in a Tab", "Restart", "Show Its Logs"]
                 && titles(serviceVerbs, .more) == ["Follow Its Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"],
             "\(serviceVerbs.map(\.title))")
+        count = commands.count
         serviceVerbs.first { $0.title == "Rebuild and Start in a Tab" }?.perform()
         check(
             "Rebuild is up --build of that service alone",
-            commands.last.map { $0.command.hasSuffix(" up -d --build web") && $0.command.contains(" -f ") } == true, commands.last?.command ?? "")
+            await eventually(5) { commands.count == count + 1 }
+                && commands.last.map { $0.command.hasSuffix(" up -d --build web") && $0.command.contains(" -f ") } == true, commands.last?.command ?? "")
         count = commands.count
         page.selection = [web]
         page.press("b")
         check(
-            "b rebuilds the selected container's service", commands.count == count + 1 && commands.last?.command.hasSuffix(" up -d --build web") == true,
+            "b rebuilds the selected container's service",
+            await eventually(5) { commands.count == count + 1 } && commands.last?.command.hasSuffix(" up -d --build web") == true,
             "\(commands.map(\.command))")
         page.selection = [tag]
         serviceVerbs.first { $0.title == "Run a One-Off in a Tab" }?.perform()
@@ -724,9 +1101,11 @@ extension E2ERunner {
                 && !String(describing: read).contains("hunter2") && !String(describing: read).contains("s3cr3t-plan"))
         await capture("panel-planned")
         if let read { panel.projectVerbs(read).first { $0.key == "u" }?.perform() }
+        // An Up looks at its ports first: the stub's Compose doesn't say its
+        // version, so it goes up as written.
         check(
             "the panel's Up is compose up in the checkout, told which engine, the name left to the files",
-            commands.last?.command == "DOCKER_HOST=unix://\(socket) docker compose up -d"
+            await eventually(5) { !commands.isEmpty } && commands.last?.command == "DOCKER_HOST=unix://\(socket) docker compose up -d"
                 && commands.last?.folder.map(FileTreeModel.realPath) == real && confirmed.isEmpty, "\(commands.last.map { "\($0)" } ?? "nothing")")
         let verbs = read.map { page.verbs(for: $0) } ?? []
         check(
@@ -751,7 +1130,8 @@ extension E2ERunner {
         page.press("u")
         check(
             "u brings it up from the page",
-            commands.count == before + 1 && commands.last?.command.hasSuffix(" docker compose up -d") == true, "\(commands.map(\.command))")
+            await eventually(5) { commands.count == before + 1 } && commands.last?.command.hasSuffix(" docker compose up -d") == true,
+            "\(commands.map(\.command))")
         if let db = group()?.services.first(where: { $0.name == "db" }) { page.selection = [DockerPageModel.serviceTag(db)] }
         page.press("D")
         check(
@@ -863,7 +1243,7 @@ extension E2ERunner {
         if let mine = panel.plan { panel.projectVerbs(mine).first { $0.key == "u" }?.perform() }
         check(
             "Up asks first: it would take that stack over",
-            confirmed.last?.contains("ot-plan") == true && commands.count == ran + 1, "\(confirmed)")
+            await eventually(5) { commands.count == ran + 1 } && confirmed.last?.contains("ot-plan") == true, "\(confirmed)")
         try? await docker.remove(other, force: true)
         _ = await eventually(5) { docker.container(other) == nil }
 
@@ -1154,7 +1534,8 @@ extension E2ERunner {
         _ = page.press("u")
         check(
             "u is compose up for the project, told which engine",
-            commands.last?.hasPrefix("DOCKER_HOST=unix://\(socket) docker compose -p ot-shop -f ") == true && commands.last?.hasSuffix(" up -d") == true,
+            await eventually(5) { !commands.isEmpty }
+                && commands.last?.hasPrefix("DOCKER_HOST=unix://\(socket) docker compose -p ot-shop -f ") == true && commands.last?.hasSuffix(" up -d") == true,
             commands.last ?? "nothing")
         page.selection = [web]
         _ = page.press("e")
@@ -1172,15 +1553,32 @@ extension E2ERunner {
             commands.append(command)
             stackFolder = folder
         }
+        // Compose (a stub) says the stack's port, which nothing holds.
+        let free = (41_000...41_999).first { !ListeningPorts.isBound($0) } ?? 41_000
+        let freeStub = composeStub(
+            "free-ports-stub-bin",
+            json: #"{"name":"ot-free-stack","services":{"web":{"image":"nginx:1.27","ports":[{"mode":"ingress","target":80,"published":"\#(free)","protocol":"tcp"}]}}}"#)
+        DockerCLI.override = freeStub.appendingPathComponent("docker")
+        page.composeVersion = nil
+        var questions = 0
+        let chooser = page.actions?.choose
+        page.actions?.choose = { _, _, _, _ in questions += 1 }
         do {
             try await app.createTask(repo: repo, branch: "feat/stack", base: "main", agent: nil, startStack: true)
             check(
                 "New Task starts the new worktree's stack",
                 commands.last?.hasSuffix("docker compose up -d") == true && stackFolder.map { ComposeProjects.composeFile(in: $0) != nil } == true
                     && stackFolder?.path != repo.path, "\(commands.last ?? "") in \(stackFolder?.path ?? "nothing")")
+            let asked = (try? String(contentsOf: freeStub.appendingPathComponent("stub.log"), encoding: .utf8)) ?? ""
+            check(
+                "a stack whose ports are free starts without a question",
+                asked.contains(" config --format json") && questions == 0 && window.attachedSheet == nil, asked.isEmpty ? "Compose wasn't asked" : asked)
         } catch {
             check("New Task with its stack", false, error.localizedDescription)
         }
+        DockerCLI.override = nil
+        page.composeVersion = nil
+        page.actions?.choose = chooser ?? { _, _, _, _ in }
         page.actions?.run = recorder ?? { _, _ in }
         _ = page.press("E")
         check(
@@ -1234,6 +1632,23 @@ extension E2ERunner {
             return false
         }
         check("a port taken by another worktree's stack says whose", holder, "\(String(describing: page.session?.conflict))")
+        // On screen, as a person would see it.
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.showDetail = true
+        page.detailTab = .overview
+        let clashProject = docker.projects.first { $0.name == "ot-shop-2" }
+        let reason = clashProject.flatMap { app.dockerActions.freePortsUnavailable($0) }
+        let offered = await shownText { $0.hasPrefix("Up ot-shop-2") }
+        var clashTyped: [String] = []
+        let typing = page.actions?.run
+        page.actions?.run = { command, _ in clashTyped.append(command) }
+        if let offered { await click(at: CGPoint(x: offered.frame.midX, y: offered.frame.midY)) }
+        await pause(0.5)
+        page.actions?.run = typing ?? { _, _ in }
+        check(
+            "its stack's Up on Free Ports can't help without its files here",
+            offered != nil && reason == "Its compose files aren't on this Mac." && clashTyped.isEmpty && page.error == nil,
+            "\(offered?.text ?? "not drawn") \(reason ?? "no reason") \(clashTyped) \(page.error ?? "")")
         try? await docker.perform(.stop, on: web)
         page.act(.start, on: docker.container(clash).map { [$0] } ?? [])
         check(
@@ -1383,6 +1798,7 @@ extension E2ERunner {
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await worktreePortsChecks(fake, socket: socket)
         await composeServicesChecks(fake, web: web)
         await modelsChecks(fake)
         await mcpToolkitChecks()

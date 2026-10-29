@@ -5,7 +5,7 @@ import Foundation
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, inspect, open, database, remove, composeUp,
-        composeDown, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models, help
+        composeUpFreePorts, composeDown, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models, help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -38,6 +38,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .run: "n"
         case .remove: "⌫"
         case .composeUp: "u"
+        case .composeUpFreePorts: "U"
         case .composeDown: "D"
         case .rebuild: "b"
         case .watch: "w"
@@ -69,7 +70,8 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .database: "Open a database container in the Database panel"
         case .run: "Run an image — the selected one — in a new container; a model, in a chat in a tab"
         case .remove: "Remove (asks first)"
-        case .composeUp: "Compose up, in a terminal tab — one not created yet too"
+        case .composeUp: "Compose up, in a terminal tab — one not created yet too; another checkout's ports or name taken, asked first"
+        case .composeUpFreePorts: "Compose up on free ports — this checkout's own, an override in Overterm's folder"
         case .composeDown: "Compose down, in a terminal tab (asks first)"
         case .rebuild: "Rebuild and start its service — a project's row, all of them — in a terminal tab"
         case .watch: "Compose watch, in a terminal tab — when a service has develop.watch"
@@ -86,7 +88,7 @@ enum DockerKey: String, CaseIterable, Sendable {
     }
 
     /// The key a typed character is, if any. Case matters: `D` is compose
-    /// down, `d` the Database panel.
+    /// down, `d` the Database panel; `U` up on free ports.
     static func of(_ characters: String) -> DockerKey? {
         switch characters {
         case "\r": .details

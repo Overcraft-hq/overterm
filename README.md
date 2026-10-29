@@ -196,8 +196,14 @@ right-hand pane, and the ports its containers publish
 sit in its panes' headers beside the ones its own processes listen on. A
 container that crashes, runs out of memory or turns unhealthy marks the
 tab whose checkout it belongs to, as a failed command does. Two
-worktrees' stacks wanting the same port: the one that couldn't start says
-which stack, or which tab's process, has it — and stops that one for you. `d` on a
+worktrees' stacks wanting the same port: before an Up, Overterm sees it
+taken — by another worktree's stack or a program — and offers Up on Free
+Ports. The stack moves to free ones (web 8080 → 18080) under a project name
+of its own, through an override kept in Overterm's folder, never in your
+repository, and every Up from Overterm uses it until you take it back; the
+pane headers say where each port went. One that couldn't start still says
+which stack, or which tab's process, has the port — and stops that one for
+you. `d` on a
 PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
 its connection filled in from the container. A container's files are a
 tab of its own: browse its folders, open a config in the editor, and the
@@ -212,7 +218,7 @@ about in the window each time, and Settings ▸ Docker can take them away.
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started
 in it — and, with a compose file in the repository, can start the worktree's
-own stack. **Merged worktrees** are marked and cleaned up in one click, keeping
+own stack, on free ports when another worktree's has them. **Merged worktrees** are marked and cleaned up in one click, keeping
 anything with changes, a tab or unpushed commits. **Pull requests** and CI
 (through your `gh`) sit on the worktree, in the strip, and in a pane of their
 own. **Claude sessions** lists every conversation ever run in the repository,

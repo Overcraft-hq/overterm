@@ -2048,11 +2048,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// capture its own window without Screen Recording permission;
     /// cacheDisplay misses layer-backed content here.
     func captureWindow(to path: String, window: NSWindow? = nil) {
-        guard let window = window ?? self.window,
-            let image = CGWindowListCreateImage(
-                .null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
-        else { return }
+        guard let image = windowImage(window) else { return }
         try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
+    /// The composited window, as on screen: its frame, at its backing scale.
+    func windowImage(_ window: NSWindow? = nil) -> CGImage? {
+        guard let window = window ?? self.window else { return nil }
+        return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
     }
 
     // MARK: Tab context menu
@@ -2971,11 +2974,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         newTab(in: path, agent: agent)
         store.selected?.customTitle = branch
         await worktrees.refresh()
-        // Its own stack, in a tab beside it (the page's run, which a scenario records).
-        if startStack, ComposeProjects.composeFile(in: path) != nil {
-            let command = DockerCommands.prefix(for: DockerModel.shared.endpoint) + "docker compose up -d"
-            if let run = dockerPage.actions?.run { run(command, path) } else { runDockerCommand(command, in: path) }
-        }
+        // Its own stack, in a tab beside it — the page's Up, which looks at
+        // its ports and its name first, and which a scenario records.
+        if startStack, ComposeProjects.composeFile(in: path) != nil { await dockerPage.up(.checkout(path)) }
     }
 
     // MARK: Snippets

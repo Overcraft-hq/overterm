@@ -35,6 +35,18 @@ struct DockerActions {
     var pickOpen: (@escaping (URL) -> Void) -> Void = { _ in }
     /// A name asked for: title, what it is for, the first guess, then it.
     var askName: (String, String, String, @escaping (String) -> Void) -> Void = { _, _, _, _ in }
+    /// Asks — what, why, the buttons' words (Cancel is added) — then the
+    /// index of the one chosen; nothing when cancelled.
+    var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
+    /// An Up of a checkout's stack through the page (`DockerPageModel.up`):
+    /// from the panel, a container's conflict.
+    var composeUp: (ComposeUpTarget, ComposeFreePorts) -> Void = { _, _ in }
+    /// Why Up on Free Ports can't help a project here, nil when it can
+    /// (`DockerPageModel.freePortsUnavailable`): a conflict's button says it.
+    var freePortsUnavailable: (ComposeProject) -> String? = { _ in nil }
+    /// Said in an alert — what, then why: what the page would say, when
+    /// the page isn't on screen.
+    var alert: (_ title: String, _ detail: String) -> Void = { _, _ in }
 }
 
 /// One block of the containers list: a compose project with its
@@ -93,7 +105,7 @@ final class DockerPageModel: ObservableObject {
     /// What the last action said when it failed, until dismissed.
     @Published var error: String?
     /// Containers (and projects) with an action on its way.
-    @Published private(set) var busy: Set<String> = []
+    @Published var busy: Set<String> = []
     /// `?`: the keys.
     @Published var cheatSheet = false
     /// Bumped to put the keyboard in the filter field (`/`).
@@ -140,6 +152,10 @@ final class DockerPageModel: ObservableObject {
     @Published var profileChoice: ComposeProfileChoice?
     /// The profiles last ticked for each project, this run only.
     var lastProfiles: [String: Set<String>] = [:]
+    /// The checkouts whose stacks run on ports of their own.
+    let ports: ComposePortStore
+    /// What `docker compose version --short` said, once it has.
+    var composeVersion: String?
 
     let docker: DockerModel
 
@@ -149,8 +165,9 @@ final class DockerPageModel: ObservableObject {
     /// The resource this page holds the model to (`DockerModel.want`).
     private var wanted: DockerModel.Resource?
 
-    init(docker: DockerModel = .shared) {
+    init(docker: DockerModel = .shared, ports: ComposePortStore = .shared) {
         self.docker = docker
+        self.ports = ports
         // A section on screen is read, and kept current, while it shows.
         wanting = $section.combineLatest($visible)
             .sink { [weak self] section, visible in
@@ -447,6 +464,11 @@ final class DockerPageModel: ObservableObject {
         case .remove: confirmRemove(selected)
         case .composeUp:
             if let project = selectedProject { compose("up", project) }
+        case .composeUpFreePorts:
+            // As its verb: when it can't help, it says why and does nothing.
+            if let project = selectedProject {
+                if let why = freePortsUnavailable(project) { error = "Up on Free Ports: " + why } else { startUp(.project(project), freePorts: .yes) }
+            }
         case .composeDown:
             if let project = selectedProject { compose("down", project) }
         case .rebuild: rebuild(Self.rebuilds(of: selection, in: docker.projects))
@@ -478,18 +500,19 @@ final class DockerPageModel: ObservableObject {
         }
     }
 
-    /// A project's verbs: `up`, `down` (asked first), `watch` and the logs
-    /// in a terminal tab; `start`, `stop`, `restart` on its containers here.
+    /// A project's verbs: `up` (its ports looked at first, `startUp`),
+    /// `down` (asked first), `watch` and the logs in a terminal tab;
+    /// `start`, `stop`, `restart` on its containers here.
     func compose(_ verb: String, _ project: ComposeProject) {
         let lasting = project.containers.filter { !$0.isOneOff }
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
         let endpoint = docker.endpoint
         if project.planned { return composePlanned(verb, project, in: folder) }
         switch verb {
-        case "up": actions?.run(DockerCommands.compose(project, "up -d", endpoint: endpoint), folder)
-        case "logs": actions?.run(DockerCommands.compose(project, "logs -f --tail 100", endpoint: endpoint), folder)
-        case "watch": actions?.run(DockerCommands.compose(project, "watch", endpoint: endpoint), folder)
-        case "pull": actions?.run(DockerCommands.compose(project, "pull", endpoint: endpoint), folder)
+        case "up": startUp(.project(project))
+        case "logs": runCompose(project, "logs -f --tail 100", in: folder)
+        case "watch": runCompose(project, "watch", in: folder)
+        case "pull": runCompose(project, "pull", in: folder)
         case "start": act(.start, on: lasting)
         case "stop": act(.stop, on: lasting.filter { $0.state.isUp })
         case "restart": act(.restart, on: lasting)
@@ -504,27 +527,22 @@ final class DockerPageModel: ObservableObject {
 
     /// A project before it runs: only `up`, `watch` (which ups it first)
     /// and `pull`, in its folder and without `-p`, so Compose reads its
-    /// files as it did for the list. Up and Watch ask first when a project
-    /// of its name runs from another folder: Compose would make that one
-    /// again from this checkout's files.
+    /// files as it did for the list — or, when its checkout has ports of
+    /// its own, under that name with that override. Up looks at its ports
+    /// and its name first (`startUp`); Watch asks when a project of its
+    /// name runs from another folder: Compose would make that one again
+    /// from this checkout's files.
     private func composePlanned(_ verb: String, _ project: ComposeProject, in folder: URL?) {
-        let endpoint = docker.endpoint
         switch verb {
-        case "up", "watch":
-            let command = DockerCommands.compose(project, verb == "up" ? "up -d" : verb, endpoint: endpoint)
-            let up: () -> Void = { [weak self] in self?.actions?.run(command, folder) }
-            guard let other = docker.projects.first(where: { $0.name == project.name }), let dir = project.workingDir,
-                ComposeProjects.projects([other], in: dir).isEmpty
-            else {
-                up()
-                return
-            }
-            let there = other.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "another folder"
-            let word = verb == "up" ? "Up" : "Watch"
+        case "up": startUp(.project(project))
+        case "watch":
+            let watch: () -> Void = { [weak self] in self?.runCompose(project, "watch", in: folder) }
+            guard ports.override(of: project) == nil, let there = runsElsewhere(project) else { return watch() }
             actions?.confirm(
-                "\(word) “\(project.name)” from this checkout?",
-                "A project of that name runs from \(there). Compose makes it again from this checkout's files and replaces its containers.", word, up)
-        case "pull": actions?.run(DockerCommands.compose(project, "pull", endpoint: endpoint), folder)
+                "Watch “\(project.name)” from this checkout?",
+                "A project of that name runs from \(there). Compose makes it again from this checkout's files and replaces its containers.", "Watch",
+                watch)
+        case "pull": runCompose(project, "pull", in: folder)
         default: break
         }
     }

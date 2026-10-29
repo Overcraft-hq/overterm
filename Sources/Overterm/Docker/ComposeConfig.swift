@@ -7,9 +7,11 @@ import Foundation
 /// only the active profiles' services. Compose keeps no record of a
 /// project before its containers exist; this is it before it runs.
 ///
-/// Only what a list shows is kept — never `environment`, `env_file`,
-/// `secrets`, `configs` or `labels`: Compose answers with the variables'
-/// values filled in. Pure, but for `stamp(of:)` and `dotEnvSecrets(in:)`.
+/// Only what a list shows, and what a stack's own ports need (each port's
+/// address, the volumes' names: `ComposePorts`), is kept — never
+/// `environment`, `env_file`, `secrets`, `configs` or `labels`: Compose
+/// answers with the variables' values filled in. Pure, but for
+/// `stamp(of:)` and `dotEnvSecrets(in:)`.
 struct ComposeConfig: Equatable, Sendable {
     struct Port: Hashable, Sendable {
         /// The host's port, as Compose writes it (`"8080"`, a range); nil
@@ -17,8 +19,27 @@ struct ComposeConfig: Equatable, Sendable {
         var published: String?
         var target: Int
         var proto: String
+        /// The host address it binds, when not every one (`127.0.0.1`).
+        var hostIP: String? = nil
+        /// `host`, swarm's; nil for Compose's own, `ingress`.
+        var mode: String? = nil
+        /// The long syntax's own: a name, and what it speaks (`http`).
+        var name: String? = nil
+        var appProtocol: String? = nil
 
         var label: String { (published.map { "\($0)→" } ?? "") + "\(target)" + (proto == "tcp" ? "" : "/\(proto)") }
+
+        /// The one host port it publishes; nil for a range (`7000-7010`)
+        /// or none (Docker picks one).
+        var hostPort: Int? { published.flatMap { Int($0) } }
+    }
+
+    /// A named volume as Compose resolved it: its name on the engine
+    /// (`<project>_<key>` unless the files gave one), and whether it is
+    /// made elsewhere.
+    struct Volume: Equatable, Sendable {
+        var name: String?
+        var external = false
     }
 
     struct Service: Equatable, Sendable {
@@ -51,6 +72,14 @@ struct ComposeConfig: Equatable, Sendable {
     var name: String
     /// By name.
     var services: [Service]
+    /// By their key in the files.
+    var volumes: [String: Volume] = [:]
+
+    /// The volumes named after the project (`shop_data`): what a project of
+    /// another name makes anew, empty. By key.
+    var projectVolumes: [String] {
+        volumes.filter { !$0.value.external && $0.value.name == name + "_" + $0.key }.map(\.key).sorted()
+    }
 
     /// What `docker compose config` is asked for the list: JSON. Profiles
     /// before the command, as Compose takes them. `DockerCLI.composeConfig`
@@ -78,7 +107,12 @@ struct ComposeConfig: Equatable, Sendable {
             guard let service = value as? [String: Any] else { return nil }
             return Self.service(name, service)
         }
-        return ComposeConfig(name: name, services: services.sorted { $0.name < $1.name })
+        var volumes: [String: Volume] = [:]
+        for (key, value) in json["volumes"] as? [String: Any] ?? [:] {
+            let volume = value as? [String: Any]
+            volumes[key] = Volume(name: volume?["name"] as? String, external: volume?["external"] as? Bool ?? false)
+        }
+        return ComposeConfig(name: name, services: services.sorted { $0.name < $1.name }, volumes: volumes)
     }
 
     private static func service(_ name: String, _ json: [String: Any]) -> Service {
@@ -89,7 +123,11 @@ struct ComposeConfig: Equatable, Sendable {
         let ports = (json["ports"] as? [Any] ?? []).compactMap { value -> Port? in
             guard let port = value as? [String: Any], let target = number(port["target"]) else { return nil }
             let published = (port["published"] as? String) ?? number(port["published"]).map(String.init)
-            return Port(published: published?.isEmpty == true ? nil : published, target: target, proto: port["protocol"] as? String ?? "tcp")
+            let mode = port["mode"] as? String
+            return Port(
+                published: published?.isEmpty == true ? nil : published, target: target, proto: port["protocol"] as? String ?? "tcp",
+                hostIP: (port["host_ip"] as? String).flatMap { $0.isEmpty ? nil : $0 }, mode: mode == "ingress" ? nil : mode,
+                name: port["name"] as? String, appProtocol: port["app_protocol"] as? String)
         }
         let deploy = json["deploy"] as? [String: Any]
         let watch = (json["develop"] as? [String: Any])?["watch"] as? [Any]

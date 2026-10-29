@@ -32,9 +32,11 @@ struct ComposeFacts: Equatable, Sendable {
     static let retryAfter: TimeInterval = 30
 
     /// `compose -p <name> -f <file>…`: the project by its labels, its files
-    /// as `up` was given them. Show Resolved Config asks the same way.
-    static func arguments(_ project: ComposeProject) -> [String] {
-        ["compose", "-p", project.name] + project.configFiles.flatMap { ["-f", $0] }
+    /// as `up` was given them — or as given (`ComposePortStore.files(for:)`:
+    /// a forgotten override's path left out). Show Resolved Config asks the
+    /// same way.
+    static func arguments(_ project: ComposeProject, files: [String]? = nil) -> [String] {
+        ["compose", "-p", project.name] + (files ?? project.configFiles).flatMap { ["-f", $0] }
     }
 
     /// Its files and the `.env` of its folder (where `up` ran, else the
@@ -77,8 +79,8 @@ struct ComposeFacts: Equatable, Sendable {
     /// Both asked at once. A failure says Compose's first line (`problem`)
     /// and leaves its list empty; one that isn't the files' is asked again
     /// (`retry`).
-    static func read(_ project: ComposeProject, stamp: Stamp, cli: DockerCLI, timeout: TimeInterval = 15) async -> ComposeFacts {
-        let arguments = Self.arguments(project)
+    static func read(_ project: ComposeProject, files: [String]? = nil, stamp: Stamp, cli: DockerCLI, timeout: TimeInterval = 15) async -> ComposeFacts {
+        let arguments = Self.arguments(project, files: files)
         async let config = outcome { try await cli.composeConfig(arguments + ["config", "--format", "json"], in: home, timeout: timeout) }
         async let listed = outcome { try await cli.composeConfig(arguments + ["config", "--profiles"], in: home, timeout: timeout) }
         var facts = ComposeFacts(stamp: stamp)

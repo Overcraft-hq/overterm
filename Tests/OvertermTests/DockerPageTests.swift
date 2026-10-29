@@ -82,6 +82,16 @@ final class DockerPageTests: XCTestCase {
             "logs finds it by name")
         XCTAssertEqual(DockerCommands.compose(project, "pull", services: ["web"]), "docker compose -p 'my app' -f '/w/my app/compose.yaml' pull web")
         XCTAssertEqual(DockerCommands.compose(project, "restart", services: ["my web"]), "docker compose -p 'my app' restart 'my web'")
+        // A stack on ports of its own: the files given, its override after the checkout's.
+        let override = "/x/Application Support/Overterm/Compose/Ports/my-app-1a2b3c4d.yaml"
+        XCTAssertEqual(
+            DockerCommands.compose(project, "up -d", files: ["/w/my app/compose.yaml", override]),
+            "docker compose -p 'my app' -f '/w/my app/compose.yaml' -f '\(override)' up -d")
+        XCTAssertEqual(DockerCommands.compose(project, "down", files: [override]), "docker compose -p 'my app' down", "down ignores the files")
+        XCTAssertEqual(
+            DockerCommands.compose(name: "shop-wt-x", files: ["/w/x/compose.yaml", "/o/x.yaml"], "up -d", profiles: ["tools"], endpoint: fake),
+            "DOCKER_HOST=unix:///tmp/fake.sock docker compose -p shop-wt-x -f /w/x/compose.yaml -f /o/x.yaml --profile tools up -d")
+        XCTAssertEqual(DockerCommands.compose(name: nil, files: [], "up -d"), "docker compose up -d", "a checkout's: Compose names it")
     }
 
     // MARK: Keys
@@ -96,6 +106,8 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("?"), .help)
         XCTAssertEqual(DockerKey.of("b"), .rebuild)
         XCTAssertEqual(DockerKey.of("w"), .watch)
+        XCTAssertEqual(DockerKey.of("U"), .composeUpFreePorts)
+        XCTAssertEqual(DockerKey.of("u"), .composeUp)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -286,7 +298,7 @@ final class DockerPageTests: XCTestCase {
 
         let verbs = page.verbs(for: plan)
         XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Up (in a Tab)", "Pull Images in a Tab"])
-        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Open Compose File", "Show Resolved Config", "Copy Folder"])
+        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Up on Free Ports", "Open Compose File", "Show Resolved Config", "Copy Folder"])
         XCTAssertTrue(verbs.allSatisfy { $0.place != .remove }, "nothing to take down")
 
         var commands: [(String, URL?)] = []
@@ -625,7 +637,7 @@ final class PortConflictsTests: XCTestCase {
         XCTAssertEqual(PortConflicts.container(holding: 5432, among: all, except: "me")?.Id, "main-db", "a stopped one holds nothing")
         XCTAssertNil(PortConflicts.container(holding: 5432, among: all, except: "main-db"))
         XCTAssertEqual(
-            ContainerDetailView.holderText(.container(id: "x", name: "shop-db-1", project: "shop", folder: "/w/shop")),
+            PortConflicts.holderText(.container(id: "x", name: "shop-db-1", project: "shop", folder: "/w/shop")),
             "shop-db-1 publishes it — compose project shop in /w/shop.")
     }
 }

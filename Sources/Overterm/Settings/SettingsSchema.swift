@@ -486,6 +486,11 @@ enum SettingsSchema {
             help: "The toolbox a debug shell runs beside a container (E): it shares the container's processes and network; the container's files are at /proc/1/root.",
             kind: .text(placeholder: "nicolaka/netshoot", monospaced: true), defaultValue: .string("nicolaka/netshoot"), requires: "docker.enabled"),
         SettingSpec(
+            key: "docker.checkPorts", section: .docker, group: "Compose", title: "Look at a stack's ports before an Up",
+            help:
+                "A checkout's stack whose host ports another worktree's stack or a program holds — or whose project name another checkout's has — is offered free ones first: an override in Overterm's folder, never in the repository. Off: Up runs as written; Up on Free Ports is still in the project's menu.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+        SettingSpec(
             key: "docker.notifyOnExit", section: .docker, group: "Attention", title: "Mark a checkout's tab when its container fails",
             help:
                 "A container of the tab's checkout that exits with an error, runs out of memory or turns unhealthy marks the tab as a failed command does, and notifies you while you are elsewhere. One you stopped doesn't.",

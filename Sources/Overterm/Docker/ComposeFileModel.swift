@@ -43,7 +43,7 @@ final class ComposeFileModel: ObservableObject {
     private var pending: ComposeConfig.Stamp?
     private var known: [String: Known] = [:]
 
-    init(docker: DockerModel = .shared, latency: TimeInterval = 0.5, reader: @escaping Reader = ComposeFileModel.compose) {
+    init(docker: DockerModel = .shared, latency: TimeInterval = 0.5, reader: @escaping Reader = { try await ComposeFileModel.compose(in: $0, endpoint: $1) }) {
         self.docker = docker
         self.latency = latency
         self.reader = reader
@@ -125,6 +125,16 @@ final class ComposeFileModel: ObservableObject {
         if reading { reading = false }
     }
 
+    /// Read again, as if a file had changed: an override of Overterm's came
+    /// or went (Up on Free Ports), which changes the name and the ports
+    /// Compose gives a checkout. What every checkout read last is stale;
+    /// nothing is read while nothing shows Docker.
+    func readAgain() {
+        for key in known.keys { known[key]?.stamp = ComposeConfig.Stamp(files: ["": "stale"]) }
+        guard shown, let folder else { return }
+        read(ComposeConfig.stamp(of: URL(fileURLWithPath: folder)))
+    }
+
     /// Whether what shows was read from the checkout's top files as they
     /// are now. Nothing reads them while Docker is hidden, so a menu that
     /// acts on the project then asks this first.
@@ -146,14 +156,33 @@ final class ComposeFileModel: ObservableObject {
     }
 
     /// `docker compose config` in the checkout, as `up` there would read
-    /// it. It reaches no engine; it is told Overterm's anyway, as every
-    /// `docker` it runs is.
-    static func compose(in folder: URL, endpoint: DockerEndpoint?) async throws -> String? {
+    /// it — or, when it runs on ports of its own, as Overterm's Up runs it
+    /// (`arguments`), the override written again first if the files
+    /// changed since (`ComposePortStore.refresh`): Compose would refuse one
+    /// naming a service they no longer have. It reaches no engine; it is
+    /// told Overterm's anyway, as every `docker` it runs is.
+    static func compose(in folder: URL, endpoint: DockerEndpoint?, ports: ComposePortStore = .shared) async throws -> String? {
         // An isolated run asks only a scenario's stub.
         guard !AppEnvironment.isIsolated || DockerCLI.override != nil else { return nil }
         guard let cli = DockerCLI(endpoint: endpoint) else {
             throw DockerError(status: 0, message: "docker isn't on this Mac, so Compose can't read the compose file.")
         }
-        return try await cli.composeConfig(ComposeConfig.arguments(), in: folder, timeout: 15)
+        if !ports.overrides.isEmpty, let projectFolder = ComposeProjects.projectFolder(in: folder) {
+            await ports.refresh(projectFolder, endpoint: endpoint)
+        }
+        return try await cli.composeConfig(arguments(in: folder, ports: ports), in: folder, timeout: 15)
+    }
+
+    /// No files, no name: what `up` in the checkout reads. With an override
+    /// kept for it, its name and its files then the override — each as
+    /// Compose takes it (`ComposeProjects.composePath`) — so the plan is the
+    /// stack Overterm's Up makes.
+    static func arguments(in folder: URL, ports: ComposePortStore = .shared) -> [String] {
+        guard !ports.overrides.isEmpty, let projectFolder = ComposeProjects.projectFolder(in: folder), let kept = ports.override(in: projectFolder)
+        else {
+            return ComposeConfig.arguments()
+        }
+        let files = ComposeProjects.composeFiles(in: folder).map(ComposeProjects.composePath) + [ports.file(of: kept).path]
+        return ["compose", "-p", kept.project] + files.flatMap { ["-f", $0] } + ["config", "--format", "json"]
     }
 }

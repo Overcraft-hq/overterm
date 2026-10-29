@@ -12,10 +12,13 @@ struct ComposeProfileChoice: Equatable {
     var profiles: [String]
     var chosen: Set<String>
 
-    /// `docker compose … --profile a --profile b up -d`, in the profiles'
-    /// order.
-    func command(endpoint: DockerEndpoint?) -> String {
-        DockerCommands.compose(project, "up -d", profiles: profiles.filter(chosen.contains), endpoint: endpoint)
+    /// The ones ticked, in the profiles' order.
+    var ticked: [String] { profiles.filter(chosen.contains) }
+
+    /// `docker compose … --profile a --profile b up -d`, the project's files
+    /// as the store says them (its override, if it has ports of its own).
+    @MainActor func command(_ ports: ComposePortStore, endpoint: DockerEndpoint?) -> String {
+        ports.command(project, "up -d", profiles: ticked, endpoint: endpoint)
     }
 }
 
@@ -69,10 +72,15 @@ extension DockerPageModel {
     private func startComposeFactsRead(_ project: ComposeProject, _ stamp: ComposeFacts.Stamp) -> Task<ComposeFacts?, Never> {
         let name = project.name
         let endpoint = docker.endpoint
+        let ports = self.ports
         let task = Task { [weak self] () -> ComposeFacts? in
+            // Its override as its files are now; a forgotten one's path,
+            // still in its labels, left out.
+            await ports.refresh(for: project, endpoint: endpoint)
+            let files = ports.files(for: project)
             let facts: ComposeFacts
             if let cli = DockerCLI(endpoint: endpoint) {
-                facts = await ComposeFacts.read(project, stamp: stamp, cli: cli)
+                facts = await ComposeFacts.read(project, files: files, stamp: stamp, cli: cli)
             } else {
                 facts = ComposeFacts(stamp: stamp, problem: "docker isn't on this Mac.", retry: Date().addingTimeInterval(ComposeFacts.retryAfter))
             }
@@ -138,12 +146,9 @@ extension DockerPageModel {
 
     /// `up -d --build`, one tab a project (four at most, like the other
     /// keys that open tabs): its images built again, what changed made again.
+    /// An Up: its ports are looked at first (`startUp`).
     func rebuild(_ rebuilds: [ComposeRebuild]) {
-        let endpoint = docker.endpoint
-        for rebuild in rebuilds.prefix(4) {
-            actions?.run(
-                DockerCommands.compose(rebuild.project, "up -d --build", services: rebuild.services, endpoint: endpoint), composeFolder(rebuild.project))
-        }
+        for rebuild in rebuilds.prefix(4) { startUp(.project(rebuild.project), options: "-d --build", services: rebuild.services) }
     }
 
     // MARK: A service
@@ -151,7 +156,7 @@ extension DockerPageModel {
     /// A compose verb for one service, in a tab in the project's folder:
     /// `pull`, `run --rm`, `logs -f --tail 100`.
     func composeService(_ verb: String, _ service: ComposeService, _ project: ComposeProject) {
-        actions?.run(DockerCommands.compose(project, verb, services: [service.name], endpoint: docker.endpoint), composeFolder(project))
+        runCompose(project, verb, services: [service.name], in: composeFolder(project))
     }
 
     /// The project's Logs tab, narrowed to the service.
@@ -177,7 +182,7 @@ extension DockerPageModel {
         guard let choice = profileChoice, !choice.chosen.isEmpty else { return }
         profileChoice = nil
         lastProfiles[choice.project.name] = choice.chosen
-        actions?.run(choice.command(endpoint: docker.endpoint), composeFolder(choice.project))
+        startUp(.project(choice.project), profiles: choice.ticked)
     }
 
     private func composeFolder(_ project: ComposeProject) -> URL? {

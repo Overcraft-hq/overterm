@@ -37,7 +37,9 @@ enum DockerMCP {
             let list = docker.containers.filter { (all || $0.state.isUp) && (project == nil || $0.composeProject == project) }
             return BrowserMCP.textResult(describe(list, remoteHost: docker.publishedHost))
         case "docker_projects":
-            return BrowserMCP.textResult(describe(docker.projects))
+            let ports = ComposePortStore.shared
+            return BrowserMCP.textResult(
+                describe(docker.projects, overrides: ports.overrides(of: docker.projects)) { ports.command($0, "up -d", endpoint: docker.endpoint) })
         case "docker_logs":
             let target = try container()
             let detail = try await engine.container(target.Id)
@@ -89,7 +91,12 @@ enum DockerMCP {
             }
             let action = string("action") ?? ""
             let service = string("service")
-            let command = try composeCommand(project, action: action, service: service, endpoint: docker.endpoint)
+            // Up and rebuild read the files: a stack on ports of its own
+            // goes up with its override, as Overterm's Up does — written
+            // again first if the files changed since.
+            await ComposePortStore.shared.refresh(for: project, endpoint: docker.endpoint)
+            let command = try composeCommand(
+                project, action: action, service: service, endpoint: docker.endpoint, files: ComposePortStore.shared.files(for: project))
             guard await allow("An agent wants to run compose \(action) on “\(project.name)”" + (service.map { " (\($0))" } ?? ""), command) else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
@@ -129,8 +136,11 @@ enum DockerMCP {
 
     /// What `docker_compose` runs: up and rebuild (`up -d --build`) in a
     /// tab, the rest named for the tab or the question. `service` narrows
-    /// it to one of the project's; down takes the whole project. Pure.
-    static func composeCommand(_ project: ComposeProject, action: String, service: String?, endpoint: DockerEndpoint?) throws -> String {
+    /// it to one of the project's; down takes the whole project. `files`:
+    /// the store's (`ComposePortStore.files(for:)`). Pure.
+    static func composeCommand(
+        _ project: ComposeProject, action: String, service: String?, endpoint: DockerEndpoint?, files: [String]? = nil
+    ) throws -> String {
         let actions = ["up", "rebuild", "down", "restart", "stop", "start"]
         guard actions.contains(action) else { throw BrowserMCP.ToolError(message: "“action” is one of \(actions.joined(separator: ", ")).") }
         if let service {
@@ -142,7 +152,7 @@ enum DockerMCP {
             }
         }
         let verb = action == "up" ? "up -d" : action == "rebuild" ? "up -d --build" : action
-        return DockerCommands.compose(project, verb, services: service.map { [$0] } ?? [], endpoint: endpoint)
+        return DockerCommands.compose(project, verb, services: service.map { [$0] } ?? [], endpoint: endpoint, files: files)
     }
 
     /// The engine, connected — started if nothing had started it yet.
@@ -201,15 +211,32 @@ enum DockerMCP {
         "\(port.address ?? "the host's loopback"):\(port.hostPort)→\(port.containerPort)"
     }
 
-    static func describe(_ projects: [ComposeProject]) -> String {
+    /// Each project, its services and their containers — and, for a stack
+    /// Overterm put on ports of its own (`overrides`, by name), what moved
+    /// and the command its Up runs: an agent's own `docker compose up`
+    /// there would ask for the file's ports again.
+    static func describe(
+        _ projects: [ComposeProject], overrides: [String: ComposePortOverride] = [:], upCommand: (ComposeProject) -> String = { _ in "" }
+    ) -> String {
         guard !projects.isEmpty else { return "No compose projects." }
         return projects.map { project in
-            "- \(project.name) (\(project.running)/\(project.containers.filter { !$0.isOneOff }.count) running)"
-                + (project.workingDir.map { " in \($0)" } ?? "") + "\n"
-                + project.services.map { service in
-                    "  - \(service.name): " + service.containers.map { "\($0.name) \($0.Status)" }.joined(separator: "; ")
-                        + (service.dependsOn.isEmpty ? "" : " (after \(service.dependsOn.joined(separator: ", ")))")
-                }.joined(separator: "\n")
+            var lines = [
+                "- \(project.name) (\(project.running)/\(project.containers.filter { !$0.isOneOff }.count) running)"
+                    + (project.workingDir.map { " in \($0)" } ?? "")
+            ]
+            lines += project.services.map { service in
+                "  - \(service.name): " + service.containers.map { "\($0.name) \($0.Status)" }.joined(separator: "; ")
+                    + (service.dependsOn.isEmpty ? "" : " (after \(service.dependsOn.joined(separator: ", ")))")
+            }
+            if let kept = overrides[project.name] {
+                let command = upCommand(project)
+                let run = command.isEmpty ? "" : " Overterm's Up runs: \(command)"
+                lines.append(
+                    kept.moves.isEmpty
+                        ? "  A project name of its own (Overterm's, for this checkout; its files say \(kept.fileName)).\(run)"
+                        : "  Ports of its own (Overterm moved them for this checkout): \(kept.moves.map(\.label).joined(separator: ", ")). Reach them there.\(run)")
+            }
+            return lines.joined(separator: "\n")
         }.joined(separator: "\n")
     }
 
@@ -267,7 +294,9 @@ enum DockerMCP {
                     "project": ["type": "string", "description": "Only this compose project's."],
                     "all": ["type": "boolean", "description": "Stopped ones too (default true)."],
                 ]),
-            tool("docker_projects", "The compose projects: their services, which run, where each was started.", [:]),
+            tool(
+                "docker_projects", "The compose projects: their services, which run, where each was started, and the ports Overterm moved for a worktree.",
+                [:]),
             tool(
                 "docker_logs", "A container's last log lines, levels read; secrets taken out.",
                 [

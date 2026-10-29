@@ -56,7 +56,11 @@ extension TerminalWindowController {
                     then(trimmed)
                     return nil
                 }
-            }
+            },
+            choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) },
+            composeUp: { [weak self] target, freePorts in self?.dockerPage.startUp(target, freePorts: freePorts) },
+            freePortsUnavailable: { [weak self] project in self?.dockerPage.freePortsUnavailable(project) },
+            alert: { [weak self] title, detail in self?.alertDocker(title, detail) }
         )
     }
 
@@ -250,6 +254,15 @@ extension TerminalWindowController {
         }
     }
 
+    /// What the page would say, as a sheet: the page isn't on screen.
+    func alertDocker(_ title: String, _ detail: String) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.beginSheetModal(for: window)
+    }
+
     func reportDockerError(_ what: String, _ error: Error) {
         dockerPage.error = "\(what): \(error.localizedDescription)"
         guard let window, store.showingOverlay != .docker else { return }
@@ -285,11 +298,24 @@ extension TerminalWindowController {
 
     // MARK: Ports
 
-    /// The containers' ports follow the containers.
+    /// The containers' ports follow the containers — and the stacks put on
+    /// ports of their own, whose pills say where each came from.
     func wireDockerPorts() {
+        // A worktree removed takes its override with it.
+        ComposePortStore.shared.prune()
         DockerModel.shared.$projects
             .dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.updateContainerPorts() } }
+            .store(in: &cancellables)
+        ComposePortStore.shared.$overrides
+            .dropFirst()
+            .sink { [weak self] _ in
+                // @Published fires before the value lands.
+                DispatchQueue.main.async {
+                    self?.updateContainerPorts()
+                    self?.dockerPanel.checkoutCompose.readAgain()
+                }
+            }
             .store(in: &cancellables)
     }
 
@@ -304,7 +330,8 @@ extension TerminalWindowController {
         // A remote engine's ports are its host's, not this checkout's servers.
         if docker.connection.isRunning, docker.publishedHost == nil, !docker.projects.isEmpty, let directory = tab.workingDirectory {
             let checkout = FileTreeModel.realPath(FileTreeModel.treeRoot(for: directory))
-            ports = ComposeProjects.ports(of: ComposeProjects.projects(docker.projects, in: checkout))
+            let here = ComposeProjects.projects(docker.projects, in: checkout)
+            ports = ComposeProjects.ports(of: here, overrides: ComposePortStore.shared.overrides(of: here))
         }
         if tab.containerPorts != ports { tab.containerPorts = ports }
     }
@@ -456,6 +483,24 @@ extension TerminalWindowController {
         newTab(in: directory, running: command)
     }
 
+    /// Asks with the buttons given and Cancel; then the index of the one
+    /// chosen. As a sheet: one already attached (New Task's) goes first.
+    func chooseDocker(_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        for button in buttons { alert.addButton(withTitle: button) }
+        alert.addButton(withTitle: "Cancel")
+        let count = buttons.count
+        alert.beginSheetModal(for: window) { response in
+            let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            guard index >= 0, index < count else { return }
+            MainActor.assumeIsolated { then(index) }
+        }
+    }
+
     func confirmDocker(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
         guard let window else { return }
         let alert = NSAlert()
@@ -555,7 +600,8 @@ extension TerminalWindowController {
                 if run {
                     self.revealOnDockerPage(DockerPageModel.projectTag(project.name))
                 } else {
-                    self.runDockerCommand(DockerCommands.compose(project, "up -d", endpoint: docker.endpoint), in: project.workingDir.map { URL(fileURLWithPath: $0) })
+                    // Its ports looked at first, as the page's Up does.
+                    self.dockerPage.startUp(.project(project))
                 }
             }
         }
@@ -601,21 +647,19 @@ extension TerminalWindowController {
 
     /// Compose Up: the checkout's projects again from their files, or the
     /// compose file at its top when none runs — its project before it
-    /// runs, when it was read from the files as they are.
+    /// runs, when it was read from the files as they are. Each looks at its
+    /// ports first (`DockerPageModel.startUp`).
     @objc func composeUp(_ sender: Any?) {
-        let endpoint = DockerModel.shared.endpoint
         let stack = dockerPanelStack()
         if stack.isEmpty {
-            guard dockerPanel.composeFile != nil else { return NSSound.beep() }
+            guard let checkout = dockerPanel.checkout, dockerPanel.composeFile != nil else { return NSSound.beep() }
             // Read from the files as they are: its Up asks first when its
             // name runs from another folder. Either way the command names no
             // project, so Compose takes it from the files.
             if let plan = dockerPanel.currentPlan { return dockerPage.compose("up", plan) }
-            runDockerCommand(DockerCommands.prefix(for: endpoint) + "docker compose up -d", in: dockerPanel.checkout)
+            dockerPage.startUp(.checkout(checkout))
         } else {
-            for project in stack {
-                runDockerCommand(DockerCommands.compose(project, "up -d", endpoint: endpoint), in: project.workingDir.map { URL(fileURLWithPath: $0) })
-            }
+            for project in stack { dockerPage.startUp(.project(project)) }
         }
     }
 

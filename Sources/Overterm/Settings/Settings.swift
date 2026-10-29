@@ -315,6 +315,7 @@ final class Settings: ObservableObject {
     var dockerContext: String { string("docker.context").trimmingCharacters(in: .whitespaces) }
     var dockerDebugImage: String { string("docker.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("nicolaka/netshoot") }
     var dockerNotifyOnExit: Bool { dockerEnabled && bool("docker.notifyOnExit") }
+    var dockerCheckPorts: Bool { dockerEnabled && bool("docker.checkPorts") }
     var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
     var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
 

@@ -24,21 +24,38 @@ enum DockerCommands {
     /// the command runs: no `-p`, no `-f`, so Compose names it from the
     /// files as they are then — a name read earlier may be stale, and `-p`
     /// would make a project of it. Profiles go before the verb, as Compose
-    /// takes them.
+    /// takes them. `files`: what to pass for the labels' `config_files` —
+    /// `ComposePortStore.files(for:)`, which every caller with files to
+    /// read goes through (a stack on ports of its own adds its override).
     static func compose(
-        _ project: ComposeProject, _ verb: String, services: [String] = [], profiles: [String] = [], endpoint: DockerEndpoint? = nil
+        _ project: ComposeProject, _ verb: String, services: [String] = [], profiles: [String] = [], endpoint: DockerEndpoint? = nil,
+        files: [String]? = nil
     ) -> String {
-        let first = verb.split(separator: " ").first.map(String.init) ?? verb
-        let needsFiles = !profiles.isEmpty || ["up", "pull", "build", "config", "create", "run", "watch"].contains(first)
+        if project.planned { return compose(name: nil, files: [], verb, services: services, profiles: profiles, endpoint: endpoint) }
+        return compose(name: project.name, files: needsFiles(verb, profiles: profiles) ? files ?? project.configFiles : [], verb, services: services, profiles: profiles, endpoint: endpoint)
+    }
+
+    /// `docker compose -p <name> -f <file>… --profile <p>… <verb> <service>…`:
+    /// a project by the name and the files given — no `-p` when nil.
+    static func compose(
+        name: String?, files: [String], _ verb: String, services: [String] = [], profiles: [String] = [], endpoint: DockerEndpoint? = nil
+    ) -> String {
         var parts = ["docker", "compose"]
-        if !project.planned {
-            parts += ["-p", quote(project.name)]
-            if needsFiles { parts += project.configFiles.flatMap { ["-f", quote($0)] } }
-        }
+        if let name { parts += ["-p", quote(name)] }
+        parts += files.flatMap { ["-f", quote($0)] }
         parts += profiles.flatMap { ["--profile", quote($0)] }
         parts.append(verb)
         parts += services.map(quote)
         return prefix(for: endpoint) + parts.joined(separator: " ")
+    }
+
+    /// Whether a compose verb reads the project's files: `up`, `pull`,
+    /// `build`, `config`, `create`, `run`, `watch`, and anything with
+    /// profiles (they are the files'). `down`, `stop`, `restart` and `logs`
+    /// find it by name.
+    static func needsFiles(_ verb: String, profiles: [String] = []) -> Bool {
+        let first = verb.split(separator: " ").first.map(String.init) ?? verb
+        return !profiles.isEmpty || ["up", "pull", "build", "config", "create", "run", "watch"].contains(first)
     }
 
     /// A shell in it: bash where there is one, else sh.

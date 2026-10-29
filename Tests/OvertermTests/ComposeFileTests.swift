@@ -390,6 +390,22 @@ final class ComposeFileModelTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(200))
     }
 
+    /// An override of Overterm's came or went: read again while shown, and
+    /// every other checkout's read is stale; nothing while hidden.
+    func testAnOverrideComingOrGoingIsReadAgain() async throws {
+        try await show("a")
+        let before = calls.count
+        model.readAgain()
+        try await eventually("read again") { calls.count == before + 1 && !model.reading }
+        XCTAssertTrue(model.isCurrent)
+        model.update(checkout: folder("a"), shown: false)
+        model.readAgain()
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(calls.count, before + 1, "hidden: nothing read")
+        model.update(checkout: folder("a"), shown: true)
+        try await eventually("read when it shows") { calls.count == before + 2 && !model.reading }
+    }
+
     func testNothingIsReadUntilShown() async throws {
         model.update(checkout: folder("a"), shown: false)
         try await Task.sleep(for: .milliseconds(300))
@@ -772,7 +788,7 @@ final class ComposeFactsTests: XCTestCase {
         page.upWithProfiles()
         XCTAssertEqual(commands.count, 1, "nothing ticked, nothing to up")
         page.profileChoice?.chosen = ["jobs"]
-        XCTAssertEqual(page.profileChoice?.command(endpoint: nil), "docker compose -p shop -f \(root.path)/compose.yaml --profile jobs up -d")
+        XCTAssertEqual(page.profileChoice?.command(page.ports, endpoint: nil), "docker compose -p shop -f \(root.path)/compose.yaml --profile jobs up -d")
         page.upWithProfiles()
         XCTAssertNil(page.profileChoice)
         XCTAssertEqual(commands.last?.0, "docker compose -p shop -f \(root.path)/compose.yaml --profile jobs up -d")

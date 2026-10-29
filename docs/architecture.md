@@ -1275,7 +1275,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Up would make the same services again, their ports taken
   (`ComposeProjects.replaces`). On the page, one of that name from another
   folder does too, and Up from here asks first: Compose would make that
-  stack again from this checkout's files. Show Resolved Config is `docker
+  stack again from this checkout's files (with Docker Compose 2.24.4 or
+  later, the question offers a name of its own — below). A checkout with
+  ports of its own is read with its override, under its name, so its plan
+  is the stack Overterm's Up makes; read again when an override comes or
+  goes (`readAgain`). Show Resolved Config is `docker
   compose config` as YAML, in the editor: a copy, removed when its tab
   closes. A copy is a file, so env files' contents aren't asked for, and
   what Compose filled in from the variables is masked first
@@ -1402,10 +1406,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   command when it isn't the image's.
 - **New Task's stack**: with Docker on and a compose file at the
   repository's top (`ComposeProjects.composeFile`), New Task offers to
-  start the new worktree's own stack — `docker compose up -d` in a tab in
-  it. Its project is the worktree's folder, so it runs beside the other
-  worktrees' stacks; where their ports collide, the conflict below says
-  so.
+  start the new worktree's own stack — through the same Up as everywhere,
+  which looks at its ports and its name first (below).
 - **Port conflicts** (`PortConflicts`, pure; `ContainerSession.conflict`):
   worktrees of one repository run the same compose file, and its fixed
   host ports (`5432:5432`) leave the second stack's container `created`,
@@ -1414,6 +1416,75 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   container (its project and folder, usually another worktree's), a
   process in one of the windows' tabs, or one outside them (lsof) — and
   offers the way out: stop that one and start this one, or show the tab.
+  A compose container's detail also offers Up on Free Ports for its stack.
+- **A worktree's stack on its own ports** (`ComposePorts`, pure;
+  `ComposePortStore`; `DockerPageModel+Ports`): worktrees of one repository
+  run one compose file, so their stacks want the same host ports — and,
+  with a `name:` in the file or `COMPOSE_PROJECT_NAME` in `.env`, the same
+  project, which an Up would take over. Before any Up of a checkout's stack
+  (the project's `u`, its row's play button, the panel's, View ▸ Compose
+  Up, the palette's, New Task's, a rebuild, Up With Profiles…) Overterm
+  asks Compose what it would publish: `docker compose -f … --profile '*'
+  config --no-env-resolution --format json` — variables filled in, the
+  overrides merged, ranges spread, no env file read. The files are the
+  checkout's as Compose finds them (`ComposeProjects.composeFiles`):
+  `COMPOSE_FILE` in `.env`, else `compose.yaml` and its
+  `compose.override.yaml`. Given `-f`, Compose discovers nothing itself.
+  Each port is looked for among the other stacks' containers (their own
+  containers' ports are theirs: Docker binds them), then on this Mac: a
+  bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1
+  (`ListeningPorts.isBound`) meets what Docker's own bind would, TIME_WAIT
+  aside, and never listens, so no firewall asks; lsof names the holder for
+  the question. A remote engine's are its containers only. A taken port of
+  a service that starts, or a name another checkout's stack has, asks
+  first: Up on Free Ports, Up as Written, Cancel. Free Ports writes an
+  override into Overterm's folder (`Compose/Ports`, never the repository),
+  passed with `-f` after the checkout's files. It holds the moved services'
+  ports under `!override`, because an override's `ports` are added to the
+  file's and the taken one would stay (Compose 2.24.4 and later; an older
+  one goes up as written), and a project name of its own when the files'
+  is another checkout's (the worktree's folder, `shop-wt-feat-x`). A
+  moved port goes 10 000 up while that stays below the system's ephemeral
+  range (8080 → 18080), else to the next free one; no two overrides give
+  out the same port, and an answer given long after the question looks at
+  the ports again before it writes anything (another window may have given
+  one out meanwhile). A project run from the checkout's folder is its
+  stack only when it was made from these files, or takes the plan's
+  place: a test stack started there from others (`-f compose.test.yaml
+  -p shop-test`) is another stack, whose ports are taken. A compose file
+  is passed as named, its folder a real path (`composePath`): Compose
+  resolves no link, so a linked `compose.yaml` keeps the checkout as its
+  project folder. The override is remembered per Compose folder (a plan
+  finds it by that folder too, which `COMPOSE_FILE` can put in a
+  subfolder) and written again from the files before each Up, which asks
+  nothing more; a moved port stays where it was put while it is free, so
+  its URL doesn't change, and one taken since moves again or goes back to
+  the file's (the page says so). With nothing left to move and the files'
+  name its own, it is forgotten rather than kept empty. When the files
+  change, it is written again before whatever reads them next — Pull,
+  Watch, Run, the plan's read, Compose's facts, Show Resolved Config, an
+  agent's up (`ComposePortStore.refresh`, by the files' sizes and dates):
+  Compose refuses an override naming a service the files no longer have,
+  and `!override` would pin a service's old ports. That reads the base
+  files and keeps each move whose port they still ask for; only an Up
+  moves ports. Every compose command that reads files is made by
+  `ComposePortStore.command`, which leaves out a forgotten override that
+  the containers' `config_files` label still names; Down, Stop and Restart
+  go by name. The project's detail, the pane headers' pills
+  (`:8080→18080`) and `docker_projects` say what moved, and an agent's
+  `docker_compose up` uses the override. ⋯ ▸ Back to the File's Ports
+  forgets it; `U` moves ports without asking. Settings ▸ Docker ▸ Compose
+  turns the check off. A Compose that doesn't say its version, or one too
+  old, leaves a kept override as it was — its name, its ports — rather
+  than let the files' name take another checkout's stack over, and says
+  so. Up on Free Ports where the files aren't on this Mac (a remote
+  engine's project) moves nothing and says why; its verb and a conflict's
+  button are greyed with the reason. What an Up says shows on the page,
+  and in an alert when the page isn't on screen (an Up from the panel,
+  the right slot, a menu or New Task). An Up with nothing to look at (no
+  files on this Mac, the check off) is typed at once; the rest about
+  0.3 s later, the project's row busy meanwhile. Unit tests never look
+  (`mayCheckPorts`) unless one asks with a stub `docker` of its own.
 - **A project's detail** (`ProjectDetailView`, `ProjectSession`): a
   compose project's row selected shows its verbs, its services, and their
   logs merged by time — `docker compose logs -f`, in the app. Logs go

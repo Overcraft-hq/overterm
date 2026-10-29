@@ -36,6 +36,19 @@ enum PortConflicts {
         return nil
     }
 
+    /// Who holds a port, in a sentence: a conflict's detail, Up on Free
+    /// Ports' question.
+    static func holderText(_ holder: DockerPortConflict.Holder) -> String {
+        switch holder {
+        case .container(_, let name, let project, let folder):
+            let whose = project.map { " — compose project \($0)" + (folder.map { " in \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? "") } ?? ""
+            return "\(name) publishes it\(whose)."
+        case .tab(_, let title, let process): return "\(process) listens on it, in the tab “\(title)”."
+        case .process(let pid, let command): return "\(command) (pid \(pid)) listens on it, outside Overterm's tabs."
+        case .unknown: return "Something else holds it."
+        }
+    }
+
     /// The running container, other than `except`, publishing `port`.
     static func container(holding port: Int, among containers: [ContainerSummary], except id: String) -> ContainerSummary? {
         containers.first { container in

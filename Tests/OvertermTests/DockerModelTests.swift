@@ -295,6 +295,15 @@ final class ComposeProjectsTests: XCTestCase {
         XCTAssertEqual(ports.map(\.process), ["web", "db"])
         XCTAssertEqual(ports.map(\.container), ["a-web-1", "a-db-1"])
         XCTAssertEqual(ports.first?.id, "a-web-1:8080", "not a pid's: there is none")
+        XCTAssertEqual(ports.map(\.movedFrom), [nil, nil])
+        // Up on Free Ports moved web's: its pill says where from.
+        let moved = ComposePortOverride(
+            folder: "/w/a", project: "a", fileName: "a", baseFiles: ["/w/a/compose.yaml"],
+            moves: [ComposePortMove(service: "web", target: 80, proto: "tcp", from: 8000, to: 8080), ComposePortMove(service: "db", target: 5432, proto: "tcp", from: 5432, to: 15432)],
+            made: Date())
+        let pills = ComposeProjects.ports(of: ComposeProjects.group([web, db, stopped]).projects, overrides: ["a": moved])
+        XCTAssertEqual(pills.map(\.movedFrom), [8000, nil], "db's 55432 isn't where the override put it")
+        XCTAssertEqual(pills.first?.id, "a-web-1:8080", "the same pill")
     }
 
     func testDependencies() {
