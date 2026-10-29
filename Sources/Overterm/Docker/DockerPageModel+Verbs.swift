@@ -21,7 +21,16 @@ extension DockerPageModel {
         var verbs = [
             DockerVerb(title: container.state.isUp ? "Stop" : "Start", symbol: container.state.isUp ? "stop.fill" : "play.fill", place: .button, key: "s") {
                 act(container.state.isUp ? .stop : .start)
-            },
+            }
+        ]
+        // One that failed: an agent told how it ended (`DockerAgentBrief`).
+        if trouble(of: container, detail: detail) != nil {
+            verbs.append(
+                DockerVerb(title: "Ask an Agent Why…", label: "Ask Why", symbol: "sparkles", place: .button, key: "a") { [weak self] in
+                    self?.askWhy(container)
+                })
+        }
+        verbs += [
             DockerVerb(title: "Restart", symbol: "arrow.clockwise", place: .button, key: "r") { act(.restart) },
             DockerVerb(title: "Open a Shell in a Tab", label: "Shell", symbol: "terminal", place: .button, key: "e", unavailable: notRunning) {
                 [weak self] in self?.actions?.run(DockerCommands.shell(in: container, endpoint: endpoint), nil)

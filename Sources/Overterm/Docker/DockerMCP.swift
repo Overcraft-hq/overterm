@@ -51,10 +51,7 @@ enum DockerMCP {
             var filter = DockerLogFilter(text: string("contains") ?? "")
             if let level = string("level") { filter.level = level.hasPrefix("err") ? .errors : level.hasPrefix("warn") ? .warnings : .all }
             let secrets = DockerSecrets.values(in: detail.env)
-            let text = lines.filter(filter.matches).map { line in
-                [line.timestamp, line.level.map { "\($0)".uppercased() }, line.message].compactMap { $0 }.joined(separator: " ")
-                    + (line.fields.isEmpty ? "" : "  " + line.fields.map { "\($0.0)=\($0.1)" }.joined(separator: " "))
-            }.joined(separator: "\n")
+            let text = lines.filter(filter.matches).map(\.plain).joined(separator: "\n")
             return BrowserMCP.textResult(bounded(DockerSecrets.redact(text.isEmpty ? "(no lines)" : text, values: secrets)))
         case "docker_inspect":
             let target = try container()
@@ -201,14 +198,9 @@ enum DockerMCP {
             var line = "- \(container.name): \(container.Image), \(container.Status)"
             if let project = container.composeProject { line += " — compose \(project)/\(container.composeService ?? "")" }
             let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
-            if !ports.isEmpty { line += " — ports " + ports.map(reach).joined(separator: ", ") }
+            if !ports.isEmpty { line += " — ports " + ports.map(\.spoken).joined(separator: ", ") }
             return line
         }.joined(separator: "\n")
-    }
-
-    /// `localhost:8080→80`; on a remote engine, its host's name.
-    private static func reach(_ port: PublishedPort) -> String {
-        "\(port.address ?? "the host's loopback"):\(port.hostPort)→\(port.containerPort)"
     }
 
     /// Each project, its services and their containers — and, for a stack
@@ -248,9 +240,10 @@ enum DockerMCP {
         if let health = detail.State.Health, let status = health.Status {
             lines.append("Health: \(status)" + (health.Log?.last?.Output.map { " — last check: \($0.trimmingCharacters(in: .whitespacesAndNewlines))" } ?? ""))
         }
-        lines.append("Command: " + ((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " "))
+        // Compose has put .env's values into it: its flags say which.
+        lines.append("Command: " + DockerSecrets.maskArguments((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " "))
         let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
-        if !ports.isEmpty { lines.append("Ports: " + ports.map(reach).joined(separator: ", ")) }
+        if !ports.isEmpty { lines.append("Ports: " + ports.map(\.spoken).joined(separator: ", ")) }
         for mount in detail.Mounts ?? [] { lines.append("Mount: \(mount.Name ?? mount.Source ?? "") → \(mount.Destination)") }
         if let networks = detail.NetworkSettings?.Networks {
             lines.append("Networks: " + networks.keys.sorted().map { "\($0) \(networks[$0]?.IPAddress ?? "")" }.joined(separator: ", "))

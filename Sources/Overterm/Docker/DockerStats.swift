@@ -78,6 +78,10 @@ struct PublishedPort: Hashable, Sendable, Comparable {
 
     var label: String { "\(hostPort)→\(containerPort)\(proto == "tcp" ? "" : "/\(proto)")" }
 
+    /// As an agent is told it: `localhost:8080→80`; on a remote engine,
+    /// its host's name.
+    var spoken: String { "\(address ?? "the host's loopback"):\(hostPort)→\(containerPort)" }
+
     static func of(_ ports: [DockerPort], remoteHost: String? = nil) -> [PublishedPort] {
         var byPort: [String: PublishedPort] = [:]
         for port in ports {
@@ -109,8 +113,11 @@ enum DockerSecrets {
     static func mask(_ value: String) -> String { value.isEmpty ? "" : "••••••" }
 
     /// `postgres://user:pass@host/db` keeps everything but the password.
+    /// A URL's userinfo holds no `/`, `?` or `#` (RFC 3986), so a port
+    /// and a later `@` (`http://api:8080/users/jane@example.com`) are no
+    /// password.
     static func maskURL(_ value: String) -> String {
-        guard let range = value.range(of: #"://[^:/@\s]+:([^@\s]+)@"#, options: .regularExpression) else { return value }
+        guard let range = value.range(of: #"://[^:/?#@\s]+:([^/?#@\s]+)@"#, options: .regularExpression) else { return value }
         let segment = value[range]
         guard let colon = segment.dropFirst(3).firstIndex(of: ":"), let at = segment.lastIndex(of: "@") else { return value }
         return value.replacingCharacters(in: segment.index(after: colon)..<at, with: "••••••")
@@ -121,13 +128,122 @@ enum DockerSecrets {
     }
 
     /// Every secret value in a set of env entries, to take out of other
-    /// text (a log line an agent is shown).
-    static func values(in env: [(key: String, value: String)]) -> [String] {
-        env.filter { isSecret($0.key) && $0.value.count >= 4 }.map(\.value)
+    /// text (a log line an agent is shown). Besides `names` the text says
+    /// anyway: a dev stack's password is often its image's name
+    /// (`POSTGRES_PASSWORD=postgres`), and taking that out blanks the
+    /// container's own name, its paths and its log, not a secret.
+    static func values(in env: [(key: String, value: String)], besides names: Set<String> = []) -> [String] {
+        env.filter { isSecret($0.key) && $0.value.count >= 4 && !names.contains($0.value) }.map(\.value)
     }
 
     static func redact(_ text: String, values: [String]) -> String {
         values.sorted { $0.count > $1.count }.reduce(text) { $0.replacingOccurrences(of: $1, with: "••••••") }
+    }
+
+    /// Every URL's password in `text` masked, not just the first: a log
+    /// line can name two databases. No `/`, `?` or `#` in a password, as
+    /// in `maskURL`: a request's path with an email in it stays.
+    static func maskURLs(in text: String) -> String {
+        guard text.contains("://") else { return text }
+        return text.replacingOccurrences(of: #"(://[^:/?#@\s]*:)([^/?#@\s]+)(@)"#, with: "$1••••••$3", options: .regularExpression)
+    }
+
+    /// What an agent may read of `text`: the env's secret values (but
+    /// `names`, see `values`) and every URL's password taken out — it
+    /// lands in the agent's transcript.
+    static func scrub(_ text: String, env: [(key: String, value: String)], keeping names: Set<String> = []) -> String {
+        maskURLs(in: redact(text, values: values(in: env, besides: names)))
+    }
+
+    /// `${VAR}` or `$VAR`, nothing else: a default (`${VAR:-pw}`) may be
+    /// the secret itself.
+    static func isReference(_ text: String) -> Bool {
+        text.range(of: #"^\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$"#, options: .regularExpression) != nil
+    }
+
+    /// A command's words, what its secret-looking flags give masked: the
+    /// word after `--requirepass`, `--password`, `--token`, `--api-key`,
+    /// redis-cli's `-a`, mongosh's `-p`; `--flag=value` and `KEY=value` by
+    /// their name; mysql's `-pvalue`; curl's `-u user:password` past the
+    /// colon. A shell script's words (`sh -c '…'`, `CMD-SHELL`) the same.
+    /// Compose has put `.env`'s values into a command already, so the
+    /// container's env can't name them all. A `${VAR}` stays as written.
+    static func maskArguments(_ words: [String]) -> [String] {
+        enum Pending { case secret, userinfo }
+        let programs = Set(words.map { ($0 as NSString).lastPathComponent })
+        let redis = programs.contains("redis-cli")
+        let curl = programs.contains("curl")
+        let mongo = !programs.isDisjoint(with: ["mongosh", "mongo"])
+        let mysql = !programs.isDisjoint(with: ["mysql", "mysqladmin", "mysqldump", "mysqlshow", "mysqlcheck", "mariadb", "mariadb-admin", "mariadb-dump"])
+        var pending: Pending?
+        return words.map { word -> String in
+            // A flag after a flag: the first one took no value.
+            if let wanted = pending, !word.hasPrefix("--") {
+                pending = nil
+                return wanted == .userinfo ? maskUserinfo(word) : maskValue(word)
+            }
+            pending = nil
+            if word.contains(where: \.isWhitespace) { return maskScript(word) }
+            if word.hasPrefix("-"), word.count > 1 {
+                let flag = String(word.drop { $0 == "-" })
+                let dashes = String(word.prefix(word.count - flag.count))
+                if let equals = flag.firstIndex(of: "=") {
+                    let name = String(flag[..<equals])
+                    let value = String(flag[flag.index(after: equals)...])
+                    if curl && name == "user" { return dashes + name + "=" + maskUserinfo(value) }
+                    return isSecretFlag(name) ? dashes + name + "=" + maskValue(value) : word
+                }
+                let long = dashes.count > 1
+                if isSecretFlag(flag) || (redis && word == "-a") || (mongo && word == "-p") {
+                    pending = .secret
+                } else if curl && (word == "-u" || word == "--user") {
+                    pending = .userinfo
+                } else if curl && !long && flag.hasPrefix("u") {
+                    return "-u" + maskUserinfo(String(flag.dropFirst()))
+                } else if mysql && !long && flag.hasPrefix("p") && flag.count > 1 {
+                    return "-p" + maskValue(String(flag.dropFirst()))
+                }
+                return word
+            }
+            if let equals = word.firstIndex(of: "=") {
+                let name = String(word[..<equals])
+                if name.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil, isSecret(name) {
+                    return name + "=" + maskValue(String(word[word.index(after: equals)...]))
+                }
+            }
+            return word
+        }
+    }
+
+    /// A flag's name that says a secret follows: the env's words, and a
+    /// pass (`--requirepass`, `--pass`, `--db-pass`).
+    static func isSecretFlag(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return isSecret(name.replacingOccurrences(of: "-", with: "_")) || lower.hasSuffix("pass") || lower.contains("passphrase")
+    }
+
+    /// A shell script's words masked in place, its spacing kept.
+    private static func maskScript(_ script: String) -> String {
+        let string = script as NSString
+        guard let words = try? NSRegularExpression(pattern: #"\S+"#) else { return script }
+        let matches = words.matches(in: script, range: NSRange(location: 0, length: string.length))
+        let masked = maskArguments(matches.map { string.substring(with: $0.range) })
+        var out = script as NSString
+        for (match, word) in zip(matches, masked).reversed() { out = out.replacingCharacters(in: match.range, with: word) as NSString }
+        return out as String
+    }
+
+    /// A flag's value: a `${VAR}` kept as written, a path too (`--key
+    /// /certs/key.pem` names a file, not the key).
+    private static func maskValue(_ value: String) -> String {
+        let bare = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        return isReference(bare) || bare.hasPrefix("/") ? value : mask(value)
+    }
+
+    /// `user:password`: the user kept.
+    private static func maskUserinfo(_ value: String) -> String {
+        guard let colon = value.firstIndex(of: ":") else { return value }
+        return String(value[...colon]) + maskValue(String(value[value.index(after: colon)...]))
     }
 }
 

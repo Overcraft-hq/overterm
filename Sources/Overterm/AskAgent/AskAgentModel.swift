@@ -27,6 +27,17 @@ final class AskAgentModel: ObservableObject {
         var diff = false
     }
 
+    /// What else goes with the text, each a chip that can be switched off:
+    /// a container's last log lines, its compose service. `text` is what
+    /// goes in the prompt, its heading included.
+    struct Part: Identifiable, Equatable {
+        let title: String
+        let text: String
+        var on = true
+
+        var id: String { title }
+    }
+
     /// The most diff that goes into a prompt. It is typed into a terminal,
     /// and a prompt nobody can scroll past is not a prompt.
     static let maxDiffBytes = 128 << 10
@@ -37,6 +48,10 @@ final class AskAgentModel: ObservableObject {
     @Published var extras = Extras()
     @Published var message = ""
     @Published private(set) var isOpen = false
+    @Published var parts: [Part] = []
+    /// What the fixed chip says the text is, in place of "N selected
+    /// lines": a container that failed.
+    @Published private(set) var subject: String?
 
     /// The command the selection came out of, if the pane's ledger knows.
     private(set) var command: CommandBlock?
@@ -49,7 +64,11 @@ final class AskAgentModel: ObservableObject {
 
     var lines: Int { selection.isEmpty ? 0 : selection.components(separatedBy: "\n").count }
 
-    func begin(selection: String, command: CommandBlock?, folder: String?, targets: [Target], diff: Bool) {
+    /// `message`: the question already typed (a container's "Why did …?").
+    func begin(
+        selection: String, command: CommandBlock?, folder: String?, targets: [Target], diff: Bool, message: String = "", subject: String? = nil,
+        parts: [Part] = []
+    ) {
         self.selection = selection
         self.command = command
         self.folder = folder
@@ -57,13 +76,17 @@ final class AskAgentModel: ObservableObject {
         chosen = targets.first { $0.id != nil }?.id
         canDiff = diff
         extras = Extras(command: command != nil, exit: command?.exit != nil, diff: false)
-        message = ""
+        self.message = message
+        self.subject = subject
+        self.parts = parts
         isOpen = !selection.isEmpty
     }
 
     func stop() {
         isOpen = false
         selection = ""
+        parts = []
+        subject = nil
     }
 
     /// What will actually be typed. Built here rather than in the view so
@@ -73,15 +96,16 @@ final class AskAgentModel: ObservableObject {
     /// the chip's whole point without saying so, which is exactly what
     /// the window did. Pass nil to mean "there is none".
     func prompt(diff: String?) -> String {
-        var parts: [String] = []
-        if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append(message) }
+        var sections: [String] = []
+        if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sections.append(message) }
         if extras.command, let command {
             var line = "$ \(command.command)"
             if extras.exit, let exit = command.exit, exit != 0 { line += "   (exit \(exit))" }
-            parts.append(line)
+            sections.append(line)
         }
-        parts.append(selection)
-        if extras.diff, let diff, !diff.isEmpty { parts.append("git diff:\n\(diff)") }
-        return parts.joined(separator: "\n\n")
+        sections.append(selection)
+        sections += parts.filter(\.on).map(\.text)
+        if extras.diff, let diff, !diff.isEmpty { sections.append("git diff:\n\(diff)") }
+        return sections.joined(separator: "\n\n")
     }
 }

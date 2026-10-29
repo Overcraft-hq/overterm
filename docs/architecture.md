@@ -477,6 +477,15 @@ What gets built is one string (`AskAgentModel.prompt`), which is the part
 worth testing; it is **typed, not sent**, so what to do with it is still
 yours to finish.
 
+Other places open the same sheet with what they know: a note, a browser
+page, an API response, a Docker container. What they bring is the text,
+a question already typed, and parts (`AskAgentModel.Part`), each a chip
+you can switch off. A container's last log lines are one part, its
+compose service another. The prompt is still one string, built in one
+place. Send hides a page over the tabs (Docker's) first, or the agent's
+tab would be chosen under it and the prompt typed out of sight; Cancel
+gives the keyboard back to that page's list, not to the hidden terminal.
+
 ## Live ports and links
 
 A pane's header shows what anything in its process tree is listening on
@@ -1599,6 +1608,46 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `die` alone. Whose checkout is the compose project's working folder
   against each tab's (`DockerAttention.belongs`), the selected tab first.
   Settings ▸ Docker ▸ Attention turns it off.
+- **Why did it fail? Ask an agent** (`DockerAgentBrief`,
+  `DockerAttention.trouble`, pure but for the reads). A container that
+  exited non-zero, ran out of memory, is dead or is unhealthy — what the
+  list paints red — and one that keeps restarting, or was created and
+  couldn't start (the engine's error), has Ask Why among its buttons
+  (`a`; ⌘L while the list has the keyboard). It reads the container
+  once, when asked; nothing polls for it. Its inspect data says how it
+  ended: the exit code and what 137 or 127 means, OOMKilled with its
+  memory limit, restarts and the policy, the health check and its last
+  output, ports, mounts, the other services, and the env masked. A
+  stopped container's health is said only as a failing streak: the
+  engine calls every stopped container with a check unhealthy. Its ports
+  are its bindings while it is stopped, since the list's exist only while
+  it runs — a port conflict is exactly a container that never ran. Its
+  last 80 log lines are one chip, the newest cut rather than dropped when
+  it alone is over the budget. Its compose service is another, as `docker
+  compose config --no-interpolate --no-env-resolution --format json` has
+  it: variables as written, env files unread, so a .env password never
+  comes in. With --no-interpolate Compose ignores a service name and
+  renders the whole model, so the service is picked here. Lines picked
+  out of a log go the same way with ⌘L, as whole lines, the container (or
+  the project) as context. The log's text view answers ⌘L itself
+  (`DockerLogTextView`), so the menu's action reaches it before the
+  terminal hidden under the page; without a selection it passes the
+  action on. Every word that can carry a secret goes through
+  `DockerSecrets.scrub`: the env's secret values and every URL's
+  password come out, since the prompt is typed into an agent and lands
+  in its transcript. A command and a health check are masked by their
+  flags too (`maskArguments`: `--requirepass`, redis-cli's `-a`): Compose
+  has put `.env`'s values into them, and the container's env needn't
+  hold those. The names, paths and states come from the engine and
+  Compose's labels and are said as they are, and a secret value that is
+  one of those names (`POSTGRES_PASSWORD=postgres`) is left alone: taking
+  it out would blank the container's name and its log, not a secret. A
+  brief that can't be scrubbed — no engine, no inspect, so no env to
+  take out — isn't made.
+  The agents of the container's checkout come first, the closest first
+  (`DockerAttention.closeness`): a folder above it that is no repository,
+  such as `~`, holds every project, so its agent isn't this one's. A new
+  one opens in its compose folder.
 - **Agents** (`DockerMCP`, on BrowserBridge's server beside the
   browser's, the API client's, the notes' and the databases' tools):
   `docker_containers`, `docker_projects`, `docker_logs` (levels read,

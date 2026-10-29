@@ -23,6 +23,15 @@ final class FakeDockerEngine: @unchecked Sendable {
         var binds: [String: String] = [:]
         /// The name it was made from, when the list says its image's ID.
         var reference: String?
+        /// How it failed, as inspect says it (`setFailure`).
+        var oomKilled = false
+        var restarts = 0
+        var restartPolicy = "no"
+        var memory = 0
+        var healthcheck: [String]?
+        /// Its health check's last outputs, oldest first.
+        var probes: [String] = []
+        var failingStreak = 0
     }
 
     let socket: String
@@ -154,6 +163,8 @@ final class FakeDockerEngine: @unchecked Sendable {
         case .running: health.map { "Up 2 minutes (\($0))" } ?? "Up 2 minutes"
         case .paused: "Up 2 minutes (Paused)"
         case .exited: "Exited (\(exitCode)) 3 seconds ago"
+        // As moby writes it.
+        case .restarting: "Restarting (\(exitCode)) 2 seconds ago"
         case .created: "Created"
         default: state.rawValue.capitalized
         }
@@ -201,6 +212,24 @@ final class FakeDockerEngine: @unchecked Sendable {
             default: state.rawValue
             }
         emit(action, id, extra: state == .exited ? ["exitCode": "\(exitCode)"] : [:])
+    }
+
+    /// How it failed, as its inspect will say: out of memory, its
+    /// restarts, its health check and that check's last outputs. Sends no
+    /// event; `set` does.
+    func setFailure(
+        _ id: String, oomKilled: Bool = false, restarts: Int = 0, restartPolicy: String = "no", memory: Int = 0, healthcheck: [String]? = nil,
+        probes: [String] = [], failingStreak: Int = 0
+    ) {
+        locked {
+            containers[id]?.oomKilled = oomKilled
+            containers[id]?.restarts = restarts
+            containers[id]?.restartPolicy = restartPolicy
+            containers[id]?.memory = memory
+            containers[id]?.healthcheck = healthcheck
+            containers[id]?.probes = probes
+            containers[id]?.failingStreak = failingStreak
+        }
     }
 
     /// The tag it was made from now names a newer image (a pull): the
@@ -700,16 +729,30 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     static func detail(_ container: Container) -> ContainerDetail {
         let summary = container.summary
+        let probes = container.probes.map { ContainerDetail.Health.Probe(Start: nil, End: nil, ExitCode: 1, Output: $0) }
+        // What it publishes, as inspect keeps it whatever its state.
+        var bindings: [String: [ContainerDetail.HostConfigDetail.PortBinding]?] = [:]
+        for port in summary.Ports ?? [] {
+            guard let host = port.PublicPort else { continue }
+            let key = "\(port.PrivatePort)/\(port.Type)"
+            bindings[key] = ((bindings[key] ?? nil) ?? []) + [.init(HostIp: port.IP == "0.0.0.0" ? "" : port.IP, HostPort: "\(host)")]
+        }
         return ContainerDetail(
-            Id: summary.Id, Name: "/" + summary.name, Created: nil, Image: summary.ImageID, RestartCount: 0, Platform: "linux",
+            Id: summary.Id, Name: "/" + summary.name, Created: nil, Image: summary.ImageID, RestartCount: container.restarts, Platform: "linux",
             State: .init(
-                Status: summary.State, Running: summary.state == .running, Paused: summary.state == .paused, Restarting: false, OOMKilled: false,
-                Dead: false, Pid: summary.state == .running ? 42 : 0, ExitCode: summary.exitCode ?? 0, Error: container.error, StartedAt: nil,
-                FinishedAt: nil, Health: summary.Health.map { .init(Status: $0.Status, FailingStreak: 0, Log: []) }),
+                Status: summary.State, Running: summary.state == .running, Paused: summary.state == .paused, Restarting: summary.state == .restarting,
+                OOMKilled: container.oomKilled, Dead: summary.state == .dead, Pid: summary.state == .running ? 42 : 0,
+                ExitCode: summary.exitCode ?? DockerAttention.restartingExit(summary.Status) ?? 0, Error: container.error, StartedAt: nil,
+                FinishedAt: summary.state == .exited ? "2026-10-29T10:00:00.000000000Z" : nil,
+                Health: summary.Health.map { .init(Status: $0.Status, FailingStreak: container.failingStreak, Log: probes) }),
             Config: .init(
                 Image: container.reference ?? summary.Image, Env: container.env, Cmd: ["sleep", "infinity"], Entrypoint: nil, WorkingDir: "/", User: "",
-                Labels: summary.Labels, ExposedPorts: nil, Tty: container.tty, Hostname: String(summary.Id.prefix(12))),
-            HostConfig: .init(RestartPolicy: .init(Name: "no", MaximumRetryCount: 0), NetworkMode: "bridge", Memory: 0, NanoCpus: 0),
+                Labels: summary.Labels,
+                ExposedPorts: bindings.isEmpty ? nil : Dictionary(uniqueKeysWithValues: bindings.keys.map { ($0, EmptyObject()) }), Tty: container.tty, Hostname: String(summary.Id.prefix(12)),
+                Healthcheck: container.healthcheck.map { .init(Test: $0, Interval: 30_000_000_000, Timeout: 5_000_000_000, Retries: 3) }),
+            HostConfig: .init(
+                RestartPolicy: .init(Name: container.restartPolicy, MaximumRetryCount: 0), NetworkMode: "bridge", Memory: container.memory, NanoCpus: 0,
+                PortBindings: bindings.isEmpty ? nil : bindings),
             Mounts: summary.Mounts, NetworkSettings: .init(Networks: ["bridge": .init(IPAddress: "172.17.0.2", Gateway: "172.17.0.1", MacAddress: nil)]))
     }
 

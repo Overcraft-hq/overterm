@@ -103,10 +103,17 @@ struct AskAgentView: View {
             }
             label("Include")
             HStack(spacing: 6) {
-                chip("\(model.lines) selected line\(model.lines == 1 ? "" : "s")", .constant(true), fixed: true)
+                chip(model.subject ?? "\(model.lines) selected line\(model.lines == 1 ? "" : "s")", .constant(true), fixed: true)
                 if model.command != nil { chip("command", $model.extras.command) }
                 if model.command?.exit != nil { chip("exit code", $model.extras.exit) }
                 if model.canDiff { chip("git diff", $model.extras.diff) }
+            }
+            // What else came with it (a container's logs, its compose
+            // service), a chip each.
+            if !model.parts.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(model.parts.indices, id: \.self) { index in chip(model.parts[index].title, $model.parts[index].on) }
+                }
             }
             TextField("What should it do with this?", text: $model.message)
                 .textFieldStyle(.plain)
@@ -138,7 +145,8 @@ struct AskAgentView: View {
                 Image(systemName: on.wrappedValue ? "checkmark.square.fill" : "square")
                     .font(.system(size: 10))
                     .foregroundStyle(on.wrappedValue ? TabStatusStyle.working : theme.text3)
-                Text(title).font(.system(size: 12)).foregroundStyle(theme.text)
+                // A container's name can be long; the sheet is 380 pt.
+                Text(title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
             }
             .padding(.horizontal, 8)
             .frame(height: 24)

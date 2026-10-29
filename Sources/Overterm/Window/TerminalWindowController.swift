@@ -2573,8 +2573,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         hideSelectionBar()
     }
 
-    /// ⌘L. Without a selection there is nothing to ask about.
+    /// ⌘L. Without a selection there is nothing to ask about. Over the
+    /// Docker page it means the selected container that failed, never the
+    /// terminal hidden under the page (lines picked in a log view answer
+    /// it themselves: `DockerLogTextView`).
     @objc func askAboutSelection(_ sender: Any?) {
+        if store.showingOverlay == .docker {
+            if !dockerPage.askWhySelected() { NSSound.beep() }
+            return
+        }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
             let text = pane.selectionText
         else { return }
@@ -2586,8 +2593,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The Ask Agent sheet over `text`: to one of `targets` (agent tabs, in
-    /// that order) or a new agent tab in `folder`.
-    func presentAskAgent(text: String, command: CommandBlock?, folder: String?, targets agents: [Tab]) {
+    /// that order) or a new agent tab in `folder`. `message`: the question
+    /// already typed; `subject`: what the fixed chip calls the text;
+    /// `parts`: what else goes with it, a chip each; `diff`: whether the
+    /// git diff chip is offered (the window's checkout, by default).
+    func presentAskAgent(
+        text: String, command: CommandBlock?, folder: String?, targets agents: [Tab], message: String = "", subject: String? = nil,
+        parts: [AskAgentModel.Part] = [], diff: Bool? = nil
+    ) {
         var targets = agents.map { other in
             AskAgentModel.Target(
                 id: other.id, title: other.title,
@@ -2596,7 +2609,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         targets.append(
             AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
-        askAgent.begin(selection: text, command: command, folder: folder, targets: targets, diff: diff.isRepository)
+        askAgent.begin(
+            selection: text, command: command, folder: folder, targets: targets, diff: diff ?? self.diff.isRepository, message: message,
+            subject: subject, parts: parts)
         guard let theme else { return }
         presentSheet { [weak self] close in
             AskAgentView(
@@ -2608,9 +2623,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 cancel: {
                     close()
                     self?.askAgent.stop()
-                    self?.focusSelectedTerminal()
+                    self?.focusAfterSheet()
                 })
         }
+    }
+
+    /// The keyboard back where it was before a sheet: the Docker page's
+    /// list while the page shows (the terminal is hidden under it), else
+    /// the selected terminal.
+    func focusAfterSheet() {
+        if store.showingOverlay == .docker { focusDockerList() } else { focusSelectedTerminal() }
     }
 
     /// Types the prompt into the chosen agent, or into a new agent tab.
@@ -2654,6 +2676,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let chosen = askAgent.chosen
         askAgent.stop()
         guard !prompt.isEmpty else { return }
+        // A page over the tabs (Docker's) steps aside: the agent's tab is
+        // selected under it otherwise, and the prompt typed out of sight.
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
         let target: Tab?
         if let chosen {
             target = store.tabs.first { $0.id == chosen }

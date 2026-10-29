@@ -109,6 +109,7 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("U"), .composeUpFreePorts)
         XCTAssertEqual(DockerKey.of("u"), .composeUp)
         XCTAssertEqual(DockerKey.of("q"), .client)
+        XCTAssertEqual(DockerKey.of("a"), .askAgent)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -414,6 +415,32 @@ final class DockerPageTests: XCTestCase {
         XCTAssertFalse(page.verbs(for: unwatched).contains { $0.title == "Watch in a Tab" })
         let refused = await page.watch(unwatched)
         XCTAssertEqual(refused, "No service of shop has develop.watch: Compose watches only those.")
+    }
+
+    /// A container that failed — what the list paints red — offers to ask
+    /// an agent why, as a button after Start; one that is fine doesn't.
+    @MainActor
+    func testAFailedContainerOffersToAskWhy() {
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        func ask(_ container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerVerb? {
+            page.verbs(for: container, detail: detail).first { $0.title == "Ask an Agent Why…" }
+        }
+        let failed = container("worker", state: "exited", status: "Exited (1) 3 seconds ago")
+        let verb = ask(failed)
+        XCTAssertEqual(verb?.place, .button)
+        XCTAssertEqual(verb?.key, "a")
+        XCTAssertEqual(verb?.label, "Ask Why")
+        XCTAssertEqual(page.verbs(for: failed).filter { $0.place == .button }.map(\.title).prefix(2), ["Start", "Ask an Agent Why…"])
+        XCTAssertNil(ask(container("web")), "a running one")
+        XCTAssertNil(ask(container("job", state: "exited", status: "Exited (0) 3 seconds ago")), "one done with its work")
+        // Running again, but inspect says the kernel killed it.
+        let running = container("api")
+        let killed = ContainerDetail(
+            Id: running.Id, Name: "/api", State: .init(Status: "running", OOMKilled: true), Config: .init(Image: "nginx:1.27"))
+        XCTAssertNotNil(ask(running, detail: killed))
+        XCTAssertFalse(page.askWhySelected(), "nothing selected")
+        page.selection = [running.Id]
+        XCTAssertFalse(page.askWhySelected(), "the model doesn't list it: nothing to ask about")
     }
 
     @MainActor

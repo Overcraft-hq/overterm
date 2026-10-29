@@ -185,7 +185,9 @@ struct ProjectDetailView: View {
             Rectangle().fill(theme.border).frame(height: 1)
             switch page.projectTab {
             case .logs:
-                DockerLogsPane(feed: session.feed, theme: theme, actions: actions, services: project.services.map(\.name), service: $session.service)
+                DockerLogsPane(
+                    feed: session.feed, theme: theme, actions: actions, services: project.services.map(\.name), service: $session.service,
+                    ask: { [project, actions] in actions.askAgent(.projectLogLines($0, project)) })
             case .services: services
             }
         }

@@ -263,7 +263,7 @@ final class E2ERunner {
     }
 
     /// An item of the menu bar's `menu`, as the menu bar has it.
-    private func menuItem(_ menu: String, _ title: String) -> NSMenuItem? {
+    func menuItem(_ menu: String, _ title: String) -> NSMenuItem? {
         NSApp.mainMenu?.items.first { $0.submenu?.title == menu }?.submenu?.items.first { $0.title == title }
     }
 
@@ -272,7 +272,7 @@ final class E2ERunner {
     /// window is never key, so NSApp.sendAction wouldn't find it). Then the
     /// item is validated, as before the menu opens again.
     @discardableResult
-    private func perform(_ item: NSMenuItem) -> Bool {
+    func perform(_ item: NSMenuItem) -> Bool {
         guard let action = item.action, (window.firstResponder ?? window).tryToPerform(action, with: item) else { return false }
         _ = app.validateMenuItem(item)
         return true

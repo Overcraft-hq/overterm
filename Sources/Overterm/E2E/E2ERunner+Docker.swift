@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Vision
 
 /// The Docker page against the fake engine (FakeDockerEngine) on a socket
@@ -289,6 +290,191 @@ extension E2ERunner {
         panelVerbs.first { $0.title == "Restart" }?.perform()
         check("and act through it", await eventually(5) { fake.requests.contains { $0.contains("/containers/\(container.Id)/restart") } })
         page.press("1")
+    }
+
+    /// A container that failed, to an agent: Ask Why opens Overterm's own
+    /// Ask Agent sheet with how it ended, its health check, its last lines
+    /// and its compose service, secrets out of all of it; ⌘L hands lines
+    /// picked out of its log over the same way. The window's own path,
+    /// nothing recorded: no agent starts (the agent tabs are shells), and
+    /// Compose is a stub.
+    private func askAgentChecks(_ fake: FakeDockerEngine, web: String, folder: URL, real: String) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        let config = #"""
+            {"name":"ot-shop","services":{"web":{"image":"nginx:1.27"},"worker":{"image":"node:22","command":["node","server.js"],"environment":{"DB_PASSWORD":"compose-literal-pw","STRIPE_SECRET_KEY":"${STRIPE_SECRET_KEY}"},"depends_on":{"db":{"condition":"service_started","required":true}}}}}
+            """#
+        let bin = composeStub("ask-stub-bin", json: config)
+        DockerCLI.override = bin.appendingPathComponent("docker")
+        defer { DockerCLI.override = nil }
+        func asked() -> String { (try? String(contentsOf: bin.appendingPathComponent("stub.log"), encoding: .utf8)) ?? "" }
+
+        let worker = fake.add(
+            name: "ot-shop-worker-1", image: "node:22", project: "ot-shop", workingDir: real, service: "worker",
+            env: ["NODE_ENV=production", "DATABASE_URL=postgres://shop:hunter2@db:5432/shop", "STRIPE_SECRET_KEY=sk_test_abc123"])
+        fake.log(worker, "connecting to postgres://shop:hunter2@db:5432/shop")
+        fake.log(worker, "stripe key sk_test_abc123 loaded")
+        fake.log(worker, "Error: Cannot find module 'express'", stream: .stderr)
+        fake.setFailure(
+            worker, oomKilled: true, restarts: 3, restartPolicy: "on-failure", memory: 256 << 20, healthcheck: ["CMD-SHELL", "curl -f http://localhost:3000/"],
+            probes: ["curl: (7) Failed to connect to localhost port 3000"], failingStreak: 3)
+        fake.set(worker, state: .exited, exitCode: 137, health: "unhealthy")
+        guard await eventually(5, { docker.container(worker)?.exitCode == 137 }), let failed = docker.container(worker) else {
+            return check("a container that failed, to ask about", false, "\(docker.containers.map(\.name))")
+        }
+        // Agent tabs, their agents not started: one in the home folder
+        // first in the strip, then one in the container's checkout — only
+        // the ranking puts the checkout's first.
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        app.newTab(in: home, agent: .codex, startAgent: false)
+        guard let homeTab = app.store.selected else { return check("an agent tab elsewhere", false) }
+        homeTab.customTitle = "home · codex"
+        app.newTab(in: folder, agent: .claude, startAgent: false)
+        guard let shopTab = app.store.selected, homeTab !== shopTab else { return check("an agent tab in the checkout", false) }
+        shopTab.customTitle = "shop · claude"
+        func position(_ tab: Tab) -> Int { app.store.tabs.firstIndex { $0 === tab } ?? -1 }
+        app.revealOnDockerPage(worker)
+        page.showDetail = true
+        page.detailTab = .overview
+        _ = await eventually(3) { self.app.dockerListHasKeyboard() }
+
+        func askWhy(_ verbs: [DockerVerb]) -> DockerVerb? { verbs.first { $0.title == "Ask an Agent Why…" } }
+        // The sheet's SwiftUI buttons are no NSButtons to click: what each
+        // runs, the sheet's own closures.
+        func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
+        check("a failed container offers to ask an agent why, as a button", askWhy(page.verbs(for: failed))?.place == .button)
+        check("a running one doesn't", docker.container(web).map { askWhy(page.verbs(for: $0)) == nil } == true)
+        check("and the panel's menu has it too", askWhy(app.dockerPanel.verbs(failed)) != nil)
+
+        askWhy(page.verbs(for: failed))?.perform()
+        check("Ask Why opens the Ask Agent sheet", await eventually(5) { self.window.attachedSheet != nil })
+        let model = app.askAgent
+        check(
+            "the checkout's agent tab is offered first, and chosen, though the strip has the home one first",
+            position(homeTab) < position(shopTab) && model.targets.first?.title == "shop · claude" && model.chosen == shopTab.id
+                && model.targets.last?.id == nil,
+            "\(model.targets.map(\.title)) chosen \(String(describing: model.chosen)), strip \(position(homeTab)) \(position(shopTab))")
+        check(
+            "the question is started for you",
+            model.message == "Why did ot-shop-worker-1 run out of memory?" && model.subject == "ot-shop-worker-1 ran out of memory",
+            "\(model.message) / \(model.subject ?? "no subject")")
+        let prompt = await app.askAgentPrompt()
+        check(
+            "it says how it ended",
+            prompt.hasPrefix(model.message) && prompt.contains("Out of memory") && prompt.contains("Memory limit 256 MB")
+                && prompt.contains("Restarts: 3 (restart policy on-failure") && prompt.contains("Image: node:22"), prompt)
+        check("and its health check's last output", prompt.contains("Last check (exit 1): curl: (7) Failed to connect"), prompt)
+        check(
+            "its last log lines, secrets taken out",
+            prompt.contains("Cannot find module 'express'") && prompt.contains("stripe key •••••• loaded") && !prompt.contains("sk_test_abc123")
+                && !prompt.contains("hunter2"), prompt)
+        check("a connection string's password masked", prompt.contains("postgres://shop:••••••@db:5432/shop"), prompt)
+        check(
+            "Compose is asked for the project's own files, variables as written",
+            asked().contains("-p ot-shop -f \(real)/compose.yaml config --no-interpolate --format json --no-env-resolution"), asked())
+        let service = model.parts.first { $0.title == "compose service" }?.text ?? ""
+        check(
+            "its compose service, a secret in it masked",
+            service.contains("node:22") && service.contains("${STRIPE_SECRET_KEY}") && !service.contains("compose-literal-pw") && !service.contains("nginx:1.27"),
+            service.isEmpty ? "\(model.parts.map(\.title))" : service)
+        if let logs = model.parts.firstIndex(where: { $0.title.hasSuffix("log lines") }) { model.parts[logs].on = false }
+        let without = await app.askAgentPrompt()
+        check("a chip leaves the logs out", !without.contains("Cannot find module") && without.contains("Out of memory"))
+        await capture("ask-why")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty, let shown = window.attachedSheet {
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-ask-sheet.png"), window: shown)
+        }
+        let cancelled = sheet().map { $0.cancel() } != nil
+        let away = await eventually(3) { self.window.attachedSheet == nil }
+        check("Cancel puts the sheet away", cancelled && away)
+        check(
+            "and gives the keyboard back to the list", await eventually(3) { self.app.dockerListHasKeyboard() },
+            "\(String(describing: window.firstResponder))")
+
+        // The list's key, and what it doesn't ask about.
+        page.selection = [worker]
+        page.press("a")
+        let keyed = await eventually(5) { self.window.attachedSheet != nil }
+        check("a asks the same from the list's keyboard", keyed && model.message.contains("run out of memory"), model.message)
+        sheet()?.cancel()
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+        page.selection = [web]
+        page.press("a")
+        await pause(0.5)
+        check("not for a container that is fine", window.attachedSheet == nil)
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+
+        // ⌘L over the page: the selected container that failed, never what
+        // is selected in the terminal hidden under the page.
+        page.selection = [worker]
+        app.store.selected?.terminal.perform(binding: "select_all")
+        app.focusDockerList()
+        _ = await eventually(3) { self.app.dockerListHasKeyboard() }
+        let fromList = menuItem("Edit", "Ask an Agent About the Selection").map { perform($0) } == true
+        let overPage = await eventually(5) { self.window.attachedSheet != nil }
+        check(
+            "⌘L over the page asks why the selected container failed",
+            fromList && overPage && model.message == "Why did ot-shop-worker-1 run out of memory?" && model.subject == "ot-shop-worker-1 ran out of memory"
+                && model.command == nil, "\(fromList) \(overPage) \(model.message) / \(model.subject ?? "no subject")")
+        sheet()?.cancel()
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+
+        // ⌘L on lines picked out of its log: whole lines, the container as context.
+        page.selection = [worker]
+        page.detailTab = .logs
+        func logView() -> DockerLogTextView? {
+            Self.find(DockerLogTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" }
+        }
+        let shown = await eventually(5) { logView()?.string.contains("Cannot find module") == true }
+        check("its log is a view that answers ⌘L itself", shown, logView()?.string ?? "no DockerLogTextView")
+        if shown, let text = logView() {
+            // Nothing picked: the log passes ⌘L on, to the container.
+            text.setSelectedRange(NSRange(location: 0, length: 0))
+            window.makeFirstResponder(text)
+            let passed = menuItem("Edit", "Ask an Agent About the Selection").map { perform($0) } == true
+            let reached = await eventually(5) { self.window.attachedSheet != nil }
+            check(
+                "a log with nothing picked passes ⌘L on, to the container",
+                passed && reached && model.message == "Why did ot-shop-worker-1 run out of memory?" && model.subject != nil,
+                "\(passed) \(reached) \(model.message)")
+            sheet()?.cancel()
+            _ = await eventually(3) { self.window.attachedSheet == nil }
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+
+            let string = text.string as NSString
+            let from = string.range(of: "stripe key").location + 4
+            let to = string.range(of: "Cannot find").location + 5
+            text.setSelectedRange(NSRange(location: from, length: to - from))
+            window.makeFirstResponder(text)
+            let chosen = menuItem("Edit", "Ask an Agent About the Selection").map { perform($0) } == true
+            let opened = await eventually(5) { self.window.attachedSheet != nil }
+            let picked = model.selection
+            check(
+                "⌘L on picked log lines asks about them, whole lines",
+                chosen && opened && picked.contains("Error: Cannot find module 'express'") && picked.contains("stripe key •••••• loaded")
+                    && !picked.contains("connecting to") && !picked.contains("sk_test_abc123"), "\(chosen) \(opened) \(picked.debugDescription)")
+            check(
+                "with the container as context",
+                model.parts.first?.title == "ot-shop-worker-1" && model.parts.first?.text.contains("Image: node:22") == true && model.subject == nil
+                    && model.lines == 2, "\(model.parts.map(\.title)) \(model.lines)")
+            model.chosen = shopTab.id
+            sheet()?.send()
+            check(
+                "Send hides the page and types into the agent's tab",
+                await eventually(3) { self.app.store.showingOverlay == nil && self.app.store.selected?.id == shopTab.id },
+                "\(String(describing: app.store.showingOverlay)) \(app.store.selected?.title ?? "none")")
+        }
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+
+        // As it was: the detail on Overview (no log followed), the worker
+        // gone, the tabs closed, the page back with its list's keyboard.
+        page.detailTab = .overview
+        page.selection = []
+        try? await docker.remove(worker, force: true)
+        app.closeTabsWithoutAsking([shopTab, homeTab])
+        if app.store.showingOverlay != .docker { app.toggleDockerPage(nil) }
+        _ = await eventually(3) { self.app.dockerListHasKeyboard() }
     }
 
     /// A folder with a stub `docker` answering as Compose 2.29 does: its
@@ -1848,6 +2034,7 @@ extension E2ERunner {
         check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await askAgentChecks(fake, web: web, folder: folder, real: real)
         await worktreePortsChecks(fake, socket: socket)
         await composeServicesChecks(fake, web: web)
         await modelsChecks(fake)

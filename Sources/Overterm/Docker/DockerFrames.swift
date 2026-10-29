@@ -81,6 +81,13 @@ struct DockerLogLine: Equatable, Sendable {
     /// The compose service, in a project's merged logs.
     var service: String?
 
+    /// The line as plain text, as an agent reads it: its time, its level,
+    /// its message, then a JSON line's fields.
+    var plain: String {
+        [timestamp, level.map { "\($0)".uppercased() }, message].compactMap { $0 }.joined(separator: " ")
+            + (fields.isEmpty ? "" : "  " + fields.map { "\($0.0)=\($0.1)" }.joined(separator: " "))
+    }
+
     static func == (a: DockerLogLine, b: DockerLogLine) -> Bool {
         a.stream == b.stream && a.timestamp == b.timestamp && a.level == b.level && a.message == b.message && a.service == b.service
             && a.fields.map { "\($0.0)=\($0.1)" } == b.fields.map { "\($0.0)=\($0.1)" }

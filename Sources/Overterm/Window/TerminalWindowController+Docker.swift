@@ -60,7 +60,8 @@ extension TerminalWindowController {
             choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) },
             composeUp: { [weak self] target, freePorts in self?.dockerPage.startUp(target, freePorts: freePorts) },
             freePortsUnavailable: { [weak self] project in self?.dockerPage.freePortsUnavailable(project) },
-            alert: { [weak self] title, detail in self?.alertDocker(title, detail) }
+            alert: { [weak self] title, detail in self?.alertDocker(title, detail) },
+            askAgent: { [weak self] in self?.askAgent(about: $0) }
         )
     }
 
@@ -291,11 +292,62 @@ extension TerminalWindowController {
     /// The tab whose checkout holds a project run in `folder`: the
     /// selected one when it does, else the first.
     func tab(forProjectIn folder: String) -> Tab? {
-        let tabs = ([store.selected].compactMap { $0 } + store.tabs).filter { tab in
-            guard let directory = tab.workingDirectory else { return false }
-            return DockerAttention.belongs(folder, to: FileTreeModel.realPath(FileTreeModel.treeRoot(for: directory)))
+        ([store.selected].compactMap { $0 } + store.tabs).first { checkoutHolds($0, folder) }
+    }
+
+    /// Whether the tab's checkout (its repository, else its folder) holds a
+    /// project run in `folder`.
+    func checkoutHolds(_ tab: Tab, _ folder: String) -> Bool {
+        guard let checkout = checkout(of: tab) else { return false }
+        return DockerAttention.belongs(folder, to: checkout)
+    }
+
+    /// The tab's repository, else its folder; real paths, as Compose's
+    /// labels say a project's folder.
+    private func checkout(of tab: Tab) -> String? {
+        tab.workingDirectory.map { FileTreeModel.realPath(FileTreeModel.treeRoot(for: $0)) }
+    }
+
+    // MARK: Asking an agent
+
+    /// Ask Why, or lines of a log: the container read once, now, then the
+    /// Ask Agent sheet. A brief that can't be read (no engine: no secrets
+    /// to take out) is said, never sent unscrubbed.
+    func askAgent(about question: DockerAgentQuestion) {
+        guard window?.attachedSheet == nil else { return NSSound.beep() }
+        Task { [weak self] in
+            do {
+                let brief = try await DockerAgentBriefing.brief(question, docker: .shared)
+                self?.presentDockerBrief(brief)
+            } catch {
+                self?.reportDockerError("Ask an agent", error)
+            }
         }
-        return tabs.first
+    }
+
+    /// The sheet, the agents of the container's checkout first, the
+    /// closest of them first (`DockerAttention.closeness`); a new one opens
+    /// in its compose folder. The git diff is offered when that folder is
+    /// in the window's checkout.
+    func presentDockerBrief(_ brief: DockerAgentBrief) {
+        guard window?.attachedSheet == nil else { return NSSound.beep() }
+        let agents = store.tabs.filter { $0.agent != nil }
+        let ranked = agents.enumerated().compactMap { index, tab -> (rank: Int, index: Int, tab: Tab)? in
+            guard let folder = brief.folder, let checkout = checkout(of: tab),
+                let rank = DockerAttention.closeness(
+                    of: checkout, to: folder, isRepository: FileManager.default.fileExists(atPath: checkout + "/.git"))
+            else { return nil }
+            return (rank, index, tab)
+        }
+        let mine = ranked.sorted { ($0.rank, $0.index) < ($1.rank, $1.index) }.map(\.tab)
+        let ordered = mine + agents.filter { agent in !mine.contains { $0 === agent } }
+        let folder = brief.folder.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } ?? store.selected?.workingDirectory
+        let diffHere =
+            diff.isRepository
+            && brief.folder.map { folder in diff.root.map { DockerAttention.belongs(folder, to: FileTreeModel.realPath($0)) } == true } == true
+        presentAskAgent(
+            text: brief.text, command: nil, folder: folder, targets: ordered, message: brief.message, subject: brief.subject, parts: brief.parts,
+            diff: diffHere)
     }
 
     // MARK: Ports

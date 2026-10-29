@@ -47,6 +47,8 @@ struct DockerActions {
     /// Said in an alert — what, then why: what the page would say, when
     /// the page isn't on screen.
     var alert: (_ title: String, _ detail: String) -> Void = { _, _ in }
+    /// The Ask Agent sheet, on why a container failed or on lines of a log.
+    var askAgent: (DockerAgentQuestion) -> Void = { _ in }
 }
 
 /// One block of the containers list: a compose project with its
@@ -379,6 +381,25 @@ final class DockerPageModel: ObservableObject {
 
     func restart() { act(.restart, on: selectedContainers) }
 
+    /// What is wrong with it (`DockerAttention.trouble`): its summary, and
+    /// the inspect already read — given, or the detail's own. Nothing is
+    /// read for it.
+    func trouble(of container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerAttention.Trouble? {
+        let known = [detail, session?.detail].first { $0?.Id == container.Id } ?? nil
+        return DockerAttention.trouble(of: container, detail: known)
+    }
+
+    /// Ask an Agent Why…: the window reads it, then opens the sheet.
+    func askWhy(_ container: ContainerSummary) { actions?.askAgent(.failure(container)) }
+
+    /// `a`, and ⌘L while the page shows: the first selected container that
+    /// failed. False when none did.
+    func askWhySelected() -> Bool {
+        guard section == .containers, let failed = selectedContainers.first(where: { trouble(of: $0) != nil }) else { return false }
+        askWhy(failed)
+        return true
+    }
+
     func pauseOrUnpause() {
         let containers = selectedContainers.filter { $0.state == .running || $0.state == .paused }
         guard !containers.isEmpty else { return }
@@ -446,6 +467,7 @@ final class DockerPageModel: ObservableObject {
         case .toggleDetail: showDetail.toggle()
         case .startStop: startOrStop()
         case .restart: restart()
+        case .askAgent: if !askWhySelected() { NSSound.beep() }
         case .pause: pauseOrUnpause()
         case .followLogs:
             for container in selected.prefix(4) { actions?.run(DockerCommands.followLogs(of: container, endpoint: endpoint), nil) }

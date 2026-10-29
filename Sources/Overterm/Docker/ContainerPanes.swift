@@ -56,6 +56,8 @@ struct DockerLogsPane: View {
     /// one shown (the project's session keeps it).
     var services: [String] = []
     var service: Binding<String?>? = nil
+    /// Lines picked out of it, to an agent (`DockerLogTextView`).
+    var ask: ((String) -> Void)? = nil
     @State private var filter = DockerLogFilter()
     @State private var wrap = true
     @State private var timestamps = true
@@ -88,7 +90,7 @@ struct DockerLogsPane: View {
                     render: { range in
                         shown[range].map { DockerLogStyle.line($0, text: text, dim: text.withAlphaComponent(0.45), timestamps: stamps) }
                     },
-                    wrap: wrap, follow: true)
+                    wrap: wrap, follow: true, ask: ask)
             }
         }
     }

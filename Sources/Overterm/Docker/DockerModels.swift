@@ -144,6 +144,17 @@ struct ContainerDetail: Codable, Sendable {
         var ExposedPorts: [String: EmptyObject]?
         var Tty: Bool?
         var Hostname: String?
+        var Healthcheck: HealthConfig?
+    }
+
+    /// The image's or the run's health check. Durations in nanoseconds,
+    /// as the Engine API says them.
+    struct HealthConfig: Codable, Sendable {
+        var Test: [String]?
+        var Interval: Int?
+        var Timeout: Int?
+        var Retries: Int?
+        var StartPeriod: Int?
     }
 
     struct HostConfigDetail: Codable, Sendable {
@@ -151,10 +162,22 @@ struct ContainerDetail: Codable, Sendable {
         var NetworkMode: String?
         var Memory: Int?
         var NanoCpus: Int?
+        /// What it publishes when it runs, by `3000/tcp`. Kept while it is
+        /// stopped, when the list's ports are gone: those exist only while
+        /// it runs.
+        var PortBindings: [String: [PortBinding]?]?
+        /// `-P`: every exposed port, to a port the engine picks.
+        var PublishAllPorts: Bool?
 
         struct RestartPolicy: Codable, Sendable {
             var Name: String?
             var MaximumRetryCount: Int?
+        }
+
+        /// `""` for either: every address, a port the engine picks.
+        struct PortBinding: Codable, Sendable {
+            var HostIp: String?
+            var HostPort: String?
         }
     }
 

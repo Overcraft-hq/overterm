@@ -197,7 +197,12 @@ the page) to start them — a container's logs a click away in the
 right-hand pane, and the ports its containers publish
 sit in its panes' headers beside the ones its own processes listen on. A
 container that crashes, runs out of memory or turns unhealthy marks the
-tab whose checkout it belongs to, as a failed command does. Two
+tab whose checkout it belongs to, as a failed command does. One that
+failed has Ask Why (`a`): Overterm's Ask Agent sheet opens for Claude
+Code or Codex with the question typed, and with it go how the container
+ended, what its exit code means, its health check's last output, its
+last log lines and its compose service, secrets taken out. Lines picked
+out of any container's log go the same way with ⌘L. Two
 worktrees' stacks wanting the same port: before an Up, Overterm sees it
 taken — by another worktree's stack or a program — and offers Up on Free
 Ports. The stack moves to free ones (web 8080 → 18080) under a project name
@@ -278,7 +283,7 @@ The defaults; every one of them is rebindable in Settings ▸ Keyboard Shortcuts
 | ⌃⌘1…9 | Go to a group · ⌃⌘F focus · ⌃⌘S stash · ⌃⌘B broadcast |
 | ⌘R / ⇧⌘C | Run the last command again / copy its output |
 | ⌘↑ / ⌘↓ | Previous / next prompt |
-| ⌘L | Ask an agent about the selection |
+| ⌘L | Ask an agent about the selection — a terminal's, or a Docker log's |
 | ⌘F | Search the terminal and the files |
 | ⌘B / ⌥⌘D | Sidebar / changes |
 | ⇧⌘E | Tab Peek (or three fingers down) |

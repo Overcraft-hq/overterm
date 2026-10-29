@@ -16,9 +16,13 @@ struct DockerTextView: NSViewRepresentable {
     let render: (Range<Int>) -> [NSAttributedString]
     var wrap = true
     var follow = true
+    /// Lines picked out of it, to an agent (⌘L, its right-click menu): a
+    /// log's; nil for what isn't one (Inspect's JSON, a build's log).
+    var ask: ((String) -> Void)? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
+        // The class method makes the subclass's text view.
+        let scroll = DockerLogTextView.scrollableTextView()
         scroll.drawsBackground = false
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
@@ -36,6 +40,7 @@ struct DockerTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        (scroll.documentView as? DockerLogTextView)?.ask = ask
         guard let text = scroll.documentView as? NSTextView, let storage = text.textStorage else { return }
         setWrap(wrap, scroll, text)
         let coordinator = context.coordinator
@@ -84,6 +89,41 @@ struct DockerTextView: NSViewRepresentable {
             container.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
         }
         scroll.hasHorizontalScroller = !wrap
+    }
+}
+
+/// A log's text view: lines picked out of it go to an agent, widened to
+/// whole lines — ⌘L (Edit's Ask an Agent About the Selection, which
+/// reaches it before the terminal hidden under the page) and its
+/// right-click menu. Without a selection, or a log, ⌘L goes on up the
+/// responder chain: the window then asks about the selected container.
+final class DockerLogTextView: NSTextView {
+    var ask: ((String) -> Void)?
+
+    @objc func askAboutSelection(_ sender: Any?) {
+        let range = selectedRange()
+        if let ask, range.length > 0 { return ask(DockerAgentText.wholeLines(of: string, range)) }
+        if nextResponder?.tryToPerform(#selector(askAboutSelection(_:)), with: sender) != true { NSSound.beep() }
+    }
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem.action == #selector(askAboutSelection(_:)) ? true : super.validateMenuItem(menuItem)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        item.action == #selector(askAboutSelection(_:)) ? true : super.validateUserInterfaceItem(item)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event)
+        guard ask != nil, selectedRange().length > 0 else { return menu }
+        // A copy: the text view's menu may be one it keeps.
+        let shown = (menu?.copy() as? NSMenu) ?? NSMenu()
+        let item = NSMenuItem(title: "Ask an Agent About These Lines", action: #selector(askAboutSelection(_:)), keyEquivalent: "")
+        item.target = self
+        shown.insertItem(.separator(), at: 0)
+        shown.insertItem(item, at: 0)
+        return shown
     }
 }
 
