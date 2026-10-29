@@ -146,8 +146,23 @@ enum SettingsJSON {
             }
             return nil
         }
-        // Objects and arrays aren't scalars: not edited in place.
-        if rest[index] == "{" || rest[index] == "[" { return nil }
+        // A list on one line, as the app writes them: to its closing bracket.
+        if rest[index] == "[" {
+            var i = rest.index(after: index)
+            var inString = false
+            while i < rest.endIndex {
+                if inString, rest[i] == "\\" {
+                    i = rest.index(i, offsetBy: 2, limitedBy: rest.endIndex) ?? rest.endIndex
+                    continue
+                }
+                if rest[i] == "\"" { inString.toggle() }
+                if !inString, rest[i] == "]" { return rest.index(after: i) }
+                i = rest.index(after: i)
+            }
+            return nil
+        }
+        // Objects, and lists over several lines, aren't edited in place.
+        if rest[index] == "{" { return nil }
         var i = index
         while i < rest.endIndex, !",/ \t".contains(rest[i]) { i = rest.index(after: i) }
         return i

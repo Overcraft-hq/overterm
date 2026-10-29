@@ -361,8 +361,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         sidebarItem.canCollapse = true
         // The rail is chrome of a fixed width, so the column's minimum is
         // the rail plus a panel that can still be read.
-        sidebarItem.minimumThickness = SidebarRail.minimumSidebarWidth
-        sidebarItem.maximumThickness = 520 + SidebarRail.width
+        Self.sizeSidebar(sidebarItem)
         sidebarItem.holdingPriority = .defaultLow + 10
         // Shown on first launch; after that, as the user left it.
         sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
@@ -1100,8 +1099,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Claude sessions
 
-    /// Sessions or Snippets switched off: the panel on screen gives way to
-    /// Files, and the rail draws its icons again.
+    /// What the rail draws: the panels' order, and the toggles that show them.
+    static let sidebarPanelKeys: Set<String> = [
+        "general.sidebarOrder", "general.sidebarRail", "general.sessions", "general.snippets",
+    ]
+
+    /// The column's limits, from the rail's width — which Compact changes.
+    private static func sizeSidebar(_ item: NSSplitViewItem) {
+        item.minimumThickness = SidebarRail.minimumSidebarWidth
+        item.maximumThickness = 520 + SidebarRail.width
+    }
+
+    func sizeSidebarColumn() {
+        guard let sidebarItem else { return }
+        Self.sizeSidebar(sidebarItem)
+    }
+
+    /// Sessions or Snippets switched off, or the rail reordered: the panel
+    /// on screen gives way to Files if it went, and the rail draws again.
     func sidebarPanelsChanged() {
         if !sidebarPanel.panel.isEnabled { sidebarPanel.panel = .files }
         sidebarPanel.objectWillChange.send()
@@ -3076,7 +3091,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
-                if keys.contains("general.sessions") || keys.contains("general.snippets") { self.sidebarPanelsChanged() }
+                if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
+                if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
                 if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
             }

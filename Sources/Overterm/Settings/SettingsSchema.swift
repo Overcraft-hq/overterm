@@ -6,9 +6,11 @@ enum SettingValue: Equatable, Sendable {
     case int(Int)
     case double(Double)
     case string(String)
+    /// A list of names, in order (`SettingKind.order`).
+    case list([String])
 
     /// From what JSONSerialization made of the file; nil for anything else
-    /// (arrays, objects, null).
+    /// (objects, null, a list holding something other than strings).
     init?(json: Any) {
         if let number = json as? NSNumber {
             if CFGetTypeID(number) == CFBooleanGetTypeID() {
@@ -20,6 +22,8 @@ enum SettingValue: Equatable, Sendable {
             }
         } else if let string = json as? String {
             self = .string(string)
+        } else if let array = json as? [Any], let strings = array as? [String] {
+            self = .list(strings)
         } else {
             return nil
         }
@@ -35,11 +39,15 @@ enum SettingValue: Equatable, Sendable {
             // A one-element array is JSONSerialization's way to escape a string.
             String(decoding: (try? JSONSerialization.data(withJSONObject: [value])) ?? Data("[\"\"]".utf8), as: UTF8.self)
                 .dropFirst().dropLast().description
+        case .list(let values):
+            // On one line, so the file can still be edited in place.
+            "[" + values.map { SettingValue.string($0).json }.joined(separator: ", ") + "]"
         }
     }
 
     var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
     var string: String? { if case .string(let value) = self { value } else { nil } }
+    var list: [String]? { if case .list(let value) = self { value } else { nil } }
     var number: Double? {
         switch self {
         case .int(let value): Double(value)
@@ -53,6 +61,8 @@ enum SettingValue: Equatable, Sendable {
 struct SettingOption: Sendable {
     let value: String
     let label: String
+    /// For an `order`: the toggle that shows this one, if it can be hidden.
+    var toggle: String? = nil
 }
 
 /// What a setting is, and so how Settings shows it and what the file may hold.
@@ -64,6 +74,10 @@ enum SettingKind: Sendable {
     case integer(ClosedRange<Int>, step: Int, unit: String)
     case number(ClosedRange<Double>, step: Double)
     case text(placeholder: String, monospaced: Bool)
+    /// The options in an order of the user's: a list of their values.
+    /// Names it doesn't know are passed over, and options it leaves out
+    /// come last — so a file from another version still reads.
+    case order([SettingOption])
 }
 
 enum SettingSource: Sendable {
@@ -101,6 +115,8 @@ struct SettingSpec: Identifiable, Sendable {
             return nil
         case .dynamicChoice, .text:
             return value.string == nil ? "must be a string" : nil
+        case .order:
+            return value.list == nil ? "must be a list of names, like [\"files\", \"git\"]" : nil
         case .integer(let range, _, _):
             guard case .int(let number) = value, range.contains(number) else {
                 return "must be a whole number from \(range.lowerBound) to \(range.upperBound)"
@@ -178,6 +194,21 @@ enum SettingsSchema {
             help:
                 "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Esc and ⇧⌘E work whatever this says.",
             kind: .choice(TabPeekGesture.Fingers.allCases.map { .init(value: $0.rawValue, label: $0.name) }), defaultValue: .string("three")),
+        SettingSpec(
+            key: "general.sidebarOrder", section: .general, group: "Sidebar", title: "Panels in the rail",
+            help: "Drag to reorder; tick to show. Right-click an icon in the rail to move or hide it there.",
+            kind: .order(SidebarPanel.allCases.map { .init(value: $0.rawValue, label: $0.title, toggle: $0.toggleKey) }),
+            defaultValue: .list(SidebarPanel.allCases.map(\.rawValue))),
+        SettingSpec(
+            key: "general.sidebarStartPanel", section: .general, group: "Sidebar", title: "A new window opens on",
+            help: "The panel the sidebar shows in a new window, or whichever was open last.",
+            kind: .choice([.init(value: "last", label: "The last one open")] + SidebarPanel.allCases.map { .init(value: $0.rawValue, label: $0.title) }),
+            defaultValue: .string("last")),
+        SettingSpec(
+            key: "general.sidebarRail", section: .general, group: "Sidebar", title: "Rail icons",
+            help: "Compact: smaller icons and a narrower rail, which leaves the panel more room.",
+            kind: .choice([.init(value: "regular", label: "Regular"), .init(value: "compact", label: "Compact")]),
+            defaultValue: .string("regular")),
         SettingSpec(
             key: "general.sessions", section: .general, group: "Sidebar", title: "Claude sessions in the sidebar",
             help: "Every conversation run in the repository, to resume. Off: no panel, and nothing reads the transcripts for it.",

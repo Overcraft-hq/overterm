@@ -126,6 +126,54 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(settings.problems.contains { $0.contains("something.else") })
     }
 
+    /// A list (the rail's order) is written on one line, read back as a
+    /// list, and changed in place like any other value — comments kept.
+    func testAListIsWrittenAndEditedInPlace() throws {
+        try write(
+            """
+            {
+              // mine
+              "general.sidebarOrder": ["database", "files"], // db first
+              "general.restoreTabs": false
+            }
+
+            """)
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(settings.value("general.sidebarOrder")?.list, ["database", "files"])
+        settings.set("general.sidebarOrder", .list(["git", "files"]))
+        XCTAssertEqual(
+            text(),
+            """
+            {
+              // mine
+              "general.sidebarOrder": ["git", "files"], // db first
+              "general.restoreTabs": false
+            }
+
+            """)
+        XCTAssertEqual(Settings(url: url, watch: false).value("general.sidebarOrder")?.list, ["git", "files"])
+        settings.set("general.sidebarOrder", .list(SidebarPanel.allCases.map(\.rawValue)))
+        XCTAssertFalse(text().contains("sidebarOrder"), "the default order leaves the file")
+    }
+
+    /// A list where a name or a flag belongs, or anything but names in a
+    /// list, is a problem like any other bad value.
+    func testAListIsCheckedLikeAnyValue() throws {
+        try write(
+            """
+            {
+              "general.sidebarOrder": [1, 2],
+              "general.restoreTabs": ["yes"],
+              "general.sidebarRail": "tiny"
+            }
+            """)
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(settings.problems.count, 3, settings.problems.joined(separator: "\n"))
+        XCTAssertEqual(settings.value("general.sidebarOrder")?.list, SidebarPanel.allCases.map(\.rawValue))
+        XCTAssertTrue(settings.restoreTabs)
+        XCTAssertEqual(SettingValue.list(["a\"b", "c"]).json, #"["a\"b", "c"]"#)
+    }
+
     func testChangesNameTheKeys() throws {
         let settings = Settings(url: url, watch: false)
         var seen: [Set<String>] = []

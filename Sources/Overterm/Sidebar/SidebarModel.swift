@@ -19,7 +19,9 @@ final class SidebarModel: ObservableObject {
     }
 
     init() {
-        let stored = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
+        let last = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
+        // Settings' "A new window opens on": a panel, or the last one open.
+        let stored = SidebarPanel(rawValue: Settings.shared.string("general.sidebarStartPanel")) ?? last
         // Left on the API panel or the notes, then switched off in Settings: Files.
         panel = stored.isEnabled ? stored : .files
     }

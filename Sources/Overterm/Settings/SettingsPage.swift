@@ -256,29 +256,54 @@ private struct SettingRow: View {
     private var enabled: Bool { spec.requires.map { settings.bool($0) } ?? true }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(spec.title).foregroundStyle(theme.text)
-                if let help = spec.help {
-                    Text(help).font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
+        if case .order(let options) = spec.kind {
+            // A list is too tall for the right of the row: it goes under.
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 16) {
+                    description
+                    Spacer(minLength: 12)
+                    reset
                 }
-                Text(verbatim: spec.key).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
+                SettingOrderList(spec: spec, options: options, settings: settings, theme: theme)
             }
+            .padding(.vertical, 10)
+        } else {
+            row
+        }
+    }
+
+    private var description: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(spec.title).foregroundStyle(theme.text)
+            if let help = spec.help {
+                Text(help).font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
+            }
+            Text(verbatim: spec.key).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
+        }
+    }
+
+    private var row: some View {
+        HStack(alignment: .center, spacing: 16) {
+            description
             Spacer(minLength: 12)
             control.disabled(!enabled)
-            Button {
-                settings.set(spec.key, nil)
-            } label: {
-                Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(theme.dimText)
-            .help(spec.defaultValue == nil ? "Back to your Ghostty config" : "Back to the default")
-            .opacity(settings.isSet(spec.key) ? 1 : 0)
-            .disabled(!settings.isSet(spec.key))
+            reset
         }
         .padding(.vertical, 10)
         .opacity(enabled ? 1 : 0.5)
+    }
+
+    private var reset: some View {
+        Button {
+            settings.set(spec.key, nil)
+        } label: {
+            Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(theme.dimText)
+        .help(spec.defaultValue == nil ? "Back to your Ghostty config" : "Back to the default")
+        .opacity(settings.isSet(spec.key) ? 1 : 0)
+        .disabled(!settings.isSet(spec.key))
     }
 
     /// Unset Ghostty settings show what Ghostty uses now.
@@ -340,6 +365,8 @@ private struct SettingRow: View {
         case .text(let placeholder, let monospaced):
             SettingTextField(text: settings.string(spec.key), placeholder: placeholder, monospaced: monospaced) { settings.set(spec.key, .string($0)) }
                 .frame(width: 260)
+        case .order:
+            EmptyView()  // `body` lays the list out under the row
         }
     }
 
@@ -363,6 +390,62 @@ private struct SettingRow: View {
         case "scrollback-limit": GhosttyRuntime.shared.configNumber("scrollback-limit").map { ($0 / 1_000_000).rounded() }
         default: nil
         }
+    }
+}
+
+/// An `order` setting: its options in the user's order, dragged to move,
+/// each with the tick of the toggle that shows it (`SettingOption.toggle`).
+private struct SettingOrderList: View {
+    let spec: SettingSpec
+    let options: [SettingOption]
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+
+    static let rowHeight: CGFloat = 30
+
+    /// The options as the file orders them — `SettingKind.order`'s rule:
+    /// unknown names passed over, the ones left out at the end.
+    private var ordered: [SettingOption] {
+        let names = settings.value(spec.key)?.list ?? []
+        var out: [SettingOption] = []
+        for name in names {
+            guard let option = options.first(where: { $0.value == name }), !out.contains(where: { $0.value == name }) else { continue }
+            out.append(option)
+        }
+        return out + options.filter { option in !out.contains { $0.value == option.value } }
+    }
+
+    var body: some View {
+        let rows = ordered
+        List {
+            ForEach(rows, id: \.value) { option in
+                HStack(spacing: 10) {
+                    Image(systemName: "line.3.horizontal").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    if let toggle = option.toggle {
+                        Toggle("", isOn: Binding(get: { settings.bool(toggle) }, set: { settings.set(toggle, .bool($0)) }))
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                            .help(Text(verbatim: toggle))
+                    } else {
+                        Toggle("", isOn: .constant(true)).toggleStyle(.checkbox).labelsHidden().disabled(true)
+                            .help("Always in the sidebar")
+                    }
+                    Text(option.label).foregroundStyle(option.toggle.map { settings.bool($0) } ?? true ? theme.text : theme.dimText)
+                    Spacer()
+                }
+                .frame(height: Self.rowHeight - 6)
+            }
+            .onMove { from, to in
+                var moved = rows
+                moved.move(fromOffsets: from, toOffset: to)
+                settings.set(spec.key, .list(moved.map(\.value)))
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .scrollDisabled(true)
+        .frame(width: 320, height: CGFloat(rows.count) * Self.rowHeight + 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.dimText.opacity(0.06)))
     }
 }
 

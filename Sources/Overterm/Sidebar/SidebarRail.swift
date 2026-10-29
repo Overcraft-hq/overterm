@@ -47,16 +47,19 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
 /// header is all panel, and the foot is somewhere for the things that
 /// belong to no panel to live.
 struct SidebarRail: View {
+    /// Settings' "Rail icons" is Compact: smaller icons, a narrower rail.
+    @MainActor static var isCompact: Bool { Settings.shared.string("general.sidebarRail") == "compact" }
+
     /// The rail is a fixed width at every sidebar width: it is chrome, not
     /// content.
-    static let width: CGFloat = 44
+    @MainActor static var width: CGFloat { isCompact ? 36 : 44 }
     /// What the panel beside the rail must keep — a file name is unreadable
     /// much under this.
     static let minimumPanelWidth: CGFloat = 176
     /// So the sidebar column's minimum is the two of them, not the panel's
     /// alone: a rail taking its width out of the old minimum truncated
     /// every row.
-    static var minimumSidebarWidth: CGFloat { width + minimumPanelWidth }
+    @MainActor static var minimumSidebarWidth: CGFloat { width + minimumPanelWidth }
 
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var theme: ChromeTheme
@@ -65,11 +68,22 @@ struct SidebarRail: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            ForEach(SidebarPanel.shown) { item in
+            let shown = SidebarPanel.shown
+            ForEach(shown) { item in
                 RailButton(selected: sidebar.panel == item, help: item.title, theme: theme) {
                     sidebar.panel = item
                 } label: {
-                    item.icon(selected: sidebar.panel == item)
+                    item.icon(selected: sidebar.panel == item, compact: Self.isCompact)
+                }
+                .contextMenu {
+                    Button("Move Up") { SidebarPanel.move(item, by: -1) }.disabled(item == shown.first)
+                    Button("Move Down") { SidebarPanel.move(item, by: 1) }.disabled(item == shown.last)
+                    if let key = item.toggleKey {
+                        Divider()
+                        Button("Hide \(item.title)") { Settings.shared.set(key, .bool(false)) }
+                    }
+                    Divider()
+                    Button("Customize Sidebar…") { onSettings() }
                 }
             }
             Spacer(minLength: 8)
@@ -80,7 +94,7 @@ struct SidebarRail: View {
                     case .hide: onClose()
                     }
                 } label: {
-                    Image(systemName: action.symbol).font(.system(size: 14))
+                    Image(systemName: action.symbol).font(.system(size: Self.isCompact ? 12 : 14))
                 }
             }
         }
@@ -103,9 +117,10 @@ private struct RailButton<Label: View>: View {
     @State private var hovering = false
 
     var body: some View {
+        let side: CGFloat = SidebarRail.isCompact ? 26 : 32
         Button(action: action) {
             label
-                .frame(width: 32, height: 32)
+                .frame(width: side, height: side)
                 .background(
                     RoundedRectangle(cornerRadius: 7)
                         .fill(selected ? theme.rowSel : (hovering ? theme.rowHover : .clear))
@@ -118,7 +133,7 @@ private struct RailButton<Label: View>: View {
                     // the bar in half.
                     RoundedRectangle(cornerRadius: 1)
                         .fill(theme.accentText)
-                        .frame(width: 2, height: 18)
+                        .frame(width: 2, height: side * 0.56)
                         .offset(x: -4)
                         .opacity(selected ? 1 : 0)
                 }

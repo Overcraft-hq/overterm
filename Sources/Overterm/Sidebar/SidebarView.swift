@@ -67,19 +67,57 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// The rail's icons: each optional panel's only while Settings has it on.
-    @MainActor static var shown: [SidebarPanel] { allCases.filter(\.isEnabled) }
+    /// The rail's icons, in the user's order (`general.sidebarOrder`): each
+    /// optional panel's only while Settings has it on.
+    @MainActor static var shown: [SidebarPanel] { order.filter(\.isEnabled) }
 
-    @MainActor var isEnabled: Bool {
+    /// Every panel, in the order the rail draws them.
+    @MainActor static var order: [SidebarPanel] { ordered(Settings.shared.value("general.sidebarOrder")?.list ?? []) }
+
+    /// The panels in the order `names` gives: names it doesn't know (or
+    /// gives twice) are passed over, and panels it leaves out keep their
+    /// place at the end — a new panel turns up in an old order.
+    static func ordered(_ names: [String]) -> [SidebarPanel] {
+        var panels: [SidebarPanel] = []
+        for name in names {
+            guard let panel = SidebarPanel(rawValue: name), !panels.contains(panel) else { continue }
+            panels.append(panel)
+        }
+        return panels + allCases.filter { !panels.contains($0) }
+    }
+
+    /// `order` with `panel` moved `offset` places among `visible` — past
+    /// the next one you can see, not a hidden one between the two.
+    static func moving(_ panel: SidebarPanel, by offset: Int, in order: [SidebarPanel], visible: [SidebarPanel]) -> [SidebarPanel] {
+        guard let at = visible.firstIndex(of: panel), visible.indices.contains(at + offset),
+            let from = order.firstIndex(of: panel), let to = order.firstIndex(of: visible[at + offset])
+        else { return order }
+        var moved = order
+        moved.remove(at: from)
+        moved.insert(panel, at: to)
+        return moved
+    }
+
+    /// Moves the panel in the rail and writes the order to settings.json.
+    @MainActor static func move(_ panel: SidebarPanel, by offset: Int) {
+        let moved = moving(panel, by: offset, in: order, visible: shown)
+        Settings.shared.set("general.sidebarOrder", .list(moved.map(\.rawValue)))
+    }
+
+    /// The toggle that shows the panel; nil for Files and Overgit, which
+    /// are always there.
+    var toggleKey: String? {
         switch self {
-        case .api: Settings.shared.apiEnabled
-        case .notes: Settings.shared.notesEnabled
-        case .database: Settings.shared.databaseEnabled
-        case .sessions: Settings.shared.sessionsEnabled
-        case .snippets: Settings.shared.snippetsEnabled
-        default: true
+        case .api: "api.enabled"
+        case .notes: "notes.enabled"
+        case .database: "database.enabled"
+        case .sessions: "general.sessions"
+        case .snippets: "general.snippets"
+        case .files, .git: nil
         }
     }
+
+    @MainActor var isEnabled: Bool { toggleKey.map { Settings.shared.bool($0) } ?? true }
 
     /// What the stored choice means. `worktrees` had an icon of its own
     /// until Overgit took it in; somebody who left the sidebar there finds
@@ -111,12 +149,12 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
 
     /// The glyph as the rail draws it: the open panel's is a shade heavier,
     /// which is all the weight the selection needs beside its bar.
-    @ViewBuilder func icon(selected: Bool) -> some View {
+    @ViewBuilder func icon(selected: Bool, compact: Bool = false) -> some View {
         switch self {
         // Wider than the symbols beside it: a drawn mark with this much
         // air in it reads a size smaller than Apple's do.
-        case .git: OvergitMark().frame(width: 19, height: 19)
-        default: Image(systemName: symbol).font(.system(size: 15, weight: selected ? .semibold : .regular))
+        case .git: OvergitMark().frame(width: compact ? 16 : 19, height: compact ? 16 : 19)
+        default: Image(systemName: symbol).font(.system(size: compact ? 13 : 15, weight: selected ? .semibold : .regular))
         }
     }
 
