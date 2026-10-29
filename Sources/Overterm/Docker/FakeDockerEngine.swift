@@ -1791,3 +1791,144 @@ private final class Ticks: @unchecked Sendable {
         return value
     }
 }
+
+extension FakeDockerEngine {
+    /// What `docker scout cves --format sarif` prints for an image, in
+    /// Scout 1.17's shape: four CVEs, one of each severity — a fix for two,
+    /// none yet for the others. Scout isn't the Engine API: a scenario's
+    /// stub `docker` prints it, and the store's tests read it.
+    static let scoutReport = #"""
+        {
+          "version": "2.1.0",
+          "$schema": "https://json.schemastore.org/sarif-2.1.0-rtm.5.json",
+          "runs": [
+            {
+              "tool": {
+                "driver": {
+                  "fullName": "Docker Scout",
+                  "informationUri": "https://docker.com/products/docker-scout",
+                  "name": "docker scout",
+                  "rules": [
+                    {
+                      "id": "CVE-2024-0727",
+                      "name": "OsPackageVulnerability",
+                      "shortDescription": { "text": "CVE-2024-0727" },
+                      "helpUri": "https://scout.docker.com/v/CVE-2024-0727?s=debian&n=openssl&ns=debian&t=deb&osn=debian&osv=12&vr=%3C3.0.13-1~deb12u1",
+                      "help": {
+                        "text": "Processing a maliciously formatted PKCS12 file may lead OpenSSL to crash, leading to a potential Denial of Service attack.\n",
+                        "markdown": "> Processing a maliciously formatted PKCS12 file may lead OpenSSL to crash.\n\n|                |                   |\n|----------------|-------------------|\n| Package        | pkg:deb/debian/openssl@3.0.11-1~deb12u1 |\n"
+                      },
+                      "properties": {
+                        "affected_version": "<3.0.13-1~deb12u1",
+                        "cvssV3_severity": "CRITICAL",
+                        "fixed_version": "3.0.13-1~deb12u1",
+                        "purls": ["pkg:deb/debian/openssl@3.0.11-1~deb12u1?os_distro=bookworm&os_name=debian&os_version=12"],
+                        "security-severity": "9.1",
+                        "tags": ["CRITICAL"]
+                      }
+                    },
+                    {
+                      "id": "CVE-2023-45853",
+                      "name": "OsPackageVulnerability",
+                      "shortDescription": { "text": "CVE-2023-45853" },
+                      "helpUri": "https://scout.docker.com/v/CVE-2023-45853?s=debian&n=zlib&ns=debian&t=deb&osn=debian&osv=12&vr=%3E%3D1%3A1.2.13.dfsg-1",
+                      "help": {
+                        "text": "MiniZip in zlib through 1.3 has an integer overflow and resultant heap-based buffer overflow in zipOpenNewFileInZip4_64 via a long filename, comment, or extra field.\n\n---\nREJECTED\n",
+                        "markdown": "> MiniZip in zlib through 1.3 has an integer overflow.\n"
+                      },
+                      "properties": {
+                        "affected_version": ">=1:1.2.13.dfsg-1",
+                        "cvssV3_severity": "HIGH",
+                        "fixed_version": "not fixed",
+                        "purls": ["pkg:deb/debian/zlib@1%3A1.2.13.dfsg-1?os_distro=bookworm&os_name=debian&os_version=12"],
+                        "security-severity": "9.8",
+                        "tags": ["HIGH"]
+                      }
+                    },
+                    {
+                      "id": "GHSA-67hx-6x53-jw92",
+                      "name": "NpmPackageVulnerability",
+                      "shortDescription": { "text": "GHSA-67hx-6x53-jw92" },
+                      "helpUri": "https://scout.docker.com/v/GHSA-67hx-6x53-jw92?s=github&n=traverse&ns=%40babel&t=npm&vr=%3C7.23.2",
+                      "help": {
+                        "text": "Babel vulnerable to arbitrary code execution when compiling specifically crafted malicious code.\n",
+                        "markdown": "> Babel vulnerable to arbitrary code execution.\n"
+                      },
+                      "properties": {
+                        "affected_version": "<7.23.2",
+                        "cvssV3_severity": "MEDIUM",
+                        "fixed_version": "7.23.2",
+                        "purls": ["pkg:npm/%40babel/traverse@7.22.5"],
+                        "security-severity": "5.3",
+                        "tags": ["MEDIUM"]
+                      }
+                    },
+                    {
+                      "id": "CVE-2005-2541",
+                      "name": "OsPackageVulnerability",
+                      "shortDescription": { "text": "CVE-2005-2541" },
+                      "helpUri": "https://scout.docker.com/v/CVE-2005-2541?s=debian&n=tar&ns=debian&t=deb&osn=debian&osv=12&vr=%3E%3D1.34%2Bdfsg-1.2",
+                      "help": {
+                        "text": "Tar 1.15.1 does not properly warn the user when extracting setuid or setgid files, which may allow local users or remote attackers to gain privileges.\n",
+                        "markdown": "> Tar 1.15.1 does not properly warn the user when extracting setuid or setgid files.\n"
+                      },
+                      "properties": {
+                        "affected_version": ">=1.34+dfsg-1.2",
+                        "cvssV3_severity": "LOW",
+                        "fixed_version": "not fixed",
+                        "purls": ["pkg:deb/debian/tar@1.34%2Bdfsg-1.2?os_distro=bookworm&os_name=debian&os_version=12"],
+                        "security-severity": "3.1",
+                        "tags": ["LOW"]
+                      }
+                    }
+                  ],
+                  "version": "1.17.1"
+                }
+              },
+              "results": [
+                {
+                  "ruleId": "CVE-2024-0727",
+                  "ruleIndex": 0,
+                  "kind": "fail",
+                  "level": "error",
+                  "message": {
+                    "text": "  Vulnerability   : CVE-2024-0727\n  Severity        : CRITICAL\n  Package         : pkg:deb/debian/openssl@3.0.11-1~deb12u1?os_distro=bookworm&os_name=debian&os_version=12\n  Affected range  : <3.0.13-1~deb12u1\n  Fixed version   : 3.0.13-1~deb12u1\n  EPSS Score      : 0.001210\n  EPSS Percentile : 0.325430\n"
+                  },
+                  "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "/usr/share/doc/openssl/copyright" } } }]
+                },
+                {
+                  "ruleId": "CVE-2023-45853",
+                  "ruleIndex": 1,
+                  "kind": "fail",
+                  "level": "error",
+                  "message": {
+                    "text": "  Vulnerability   : CVE-2023-45853\n  Severity        : HIGH\n  Package         : pkg:deb/debian/zlib@1%3A1.2.13.dfsg-1?os_distro=bookworm&os_name=debian&os_version=12\n  Affected range  : >=1:1.2.13.dfsg-1\n  Fixed version   : not fixed\n  EPSS Score      : 0.004450\n  EPSS Percentile : 0.722530\n"
+                  },
+                  "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "/var/lib/dpkg/status" } } }]
+                },
+                {
+                  "ruleId": "GHSA-67hx-6x53-jw92",
+                  "ruleIndex": 2,
+                  "kind": "fail",
+                  "level": "warning",
+                  "message": {
+                    "text": "  Vulnerability   : GHSA-67hx-6x53-jw92\n  Severity        : MEDIUM\n  Package         : pkg:npm/%40babel/traverse@7.22.5\n  Affected range  : <7.23.2\n  Fixed version   : 7.23.2\n"
+                  },
+                  "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "/app/node_modules/@babel/traverse/package.json" } } }]
+                },
+                {
+                  "ruleId": "CVE-2005-2541",
+                  "ruleIndex": 3,
+                  "kind": "fail",
+                  "level": "note",
+                  "message": {
+                    "text": "  Vulnerability   : CVE-2005-2541\n  Severity        : LOW\n  Package         : pkg:deb/debian/tar@1.34%2Bdfsg-1.2?os_distro=bookworm&os_name=debian&os_version=12\n  Affected range  : >=1.34+dfsg-1.2\n  Fixed version   : not fixed\n  EPSS Score      : 0.000430\n  EPSS Percentile : 0.081120\n"
+                  },
+                  "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "/var/lib/dpkg/status" } } }]
+                }
+              ]
+            }
+          ]
+        }
+        """#
+}

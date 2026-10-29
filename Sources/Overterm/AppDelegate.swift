@@ -86,6 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // A volume's helpers, while a remote engine's forward is still open.
         DockerHelpers.removeAll(waiting: 2)
         DockerSSHForwards.closeAll()
+        // A scan's Scout, or it outlives the app.
+        DockerScoutScans.shared.cancelAll()
         BrowserBridge.shared.stop()
     }
 

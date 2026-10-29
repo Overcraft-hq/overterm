@@ -4,7 +4,7 @@ import Foundation
 /// keyboard — the terminal never sees them, and a list is where a
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
-    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, files, open, database, settings, remove,
+    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, files, open, database, vulnerabilities, settings, remove,
         composeUp, composeUpFreePorts, composeDown, checkUpdates, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models,
         help
 
@@ -39,6 +39,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .files: "f"
         case .open: "o"
         case .database: "d"
+        case .vulnerabilities: "v"
         case .settings: ","
         case .run: "n"
         case .remove: "⌫"
@@ -77,6 +78,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .files: "Files — of the selected container or volume"
         case .open: "Open its first port in the browser"
         case .database: "Open a database container in the Database panel"
+        case .vulnerabilities: "An image's vulnerabilities — Docker Scout, scanned when you press Scan (a container: its image's)"
         case .settings: "Settings… — its memory, CPUs and restart policy, changed in place"
         case .run: "Run an image — the selected one — in a new container; a model, in a chat in a tab"
         case .remove: "Remove (asks first)"

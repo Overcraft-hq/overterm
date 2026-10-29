@@ -129,6 +129,7 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("f"), .files)
         XCTAssertEqual(DockerKey.of("C"), .checkUpdates, "C checks for updates, c cleans up")
         XCTAssertEqual(DockerKey.of("c"), .cleanUp)
+        XCTAssertEqual(DockerKey.of("v"), .vulnerabilities)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -513,6 +514,48 @@ final class DockerPageTests: XCTestCase {
         let settings = page.verbs(for: removing).first { $0.key == DockerKey.settings.key }
         XCTAssertEqual(settings?.unavailable, "Docker is removing it.")
         XCTAssertEqual(page.verbs(for: removing).first { $0.title == "Save as Image…" }?.unavailable, "Docker is removing it.")
+    }
+
+    /// Docker Scout on an image: Scan for Vulnerabilities first in its
+    /// menu, then the tab's three; `v` opens the image's Vulnerabilities
+    /// tab and scans nothing; a page of another engine than the app's has
+    /// a store of its own, which in a test runs no Scout.
+    @MainActor
+    func testAnImagesVulnerabilitiesAreScannedOnlyWhenAsked() throws {
+        let override = DockerCLI.override
+        DockerCLI.override = nil
+        defer { DockerCLI.override = override }
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        XCTAssertFalse(page.scans === DockerScoutScans.shared)
+        var commands: [String] = []
+        page.actions = DockerActions(run: { command, _ in commands.append(command) }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        page.hasScout = true
+        let image = ImageSummary(Id: "sha256:" + String(repeating: "b", count: 64), RepoTags: ["redis:7"], Created: 0, Size: 1)
+        let scout = try XCTUnwrap(page.verbs(for: image).first { $0.title == "Docker Scout" })
+        XCTAssertEqual(
+            scout.children.map(\.title), ["Scan for Vulnerabilities", "Quickview in a Tab", "Vulnerabilities in a Tab", "Base Image Updates in a Tab"])
+        XCTAssertEqual(scout.children.map(\.group), [0, 1, 1, 1], "set apart from the tab's")
+        page.section = .images
+        page.showDetail = false
+        XCTAssertTrue(page.press("v"))
+        XCTAssertTrue(page.showDetail)
+        XCTAssertEqual(page.imageTab, .vulnerabilities)
+        XCTAssertTrue(page.scans.scans.isEmpty, "a key scans nothing")
+        // ↩, out of habit (Logs, in Containers): not the list's here, and
+        // nothing on the tab is the window's default button (the scenario).
+        XCTAssertFalse(page.press("\r"))
+        XCTAssertTrue(page.scans.scans.isEmpty, "nor does Return")
+        scout.children.first?.perform()
+        XCTAssertEqual(page.imageSelection, [image.Id])
+        guard case .failed(.isolated, _) = page.scans.scan(for: image.Id)?.state else {
+            return XCTFail("\(String(describing: page.scans.scan(for: image.Id)))")
+        }
+        page.signInToDocker()
+        XCTAssertEqual(commands, ["docker login"])
+        let untagged = ImageSummary(Id: "sha256:" + String(repeating: "c", count: 64), RepoTags: ["<none>:<none>"], Created: 0, Size: 1)
+        page.scanVulnerabilities(untagged)
+        XCTAssertNil(page.scans.scan(for: untagged.Id), "Scout scans by name")
+        XCTAssertNil(page.verbs(for: untagged).first { $0.title == "Docker Scout" })
     }
 
     /// A project before it runs is watched from its plan: Compose's own

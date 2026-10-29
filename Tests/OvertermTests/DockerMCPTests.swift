@@ -34,9 +34,69 @@ final class DockerMCPTests: XCTestCase {
         fake.stop()
     }
 
-    private func text(_ name: String, _ arguments: [String: Any] = [:]) async throws -> String {
-        let result = try await DockerMCP.call(name, arguments, docker: model)
+    private func text(_ name: String, _ arguments: [String: Any] = [:], scans: DockerScoutScans? = nil) async throws -> String {
+        let result = try await DockerMCP.call(name, arguments, docker: model, scans: scans ?? DockerScoutScans())
         return ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+    }
+
+    /// `docker_vulnerabilities`: a scan the user ran, read — never one
+    /// started for an agent, whatever Settings lets agents do.
+    func testVulnerabilitiesAreTheUsersScan() async throws {
+        let scans = DockerScoutScans()
+        scans.locate = { _ in
+            XCTFail("an agent's question ran docker"); return nil
+        }
+        let before = try await text("docker_vulnerabilities", ["image": "nginx:1.27"], scans: scans)
+        XCTAssertTrue(before.contains("nginx:1.27 hasn't been scanned"), before)
+        XCTAssertTrue(scans.scans.isEmpty, "nothing started")
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/scout-cves.sarif.json")
+        let report = try XCTUnwrap(DockerScoutReport.parse(try String(contentsOf: fixture, encoding: .utf8)))
+        scans.finish("sha256:x", image: "nginx:1.27", .success(report))
+        let after = try await text("docker_vulnerabilities", ["image": "nginx:1.27"], scans: scans)
+        XCTAssertTrue(after.hasPrefix("nginx:1.27 — Docker Scout 1.17.1, scanned just now: 2 critical"), after)
+        XCTAssertTrue(after.contains("CVE-2021-22945 critical 9.1"), after)
+        XCTAssertTrue(after.contains("fixed in 7.74.0-1.3+deb11u2"), after)
+        XCTAssertTrue(after.contains("https://scout.docker.com/v/CVE-2021-22945"), after)
+        XCTAssertLessThan(after.range(of: "GHSA-67hx-6x53-jw92")!.lowerBound, after.range(of: "CVE-2023-5129")!.lowerBound, "the worst first")
+        XCTAssertEqual(scans.scans.count, 1, "and still only the user's")
+        scans.finish("sha256:y", image: "redis:7", .failure(.signedOut))
+        let failed = try await text("docker_vulnerabilities", ["image": "redis:7"], scans: scans)
+        XCTAssertTrue(failed.hasPrefix("The last scan of redis:7 failed: Docker Scout needs you signed in"), failed)
+        do {
+            _ = try await text("docker_vulnerabilities", [:], scans: scans)
+            XCTFail("no image")
+        } catch let error as BrowserMCP.ToolError {
+            XCTAssertTrue(error.message.contains("“image”"), error.message)
+        }
+        let names = DockerMCP.tools.compactMap { $0["name"] as? String }
+        XCTAssertTrue(names.contains("docker_vulnerabilities"))
+        XCTAssertFalse(DockerMCP.writes.contains("docker_vulnerabilities"))
+    }
+
+    /// A long report — 400 findings, Go's long advisory links, as a full
+    /// image has — fits the answer by its end: the image, the totals and
+    /// the critical ones stay, and it says how many more there are.
+    func testALongReportKeepsItsHead() throws {
+        let findings = (0..<400).map { index in
+            let severity: DockerScoutSeverity = index < 100 ? .critical : index < 200 ? .high : index < 300 ? .medium : .low
+            return DockerScoutFinding(
+                vulnerability: "CVE-2024-\(10_000 + index)", severity: severity, score: 9.1,
+                package: DockerScoutPackage(purl: "pkg:golang/golang.org/x/net\(index)@v0.0.0-20220127200216-cd36cc0744dd") ?? DockerScoutPackage(name: "net"),
+                fixedIn: "0.17.0",
+                advisory: URL(
+                    string: "https://scout.docker.com/v/CVE-2024-\(10_000 + index)?s=github&n=net&ns=golang.org%2Fx&t=golang&vr=%3C0.17.0&p="
+                        + String(repeating: "x", count: 80)))
+        }
+        let report = DockerScoutReport(findings: findings, scoutVersion: "1.17.1")
+        let scan = DockerScoutScans.Scan(imageID: "sha256:x", image: "app:latest", state: .done(report, at: Date()))
+        let text = DockerMCP.describeVulnerabilities(scan, image: "app:latest")
+        XCTAssertLessThanOrEqual(text.count, 60_000)
+        XCTAssertTrue(text.hasPrefix("app:latest — Docker Scout 1.17.1, scanned just now: 100 critical, 100 high"), String(text.prefix(200)))
+        let lines = text.split(separator: "\n")
+        XCTAssertTrue(lines[1].hasPrefix("- CVE-2024-10000 critical 9.1: golang.org/x/net0"), String(lines[1]))
+        let shown = lines.filter { $0.hasPrefix("- ") }.count
+        XCTAssertLessThan(shown, 300, "cut by its length")
+        XCTAssertEqual(lines.last.map(String.init), "… and \(400 - shown) more")
     }
 
     /// `docker_image_updates`: the user's last Check for Updates, read —

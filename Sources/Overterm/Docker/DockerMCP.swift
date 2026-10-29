@@ -19,10 +19,19 @@ enum DockerMCP {
 
     /// `updates`: what the user's last Check for Updates found — read,
     /// never asked again: a registry's answer spends the user's pulls.
+    /// `scans`: what Docker Scout found in the images the user scanned —
+    /// read, never started: a scan sends an image's packages away.
     static func call(
-        _ name: String, _ arguments: [String: Any], docker: DockerModel, updates: DockerImageUpdates = .shared
+        _ name: String, _ arguments: [String: Any], docker: DockerModel, updates: DockerImageUpdates = .shared, scans: DockerScoutScans = .shared
     ) async throws -> [String: Any] {
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        // From memory: no engine needed, nothing run.
+        if name == "docker_vulnerabilities" {
+            guard let image = string("image") else {
+                throw BrowserMCP.ToolError(message: "docker_vulnerabilities needs “image” — its name, as the Docker page's Images list it.")
+            }
+            return BrowserMCP.textResult(describeVulnerabilities(scans.scan(matching: image, images: docker.images), image: image))
+        }
         let engine = try await ready(docker)
         func container() throws -> ContainerSummary {
             guard let wanted = string("container") else { throw BrowserMCP.ToolError(message: "\(name) needs “container” — docker_containers lists them.") }
@@ -380,6 +389,29 @@ enum DockerMCP {
         return lines.joined(separator: "\n")
     }
 
+    /// The user's last scan of an image, as Scout found it: the worst
+    /// first, 300 at most and `max` characters at most — the end cut, not
+    /// the head (`bounded` keeps a log's end) — or why there is none.
+    /// Never a scan.
+    static func describeVulnerabilities(_ scan: DockerScoutScans.Scan?, image: String, now: Date = Date(), max: Int = 60_000) -> String {
+        guard let scan else {
+            return "\(image) hasn't been scanned. Docker Scout sends an image's packages to Docker's service, so only the user starts a scan: "
+                + "the Docker page ▸ Images ▸ the image ▸ Vulnerabilities ▸ Scan."
+        }
+        switch scan.state {
+        case .scanning(let since, _):
+            return "Docker Scout is scanning \(scan.image) now (started \(Int(now.timeIntervalSince(since))) s ago)."
+        case .failed(let failure, _):
+            return "The last scan of \(scan.image) failed: \(failure.message)"
+        case .done(let report, let at):
+            let version = report.scoutVersion.map { " \($0)" } ?? ""
+            var text = "\(scan.image) — Docker Scout\(version), scanned \(UsageFormat.age(at, now: now)): \(report.sentence)."
+            let findings = DockerScoutFilter().groups(report.findings).flatMap(\.findings)
+            if !findings.isEmpty { text += "\n" + report.lines(findings, limit: 300, characters: Swift.max(0, max - text.count - 1)) }
+            return text
+        }
+    }
+
     /// Model Runner's models and where a program reaches them — read
     /// from the runner, never `docker model` (which would install one).
     static func describeModels(_ docker: DockerModel, engine: DockerEngine) async throws -> String {
@@ -442,6 +474,10 @@ enum DockerMCP {
                 "docker_image_updates",
                 "Which local images have a newer image under the same tag in their registry, as the user's last Check for Updates found — with when it was checked and which compose services use them. It never asks a registry itself.",
                 ["project": ["type": "string", "description": "Only this compose project's images."]]),
+            tool(
+                "docker_vulnerabilities",
+                "The vulnerabilities Docker Scout found in an image, from a scan the user ran on the Docker page — each CVE with its severity, Scout's score, the package, the version installed, the fixed version and the advisory's link, the worst first. It never scans.",
+                ["image": ["type": "string", "description": "Its name (nginx:1.27) or ID."]], required: ["image"]),
         ]
         if Settings.shared.dockerAgentWrites {
             tools += [
@@ -480,7 +516,7 @@ enum DockerMCP {
     }
 
     static let instructions =
-        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_inspect says when a container runs emulated (an amd64 image on Apple silicon: slow). docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use. docker_image_updates says which images are newer in their registries, as of the user's last Check for Updates — it never asks a registry."
+        "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_inspect says when a container runs emulated (an amd64 image on Apple silicon: slow). docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use. docker_image_updates says which images are newer in their registries, as of the user's last Check for Updates — it never asks a registry. docker_vulnerabilities lists the CVEs Docker Scout found in an image the user scanned — it never starts a scan, which sends the image's packages to Docker's service."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [

@@ -25,6 +25,29 @@ final class GitRunTests: XCTestCase {
         XCTAssertEqual(output, "done\n")
     }
 
+    /// A long tool's progress: stderr handed over as it comes, stdout
+    /// kept whole.
+    func testStderrIsHandedOverAsItComes() async throws {
+        final class Collected: @unchecked Sendable {
+            private let lock = NSLock()
+            private var data = Data()
+            private var pieces = 0
+            func add(_ chunk: Data) {
+                lock.withLock {
+                    data.append(chunk); pieces += 1
+                }
+            }
+            var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
+            var count: Int { lock.withLock { pieces } }
+        }
+        let collected = Collected()
+        let output = try await Git.run(
+            sh, ["-c", "echo one >&2; sleep 0.2; echo two >&2; echo out"], in: tmp, timeout: 20, stderr: { collected.add($0) })
+        XCTAssertEqual(output, "out\n")
+        XCTAssertEqual(collected.text, "one\ntwo\n")
+        XCTAssertGreaterThanOrEqual(collected.count, 2, "as it came, not at the end")
+    }
+
     func testFailureCarriesStderr() async throws {
         do {
             _ = try await Git.run(sh, ["-c", "echo nope >&2; exit 3"], in: tmp)

@@ -601,6 +601,218 @@ extension E2ERunner {
         page.press("1")
     }
 
+    /// Docker Scout's Vulnerabilities tab, as a stub `docker` plays Scout:
+    /// nothing runs in an isolated run without the stub, nor for `v`; Scan
+    /// asks Scout for SARIF of the engine's own copy, for the image's
+    /// platform, on the page's engine; its progress shows, then its CVEs by
+    /// severity, each with its package, the version here and the fix, and
+    /// the filters narrow them; signed out is said, with `docker login` in
+    /// a tab; agents read the user's scan and never start one.
+    private func scoutChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        let scans = page.scans
+        let scanned = fake.addImage("ot/scanned:1", size: 20 << 20)
+        let locked = fake.addImage("ot/private:1", size: 5 << 20)
+        var commands: [String] = []
+        let actions = page.actions
+        let hadScout = page.hasScout
+        let imageTab = page.imageTab
+        let filter = page.scoutFilter
+        let selection = page.selection
+        let override = DockerCLI.override
+        page.actions?.run = { command, _ in commands.append(command) }
+        page.hasScout = true
+        page.scoutFilter = DockerScoutFilter()
+        defer {
+            page.actions = actions
+            page.hasScout = hadScout
+            page.imageTab = imageTab
+            page.scoutFilter = filter
+            page.selection = selection
+            DockerCLI.override = override
+            scans.forget(scanned)
+            scans.forget(locked)
+        }
+        func state(_ id: String) -> DockerScoutScans.State? { scans.scan(for: id)?.state }
+        func described(_ id: String) -> String { scans.scan(for: id).map { "\($0.state)" } ?? "no scan" }
+        func drawn(_ name: String, _ line: (text: String, frame: CGRect)?) async {
+            var detail = line?.text ?? ""
+            if line == nil { detail = await readWindow().map(\.text).joined(separator: " | ") }
+            check(name, line != nil, detail)
+        }
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.press("2")
+        docker.load(.images)
+        guard await eventually(5, { [scanned, locked].allSatisfy { id in docker.images.contains { $0.Id == id } } }),
+            let image = docker.images.first(where: { $0.Id == scanned }), let privateImage = docker.images.first(where: { $0.Id == locked })
+        else { return check("images to scan", false, "\(docker.images.map(\.tags))") }
+
+        DockerCLI.override = nil
+        page.scanVulnerabilities(image)
+        var isolated = false
+        if case .failed(.isolated, _) = state(scanned) { isolated = true }
+        check("no Scout in an isolated run without a stub", isolated, described(scanned))
+        scans.forget(scanned)
+
+        // Scout, as a stub plays it: its progress on stderr, SARIF on stdout.
+        let bin = scratch.appendingPathComponent("scout-stub-bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("docker")
+        let script = """
+            #!/bin/sh
+            dir="$(dirname "$0")"
+            echo "$DOCKER_HOST|$*" >> "$dir/calls"
+            case "$*" in
+              "scout cves --format sarif"*" local://ot/scanned:1")
+                echo '    ✓ SBOM of image already cached, 3 packages indexed' >&2; sleep 1
+                echo '    ✗ Detected 4 vulnerable packages with a total of 4 vulnerabilities' >&2
+                cat "$dir/report.sarif.json" ;;
+              "scout cves --format sarif"*" local://ot/private:1")
+                echo 'Log in with your Docker ID or email address to use docker scout.' >&2; exit 1 ;;
+              *) echo "unexpected: $*" >&2; exit 1 ;;
+            esac
+            """
+        try? FakeDockerEngine.scoutReport.write(to: bin.appendingPathComponent("report.sarif.json"), atomically: true, encoding: .utf8)
+        try? script.write(to: stub, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        func calls() -> [String] {
+            ((try? String(contentsOf: bin.appendingPathComponent("calls"), encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        }
+        DockerCLI.override = stub
+
+        page.imageSelection = [scanned]
+        page.imageTab = .overview
+        page.press("v")
+        check(
+            "v opens an image's Vulnerabilities, scanning nothing",
+            page.showDetail && page.imageTab == .vulnerabilities && scans.scan(for: scanned) == nil && calls().isEmpty, described(scanned))
+        // Return, out of habit (↩ is Logs in Containers), as AppKit routes
+        // it: the page's key monitor, then the window's key equivalents. A
+        // scan takes its button — nothing there is the default one.
+        let intro = await shownText { $0.contains("In a Tab") }
+        _ = await eventually(5) {
+            if !self.app.dockerListHasKeyboard() { self.app.focusDockerList() }
+            return self.app.dockerListHasKeyboard()
+        }
+        if let returnKey = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36), !app.handleDockerKey(returnKey)
+        {
+            _ = window.performKeyEquivalent(with: returnKey)
+        }
+        await pause(0.5)
+        check(
+            "and Return there scans nothing", intro != nil && app.dockerListHasKeyboard() && scans.scan(for: scanned) == nil && calls().isEmpty,
+            "\(intro?.text ?? "no intro drawn") \(described(scanned)) \(calls())")
+        scans.forget(scanned)
+        // A container's `v`: its image's tab.
+        let user = fake.add(name: "ot-scanned-user", image: "ot/scanned:1", imageID: scanned)
+        page.press("1")
+        if await eventually(5, { docker.container(user) != nil }) {
+            page.selection = [user]
+            page.imageTab = .overview
+            page.press("v")
+            check(
+                "on a container, v goes to its image's",
+                page.section == .images && page.imageSelection == [scanned] && page.imageTab == .vulnerabilities && scans.scan(for: scanned) == nil,
+                "\(page.section) \(page.imageSelection)")
+        } else {
+            check("a container of the image", false)
+        }
+        try? await docker.remove(user, force: true)
+        page.press("2")
+        page.imageSelection = [scanned]
+
+        let scout = page.verbs(for: image).first { $0.title == "Docker Scout" }
+        check(
+            "Scan for Vulnerabilities is in its Docker Scout menu", scout?.children.first?.title == "Scan for Vulnerabilities",
+            "\(scout?.children.map(\.title) ?? [])")
+        scout?.children.first?.perform()
+        let progressed = await eventually(5) {
+            if case .scanning(_, let progress) = state(scanned) { return progress == "SBOM of image already cached, 3 packages indexed" }
+            return false
+        }
+        check("a scan says how far Scout has got", progressed, described(scanned))
+        check(
+            "and its verb waits for it",
+            page.verbs(for: image).first { $0.title == "Docker Scout" }?.children.first?.unavailable == "Scanning…")
+        let finished = await eventually(10) { state(scanned)?.report != nil }
+        check(
+            "as SARIF, of the engine's own copy, for its platform, on the page's engine",
+            calls() == ["unix://\(fake.socket)|scout cves --format sarif --platform linux/arm64 local://ot/scanned:1"], "\(calls())")
+        let report = state(scanned)?.report
+        let findings = report?.findings ?? []
+        check(
+            "its CVEs by severity, the worst first", finished && page.scoutFilter.groups(findings).map(\.severity) == [.critical, .high, .medium, .low],
+            described(scanned))
+        let openssl = findings.first { $0.severity == .critical }
+        let zlib = findings.first { $0.package.name == "zlib" }
+        check(
+            "each with its package, the version here and the fix",
+            openssl?.package.displayName == "openssl" && openssl?.package.version == "3.0.11-1~deb12u1" && openssl?.fixedIn == "3.0.13-1~deb12u1"
+                && openssl?.advisory?.host == "scout.docker.com" && zlib?.fixedIn == nil && zlib?.package.version == "1:1.2.13.dfsg-1",
+            "\(String(describing: openssl)) \(String(describing: zlib))")
+        check("and how many packages Scout indexed", report?.packagesIndexed == 3, "\(String(describing: report?.packagesIndexed))")
+        page.showDetail = false
+        await drawn("the image's row says what a scan found", await shownText { $0.contains("1C 1H 1M 1L") })
+        page.showDetail = true
+        page.imageTab = .vulnerabilities
+        await drawn("the tab lists them, by CVE", await shownText { $0.contains("2024-0727") })
+        await capture("vulnerabilities")
+        // The filters, clicked as a person would: what they leave is what
+        // is drawn. zlib's high CVE has no fix; openssl's critical one has.
+        func lists(_ kept: String, not left: String) async -> Bool {
+            let deadline = Date().addingTimeInterval(5)
+            repeat {
+                let lines = await readWindow().map(\.text)
+                if lines.contains(where: { $0.contains(kept) }), !lines.contains(where: { $0.contains(left) }) { return true }
+                await pause(0.3)
+            } while Date() < deadline
+            return false
+        }
+        let unfixed = await shownText { $0.contains("2023-45853") }
+        let fixableBox = await shownText { $0.contains("Fixable only") }
+        if let fixableBox { await click(at: CGPoint(x: fixableBox.frame.midX, y: fixableBox.frame.midY)) }
+        let onlyFixable = await lists("2024-0727", not: "2023-45853")
+        check(
+            "Fixable only leaves out what has no fix", unfixed != nil && page.scoutFilter.fixableOnly && onlyFixable,
+            "\(fixableBox?.text ?? "no checkbox read") \(page.scoutFilter)")
+        page.scoutFilter = DockerScoutFilter()
+        _ = await shownText { $0.contains("2023-45853") }
+        let highChip = await wordFrame("High")
+        if let highChip { await click(at: CGPoint(x: highChip.midX, y: highChip.midY)) }
+        let withoutHigh = await lists("2024-0727", not: "2023-45853")
+        check(
+            "a severity can be left out",
+            !page.scoutFilter.severities.contains(.high) && page.scoutFilter.severities.contains(.critical) && withoutHigh,
+            "\(highChip.map { "\($0)" } ?? "no chip read") \(page.scoutFilter)")
+        page.scoutFilter = DockerScoutFilter()
+
+        page.scanVulnerabilities(privateImage)
+        let signedOut = await eventually(5) {
+            if case .failed(.signedOut, _) = state(locked) { return true }
+            return false
+        }
+        check("signed out, it says so", signedOut, described(locked))
+        await drawn("in so many words", await shownText { $0.contains("signed in to Docker") })
+        page.signInToDocker()
+        check("and signs in in a tab", commands.last == "docker login", commands.last ?? "nothing")
+
+        func told(_ image: String) async -> String {
+            let result = try? await DockerMCP.call("docker_vulnerabilities", ["image": image], docker: docker)
+            return ((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        }
+        let read = await told("ot/scanned:1")
+        check("agents read the user's scan", read.contains("CVE-2024-0727 critical") && read.contains("fixed in 3.0.13-1~deb12u1"), read)
+        let unscanned = await told("debian:bookworm-slim")
+        check("and never start one", unscanned.contains("hasn't been scanned") && calls().count == 2, unscanned + " \(calls())")
+
+        for id in [scanned, locked] { try? await docker.engine?.remove(image: id, force: true) }
+        docker.load(.images)
+        page.press("1")
+    }
+
     /// Check for Updates: each image's registry asked once, only when asked,
     /// through a stub `docker` answering as buildx would — a newer digest an
     /// update, the same one current, a registry wanting credentials said so,
@@ -1683,6 +1895,35 @@ extension E2ERunner {
             let box = observation.boundingBox
             return (text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
         }
+    }
+
+    /// Where `word` is drawn, read again until it shows: its own frame
+    /// within the line Vision reads it in — a row of chips is one line.
+    private func wordFrame(_ word: String, timeout: TimeInterval = 5) async -> CGRect? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if let image = app.windowImage(window) {
+                let pixels = WindowPixels(image: image)
+                let size = window.frame.size
+                if let frame = await Task.detached(operation: { Self.locate(word, in: pixels, size: size) }).value { return frame }
+            }
+            await pause(0.3)
+        } while Date() < deadline
+        return nil
+    }
+
+    nonisolated private static func locate(_ word: String, in pixels: WindowPixels, size: CGSize) -> CGRect? {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: pixels.image).perform([request])
+        for observation in request.results ?? [] {
+            guard let candidate = observation.topCandidates(1).first, let range = candidate.string.range(of: word),
+                let box = (try? candidate.boundingBox(for: range))?.boundingBox
+            else { continue }
+            return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
+        }
+        return nil
     }
 
     /// The window's line of text that `match` picks, read again until it
@@ -3422,6 +3663,7 @@ extension E2ERunner {
         await resourcesChecks(fake)
         await buildsChecks()
         await verbsChecks(fake, web: web)
+        await scoutChecks(fake)
         await imageUpdatesChecks(fake)
         await volumeFilesChecks(fake)
         await settingsChecks(fake, web: web)

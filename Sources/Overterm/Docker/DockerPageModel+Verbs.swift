@@ -396,9 +396,18 @@ extension DockerPageModel {
                     DockerVerb(
                         title: "Docker Scout", symbol: "shield.lefthalf.filled", group: 1,
                         children: [
-                            DockerVerb(title: "Quickview in a Tab", symbol: "eye") { [weak self] in self?.scout("quickview", name) },
-                            DockerVerb(title: "Vulnerabilities in a Tab", symbol: "exclamationmark.shield") { [weak self] in self?.scout("cves", name) },
-                            DockerVerb(title: "Base Image Updates in a Tab", symbol: "arrow.up.circle") { [weak self] in self?.scout("recommendations", name) },
+                            // Here, on its Vulnerabilities tab; the rest in a tab.
+                            DockerVerb(
+                                title: "Scan for Vulnerabilities", symbol: "shield.lefthalf.filled",
+                                unavailable: scans.scan(for: image.Id)?.state.isScanning == true ? "Scanning…" : nil
+                            ) { [weak self] in self?.scanVulnerabilities(image) },
+                            DockerVerb(title: "Quickview in a Tab", symbol: "eye", group: 1) { [weak self] in self?.scout("quickview", name) },
+                            DockerVerb(title: "Vulnerabilities in a Tab", symbol: "exclamationmark.shield", group: 1) { [weak self] in
+                                self?.scout("cves", name)
+                            },
+                            DockerVerb(title: "Base Image Updates in a Tab", symbol: "arrow.up.circle", group: 1) { [weak self] in
+                                self?.scout("recommendations", name)
+                            },
                         ]))
             }
         }

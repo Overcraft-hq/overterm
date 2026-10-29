@@ -77,11 +77,21 @@ struct DockerResourceRow: View {
 
 // MARK: Images
 
+/// An image's detail's tabs: what it is, and what Docker Scout found in it.
+enum DockerImageTab: String, CaseIterable, Identifiable {
+    case overview, vulnerabilities
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
 struct DockerImagesView: View {
     @ObservedObject var page: DockerPageModel
     @ObservedObject var docker: DockerModel
     /// What the registries said: a row's `update`, a detail's Registry.
     @ObservedObject var updates: DockerImageUpdates
+    /// What Scout found: a row's `1C 2H`, the detail's Vulnerabilities.
+    @ObservedObject var scans: DockerScoutScans
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var pullName = ""
@@ -134,7 +144,9 @@ struct DockerImagesView: View {
                             title: image.tags.first ?? "<none>",
                             subtitle: [image.shortID, docker.platforms[image.Id]?.description, image.tags.count > 1 ? "+\(image.tags.count - 1) tags" : nil]
                                 .compactMap { $0 }.joined(separator: " · "),
-                            figures: [users.isEmpty ? "unused" : "\(users.count) container\(users.count == 1 ? "" : "s")", bytes(image.Size), ago(image.Created)],
+                            figures: [scans.scan(for: image.Id)?.state.report?.shortSummary].compactMap { $0 } + [
+                                users.isEmpty ? "unused" : "\(users.count) container\(users.count == 1 ? "" : "s")", bytes(image.Size), ago(image.Created),
+                            ],
                             dim: users.isEmpty, theme: theme, imageID: image.Id, docker: docker,
                             badge: badge(image).map(\.words), badgeHelp: badge(image)?.help
                         )
@@ -151,7 +163,7 @@ struct DockerImagesView: View {
                 .accessibilityIdentifier("docker.images")
                 if page.showDetail, page.imageSelection.count == 1, let image = docker.images.first(where: { page.imageSelection.contains($0.Id) }) {
                     Rectangle().fill(theme.border).frame(width: 1)
-                    DockerImageDetail(image: image, docker: docker, page: page, updates: updates, theme: theme, actions: actions).id(image.Id)
+                    DockerImageDetail(image: image, docker: docker, page: page, updates: updates, scans: scans, theme: theme, actions: actions).id(image.Id)
                         .frame(width: 420)
                 }
             }
@@ -220,78 +232,134 @@ extension DockerImagesView {
     }
 }
 
+/// An image, at the side of the list: what it is — its registry, who uses
+/// it, its layers — or what Docker Scout found in it, a tab each.
 private struct DockerImageDetail: View {
     let image: ImageSummary
     @ObservedObject var docker: DockerModel
     @ObservedObject var page: DockerPageModel
     @ObservedObject var updates: DockerImageUpdates
+    @ObservedObject var scans: DockerScoutScans
     @ObservedObject var theme: ChromeTheme
     let actions: DockerActions
     @State private var layers: [ImageLayer]?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+        let verbs = page.verbs(for: image)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Text(verbatim: image.tags.first ?? "<none>").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
                         .textSelection(.enabled)
                     DockerEmulationBadge(subject: .image(image.Id), docker: docker)
                 }
-                let verbs = page.verbs(for: image)
                 DockerActionBar(verbs: verbs, theme: theme)
-                if let emulation = docker.emulation(ofImage: image.Id) {
-                    DockerEmulationNote(
-                        emulation: emulation, text: emulation.imageAdvice, verb: verbs.first { $0.title == emulation.imageVerbTitle }, theme: theme)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 10)
+            tabs
+            Rectangle().fill(theme.border).frame(height: 1)
+            switch page.imageTab {
+            case .overview:
+                ScrollView {
+                    overview(verbs).padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                DockerDetailBlock(title: "Image", theme: theme) {
-                    DockerDetailRow(key: "ID", value: image.shortID, theme: theme)
-                    if let platform = docker.platforms[image.Id] {
-                        DockerDetailRow(key: "Platform", value: platform.description + (docker.emulation(ofImage: image.Id) != nil ? " — emulated here" : ""), theme: theme)
-                    }
-                    DockerDetailRow(key: "Size", value: bytes(image.Size), theme: theme)
-                    DockerDetailRow(key: "Created", value: ago(image.Created), theme: theme)
-                    ForEach(image.tags.dropFirst(), id: \.self) { DockerDetailRow(key: "Also", value: $0, theme: theme) }
-                }
-                if !image.tags.isEmpty {
-                    DockerDetailBlock(title: "Registry", theme: theme) {
-                        TimelineView(.everyMinute) { _ in
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(image.tags, id: \.self) { tag in
-                                    let line = registryLine(tag)
-                                    DockerDetailRow(key: tag, value: line.words, theme: theme)
-                                    if let digests = line.digests { DockerDetailRow(key: "", value: digests, theme: theme) }
-                                }
+                // Its layers, read while this tab shows.
+                .task(id: image.Id) { layers = (try? await docker.engine?.history(of: image.Id)) ?? [] }
+            case .vulnerabilities:
+                DockerScoutPane(image: image, scans: scans, page: page, theme: theme, actions: actions)
+            }
+        }
+        .accessibilityIdentifier("docker.image.detail")
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 4) {
+            ForEach(DockerImageTab.allCases) { item in
+                Button {
+                    page.imageTab = item
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(item.title)
+                            .font(.system(size: 12, weight: page.imageTab == item ? .semibold : .regular))
+                            .foregroundStyle(page.imageTab == item ? theme.text : theme.text2)
+                        // The worst of it, once scanned.
+                        if item == .vulnerabilities, let report = scans.scan(for: image.Id)?.state.report {
+                            let worst = report.count(.critical) + report.count(.high)
+                            if worst > 0 {
+                                Text(verbatim: "\(worst)").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(TabStatusStyle.failed)
+                                    .padding(.horizontal, 5).frame(height: 15)
+                                    .background(Capsule().fill(TabStatusStyle.failed.opacity(0.14)))
+                                    .help("Critical and high")
                             }
                         }
                     }
-                    .accessibilityIdentifier("docker.image.registry")
+                    .padding(.horizontal, 9)
+                    .frame(height: 24)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(page.imageTab == item ? theme.selected : .clear))
+                    .contentShape(Rectangle())
                 }
-                let users = docker.containers(using: image)
-                if !users.isEmpty {
-                    DockerDetailBlock(title: "Used by", theme: theme) {
-                        ForEach(users) { DockerDetailRow(key: $0.name, value: DockerStatusStyle.status($0), theme: theme) }
-                    }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("docker.image.tab.\(item.rawValue)")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    private func overview(_ verbs: [DockerVerb]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let emulation = docker.emulation(ofImage: image.Id) {
+                DockerEmulationNote(
+                    emulation: emulation, text: emulation.imageAdvice, verb: verbs.first { $0.title == emulation.imageVerbTitle }, theme: theme)
+            }
+            DockerDetailBlock(title: "Image", theme: theme) {
+                DockerDetailRow(key: "ID", value: image.shortID, theme: theme)
+                if let platform = docker.platforms[image.Id] {
+                    DockerDetailRow(key: "Platform", value: platform.description + (docker.emulation(ofImage: image.Id) != nil ? " — emulated here" : ""), theme: theme)
                 }
-                DockerDetailBlock(title: "Layers", theme: theme) {
-                    if let layers {
-                        ForEach(Array(layers.enumerated()), id: \.offset) { _, layer in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(verbatim: bytes(layer.Size)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
-                                    .frame(width: 70, alignment: .trailing)
-                                Text(verbatim: Self.step(layer.CreatedBy)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text)
-                                    .lineLimit(2).textSelection(.enabled)
+                DockerDetailRow(key: "Size", value: bytes(image.Size), theme: theme)
+                DockerDetailRow(key: "Created", value: ago(image.Created), theme: theme)
+                ForEach(image.tags.dropFirst(), id: \.self) { DockerDetailRow(key: "Also", value: $0, theme: theme) }
+            }
+            if !image.tags.isEmpty {
+                DockerDetailBlock(title: "Registry", theme: theme) {
+                    TimelineView(.everyMinute) { _ in
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(image.tags, id: \.self) { tag in
+                                let line = registryLine(tag)
+                                DockerDetailRow(key: tag, value: line.words, theme: theme)
+                                if let digests = line.digests { DockerDetailRow(key: "", value: digests, theme: theme) }
                             }
                         }
-                    } else {
-                        ProgressView().controlSize(.small)
                     }
+                }
+                .accessibilityIdentifier("docker.image.registry")
+            }
+            let users = docker.containers(using: image)
+            if !users.isEmpty {
+                DockerDetailBlock(title: "Used by", theme: theme) {
+                    ForEach(users) { DockerDetailRow(key: $0.name, value: DockerStatusStyle.status($0), theme: theme) }
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            DockerDetailBlock(title: "Layers", theme: theme) {
+                if let layers {
+                    ForEach(Array(layers.enumerated()), id: \.offset) { _, layer in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(verbatim: bytes(layer.Size)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                                .frame(width: 70, alignment: .trailing)
+                            Text(verbatim: Self.step(layer.CreatedBy)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text)
+                                .lineLimit(2).textSelection(.enabled)
+                        }
+                    }
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
         }
-        .task(id: image.Id) { layers = (try? await docker.engine?.history(of: image.Id)) ?? [] }
-        .accessibilityIdentifier("docker.image.detail")
     }
 
     static func step(_ createdBy: String) -> String { DockerImageDetailSteps.step(createdBy) }

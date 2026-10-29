@@ -222,7 +222,7 @@ struct DockerPageView: View {
             Rectangle().fill(theme.border).frame(height: 1)
             switch docker.connection {
             case .running where page.section == .images:
-                DockerImagesView(page: page, docker: docker, updates: updates, theme: theme, actions: actions)
+                DockerImagesView(page: page, docker: docker, updates: updates, scans: page.scans, theme: theme, actions: actions)
             case .running where page.section == .volumes: DockerVolumesView(page: page, docker: docker, theme: theme, actions: actions)
             case .running where page.section == .networks: DockerNetworksView(page: page, docker: docker, theme: theme, actions: actions)
             case .running where page.section == .builds: DockerBuildsView(page: page, theme: theme, actions: actions)

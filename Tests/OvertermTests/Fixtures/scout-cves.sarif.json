@@ -1,0 +1,309 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0-rtm.5.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "fullName": "Docker Scout",
+          "informationUri": "https://docker.com/products/docker-scout",
+          "name": "docker scout",
+          "rules": [
+            {
+              "id": "CVE-2021-22945",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2021-22945"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2021-22945?s=debian&n=curl",
+              "help": {
+                "text": "When curl >= 7.7.0 and <= 7.78.0 is used with an MQTT server, the code that handles the CONNACK response can free a pointer twice when the server sends a malformed one: a double free in the MQTT sending function, which a malicious server can use to crash the client or, in some configurations, worse. The flaw is in lib/mqtt.c, where the send buffer is freed and then referenced again after a short write, so that a second call frees it once more. Applications that never speak MQTT are not affected, but the code is built into most distributions' libcurl.\n\n|                |                   |\n|----------------|-------------------|\n| Package        | curl |\n| Affected range | <7.74.0-1.3+deb11u2 |\n",
+                "markdown": "> When curl >= 7.7.0 and <= 7.78.0 is used with an MQTT server, the code that handles the CONNACK response can free a pointer twice when the server sends a malformed one: a double free in the MQTT sending function, which a malicious server can use to crash the client or, in some configurations, worse. The flaw is in lib/mqtt.c, where the send buffer is freed and then referenced again after a short write, so that a second call frees it once more. Applications that never speak MQTT are not affected, but the code is built into most distributions' libcurl.\n"
+              },
+              "properties": {
+                "affected_version": "<7.74.0-1.3+deb11u2",
+                "cvssV3_severity": "CRITICAL",
+                "fixed_version": "7.74.0-1.3+deb11u2",
+                "purls": [
+                  "pkg:deb/debian/curl@7.74.0-1.3%2Bdeb11u1?os_distro=bullseye&os_name=debian&os_version=11"
+                ],
+                "security-severity": "9.1",
+                "tags": [
+                  "CRITICAL"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2023-44487",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2023-44487"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2023-44487?s=debian&n=nghttp2",
+              "help": {
+                "text": "The HTTP/2 protocol allows a denial of service (server resource consumption) because request cancellation can reset many streams quickly, as exploited in the wild in August through October 2023.\n",
+                "markdown": "> The HTTP/2 protocol allows a denial of service (server resource consumption) because request cancellation can reset many streams quickly, as exploited in the wild in August through October 2023.\n"
+              },
+              "properties": {
+                "affected_version": "<1.43.0-1+deb11u1",
+                "cvssV3_severity": "LOW",
+                "fixed_version": "1.43.0-1+deb11u1",
+                "purls": [
+                  "pkg:deb/debian/nghttp2@1.43.0-1?os_distro=bullseye&os_name=debian&os_version=11",
+                  "pkg:deb/debian/nginx@1.21.6-1~bullseye?os_distro=bullseye&os_name=debian&os_version=11"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "LOW"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2023-4039",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2023-4039"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2023-4039?s=debian&n=shadow",
+              "help": {
+                "text": "A flaw in shadow's useradd lets a local user read another's password hash in a narrow race.\n",
+                "markdown": "> A flaw in shadow's useradd lets a local user read another's password hash in a narrow race.\n"
+              },
+              "properties": {
+                "affected_version": ">=1:4.8.1-1",
+                "cvssV3_severity": "LOW",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:deb/debian/shadow@1%3A4.8.1-1?os_distro=bullseye&os_name=debian&os_version=11"
+                ],
+                "security-severity": "3.3",
+                "tags": [
+                  "LOW"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2023-5129",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2023-5129"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2023-5129?s=debian&n=libwebp",
+              "help": {
+                "text": "This CVE ID has been rejected or withdrawn by its CVE Numbering Authority as a duplicate of CVE-2023-4863.\n\n---\nREJECTED\n",
+                "markdown": "> This CVE ID has been rejected or withdrawn by its CVE Numbering Authority as a duplicate of CVE-2023-4863.\n"
+              },
+              "properties": {
+                "affected_version": ">=0.6.1-2.1",
+                "cvssV3_severity": "UNSPECIFIED",
+                "fixed_version": "not fixed",
+                "purls": [
+                  "pkg:deb/debian/libwebp@0.6.1-2.1?os_distro=bullseye&os_name=debian&os_version=11"
+                ],
+                "security-severity": "3.1",
+                "tags": [
+                  "UNSPECIFIED"
+                ]
+              }
+            },
+            {
+              "id": "GHSA-67hx-6x53-jw92",
+              "name": "NpmPackageVulnerability",
+              "shortDescription": {
+                "text": "GHSA-67hx-6x53-jw92"
+              },
+              "helpUri": "https://scout.docker.com/v/GHSA-67hx-6x53-jw92?s=github&n=traverse&ns=%40babel&t=npm&vr=%3C7.23.2",
+              "help": {
+                "text": "Babel vulnerable to arbitrary code execution when compiling specifically crafted malicious code.\n",
+                "markdown": "> Babel vulnerable to arbitrary code execution when compiling specifically crafted malicious code.\n"
+              },
+              "properties": {
+                "affected_version": "<7.23.2",
+                "cvssV3_severity": "CRITICAL",
+                "fixed_version": "7.23.2",
+                "purls": [
+                  "pkg:npm/%40babel/traverse@7.22.5"
+                ],
+                "security-severity": "9.3",
+                "tags": [
+                  "CRITICAL"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2023-45288",
+              "name": "GolangPackageVulnerability",
+              "shortDescription": {
+                "text": "CVE-2023-45288"
+              },
+              "helpUri": "https://scout.docker.com/v/CVE-2023-45288?s=debian&n=net",
+              "help": {
+                "text": "An attacker may cause an HTTP/2 endpoint to read arbitrary amounts of header data by sending an excessive number of CONTINUATION frames.\n",
+                "markdown": "> An attacker may cause an HTTP/2 endpoint to read arbitrary amounts of header data by sending an excessive number of CONTINUATION frames.\n"
+              },
+              "properties": {
+                "affected_version": "<0.23.0",
+                "cvssV3_severity": "MEDIUM",
+                "fixed_version": "0.23.0",
+                "purls": [
+                  "pkg:golang/golang.org/x/net@v0.17.0"
+                ],
+                "security-severity": "5.3",
+                "tags": [
+                  "MEDIUM"
+                ]
+              }
+            }
+          ],
+          "version": "1.17.1"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-2021-22945",
+          "ruleIndex": 0,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "  Vulnerability   : CVE-2021-22945\n  Severity        : CRITICAL\n  Package         : pkg:deb/debian/curl@7.74.0-1.3%2Bdeb11u1?os_distro=bullseye&os_name=debian&os_version=11\n  Affected range  : <7.74.0-1.3+deb11u2\n  Fixed version   : 7.74.0-1.3+deb11u2\n  EPSS Score      : 0.004700\n  EPSS Percentile : 0.749730\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/share/doc/curl/copyright"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2021-22945",
+          "ruleIndex": 0,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "  Vulnerability   : CVE-2021-22945\n  Severity        : CRITICAL\n  Package         : pkg:deb/debian/curl@7.74.0-1.3%2Bdeb11u1?os_distro=bullseye&os_name=debian&os_version=11\n  Affected range  : <7.74.0-1.3+deb11u2\n  Fixed version   : 7.74.0-1.3+deb11u2\n  EPSS Score      : 0.004700\n  EPSS Percentile : 0.749730\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/var/lib/dpkg/status"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2023-44487",
+          "ruleIndex": 1,
+          "kind": "fail",
+          "level": "note",
+          "message": {
+            "text": "  Vulnerability   : CVE-2023-44487\n  Severity        : LOW\n  Package         : pkg:deb/debian/nghttp2@1.43.0-1?os_distro=bullseye&os_name=debian&os_version=11\n  Affected range  : <1.43.0-1+deb11u1\n  Fixed version   : 1.43.0-1+deb11u1\n  EPSS Score      : 0.817350\n  EPSS Percentile : 0.998330\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/var/lib/dpkg/status"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2023-44487",
+          "ruleIndex": 1,
+          "kind": "fail",
+          "level": "note",
+          "message": {
+            "text": "  Vulnerability   : CVE-2023-44487\n  Severity        : LOW\n  Package         : pkg:deb/debian/nginx@1.21.6-1~bullseye?os_distro=bullseye&os_name=debian&os_version=11\n  Affected range  : >=1.18.0-6.1+deb11u3\n  Fixed version   : not fixed\n  EPSS Score      : 0.817350\n  EPSS Percentile : 0.998330\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/var/lib/dpkg/status"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2023-4039",
+          "ruleIndex": 2,
+          "kind": "fail",
+          "level": "note",
+          "message": {
+            "text": "  Vulnerability   : CVE-2023-4039\n  Severity        : LOW\n  Package         : pkg:deb/debian/shadow@1%3A4.8.1-1?os_distro=bullseye&os_name=debian&os_version=11\n  Affected range  : >=1:4.8.1-1\n  Fixed version   : not fixed\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/var/lib/dpkg/status"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2023-5129",
+          "ruleIndex": 3,
+          "kind": "fail",
+          "level": "none",
+          "message": {
+            "text": "  Vulnerability   : CVE-2023-5129\n  Severity        : UNSPECIFIED\n  Package         : pkg:deb/debian/libwebp@0.6.1-2.1?os_distro=bullseye&os_name=debian&os_version=11\n  Affected range  : >=0.6.1-2.1\n  Fixed version   : not fixed\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/var/lib/dpkg/status"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "GHSA-67hx-6x53-jw92",
+          "ruleIndex": 4,
+          "kind": "fail",
+          "level": "error",
+          "message": {
+            "text": "  Vulnerability   : GHSA-67hx-6x53-jw92\n  Severity        : CRITICAL\n  Package         : pkg:npm/%40babel/traverse@7.22.5\n  Affected range  : <7.23.2\n  Fixed version   : 7.23.2\n  EPSS Score      : 0.005440\n  EPSS Percentile : 0.773070\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/app/node_modules/@babel/traverse/package.json"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2023-45288",
+          "ruleIndex": 5,
+          "kind": "fail",
+          "level": "warning",
+          "message": {
+            "text": "  Vulnerability   : CVE-2023-45288\n  Severity        : MEDIUM\n  Package         : pkg:golang/golang.org/x/net@v0.17.0\n  Affected range  : <0.23.0\n  Fixed version   : 0.23.0\n  EPSS Score      : 0.000540\n  EPSS Percentile : 0.215210\n"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/usr/local/bin/app"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

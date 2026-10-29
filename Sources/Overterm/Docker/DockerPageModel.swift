@@ -227,6 +227,13 @@ final class DockerPageModel: ObservableObject {
     /// What the registries said of the images (Check for Updates): the
     /// app's, for the app's engine.
     let updates: DockerImageUpdates
+    /// What Docker Scout found in the images the user scanned: the app's,
+    /// for the app's engine.
+    let scans: DockerScoutScans
+    /// An image's detail's tab, kept from one image to the next.
+    @Published var imageTab: DockerImageTab = .overview
+    /// What its Vulnerabilities tab lists, kept from one image to the next.
+    @Published var scoutFilter = DockerScoutFilter()
 
     private var streams: AnyCancellable?
     private var volumeStreams: AnyCancellable?
@@ -236,12 +243,16 @@ final class DockerPageModel: ObservableObject {
     /// The resource this page holds the model to (`DockerModel.want`).
     private var wanted: DockerModel.Resource?
 
-    /// `updates`: the app's for the app's engine; another engine's (a
-    /// test's) gets its own, which asks no registry.
-    init(docker: DockerModel = .shared, ports: ComposePortStore = .shared, updates: DockerImageUpdates? = nil) {
+    /// `updates`, `scans`: the app's for the app's engine; another
+    /// engine's (a test's) gets its own, which asks no registry and runs
+    /// no Scout.
+    init(
+        docker: DockerModel = .shared, ports: ComposePortStore = .shared, updates: DockerImageUpdates? = nil, scans: DockerScoutScans? = nil
+    ) {
         self.docker = docker
         self.ports = ports
         self.updates = updates ?? (docker === DockerModel.shared ? .shared : DockerImageUpdates(docker: docker, cli: { _ in nil }))
+        self.scans = scans ?? (docker === DockerModel.shared ? .shared : DockerScoutScans())
         // A section on screen is read, and kept current, while it shows.
         wanting = $section.combineLatest($visible)
             .sink { [weak self] section, visible in
@@ -781,6 +792,14 @@ final class DockerPageModel: ObservableObject {
             if let url = selected.compactMap({ docker.ports(of: $0).first?.url }).first { actions?.open(url) }
         case .database:
             if let container = selected.first { openInDatabase(container) }
+        case .vulnerabilities:
+            // Its image's tab, as it stands: nothing is scanned for a key.
+            if let id = selected.compactMap(\.ImageID).first(where: { !$0.isEmpty }) {
+                section = .images
+                imageSelection = [id]
+                showDetail = true
+                imageTab = .vulnerabilities
+            }
         case .settings:
             // As its verb: not for one Docker is removing.
             if let container = detailed ?? selected.first, let verb = verbs(for: container).first(where: { $0.key == DockerKey.settings.key }),
@@ -835,6 +854,10 @@ final class DockerPageModel: ObservableObject {
             return true
         case .details where section == .builds:
             showDetail = true
+            return true
+        case .vulnerabilities where section == .images:
+            showDetail = true
+            imageTab = .vulnerabilities
             return true
         case .checkUpdates where section == .images:
             let selected = docker.images.filter { imageSelection.contains($0.Id) }

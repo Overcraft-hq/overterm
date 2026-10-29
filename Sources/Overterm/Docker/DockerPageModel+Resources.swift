@@ -188,6 +188,22 @@ extension DockerPageModel {
         actions?.run(DockerCommands.scout(verb, image: image, endpoint: docker.endpoint), nil)
     }
 
+    /// Scan for Vulnerabilities, Scan: the image's Vulnerabilities tab, and
+    /// Scout asked of it by its name — pressed, never by itself.
+    func scanVulnerabilities(_ image: ImageSummary) {
+        guard let name = image.tags.first else { return }
+        imageSelection = [image.Id]
+        showDetail = true
+        imageTab = .vulnerabilities
+        scans.scan(imageID: image.Id, name: name, endpoint: docker.endpoint, engine: docker.engine, platform: docker.platforms[image.Id])
+    }
+
+    func cancelScan(_ image: ImageSummary) { scans.cancel(image.Id) }
+
+    /// `docker login` in a tab: the credentials are the CLI's, in its
+    /// config.json, whichever engine.
+    func signInToDocker() { actions?.run("docker login", nil) }
+
     // MARK: MCP Toolkit
 
     func loadMCPToolkit() {

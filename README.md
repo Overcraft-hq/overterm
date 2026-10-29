@@ -170,8 +170,8 @@ with none, `q` a database's own client — psql, mysql, redis-cli,
 mongosh — signed in from its environment without the password on the
 command line, `t` follows its logs, `f` its files, `o` opens its
 port, `u` and `D` bring a project up and down — in a terminal tab, where you
-see the command. Filter with `status:running project:api port:5432 is:test`;
-`?` lists the keys. `n` runs an image with a window that writes the
+see the command — and `v` shows an image's vulnerabilities. Filter with
+`status:running project:api port:5432 is:test`; `?` lists the keys. `n` runs an image with a window that writes the
 `docker run` as you fill it in; any container copies as the `docker run`
 that would make it again. A compose project's services' logs are merged as
 `compose logs` merges them, each service in its colour. Containers
@@ -212,8 +212,12 @@ failed and why, each one's output, Dockerfile warnings with their line,
 the Dockerfile a click away — and the plain log in a tab. Models lists Docker Model Runner's local
 LLMs — which are loaded, what they take — with a chat with one in a tab
 and the OpenAI base URL to give your code. An `ssh://` context reaches a
-remote engine through your own ssh, its ports opening on the host. Docker
-Scout looks an image over in a tab. With Docker's MCP Toolkit, the page
+remote engine through your own ssh, its ports opening on the host. An
+image's Vulnerabilities tab asks Docker Scout when you press Scan — it
+sends the image's package list to Docker's service, signed in as you — and
+lists its CVEs by severity: the package, the version you have, the one that
+fixes it, the advisory a click away; filter to the severities you care
+about, or to what can be fixed. With Docker's MCP Toolkit, the page
 says whether Claude Code and Codex reach its MCP servers, and connects
 them in a tab. The rail's shippingbox keeps the
 selected tab's checkout's stack beside the terminal — before it runs too:
@@ -248,8 +252,9 @@ container Overterm runs only while the tab shows.
 
 Claude Code started in Overterm can read Docker too, through MCP: the
 containers and compose projects, a container's logs, why it failed, what
-it uses — secrets kept out. Starting, stopping, changing a container's
-limits, compose and exec are asked about in the window each time, and
+it uses, and the vulnerabilities of an image you scanned — secrets kept
+out. Starting, stopping, changing a container's limits, compose and exec
+are asked about in the window each time, and
 Settings ▸ Docker can take them away.
 
 ### And the work around the work

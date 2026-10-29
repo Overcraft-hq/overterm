@@ -66,14 +66,16 @@ struct DockerCLI: Sendable {
     /// Runs it, its output back. `env` sets the engine (its context or
     /// host) and a PATH with the tool's own folder, where `docker` finds
     /// its credential helpers and plugins. `folder`: where it runs —
-    /// `compose` reads the files there.
+    /// `compose` reads the files there. `stderr`: what it says there, as
+    /// it comes, while stdout is kept whole (Scout's progress, then its
+    /// report).
     func run(
         _ arguments: [String], in folder: URL = FileManager.default.homeDirectoryForCurrentUser, success: Set<Int32> = [0],
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 30, stderr: (@Sendable (Data) -> Void)? = nil
     ) async throws -> String {
         try await Git.run(
             URL(fileURLWithPath: "/usr/bin/env"), Self.environment(for: endpoint, executable: executable) + [executable.path] + arguments,
-            in: folder, success: success, timeout: timeout)
+            in: folder, success: success, timeout: timeout, stderr: stderr)
     }
 
     enum Output: Sendable { case stdout, stderr }

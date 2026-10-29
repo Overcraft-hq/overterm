@@ -1253,7 +1253,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Compose resolves it (`compose config`, run in the checkout:
   `DockerCLI.run(in:)`). Found where installers put it (an app from the
   Dock has none of it on its PATH), run through `Git.run`, told the context
-  or host Overterm uses.
+  or host Overterm uses. Its stderr can be followed as it comes, while its
+  stdout is kept whole (Scout's progress, then its report).
 - **The model** (`DockerModel`, one for the app): whether the engine
   answers, its containers, the compose projects among them
   (`ComposeProjects` — Compose's only record is its labels; a checkout's
@@ -1513,10 +1514,39 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   first and is the runner's `DELETE /models/…`. The header copies the
   OpenAI-compatible base URL for a container and, for a runner
   container, for this Mac; agents get the same in `docker_models`.
-- **Docker Scout**: an image's menu runs `docker scout quickview`, `cves`
-  or `recommendations` in a terminal tab, when the plugin is there
-  (`DockerCLI.hasPlugin`, the CLI's plugin folders) — never by itself: it
-  sends the image's packages to Docker's service, signed in as the user.
+- **Vulnerabilities** (`DockerScout`, pure; `DockerScoutScans`;
+  `DockerScoutView`): an image's detail has two tabs, Overview and
+  Vulnerabilities. A scan is `docker scout cves --format sarif
+  local://<name>` through `DockerCLI`, and it runs only when Scan is
+  pressed (or the image's Scan for Vulnerabilities): Scout sends the
+  image's packages to Docker's service, signed in as the user. `v` and
+  the tab itself run nothing, and Scan is no default button: Return is
+  the page's ↩, pressed out of habit. `local://` scans the engine's own copy and
+  never asks a registry; `--platform` is the image's own, when its
+  inspect says one. A scan may take ten minutes at most. The last line
+  Scout writes on stderr is its progress (`Git.run` hands stderr over as
+  it comes, while stdout is kept whole), and Cancel stops the process.
+  SARIF, because its rules carry the fixed version, the affected range,
+  the package URLs, the severity, a score and the advisory's link;
+  GitLab's format gives the fix only as prose, and `cves` has no json.
+  One rule covers every package a CVE is in, but its properties describe
+  only the first package, so each result's message wins
+  (CVE-2023-44487 is fixed in nghttp2 but not in nginx). Older Scouts
+  write no package URLs (`name version`), and text after the JSON is
+  tolerated (scout-cli#78). Every field is read on its own, and a wrong
+  type is ignored, never fatal. `security-severity` is the advisory's CVSS
+  where it has one, but Scout puts 3.1 where there is none: the page calls
+  it Scout's score, never CVSS, and hides it for Unspecified. Scans are
+  kept in memory for the app, by image ID: a rebuilt image starts
+  unscanned, two windows show the same scan, and the Images list's row
+  says `1C 2H 5M`. Signed out is said so, with `docker login` in a tab;
+  a missing plugin, an image the engine doesn't have and the timeout are
+  said in words too, and anything else is Scout's own last lines, with
+  Run in a Tab. An isolated run or a test process never runs the real
+  Scout (`DockerScout.mayRunReal`); a scenario's stub runs through
+  `DockerCLI.override`. Quitting cancels every scan. The three "in a
+  Tab" verbs stay in the image's Docker Scout menu (`quickview`, `cves`,
+  `recommendations`), when the plugin is there (`DockerCLI.hasPlugin`).
 - **MCP Toolkit** (`DockerMCPToolkit`, pure but for `read`): whether
   Claude Code and Codex reach Docker's MCP gateway — `docker mcp client
   ls --global --json`, which reads their config files and nothing else,
@@ -1994,7 +2024,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `docker_exec` act, each asked about in the window first (`allow`; a
   test answers through `askOverride`), compose up, rebuild (`up --build`)
   and down in a terminal tab the user sees. `docker_compose` takes a
-  `service` too, for all but down. Settings ▸ Docker ▸ Agents: reading, and asking to
+  `service` too, for all but down. `docker_vulnerabilities` reads a scan
+  the user ran (from memory, without the engine) and never starts one,
+  even with agents allowed to act. A name means the image that holds it
+  now: after a rebuild the old image's report is not the image's. A long
+  list is cut at its end, never its head — the worst come first. Settings ▸ Docker ▸ Agents: reading, and asking to
   act — on by default, as decided. No secret leaves in an answer: env
   values that look like secrets are masked, and their values taken out of
   logs and exec output.
@@ -2020,7 +2054,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **Keys** (`DockerKey`, a pure table, `?` shows it): single letters while
   the list's table has the keyboard — `s` start/stop, `r` restart, `p`
   pause, `e` a shell, `t` logs followed, `o` its port, `u`/`D` compose
-  up/down, `b` rebuild, `w` watch, `⌫` remove, `/` the filter. The window's key monitor
+  up/down, `b` rebuild, `w` watch, `v` an image's vulnerabilities (on a
+  container, its image's; nothing is scanned for a key), `⌫` remove, `/`
+  the filter. The window's key monitor
   (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
   and an AppKit table would eat letters for type-select.
 - **The switcher** (⇧⌥⌘P): the palette scoped to its Docker group —
@@ -2067,6 +2103,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   rather than types what would reach a real `docker`; a stub `docker`
   answers `compose config` for the scenario (a checkout's plan, a
   project's watch and profiles), and plays Compose before 2.35 too.
+  Scout's SARIF is a fixture written after real 1.17 reports
+  (`Fixtures/scout-cves.sarif.json`) and the fake's `scoutReport`, which
+  a stub `docker` prints with its progress, for the store's tests and the
+  scenario; a stub signed out, a slow one and a timeout are tested too.
 
 ## Simulator
 
