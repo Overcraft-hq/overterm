@@ -112,6 +112,83 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertFalse(inspect.contains("hunter2") || inspect.contains("s3cr3t"), inspect)
     }
 
+    /// Why a container was killed or is slow: its limits and restart
+    /// policy, said with the rest — no secret with them.
+    func testInspectSaysItsLimits() async throws {
+        fake.setHostConfig(web) {
+            $0.Memory = 512 << 20
+            $0.NanoCpus = 1_500_000_000
+            $0.RestartPolicy = .init(Name: "unless-stopped", MaximumRetryCount: 0)
+        }
+        let inspect = try await text("docker_inspect", ["container": "shop-web-1"])
+        XCTAssertTrue(inspect.contains("Limits: memory \(DockerBytes.string(512 << 20, memory: true)), 1.5 CPUs"), inspect)
+        XCTAssertTrue(inspect.contains("Restart: unless-stopped"), inspect)
+        XCTAssertFalse(inspect.contains("s3cr3t-value"), inspect)
+        fake.setHostConfig(web) { $0 = .init(RestartPolicy: .init(Name: "no", MaximumRetryCount: 0)) }
+        let plain = try await text("docker_inspect", ["container": "shop-web-1"])
+        XCTAssertFalse(plain.contains("Limits:") || plain.contains("Restart:"), "nothing set, nothing said")
+    }
+
+    /// `docker_update` past its setting's gate (Settings ▸ Docker is the
+    /// scenario's): asked before anything is sent, nothing sent when
+    /// declined or when nothing would change, `on-failure:N` read as N
+    /// and a count that isn't one refused.
+    func testAnUpdateIsAskedFirstAndReadAsTheCLIWouldSayIt() async throws {
+        let target = try XCTUnwrap(model.container(web))
+        let engine = try XCTUnwrap(model.engine)
+        func update(_ arguments: [String: Any]) async throws -> String {
+            let result = try await DockerMCP.update(target, arguments, docker: model, engine: engine)
+            return ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        }
+        func refusal(_ arguments: [String: Any]) async -> String? {
+            do {
+                _ = try await update(arguments)
+                return nil
+            } catch {
+                return (error as? BrowserMCP.ToolError)?.message ?? "\(error)"
+            }
+        }
+        func updates() -> Int { fake.requests.filter { $0.hasPrefix("POST") && $0.contains("/update") }.count }
+        defer { DockerMCP.askOverride = nil }
+
+        var asked: [String] = []
+        DockerMCP.askOverride = { question in
+            asked.append(question)
+            return false
+        }
+        let declined = await refusal(["restart": "on-failure:3"])
+        XCTAssertTrue(declined?.contains("declined") == true, declined ?? "done")
+        XCTAssertEqual(fake.hostConfig(web)?.RestartPolicy?.Name, "no", "declined: unchanged")
+        XCTAssertEqual(updates(), 0, "nothing sent")
+        XCTAssertTrue(asked.last?.contains("docker update --restart on-failure:3 shop-web-1") == true, asked.last ?? "not asked")
+
+        var policyWhenAsked: String?
+        DockerMCP.askOverride = { question in
+            asked.append(question)
+            policyWhenAsked = self.fake.hostConfig(self.web)?.RestartPolicy?.Name
+            return true
+        }
+        let done = try await update(["restart": "on-failure:3"])
+        XCTAssertEqual(policyWhenAsked, "no", "asked before it is sent")
+        XCTAssertEqual(fake.hostConfig(web)?.RestartPolicy, .init(Name: "on-failure", MaximumRetryCount: 3))
+        XCTAssertTrue(done.contains("restarts on failure, 3 times at most"), done)
+        XCTAssertTrue(done.contains("Compose puts back what shop's file says"), done)
+
+        let asks = asked.count
+        let sent = updates()
+        let same = try await update(["restart": "on-failure:3"])
+        XCTAssertTrue(same.contains("already has those settings"), same)
+        XCTAssertEqual(asked.count, asks, "nothing to ask")
+        XCTAssertEqual(updates(), sent, "nothing sent")
+
+        let unreadable = await refusal(["restart": "on-failure:x"])
+        XCTAssertTrue(unreadable?.contains("0 or more times") == true, unreadable ?? "taken")
+        XCTAssertEqual(fake.hostConfig(web)?.RestartPolicy?.MaximumRetryCount, 3, "never read as no limit")
+        let huge = await refusal(["cpus": 1e12])
+        XCTAssertTrue(huge?.contains("CPUs") == true, huge ?? "taken")
+        XCTAssertEqual(updates(), sent)
+    }
+
     /// An amd64 image on this arm64 engine: inspect says it runs
     /// emulated and what runs it natively; the list marks it.
     func testAnEmulatedContainerSaysSo() async throws {

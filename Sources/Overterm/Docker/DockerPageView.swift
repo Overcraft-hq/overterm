@@ -34,6 +34,9 @@ struct DockerPageView: View {
         .sheet(isPresented: Binding(get: { page.profileChoice != nil }, set: { if !$0 { page.profileChoice = nil } })) {
             ComposeProfilesSheet(page: page, endpoint: docker.endpoint)
         }
+        .sheet(isPresented: Binding(get: { page.containerSettings != nil }, set: { if !$0 { page.containerSettings = nil } })) {
+            if let settings = page.containerSettings { DockerSettingsSheet(settings: settings, page: page, docker: docker, actions: actions) }
+        }
         .onChange(of: page.focusList) { _ in focus = .list }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         .onAppear { focus = .list }

@@ -259,7 +259,9 @@ extension DockerPageModel {
         return images.min { $0.Size < $1.Size }?.Id
     }
 
-    private func transfer(_ what: String, _ work: @escaping () async throws -> String) {
+    /// Long work on the page — an export, an import, a commit: `what` said
+    /// while it runs, its answer once it is done, or why it failed.
+    func transfer(_ what: String, _ work: @escaping () async throws -> String) {
         transferring = what
         Task {
             do {

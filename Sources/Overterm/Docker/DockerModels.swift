@@ -100,9 +100,12 @@ struct ContainerSummary: Codable, Identifiable, Hashable, Sendable {
         return Int(Status[Status.index(after: open)..<close])
     }
 
-    var composeProject: String? { labels["com.docker.compose.project"] }
-    var composeService: String? { labels["com.docker.compose.service"] }
-    var composeWorkingDir: String? { labels["com.docker.compose.project.working_dir"] }
+    /// Nil for an empty label too: an image Overterm saved empties
+    /// Compose's labels (`DockerCommit`), and a container run from it is
+    /// no service of a project called "".
+    var composeProject: String? { labels["com.docker.compose.project"].flatMap { $0.isEmpty ? nil : $0 } }
+    var composeService: String? { labels["com.docker.compose.service"].flatMap { $0.isEmpty ? nil : $0 } }
+    var composeWorkingDir: String? { labels["com.docker.compose.project.working_dir"].flatMap { $0.isEmpty ? nil : $0 } }
     var isOneOff: Bool { labels["com.docker.compose.oneoff"]?.lowercased() == "true" }
 }
 
@@ -194,8 +197,17 @@ struct ContainerDetail: Codable, Sendable {
         var PortBindings: [String: [PortBinding]?]?
         /// `-P`: every exposed port, to a port the engine picks.
         var PublishAllPorts: Bool?
+        /// Memory and swap together; -1 is swap without a limit, 0 none set
+        /// (a container with no memory limit has 0).
+        var MemorySwap: Int?
+        /// `--cpu-quota` over `--cpu-period` (µs), Compose's `cpu_quota`:
+        /// a CPU limit set another way than `NanoCpus`.
+        var CpuQuota: Int?
+        var CpuPeriod: Int?
+        /// `--rm`.
+        var AutoRemove: Bool?
 
-        struct RestartPolicy: Codable, Sendable {
+        struct RestartPolicy: Codable, Equatable, Sendable {
             var Name: String?
             var MaximumRetryCount: Int?
         }
@@ -354,6 +366,14 @@ struct EngineInfo: Codable, Sendable {
     var Architecture: String? = nil
     /// Go's: linux, windows.
     var OSType: String? = nil
+    /// The storage driver's pairs: the containerd image store says
+    /// `driver-type io.containerd.snapshotter.v1`, the classic one its
+    /// filesystem's.
+    var DriverStatus: [[String]]? = nil
+
+    /// Docker Desktop's default since 4.34, Engine 29's: an image keeps
+    /// nothing of the container it was committed from (`DockerCommit`).
+    var containerdStore: Bool { DriverStatus?.contains { $0.contains { $0.hasPrefix("io.containerd.snapshotter") } } == true }
 }
 
 /// One line of `GET /events`.

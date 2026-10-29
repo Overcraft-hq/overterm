@@ -1237,7 +1237,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   any cut and lines read for their level (`DockerFrames`), a plain ustar
   writer for `archive` (macOS's `tar` adds xattrs the engine fails on),
   stats as `docker stats` works them out, ports once rather than once per
-  address family, secret-looking env values masked (`DockerStats`).
+  address family, secret-looking env values masked (`DockerStats`). A `;`
+  in a query is encoded: Go refuses one there, and a commit's comment may
+  hold one.
 - **`docker` itself** (`DockerCLI`): for what the API doesn't answer — a
   runtime's own status while its socket is silent (`docker desktop
   status`, `orb status`, `colima status`), and a checkout's compose file as
@@ -1479,6 +1481,57 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   back: its env less what its image sets (the image's inspect data), its
   published ports, mounts (`:ro` kept), restart policy, network, and its
   command when it isn't the image's.
+- **A container's settings** (`,`, `DockerContainerSettings`, pure;
+  `DockerSettingsSheet`): its memory limit, CPUs and restart policy, read
+  from inspect and changed in place with `POST /containers/{id}/update`,
+  running or stopped — what `docker update` does, written out in the sheet
+  as it is edited. The engine reads every zero as "unchanged", so a limit
+  can be changed but never taken away; the sheet says so rather than send
+  an empty one. A new memory limit always goes with its swap: the engine
+  refuses a limit above the swap it has when none is given, and a
+  container with no limit has a swap of 0 — so the swap keeps what it was
+  (none, unlimited, the same on top), or is twice the limit, as
+  `docker run -m` makes it. A container made with `--cpu-quota` (Compose's
+  `cpu_quota`) is changed by its quota: the engine won't put NanoCpus over
+  one. What the engine would refuse — under 6m, more CPUs than it has, a
+  restart policy for a `--rm` container — is said before it is sent; a
+  number of CPUs is held inside an Int before it is converted, since a
+  byte count pasted there would trap as nano-CPUs. The `,` key goes
+  through the verb, so a container Docker is removing has none. A
+  running container's memory in use is one sample (`one-shot`), read when
+  the sheet opens. The detail reads itself again at the `update` event, so
+  a change from the CLI shows too. A compose service's container keeps
+  these until Compose makes it again from its file, and the sheet says to
+  write them there.
+- **Rename and Save as Image** (`DockerCommit`, pure): Rename is
+  `/containers/{id}/rename`; a name Docker would refuse, or one that is
+  taken, is asked again with the reason. Compose finds its containers by
+  their labels, so a service's container renamed still runs as the
+  service, but the next up that makes it again gives it its old name back:
+  that is asked about first. Save as Image is `/commit` — the running
+  container paused while it is copied, its volumes not in it. Its env and
+  labels can only be overridden there, not removed, so the image gets
+  `ENV KEY=""` for each value that looks like a secret (by its name, or a
+  URL's password) and that its own image didn't set, and `LABEL key=""`
+  for Compose's and Testcontainers' labels: kept, a container run from the
+  image would be counted as one of the service's replicas by the next
+  `compose up`, or reaped by Ryuk. An emptied label reads as none
+  (`composeProject` is nil for `""`), so such a container is no service of
+  a project called "". The classic image store also writes the committed
+  container's own config into the image (`container_config`, the secrets
+  in it), and `docker save` and `docker push` carry it; no parameter
+  changes that. There (`EngineInfo.containerdStore` is false, or unknown)
+  the commit is made twice (`commitAnew`): untagged with the changes, then
+  from a container of that one, never started and removed after — whose
+  own config is the changed one. The first image stays as the second's
+  parent, which the engine lists no more than a layer. The containerd
+  store keeps nothing of the container, and one commit does. What a
+  commit can't change is said instead: a password in the command or the
+  health check (Compose puts `.env`'s values there) stays in the image,
+  and the question says so before, the note after. The inspect is read
+  before the question for that. Both verbs bring the page up first from
+  the panel's menu and the right-hand pane, where their progress and
+  failures are shown.
 - **New Task's stack**: with Docker on and a compose file at the
   repository's top (`ComposeProjects.composeFile`), New Task offers to
   start the new worktree's own stack — through the same Up as everywhere,
@@ -1747,10 +1800,12 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **Agents** (`DockerMCP`, on BrowserBridge's server beside the
   browser's, the API client's, the notes' and the databases' tools):
   `docker_containers`, `docker_projects`, `docker_logs` (levels read,
-  filtered), `docker_inspect` (state, error, health, platform — emulated
-  or not, and what runs it natively — ports, mounts, env) and
-  `docker_stats` read; `docker_containers` marks what runs emulated,
-  reading the platforms it needs first; `docker_action`, `docker_compose` and
+  filtered), `docker_inspect` (state, error, health, its limits and
+  restart policy, platform — emulated or not, and what runs it natively —
+  ports, mounts, env) and `docker_stats` read; `docker_containers` marks
+  what runs emulated, reading the platforms it needs first;
+  `docker_action`, `docker_update` (a container's limits or restart
+  policy, checked as the sheet checks them), `docker_compose` and
   `docker_exec` act, each asked about in the window first (`allow`; a
   test answers through `askOverride`), compose up, rebuild (`up --build`)
   and down in a terminal tab the user sees. `docker_compose` takes a

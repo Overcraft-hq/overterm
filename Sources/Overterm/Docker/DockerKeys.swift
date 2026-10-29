@@ -4,8 +4,8 @@ import Foundation
 /// keyboard — the terminal never sees them, and a list is where a
 /// keystroke can't be text. `?` shows this table. Pure.
 enum DockerKey: String, CaseIterable, Sendable {
-    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, open, database, remove, composeUp,
-        composeUpFreePorts, composeDown, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models, help
+    case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, open, database, settings, remove,
+        composeUp, composeUpFreePorts, composeDown, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models, help
 
     /// The section a digit goes to.
     var section: DockerPageModel.Section? {
@@ -37,6 +37,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .inspect: "i"
         case .open: "o"
         case .database: "d"
+        case .settings: ","
         case .run: "n"
         case .remove: "⌫"
         case .composeUp: "u"
@@ -72,6 +73,7 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .inspect: "Inspect"
         case .open: "Open its first port in the browser"
         case .database: "Open a database container in the Database panel"
+        case .settings: "Settings… — its memory, CPUs and restart policy, changed in place"
         case .run: "Run an image — the selected one — in a new container; a model, in a chat in a tab"
         case .remove: "Remove (asks first)"
         case .composeUp: "Compose up, in a terminal tab — one not created yet too; another checkout's ports or name taken, asked first"

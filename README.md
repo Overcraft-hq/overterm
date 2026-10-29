@@ -195,6 +195,11 @@ Clean Up lists what nothing uses before anything goes. Every detail has
 its actions as buttons, the same ones its right-click menu has; a
 network's puts a container on it or takes one off. A volume exports,
 imports and clones; a container's filesystem and an image save as tars.
+A container's memory, CPUs and restart policy change in place from its
+Settings… (`,`), the `docker update` written out as you go; it renames —
+warning you when Compose would put the old name back — and saves as an
+image, its secrets and Compose's labels left out. A password in its
+command can't be, and it says so before you save.
 Builds show what buildx kept of each — how long, how much from cache, its
 log, the Dockerfile a click away. Models lists Docker Model Runner's local
 LLMs — which are loaded, what they take — with a chat with one in a tab
@@ -231,8 +236,9 @@ save goes back into the container.
 
 Claude Code started in Overterm can read Docker too, through MCP: the
 containers and compose projects, a container's logs, why it failed, what
-it uses — secrets kept out. Starting, stopping, compose and exec are asked
-about in the window each time, and Settings ▸ Docker can take them away.
+it uses — secrets kept out. Starting, stopping, changing a container's
+limits, compose and exec are asked about in the window each time, and
+Settings ▸ Docker can take them away.
 
 ### And the work around the work
 

@@ -27,9 +27,15 @@ final class FakeDockerEngine: @unchecked Sendable {
         /// How it failed, as inspect says it (`setFailure`).
         var oomKilled = false
         var restarts = 0
-        var restartPolicy = "no"
-        var memory = 0
+        /// Its limits and restart policy, as inspect says them and
+        /// `update` changes them.
+        var hostConfig = ContainerDetail.HostConfigDetail(
+            RestartPolicy: .init(Name: "no", MaximumRetryCount: 0), NetworkMode: "bridge", Memory: 0, NanoCpus: 0, MemorySwap: 0, CpuQuota: 0,
+            CpuPeriod: 0, AutoRemove: false)
         var healthcheck: [String]?
+        /// What it runs, as inspect says it (`setCommand`).
+        var cmd = ["sleep", "infinity"]
+        var entrypoint: [String]?
         /// Its health check's last outputs, oldest first.
         var probes: [String] = []
         var failingStreak = 0
@@ -88,6 +94,31 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// index holds in the containerd store.
     private var imagePlatforms: [String: [ImagePlatform]] = [:]
     private var execs: [String: (container: String, command: [String])] = [:]
+    private var committed: [Commit] = []
+    /// What a committed image holds of a config, by its id.
+    private var imageRecords: [String: ImageRecord] = [:]
+
+    /// What an image holds of a config, as its inspect says it: `Config`;
+    /// in the classic store `ContainerConfig` too, the committed
+    /// container's own as it was — the engine writes it whatever the
+    /// changes; and the image it was made from.
+    struct ImageRecord: Sendable {
+        var config: ContainerDetail.Config
+        var containerConfig: ContainerDetail.Config?
+        var parent: String?
+    }
+
+    /// A `docker commit` as the engine was asked it.
+    struct Commit: Equatable, Sendable {
+        var container: String
+        var repo: String
+        var tag: String
+        var comment: String
+        /// Its Dockerfile lines, as sent: one string, a line each.
+        var changes: String
+        /// Nil when not said: the engine pauses it then.
+        var pause: String?
+    }
     private var exitCodes: [String: Int] = [:]
     private var eventStreams: [ObjectIdentifier: Channel] = [:]
     private var logFollowers: [String: [Channel]] = [:]
@@ -274,8 +305,8 @@ final class FakeDockerEngine: @unchecked Sendable {
         locked {
             containers[id]?.oomKilled = oomKilled
             containers[id]?.restarts = restarts
-            containers[id]?.restartPolicy = restartPolicy
-            containers[id]?.memory = memory
+            containers[id]?.hostConfig.RestartPolicy = .init(Name: restartPolicy, MaximumRetryCount: 0)
+            containers[id]?.hostConfig.Memory = memory
             containers[id]?.healthcheck = healthcheck
             containers[id]?.probes = probes
             containers[id]?.failingStreak = failingStreak
@@ -306,6 +337,41 @@ final class FakeDockerEngine: @unchecked Sendable {
     func setStatsAnswer(_ id: String, _ answer: StatsAnswer) { locked { containers[id]?.statsAnswer = answer } }
 
     func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
+
+    /// Its limits and restart policy now.
+    func hostConfig(_ id: String) -> ContainerDetail.HostConfigDetail? { locked { containers[id]?.hostConfig } }
+
+    /// As it was made: `-m`, `--cpu-quota`, `--rm`. Sends no event.
+    func setHostConfig(_ id: String, _ change: (inout ContainerDetail.HostConfigDetail) -> Void) {
+        locked {
+            guard var host = containers[id]?.hostConfig else { return }
+            change(&host)
+            containers[id]?.hostConfig = host
+        }
+    }
+
+    /// The commits asked for, in order.
+    var commits: [Commit] { locked { committed } }
+
+    /// What a committed image holds, by its id or a tag.
+    func imageRecord(_ reference: String) -> ImageRecord? {
+        locked {
+            let id = images.first { $0.Id == reference || $0.tags.contains(reference) }?.Id ?? reference
+            return imageRecords[id]
+        }
+    }
+
+    /// Every image, those the list leaves out (a layer's parent) too.
+    var allImages: [ImageSummary] { locked { images } }
+
+    /// What it runs, as it was made.
+    func setCommand(_ id: String, _ cmd: [String], entrypoint: [String]? = nil, healthcheck: [String]? = nil) {
+        locked {
+            containers[id]?.cmd = cmd
+            containers[id]?.entrypoint = entrypoint
+            if let healthcheck { containers[id]?.healthcheck = healthcheck }
+        }
+    }
 
     func setFile(_ id: String, _ path: String, _ data: Data) {
         let now = Self.timestamp()
@@ -510,6 +576,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             emitImage("tag", found.Id)
             return .empty(201)
         case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"), platform: query["platform"])
+        case "commit" where method == .POST: return commit(query)
         case "networks" where named && ["connect", "disconnect"].contains(verb):
             return other(method, kind, id, named, body, query.merging(["_verb": verb]) { $1 })
         case "images", "volumes", "networks": return other(method, kind, id, named, body, query)
@@ -550,13 +617,14 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     private func info() -> Answer {
-        let (count, running, imageCount, machine) = locked {
-            (containers.count, containers.values.filter { $0.summary.state == .running }.count, images.count, architecture)
+        let (count, running, imageCount, machine, index) = locked {
+            (containers.count, containers.values.filter { $0.summary.state == .running }.count, images.count, architecture, containerdStore)
         }
         return Self.json(
             EngineInfo(
                 Name: "fake", OperatingSystem: "Overterm's fake engine", ServerVersion: "29.0.0", NCPU: 4, MemTotal: 8 << 30, Containers: count,
-                ContainersRunning: running, Images: imageCount, Architecture: machine, OSType: "linux"))
+                ContainersRunning: running, Images: imageCount, Architecture: machine, OSType: "linux",
+                DriverStatus: index ? [["driver-type", "io.containerd.snapshotter.v1"]] : [["Backing Filesystem", "extfs"], ["Supports d_type", "true"]]))
     }
 
     /// An image's inspect: its summary's fields and its platform, the
@@ -574,6 +642,14 @@ final class FakeDockerEngine: @unchecked Sendable {
         object["Os"] = platform.os
         object["Architecture"] = platform.architecture
         if let variant = platform.variant { object["Variant"] = variant }
+        if let record = locked({ imageRecords[image.Id] }) {
+            func json(_ config: ContainerDetail.Config) -> Any? {
+                (try? JSONEncoder().encode(config)).flatMap { try? JSONSerialization.jsonObject(with: $0) }
+            }
+            object["Config"] = json(record.config)
+            if let config = record.containerConfig { object["ContainerConfig"] = json(config) }
+            object["Parent"] = record.parent ?? ""
+        }
         return .json(200, (try? JSONSerialization.data(withJSONObject: object)) ?? Data())
     }
 
@@ -632,6 +708,11 @@ final class FakeDockerEngine: @unchecked Sendable {
             emit("destroy", id)
             locked { _ = containers.removeValue(forKey: id) }
             return .empty(204)
+        case (.POST, "update"):
+            guard let change = try? JSONDecoder().decode(DockerEngine.ContainerUpdate.self, from: body) else { return Self.error(400, "bad request") }
+            return update(id, change, container.hostConfig)
+        case (.POST, "rename"):
+            return rename(id, to: query["name"] ?? "", from: container.summary.name)
         case (.GET, "logs"):
             let tail = Int(query["tail"] ?? "") ?? container.logs.count
             let frames = container.logs.suffix(tail).reduce(into: Data()) { $0 += Self.frame($1.stream, $1.time + " " + $1.text + "\n") }
@@ -706,6 +787,113 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
+    /// `docker update`, as moby v27 checks it, in its words: every 0 (or
+    /// nothing) unchanged; a memory limit above the swap it has refused
+    /// unless a swap comes with it; NanoCpus and a quota never both; no
+    /// restart policy for a `--rm` one. Four CPUs, as `info` says.
+    private func update(_ id: String, _ change: DockerEngine.ContainerUpdate, _ current: ContainerDetail.HostConfigDetail) -> Answer {
+        let memory = change.Memory ?? 0
+        let swap = change.MemorySwap ?? 0
+        let nanos = change.NanoCpus ?? 0
+        let quota = change.CpuQuota ?? 0
+        let period = change.CpuPeriod ?? 0
+        if memory != 0, memory < 6_291_456 { return Self.error(400, "Minimum memory limit allowed is 6MB") }
+        if nanos < 0 || nanos > 4_000_000_000 { return Self.error(400, "Range of CPUs is from 0.01 to 4.00, as there are only 4 CPUs available") }
+        if let policy = change.RestartPolicy, policy.Name != "on-failure", (policy.MaximumRetryCount ?? 0) != 0 {
+            return Self.error(400, "invalid restart policy: maximum retry count can only be used with 'on-failure'")
+        }
+        let refused = "Cannot update container \(id): "
+        if nanos > 0, (current.CpuPeriod ?? 0) > 0 {
+            return Self.error(409, refused + "Conflicting options: Nano CPUs cannot be updated as CPU Period has already been set")
+        }
+        if nanos > 0, (current.CpuQuota ?? 0) > 0 {
+            return Self.error(409, refused + "Conflicting options: Nano CPUs cannot be updated as CPU Quota has already been set")
+        }
+        if period > 0, (current.NanoCpus ?? 0) > 0 {
+            return Self.error(409, refused + "Conflicting options: CPU Period cannot be updated as NanoCPUs has already been set")
+        }
+        if quota > 0, (current.NanoCpus ?? 0) > 0 {
+            return Self.error(409, refused + "Conflicting options: CPU Quota cannot be updated as NanoCPUs has already been set")
+        }
+        if memory != 0, memory > (current.MemorySwap ?? 0), swap == 0 {
+            return Self.error(
+                409, refused + "Memory limit should be smaller than already set memoryswap limit, update the memoryswap at the same time")
+        }
+        if let name = change.RestartPolicy?.Name, !["", "no"].contains(name), current.AutoRemove == true {
+            return Self.error(409, refused + "Restart policy cannot be updated because AutoRemove is enabled for the container")
+        }
+        setHostConfig(id) { host in
+            if memory != 0 { host.Memory = memory }
+            if swap != 0 { host.MemorySwap = swap }
+            if nanos != 0 { host.NanoCpus = nanos }
+            if quota != 0 { host.CpuQuota = quota }
+            if period != 0 { host.CpuPeriod = period }
+            if let policy = change.RestartPolicy, let name = policy.Name, !name.isEmpty { host.RestartPolicy = policy }
+        }
+        emit("update", id)
+        return .json(200, Data(#"{"Warnings":[]}"#.utf8))
+    }
+
+    /// `docker rename`, as moby answers it.
+    private func rename(_ id: String, to name: String, from old: String) -> Answer {
+        guard name.range(of: #"^/?[a-zA-Z0-9][a-zA-Z0-9_.-]+$"#, options: .regularExpression) != nil else {
+            return Self.error(400, "Error when allocating new name: Invalid container name (/\(name)), only [a-zA-Z0-9][a-zA-Z0-9_.-] are allowed")
+        }
+        let bare = name.hasPrefix("/") ? String(name.dropFirst()) : name
+        if bare == old { return Self.error(400, "Renaming a container with the same name as its current name") }
+        if let holder = locked({ containers.values.first { $0.summary.name == bare } }) {
+            return Self.error(
+                409,
+                "Error when allocating new name: Conflict. The container name \"/\(bare)\" is already in use by container \"\(holder.summary.Id)\". You have to remove (or rename) that container to be able to reuse that name."
+            )
+        }
+        locked { containers[id]?.summary.Names = ["/" + bare] }
+        emit("rename", id, extra: ["oldName": "/" + old])
+        return .empty(204)
+    }
+
+    /// `docker commit`: recorded as asked, and an image of that name made
+    /// — untagged without one. Its config is the container's with the
+    /// changes' `ENV` and `LABEL` put over it; in the classic store the
+    /// container's own config goes in as well, as it was.
+    private func commit(_ query: [String: String]) -> Answer {
+        let wanted = query["container"] ?? ""
+        guard let container = locked({ containers[wanted] ?? containers.values.first { $0.summary.name == wanted } }) else {
+            return Self.error(404, "No such container: \(wanted)")
+        }
+        let id = container.summary.Id
+        let repo = query["repo"] ?? ""
+        let tag = query["tag"] ?? ""
+        let changes = query["changes"] ?? ""
+        let original = Self.detail(container).Config
+        var config = original
+        for line in changes.split(separator: "\n") {
+            let words = line.split(separator: " ").map(String.init)
+            guard let instruction = words.first?.uppercased(), ["ENV", "LABEL"].contains(instruction) else { continue }
+            for word in words.dropFirst() {
+                guard let equals = word.firstIndex(of: "=") else { continue }
+                let key = String(word[..<equals])
+                let value = String(word[word.index(after: equals)...]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                if instruction == "ENV" {
+                    config.Env = (config.Env ?? []).filter { !$0.hasPrefix(key + "=") } + [key + "=" + value]
+                } else {
+                    config.Labels = (config.Labels ?? [:]).merging([key: value]) { $1 }
+                }
+            }
+        }
+        locked {
+            committed.append(Commit(container: id, repo: repo, tag: tag, comment: query["comment"] ?? "", changes: changes, pause: query["pause"]))
+        }
+        let reference = repo.isEmpty ? nil : repo + ":" + (tag.isEmpty ? "latest" : tag)
+        let image = addImage(reference, size: 1 << 20)
+        locked {
+            imageRecords[image] = ImageRecord(config: config, containerConfig: containerdStore ? nil : original, parent: container.summary.ImageID)
+        }
+        if reference != nil { emitImage("tag", image) }
+        emit("commit", id, extra: ["imageRef": reference ?? image])
+        return .json(201, Data(#"{"Id":"\#(image)"}"#.utf8))
+    }
+
     /// An exec's start and its exit: the listing script answered from the
     /// container's files; anything else isn't there (127, as a shell says).
     private func exec(_ method: HTTPMethod, _ execID: String, _ verb: String) -> Answer {
@@ -745,21 +933,44 @@ final class FakeDockerEngine: @unchecked Sendable {
         return (0, lines.values.sorted().map { $0 + "\n" }.joined(), "")
     }
 
-    /// A container made, not started: what the helper is.
+    /// A container made, not started: what the helper is. From a
+    /// committed image, what it doesn't say is the image's — its command,
+    /// env, labels and health check — as the engine merges them.
     private func create(_ body: Data, _ query: [String: String]) -> Answer {
         struct Request: Decodable {
             struct Host: Decodable { var Binds: [String]? }
             var Image: String
+            var Cmd: [String]?
+            var Env: [String]?
+            var Labels: [String: String]?
             var HostConfig: Host?
         }
         guard let request = try? JSONDecoder().decode(Request.self, from: body) else { return Self.error(400, "bad request") }
-        let id = add(name: query["name"] ?? "helper-\(UUID().uuidString.prefix(6).lowercased())", image: request.Image, state: .created)
+        if let name = query["name"], let holder = locked({ containers.values.first { $0.summary.name == name } }) {
+            return Self.error(
+                409,
+                "Conflict. The container name \"/\(name)\" is already in use by container \"\(holder.summary.Id)\". You have to remove (or rename) that container to be able to reuse that name."
+            )
+        }
+        let found = image(request.Image)
+        let record = found.flatMap { found in locked { imageRecords[found.Id] } }
+        let labels = (record?.config.Labels ?? [:]).merging(request.Labels ?? [:]) { $1 }
+        let id = add(
+            name: query["name"] ?? "helper-\(UUID().uuidString.prefix(6).lowercased())", image: request.Image, state: .created,
+            env: request.Env ?? record?.config.Env ?? [], imageID: found?.Id, labels: labels)
         var binds: [String: String] = [:]
         for bind in request.HostConfig?.Binds ?? [] {
             let parts = bind.split(separator: ":").map(String.init)
             if parts.count >= 2 { binds[parts[1]] = parts[0] }
         }
-        locked { containers[id]?.binds = binds }
+        locked {
+            containers[id]?.binds = binds
+            if let cmd = request.Cmd ?? record?.config.Cmd { containers[id]?.cmd = cmd }
+            if let record {
+                containers[id]?.entrypoint = record.config.Entrypoint
+                containers[id]?.healthcheck = record.config.Healthcheck?.Test
+            }
+        }
         return .json(201, Data(#"{"Id":"\#(id)","Warnings":[]}"#.utf8))
     }
 
@@ -821,7 +1032,14 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     private func other(_ method: HTTPMethod, _ kind: String, _ id: String, _ named: Bool, _ body: Data, _ query: [String: String]) -> Answer {
         switch (method, kind, named) {
-        case (.GET, "images", false): return Self.json(locked { images })
+        case (.GET, "images", false):
+            // As the engine lists them: an untagged image another was made
+            // from is a layer of it, out of the list but with `all`.
+            return Self.json(
+                locked {
+                    let parents = Set(imageRecords.values.compactMap(\.parent))
+                    return images.filter { query["all"] == "1" || !($0.isDangling && parents.contains($0.Id)) }
+                })
         case (.GET, "images", true) where id == "search":
             let term = (query["term"] ?? "").lowercased()
             let catalog = [("redis", "Redis is the world's fastest data platform", 13_000, true), ("bitnami/redis", "Bitnami Redis", 300, false)]
@@ -840,7 +1058,10 @@ final class FakeDockerEngine: @unchecked Sendable {
         case (.GET, "networks", false): return Self.json(locked { networks })
         case (.DELETE, "images", true):
             if let refused = refusal(id) { return refused }
-            locked { images.removeAll { $0.Id == id || $0.tags.contains(id) } }
+            locked {
+                for gone in images where gone.Id == id || gone.tags.contains(id) { imageRecords.removeValue(forKey: gone.Id) }
+                images.removeAll { $0.Id == id || $0.tags.contains(id) }
+            }
             emitImage("delete", id)
             return Self.json([PruneReport.ImageDeleted(Untagged: nil, Deleted: id)])
         case (.DELETE, "volumes", true):
@@ -929,13 +1150,16 @@ final class FakeDockerEngine: @unchecked Sendable {
                 FinishedAt: summary.state == .exited ? "2026-10-29T10:00:00.000000000Z" : nil,
                 Health: summary.Health.map { .init(Status: $0.Status, FailingStreak: container.failingStreak, Log: probes) }),
             Config: .init(
-                Image: container.reference ?? summary.Image, Env: container.env, Cmd: ["sleep", "infinity"], Entrypoint: nil, WorkingDir: "/", User: "",
+                Image: container.reference ?? summary.Image, Env: container.env, Cmd: container.cmd, Entrypoint: container.entrypoint, WorkingDir: "/",
+                User: "",
                 Labels: summary.Labels,
                 ExposedPorts: bindings.isEmpty ? nil : Dictionary(uniqueKeysWithValues: bindings.keys.map { ($0, EmptyObject()) }), Tty: container.tty, Hostname: String(summary.Id.prefix(12)),
                 Healthcheck: container.healthcheck.map { .init(Test: $0, Interval: 30_000_000_000, Timeout: 5_000_000_000, Retries: 3) }),
-            HostConfig: .init(
-                RestartPolicy: .init(Name: container.restartPolicy, MaximumRetryCount: 0), NetworkMode: "bridge", Memory: container.memory, NanoCpus: 0,
-                PortBindings: bindings.isEmpty ? nil : bindings),
+            HostConfig: {
+                var host = container.hostConfig
+                host.PortBindings = bindings.isEmpty ? nil : bindings
+                return host
+            }(),
             Mounts: summary.Mounts, NetworkSettings: .init(Networks: ["bridge": .init(IPAddress: "172.17.0.2", Gateway: "172.17.0.1", MacAddress: nil)]))
     }
 

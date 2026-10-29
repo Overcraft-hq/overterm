@@ -85,10 +85,10 @@ OVERTERM_DOCKER_TESTS=1 swift test --filter DockerTransportTests
 
 adds calls to the engine your terminal's `docker` reaches, to check that
 the models still read what it answers: reads (`_ping`, `info`, the lists),
-then exec, files and a volume's export and import on a container and a
-volume of their own — labelled `overterm.test`, made from
-`debian:bookworm-slim` only if it is already there (nothing is pulled),
-and removed after.
+then exec, files, a volume's export and import, and a container's limits
+and name changed, on a container and a volume of their own — labelled
+`overterm.test`, made from `debian:bookworm-slim` only if it is already
+there (nothing is pulled), and removed after.
 
 `OVERTERM_DOCKER_TESTS=1 swift test --filter ComposeConfigTests` runs your
 `docker compose config` on a project of its own, to check that Compose

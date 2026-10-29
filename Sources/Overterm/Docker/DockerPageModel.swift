@@ -162,6 +162,8 @@ final class DockerPageModel: ObservableObject {
     @Published var buildsError: String?
     /// The Run window, open on this.
     @Published var runSpec: DockerRunSpec?
+    /// The Settings sheet, open on this.
+    @Published var containerSettings: DockerContainerSettings?
     /// Docker Model Runner's: where it is, then what it has — nil while
     /// it isn't answering (`loadModels`).
     @Published var modelsPlace: ModelRunner.Place?
@@ -636,6 +638,13 @@ final class DockerPageModel: ObservableObject {
             if let url = selected.compactMap({ docker.ports(of: $0).first?.url }).first { actions?.open(url) }
         case .database:
             if let container = selected.first { openInDatabase(container) }
+        case .settings:
+            // As its verb: not for one Docker is removing.
+            if let container = detailed ?? selected.first, let verb = verbs(for: container).first(where: { $0.key == DockerKey.settings.key }),
+                verb.unavailable == nil
+            {
+                verb.perform()
+            }
         case .remove:
             // A run's row: all of it, as Ryuk would remove it.
             if let session = detailedSession { confirmRemove(session: session) } else { confirmRemove(selected) }

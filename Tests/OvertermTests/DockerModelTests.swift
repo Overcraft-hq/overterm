@@ -106,6 +106,23 @@ final class DockerModelTests: XCTestCase {
         XCTAssertNil(model.container("redis"))
     }
 
+    /// A `docker update` changes nothing the list says: the detail reads
+    /// itself again at the engine's event — the CLI's too. A rename shows
+    /// in the list at once.
+    func testADetailIsReadAgainWhenItsSettingsChange() async throws {
+        let id = fake.add(name: "api")
+        model.start()
+        try await eventually("the container") { model.container(id) != nil }
+        let session = ContainerSession(id: id, docker: model)
+        try await eventually("its detail") { session.detail != nil }
+        let engine = try XCTUnwrap(model.engine)
+        try await engine.update(container: id, .init(Memory: 512 << 20, MemorySwap: 1 << 30))
+        try await eventually("its new limit, at the event") { session.detail?.HostConfig?.Memory == 512 << 20 }
+        try await model.rename(id, to: "api-2")
+        XCTAssertEqual(model.container(id)?.name, "api-2", "the list says it at once")
+        session.close()
+    }
+
     /// A database's own client: who to sign in as read from its inspect by
     /// name, and only when asked; a stopped one's says why it can't.
     func testAClientSignsInByItsEnvsNames() async throws {

@@ -15,7 +15,7 @@ enum DockerMCP {
     /// Set by tests and the E2E runner: answers instead of the alert.
     static var askOverride: ((String) -> Bool)?
 
-    static let writes: Set<String> = ["docker_action", "docker_compose", "docker_exec"]
+    static let writes: Set<String> = ["docker_action", "docker_update", "docker_compose", "docker_exec"]
 
     static func call(_ name: String, _ arguments: [String: Any], docker: DockerModel) async throws -> [String: Any] {
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
@@ -93,6 +93,8 @@ enum DockerMCP {
                 try await docker.perform(verb, on: target.Id)
             }
             return BrowserMCP.textResult("\(target.name): \(action) done — \(docker.container(target.Id)?.Status ?? "gone").")
+        case "docker_update":
+            return try await update(try container(), arguments, docker: docker, engine: engine)
         case "docker_compose":
             guard let wanted = string("project"), let project = docker.projects.first(where: { $0.name == wanted }) else {
                 throw BrowserMCP.ToolError(message: "“project” is one of: \(docker.projects.map(\.name).joined(separator: ", ")).")
@@ -182,6 +184,31 @@ enum DockerMCP {
     }
 
     /// Asks in the window. An agent's write runs only on a yes.
+    /// `docker_update`: what the agent asks for, checked as the Settings
+    /// sheet checks it, then asked of the user with the `docker update` it
+    /// is. `on-failure:N` tries N times at most; a count that isn't one is
+    /// refused, never read as no limit.
+    static func update(_ target: ContainerSummary, _ arguments: [String: Any], docker: DockerModel, engine: DockerEngine) async throws -> [String: Any] {
+        func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
+        var settings = DockerContainerSettings(target, try await engine.container(target.Id), engine: docker.info)
+        if let memory = string("memory") { settings.memory = memory }
+        if let cpus = (arguments["cpus"] as? NSNumber)?.stringValue ?? string("cpus") { settings.cpus = cpus }
+        if let restart = string("restart") {
+            let parts = restart.split(separator: ":", maxSplits: 1).map(String.init)
+            settings.restart = parts.first ?? restart
+            settings.retries = parts.count > 1 ? Int(parts[1]) ?? -1 : 0
+        }
+        if let problem = settings.problem { throw BrowserMCP.ToolError(message: problem) }
+        guard let change = settings.update else { return BrowserMCP.textResult("\(target.name) already has those settings.") }
+        guard await allow("An agent wants to change “\(target.name)”", settings.line(prefix: DockerCommands.prefix(for: docker.endpoint))) else {
+            throw BrowserMCP.ToolError(message: "The user declined.")
+        }
+        let warnings = try await engine.update(container: target.Id, change)
+        let compose = settings.project.map { " Compose puts back what \($0)'s file says when it makes it again." } ?? ""
+        return BrowserMCP.textResult(
+            "\(target.name): \(settings.summary)." + compose + (warnings.isEmpty ? "" : " Docker says: " + warnings.joined(separator: " ")))
+    }
+
     static func allow(_ title: String, _ detail: String) async -> Bool {
         if let answer = askOverride { return answer(title + "\n" + detail) }
         let alert = NSAlert()
@@ -275,6 +302,14 @@ enum DockerMCP {
         }
         if let error = detail.State.Error, !error.isEmpty { lines.append("Error: \(error)") }
         if detail.State.OOMKilled == true { lines.append("Killed: out of memory") }
+        // What it may use: why the kernel killed it, or why it is slow.
+        let limits = DockerContainerSettings.Current(detail.HostConfig)
+        let said = [
+            limits.memory > 0 ? "memory \(DockerBytes.string(limits.memory, memory: true))" : nil,
+            limits.cpus.map { "\(DockerContainerSettings.number($0)) CPU\($0 == 1 ? "" : "s")" },
+        ].compactMap { $0 }
+        if !said.isEmpty { lines.append("Limits: " + said.joined(separator: ", ")) }
+        if limits.restart != "no" { lines.append("Restart: \(limits.restart)" + (limits.retries > 0 ? ":\(limits.retries)" : "")) }
         if let health = detail.State.Health, let status = health.Status {
             lines.append("Health: \(status)" + (health.Log?.last?.Output.map { " — last check: \($0.trimmingCharacters(in: .whitespacesAndNewlines))" } ?? ""))
         }
@@ -339,7 +374,7 @@ enum DockerMCP {
                 ], required: ["container"]),
             tool(
                 "docker_inspect",
-                "Why a container is as it is: its state and error, health check, platform (emulated or not), command, ports, mounts, networks, env (secrets masked).",
+                "Why a container is as it is: its state and error, health check, memory and CPU limits, restart policy, platform (emulated or not), command, ports, mounts, networks, env (secrets masked).",
                 ["container": ["type": "string", "description": "Its name, from docker_containers."]], required: ["container"]),
             tool(
                 "docker_stats", "A running container's CPU, memory and network now.",
@@ -357,6 +392,15 @@ enum DockerMCP {
                         "container": ["type": "string", "description": "Its name, from docker_containers."],
                         "action": ["type": "string", "enum": ["start", "stop", "restart", "pause", "unpause", "remove"]],
                     ], required: ["container", "action"]),
+                tool(
+                    "docker_update",
+                    "Change a container's memory limit, CPUs or restart policy in place (docker update); it keeps running. A compose service's container gets its compose file's again when Compose makes it anew. The user is asked first.",
+                    [
+                        "container": ["type": "string", "description": "Its name, from docker_containers."],
+                        "memory": ["type": "string", "description": "A memory limit: 512m, 2g (6m at least). A limit can be changed, not taken away."],
+                        "cpus": ["type": "number", "description": "CPUs it may use: 0.5, 2 (at most the engine's)."],
+                        "restart": ["type": "string", "description": "no, always, unless-stopped, on-failure or on-failure:N (N tries at most)."],
+                    ], required: ["container"]),
                 tool(
                     "docker_compose",
                     "Compose up, rebuild (up --build), down, restart, stop or start a project, or one of its services. Up, rebuild and down run in a terminal tab the user sees. The user is asked first.",

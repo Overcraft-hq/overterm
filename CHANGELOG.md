@@ -43,6 +43,7 @@ version is tagged `v<version>`.
 - docker: a container running under emulation on Apple silicon says so, with what to do
 - docker: CPU and memory columns in the container list
 - docker: Testcontainers' containers apart, by test run, removed together
+- docker: a container's memory, CPUs and restart policy changed in place; renamed; saved as an image
 
 ## 1.4.6 — 2026-10-29
 

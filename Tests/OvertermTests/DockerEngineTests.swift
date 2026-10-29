@@ -100,6 +100,9 @@ final class DockerEngineTests: XCTestCase {
             engine.path("/containers/json", ["all": "1", "filters": #"{"label":["a=b"]}"#]),
             "/v\(DockerEngine.clientVersion)/containers/json?all=1&filters=%7B%22label%22:%5B%22a%3Db%22%5D%7D")
         XCTAssertEqual(engine.path("/images/create", ["fromImage": "a+b"]), "/v\(DockerEngine.clientVersion)/images/create?fromImage=a%2Bb")
+        // Go refuses a raw `;` in a query: a commit's comment may hold one.
+        XCTAssertEqual(
+            engine.path("/commit", ["comment": "a;b", "changes": #"ENV A="""#]), "/v\(DockerEngine.clientVersion)/commit?changes=ENV%20A%3D%22%22&comment=a%3Bb")
     }
 
     func testTheOlderVersionIsSpoken() {

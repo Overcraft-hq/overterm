@@ -122,6 +122,7 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("u"), .composeUp)
         XCTAssertEqual(DockerKey.of("q"), .client)
         XCTAssertEqual(DockerKey.of("a"), .askAgent)
+        XCTAssertEqual(DockerKey.of(","), .settings)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -456,6 +457,54 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(page.projectTab, .logs)
         XCTAssertTrue(page.showDetail)
         XCTAssertEqual(page.projectSession?.service, "web")
+    }
+
+    /// A container run from an image Overterm saved: Compose's labels are
+    /// there, emptied (a commit can't take a label away) — and it is no
+    /// service of a project called "", wherever it is read.
+    @MainActor
+    func testEmptiedComposeLabelsAreNoProject() {
+        var run = container("snapshot-run")
+        run.Labels = [
+            "com.docker.compose.project": "", "com.docker.compose.service": "", "com.docker.compose.oneoff": "",
+            "com.docker.compose.project.working_dir": "", "com.docker.compose.project.config_files": "", "org.testcontainers.hash": "",
+        ]
+        XCTAssertNil(run.composeProject)
+        XCTAssertNil(run.composeService)
+        XCTAssertNil(run.composeWorkingDir)
+        XCTAssertFalse(DockerEmulation.isService(run))
+        XCTAssertFalse(Testcontainers.isReused(run))
+        XCTAssertEqual(ComposeProjects.group([run]).loose.map(\.name), ["snapshot-run"])
+        XCTAssertFalse(DockerMCP.describe([run]).contains("compose"), DockerMCP.describe([run]))
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        XCTAssertNil(page.verbs(for: run).first { $0.key == "b" }, "no service to rebuild")
+    }
+
+    /// Settings…, Rename… and Save as Image… from the panel or the
+    /// right-hand pane: the page comes up first, where what they say as
+    /// they go — and when they fail — is shown. One Docker is removing
+    /// has no settings, by its verb or its key.
+    @MainActor
+    func testAContainersSettingsVerbsBringThePageUp() throws {
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
+        var opened = 0
+        var asked: [String] = []
+        page.actions = DockerActions(run: { _, _ in }, confirm: { _, _, _, _ in }, open: { _ in }, copy: { _ in }, settings: {})
+        page.actions?.openPage = { opened += 1 }
+        page.actions?.askName = { title, _, _, _ in asked.append(title) }
+        XCTAssertFalse(page.visible)
+        let web = container("web")
+        let verbs = page.verbs(for: web)
+        for title in ["Settings…", "Rename…", "Save as Image…"] { try XCTUnwrap(verbs.first { $0.title == title }).perform() }
+        XCTAssertEqual(opened, 3, "each brings the page up")
+        XCTAssertEqual(asked, ["Rename “web”"])
+        page.visible = true
+        try XCTUnwrap(page.verbs(for: web).first { $0.title == "Rename…" }).perform()
+        XCTAssertEqual(opened, 3, "already on screen")
+        let removing = container("old", state: "removing", status: "Removal In Progress")
+        let settings = page.verbs(for: removing).first { $0.key == DockerKey.settings.key }
+        XCTAssertEqual(settings?.unavailable, "Docker is removing it.")
+        XCTAssertEqual(page.verbs(for: removing).first { $0.title == "Save as Image…" }?.unavailable, "Docker is removing it.")
     }
 
     /// A project before it runs is watched from its plan: Compose's own

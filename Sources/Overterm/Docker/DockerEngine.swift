@@ -289,9 +289,11 @@ final class DockerEngine: Sendable {
         if !query.isEmpty {
             components.queryItems = query.keys.sorted().map { URLQueryItem(name: $0, value: query[$0]) }
         }
-        // `+` stays a plus in a query, which the engine reads as a space.
+        // `+` stays a plus in a query, which the engine reads as a space;
+        // `;` stays raw, and Go refuses a query with one (a commit's comment).
         return (components.percentEncodedPath)
-            + (components.percentEncodedQuery.map { "?" + $0.replacingOccurrences(of: "+", with: "%2B") } ?? "")
+            + (components.percentEncodedQuery.map { "?" + $0.replacingOccurrences(of: "+", with: "%2B").replacingOccurrences(of: ";", with: "%3B") }
+                ?? "")
     }
 
     /// A call whose answer is JSON; an error status throws the engine's

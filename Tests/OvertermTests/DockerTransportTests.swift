@@ -6,8 +6,9 @@ import XCTest
 /// The engine's calls over a real unix socket, against the fake engine:
 /// answers, errors, streams that go on, streams left early. Never the
 /// user's Docker; with OVERTERM_DOCKER_TESTS=1 a few calls go to it as
-/// well: reads (`testTheRealEngineAnswers`), and exec, files and a
-/// volume's export and import on a container and a volume of their own —
+/// well: reads (`testTheRealEngineAnswers`), and exec, files, a volume's
+/// export and import, and a container's limits and name changed, on a
+/// container and a volume of their own —
 /// labelled `overterm.test`, from an image already there (nothing is
 /// pulled), removed after.
 final class DockerTransportTests: XCTestCase {
@@ -297,6 +298,226 @@ final class DockerTransportTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(300))
         try await real.remove(volume: name, force: true)
+    }
+
+    /// `docker update` as the engine takes it: a memory limit only with a
+    /// swap when it has none, CPUs the way they were given, no restart
+    /// policy for a `--rm` one — and what the sheet sends, it takes.
+    func testSettingsChangeAsTheEngineAllows() async throws {
+        let plain = fake.add(name: "ot-tune")
+        func draft(_ id: String) async throws -> DockerContainerSettings {
+            let summary = try await engine.containers().first { $0.Id == id }
+            return DockerContainerSettings(try XCTUnwrap(summary), try await engine.container(id), engine: try await engine.info())
+        }
+        func refusal(_ id: String, _ change: DockerEngine.ContainerUpdate) async -> DockerError? {
+            do {
+                try await engine.update(container: id, change)
+                return nil
+            } catch {
+                return error as? DockerError
+            }
+        }
+        let swapless = await refusal(plain, .init(Memory: 1 << 30))
+        XCTAssertEqual(swapless?.status, 409, "a limit above a swap of 0, and no swap with it")
+        XCTAssertTrue(swapless?.message.contains("memoryswap") == true, swapless?.message ?? "taken")
+
+        let events = engine.events()
+        let heard = Task {
+            for try await event in events where event.verb == "update" { return event.Actor.ID }
+            return ""
+        }
+        try await waitUntil { $0.listening == 1 }
+        var settings = try await draft(plain)
+        settings.memory = "1g"
+        settings.cpus = "1.5"
+        try await engine.update(container: plain, try XCTUnwrap(settings.update))
+        XCTAssertEqual(fake.hostConfig(plain)?.Memory, 1 << 30)
+        XCTAssertEqual(fake.hostConfig(plain)?.MemorySwap, 2 << 30)
+        XCTAssertEqual(fake.hostConfig(plain)?.NanoCpus, 1_500_000_000)
+        let updated = try await heard.value
+        XCTAssertEqual(updated, plain, "an update event")
+        let read = try await draft(plain)
+        XCTAssertEqual([read.memory, read.cpus], ["1g", "1.5"], "inspect says it back")
+
+        let quota = fake.add(name: "ot-quota")
+        fake.setHostConfig(quota) {
+            $0.CpuQuota = 50_000
+            $0.CpuPeriod = 100_000
+        }
+        let conflicting = await refusal(quota, .init(NanoCpus: 1_000_000_000))
+        XCTAssertEqual(conflicting?.status, 409)
+        XCTAssertTrue(conflicting?.message.contains("Conflicting options") == true, conflicting?.message ?? "taken")
+        var byQuota = try await draft(quota)
+        byQuota.cpus = "1"
+        try await engine.update(container: quota, try XCTUnwrap(byQuota.update))
+        XCTAssertEqual(fake.hostConfig(quota)?.CpuQuota, 100_000, "by its quota, as it was made")
+
+        let small = await refusal(plain, .init(Memory: 4 << 20, MemorySwap: 8 << 20))
+        XCTAssertEqual(small?.status, 400)
+        let many = await refusal(plain, .init(NanoCpus: 9_000_000_000))
+        XCTAssertEqual(many?.status, 400)
+        XCTAssertTrue(many?.message.contains("only 4 CPUs") == true, many?.message ?? "taken")
+        fake.setHostConfig(plain) { $0.AutoRemove = true }
+        let removed = await refusal(plain, .init(RestartPolicy: .init(Name: "always", MaximumRetryCount: 0)))
+        XCTAssertEqual(removed?.status, 409)
+        XCTAssertTrue(removed?.message.contains("AutoRemove") == true, removed?.message ?? "taken")
+    }
+
+    func testRenameAndCommit() async throws {
+        let web = fake.add(name: "web", env: ["API_TOKEN=s3cr3t"])
+        fake.add(name: "db")
+        let events = engine.events()
+        let heard = Task {
+            for try await event in events where event.verb == "rename" { return event.Actor.Attributes?["oldName"] ?? "" }
+            return ""
+        }
+        try await waitUntil { $0.listening == 1 }
+        try await engine.rename(container: web, to: "web-2")
+        XCTAssertEqual(fake.summary(web)?.name, "web-2")
+        let old = try await heard.value
+        XCTAssertEqual(old, "/web", "a rename event, with the old name")
+        for (name, status) in [("x", 400), ("db", 409), ("web-2", 400)] {
+            do {
+                try await engine.rename(container: web, to: name)
+                XCTFail("\(name) taken")
+            } catch let error as DockerError {
+                XCTAssertEqual(error.status, status, "\(name): \(error.message)")
+            }
+        }
+        let id = try await engine.commit(container: web, repository: "ot/web", tag: "1", comment: "c", changes: [#"ENV A="""#])
+        let images = try await engine.images()
+        XCTAssertEqual(images.first { $0.tags.contains("ot/web:1") }?.Id, id)
+        XCTAssertEqual(fake.commits.last?.changes, #"ENV A="""#)
+        XCTAssertNil(fake.commits.last?.pause, "paused, as the engine does by default")
+        XCTAssertTrue(
+            fake.requests.contains("POST /v1.47/commit?changes=ENV%20A%3D%22%22&comment=c&container=\(web)&repo=ot/web&tag=1"),
+            "\(fake.requests.filter { $0.contains("commit") })")
+    }
+
+    /// Saved as an image on the classic store, which keeps the committed
+    /// container's own config in the image (`docker save` and `push`
+    /// carry it): committed twice, the second time from a container of
+    /// the first, so neither the image's config nor the container's it
+    /// keeps holds the secret or Compose's labels. The first stays as the
+    /// image's parent, out of the list; the helper goes.
+    func testASavedImageKeepsNoSecretOnTheClassicStore() async throws {
+        let web = fake.add(name: "web", project: "shop", service: "web", env: ["API_TOKEN=s3cr3t", "PORT=80"])
+        let detail = try await engine.container(web)
+        let changes = DockerCommit.changes(env: detail.Config.Env ?? [], imageEnv: [], labels: detail.Config.Labels ?? [:])
+        let info = try await engine.info()
+        XCTAssertFalse(info.containerdStore, "the fake's classic store")
+
+        // Once, as the CLI does: the secret stays in what the image keeps.
+        _ = try await engine.commit(container: web, repository: "ot/once", tag: "1", changes: changes)
+        let once = try XCTUnwrap(fake.imageRecord("ot/once:1"))
+        XCTAssertTrue(once.config.Env?.contains("API_TOKEN=") == true)
+        XCTAssertTrue(once.containerConfig?.Env?.contains("API_TOKEN=s3cr3t") == true, "why it is done twice")
+
+        let before = fake.allImages.count
+        let commits = fake.commits.count
+        let id = try await engine.commitAnew(container: web, helper: "web-saving-1", repository: "ot/web", tag: "1", comment: "c", changes: changes)
+        let saved = try XCTUnwrap(fake.imageRecord("ot/web:1"))
+        for config in [saved.config, try XCTUnwrap(saved.containerConfig)] {
+            XCTAssertTrue(config.Env?.contains("API_TOKEN=") == true, "\(config.Env ?? [])")
+            XCTAssertFalse(config.Env?.contains { $0.contains("s3cr3t") } == true, "\(config.Env ?? [])")
+            XCTAssertTrue(config.Env?.contains("PORT=80") == true, "the rest stays")
+            XCTAssertEqual(config.Labels?["com.docker.compose.project"], "", "emptied")
+        }
+        let made = Array(fake.commits.dropFirst(commits))
+        XCTAssertEqual(made.map(\.repo), ["", "ot/web"], "untagged, then under the name")
+        XCTAssertEqual(made.map(\.changes), [changes.joined(separator: "\n"), ""])
+        XCTAssertEqual(made.last?.comment, "c")
+        XCTAssertNotEqual(made.last?.container, web, "the second from the helper")
+        let containers = try await engine.containers()
+        XCTAssertFalse(containers.contains { $0.name == "web-saving-1" }, "the helper is removed")
+        let images = try await engine.images()
+        XCTAssertEqual(images.first { $0.tags.contains("ot/web:1") }?.Id, id)
+        XCTAssertFalse(images.contains { $0.isDangling }, "the first is the image's parent, out of the list")
+        XCTAssertEqual(fake.allImages.count, before + 2)
+
+        // A container run from it: no secret, and no service of Compose's.
+        let run = try await engine.create(fromImage: "ot/web:1", name: "from-snapshot")
+        let listed = try await engine.containers()
+        let summary = try XCTUnwrap(listed.first { $0.Id == run })
+        XCTAssertNil(summary.composeProject)
+        XCTAssertNil(summary.composeService)
+        XCTAssertTrue(ComposeProjects.group([summary]).projects.isEmpty)
+        let env = try await engine.container(run).Config.Env ?? []
+        XCTAssertFalse(env.contains { $0.contains("s3cr3t") }, "\(env)")
+
+        // A helper that can't be made: nothing left behind.
+        fake.add(name: "web-saving-2")
+        let count = fake.allImages.count
+        do {
+            _ = try await engine.commitAnew(container: web, helper: "web-saving-2", repository: "ot/web", tag: "2", comment: "", changes: changes)
+            XCTFail("the name is taken")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 409)
+        }
+        XCTAssertEqual(fake.allImages.count, count, "the first image removed")
+        XCTAssertNil(fake.imageRecord("ot/web:2"))
+    }
+
+    /// The containerd store keeps nothing of the container in the image:
+    /// one commit is enough, and the engine says which store it is.
+    func testTheContainerdStoreKeepsNoContainerConfig() async throws {
+        fake.containerdStore = true
+        defer { fake.containerdStore = false }
+        let web = fake.add(name: "web", env: ["API_TOKEN=s3cr3t"])
+        let info = try await engine.info()
+        XCTAssertTrue(info.containerdStore)
+        _ = try await engine.commit(container: web, repository: "ot/web", tag: "1", changes: [#"ENV API_TOKEN="""#])
+        let saved = try XCTUnwrap(fake.imageRecord("ot/web:1"))
+        XCTAssertNil(saved.containerConfig)
+        XCTAssertEqual(saved.config.Env, ["API_TOKEN="])
+    }
+
+    /// A container's limits and name changed on the real engine: the swap
+    /// sent with a limit is what lets one go above the old swap. A
+    /// container of our own, labelled, from an image already here; removed
+    /// after. No commit: it would make an image.
+    func testSettingsAndANameOnTheRealEngine() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_DOCKER_TESTS"] == "1", "OVERTERM_DOCKER_TESTS=1 runs it")
+        let real = DockerEngine(endpoint: .current())
+        try await real.ping()
+        let image = "debian:bookworm-slim"
+        guard (try? await real.send(.GET, "/images/\(image)/json")) != nil else { throw XCTSkip("\(image) isn't on this Mac; nothing is pulled") }
+        let name = "overterm-test-\(UUID().uuidString.prefix(8).lowercased())"
+        let create = try JSONSerialization.data(withJSONObject: ["Image": image, "Cmd": ["sleep", "120"], "Labels": ["overterm.test": "1"]])
+        struct Created: Decodable { var Id: String }
+        let made = try JSONDecoder().decode(
+            Created.self,
+            from: try await real.send(.POST, "/containers/create", ["name": name], body: create, headers: [("Content-Type", "application/json")]).body)
+        func draft() async throws -> DockerContainerSettings {
+            let summary = try await real.containers().first { $0.Id == made.Id }
+            return DockerContainerSettings(try XCTUnwrap(summary), try await real.container(made.Id), engine: try await real.info())
+        }
+        do {
+            try await real.perform(.start, on: made.Id)
+            var settings = try await draft()
+            settings.memory = "64m"
+            settings.cpus = "0.5"
+            settings.restart = "on-failure"
+            settings.retries = 2
+            try await real.update(container: made.Id, try XCTUnwrap(settings.update))
+            let host = try await real.container(made.Id).HostConfig
+            XCTAssertEqual(host?.Memory, 64 << 20)
+            XCTAssertEqual(host?.MemorySwap, 128 << 20)
+            XCTAssertEqual(host?.NanoCpus, 500_000_000)
+            XCTAssertEqual(host?.RestartPolicy, .init(Name: "on-failure", MaximumRetryCount: 2))
+            var higher = try await draft()
+            higher.memory = "256m"
+            try await real.update(container: made.Id, try XCTUnwrap(higher.update))
+            let raised = try await real.container(made.Id).HostConfig?.Memory
+            XCTAssertEqual(raised, 256 << 20, "above the old swap: taken, its swap with it")
+            try await real.rename(container: made.Id, to: name + "-2")
+            let renamed = try await real.container(made.Id).name
+            XCTAssertEqual(renamed, name + "-2")
+        } catch {
+            try? await real.remove(container: made.Id, force: true)
+            throw error
+        }
+        try await real.remove(container: made.Id, force: true)
     }
 
     func testHubIsSearchedThroughTheEngine() async throws {

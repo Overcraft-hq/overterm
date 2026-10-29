@@ -65,10 +65,14 @@ final class ContainerSession: ObservableObject {
                 self.load()
             }
         // Its own start, from the engine: a list read after a quick restart
-        // may look as it did before it.
+        // may look as it did before it. Its settings changed (`docker
+        // update`, here or from the CLI): nothing the list says changes, so
+        // its inspect is read again at the event.
         starts = docker.events
-            .filter { $0.Actor.ID == id && ["start", "restart", "unpause"].contains($0.verb) }
-            .sink { [weak self] _ in self?.started() }
+            .filter { $0.Actor.ID == id && ["start", "restart", "unpause", "update"].contains($0.verb) }
+            .sink { [weak self] event in
+                if event.verb == "update" { self?.load() } else { self?.started() }
+            }
     }
 
     private func started() {

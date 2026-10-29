@@ -502,7 +502,8 @@ enum SettingsSchema {
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
         SettingSpec(
             key: "docker.agentWrites", section: .docker, group: "Agents", title: "Agents can ask to act",
-            help: "Start, stop, restart or remove a container, run compose, exec in a container — each asked about in the window first, and run only if you say so.",
+            help:
+                "Start, stop, restart or remove a container, change its memory, CPUs or restart policy, run compose, exec in a container — each asked about in the window first, and run only if you say so.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess"),
         SettingSpec(
             key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",

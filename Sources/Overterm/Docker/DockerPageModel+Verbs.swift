@@ -18,6 +18,7 @@ extension DockerPageModel {
         let endpoint = docker.endpoint
         let running = container.state == .running
         let notRunning = running ? nil : "It isn't running."
+        let gone = container.state == .dead || container.state == .removing ? "Docker is removing it." : nil
         var verbs = [
             DockerVerb(title: container.state.isUp ? "Stop" : "Start", symbol: container.state.isUp ? "stop.fill" : "play.fill", place: .button, key: "s") {
                 act(container.state.isUp ? .stop : .start)
@@ -90,10 +91,25 @@ extension DockerPageModel {
             DockerVerb(title: "Copy Name", symbol: "doc.on.doc", group: 2) { [weak self] in self?.actions?.copy(container.name) },
             DockerVerb(title: "Copy ID", symbol: "number", group: 2) { [weak self] in self?.actions?.copy(container.Id) },
             DockerVerb(title: "Copy as docker run", symbol: "terminal", group: 2) { [weak self] in self?.copyRunCommand(container) },
-            DockerVerb(title: "Export Filesystem…", symbol: "square.and.arrow.up", group: 3) { [weak self] in
+            // Its memory, CPUs and restart policy in place; the sheet is the
+            // page's, brought up first from the panel. So is what a rename
+            // and a save say as they go, and when they fail.
+            DockerVerb(title: "Settings…", symbol: "slider.horizontal.3", key: ",", unavailable: gone, group: 3) { [weak self] in
+                if self?.visible == false { self?.actions?.openPage() }
+                self?.editSettings(container)
+            },
+            DockerVerb(title: "Rename…", symbol: "pencil", group: 3) { [weak self] in
+                if self?.visible == false { self?.actions?.openPage() }
+                self?.askRename(container)
+            },
+            DockerVerb(title: "Export Filesystem…", symbol: "square.and.arrow.up", group: 4) { [weak self] in
                 self?.actions?.pickSave("\(container.name).tar") { self?.exportContainer(container, to: $0) }
             },
-            DockerVerb(title: "Run Another Like It…", symbol: "plus.square.on.square", group: 3) { [weak self] in
+            DockerVerb(title: "Save as Image…", symbol: "square.stack.3d.down.right", unavailable: gone, group: 4) { [weak self] in
+                if self?.visible == false { self?.actions?.openPage() }
+                self?.askSaveAsImage(container)
+            },
+            DockerVerb(title: "Run Another Like It…", symbol: "plus.square.on.square", group: 4) { [weak self] in
                 // Its window is the page's: brought up first from the panel.
                 if self?.visible == false { self?.actions?.openPage() }
                 self?.runAnother(like: container)

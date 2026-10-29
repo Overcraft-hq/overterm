@@ -42,7 +42,9 @@ extension E2ERunner {
         }
         let docker = DockerModel.shared
         let tools = await listed()
-        check("agents are offered Docker's tools", tools.contains("docker_logs") && tools.contains("docker_action"), "\(tools)")
+        check(
+            "agents are offered Docker's tools", tools.contains("docker_logs") && tools.contains("docker_action") && tools.contains("docker_update"),
+            "\(tools)")
         let containers = await call("docker_containers")
         check("docker_containers lists them with their ports", containers.text.contains("ot-shop-web-1") && containers.text.contains("localhost:58080→80"), containers.text)
         let inspect = await call("docker_inspect", ["container": "ot-shop-web-1"])
@@ -61,6 +63,20 @@ extension E2ERunner {
         check("asked about by name", asked.contains("stop") && asked.contains("ot-shop-web-1"), asked)
         _ = await call("docker_action", ["container": "ot-shop-web-1", "action": "start"])
         check("and back", await eventually(5) { docker.container(web)?.state == .running })
+        var memoryWhenAsked: Int?
+        DockerMCP.askOverride = { question in
+            asked = question
+            memoryWhenAsked = fake.hostConfig(web)?.Memory
+            return true
+        }
+        let updated = await call("docker_update", ["container": "ot-shop-web-1", "memory": "768m", "restart": "always"])
+        let limits = fake.hostConfig(web)
+        check(
+            "docker_update changes its limits, asked first",
+            !updated.isError && limits?.Memory == 768 << 20 && limits?.RestartPolicy?.Name == "always" && asked.contains("--memory 768m")
+                && memoryWhenAsked != 768 << 20, "\(updated.text) | \(asked) | \(memoryWhenAsked ?? -1)")
+        let tooSmall = await call("docker_update", ["container": "ot-shop-web-1", "memory": "1m"])
+        check("and says what Docker would refuse", tooSmall.isError && tooSmall.text.contains("6m"), tooSmall.text)
         let exec = await call("docker_exec", ["container": "ot-shop-web-1", "command": "cat /etc/hostname"])
         check("docker_exec says the exit code", exec.text.hasPrefix("exit 127"), exec.text)
         // One service, rebuilt: in a tab, recorded here.
@@ -78,7 +94,9 @@ extension E2ERunner {
 
         Settings.shared.set("docker.agentWrites", .bool(false))
         let without = await listed()
-        check("with writes off, no write is offered", without.contains("docker_logs") && !without.contains("docker_action"), "\(without)")
+        check(
+            "with writes off, no write is offered",
+            without.contains("docker_logs") && !without.contains("docker_action") && !without.contains("docker_update"), "\(without)")
         let refused = await call("docker_action", ["container": "ot-shop-web-1", "action": "stop"])
         check("nor done", refused.isError && refused.text.contains("Settings ▸ Docker") && fake.summary(web)?.state == .running, refused.text)
         Settings.shared.set("docker.agentWrites", nil)
@@ -381,6 +399,193 @@ extension E2ERunner {
         panelVerbs.first { $0.title == "Restart" }?.perform()
         check("and act through it", await eventually(5) { fake.requests.contains { $0.contains("/containers/\(container.Id)/restart") } })
         page.press("1")
+    }
+
+    /// A container's Settings… (`,`), Rename… and Save as Image…, from its
+    /// verbs: the sheet reads what it has and applies through the engine,
+    /// saying first what the engine would refuse; a name Docker would
+    /// refuse, or one taken, is asked again; a compose service's container
+    /// is warned about first; its image leaves its secrets and Compose's
+    /// labels out. Nothing goes to a terminal tab.
+    private func settingsChecks(_ fake: FakeDockerEngine, web: String) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        let actions = page.actions
+        defer { page.actions = actions }
+        var commands: [String] = []
+        var confirmed: [String] = []
+        var asked: [String] = []
+        var answers: [String] = []
+        page.actions?.run = { command, _ in commands.append(command) }
+        // Declined: the compose service's container keeps its name.
+        page.actions?.confirm = { title, _, _, _ in confirmed.append(title) }
+        // A queue: a name asked again with the same answer would ask forever.
+        page.actions?.askName = { title, detail, _, then in
+            asked.append(title + "\n" + detail)
+            if !answers.isEmpty { then(answers.removeFirst()) }
+        }
+        page.cleaned = nil
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        page.section = .containers
+        let tune = fake.add(name: "ot-tune", image: "redis:7")
+        guard await eventually(5, { docker.container(tune) != nil }), let container = docker.container(tune) else {
+            return check("a container to tune", false)
+        }
+        page.selection = [tune]
+        page.showDetail = true
+        let more = page.verbs(for: container).filter { $0.place == .more }.map(\.title)
+        check(
+            "a container's More has Settings, Rename and Save as Image", ["Settings…", "Rename…", "Save as Image…"].allSatisfy(more.contains), "\(more)")
+
+        page.press(",")
+        check(
+            ", opens its settings as a sheet", await eventually(5) { page.containerSettings?.id == tune && self.window.attachedSheet != nil },
+            page.error ?? "")
+        let opened = page.containerSettings
+        check(
+            "with no limits and no restart policy, as inspect says", opened?.memory == "" && opened?.cpus == "" && opened?.restart == "no",
+            "\(String(describing: opened))")
+        check("and what it uses now", opened?.inUse == 48 << 20, "\(opened?.inUse ?? -1)")
+        await capture("settings")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty, let shown = window.attachedSheet {
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-settings-sheet.png"), window: shown)
+        }
+        guard var settings = opened else { return }
+        settings.memory = "1g"
+        settings.cpus = "1.5"
+        settings.restart = "unless-stopped"
+        let line = settings.line(prefix: DockerCommands.prefix(for: docker.endpoint))
+        check(
+            "the change written out as docker update", line.hasSuffix("docker update --memory 1g --memory-swap 2g --cpus 1.5 --restart unless-stopped ot-tune"),
+            line)
+        let failed = await page.applySettings(settings)
+        let host = fake.hostConfig(tune)
+        check(
+            "Apply changes it through the engine, with the swap Docker needs",
+            failed == nil && host?.Memory == 1 << 30 && host?.MemorySwap == 2 << 30 && host?.NanoCpus == 1_500_000_000
+                && host?.RestartPolicy?.Name == "unless-stopped", "\(failed ?? "") \(String(describing: host))")
+        check("not in a terminal tab", commands.isEmpty, "\(commands)")
+        check(
+            "the sheet goes, and says what changed",
+            await eventually(5) { self.window.attachedSheet == nil && page.cleaned?.contains("1.5 CPUs") == true }, page.cleaned ?? "nothing said")
+        check(
+            "the detail reads its new limits at the engine's update event", await eventually(5) { page.session?.detail?.HostConfig?.Memory == 1 << 30 },
+            "\(page.session?.detail?.HostConfig?.Memory ?? -1)")
+
+        page.press(",")
+        if await eventually(5, { page.containerSettings?.memory == "1g" }), var again = page.containerSettings {
+            if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty, await eventually(3, { self.window.attachedSheet != nil }),
+                let shown = window.attachedSheet
+            {
+                await pause(0.5)
+                app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-settings-applied.png"), window: shown)
+            }
+            again.memory = ""
+            check("a memory limit can't be emptied, and says why", again.problem?.contains("not take one away") == true, again.problem ?? "")
+            again.memory = "4m"
+            check("under 6m is refused before the engine", again.problem?.contains("6m") == true, again.problem ?? "")
+            again.memory = "2g"
+            again.cpus = "9"
+            check("more CPUs than the engine has are refused", again.problem?.contains("4 CPUs") == true && again.update == nil, again.problem ?? "")
+        } else {
+            check("its settings again, as it has them now", false, "\(String(describing: page.containerSettings))")
+        }
+        page.containerSettings = nil
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+
+        // One Docker is removing: its verb says so, and its key does nothing.
+        fake.set(tune, state: .removing)
+        if await eventually(5, { docker.container(tune)?.state == .removing }) {
+            page.selection = [tune]
+            page.press(",")
+            await pause(0.5)
+            check("no settings for one Docker is removing, by its key", page.containerSettings == nil && window.attachedSheet == nil)
+        } else {
+            check("a container Docker is removing", false, docker.container(tune)?.State ?? "gone")
+        }
+        fake.set(tune, state: .running)
+        _ = await eventually(5) { docker.container(tune)?.state == .running }
+
+        // Rename: one Docker refuses, then one taken, then one it takes.
+        answers = ["x", "ot-shop-db-1", "ot-tuned"]
+        page.verbs(for: container).first { $0.title == "Rename…" }?.perform()
+        check(
+            "Rename… asks again when Docker would refuse the name", await eventually(3) { asked.contains { $0.contains("two or more") } },
+            asked.joined(separator: " | "))
+        check("and when another container has it", await eventually(5) { asked.contains { $0.contains("ot-shop-db-1") } }, asked.joined(separator: " | "))
+        check(
+            "then renames it, through the engine",
+            await eventually(5) { docker.container(tune)?.name == "ot-tuned" && fake.summary(tune)?.name == "ot-tuned" },
+            "\(docker.container(tune)?.name ?? "gone") \(page.error ?? "")")
+        check("without a warning for a container of no project", confirmed.isEmpty, "\(confirmed)")
+        let asks = asked.count
+        if let service = docker.container(web) { page.verbs(for: service).first { $0.title == "Rename…" }?.perform() }
+        await pause(0.3)
+        check(
+            "renaming a compose service's container warns first",
+            confirmed.last?.contains("Compose") == true && asked.count == asks && docker.container(web)?.name == "ot-shop-web-1", "\(confirmed)")
+
+        // Save as Image: what is and isn't in it, asked once its inspect is
+        // read; committed twice on this classic store, which keeps the
+        // container's own config in the image too.
+        answers = ["ot/web-snapshot:1"]
+        let questions = asked.count
+        if let service = docker.container(web) { page.verbs(for: service).first { $0.title == "Save as Image…" }?.perform() }
+        _ = await eventually(5) { asked.count > questions }
+        let question = asked.last ?? ""
+        check(
+            "it is asked what goes in", question.contains("volumes") && question.contains("API_TOKEN") && question.contains("Compose's labels"),
+            question)
+        check(
+            "Save as Image commits it under the name asked",
+            await eventually(5) { fake.commits.last.map { $0.repo == "ot/web-snapshot" && $0.tag == "1" } == true }, page.error ?? "no commit")
+        let saved = fake.imageRecord("ot/web-snapshot:1")
+        let kept = [saved?.config, saved?.containerConfig].compactMap { $0 }
+        let blanked = kept.allSatisfy { config in
+            let env = config.Env ?? []
+            return env.contains("API_TOKEN=") && !env.contains { $0.contains("s3cr3t-value") } && env.contains("NGINX_PORT=80")
+        }
+        check("its secrets left out of the image, and of what it keeps of the container", kept.count == 2 && blanked, "\(kept.map { $0.Env ?? [] })")
+        check(
+            "the image is listed, and said",
+            await eventually(5) { docker.images.contains { $0.tags.contains("ot/web-snapshot:1") } && page.cleaned?.contains("ot/web-snapshot:1") == true },
+            page.cleaned ?? page.error ?? "")
+        check("the container it was saved through is gone", !docker.containers.contains { $0.name.contains("-saving-") }, "\(docker.containers.map(\.name))")
+        // Run from it: Compose's labels are there, emptied — no project's.
+        if let run = try? await docker.engine?.create(fromImage: "ot/web-snapshot:1", name: "ot-from-snapshot"),
+            await eventually(5, { docker.container(run) != nil }), let made = docker.container(run)
+        {
+            let joined = docker.projects.contains { $0.containers.contains { $0.Id == run } }
+            check(
+                "and a container run from it joins no project",
+                made.composeProject == nil && !joined && page.verbs(for: made).first { $0.key == "b" } == nil
+                    && !DockerMCP.describe([made]).contains("compose"), "\(made.Labels ?? [:]) \(DockerMCP.describe([made]))")
+            try? await docker.remove(run, force: true)
+        } else {
+            check("a container run from the image", false, page.error ?? "")
+        }
+
+        // A password in its command: no commit can take it out, so it is said.
+        let cache = fake.add(name: "ot-cache", image: "redis:7")
+        fake.setCommand(cache, ["redis-server", "--requirepass", "p4ssw0rd"])
+        if await eventually(5, { docker.container(cache) != nil }), let redis = docker.container(cache) {
+            page.cleaned = nil
+            answers = ["ot/cache:1"]
+            let before = asked.count
+            page.verbs(for: redis).first { $0.title == "Save as Image…" }?.perform()
+            _ = await eventually(5) { asked.count > before }
+            check(
+                "a password in its command is said to stay", asked.last?.contains("A password in its command stays in the image") == true,
+                asked.last ?? "")
+            check(
+                "and said again once it is saved", await eventually(5) { page.cleaned?.contains("The password in its command is in it.") == true },
+                page.cleaned ?? page.error ?? "")
+        } else {
+            check("a container with a password in its command", false)
+        }
+        try? await docker.remove(cache, force: true)
+        try? await docker.remove(tune, force: true)
+        page.cleaned = nil
     }
 
     /// A Testcontainers run, as Java's makes one: its containers apart from
@@ -2506,6 +2711,7 @@ extension E2ERunner {
         await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await settingsChecks(fake, web: web)
         await testcontainersChecks(fake)
         await askAgentChecks(fake, web: web, folder: folder, real: real)
         await worktreePortsChecks(fake, socket: socket)

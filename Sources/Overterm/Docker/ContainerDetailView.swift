@@ -182,6 +182,8 @@ struct ContainerDetailView: View {
                 }
                 if let dir = detail.Config.WorkingDir, !dir.isEmpty { row("Working dir", dir) }
                 if let user = detail.Config.User, !user.isEmpty { row("User", user) }
+                if let memory = detail.HostConfig?.Memory, memory > 0 { row("Memory limit", DockerBytes.string(memory, memory: true)) }
+                if let cpus = DockerContainerSettings.Current(detail.HostConfig).cpus { row("CPUs", DockerContainerSettings.number(cpus)) }
                 if let policy = detail.HostConfig?.RestartPolicy?.Name, !policy.isEmpty, policy != "no" { row("Restart", policy) }
                 if let started = detail.State.StartedAt, container.state.isUp { row("Started", Self.date(started)) }
                 if let finished = detail.State.FinishedAt, !container.state.isUp, !finished.hasPrefix("0001") {

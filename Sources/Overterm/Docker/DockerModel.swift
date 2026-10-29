@@ -584,4 +584,11 @@ final class DockerModel: ObservableObject {
         try await engine.remove(container: id, force: force, volumes: volumes)
         await reload()
     }
+
+    /// Its new name, and the list saying it at once.
+    func rename(_ id: String, to name: String) async throws {
+        guard let engine else { throw DockerError.unreachable("Docker isn't running.") }
+        try await engine.rename(container: id, to: name)
+        await reload()
+    }
 }

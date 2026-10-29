@@ -78,7 +78,7 @@ enum Testcontainers {
     }
 
     static func isReused(_ container: ContainerSummary) -> Bool {
-        reuseLabels.contains { container.labels[$0] != nil }
+        reuseLabels.contains { container.labels[$0]?.isEmpty == false }
     }
 
     /// The session a container's or a network's labels say.

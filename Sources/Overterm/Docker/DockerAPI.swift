@@ -54,6 +54,85 @@ extension DockerEngine {
         try await send(.POST, "/containers/\(id)/rename", ["name": name])
     }
 
+    /// What `docker update` changes on a container, running or not: only
+    /// the fields given — nil is left out, and the engine reads it (and
+    /// every 0) as unchanged. `CpuPeriod` is here for the fake engine to
+    /// read; Overterm never sends one.
+    struct ContainerUpdate: Codable, Equatable, Sendable {
+        var Memory: Int?
+        var MemorySwap: Int?
+        var NanoCpus: Int?
+        var CpuQuota: Int?
+        var CpuPeriod: Int?
+        var RestartPolicy: ContainerDetail.HostConfigDetail.RestartPolicy?
+    }
+
+    /// Changes it in place; what the engine warns of (no swap accounting
+    /// on its kernel) back.
+    @discardableResult
+    func update(container id: String, _ change: ContainerUpdate) async throws -> [String] {
+        struct Answer: Decodable { var Warnings: [String]? }
+        let body = try JSONEncoder().encode(change)
+        let response = try await send(.POST, "/containers/\(id)/update", body: body, headers: [("Content-Type", "application/json")])
+        return (try? JSONDecoder().decode(Answer.self, from: response.body))?.Warnings ?? []
+    }
+
+    /// Its files and config as a new image (`docker commit`): paused while
+    /// it is copied, the engine's default, as the CLI's. `changes` are
+    /// Dockerfile lines (`ENV KEY=""`) put over its config. No body: the
+    /// container's own config is the image's. Untagged without a
+    /// repository. Returns the image's id.
+    func commit(container id: String, repository: String? = nil, tag: String = "latest", comment: String = "", changes: [String] = []) async throws
+        -> String
+    {
+        struct Answer: Decodable { var Id: String }
+        var query = ["container": id]
+        if let repository {
+            query["repo"] = repository
+            query["tag"] = tag
+        }
+        if !comment.isEmpty { query["comment"] = comment }
+        if !changes.isEmpty { query["changes"] = changes.joined(separator: "\n") }
+        let response = try await send(.POST, "/commit", query)
+        return try JSONDecoder().decode(Answer.self, from: response.body).Id
+    }
+
+    /// A commit whose image keeps nothing `changes` take out. The classic
+    /// image store writes the container's own config into the image as
+    /// well (`container_config`, as it was: secrets, Compose's labels),
+    /// and `docker save` and `docker push` carry it; no parameter changes
+    /// that. So the container is committed untagged, with the changes; a
+    /// container made from that (never started) is committed under the
+    /// name, its own config the changed one; and it is removed. The first
+    /// image stays as the new one's parent, which the engine lists no more
+    /// than any layer's, and removes with it. Returns the image's id.
+    func commitAnew(
+        container id: String, helper name: String, repository: String, tag: String, comment: String, changes: [String]
+    ) async throws -> String {
+        let first = try await commit(container: id, changes: changes)
+        var helper: String?
+        do {
+            let made = try await create(fromImage: first, name: name)
+            helper = made
+            let image = try await commit(container: made, repository: repository, tag: tag, comment: comment)
+            try? await remove(container: made, force: true, volumes: true)
+            return image
+        } catch {
+            if let helper { try? await remove(container: helper, force: true, volumes: true) }
+            try? await remove(image: first)
+            throw error
+        }
+    }
+
+    /// A container made from `image` and nothing else — its command, env
+    /// and labels the image's own; never started. Returns its id.
+    func create(fromImage image: String, name: String) async throws -> String {
+        struct Created: Decodable { var Id: String }
+        let body = try JSONSerialization.data(withJSONObject: ["Image": image])
+        let response = try await send(.POST, "/containers/create", ["name": name], body: body, headers: [("Content-Type", "application/json")])
+        return try JSONDecoder().decode(Created.self, from: response.body).Id
+    }
+
     /// The last `tail` lines, then (`follow`) what comes; demuxed when the
     /// container has no TTY.
     func logs(_ id: String, tty: Bool, tail: Int = 500, follow: Bool, timestamps: Bool = true, since: Int? = nil)
