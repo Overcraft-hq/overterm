@@ -83,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         LanguageServers.shared.stopAll()
         // Each database tunnel's ssh, or it outlives the app.
         SSHTunnel.closeAll()
+        // A volume's helpers, while a remote engine's forward is still open.
+        DockerHelpers.removeAll(waiting: 2)
         DockerSSHForwards.closeAll()
         BrowserBridge.shared.stop()
     }

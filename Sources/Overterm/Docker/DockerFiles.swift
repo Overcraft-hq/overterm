@@ -69,21 +69,75 @@ enum DockerFiles {
 
     /// Where a container's file is kept while the editor has it: under
     /// Overterm's own folder, by container and path — `.` and `..` left
-    /// out, so a path typed as `/../../x` stays inside that folder.
-    static func localCopy(of path: String, in container: String, under root: URL) -> URL {
+    /// out, so a path typed as `/../../x` stays inside that folder. A
+    /// volume's go under `Volumes` (`localCopy(of:from:under:)`).
+    static func localCopy(of path: String, in container: String, under root: URL, folder: String = "Containers") -> URL {
         let safe = container.replacingOccurrences(of: "/", with: "_")
         let parts = path.split(separator: "/").filter { $0 != "." && $0 != ".." }.joined(separator: "/")
-        return root.appendingPathComponent("Containers", isDirectory: true).appendingPathComponent(safe == ".." ? "_" : safe, isDirectory: true)
+        return root.appendingPathComponent(folder, isDirectory: true).appendingPathComponent(safe == ".." ? "_" : safe, isDirectory: true)
             .appendingPathComponent(parts.isEmpty ? "untitled" : parts)
+    }
+
+    /// A container's or a volume's file, kept by where it came from.
+    static func localCopy(of path: String, from source: DockerFileSource, under root: URL) -> URL {
+        localCopy(of: path, in: source.copiesName, under: root, folder: source.copiesFolder)
     }
 }
 
-/// A container's file the editor has a copy of: where it came from, and
-/// what it was when read — to tell a save that would overwrite a change
-/// made in the container since.
+/// Whose files a Files tab shows: a container's, or a volume's — read
+/// through a helper that mounts it (`DockerEngine.reaching`).
+enum DockerFileSource: Hashable, Sendable {
+    case container(id: String, name: String)
+    case volume(String)
+
+    static func of(_ container: ContainerSummary) -> DockerFileSource { .container(id: container.Id, name: container.name) }
+
+    /// As a sentence says it: `web`, `the volume pgdata`.
+    var title: String {
+        switch self {
+        case .container(_, let name): name
+        case .volume(let name): "the volume \(name)"
+        }
+    }
+
+    /// Where its copies go in Overterm's folder, and under what name.
+    var copiesFolder: String {
+        switch self {
+        case .container: "Containers"
+        case .volume: "Volumes"
+        }
+    }
+
+    var copiesName: String {
+        switch self {
+        case .container(_, let name): name
+        case .volume(let name): name
+        }
+    }
+}
+
+/// A container's or a volume's file the editor has a copy of: where it
+/// came from, and what it was when read — to tell a save that would
+/// overwrite a change made there since, and to give the file back its
+/// owner (a database won't read a config root now owns).
 struct DockerFileCopy: Equatable, Sendable {
-    var container: String
-    var name: String
+    var source: DockerFileSource
     var path: String
     var stat: DockerTar.PathStat
+    var uid: Int
+    var gid: Int
+    /// The engine it was read from: a volume's name is on every engine,
+    /// and the context may have changed since.
+    var endpoint: DockerEndpoint
+
+    /// Why it isn't saved through `now`: another engine than the one it
+    /// came from, where the same name is another volume (or nothing, and
+    /// a helper would make it). Nil for the same one. Pure.
+    func refusal(through now: DockerEndpoint) -> String? {
+        guard now.address != endpoint.address else { return nil }
+        return "It was opened from \(Self.name(of: endpoint)), and Docker is now \(Self.name(of: now)): switch back to save it there."
+    }
+
+    /// `the context colima`, else its host.
+    static func name(of endpoint: DockerEndpoint) -> String { endpoint.context.map { "the context \($0)" } ?? endpoint.host }
 }

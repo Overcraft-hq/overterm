@@ -123,6 +123,7 @@ final class DockerPageTests: XCTestCase {
         XCTAssertEqual(DockerKey.of("q"), .client)
         XCTAssertEqual(DockerKey.of("a"), .askAgent)
         XCTAssertEqual(DockerKey.of(","), .settings)
+        XCTAssertEqual(DockerKey.of("f"), .files)
         XCTAssertNil(DockerKey.of("x"))
         XCTAssertEqual(Set(DockerKey.allCases.map(\.key)).count, DockerKey.allCases.count, "no key twice")
     }
@@ -700,6 +701,124 @@ final class DockerFilesTests: XCTestCase {
         XCTAssertEqual(DockerFiles.localCopy(of: "/etc/nginx/nginx.conf", in: "web", under: root).path, "/support/Containers/web/etc/nginx/nginx.conf")
         XCTAssertEqual(DockerFiles.localCopy(of: "/../../../etc/passwd", in: "web", under: root).path, "/support/Containers/web/etc/passwd")
         XCTAssertEqual(DockerFiles.localCopy(of: "/a/./b", in: "x/y", under: root).path, "/support/Containers/x_y/a/b")
+    }
+
+    /// A file saved back keeps its owner: the engine gives what it extracts
+    /// the tar's, and a database won't read a config root owns.
+    func testATarKeepsItsOwner() throws {
+        let owned = try XCTUnwrap(DockerTar.archive(name: "pg_hba.conf", data: Data("local all all trust\n".utf8), uid: 999, gid: 70))
+        let entry = try XCTUnwrap(DockerTar.entries(of: owned).first)
+        XCTAssertEqual(entry.uid, 999)
+        XCTAssertEqual(entry.gid, 70)
+        XCTAssertEqual(String(decoding: entry.data, as: UTF8.self), "local all all trust\n")
+        let plain = try XCTUnwrap(DockerTar.entries(of: try XCTUnwrap(DockerTar.archive(name: "a", data: Data("x".utf8)))).first)
+        XCTAssertEqual(plain.uid, 0, "root's unless said")
+        XCTAssertEqual(plain.gid, 0)
+        let long = String(repeating: "folder/", count: 20) + "file.conf"
+        let deep = try XCTUnwrap(DockerTar.entries(of: try XCTUnwrap(DockerTar.archive(name: long, data: Data("y".utf8), uid: 1000, gid: 1000))).first)
+        XCTAssertEqual(deep.name, long, "a name past 100 bytes, through its prefix")
+        XCTAssertEqual(deep.uid, 1000)
+    }
+
+    func testAHelperIsOverterms() {
+        func summary(_ labels: [String: String]) -> ContainerSummary {
+            ContainerSummary(Id: "x", Names: ["/overterm-files-1a2b3c4d"], Image: "busybox", Created: 1, Labels: labels, State: "running", Status: "")
+        }
+        XCTAssertTrue(summary(["overterm.helper": "1", "overterm.volume": "pgdata"]).isHelper)
+        XCTAssertFalse(summary([:]).isHelper)
+        XCTAssertFalse(summary(["overterm.test": "1"]).isHelper)
+    }
+}
+
+/// A volume's files: its paths in the helper, which images can run one.
+/// Pure.
+final class DockerVolumeFilesTests: XCTestCase {
+    func testPathsInTheHelper() {
+        XCTAssertEqual(DockerVolumeFiles.helperPath("/"), "/volume")
+        XCTAssertEqual(DockerVolumeFiles.helperPath("/conf/app.conf"), "/volume/conf/app.conf")
+        XCTAssertEqual(DockerVolumeFiles.helperPath("/../../etc/passwd"), "/volume/etc/passwd", "a typed .. stays in the volume")
+        XCTAssertEqual(DockerVolumeFiles.helperPath(""), "/volume")
+        XCTAssertEqual(DockerVolumeFiles.said("No such folder: /volume/x"), "No such folder: /x")
+        XCTAssertEqual(DockerVolumeFiles.said("No such folder: /volume"), "No such folder: /")
+        XCTAssertEqual(
+            DockerVolumeFiles.said("Could not find the file /volume/conf/a.conf in container 1a2b"), "Could not find the file /conf/a.conf in container 1a2b")
+        XCTAssertEqual(DockerVolumeFiles.said("/var/lib/docker/volumes/x/_data"), "/var/lib/docker/volumes/x/_data", "not another path")
+    }
+
+    func testWhichImagesAreTried() {
+        func image(_ tags: [String], _ size: Int) -> ImageSummary {
+            ImageSummary(Id: "sha256:" + (tags.first ?? "none-\(size)"), RepoTags: tags.isEmpty ? ["<none>:<none>"] : tags, Created: 1, Size: size)
+        }
+        let postgres = image(["postgres:16"], 400 << 20)
+        let busybox = image(["busybox:1.36"], 4 << 20)
+        let dangling = image([], 1 << 20)
+        let netshoot = image(["nicolaka/netshoot:latest"], 300 << 20)
+        let alpine = image(["alpine:3.20"], 8 << 20)
+        let distroless = image(["gcr.io/distroless/static:nonroot"], 2 << 20)
+        let node = image(["node:20"], 1 << 30)
+        let images = [postgres, busybox, dangling, netshoot, alpine, distroless, node]
+        let db = ContainerSummary(Id: "db", Names: ["/db"], Image: "postgres:16", ImageID: postgres.Id, Created: 1, State: "running", Status: "")
+        func tried(_ images: [ImageSummary], worked: String? = nil, limit: Int = 3) -> [String] {
+            DockerVolumeFiles.shellImages(images, debugImage: "nicolaka/netshoot", mountedBy: [db], worked: worked, limit: limit)
+        }
+        XCTAssertEqual(tried(images), [busybox.Id, alpine.Id, netshoot.Id], "the small shells first, then the debug shell's")
+        XCTAssertEqual(
+            tried(images, limit: 10), [busybox.Id, alpine.Id, netshoot.Id, postgres.Id, node.Id],
+            "then what mounts it, then the rest — never <none>, never distroless")
+        let hub = image(["docker.io/library/busybox:latest"], 4 << 20)
+        XCTAssertEqual(tried([node, hub]).first, hub.Id, "Docker Hub's full name is busybox")
+        let both = image(["busybox:1.36", "alpine:3.20"], 5 << 20)
+        XCTAssertEqual(tried([both, node]), [both.Id, node.Id], "an image of two names once")
+        XCTAssertEqual(tried(images, worked: node.Id), [node.Id, busybox.Id, alpine.Id], "the one that worked last first")
+        XCTAssertEqual(tried(images, worked: "sha256:gone").first, busybox.Id, "unless it is gone")
+        XCTAssertEqual(tried([]), [])
+    }
+
+    func testAVolumesCopyStaysInItsFolder() {
+        let root = URL(fileURLWithPath: "/support")
+        XCTAssertEqual(DockerFiles.localCopy(of: "/conf/../app.conf", from: .volume("pgdata"), under: root).path, "/support/Volumes/pgdata/conf/app.conf")
+        XCTAssertEqual(
+            DockerFiles.localCopy(of: "/etc/hosts", from: .container(id: "abc", name: "web"), under: root).path, "/support/Containers/web/etc/hosts")
+        XCTAssertEqual(DockerFileSource.volume("pgdata").title, "the volume pgdata")
+        XCTAssertEqual(DockerFileSource.container(id: "abc", name: "web").title, "web")
+    }
+
+    func testTheMountedNote() {
+        XCTAssertEqual(VolumeFilesPane.mountedNote(["db"]), "Mounted by db, running: it sees a saved file at once.")
+        XCTAssertEqual(VolumeFilesPane.mountedNote(["db", "backup"]), "Mounted by db, backup, running: they see a saved file at once.")
+    }
+
+    /// A copy saves only to the engine it was read from: a volume's name
+    /// is on every engine, and the context may have changed since.
+    func testACopySavesOnlyWhereItCameFrom() {
+        let desktop = DockerEndpoint(address: .unix("/Users/me/.docker/run/docker.sock"), context: "desktop-linux", source: "context desktop-linux")
+        let remote = DockerEndpoint(address: .tcp(host: "dev.example", port: 2376), context: nil, source: "DOCKER_HOST")
+        let stat = DockerTar.PathStat(name: "pg_hba.conf", size: 1, mode: 0o600, mtime: "2026-01-01T00:00:00Z", linkTarget: "")
+        let copy = DockerFileCopy(source: .volume("pgdata"), path: "/pg_hba.conf", stat: stat, uid: 999, gid: 999, endpoint: desktop)
+        XCTAssertNil(copy.refusal(through: desktop))
+        var renamed = desktop
+        renamed.source = "DOCKER_CONTEXT"
+        XCTAssertNil(copy.refusal(through: renamed), "the same socket however it was found")
+        XCTAssertEqual(
+            copy.refusal(through: remote), "It was opened from the context desktop-linux, and Docker is now tcp://dev.example:2376: switch back to save it there.")
+    }
+
+    /// The helpers a run before this one left: Overterm's, another run's
+    /// (or none's, before the label), not running, and made over ten
+    /// minutes ago.
+    func testWhichHelpersWereLeftBehind() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func helper(_ id: String, _ state: String = "created", run: String? = "earlier", ago: Int = 3600, helper: Bool = true) -> ContainerSummary {
+            var labels = helper ? ["overterm.helper": "1"] : [:]
+            labels["overterm.run"] = run
+            return ContainerSummary(
+                Id: id, Names: ["/" + id], Image: "busybox", Created: 1_800_000_000 - ago, Labels: labels, State: state, Status: "")
+        }
+        let helpers = [
+            helper("left"), helper("unlabelled", "exited", run: nil), helper("running", "running"), helper("ours", run: DockerHelpers.run),
+            helper("recent", ago: 60), helper("web", helper: false),
+        ]
+        XCTAssertEqual(DockerHelpers.leftBehind(helpers, now: now), ["left", "unlabelled"])
     }
 }
 

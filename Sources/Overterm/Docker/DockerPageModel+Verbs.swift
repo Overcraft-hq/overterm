@@ -367,9 +367,10 @@ extension DockerPageModel {
         let users = docker.containers(mounting: volume)
         let endpoint = docker.endpoint
         return [
-            DockerVerb(title: "Browse in a Tab", label: "Browse", symbol: "terminal", place: .button) { [weak self] in
-                self?.actions?.run(
-                    DockerCommands.prefix(for: endpoint) + "docker run --rm -it -v \(DockerCommands.quote(volume.Name)):/volume -w /volume alpine sh", nil)
+            // Its files on the page, its detail's Files tab; a shell on it
+            // in a tab is behind More.
+            DockerVerb(title: "Browse Files", label: "Files", symbol: "folder", place: .button, key: "f") { [weak self] in
+                self?.browseFiles(of: volume)
             },
             DockerVerb(title: "Export…", symbol: "square.and.arrow.up", place: .button) { [weak self] in
                 self?.actions?.pickSave("\(volume.shortName).tar") { self?.exportVolume(volume, to: $0) }
@@ -378,6 +379,10 @@ extension DockerPageModel {
                 self?.actions?.askName("Clone “\(volume.shortName)”", "A new volume with the same files.", volume.shortName + "-copy") {
                     self?.cloneVolume(volume, as: $0)
                 }
+            },
+            DockerVerb(title: "Open a Shell on It in a Tab", label: "Shell", symbol: "terminal") { [weak self] in
+                self?.actions?.run(
+                    DockerCommands.prefix(for: endpoint) + "docker run --rm -it -v \(DockerCommands.quote(volume.Name)):/volume -w /volume alpine sh", nil)
             },
             DockerVerb(title: "Import Into a New Volume…", symbol: "square.and.arrow.down") { [weak self] in self?.importVolumeAsking() },
             DockerVerb(title: "Copy Name", symbol: "doc.on.doc", group: 1) { [weak self] in self?.actions?.copy(volume.Name) },

@@ -300,6 +300,239 @@ final class DockerTransportTests: XCTestCase {
         try await real.remove(volume: name, force: true)
     }
 
+    /// A volume's Files tab lists through a helper that runs — `sh` as
+    /// root, no network, gone by itself — with the volume at /volume, and
+    /// labelled as Overterm's.
+    func testAVolumeIsListedThroughAHelperThatRuns() async throws {
+        let busybox = fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.setVolumeFile("pgdata", "PG_VERSION", Data("16\n".utf8))
+        fake.setVolumeFile("pgdata", "base/1/123", Data(count: 8192))
+        let id = try await engine.filesHelper(mounting: "pgdata", image: busybox)
+        let made = try XCTUnwrap(fake.created(id))
+        XCTAssertEqual(made.Entrypoint, ["sh", "-c", "exec sleep 1800"])
+        XCTAssertEqual(made.User, "0:0")
+        XCTAssertEqual(made.WorkingDir, "/volume")
+        XCTAssertEqual(made.HostConfig?.AutoRemove, true)
+        XCTAssertEqual(made.HostConfig?.NetworkMode, "none")
+        XCTAssertEqual(made.HostConfig?.Binds, ["pgdata:/volume"])
+        XCTAssertEqual(made.Labels?["overterm.helper"], "1")
+        XCTAssertEqual(made.Labels?["overterm.volume"], "pgdata")
+        XCTAssertTrue(fake.summary(id)?.name.hasPrefix("overterm-files-") == true, fake.summary(id)?.name ?? "")
+        XCTAssertEqual(fake.summary(id)?.state, .running)
+        XCTAssertEqual(DockerHelpers.ids(on: engine), [id])
+        let top = try await engine.list(id, folder: "/volume")
+        XCTAssertEqual(top.map(\.name), ["base", "PG_VERSION"], "folders first")
+        let base = try await engine.list(id, folder: "/volume/base")
+        XCTAssertEqual(base.map(\.name), ["1"])
+        await engine.removeHelper(id)
+        XCTAssertEqual(fake.helperIDs, [])
+        XCTAssertEqual(DockerHelpers.ids(on: engine), [])
+    }
+
+    /// A volume's file read and written through a helper made for the
+    /// call, which goes whatever the call did — and keeps its owner.
+    func testAVolumesFileKeepsItsOwner() async throws {
+        let engine: DockerEngine = engine
+        fake.addImage("debian:bookworm-slim", size: 80 << 20)
+        fake.setVolumeFile("pgdata", "pg_hba.conf", Data("local all all trust\n".utf8), uid: 999, gid: 999)
+        let entry = try await engine.reaching(.volume("pgdata"), "/pg_hba.conf") { id, at in try await engine.readEntry(id, file: at) }
+        XCTAssertEqual(String(decoding: entry.data, as: UTF8.self), "local all all trust\n")
+        XCTAssertEqual(entry.uid, 999)
+        XCTAssertEqual(fake.helperIDs, [], "the helper goes after the call")
+        let stat = try await engine.reaching(.volume("pgdata"), "/pg_hba.conf") { id, at in
+            try await engine.write(id, file: at, data: Data("host all all all md5\n".utf8), uid: entry.uid, gid: entry.gid)
+            return try await engine.stat(id, path: at)
+        }
+        XCTAssertEqual(stat.size, 21)
+        XCTAssertEqual(fake.volumeContents("pgdata")["pg_hba.conf"], Data("host all all all md5\n".utf8))
+        XCTAssertEqual(fake.volumeOwner("pgdata", "pg_hba.conf")?.uid, 999)
+        XCTAssertEqual(fake.volumeOwner("pgdata", "pg_hba.conf")?.gid, 999)
+        XCTAssertEqual(fake.helperIDs, [])
+        do {
+            _ = try await engine.reaching(.volume("pgdata"), "/nope") { id, at in try await engine.stat(id, path: at) }
+            XCTFail("no such file")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 404)
+            XCTAssertEqual(DockerVolumeFiles.said(error.message), "/nope isn't there.", "said as the volume's path")
+        }
+        XCTAssertEqual(fake.helperIDs, [], "and after one that threw")
+        let folder = try await engine.reaching(.volume("pgdata"), "/") { id, at in try await engine.stat(id, path: at) }
+        XCTAssertTrue(folder.isDirectory, "its top is a folder")
+    }
+
+    /// Without `sh` its start fails: nothing is left of it.
+    func testAStartThatFailsLeavesNoHelper() async throws {
+        let distroless = fake.addImage("gcr.io/distroless/static:nonroot", size: 2 << 20, shell: false)
+        fake.addVolume("pgdata", size: 0, refCount: 0)
+        do {
+            _ = try await engine.filesHelper(mounting: "pgdata", image: distroless)
+            XCTFail("no sh to start")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 400)
+            XCTAssertTrue(error.message.contains("executable file not found"), error.message)
+        }
+        XCTAssertEqual(fake.helperIDs, [])
+        XCTAssertEqual(DockerHelpers.ids(on: engine), [])
+    }
+
+    /// What is left at quit is removed: waited for off any cooperative
+    /// thread, as the main thread waits at quit.
+    func testHelpersLeftAtQuitAreRemoved() async throws {
+        let busybox = fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.addVolume("pgdata", size: 0, refCount: 0)
+        fake.addVolume("cache", size: 0, refCount: 0)
+        _ = try await engine.filesHelper(mounting: "pgdata", image: busybox)
+        _ = try await engine.filesHelper(mounting: "cache", image: busybox)
+        XCTAssertEqual(fake.helperIDs.count, 2)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                DockerHelpers.removeAll(waiting: 2)
+                done.resume()
+            }
+        }
+        XCTAssertEqual(fake.helperIDs, [])
+        XCTAssertEqual(DockerHelpers.ids(on: engine), [])
+    }
+
+    /// One removal, however many ask, and returned from only once the
+    /// engine no longer has it: a second DELETE would be refused at once
+    /// (409) while the first still kills it — and it still holds its
+    /// volume. Its anonymous volumes go with it (`v=1`).
+    func testAHelperIsRemovedOnceAndWaitedFor() async throws {
+        let engine: DockerEngine = engine
+        let busybox = fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.addVolume("pgdata", size: 0, refCount: 0)
+        fake.removalDelay = 300
+        let id = try await engine.filesHelper(mounting: "pgdata", image: busybox)
+        async let first: Void = engine.removeHelper(id)
+        async let second: Void = engine.removeHelper(id)
+        _ = await (first, second)
+        XCTAssertNil(fake.summary(id), "gone when either returns")
+        let deletes = fake.requests.filter { $0.hasPrefix("DELETE /v1.47/containers/\(id)") }
+        XCTAssertEqual(deletes, ["DELETE /v1.47/containers/\(id)?force=1&v=1"], "once, with its anonymous volumes")
+        XCTAssertEqual(DockerHelpers.ids(on: engine), [])
+        try await engine.remove(volume: "pgdata")
+        XCTAssertFalse(fake.volumeNames.contains("pgdata"), "free at once")
+
+        // Removed by someone else meanwhile (a 409): waited for all the same.
+        fake.removalDelay = 0
+        fake.addVolume("cache", size: 0, refCount: 0)
+        let other = try await engine.filesHelper(mounting: "cache", image: busybox)
+        fake.refuseRemoval(of: other, 409, "removal of container \(other) is already in progress")
+        let stub: FakeDockerEngine = fake
+        Task.detached {
+            try? await Task.sleep(for: .milliseconds(250))
+            stub.expire(other)
+        }
+        await engine.removeHelper(other)
+        XCTAssertNil(fake.summary(other), "returned once it was gone")
+    }
+
+    /// A helper is made only for a volume the engine has: bound by its
+    /// name, one would make it again, empty — as the engine does (the
+    /// fake too, below), and a save would land in it.
+    func testAVolumeGoneGetsNoHelper() async throws {
+        let engine: DockerEngine = engine
+        let busybox = fake.addImage("busybox:1.36", size: 4 << 20)
+        let creates = { self.fake.requests.filter { $0.contains("/containers/create") }.count }
+        for attempt in 0..<3 {
+            do {
+                switch attempt {
+                case 0: _ = try await engine.filesHelper(mounting: "pgdata", image: busybox)
+                case 1: _ = try await engine.helper(mounting: "pgdata", image: busybox)
+                default:
+                    _ = try await engine.reaching(.volume("pgdata"), "/pg_hba.conf") { id, at in
+                        try await engine.write(id, file: at, data: Data("x".utf8))
+                    }
+                }
+                XCTFail("made for a volume there isn't")
+            } catch let error as DockerError {
+                XCTAssertEqual(error, DockerError.volumeGone("pgdata"))
+                XCTAssertEqual(error.message, "The volume pgdata is gone.")
+            }
+        }
+        XCTAssertEqual(creates(), 0)
+        XCTAssertFalse(fake.volumeNames.contains("pgdata"), "not made again")
+        // What the check keeps from happening: the engine makes a name it
+        // doesn't know, bound.
+        let body = try JSONSerialization.data(withJSONObject: ["Image": busybox, "HostConfig": ["Binds": ["other:/volume"]]])
+        try await engine.send(.POST, "/containers/create", body: body, headers: [("Content-Type", "application/json")])
+        XCTAssertTrue(fake.volumeNames.contains("other"))
+    }
+
+    /// A helper the run doesn't know — left by a crash, or by a version
+    /// before this one — is found by its mount and removed before its
+    /// volume, which the engine would refuse to remove while it is there.
+    func testAHelperNobodyRecordedIsFoundByItsMount() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.addVolume("pgdata", size: 0, refCount: 0)
+        fake.addVolume("cache", size: 0, refCount: 0)
+        let old = fake.add(
+            name: "helper-0ld", image: "busybox:1.36", state: .created, volumes: ["pgdata"], labels: ["overterm.helper": "1"],
+            created: Int(Date().timeIntervalSince1970) - 3600)
+        let elsewhere = fake.add(name: "overterm-helper-ca", image: "busybox:1.36", state: .created, volumes: ["cache"], labels: ["overterm.helper": "1"])
+        fake.addVolume("logs", size: 0, refCount: 0)
+        let theirs = fake.add(name: "db", image: "postgres:16", state: .exited, volumes: ["logs"])
+        do {
+            try await engine.remove(volume: "pgdata")
+            XCTFail("in use")
+        } catch let error as DockerError {
+            XCTAssertEqual(error.status, 409)
+            XCTAssertTrue(error.message.contains("volume is in use"), error.message)
+        }
+        await DockerHelpers.remove(mounting: "pgdata", on: engine)
+        XCTAssertNil(fake.summary(old), "found through the engine")
+        XCTAssertNotNil(fake.summary(elsewhere), "another volume's stays")
+        XCTAssertNotNil(fake.summary(theirs), "and nobody's but a helper is touched")
+        XCTAssertTrue(fake.requests.contains { $0.contains("/containers/json?all=1&filters=") }, "asked by its label")
+        try await engine.remove(volume: "pgdata")
+        XCTAssertFalse(fake.volumeNames.contains("pgdata"), "free now")
+    }
+
+    /// The same against the real engine: a helper that runs `sh` as root
+    /// lists a volume, reads a file's owner, and is gone once removed. A
+    /// volume of our own, from an image already here; removed after.
+    func testAVolumeIsBrowsedOnTheRealEngine() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_DOCKER_TESTS"] == "1", "OVERTERM_DOCKER_TESTS=1 runs it")
+        let real = DockerEngine(endpoint: .current())
+        try await real.ping()
+        let image = "debian:bookworm-slim"
+        guard (try? await real.send(.GET, "/images/\(image)/json")) != nil else { throw XCTSkip("\(image) isn't on this Mac; nothing is pulled") }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-volume-\(UUID().uuidString.prefix(6))")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let name = "overterm-test-\(UUID().uuidString.prefix(8).lowercased())"
+        var tar = DockerTar.header(name: "volume/", size: 0, mode: 0o755, modified: Date(), type: "5")!
+        tar += DockerTar.header(name: "volume/conf/", size: 0, mode: 0o755, modified: Date(), type: "5")!
+        tar += DockerTar.archive(name: "volume/conf/a.txt", data: Data("owned\n".utf8), uid: 999, gid: 999)!
+        let source = folder.appendingPathComponent("in.tar")
+        try tar.write(to: source)
+        var helper: String?
+        do {
+            try await real.import(volume: name, from: source, using: image)
+            let id = try await real.filesHelper(mounting: name, image: image, labels: ["overterm.test": "1"])
+            helper = id
+            let conf = try await real.list(id, folder: "/volume/conf")
+            XCTAssertEqual(conf.map(\.name), ["a.txt"])
+            let entry = try await real.readEntry(id, file: "/volume/conf/a.txt")
+            XCTAssertEqual(entry.uid, 999)
+            await real.removeHelper(id)
+            helper = nil
+            do {
+                _ = try await real.send(.GET, "/containers/\(id)/json")
+                XCTFail("the helper is gone")
+            } catch let error as DockerError {
+                XCTAssertEqual(error.status, 404)
+            }
+        } catch {
+            if let helper { await real.removeHelper(helper) }
+            try? await real.remove(volume: name, force: true)
+            throw error
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        try await real.remove(volume: name, force: true)
+    }
+
     /// `docker update` as the engine takes it: a memory limit only with a
     /// swap when it has none, CPUs the way they were given, no restart
     /// policy for a `--rm` one — and what the sheet sends, it takes.

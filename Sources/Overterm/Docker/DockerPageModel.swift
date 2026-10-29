@@ -19,10 +19,11 @@ struct DockerActions {
     var showContainer: (ContainerSummary) -> Void = { _ in }
     /// A database container's connection, in the Database panel's form.
     var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
-    /// A container's file, in the editor — saved back into the container.
-    var openFile: (ContainerSummary, String) -> Void = { _, _ in }
-    /// A container's file, to the Mac.
-    var downloadFile: (ContainerSummary, String) -> Void = { _, _ in }
+    /// A container's or a volume's file, in the editor — saved back where
+    /// it came from.
+    var openFile: (DockerFileSource, String) -> Void = { _, _ in }
+    /// A container's or a volume's file, to the Mac.
+    var downloadFile: (DockerFileSource, String) -> Void = { _, _ in }
     /// A tab of the window, brought up.
     var showTab: (UUID) -> Void = { _ in }
     /// A file on the Mac, in the editor.
@@ -202,6 +203,7 @@ final class DockerPageModel: ObservableObject {
     let docker: DockerModel
 
     private var streams: AnyCancellable?
+    private var volumeStreams: AnyCancellable?
     private var wanting: AnyCancellable?
     private var usageWanting: AnyCancellable?
     private var showing: AnyCancellable?
@@ -233,6 +235,14 @@ final class DockerPageModel: ObservableObject {
             .sink { [weak self] _ in
                 // @Published fires before the values land.
                 DispatchQueue.main.async { self?.updateStreams() }
+            }
+        // A volume's Files tab: its helper runs only while the tab shows —
+        // and its volume is listed, as the detail is drawn only then.
+        volumeStreams = Publishers.CombineLatest4($volumeSelection, $volumeTab, $visible, $showDetail)
+            .combineLatest($section, docker.$volumes.map { $0.map(\.Name) }.removeDuplicates())
+            .sink { [weak self] _ in
+                // @Published fires before the values land.
+                DispatchQueue.main.async { self?.updateVolumeFiles() }
             }
         // A test run folded as it first shows: at once, with the emitted
         // runs (@Published fires before they land) — a turn later, it
@@ -289,6 +299,7 @@ final class DockerPageModel: ObservableObject {
         want(nil)
         wantUsage(false)
         updateStreams()
+        closeVolumeFiles()
     }
 
     /// What a container uses now, while it runs or is paused.
@@ -506,6 +517,62 @@ final class DockerPageModel: ObservableObject {
     /// The detail's session: one at a time, the last one closed.
     private(set) var session: ContainerSession?
 
+    /// A volume's detail's tab, kept from one volume to the next.
+    @Published var volumeTab: VolumeTab = .overview
+    /// The selected volume's Files tab: one at a time, the last one closed.
+    /// Made and followed by `updateVolumeFiles` alone — the view only
+    /// reads it, so none is made that nothing shows.
+    @Published private(set) var volumeFiles: VolumeFilesSession?
+    /// Volumes being removed (Remove, Clean Up): their Files tab makes no
+    /// helper meanwhile, which would hold them again.
+    var removingVolumes: Set<String> = []
+
+    private func volumeFiles(for name: String) -> VolumeFilesSession {
+        if let volumeFiles, volumeFiles.volume == name { return volumeFiles }
+        volumeFiles?.close()
+        let made = VolumeFilesSession(volume: name, docker: docker)
+        volumeFiles = made
+        return made
+    }
+
+    /// The session gone: its helper's removal, for a caller that must wait
+    /// till the volume is free.
+    @discardableResult
+    func closeVolumeFiles() -> Task<Void, Never>? {
+        guard let volumeFiles else { return nil }
+        self.volumeFiles = nil
+        return volumeFiles.close()
+    }
+
+    /// Its helper runs while the Files tab is on screen; hidden, the
+    /// session keeps its folder for when it shows again. Another volume,
+    /// or another section, forgets it. A volume the list no longer has
+    /// (pruned, removed in a terminal) shows no detail, so no helper:
+    /// bound by its name, one would make the volume again.
+    func updateVolumeFiles() {
+        guard section == .volumes, volumeSelection.count == 1, let name = volumeSelection.first else {
+            closeVolumeFiles()
+            return
+        }
+        let listed = docker.volumes.contains { $0.Name == name } && !removingVolumes.contains(name)
+        if visible && showDetail && volumeTab == .files && listed {
+            volumeFiles(for: name).follow(shown: true)
+        } else if let volumeFiles, volumeFiles.volume == name {
+            volumeFiles.follow(shown: false)
+        } else {
+            closeVolumeFiles()
+        }
+    }
+
+    /// Browse Files: the page on the volume's Files tab.
+    func browseFiles(of volume: VolumeSummary) {
+        if !visible { actions?.openPage() }
+        section = .volumes
+        volumeSelection = [volume.Name]
+        showDetail = true
+        volumeTab = .files
+    }
+
     func session(for id: String) -> ContainerSession {
         if let session, session.id == id { return session }
         session?.close()
@@ -616,6 +683,9 @@ final class DockerPageModel: ObservableObject {
         case .inspect:
             showDetail = true
             detailTab = .inspect
+        case .files:
+            showDetail = true
+            detailTab = .files
         case .toggleDetail: showDetail.toggle()
         case .startStop: startOrStop()
         case .restart: restart()
@@ -680,6 +750,10 @@ final class DockerPageModel: ObservableObject {
             return true
         case .toggleDetail:
             showDetail.toggle()
+            return true
+        case .files where section == .volumes:
+            showDetail = true
+            volumeTab = .files
             return true
         default:
             return false

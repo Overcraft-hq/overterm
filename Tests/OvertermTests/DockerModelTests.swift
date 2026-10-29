@@ -619,6 +619,46 @@ final class DockerModelTests: XCTestCase {
         XCTAssertEqual(gone.connection, .off)
     }
 
+    /// Overterm's own helpers are nobody's: not listed, and not what
+    /// mounts a volume — one would make it look in use, and its Remove
+    /// refused.
+    func testOvertermsHelpersAreNotListed() async throws {
+        fake.add(name: "web")
+        let image = fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.addVolume("data", size: 1 << 20, refCount: 0)
+        let engine = DockerEngine(endpoint: DockerEndpoint(address: .unix(socket), context: nil, source: "test"))
+        let helper = try await engine.helper(mounting: "data", image: image)
+        XCTAssertEqual(fake.summary(helper)?.Mounts?.first?.Name, "data", "the engine lists its mount")
+        model.start()
+        try await eventually("listed") { model.containers.count == 1 }
+        XCTAssertEqual(model.containers.map(\.name), ["web"])
+        XCTAssertEqual(model.containers(mountingVolume: "data"), [])
+        await engine.removeHelper(helper)
+    }
+
+    /// What a run before this left and that doesn't run — a never-started
+    /// helper holds its volume for good, and no list shows it — removed as
+    /// the engine connects. Not one that runs, one this run made, nor one
+    /// made in the last ten minutes (another Overterm may be reading
+    /// through it).
+    func testHelpersARunBeforeLeftAreSweptAtConnect() async throws {
+        let hour = Int(Date().timeIntervalSince1970) - 3600
+        let helper = ["overterm.helper": "1"]
+        let left = fake.add(name: "overterm-helper-0ld", state: .created, volumes: ["data"], labels: helper, created: hour)
+        let older = fake.add(name: "helper-pre-run-label", state: .exited, volumes: ["data"], labels: helper, created: hour)
+        let running = fake.add(name: "overterm-files-0ld", state: .running, volumes: ["data"], labels: helper, created: hour)
+        let recent = fake.add(name: "overterm-helper-new", state: .created, volumes: ["data"], labels: helper)
+        let ours = fake.add(
+            name: "overterm-helper-ours", state: .created, volumes: ["data"], labels: helper.merging(["overterm.run": DockerHelpers.run]) { $1 },
+            created: hour)
+        let theirs = fake.add(name: "web", state: .exited, created: hour)
+        model.start()
+        try await eventually("left ones removed") { self.fake.summary(left) == nil && self.fake.summary(older) == nil }
+        try await Task.sleep(for: .milliseconds(200))
+        for kept in [running, recent, ours, theirs] { XCTAssertNotNil(fake.summary(kept)) }
+        XCTAssertEqual(model.containers.map(\.name), ["web"])
+    }
+
     /// The poll runs only while something shows Docker.
     func testThePollRunsWhileShown() async throws {
         shop()
@@ -634,6 +674,286 @@ final class DockerModelTests: XCTestCase {
         let after = lists()
         try await Task.sleep(for: .milliseconds(450))
         XCTAssertEqual(lists(), after, "no poll once hidden")
+    }
+}
+
+/// A volume's Files tab against the fake engine: a helper only while it
+/// shows, one passed over without a shell, one made again when it went
+/// under it, busybox only when asked.
+@MainActor
+final class VolumeFilesSessionTests: XCTestCase {
+    private var fake: FakeDockerEngine!
+    private var model: DockerModel!
+
+    override func setUp() async throws {
+        let socket = "/tmp/ot-docker-\(UUID().uuidString.prefix(8)).sock"
+        fake = FakeDockerEngine(socket: socket)
+        try fake.start()
+        let endpoint = DockerEndpoint(address: .unix(socket), context: nil, source: "test")
+        model = DockerModel(endpoint: { endpoint }, retries: [.milliseconds(50)], poll: .milliseconds(200))
+        model.start()
+        VolumeFilesSession.worked = nil
+        try await eventually("connected") { self.model.engine != nil && self.model.connection.isRunning }
+        fake.setVolumeFile("pgdata", "PG_VERSION", Data("16\n".utf8))
+        fake.setVolumeFile("pgdata", "base/1/123", Data(count: 8))
+    }
+
+    override func tearDown() async throws {
+        model.stop()
+        fake.stop()
+    }
+
+    private func eventually(_ what: String, timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() > deadline {
+                XCTFail("timed out: \(what)")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func creates() -> Int { fake.requests.filter { $0.hasPrefix("POST") && $0.contains("/containers/create") }.count }
+
+    func testItListsOnlyWhileShown() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.open("/")
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(creates(), 0, "nothing made while it doesn't show")
+        session.follow(shown: true)
+        try await eventually("its top") { session.entries.map(\.name) == ["base", "PG_VERSION"] }
+        XCTAssertEqual(fake.helperIDs.count, 1)
+        session.open("/base")
+        try await eventually("a folder") { session.entries.map(\.name) == ["1"] }
+        let first = fake.helperIDs
+        session.follow(shown: false)
+        try await eventually("its helper gone") { self.fake.helperIDs.isEmpty }
+        XCTAssertEqual(session.folder, "/base", "its folder kept")
+        session.follow(shown: true)
+        try await eventually("the same folder, through another") {
+            !session.listing && session.entries.map(\.name) == ["1"] && self.fake.helperIDs.count == 1 && self.fake.helperIDs != first
+        }
+        session.close()
+        try await eventually("closed") { self.fake.helperIDs.isEmpty }
+    }
+
+    func testAShelllessImageIsPassedOver() async throws {
+        let busybox = fake.addImage("busybox:1.36", size: 4 << 20, shell: false)
+        let debian = fake.addImage("debian:bookworm-slim", size: 80 << 20)
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.follow(shown: true)
+        try await eventually("listed") { session.entries.map(\.name) == ["base", "PG_VERSION"] }
+        XCTAssertEqual(creates(), 2, "busybox's, then debian's")
+        XCTAssertEqual(fake.requests.filter { $0.hasPrefix("DELETE /v1.47/containers/") }.count, 1, "busybox's removed")
+        XCTAssertEqual(fake.helperIDs.count, 1)
+        XCTAssertEqual(fake.helperIDs.first.flatMap { fake.summary($0)?.ImageID }, debian)
+        XCTAssertNotEqual(VolumeFilesSession.worked, busybox)
+        XCTAssertEqual(VolumeFilesSession.worked, debian, "tried first next time")
+        session.close()
+        try await eventually("closed") { self.fake.helperIDs.isEmpty }
+    }
+
+    func testAHelperGoneUnderItIsMadeAgain() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.follow(shown: true)
+        try await eventually("listed") { session.entries.count == 2 && self.fake.helperIDs.count == 1 }
+        let first = fake.helperIDs
+        first.forEach(fake.expire)
+        XCTAssertEqual(fake.helperIDs, [], "its sleep ended")
+        session.open("/")
+        try await eventually("listed again through another") {
+            !session.listing && session.entries.count == 2 && self.fake.helperIDs.count == 1 && self.fake.helperIDs != first
+        }
+        XCTAssertNil(session.filesError)
+        session.close()
+        try await eventually("closed") { self.fake.helperIDs.isEmpty }
+    }
+
+    func testNoImageWithAShellOffersBusybox() async throws {
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.follow(shown: true)
+        try await eventually("it asks") { session.needsImage }
+        XCTAssertEqual(session.filesError, DockerVolumeFiles.noShell.message)
+        XCTAssertFalse(fake.requests.contains { $0.contains("/images/create") }, "nothing pulled unasked")
+        session.pullShellImage()
+        try await eventually("listed through busybox") { session.entries.count == 2 && !session.needsImage && !session.pulling }
+        XCTAssertTrue(fake.requests.contains { $0.contains("/images/create?fromImage=busybox&tag=latest") }, "\(fake.requests)")
+        session.close()
+        try await eventually("closed") { self.fake.helperIDs.isEmpty }
+    }
+
+    func testCloseRemovesAHelperStillBeingMade() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.follow(shown: true)
+        try await eventually("being made") { self.creates() >= 1 }
+        session.close()
+        try await eventually("none left") { self.fake.helperIDs.isEmpty }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(fake.helperIDs, [], "nor made after")
+        // Closed before it began: nothing made at all.
+        let before = creates()
+        let other = VolumeFilesSession(volume: "pgdata", docker: model)
+        other.follow(shown: true)
+        other.close()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(creates(), before)
+    }
+
+    /// A failure that isn't a missing shell — a volume that won't mount, a
+    /// full disk — is said as the engine said it: busybox would fail the
+    /// same way, so it isn't offered.
+    func testAFailureOfAnotherKindIsSaidAsItIs() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.addImage("alpine:3.20", size: 8 << 20)
+        fake.failStarts(
+            mounting: "pgdata", "error while mounting volume '/var/lib/docker/volumes/pgdata/_data': failed to mount local volume: connection refused")
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.follow(shown: true)
+        try await eventually("it says why") { session.filesError != nil && !session.listing }
+        XCTAssertTrue(session.filesError?.hasPrefix("error while mounting volume '/var/lib/docker/volumes/pgdata/_data'") == true, session.filesError ?? "")
+        XCTAssertFalse(session.needsImage, "no busybox offered")
+        XCTAssertEqual(fake.helperIDs, [], "nothing left")
+        session.close()
+    }
+
+    /// Removed behind the tab's back while it was hidden: no helper made
+    /// at its return, which would make the volume again, empty.
+    func testAVolumeGoneIsNotMadeAgain() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        let session = VolumeFilesSession(volume: "pgdata", docker: model)
+        session.follow(shown: true)
+        try await eventually("listed") { session.entries.count == 2 }
+        session.follow(shown: false)
+        try await eventually("its helper gone") { self.fake.helperIDs.isEmpty }
+        fake.dropVolume("pgdata")
+        let before = creates()
+        session.follow(shown: true)
+        try await eventually("it says so") { session.filesError == "The volume pgdata is gone." }
+        XCTAssertEqual(creates(), before, "no helper")
+        XCTAssertFalse(fake.volumeNames.contains("pgdata"), "not made again")
+        XCTAssertFalse(session.needsImage)
+        session.close()
+    }
+
+    // MARK: On the page
+
+    private func page() -> DockerPageModel {
+        let page = DockerPageModel(docker: model)
+        page.actions = DockerActions(run: { _, _ in }, confirm: { _, _, _, then in then() }, open: { _ in }, copy: { _ in }, settings: {})
+        return page
+    }
+
+    private func showFiles(_ page: DockerPageModel, of volume: String) {
+        page.section = .volumes
+        page.showDetail = true
+        page.volumeSelection = [volume]
+        page.volumeTab = .files
+        page.visible = true
+    }
+
+    private func binds(_ id: String?) -> [String] { id.flatMap { fake.created($0)?.HostConfig?.Binds } ?? [] }
+
+    /// A helper only while the Files tab is on screen: Overview hides it
+    /// (its folder kept), another volume or section forgets it.
+    func testThePageKeepsAHelperOnlyWhileFilesShows() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.setVolumeFile("cache", "a.txt", Data("a".utf8))
+        let page = page()
+        defer { page.close() }
+        page.section = .volumes
+        page.visible = true
+        page.volumeSelection = ["pgdata"]
+        try await eventually("its volumes listed") { self.model.volumes.count == 2 }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(creates(), 0, "Overview makes none")
+        page.volumeTab = .files
+        try await eventually("listed") { page.volumeFiles?.entries.count == 2 }
+        page.volumeFiles?.open("/base")
+        try await eventually("a folder") { page.volumeFiles?.entries.map(\.name) == ["1"] }
+        let session = page.volumeFiles
+        page.volumeTab = .overview
+        try await eventually("Overview: its helper gone") { self.fake.helperIDs.isEmpty }
+        XCTAssertTrue(page.volumeFiles === session, "kept")
+        XCTAssertEqual(page.volumeFiles?.folder, "/base", "with its folder")
+        page.volumeTab = .files
+        try await eventually("back: the same folder, a helper again") { page.volumeFiles?.entries.map(\.name) == ["1"] && self.fake.helperIDs.count == 1 }
+        page.volumeSelection = ["cache"]
+        try await eventually("another volume: the other's helper") {
+            page.volumeFiles?.volume == "cache" && self.fake.helperIDs.count == 1 && self.binds(self.fake.helperIDs.first) == ["cache:/volume"]
+        }
+        XCTAssertEqual(page.volumeFiles?.folder, "/", "from its top")
+        page.section = .images
+        try await eventually("another section: none") { self.fake.helperIDs.isEmpty && page.volumeFiles == nil }
+        page.section = .volumes
+        try await eventually("back on Files") { self.fake.helperIDs.count == 1 }
+        page.visible = false
+        try await eventually("the page hidden: none") { self.fake.helperIDs.isEmpty }
+        XCTAssertNotNil(page.volumeFiles, "its folder kept for its return")
+    }
+
+    /// Remove… from its Files tab: the tab's helper removed and waited for
+    /// first — on an engine that takes its time to kill one, the volume
+    /// would be refused as in use — and none made meanwhile.
+    func testRemovingAVolumeItsFilesTabShows() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.removalDelay = 300
+        let page = page()
+        defer { page.close() }
+        showFiles(page, of: "pgdata")
+        try await eventually("listed") { page.volumeFiles?.entries.count == 2 && self.fake.helperIDs.count == 1 }
+        let helper = fake.helperIDs[0]
+        let volume = try XCTUnwrap(model.volumes.first { $0.Name == "pgdata" })
+        page.confirmRemove(volumes: [volume])
+        try await eventually("removed") { !self.fake.volumeNames.contains("pgdata") || page.error != nil }
+        XCTAssertNil(page.error)
+        XCTAssertFalse(fake.volumeNames.contains("pgdata"))
+        XCTAssertEqual(fake.requests.filter { $0.hasPrefix("DELETE /v1.47/containers/\(helper)") }.count, 1, "one removal of its helper")
+        XCTAssertEqual(creates(), 1, "none made meanwhile")
+        XCTAssertTrue(page.volumeSelection.isEmpty)
+    }
+
+    /// The engine refused: the volume stays, and so does its Files tab —
+    /// listed again, not left blank.
+    func testAVolumeRemoveRefusedShowsItsFilesAgain() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        fake.refuseRemoval(of: "pgdata", 500, "the driver said no")
+        let page = page()
+        defer { page.close() }
+        showFiles(page, of: "pgdata")
+        try await eventually("listed") { page.volumeFiles?.entries.count == 2 }
+        let volume = try XCTUnwrap(model.volumes.first { $0.Name == "pgdata" })
+        page.confirmRemove(volumes: [volume])
+        try await eventually("refused") { page.error != nil }
+        XCTAssertEqual(page.error, "Remove pgdata: the driver said no")
+        try await eventually("its Files again") { page.volumeFiles?.entries.count == 2 && self.fake.helperIDs.count == 1 && page.volumeFiles?.listing == false }
+        page.volumeFiles?.reload()
+        try await eventually("and it reloads") { page.volumeFiles?.listing == false && page.volumeFiles?.entries.count == 2 }
+    }
+
+    /// Pruned (or removed in a terminal) and gone from the list: the tab
+    /// makes no helper for it, which would make it again.
+    func testAVolumeTheListNoLongerHasGetsNoHelper() async throws {
+        fake.addImage("busybox:1.36", size: 4 << 20)
+        let page = page()
+        defer { page.close() }
+        showFiles(page, of: "pgdata")
+        try await eventually("listed") { page.volumeFiles?.entries.count == 2 }
+        page.visible = false
+        try await eventually("hidden: no helper") { self.fake.helperIDs.isEmpty }
+        fake.dropVolume("pgdata")
+        model.load(.volumes)
+        try await eventually("the list without it") { !self.model.volumes.contains { $0.Name == "pgdata" } }
+        let before = creates()
+        page.visible = true
+        page.section = .images
+        page.section = .volumes
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(creates(), before)
+        XCTAssertFalse(fake.volumeNames.contains("pgdata"), "not made again")
     }
 }
 

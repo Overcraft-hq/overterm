@@ -308,36 +308,94 @@ struct DockerVolumesView: View {
             .contextMenu { Button("Import Into a New Volume…") { page.importVolumeAsking() } }
             if page.showDetail, page.volumeSelection.count == 1, let volume = docker.volumes.first(where: { page.volumeSelection.contains($0.Name) }) {
                 Rectangle().fill(theme.border).frame(width: 1)
+                DockerVolumeDetail(volume: volume, docker: docker, page: page, theme: theme, actions: actions)
+                    .id(volume.Name)
+                    .frame(width: 420)
+                    .accessibilityIdentifier("docker.volume.detail")
+            }
+        }
+    }
+}
+
+/// A volume, at the side of the list: what it is and what mounts it, or
+/// its files (`VolumeFilesPane`) — a tab each, as a container's detail.
+private struct DockerVolumeDetail: View {
+    let volume: VolumeSummary
+    @ObservedObject var docker: DockerModel
+    @ObservedObject var page: DockerPageModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: DockerActions
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(verbatim: volume.shortName).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                DockerActionBar(verbs: page.verbs(for: volume), theme: theme)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 10)
+            tabs
+            Rectangle().fill(theme.border).frame(height: 1)
+            switch page.volumeTab {
+            case .overview:
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(verbatim: volume.shortName).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                        DockerActionBar(verbs: page.verbs(for: volume), theme: theme)
-                        DetailBlock(title: "Volume", theme: theme) {
-                            DetailRow(key: "Name", value: volume.Name, theme: theme)
-                            DetailRow(key: "Driver", value: volume.Driver, theme: theme)
-                            DetailRow(key: "Size", value: volume.UsageData.map { bytes($0.Size) } ?? "—", theme: theme)
-                            DetailRow(key: "In the VM at", value: volume.Mountpoint, theme: theme)
-                            if let created = volume.CreatedAt { DetailRow(key: "Created", value: ContainerDetailView.date(created), theme: theme) }
-                        }
-                        let users = docker.containers(mounting: volume)
-                        DetailBlock(title: "Mounted by", theme: theme) {
-                            if users.isEmpty { Text("Nothing").font(.system(size: 11.5)).foregroundStyle(theme.text3) }
-                            ForEach(users) { container in
-                                let at = (container.Mounts ?? []).first { $0.Name == volume.Name }?.Destination ?? ""
-                                DetailRow(key: container.name, value: at, theme: theme)
-                            }
-                        }
-                        let labels = (volume.Labels ?? [:]).filter { !$0.key.hasPrefix("com.docker.compose.") }
-                        if !labels.isEmpty {
-                            DetailBlock(title: "Labels", theme: theme) { ForEach(labels.keys.sorted(), id: \.self) { DetailRow(key: $0, value: labels[$0] ?? "", theme: theme) } }
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    overview.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .id(volume.Name)
-                .frame(width: 420)
-                .accessibilityIdentifier("docker.volume.detail")
+            case .files:
+                // Made as the tab shows (`updateVolumeFiles`), a turn later.
+                if let session = page.volumeFiles, session.volume == volume.Name {
+                    VolumeFilesPane(volume: volume, session: session, docker: docker, theme: theme, actions: actions)
+                } else {
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 4) {
+            ForEach(VolumeTab.allCases) { item in
+                Button {
+                    page.volumeTab = item
+                } label: {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: page.volumeTab == item ? .semibold : .regular))
+                        .foregroundStyle(page.volumeTab == item ? theme.text : theme.text2)
+                        .padding(.horizontal, 9)
+                        .frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(page.volumeTab == item ? theme.selected : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("docker.volume.tab.\(item.rawValue)")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var overview: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            DetailBlock(title: "Volume", theme: theme) {
+                DetailRow(key: "Name", value: volume.Name, theme: theme)
+                DetailRow(key: "Driver", value: volume.Driver, theme: theme)
+                DetailRow(key: "Size", value: volume.UsageData.map { bytes($0.Size) } ?? "—", theme: theme)
+                DetailRow(key: "In the VM at", value: volume.Mountpoint, theme: theme)
+                if let created = volume.CreatedAt { DetailRow(key: "Created", value: ContainerDetailView.date(created), theme: theme) }
+            }
+            let users = docker.containers(mounting: volume)
+            DetailBlock(title: "Mounted by", theme: theme) {
+                if users.isEmpty { Text("Nothing").font(.system(size: 11.5)).foregroundStyle(theme.text3) }
+                ForEach(users) { container in
+                    let at = (container.Mounts ?? []).first { $0.Name == volume.Name }?.Destination ?? ""
+                    DetailRow(key: container.name, value: at, theme: theme)
+                }
+            }
+            let labels = (volume.Labels ?? [:]).filter { !$0.key.hasPrefix("com.docker.compose.") }
+            if !labels.isEmpty {
+                DetailBlock(title: "Labels", theme: theme) { ForEach(labels.keys.sorted(), id: \.self) { DetailRow(key: $0, value: labels[$0] ?? "", theme: theme) } }
             }
         }
     }

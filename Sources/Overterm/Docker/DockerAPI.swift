@@ -237,23 +237,34 @@ extension DockerEngine {
 
     /// What a path is — without reading it.
     func stat(_ id: String, path: String) async throws -> DockerTar.PathStat {
-        let response = try await send(.HEAD, "/containers/\(id)/archive", ["path": path])
+        let response: DockerResponse
+        do {
+            response = try await send(.HEAD, "/containers/\(id)/archive", ["path": path])
+        } catch let error as DockerError where error.status == 404 && error.message == "HTTP 404" {
+            // A HEAD's answer has no body to say why: a 404 is the path.
+            throw DockerError(status: 404, message: "\(path) isn't there.")
+        }
         guard let header = response.header("X-Docker-Container-Path-Stat"), let stat = DockerTar.pathStat(header) else {
             throw DockerError(status: response.status, message: "\(path): Docker said nothing about it.")
         }
         return stat
     }
 
-    func read(_ id: String, file: String) async throws -> Data {
+    /// A file as the archive has it: its contents and its owner.
+    func readEntry(_ id: String, file: String) async throws -> DockerTar.Entry {
         let entries = DockerTar.entries(of: try await send(.GET, "/containers/\(id)/archive", ["path": file]).body)
         guard let entry = entries.first(where: { $0.kind == .file }) else { throw DockerError(status: 0, message: "\(file) isn't a file.") }
-        return entry.data
+        return entry
     }
 
-    /// Writes `data` as `file`, through a plain ustar archive (DockerTar).
-    func write(_ id: String, file: String, data: Data, mode: Int = 0o644) async throws {
+    func read(_ id: String, file: String) async throws -> Data { try await readEntry(id, file: file).data }
+
+    /// Writes `data` as `file`, through a plain ustar archive (DockerTar),
+    /// owned by `uid` and `gid`: the engine gives what it extracts the
+    /// tar's owner, so a file written back keeps its own only when told it.
+    func write(_ id: String, file: String, data: Data, mode: Int = 0o644, uid: Int = 0, gid: Int = 0) async throws {
         let url = URL(fileURLWithPath: file)
-        guard let archive = DockerTar.archive(name: url.lastPathComponent, data: data, mode: mode) else {
+        guard let archive = DockerTar.archive(name: url.lastPathComponent, data: data, mode: mode, uid: uid, gid: gid) else {
             throw DockerError(status: 0, message: "\(file): the name is too long to write.")
         }
         try await send(
@@ -291,25 +302,153 @@ extension DockerEngine {
     @discardableResult
     func save(image name: String, to file: URL) async throws -> Int { try await download("/images/\(name)/get", to: file) }
 
+    /// An image to make a helper from that never runs: any will do — a
+    /// small one if there is one.
+    func anyImage() async -> String? {
+        guard let images = try? await images(), !images.isEmpty else { return nil }
+        for name in DockerVolumeFiles.shells {
+            if let image = images.first(where: { $0.tags.contains { $0.hasPrefix(name + ":") } }) { return image.Id }
+        }
+        return images.min { $0.Size < $1.Size }?.Id
+    }
+
+    /// A helper's name: `overterm-helper-` or `overterm-files-`, then 8 hex.
+    static func helperName(_ kind: String) -> String {
+        "overterm-\(kind)-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8).lowercased()
+    }
+
+    /// What every helper is labelled: Overterm's, this run's, and the
+    /// volume it holds.
+    static func helperLabels(_ volume: String) -> [String: String] {
+        ["overterm.helper": "1", "overterm.run": DockerHelpers.run, "overterm.volume": volume]
+    }
+
+    /// The volume there, or why not: a container bound to a name the
+    /// engine doesn't know makes an empty volume of it — one removed in a
+    /// terminal, or pruned, would come back, and a save would land in it.
+    func requireVolume(_ name: String) async throws {
+        do {
+            try await send(.GET, "/volumes/\(name)")
+        } catch let error as DockerError where error.status == 404 {
+            throw DockerError.volumeGone(name)
+        }
+    }
+
     /// A container made and never started, `volume` at /volume — enough for
     /// the archive endpoint to read and write the volume: nothing runs, so
-    /// any image on the Mac will do. Labelled, and removed by the caller.
+    /// any image on the Mac will do. Only for a volume there is; labelled,
+    /// recorded (`DockerHelpers`), and removed by the caller (`removeHelper`).
     func helper(mounting volume: String, image: String) async throws -> String {
         struct Created: Decodable { var Id: String }
+        try await requireVolume(volume)
         let body = try JSONSerialization.data(withJSONObject: [
-            "Image": image, "Cmd": ["true"], "Labels": ["overterm.helper": "1"],
-            "HostConfig": ["Binds": ["\(volume):/volume"]],
+            "Image": image, "Cmd": ["true"], "Labels": Self.helperLabels(volume),
+            "HostConfig": ["Binds": ["\(volume):\(DockerVolumeFiles.mount)"]],
         ])
-        let response = try await send(.POST, "/containers/create", body: body, headers: [("Content-Type", "application/json")])
-        return try JSONDecoder().decode(Created.self, from: response.body).Id
+        let response = try await send(
+            .POST, "/containers/create", ["name": Self.helperName("helper")], body: body, headers: [("Content-Type", "application/json")])
+        let id = try JSONDecoder().decode(Created.self, from: response.body).Id
+        DockerHelpers.made(id, volume: volume, on: self)
+        return id
+    }
+
+    /// `body` with a helper that never starts (`helper(mounting:)`),
+    /// removed after, whatever `body` did — gone when this returns.
+    func withHelper<T: Sendable>(mounting volume: String, image: String, _ body: @Sendable (String) async throws -> T) async throws -> T {
+        let helper = try await helper(mounting: volume, image: image)
+        do {
+            let result = try await body(helper)
+            await removeHelper(helper)
+            return result
+        } catch {
+            await removeHelper(helper)
+            throw error
+        }
+    }
+
+    /// A volume's Files tab's helper: one that runs, so `exec` can list its
+    /// folders — `sh` from `image`, as root (a volume's files are a
+    /// database's, 999's), with no network, for `lifetime` seconds, then
+    /// gone by itself (AutoRemove) should nobody remove it. The image's own
+    /// entrypoint is replaced, so none of its startup runs. Only for a
+    /// volume there is. A start that fails (no `sh`, a platform this engine
+    /// can't run, a volume that won't mount) leaves nothing.
+    func filesHelper(
+        mounting volume: String, image: String, lifetime: Int = DockerVolumeFiles.lifetime, labels extra: [String: String] = [:]
+    ) async throws -> String {
+        struct Created: Decodable { var Id: String }
+        try await requireVolume(volume)
+        let labels = Self.helperLabels(volume).merging(extra) { own, _ in own }
+        // Entrypoint and User both said: with an entrypoint the image's
+        // command isn't merged in, and an empty user would be the image's.
+        let body = try JSONSerialization.data(withJSONObject: [
+            "Image": image, "Entrypoint": ["sh", "-c", "exec sleep \(lifetime)"], "User": "0:0", "WorkingDir": DockerVolumeFiles.mount,
+            "Labels": labels,
+            "HostConfig": ["Binds": ["\(volume):\(DockerVolumeFiles.mount)"], "AutoRemove": true, "NetworkMode": "none"],
+        ])
+        let response = try await send(
+            .POST, "/containers/create", ["name": Self.helperName("files")], body: body, headers: [("Content-Type", "application/json")])
+        let id = try JSONDecoder().decode(Created.self, from: response.body).Id
+        DockerHelpers.made(id, volume: volume, on: self)
+        do {
+            try await perform(.start, on: id)
+        } catch {
+            await removeHelper(id)
+            throw error
+        }
+        return id
+    }
+
+    /// Removed, once however many ask (`DockerHelpers.remove`): returns
+    /// when the engine no longer has it.
+    func removeHelper(_ id: String) async { await DockerHelpers.remove(id, on: self) }
+
+    /// The removal itself: with force, a running one too, and with its
+    /// anonymous volumes — an image's `VOLUME` (postgres', redis') made one
+    /// at create, and AutoRemove would take them only when its sleep ends.
+    /// The volume it was given by name is never one of them. Gone already
+    /// (AutoRemove, a 404) is no failure; a removal on its way elsewhere
+    /// (a 409) is waited for, at most 5 s, till the engine no longer has it.
+    func deleteHelper(_ id: String) async {
+        do {
+            try await remove(container: id, force: true, volumes: true)
+        } catch let error as DockerError where error.status == 409 {
+            let until = ContinuousClock.now + .seconds(5)
+            while ContinuousClock.now < until {
+                do {
+                    try await send(.GET, "/containers/\(id)/json")
+                } catch {
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        } catch {}
+    }
+
+    /// Overterm's helpers as the engine lists them, whichever run made them.
+    func helpers() async throws -> [ContainerSummary] {
+        try await get([ContainerSummary].self, "/containers/json", ["all": "1", "filters": #"{"label":["overterm.helper=1"]}"#]).filter(\.isHelper)
+    }
+
+    /// `body` run on a container's file, or a volume's through a helper
+    /// made for it and removed after, whatever `body` did: the container's
+    /// id and the path as it has it.
+    func reaching<T: Sendable>(_ source: DockerFileSource, _ path: String, _ body: @Sendable (String, String) async throws -> T) async throws -> T {
+        switch source {
+        case .container(let id, _):
+            return try await body(id, path)
+        case .volume(let name):
+            guard let image = await anyImage() else { throw DockerError.noHelperImage }
+            return try await withHelper(mounting: name, image: image) { try await body($0, DockerVolumeFiles.helperPath(path)) }
+        }
     }
 
     /// A volume's files as a tar, `volume/` at its top.
     @discardableResult
     func export(volume name: String, to file: URL, using image: String) async throws -> Int {
-        let helper = try await helper(mounting: name, image: image)
-        defer { Task { try? await remove(container: helper, force: true) } }
-        return try await download("/containers/\(helper)/archive", ["path": "/volume"], to: file)
+        try await withHelper(mounting: name, image: image) { helper in
+            try await self.download("/containers/\(helper)/archive", ["path": DockerVolumeFiles.mount], to: file)
+        }
     }
 
     /// A volume made (if it isn't there) and filled from a tar `export`
@@ -317,10 +456,10 @@ extension DockerEngine {
     func `import`(volume name: String, from file: URL, using image: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["Name": name, "Labels": ["overterm.imported": "1"]])
         try await send(.POST, "/volumes/create", body: body, headers: [("Content-Type", "application/json")])
-        let helper = try await helper(mounting: name, image: image)
-        defer { Task { try? await remove(container: helper, force: true) } }
         let tar = try Data(contentsOf: file, options: .mappedIfSafe)
-        try await send(.PUT, "/containers/\(helper)/archive", ["path": "/"], body: tar, headers: [("Content-Type", "application/x-tar")])
+        try await withHelper(mounting: name, image: image) { helper in
+            _ = try await self.send(.PUT, "/containers/\(helper)/archive", ["path": "/"], body: tar, headers: [("Content-Type", "application/x-tar")])
+        }
     }
 
     // MARK: Images, volumes, networks

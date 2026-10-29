@@ -168,7 +168,7 @@ Single keys while the list has the keyboard: `s` starts or stops, `r`
 restarts, `e` opens a shell in a tab, `E` a debug shell beside an image
 with none, `q` a database's own client — psql, mysql, redis-cli,
 mongosh — signed in from its environment without the password on the
-command line, `t` follows its logs, `o` opens its
+command line, `t` follows its logs, `f` its files, `o` opens its
 port, `u` and `D` bring a project up and down — in a terminal tab, where you
 see the command. Filter with `status:running project:api port:5432 is:test`;
 `?` lists the keys. `n` runs an image with a window that writes the
@@ -232,7 +232,9 @@ you. `d` on a
 PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
 its connection filled in from the container. A container's files are a
 tab of its own: browse its folders, open a config in the editor, and the
-save goes back into the container.
+save goes back into the container. A volume's files are a tab too: a
+database's config opened and saved back, its owner kept, through a small
+container Overterm runs only while the tab shows.
 
 Claude Code started in Overterm can read Docker too, through MCP: the
 containers and compose projects, a container's logs, why it failed, what

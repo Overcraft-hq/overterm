@@ -250,14 +250,7 @@ extension DockerPageModel {
 
     /// An image to make a helper from: it never runs, so any will do —
     /// a small one if there is one.
-    func helperImage() async -> String? {
-        guard let images = try? await docker.engine?.images(), !images.isEmpty else { return nil }
-        let small = ["busybox", "alpine", "debian", "ubuntu"]
-        for name in small {
-            if let image = images.first(where: { $0.tags.contains { $0.hasPrefix(name + ":") } }) { return image.Id }
-        }
-        return images.min { $0.Size < $1.Size }?.Id
-    }
+    func helperImage() async -> String? { await docker.engine?.anyImage() }
 
     /// Long work on the page — an export, an import, a commit: `what` said
     /// while it runs, its answer once it is done, or why it failed.
@@ -292,7 +285,7 @@ extension DockerPageModel {
 
     func exportVolume(_ volume: VolumeSummary, to file: URL) {
         transfer("Exporting \(volume.shortName)") { [weak self, docker] in
-            guard let engine = docker.engine, let image = await self?.helperImage() else { throw Self.noHelper }
+            guard let engine = docker.engine, let image = await self?.helperImage() else { throw DockerError.noHelperImage }
             let bytes = try await engine.export(volume: volume.Name, to: file, using: image)
             return "\(volume.shortName): \(DockerBytes.string(bytes)) in \(file.lastPathComponent)."
         }
@@ -300,7 +293,7 @@ extension DockerPageModel {
 
     func importVolume(_ name: String, from file: URL) {
         transfer("Importing into \(name)") { [weak self, docker] in
-            guard let engine = docker.engine, let image = await self?.helperImage() else { throw Self.noHelper }
+            guard let engine = docker.engine, let image = await self?.helperImage() else { throw DockerError.noHelperImage }
             try await engine.import(volume: name, from: file, using: image)
             docker.load(.volumes)
             return "\(file.lastPathComponent) is in the volume \(name)."
@@ -310,7 +303,7 @@ extension DockerPageModel {
     /// A copy under another name: exported, then imported.
     func cloneVolume(_ volume: VolumeSummary, as name: String) {
         transfer("Cloning \(volume.shortName)") { [weak self, docker] in
-            guard let engine = docker.engine, let image = await self?.helperImage() else { throw Self.noHelper }
+            guard let engine = docker.engine, let image = await self?.helperImage() else { throw DockerError.noHelperImage }
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-clone-\(UUID().uuidString).tar")
             defer { try? FileManager.default.removeItem(at: file) }
             try await engine.export(volume: volume.Name, to: file, using: image)
@@ -319,9 +312,6 @@ extension DockerPageModel {
             return "\(volume.shortName) copied into \(name)."
         }
     }
-
-    nonisolated static let noHelper = DockerError(
-        status: 0, message: "A volume is read through a container that never runs, and it needs any image on this Mac — pull one (busybox).")
 
     // MARK: Files on the Mac
 
@@ -530,13 +520,22 @@ extension DockerPageModel {
             guard let self else { return }
             Task {
                 for volume in removable {
+                    // Its Files tab's helper holds it, and every other helper
+                    // on it: the engine would refuse. Each waited for till it
+                    // is gone, and none made again meanwhile.
+                    self.removingVolumes.insert(volume.Name)
+                    if self.volumeFiles?.volume == volume.Name { await self.closeVolumeFiles()?.value }
+                    await DockerHelpers.remove(mounting: volume.Name, on: self.docker.engine)
                     do {
                         try await self.docker.engine?.remove(volume: volume.Name)
                         self.volumeSelection.remove(volume.Name)
                     } catch {
                         self.error = "Remove \(volume.shortName): \(error.localizedDescription)"
                     }
+                    self.removingVolumes.remove(volume.Name)
                 }
+                // One that stayed shows its Files again.
+                self.updateVolumeFiles()
                 self.docker.load(.volumes)
             }
         }
@@ -583,10 +582,15 @@ extension DockerPageModel {
     func cleanUp() {
         guard let engine = docker.engine else { return }
         let choice = cleanChoice
+        // A volume a helper holds is in use, and a prune leaves it.
+        let volumes = choice.volumes ? cleanPlan.volumes.map(\.Name) : []
         cleaning = false
         Task {
             var freed = 0
             var removed = 0
+            removingVolumes.formUnion(volumes)
+            if let shown = volumeFiles?.volume, volumes.contains(shown) { await closeVolumeFiles()?.value }
+            for volume in volumes { await DockerHelpers.remove(mounting: volume, on: engine) }
             do {
                 if choice.containers { removed += try await engine.prune(.containers).ContainersDeleted?.count ?? 0 }
                 if choice.images {
@@ -598,6 +602,7 @@ extension DockerPageModel {
                     let report = try await engine.prune(.volumes, everythingUnused: choice.namedVolumes)
                     freed += report.SpaceReclaimed ?? 0
                     removed += report.VolumesDeleted?.count ?? 0
+                    volumeSelection.subtract(report.VolumesDeleted ?? [])
                 }
                 if choice.networks { removed += try await engine.prune(.networks).NetworksDeleted?.count ?? 0 }
                 if choice.buildCache { freed += try await engine.prune(.buildCache).SpaceReclaimed ?? 0 }
@@ -605,6 +610,9 @@ extension DockerPageModel {
             } catch {
                 self.error = "Clean Up: \(error.localizedDescription)"
             }
+            removingVolumes.subtract(volumes)
+            // One the prune left shows its Files again.
+            updateVolumeFiles()
             await docker.reload()
             prepareCleanUp()
         }

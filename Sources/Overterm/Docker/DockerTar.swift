@@ -18,15 +18,21 @@ enum DockerTar {
         var modified: Date
         var linkTarget: String
         var data: Data
+        /// Its owner, as the header says it — the engine gives what it
+        /// extracts this owner (`createTarFile`'s Lchown), so a file saved
+        /// back keeps it. A base-256 id (past 2097151) reads as 0.
+        var uid = 0
+        var gid = 0
     }
 
     static let block = 512
 
     /// One file, as a ustar archive: a header, the contents padded to a
     /// block, two empty blocks. A name past ustar's 100 bytes goes to its
-    /// 155-byte prefix (a path's folders); longer than that, nil.
-    static func archive(name: String, data: Data, mode: Int = 0o644, modified: Date = Date()) -> Data? {
-        guard let header = header(name: name, size: data.count, mode: mode, modified: modified, type: "0") else { return nil }
+    /// 155-byte prefix (a path's folders); longer than that, nil. Its
+    /// owner is root unless said.
+    static func archive(name: String, data: Data, mode: Int = 0o644, modified: Date = Date(), uid: Int = 0, gid: Int = 0) -> Data? {
+        guard let header = header(name: name, size: data.count, mode: mode, modified: modified, type: "0", uid: uid, gid: gid) else { return nil }
         var out = header
         out.append(data)
         let padding = (block - data.count % block) % block
@@ -34,7 +40,7 @@ enum DockerTar {
         return out
     }
 
-    static func header(name: String, size: Int, mode: Int, modified: Date, type: Character) -> Data? {
+    static func header(name: String, size: Int, mode: Int, modified: Date, type: Character, uid: Int = 0, gid: Int = 0) -> Data? {
         var (prefix, short) = ("", name)
         if name.utf8.count > 100 {
             guard let slash = name.utf8.indices.last(where: { name.utf8[$0] == UInt8(ascii: "/") && name.utf8.distance(from: $0, to: name.utf8.endIndex) <= 101 }),
@@ -52,8 +58,8 @@ enum DockerTar {
         }
         put(short, at: 0, length: 100)
         octal(mode, at: 100, length: 8)
-        octal(0, at: 108, length: 8)  // uid
-        octal(0, at: 116, length: 8)  // gid
+        octal(uid, at: 108, length: 8)
+        octal(gid, at: 116, length: 8)
         octal(size, at: 124, length: 12)
         octal(Int(modified.timeIntervalSince1970), at: 136, length: 12)
         put("        ", at: 148, length: 8)  // checksum, as spaces while summing
@@ -114,7 +120,7 @@ enum DockerTar {
             entries.append(
                 Entry(
                     name: name, kind: kind, size: size, mode: number(100, 8), modified: Date(timeIntervalSince1970: TimeInterval(number(136, 12))),
-                    linkTarget: field(157, 100), data: kind == .file ? data : Data()))
+                    linkTarget: field(157, 100), data: kind == .file ? data : Data(), uid: number(108, 8), gid: number(116, 8)))
         }
         return entries
     }

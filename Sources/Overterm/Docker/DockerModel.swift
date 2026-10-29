@@ -107,6 +107,9 @@ final class DockerModel: ObservableObject {
     private var closing: Task<Void, Never>?
     private var reloading: Task<Void, Never>?
     private var polling: Task<Void, Never>?
+    /// The engine whose first list was looked through for helpers a run
+    /// before this left (`DockerHelpers.sweep`).
+    private weak var sweptHelpers: DockerEngine?
     private var viewers = 0
     private var attempt = 0
 
@@ -309,7 +312,14 @@ final class DockerModel: ObservableObject {
     func reload() async {
         guard let engine else { return }
         guard let list = try? await engine.containers(all: true), self.engine === engine else { return }
-        let sorted = list.sorted { $0.name < $1.name }
+        // What a run before this left, once an engine connects.
+        if sweptHelpers !== engine {
+            sweptHelpers = engine
+            DockerHelpers.sweep(list.filter(\.isHelper), on: engine)
+        }
+        // Overterm's own helpers are nobody's: not the lists', the panel's,
+        // the palette's, an agent's — nor what mounts a volume.
+        let sorted = list.filter { !$0.isHelper }.sorted { $0.name < $1.name }
         guard sorted != containers else { return }
         containers = sorted
         pinPlatforms()
@@ -550,8 +560,10 @@ final class DockerModel: ObservableObject {
     }
 
     /// What mounts a volume.
-    func containers(mounting volume: VolumeSummary) -> [ContainerSummary] {
-        containers.filter { ($0.Mounts ?? []).contains { $0.Name == volume.Name } }
+    func containers(mounting volume: VolumeSummary) -> [ContainerSummary] { containers(mountingVolume: volume.Name) }
+
+    func containers(mountingVolume name: String) -> [ContainerSummary] {
+        containers.filter { ($0.Mounts ?? []).contains { $0.Name == name } }
     }
 
     /// What is on a network, as the list says (a network's own record says

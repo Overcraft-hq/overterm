@@ -52,6 +52,25 @@ final class FakeDockerEngine: @unchecked Sendable {
         var systemTotal = 1_000_000_000_000
         /// How its one-shot stats answer (`setStatsAnswer`).
         var statsAnswer = StatsAnswer.read
+        /// What its create asked for, when it was made through the API.
+        var created: CreateRequest?
+    }
+
+    /// A `POST /containers/create` body, as far as the fake reads it.
+    struct CreateRequest: Decodable, Sendable {
+        struct Host: Decodable, Sendable {
+            var Binds: [String]?
+            var AutoRemove: Bool?
+            var NetworkMode: String?
+        }
+        var Image: String
+        var Entrypoint: [String]?
+        var Cmd: [String]?
+        var Env: [String]?
+        var User: String?
+        var WorkingDir: String?
+        var Labels: [String: String]?
+        var HostConfig: Host?
     }
 
     /// A one-shot stats read's answer: the sample, the engine's 500, or
@@ -73,8 +92,14 @@ final class FakeDockerEngine: @unchecked Sendable {
     private var images: [ImageSummary] = []
     private var volumes: [VolumeSummary] = []
     private var networks: [NetworkSummary] = []
-    /// What each volume holds, by path in it.
+    /// What each volume holds, by path in it — when each was written, and
+    /// whose it is.
     private var volumeFiles: [String: [String: Data]] = [:]
+    private var volumeMtimes: [String: [String: String]] = [:]
+    private var volumeOwners: [String: [String: (uid: Int, gid: Int)]] = [:]
+    /// Images with no `sh` (distroless): a container of one whose
+    /// entrypoint is `sh` doesn't start.
+    private var shellless: Set<String> = []
     /// Bytes of build cache not in use.
     var buildCache = 0
     /// What `/info` says the host is (`uname -m`): Apple silicon's.
@@ -90,6 +115,15 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// How long an image's inspect takes, in milliseconds: a remote
     /// engine's round trip.
     var imageInspectDelay = 0
+    /// How long a running container's removal takes, in milliseconds: its
+    /// kill and its rootfs. Meanwhile it is still there, holding its
+    /// volumes, and a second removal is refused as moby refuses it
+    /// (`SetRemovalInProgress`).
+    var removalDelay = 0
+    private var removing: Set<String> = []
+    /// Starts refused for a container that mounts the volume, as the
+    /// engine says why (`failStarts`).
+    private var startFailures: [String: String] = [:]
     /// Each image's platforms, by id: one in the classic store, what its
     /// index holds in the containerd store.
     private var imagePlatforms: [String: [ImagePlatform]] = [:]
@@ -293,7 +327,16 @@ final class FakeDockerEngine: @unchecked Sendable {
             default: state.rawValue
             }
         emit(action, id, extra: state == .exited ? ["exitCode": "\(exitCode)"] : [:])
+        // `--rm`: gone once it ends, as the engine removes it.
+        if state == .exited, locked({ containers[id]?.hostConfig.AutoRemove == true }) {
+            emit("destroy", id)
+            locked { _ = containers.removeValue(forKey: id) }
+        }
     }
+
+    /// A container that removes itself (AutoRemove) ends by itself: its
+    /// sleep was up.
+    func expire(_ id: String) { set(id, state: .exited) }
 
     /// How it failed, as its inspect will say: out of memory, its
     /// restarts, its health check and that check's last outputs. Sends no
@@ -388,7 +431,8 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// containerd store the platform joins the tag's index.
     @discardableResult
     func addImage(
-        _ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil, labels: [String: String] = [:]
+        _ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil, labels: [String: String] = [:],
+        shell: Bool = true
     ) -> String {
         let platform = ImagePlatform(architecture: architecture, variant: variant)
         let index = locked { containerdStore }
@@ -411,6 +455,7 @@ final class FakeDockerEngine: @unchecked Sendable {
             }
             images.append(image)
             imagePlatforms[image.Id] = [platform]
+            if shell { shellless.remove(image.Id) } else { shellless.insert(image.Id) }
         }
         return image.Id
     }
@@ -533,6 +578,9 @@ final class FakeDockerEngine: @unchecked Sendable {
         /// client closes it.
         case never
         case notFound
+        /// Answered after `ms`, once `then` has run: a slow engine's work,
+        /// done while the request waits.
+        indirect case later(Int, Answer, @Sendable () -> Void)
     }
 
     func answer(_ method: HTTPMethod, _ uri: String, body: Data, chunked: Bool = false) -> Answer {
@@ -688,6 +736,14 @@ final class FakeDockerEngine: @unchecked Sendable {
             var detail = Self.detail(container)
             detail.ImageManifestDescriptor = locked { summary(of: container, version: version) }.ImageManifestDescriptor
             return Self.json(detail)
+        case (.POST, "start") where locked({ container.binds.values.contains { startFailures[$0] != nil } }):
+            return Self.error(500, locked { container.binds.values.compactMap { startFailures[$0] }.first } ?? "")
+        case (.POST, "start") where (container.entrypoint ?? container.cmd).first == "sh" && locked({ shellless.contains(container.summary.ImageID ?? "") }):
+            // As runc says it; the container stays created.
+            return Self.error(
+                400,
+                #"failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: exec: "sh": executable file not found in $PATH: unknown"#
+            )
         case (.POST, "start"), (.POST, "stop"), (.POST, "restart"), (.POST, "pause"), (.POST, "unpause"), (.POST, "kill"):
             let state: ContainerState =
                 switch verb {
@@ -705,9 +761,20 @@ final class FakeDockerEngine: @unchecked Sendable {
             if container.summary.state == .running, query["force"] != "1" {
                 return Self.error(409, "cannot remove container \(container.summary.name): container is running: stop the container before removing or force remove")
             }
-            emit("destroy", id)
-            locked { _ = containers.removeValue(forKey: id) }
-            return .empty(204)
+            let (wait, first) = locked { (removalDelay, container.summary.state == .running ? removing.insert(id).inserted : true) }
+            guard first else { return Self.error(409, "removal of container \(id) is already in progress") }
+            guard wait > 0, container.summary.state == .running else {
+                emit("destroy", id)
+                locked { _ = containers.removeValue(forKey: id) }
+                return .empty(204)
+            }
+            return .later(wait, .empty(204)) { [self] in
+                emit("destroy", id)
+                locked {
+                    _ = containers.removeValue(forKey: id)
+                    _ = removing.remove(id)
+                }
+            }
         case (.POST, "update"):
             guard let change = try? JSONDecoder().decode(DockerEngine.ContainerUpdate.self, from: body) else { return Self.error(400, "bad request") }
             return update(id, change, container.hostConfig)
@@ -743,6 +810,11 @@ final class FakeDockerEngine: @unchecked Sendable {
             let execID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
             locked { execs[execID] = (id, command) }
             return .json(201, Data(#"{"Id":"\#(execID)"}"#.utf8))
+        case (.HEAD, "archive") where volumePath(path, in: container) != nil:
+            guard let (volume, inside) = volumePath(path, in: container), let stat = volumeStat(volume, inside) else {
+                return Self.error(404, "Could not find the file \(path) in container \(id)")
+            }
+            return .raw(200, Data(), [("X-Docker-Container-Path-Stat", (try? JSONEncoder().encode(stat))?.base64EncodedString() ?? "")])
         case (.HEAD, "archive"):
             guard let data = container.files[path] else { return Self.error(404, "Could not find the file \(path) in container \(id)") }
             let stat = DockerTar.PathStat(
@@ -750,15 +822,12 @@ final class FakeDockerEngine: @unchecked Sendable {
                 linkTarget: "")
             return .raw(200, Data(), [("X-Docker-Container-Path-Stat", (try? JSONEncoder().encode(stat))?.base64EncodedString() ?? "")])
         case (.GET, "archive"):
-            // A volume's mount point: its files, under the folder's own name.
-            if let volume = container.binds[path] {
-                let files = locked { volumeFiles[volume] ?? [:] }
-                let top = (path as NSString).lastPathComponent
-                var archive = DockerTar.header(name: top + "/", size: 0, mode: 0o755, modified: Date(), type: "5") ?? Data()
-                for (name, data) in files.sorted(by: { $0.key < $1.key }) {
-                    archive += (DockerTar.archive(name: top + "/" + name, data: data) ?? Data()).dropLast(2 * DockerTar.block)
+            // In a mounted volume: the mount point its whole tree, under the
+            // folder's own name; a file in it alone, with its owner.
+            if let (volume, inside) = volumePath(path, in: container) {
+                guard let archive = volumeArchive(volume, inside, top: (path as NSString).lastPathComponent) else {
+                    return Self.error(404, "Could not find the file \(path) in container \(id)")
                 }
-                archive += Data(count: 2 * DockerTar.block)
                 return .raw(200, archive, [("Content-Type", "application/x-tar")])
             }
             guard let data = container.files[path], let archive = DockerTar.archive(name: (path as NSString).lastPathComponent, data: data) else {
@@ -769,9 +838,16 @@ final class FakeDockerEngine: @unchecked Sendable {
             let folder = query["path"] ?? "/"
             for entry in DockerTar.entries(of: body) where entry.kind == .file {
                 let full = (folder as NSString).appendingPathComponent(entry.name)
-                // Into a mounted volume, when it lands under its mount point.
+                // Into a mounted volume, when it lands under its mount point,
+                // owned as the entry says (no copyUIDGID: the tar's owner).
                 if let (mount, volume) = container.binds.first(where: { full.hasPrefix($0.key + "/") }) {
-                    locked { volumeFiles[volume, default: [:]][String(full.dropFirst(mount.count + 1))] = entry.data }
+                    let inside = String(full.dropFirst(mount.count + 1))
+                    let now = Self.timestamp()
+                    locked {
+                        volumeFiles[volume, default: [:]][inside] = entry.data
+                        volumeMtimes[volume, default: [:]][inside] = now
+                        volumeOwners[volume, default: [:]][inside] = (entry.uid, entry.gid)
+                    }
                 } else {
                     setFile(id, full, entry.data)
                 }
@@ -914,11 +990,19 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     private func run(_ command: [String], in id: String) -> (Int, String, String) {
+        if command == ["sh", "-c", "true"] { return (0, "", "") }
         guard command.first == "sh", command.contains("overterm-ls"), let folder = command.last else {
             return (127, "", "\(command.first ?? ""): not found\n")
         }
-        let files = locked { containers[id]?.files ?? [:] }
-        let prefix = folder.hasSuffix("/") ? folder : folder + "/"
+        // In a mounted volume: its files, by their path in it.
+        if let container = locked({ containers[id] }), let (volume, inside) = volumePath(folder, in: container) {
+            return list(locked { volumeFiles[volume] ?? [:] }, under: inside.isEmpty ? "" : inside + "/", folder: folder, top: inside.isEmpty)
+        }
+        return list(locked { containers[id]?.files ?? [:] }, under: folder.hasSuffix("/") ? folder : folder + "/", folder: folder, top: folder == "/")
+    }
+
+    /// The listing script's answer for `files` under `prefix`.
+    private func list(_ files: [String: Data], under prefix: String, folder: String, top: Bool) -> (Int, String, String) {
         var lines: [String: String] = [:]
         for (path, data) in files where path.hasPrefix(prefix) {
             let rest = path.dropFirst(prefix.count)
@@ -929,7 +1013,7 @@ final class FakeDockerEngine: @unchecked Sendable {
                 lines[String(rest)] = "f\t\(data.count)\t\(rest)"
             }
         }
-        guard !lines.isEmpty || folder == "/" else { return (2, "", "No such folder: \(folder)\n") }
+        guard !lines.isEmpty || top else { return (2, "", "No such folder: \(folder)\n") }
         return (0, lines.values.sorted().map { $0 + "\n" }.joined(), "")
     }
 
@@ -937,15 +1021,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// committed image, what it doesn't say is the image's — its command,
     /// env, labels and health check — as the engine merges them.
     private func create(_ body: Data, _ query: [String: String]) -> Answer {
-        struct Request: Decodable {
-            struct Host: Decodable { var Binds: [String]? }
-            var Image: String
-            var Cmd: [String]?
-            var Env: [String]?
-            var Labels: [String: String]?
-            var HostConfig: Host?
-        }
-        guard let request = try? JSONDecoder().decode(Request.self, from: body) else { return Self.error(400, "bad request") }
+        guard let request = try? JSONDecoder().decode(CreateRequest.self, from: body) else { return Self.error(400, "bad request") }
         if let name = query["name"], let holder = locked({ containers.values.first { $0.summary.name == name } }) {
             return Self.error(
                 409,
@@ -963,11 +1039,26 @@ final class FakeDockerEngine: @unchecked Sendable {
             let parts = bind.split(separator: ":").map(String.init)
             if parts.count >= 2 { binds[parts[1]] = parts[0] }
         }
+        // A name the engine doesn't know is made a volume, empty, as the
+        // engine makes it (`registerMountPoints`).
+        for name in Set(binds.values) where !name.hasPrefix("/") && locked({ !volumes.contains { $0.Name == name } }) {
+            addVolume(name, size: 0, refCount: 0)
+        }
         locked {
             containers[id]?.binds = binds
-            if let cmd = request.Cmd ?? record?.config.Cmd { containers[id]?.cmd = cmd }
+            containers[id]?.created = request
+            // A named volume bound is a mount the list says, as the engine's.
+            containers[id]?.summary.Mounts = binds.filter { !$0.value.hasPrefix("/") }.sorted { $0.key < $1.key }
+                .map { DockerMountPoint(Type: "volume", Name: $0.value, Destination: $0.key) }
+            if let auto = request.HostConfig?.AutoRemove { containers[id]?.hostConfig.AutoRemove = auto }
+            if let mode = request.HostConfig?.NetworkMode { containers[id]?.hostConfig.NetworkMode = mode }
+            if let cmd = request.Cmd ?? (request.Entrypoint == nil ? record?.config.Cmd : nil) { containers[id]?.cmd = cmd }
+            if let entrypoint = request.Entrypoint {
+                containers[id]?.entrypoint = entrypoint
+                if request.Cmd == nil { containers[id]?.cmd = [] }
+            }
             if let record {
-                containers[id]?.entrypoint = record.config.Entrypoint
+                if request.Entrypoint == nil { containers[id]?.entrypoint = record.config.Entrypoint }
                 containers[id]?.healthcheck = record.config.Healthcheck?.Test
             }
         }
@@ -977,7 +1068,82 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// What a volume holds now, for a test.
     func volumeContents(_ name: String) -> [String: Data] { locked { volumeFiles[name] ?? [:] } }
 
-    func setVolumeFile(_ name: String, _ path: String, _ data: Data) { locked { volumeFiles[name, default: [:]][path] = data } }
+    /// A file in a volume — the volume made if it isn't there.
+    func setVolumeFile(_ name: String, _ path: String, _ data: Data, uid: Int = 0, gid: Int = 0) {
+        if locked({ !volumes.contains { $0.Name == name } }) { addVolume(name, size: 0, refCount: 0) }
+        let now = Self.timestamp()
+        locked {
+            volumeFiles[name, default: [:]][path] = data
+            volumeMtimes[name, default: [:]][path] = now
+            volumeOwners[name, default: [:]][path] = (uid, gid)
+        }
+    }
+
+    /// Whose a volume's file is now.
+    func volumeOwner(_ name: String, _ path: String) -> (uid: Int, gid: Int)? { locked { volumeOwners[name]?[path] } }
+
+    /// Starts of a container that mounts `volume` refused from now on, as
+    /// the engine says `message` (an nfs volume whose server is away, a
+    /// full disk); nil starts them again.
+    func failStarts(mounting volume: String, _ message: String?) { locked { startFailures[volume] = message } }
+
+    /// A volume gone behind the app's back, as `docker volume rm` in a
+    /// terminal: no event, no refusal.
+    func dropVolume(_ name: String) {
+        locked {
+            volumes.removeAll { $0.Name == name }
+            volumeFiles[name] = nil
+            volumeMtimes[name] = nil
+            volumeOwners[name] = nil
+        }
+    }
+
+    /// Overterm's helpers there are now (`overterm.helper=1`).
+    var helperIDs: [String] { locked { containers.values.filter { $0.summary.labels["overterm.helper"] == "1" }.map(\.summary.Id).sorted() } }
+
+    /// What a container's create asked for.
+    func created(_ id: String) -> CreateRequest? { locked { containers[id]?.created } }
+
+    /// The volume a path is in, and where in it: `/volume/conf/a` in a
+    /// helper with `pgdata` at `/volume` → (pgdata, `conf/a`); the mount
+    /// itself, "".
+    private func volumePath(_ path: String, in container: Container) -> (volume: String, path: String)? {
+        for (mount, volume) in container.binds {
+            if path == mount || path == mount + "/" { return (volume, "") }
+            if path.hasPrefix(mount + "/") { return (volume, String(path.dropFirst(mount.count + 1))) }
+        }
+        return nil
+    }
+
+    /// A volume's file, or a folder of it: what HEAD says of it, and what
+    /// GET gives — a file alone, or a folder's tree under its name.
+    private func volumeStat(_ volume: String, _ path: String) -> DockerTar.PathStat? {
+        let (files, mtimes) = locked { (volumeFiles[volume] ?? [:], volumeMtimes[volume] ?? [:]) }
+        let name = path.isEmpty ? "volume" : (path as NSString).lastPathComponent
+        if let data = files[path] {
+            return DockerTar.PathStat(name: name, size: data.count, mode: 0o644, mtime: mtimes[path] ?? "2026-01-01T00:00:00Z", linkTarget: "")
+        }
+        guard path.isEmpty || files.keys.contains(where: { $0.hasPrefix(path + "/") }) else { return nil }
+        return DockerTar.PathStat(name: name, size: 4096, mode: 0o755 | (1 << 31), mtime: "2026-01-01T00:00:00Z", linkTarget: "")
+    }
+
+    private func volumeArchive(_ volume: String, _ path: String, top: String) -> Data? {
+        let (files, owners) = locked { (volumeFiles[volume] ?? [:], volumeOwners[volume] ?? [:]) }
+        if let data = files[path] {
+            let owner = owners[path] ?? (0, 0)
+            return DockerTar.archive(name: (path as NSString).lastPathComponent, data: data, uid: owner.uid, gid: owner.gid)
+        }
+        let prefix = path.isEmpty ? "" : path + "/"
+        let under = files.filter { $0.key.hasPrefix(prefix) }
+        guard path.isEmpty || !under.isEmpty else { return nil }
+        var archive = DockerTar.header(name: top + "/", size: 0, mode: 0o755, modified: Date(), type: "5") ?? Data()
+        for (name, data) in under.sorted(by: { $0.key < $1.key }) {
+            let owner = owners[name] ?? (0, 0)
+            archive += (DockerTar.archive(name: top + "/" + name.dropFirst(prefix.count), data: data, uid: owner.uid, gid: owner.gid) ?? Data())
+                .dropLast(2 * DockerTar.block)
+        }
+        return archive + Data(count: 2 * DockerTar.block)
+    }
 
     private func image(_ idOrName: String) -> ImageSummary? {
         locked { images.first { $0.Id == idOrName || $0.tags.contains(idOrName) || $0.shortID == idOrName } }
@@ -1048,6 +1214,9 @@ final class FakeDockerEngine: @unchecked Sendable {
             }
             return .json(200, Data(("[" + found.joined(separator: ",") + "]").utf8))
         case (.GET, "volumes", false): return Self.json(VolumeList(Volumes: locked { volumes }, Warnings: nil))
+        case (.GET, "volumes", true):
+            guard let volume = locked({ volumes.first { $0.Name == id } }) else { return Self.error(404, "get \(id): no such volume") }
+            return Self.json(volume)
         case (.POST, "volumes", false):
             struct Request: Decodable { var Name: String }
             guard let name = try? JSONDecoder().decode(Request.self, from: body).Name else { return Self.error(400, "no Name") }
@@ -1066,7 +1235,15 @@ final class FakeDockerEngine: @unchecked Sendable {
             return Self.json([PruneReport.ImageDeleted(Untagged: nil, Deleted: id)])
         case (.DELETE, "volumes", true):
             if let refused = refusal(id) { return refused }
-            locked { volumes.removeAll { $0.Name == id } }
+            // As the engine: never one a container mounts, running or not.
+            let users = locked { containers.values.filter { ($0.summary.Mounts ?? []).contains { $0.Name == id } }.map(\.summary.Id).sorted() }
+            guard users.isEmpty else { return Self.error(409, "remove \(id): volume is in use - [\(users.joined(separator: ", "))]") }
+            locked {
+                volumes.removeAll { $0.Name == id }
+                volumeFiles[id] = nil
+                volumeMtimes[id] = nil
+                volumeOwners[id] = nil
+            }
             return .empty(204)
         case (.DELETE, "networks", true):
             if let refused = refusal(id, locked({ networks.first { $0.Id == id }?.Name }) ?? id) { return refused }
@@ -1248,6 +1425,14 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
     private func respond(_ context: ChannelHandlerContext, _ request: HTTPRequestHead) {
         let chunked = request.headers["Transfer-Encoding"].contains { $0.lowercased().contains("chunked") }
         let answer = engine.answer(request.method, request.uri, body: body, chunked: chunked)
+        if case .later(let ms, let inner, let then) = answer {
+            let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
+            context.eventLoop.scheduleTask(in: .milliseconds(Int64(ms))) { [self] in
+                then()
+                send(inner, bound.value, request)
+            }
+            return
+        }
         // Asked now, answered later: a slow engine.
         let delay = engine.delay(of: request.uri)
         guard delay > 0 else { return send(answer, context, request) }
@@ -1279,7 +1464,7 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
         case .empty(let status): whole(status, Data())
         case .raw(let status, let data, let extra): whole(status, data, extra)
         case .notFound: whole(404, Data(#"{"message":"page not found"}"#.utf8))
-        case .never: break
+        case .never, .later: break
         case .events:
             open("application/json")
             engine.listen(channel)

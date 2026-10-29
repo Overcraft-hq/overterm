@@ -92,6 +92,8 @@ extension DockerPageModel {
         }
         do {
             for volume in Testcontainers.volumes(of: session, in: try await engine.volumes()) {
+                // A Files tab's helper would hold it.
+                await DockerHelpers.remove(mounting: volume.Name, on: engine)
                 do { try await engine.remove(volume: volume.Name) } catch { failed(volume.shortName, error) }
             }
         } catch {

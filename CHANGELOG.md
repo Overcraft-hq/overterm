@@ -44,6 +44,7 @@ version is tagged `v<version>`.
 - docker: CPU and memory columns in the container list
 - docker: Testcontainers' containers apart, by test run, removed together
 - docker: a container's memory, CPUs and restart policy changed in place; renamed; saved as an image
+- docker: a volume's files browsed, opened and saved back, as a container's are
 
 ## 1.4.6 — 2026-10-29
 

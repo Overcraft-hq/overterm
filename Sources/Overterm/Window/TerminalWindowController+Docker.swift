@@ -18,8 +18,8 @@ extension TerminalWindowController {
             openPage: { [weak self] in self?.toggleDockerPage(nil) },
             showContainer: { [weak self] in self?.showContainer($0) },
             openDatabase: { [weak self] in self?.newDatabaseConnection(from: $0) },
-            openFile: { [weak self] container, path in self?.openContainerFile(container, path) },
-            downloadFile: { [weak self] container, path in self?.downloadContainerFile(container, path) },
+            openFile: { [weak self] source, path in self?.openDockerFile(source, path) },
+            downloadFile: { [weak self] source, path in self?.downloadDockerFile(source, path) },
             showTab: { [weak self] id in
                 guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
@@ -156,28 +156,41 @@ extension TerminalWindowController {
         }
     }
 
-    // MARK: A container's files
+    // MARK: A container's or a volume's files
 
-    /// A container's file in the editor: a copy under Overterm's folder,
-    /// written back into the container when the editor saves it.
-    func openContainerFile(_ container: ContainerSummary, _ path: String) {
+    /// A container's file in the editor.
+    func openContainerFile(_ container: ContainerSummary, _ path: String) { openDockerFile(.of(container), path) }
+
+    /// A container's or a volume's file in the editor: a copy under
+    /// Overterm's folder, written back where it came from when the editor
+    /// saves it — a volume's through a helper made for the call.
+    func openDockerFile(_ source: DockerFileSource, _ path: String) {
         guard let engine = DockerModel.shared.engine else { return }
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         Task {
             do {
-                let stat = try await engine.stat(container.Id, path: path)
-                guard !stat.isDirectory else { throw DockerError(status: 0, message: "\(path) is a folder.") }
-                let data = try await engine.read(container.Id, file: path)
-                let local = DockerFiles.localCopy(of: path, in: container.name, under: AppEnvironment.supportDirectory)
+                let (stat, entry) = try await engine.reaching(source, path) { id, at in
+                    let stat = try await engine.stat(id, path: at)
+                    guard !stat.isDirectory else { throw DockerError(status: 0, message: "\(path) is a folder.") }
+                    return (stat, try await engine.readEntry(id, file: at))
+                }
+                let local = DockerFiles.localCopy(of: path, from: source, under: AppEnvironment.supportDirectory)
                 try FileManager.default.createDirectory(at: local.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try data.write(to: local)
-                dockerFileCopies[local.path] = DockerFileCopy(container: container.Id, name: container.name, path: path, stat: stat)
-                hookContainerSaves()
+                try entry.data.write(to: local)
+                dockerFileCopies[local.path] = DockerFileCopy(
+                    source: source, path: path, stat: stat, uid: entry.uid, gid: entry.gid, endpoint: engine.endpoint)
+                hookDockerSaves()
                 openInEditor(local)
             } catch {
-                reportDockerError("Open \(path)", error)
+                reportDockerError("Open \(path)", Self.said(error, in: source))
             }
         }
+    }
+
+    /// A volume's helper paths in what went wrong, as the volume's.
+    static func said(_ error: Error, in source: DockerFileSource) -> Error {
+        guard case .volume = source else { return error }
+        return DockerError(status: (error as? DockerError)?.status ?? 0, message: DockerVolumeFiles.said(error.localizedDescription))
     }
 
     /// A copy made to be read (a resolved compose config), in the editor:
@@ -202,45 +215,61 @@ extension TerminalWindowController {
         paths.forEach(removeDockerReadCopy)
     }
 
-    /// The editor's save goes back into the container too, for a copy.
-    private func hookContainerSaves() {
+    /// The editor's save goes back where the copy came from too.
+    private func hookDockerSaves() {
         guard !dockerSaveHooked, let editor else { return }
         dockerSaveHooked = true
         let saved = editor.onSaved
         editor.onSaved = { [weak self] in
             saved?()
             guard let self, let url = self.editor?.active?.url, let copy = self.dockerFileCopies[url.path] else { return }
-            self.saveContainerFile(copy, from: url)
+            self.saveDockerFile(copy, from: url)
         }
     }
 
-    /// Written back — asked first when the file changed in the container
-    /// since it was opened (a process there wrote it, or another editor).
-    func saveContainerFile(_ copy: DockerFileCopy, from local: URL, overwrite: Bool = false) {
+    /// What a save found: the file changed there since it was read, or
+    /// written — its stat now, if it could be read.
+    enum DockerSave: Sendable {
+        case changed
+        case written(DockerTar.PathStat?)
+    }
+
+    /// Written back with its mode and owner — asked first when the file
+    /// changed where it is since it was opened (a process there wrote it,
+    /// or another editor). One call: a volume's through one helper. Only
+    /// to the engine it came from.
+    func saveDockerFile(_ copy: DockerFileCopy, from local: URL, overwrite: Bool = false) {
         guard let engine = DockerModel.shared.engine else { return reportDockerError("Save \(copy.path)", DockerError.unreachable("Docker isn't running.")) }
+        if let refusal = copy.refusal(through: engine.endpoint) {
+            return reportDockerError("Save \(copy.path) into \(copy.source.title)", DockerError(status: 0, message: refusal))
+        }
         Task {
             do {
-                let now = try? await engine.stat(copy.container, path: copy.path)
-                if !overwrite, let now, now.size != copy.stat.size || now.mtime != copy.stat.mtime {
-                    confirmDocker(
-                        "“\((copy.path as NSString).lastPathComponent)” changed in \(copy.name)",
-                        "It was written in the container after you opened it. Saving replaces that with your copy.", "Replace"
-                    ) { [weak self] in self?.saveContainerFile(copy, from: local, overwrite: true) }
-                    return
-                }
                 let data = try Data(contentsOf: local)
-                try await engine.write(copy.container, file: copy.path, data: data, mode: Int(copy.stat.mode & 0o777))
-                if let written = try? await engine.stat(copy.container, path: copy.path) {
-                    dockerFileCopies[local.path]?.stat = written
+                let outcome = try await engine.reaching(copy.source, copy.path) { id, at -> DockerSave in
+                    let now = try? await engine.stat(id, path: at)
+                    if !overwrite, let now, now.size != copy.stat.size || now.mtime != copy.stat.mtime { return .changed }
+                    try await engine.write(id, file: at, data: data, mode: Int(copy.stat.mode & 0o777), uid: copy.uid, gid: copy.gid)
+                    return .written(try? await engine.stat(id, path: at))
+                }
+                switch outcome {
+                case .changed:
+                    let place = if case .volume = copy.source { "the volume" } else { "the container" }
+                    confirmDocker(
+                        "“\((copy.path as NSString).lastPathComponent)” changed in \(copy.source.title)",
+                        "It was written in \(place) after you opened it. Saving replaces that with your copy.", "Replace"
+                    ) { [weak self] in self?.saveDockerFile(copy, from: local, overwrite: true) }
+                case .written(let stat):
+                    if let stat { dockerFileCopies[local.path]?.stat = stat }
                 }
             } catch {
-                reportDockerError("Save \(copy.path) into \(copy.name)", error)
+                reportDockerError("Save \(copy.path) into \(copy.source.title)", Self.said(error, in: copy.source))
             }
         }
     }
 
-    /// A container's file to the Mac, where the user says.
-    func downloadContainerFile(_ container: ContainerSummary, _ path: String) {
+    /// A container's or a volume's file to the Mac, where the user says.
+    func downloadDockerFile(_ source: DockerFileSource, _ path: String) {
         guard let window, let engine = DockerModel.shared.engine else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = (path as NSString).lastPathComponent
@@ -249,9 +278,9 @@ extension TerminalWindowController {
             MainActor.assumeIsolated {
                 Task { [weak self] in
                     do {
-                        try await engine.read(container.Id, file: path).write(to: url)
+                        try await engine.reaching(source, path) { id, at in try await engine.read(id, file: at) }.write(to: url)
                     } catch {
-                        self?.reportDockerError("Save \(path)", error)
+                        self?.reportDockerError("Save \(path)", Self.said(error, in: source))
                     }
                 }
             }

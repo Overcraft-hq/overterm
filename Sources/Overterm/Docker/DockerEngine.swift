@@ -29,6 +29,15 @@ struct DockerError: LocalizedError, Equatable, Sendable {
     var errorDescription: String? { message }
 
     static func unreachable(_ detail: String) -> DockerError { DockerError(status: 0, message: detail) }
+
+    /// A volume's files and its export go through a container that never
+    /// runs, made from any image here: there is none.
+    static let noHelperImage = DockerError(
+        status: 0, message: "A volume is read through a container that never runs, and it needs any image on this Mac — pull one (busybox).")
+
+    /// The engine has no volume by that name now: removed, or pruned. 410,
+    /// so nothing takes it for a helper gone under its tab (a 404).
+    static func volumeGone(_ name: String) -> DockerError { DockerError(status: 410, message: "The volume \(name) is gone.") }
 }
 
 /// How bytes get to the engine and back: NIO over a socket for the app,

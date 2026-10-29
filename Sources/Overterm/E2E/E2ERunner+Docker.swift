@@ -267,7 +267,8 @@ extension E2ERunner {
         let imageTar = scratch.appendingPathComponent("image.tar")
         if let image = docker.images.first { page.saveImage(image, to: imageTar) }
         check("an image saves", await eventually(5) { ((try? Data(contentsOf: imageTar))?.count ?? 0) > 0 })
-        check("its helpers are gone", await eventually(5) { !docker.containers.contains { $0.name.hasPrefix("helper-") } })
+        // Labelled, and never listed: the fake's own list says.
+        check("its helpers are gone", await eventually(5) { fake.helperIDs.isEmpty }, "\(fake.helperIDs)")
         page.cleaned = nil
 
         // Clean Up: listed, then done.
@@ -355,12 +356,15 @@ extension E2ERunner {
         page.volumeSelection = [volume.Name]
         let volumeVerbs = page.verbs(for: volume)
         check(
-            "a volume's detail has its verbs as buttons", titles(volumeVerbs, .button) == ["Browse in a Tab", "Export…", "Clone…"],
+            "a volume's detail has its verbs as buttons", titles(volumeVerbs, .button) == ["Browse Files", "Export…", "Clone…"],
             "\(titles(volumeVerbs, .button))")
-        check("the rest behind More", titles(volumeVerbs, .more) == ["Import Into a New Volume…", "Copy Name", "Copy Mountpoint"])
+        check(
+            "the rest behind More",
+            titles(volumeVerbs, .more) == ["Open a Shell on It in a Tab", "Import Into a New Volume…", "Copy Name", "Copy Mountpoint"],
+            "\(titles(volumeVerbs, .more))")
         check("and removal last", titles(volumeVerbs, .remove) == ["Remove…"])
-        volumeVerbs.first { $0.title == "Browse in a Tab" }?.perform()
-        check("Browse opens a shell on it in a tab", commands.last?.contains("-v ot-old-data:/volume") == true, commands.last ?? "nothing")
+        volumeVerbs.first { $0.title == "Open a Shell on It in a Tab" }?.perform()
+        check("a shell on it opens in a tab", commands.last?.contains("-v ot-old-data:/volume") == true, commands.last ?? "nothing")
         await capture("volume")
 
         // An image: Tag… asks for the name.
@@ -398,6 +402,141 @@ extension E2ERunner {
         check("the panel's verbs are the page's", panelVerbs.map(\.title) == page.verbs(for: container).map(\.title))
         panelVerbs.first { $0.title == "Restart" }?.perform()
         check("and act through it", await eventually(5) { fake.requests.contains { $0.contains("/containers/\(container.Id)/restart") } })
+        page.press("1")
+    }
+
+    /// A volume's Files tab: its folders listed through a helper that
+    /// runs only while the tab shows — as root, without a network, out of
+    /// every list — a file to the editor and saved back with its owner
+    /// through a helper made for the call, a helper gone under it made
+    /// again, and what is left at quit removed.
+    private func volumeFilesChecks(_ fake: FakeDockerEngine) async {
+        let page = app.dockerPage
+        let docker = DockerModel.shared
+        let volume = "ot-old-data"
+        fake.setVolumeFile(volume, "conf/app.conf", Data("level = info\n".utf8), uid: 999, gid: 999)
+        page.press("3")
+        page.showDetail = true
+        page.volumeSelection = [volume]
+        page.volumeTab = .overview
+        await pause(0.3)
+        check("a volume's Overview makes no helper", fake.helperIDs.isEmpty, "\(fake.helperIDs)")
+        page.press("f")
+        check("f opens a volume's Files", page.volumeTab == .files)
+        page.volumeTab = .overview
+        if let summary = docker.volumes.first(where: { $0.Name == volume }) { page.verbs(for: summary).first { $0.title == "Browse Files" }?.perform() }
+        check("and so does Browse Files", page.volumeTab == .files && page.section == .volumes && page.volumeSelection == [volume])
+        func names() -> [String] { page.volumeFiles?.entries.map(\.name) ?? [] }
+        check(
+            "its top is listed through a helper that runs", await eventually(5) { names() == ["conf", "data.txt"] },
+            "\(names()) \(page.volumeFiles?.filesError ?? "")")
+        let helper = fake.helperIDs.first ?? ""
+        let made = fake.created(helper)
+        check(
+            "one helper, running, as root, no network, removing itself",
+            fake.helperIDs.count == 1 && fake.summary(helper)?.state == .running && made?.User == "0:0" && made?.HostConfig?.NetworkMode == "none"
+                && made?.HostConfig?.AutoRemove == true, "\(fake.helperIDs) \(String(describing: made))")
+        // Read again since the helper was made: the model reloads a beat
+        // after its event, and a list from before would pass anyway.
+        let lists = fake.requests.filter { $0.contains("/containers/json?all=1") && !$0.contains("filters") }.count
+        await docker.reload()
+        check(
+            "which the lists don't show",
+            fake.requests.filter { $0.contains("/containers/json?all=1") && !$0.contains("filters") }.count > lists
+                && !docker.containers.contains { fake.helperIDs.contains($0.Id) } && docker.containers(mountingVolume: volume).isEmpty
+                && !docker.containers.isEmpty, "\(docker.containers.map(\.name))")
+        page.volumeFiles?.open("/conf")
+        check("a folder opens", await eventually(5) { names() == ["app.conf"] }, "\(names())")
+        await capture("volume-files")
+
+        app.openDockerFile(.volume(volume), "/conf/app.conf")
+        let opened = await eventually(5) { self.app.editor?.active?.url?.path.hasSuffix("Volumes/\(volume)/conf/app.conf") == true }
+        check("a volume's file opens in the editor", opened, app.editor?.active?.url?.path ?? "nothing")
+        check("as the volume has it", app.editor?.textView?.string.contains("level = info") == true)
+        check("the page hidden, its helper goes", await eventually(5) { fake.helperIDs.isEmpty }, "\(fake.helperIDs)")
+        if opened, let editor = app.editor, let text = editor.textView {
+            text.setSelectedRange(NSRange(location: 0, length: (text.string as NSString).length))
+            text.insertText("level = debug\n", replacementRange: text.selectedRange())
+            editor.saveDocument(nil)
+            check(
+                "saving writes it back into the volume",
+                await eventually(5) { fake.volumeContents(volume)["conf/app.conf"] == Data("level = debug\n".utf8) },
+                String(decoding: fake.volumeContents(volume)["conf/app.conf"] ?? Data(), as: UTF8.self) + " " + (page.error ?? ""))
+            let owner = fake.volumeOwner(volume, "conf/app.conf")
+            check("its owner kept", owner?.uid == 999 && owner?.gid == 999, "\(String(describing: owner))")
+            check("and the save's helper is gone", await eventually(5) { fake.helperIDs.isEmpty }, "\(fake.helperIDs)")
+
+            // The context switched since it was opened: the same name there
+            // is another volume, so the save says so and writes nothing.
+            if let local = editor.active?.url?.path, let copy = app.dockerFileCopies[local] {
+                app.dockerFileCopies[local]?.endpoint = DockerEndpoint(address: .unix("/tmp/ot-elsewhere.sock"), context: "elsewhere", source: "test")
+                let creates = fake.requests.filter { $0.contains("/containers/create") }.count
+                page.error = nil
+                text.insertText("# elsewhere\n", replacementRange: NSRange(location: 0, length: 0))
+                editor.saveDocument(nil)
+                check(
+                    "a copy from another engine isn't saved here",
+                    await eventually(5) { page.error?.contains("opened from the context elsewhere") == true }
+                        && fake.volumeContents(volume)["conf/app.conf"] == Data("level = debug\n".utf8)
+                        && fake.requests.filter { $0.contains("/containers/create") }.count == creates, page.error ?? "no error")
+                if let sheet = window.attachedSheet { window.endSheet(sheet) }
+                app.dockerFileCopies[local] = copy
+                page.error = nil
+            }
+        }
+
+        app.toggleDockerPage(nil)
+        check(
+            "back on the page, the same folder through a new helper",
+            await eventually(5) { page.volumeFiles?.folder == "/conf" && names() == ["app.conf"] && fake.helperIDs.count == 1 && fake.helperIDs != [helper] },
+            "\(page.volumeFiles?.folder ?? "nil") \(names()) \(fake.helperIDs)")
+        let second = fake.helperIDs
+        second.forEach(fake.expire)
+        page.volumeFiles?.open("/")
+        check(
+            "a helper whose time was up is made again",
+            await eventually(5) { names() == ["conf", "data.txt"] && fake.helperIDs.count == 1 && fake.helperIDs != second },
+            "\(names()) \(fake.helperIDs) \(page.volumeFiles?.filesError ?? "")")
+        // While one runs: Overview takes it away, the folder kept.
+        page.volumeTab = .overview
+        check(
+            "leaving Files removes its helper", await eventually(5) { fake.helperIDs.isEmpty && page.volumeFiles?.listing != true },
+            "\(fake.helperIDs)")
+        await pause(0.3)
+        check("and makes none again", fake.helperIDs.isEmpty, "\(fake.helperIDs)")
+        page.volumeTab = .files
+        check("Files again, a helper again", await eventually(5) { fake.helperIDs.count == 1 && names() == ["conf", "data.txt"] }, "\(fake.helperIDs)")
+        DockerHelpers.removeAll(waiting: 2)
+        check("what is left at quit is removed", fake.helperIDs.isEmpty, "\(fake.helperIDs)")
+        page.volumeTab = .overview
+        await pause(0.2)
+
+        // Remove… from a volume's Files tab, on an engine slow to kill a
+        // container: its helper waited for, then the volume goes — and
+        // isn't made again when Files shows once more.
+        let gone = "ot-files-gone"
+        fake.setVolumeFile(gone, "a.txt", Data("a\n".utf8))
+        docker.load(.volumes)
+        _ = await eventually(5) { docker.volumes.contains { $0.Name == gone } }
+        page.volumeSelection = [gone]
+        page.volumeTab = .files
+        check("another volume's Files", await eventually(5) { names() == ["a.txt"] && fake.helperIDs.count == 1 }, "\(names()) \(fake.helperIDs)")
+        fake.removalDelay = 300
+        page.error = nil
+        let confirm = page.actions?.confirm
+        page.actions?.confirm = { _, _, _, then in then() }
+        if let summary = docker.volumes.first(where: { $0.Name == gone }) { page.verbs(for: summary).first { $0.title == "Remove…" }?.perform() }
+        check(
+            "Remove from its Files tab removes it, its helper first",
+            await eventually(5) { !fake.volumeNames.contains(gone) || page.error != nil } && page.error == nil && fake.helperIDs.isEmpty,
+            page.error ?? "\(fake.volumeNames)")
+        fake.removalDelay = 0
+        if let confirm { page.actions?.confirm = confirm }
+        page.volumeSelection = [gone]
+        await pause(0.3)
+        check("and a Files tab on it makes it no more", !fake.volumeNames.contains(gone) && fake.helperIDs.isEmpty, "\(fake.volumeNames) \(fake.helperIDs)")
+        page.volumeSelection = []
+        page.volumeTab = .overview
         page.press("1")
     }
 
@@ -2711,6 +2850,7 @@ extension E2ERunner {
         await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
         await verbsChecks(fake, web: web)
+        await volumeFilesChecks(fake)
         await settingsChecks(fake, web: web)
         await testcontainersChecks(fake)
         await askAgentChecks(fake, web: web, folder: folder, real: real)

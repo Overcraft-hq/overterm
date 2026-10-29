@@ -107,6 +107,9 @@ struct ContainerSummary: Codable, Identifiable, Hashable, Sendable {
     var composeService: String? { labels["com.docker.compose.service"].flatMap { $0.isEmpty ? nil : $0 } }
     var composeWorkingDir: String? { labels["com.docker.compose.project.working_dir"].flatMap { $0.isEmpty ? nil : $0 } }
     var isOneOff: Bool { labels["com.docker.compose.oneoff"]?.lowercased() == "true" }
+    /// One Overterm made for itself (`DockerHelpers`): a volume's helper.
+    /// Never listed — one mounting a volume would make it look in use.
+    var isHelper: Bool { labels["overterm.helper"] == "1" }
 }
 
 enum ContainerState: String, Sendable, CaseIterable {

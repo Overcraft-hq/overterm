@@ -1370,7 +1370,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   registry password. Typing in the pull field asks Docker Hub through
   the engine's own `/images/search` (as `docker search` does) and suggests
   images with their stars and the official mark. Tag, remove (asked first; never what a running
-  container uses), browse a volume in a tab (a throwaway container).
+  container uses), a shell on a volume in a tab (a throwaway container);
+  its files in the detail's Files tab. Overterm's own helpers are never
+  listed: one mounting a volume would make it look in use.
 - **Emulation** (`DockerPlatform`, `DockerEmulation`, pure): an image built
   for another architecture than the engine's — amd64 on Apple silicon —
   runs translated (Rosetta or QEMU), often several times slower. The
@@ -1447,8 +1449,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   as they come. A volume goes through a helper: a container created with
   the volume at `/volume` and never started — the archive endpoint mounts
   it anyway (the live test checks that against the real engine) — so any
-  image on the Mac will do and nothing runs; it is labelled and removed
-  after. Export reads `/volume`, import makes the volume and writes the
+  image on the Mac will do and nothing runs; it is named
+  `overterm-helper-…`, labelled, recorded in `DockerHelpers` and removed
+  before the call returns — one left by a quit mid-export is removed at
+  quit too. Export reads `/volume`, import makes the volume and writes the
   tar back at `/`, a clone is both.
 - **Clean Up** (`c`, `DockerPrunePlan`, pure): what the engine's prunes
   would remove, listed before anything goes — the prunes say what they
@@ -1702,10 +1706,57 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`Containers/<name>/<path>`, `.` and `..` left out) and is written back
   through `archive` when the editor saves it — asked first when it
   changed in the container since it was opened (its stat's size and
-  mtime), and kept with its mode. Its Changes view is the engine's
+  mtime), and kept with its mode and owner. Its Changes view is the engine's
   `/changes`: what was added, modified and deleted since it started, a
   file a click from the editor. Stats shows its processes (`top`, every
   other sample while the tab shows).
+- **A volume's files** (the volume detail's Files tab, `VolumeFilesSession`,
+  `DockerVolumeFiles` pure; the list is `DockerFolderList`, a container's
+  too): its folders are listed as a container's are, by the same `sh`
+  script through `exec`, so they need a container that runs. `archive` on
+  a folder hands over its whole tree, written as it is walked in name
+  order: a folder's entries are spread through its subfolders' until the
+  end, so a database's volume would be gigabytes a click. The helper is a
+  container of an image already here that has a shell (busybox, alpine,
+  debian, ubuntu, the debug shell's image, what mounts the volume, then the
+  rest by size; at most three tried, each checked with `sh -c true`). It
+  has the volume at `/volume`, runs `exec sleep 1800` as root with no
+  network, and is labelled `overterm.helper=1`. It is made when the tab
+  first lists, and removed when the tab stops showing: another tab,
+  another volume, the page hidden, the window closed. A helper gone under
+  the tab (its sleep ended) is made again at the next listing. At quit,
+  what is left is removed (`DockerHelpers`), before a remote engine's
+  forward closes. After a crash, its sleep ends and AutoRemove takes it.
+  A file opens, saves and downloads through a helper made for the call and
+  never started, as export's is (`DockerEngine.reaching`): any image will
+  do, and the editor's copy (`Volumes/<name>/<path>`) still saves after the
+  tab has gone. A save keeps the file's owner: the engine gives what
+  `archive` writes the tar's uid and gid, and a database won't read a
+  config that root now owns. The copy saves only to the engine it was
+  read from: a volume's name is on every engine, and the context may have
+  changed since. With no image with a shell here, the tab offers to pull
+  busybox, and only when asked; a failure of another kind (a volume that
+  won't mount, a full disk) is said as the engine said it, since busybox
+  would fail the same way.
+- **Helpers** (`DockerHelpers`): a helper is made only for a volume the
+  engine has (`GET /volumes/<name>`). Bound by its name, one would make
+  the volume again, empty: a volume pruned or removed in a terminal would
+  come back, and a save would land in it. The tab makes none for a volume
+  the list no longer has, as its detail isn't drawn then. A helper is
+  removed once however many ask, and the removal returns only when the
+  engine no longer has it: the engine refuses a second at once (409,
+  already in progress) while the first still kills the container, which
+  still holds its volume. Its anonymous volumes go with it (`v=1`): an
+  image's `VOLUME` (postgres', redis') makes one at create, and the volume
+  it was given by name is never one of them. A running helper holds its
+  volume, so Remove and Clean Up remove the helpers holding one first and
+  wait for them, and the Files tab makes none meanwhile. They ask the
+  engine too, by the mount: one a crash left, or a version before
+  `overterm.volume`, is in no list and in no record. Each helper carries
+  its run (`overterm.run`); when an engine connects, the helpers of
+  another run that don't run and were made over ten minutes ago are
+  removed — a never-started one would hold its volume for good, and
+  another Overterm may still be reading through a newer one.
 - **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
   MySQL, MariaDB or ClickHouse container as a connection — the kind from
   its image, user, password and database from the variables its image's
