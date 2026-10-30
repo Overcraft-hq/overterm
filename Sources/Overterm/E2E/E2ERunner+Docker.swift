@@ -2221,13 +2221,15 @@ extension E2ERunner {
             return false
         }
         count = commands.count
-        let button = conflicted ? await shownText { $0.hasPrefix("Up ot-main") } : nil
-        if let button { await click(at: CGPoint(x: button.frame.midX, y: button.frame.midY)) }
+        // The words' own place: Vision may read the box's two buttons as one
+        // line, whose middle is between them.
+        let button = conflicted ? await wordFrame("Up on Free Ports") : nil
+        if let button { await click(at: CGPoint(x: button.midX, y: button.midY)) }
         let movedAgain = button != nil ? await eventually(5) { commands.count == count + 1 } : false
         check(
             "a conflict's own Up on Free Ports moves its stack",
             movedAgain && commands.last?.command == upCommand && page.ports.override(in: real)?.moves.map(\.from) == [held, 38080] && alerts.isEmpty,
-            "\(conflicted) \(button?.text ?? "no button read") \(commands.last?.command ?? "nothing") \(page.error ?? "") \(alerts)")
+            "\(conflicted) \(button.map { "button at \($0)" } ?? "no button read") \(commands.last?.command ?? "nothing") \(page.error ?? "") \(alerts)")
         page.ports.forget(real)
 
         try? await docker.remove(ownWeb, force: true)
@@ -3503,17 +3505,17 @@ extension E2ERunner {
         page.detailTab = .overview
         let clashProject = docker.projects.first { $0.name == "ot-shop-2" }
         let reason = clashProject.flatMap { app.dockerActions.freePortsUnavailable($0) }
-        let offered = await shownText { $0.hasPrefix("Up ot-shop-2") }
+        let offered = await wordFrame("Up on Free Ports")
         var clashTyped: [String] = []
         let typing = page.actions?.run
         page.actions?.run = { command, _ in clashTyped.append(command) }
-        if let offered { await click(at: CGPoint(x: offered.frame.midX, y: offered.frame.midY)) }
+        if let offered { await click(at: CGPoint(x: offered.midX, y: offered.midY)) }
         await pause(0.5)
         page.actions?.run = typing ?? { _, _ in }
         check(
             "its stack's Up on Free Ports can't help without its files here",
             offered != nil && reason == "Its compose files aren't on this Mac." && clashTyped.isEmpty && page.error == nil,
-            "\(offered?.text ?? "not drawn") \(reason ?? "no reason") \(clashTyped) \(page.error ?? "")")
+            "\(offered.map { "drawn at \($0)" } ?? "not drawn") \(reason ?? "no reason") \(clashTyped) \(page.error ?? "")")
         try? await docker.perform(.stop, on: web)
         page.act(.start, on: docker.container(clash).map { [$0] } ?? [])
         check(

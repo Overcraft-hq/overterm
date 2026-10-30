@@ -126,37 +126,50 @@ struct ContainerDetailView: View {
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
             }
-            HStack(spacing: 8) {
-                switch conflict.holder {
-                case .container(let id, let name, _, _):
-                    Button("Stop \(name) and Start This") {
-                        Task {
-                            try? await DockerModel.shared.perform(.stop, on: id)
-                            // Its own Start: whoever shows it says if that fails.
-                            verbs().first { $0.title == "Start" }?.perform()
-                        }
-                    }
-                    .accessibilityIdentifier("docker.conflict.swap")
-                case .tab(let id, _, _):
-                    Button("Show the Tab") { actions.showTab(id) }
-                case .process, .unknown:
-                    EmptyView()
-                }
-                // Its stack beside the other: on ports of its own — or why
-                // not (its files elsewhere, an older Compose), as its verb.
-                if let project = session.docker.projects.first(where: { $0.name == container.composeProject }) {
-                    let why = actions.freePortsUnavailable(project)
-                    Button("Up \(project.name) on Free Ports") { actions.composeUp(.project(project), .yes) }
-                        .disabled(why != nil)
-                        .help(why ?? "Its stack on ports nothing holds, under a name of its own: an override in Overterm's folder, not in the repository")
-                        .accessibilityIdentifier("docker.conflict.freePorts")
-                }
+            // Side by side while both fit; else one under the other, so
+            // neither is cut.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { conflictButtons(conflict) }
+                VStack(alignment: .leading, spacing: 6) { conflictButtons(conflict) }
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(TabStatusStyle.failed.opacity(0.12)))
         .accessibilityIdentifier("docker.conflict")
+    }
+
+    /// The way out of a conflict: the holder stopped, or this stack moved.
+    @ViewBuilder private func conflictButtons(_ conflict: DockerPortConflict) -> some View {
+        switch conflict.holder {
+        case .container(let id, let name, _, _):
+            Button("Stop \(name) and Start This") {
+                Task {
+                    try? await DockerModel.shared.perform(.stop, on: id)
+                    // Its own Start: whoever shows it says if that fails.
+                    verbs().first { $0.title == "Start" }?.perform()
+                }
+            }
+            .accessibilityIdentifier("docker.conflict.swap")
+        case .tab(let id, _, _):
+            Button("Show the Tab") { actions.showTab(id) }
+        case .process, .unknown:
+            EmptyView()
+        }
+        // Its stack beside the other: on ports of its own — or why
+        // not (its files elsewhere, an older Compose), as its verb.
+        if let project = session.docker.projects.first(where: { $0.name == container.composeProject }) {
+            let why = actions.freePortsUnavailable(project)
+            // The box above names the stack: a project's long name (a
+            // worktree's) cut the words that say what the button does.
+            Button("Up on Free Ports") { actions.composeUp(.project(project), .yes) }
+                .disabled(why != nil)
+                .help(
+                    why
+                        ?? "Up \(project.name) on ports nothing holds, under a name of its own: an override in Overterm's folder, not in the repository"
+                )
+                .accessibilityIdentifier("docker.conflict.freePorts")
+        }
     }
 
     // MARK: Overview
