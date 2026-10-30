@@ -920,7 +920,7 @@ extension E2ERunner {
         check(
             "their rows are marked", Set(updates.images(withUpdates: docker.images).map(\.Id)) == [nginx, elsewhere],
             "\(updates.images(withUpdates: docker.images).map(\.tags))")
-        await drawn("with a chip", await shownText(5, chip))
+        await drawn("with a chip", await shownText(15, chip))
         check(
             "nothing pulled yet: Up recreates nothing", shop().map { updates.summary(of: $0).recreate.isEmpty } == true,
             "\(shop().map(updates.summary(of:)).map { "\($0)" } ?? "no project")")
@@ -980,7 +980,7 @@ extension E2ERunner {
         guard let project = shop() else { return check("a project to check", false) }
         let summary = updates.summary(of: project)
         check("the project says which service has one", summary.available.map(\.service) == ["web"], "\(summary)")
-        await drawn("its row has a chip", await shownText(5, chip))
+        await drawn("its row has a chip", await shownText(15, chip))
         await drawn("its detail says which", await shownText { $0.contains("Newer in the registry") })
         let pullVerb = page.verbs(for: project).first { $0.title == "Pull Updates in a Tab" }
         check("Pull Updates is a button on the project", pullVerb?.place == .button)
@@ -1899,7 +1899,7 @@ extension E2ERunner {
 
     /// Where `word` is drawn, read again until it shows: its own frame
     /// within the line Vision reads it in — a row of chips is one line.
-    private func wordFrame(_ word: String, timeout: TimeInterval = 5) async -> CGRect? {
+    private func wordFrame(_ word: String, timeout: TimeInterval = 15) async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if let image = app.windowImage(window) {
@@ -1927,8 +1927,10 @@ extension E2ERunner {
     }
 
     /// The window's line of text that `match` picks, read again until it
-    /// shows (SwiftUI draws a moment later).
-    private func shownText(_ timeout: TimeInterval = 5, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
+    /// shows (SwiftUI draws a moment later). A Vision pass can take seconds
+    /// on a busy machine, so the wait is long — it only runs out when
+    /// something isn't drawn.
+    private func shownText(_ timeout: TimeInterval = 15, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if let line = await readWindow().first(where: { match($0.text) }) { return line }

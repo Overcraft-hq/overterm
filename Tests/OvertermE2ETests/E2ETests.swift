@@ -59,7 +59,8 @@ final class E2ETests: XCTestCase {
     func testNotes() throws { try run("notes") }
     func testDatabase() throws { try run("database") }
     func testStorage() throws { try run("storage") }
-    func testDocker() throws { try run("docker") }
+    // The whole Docker page, end to end: 80–110 s on a busy machine.
+    func testDocker() throws { try run("docker", timeout: 300) }
     func testSuspend() throws { try run("suspend") }
     func testDatabaseAgent() throws { try run("databaseAgent") }
     func testDatabaseTunnel() throws { try run("databaseTunnel") }
