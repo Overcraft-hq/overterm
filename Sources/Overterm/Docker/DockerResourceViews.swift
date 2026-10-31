@@ -123,7 +123,11 @@ struct DockerImagesView: View {
                 if DockerPageModel.hubTerm(pullName) != nil {
                     Button {
                         let term = pullName
-                        Task { found = await page.searchHub(term) }
+                        Task {
+                            let answer = await page.searchHub(term)
+                            // Typed on meanwhile: not this name's.
+                            if pullName == term { found = answer }
+                        }
                     } label: {
                         Label("Search Docker Hub", systemImage: "magnifyingglass").font(.system(size: 11))
                     }
