@@ -165,7 +165,9 @@ extension TerminalWindowController {
                     guard let saved, let self else { return }
                     model.expanded.insert(saved.id.uuidString)
                     Task { await model.session(saved).open() }
-                    if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                    // The sheet's end gave the keyboard to the page's list;
+                    // the page steps aside, so it goes to the terminal.
+                    if self.store.showingOverlay != nil { self.hideOverlay() }
                     self.showDatabase(nil)
                 }, suggestedPassword: guess.password ?? "")
         }
