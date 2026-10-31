@@ -9,6 +9,8 @@ struct CommitDetailView: View {
     @ObservedObject var theme: ChromeTheme
     let onClose: () -> Void
     let onOpen: (String) -> Void
+    /// The commit in a review tab.
+    var onReview: (String) -> Void = { _ in }
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
@@ -68,6 +70,14 @@ struct CommitDetailView: View {
             }
             Spacer(minLength: 0)
             if let sha = model.detail?.commit.sha {
+                Button {
+                    onReview(sha)
+                } label: {
+                    Image(systemName: "rectangle.split.2x1").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .help("Review in a tab of its own")
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(sha, forType: .string)

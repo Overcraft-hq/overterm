@@ -57,6 +57,8 @@ final class E2ETests: XCTestCase {
     func testAPI() throws { try run("api") }
     func testAPIImport() throws { try run("apiImport") }
     func testNotes() throws { try run("notes") }
+    func testDrawing() throws { try run("drawing") }
+    func testReview() throws { try run("review") }
     func testDatabase() throws { try run("database") }
     func testStorage() throws { try run("storage") }
     func testSuspend() throws { try run("suspend") }

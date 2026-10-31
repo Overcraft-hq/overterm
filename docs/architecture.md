@@ -626,6 +626,51 @@ its directory. A click selects that tab, else opens one with
 `claude --resume <id>` (`Agent.claudeResume`, UUIDs only — it is typed into
 a shell).
 
+## Review tabs (⇧⌘R)
+
+A branch, some commits or a pull request read as a reviewer reads them, in a
+tab of its own (`Sources/Overterm/Review/`) — the whole window under the
+strip, so full screen is the whole screen. Not the right-hand pane: that is
+one slot and a card wide, and a review side by side needs the width.
+
+- **A page, as Settings is.** `TabStore.reviews` are the open ones, after the
+  terminal tabs and before Settings; `reviewShowing` is the one covering the
+  body (`ReviewHostingView`, over it as Settings' page is). The terminal tab
+  under it stays `selectedID`, so nothing that assumes "a tab has terminals"
+  changes: choosing a terminal tab uncovers it, ⌘W while it shows closes
+  only it, Settings and a review never show at once. Reviews are not saved
+  with the session — they are cheap to open again.
+- **What is reviewed** (`ReviewSource`): `branch` — the checkout's branch
+  since its merge base with the changes pane's base, uncommitted and
+  untracked files included (what the changes pane's Branch lists);
+  `range` — `base...head`, against their merge base, as a pull request
+  reads (Overgit's Compare, a branch's Review Branch against that base);
+  `commits` — `from` through `to` against `from`'s first parent (the empty
+  tree for a root commit), picked in either order and put oldest first;
+  `pullRequest` — `gh pr diff N`, so the branch need not be here, with
+  `gh pr view` for the header. Opening the same thing again shows its tab.
+- **Read lazily.** `ReviewModel` lists the files at once (`--name-status`
+  with `--numstat`; for a pull request, `ReviewPatch.split` cuts the one
+  patch into files and reads each header: added, deleted, renamed, binary,
+  C-quoted names) and reads a file's diff only when it is picked, and the
+  next one ahead. Up to `ReviewModel.maxLines` lines a file (20,000), more
+  than the changes pane's: a review is for reading.
+- **Side by side** (`SplitDiff.rows`, pure): context on both sides; a run of
+  removed lines pairs in order with the added run right after it — as
+  `DiffHighlight.pairs` pairs them for what changed inside a line — and the
+  longer run's rest faces an empty side. Laid out once per file. The lines
+  are `FileDiff`'s, so colours and changed parts are the changes pane's.
+  Split or Unified is remembered (`reviewLayout` in `AppEnvironment.defaults`).
+- **Keys** (`ReviewHostingView.keyDown`, only what nothing on the page took):
+  j/k next and previous file, n/p next and previous change (past the last,
+  the next file), v viewed — which moves on to the next file not viewed.
+  Viewed marks belong to the review tab, not to the repository.
+- **Opened from** View ▸ Review Branch (⇧⌘R) and the palette (Review Branch,
+  Review Pull Request), the changes pane's Review (Branch scope), Overgit
+  (a commit's Review Commit / Select as Start of Review, a branch's Review
+  Branch, a pull request's Review Changes), and the Compare, Commit and Pull
+  Request panes' headers. Comments on lines are for later.
+
 ## Pull requests
 
 Everything GitHub goes through the user's own `gh` (`Sources/Overterm/GitHub/`;

@@ -73,6 +73,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The Settings tab's page (Warp's): over the window's body while it shows.
     let settingsPage = SettingsPageModel()
     private(set) var settingsView: NSView?
+    /// The review tabs' page: the one showing, over the body as Settings is.
+    var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
     let focus = GroupFocus()
     /// ⌥⌘I: one line typed into every tab of an island.
@@ -200,6 +202,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 // out from under the Settings tab — and from under a zoomed
                 // editor.
                 self?.hideSettingsPage(focus: false)
+                self?.hideReviewPage(focus: false)
                 self?.setEditorZoomed(false)
             }
             .store(in: &cancellables)
@@ -234,6 +237,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         // The terminal tab under the Settings tab is still the
                         // selected one: clicking it only uncovers it.
                         self?.hideSettingsPage()
+                        self?.hideReviewPage()
                         self?.store.select(tab)
                     },
                     close: { [weak self] in self?.closeTab($0) },
@@ -246,6 +250,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     showUpdate: { [weak self] in self?.openSettings(.about) },
                     showSettings: { [weak self] in self?.showSettingsPage() },
                     closeSettings: { [weak self] in self?.closeSettings() },
+                    showReview: { [weak self] in self?.showReview($0) },
+                    closeReview: { [weak self] in self?.closeReview($0) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
                     setPinned: { [weak self] tab, pinned in self?.store.setPinned(tab, pinned) },
                     toggleBrowser: { [weak self] in self?.toggleBrowser(nil) },
@@ -329,7 +335,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     dropStash: { [weak self] in self?.dropStash($0) },
                     showChanges: { [weak self] in self?.showChanges(nil) },
                     showChangedFile: { [weak self] in self?.showChangedFile($0) },
-                    compare: { [weak self] base, head in self?.showCompare(base: base, head: head) }
+                    compare: { [weak self] base, head in self?.showCompare(base: base, head: head) },
+                    reviewCommits: { [weak self] from, to in self?.reviewCommits(from: from, to: to) },
+                    reviewBranch: { [weak self] in self?.reviewBranchRef($0) },
+                    reviewPullRequest: { [weak self] in self?.reviewPullRequest($0) }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
@@ -492,14 +501,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     model: diff, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
                     onDetach: { [weak self] in self?.detach() },
-                    onOpen: { [weak self] in self?.openInEditor($0) }),
+                    onOpen: { [weak self] in self?.openInEditor($0) },
+                    onReview: { [weak self] in self?.reviewBranch(nil) }),
                 pullRequest: PullRequestView(
                     model: pullRequest, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
                     onOpenFile: { [weak self] path, line in
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path), line: line)
-                    }),
+                    },
+                    onReview: { [weak self] in self?.reviewPullRequest($0) }),
                 usage: UsageView(
                     model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) }),
                 commit: CommitDetailView(
@@ -508,7 +519,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     onOpen: { [weak self] path in
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path))
-                    }),
+                    },
+                    onReview: { [weak self] in self?.reviewCommits(from: $0, to: $0) }),
                 runner: APIRunnerView(
                     runner: apiWorkspace.runner, workspace: apiWorkspace, theme: theme,
                     open: { [weak self] in self?.openInEditor($0) },
@@ -520,7 +532,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     onOpen: { [weak self] path in
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path))
-                    }),
+                    },
+                    onReview: { [weak self] base, head in self?.reviewRange(base: base, head: head) }),
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
@@ -655,6 +668,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             settingsView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         self.settingsView = settingsView
+
+        // A review tab's page, the same way.
+        let reviewView = ReviewHostingView(rootView: ReviewPageView(store: store, theme: theme, actions: reviewActions))
+        reviewView.review = { [weak self] in self?.shownReview }
+        reviewView.translatesAutoresizingMaskIntoConstraints = false
+        reviewView.isHidden = true
+        content.addSubview(reviewView)
+        NSLayoutConstraint.activate([
+            reviewView.topAnchor.constraint(equalTo: titleBottom),
+            reviewView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            reviewView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            reviewView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        self.reviewView = reviewView
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(
@@ -2168,6 +2195,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     } else {
                         // Under the Settings tab, a click only uncovers it.
                         hideSettingsPage()
+                        hideReviewPage()
                         store.select(tab)
                     }
                 case .group(let group):
@@ -2767,6 +2795,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 [weak self] _, _ in self?.showPullRequest(nil)
             },
             PaletteItem(
+                id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side  ⇧⌘R",
+                symbol: "rectangle.split.2x1"
+            ) { [weak self] _, _ in self?.reviewBranch(nil) },
+            PaletteItem(
+                id: "a.reviewPullRequest", group: .action, title: "Review Pull Request", subtitle: "This branch's pull request, in a tab",
+                symbol: "arrow.triangle.pull"
+            ) { [weak self] _, _ in self?.reviewCurrentPullRequest() },
+            PaletteItem(
                 id: "a.cleanUp", group: .action, title: "Clean Up Merged Worktrees…", subtitle: "Fetch, then remove merged worktrees",
                 symbol: "sparkles"
             ) { [weak self] _, _ in self?.cleanUpMergedWorktrees(nil) },
@@ -3145,6 +3181,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         hideAgentOverview()
         if peek.isOpen { peek.close() }
         hideSpotlight(keepTerminalSearch: false)
+        hideReviewPage(focus: false)
         store.settingsShowing = true
         settingsView.isHidden = false
         window?.makeFirstResponder(settingsView)
@@ -3305,6 +3342,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// ⌘W: the focused pane of a split tab, else the tab.
     @objc func closeSelectedTab(_ sender: Any?) {
         if store.settingsShowing { return closeSettings() }
+        if let review = shownReview { return closeReview(review) }
         guard let tab = store.selected else { return }
         if tab.isSplit {
             closePane(tab.terminal, in: tab)

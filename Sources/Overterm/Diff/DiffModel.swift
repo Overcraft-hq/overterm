@@ -508,10 +508,10 @@ final class DiffModel: ObservableObject {
 
     /// Parses and styles a file's diff off the main thread: tokenizing a
     /// capped diff takes milliseconds, which a scroll can't spare.
-    nonisolated static func fileDiff(parsing text: String, path: String) async -> FileDiff {
+    nonisolated static func fileDiff(parsing text: String, path: String, limit: Int = maxDiffLines) async -> FileDiff {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: FileDiff(parsing: text, path: path))
+                continuation.resume(returning: FileDiff(parsing: text, path: path, limit: limit))
             }
         }
     }

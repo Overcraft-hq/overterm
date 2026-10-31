@@ -50,6 +50,15 @@ final class TabStore: ObservableObject {
     /// selected terminal tab stays selected underneath.
     @Published var settingsOpen = false
     @Published var settingsShowing = false
+    /// Review tabs: pages too, after the terminal tabs (before Settings),
+    /// each a review of its own. `reviewShowing` is the one covering the
+    /// window — the selected terminal tab stays selected under it, as
+    /// under Settings.
+    @Published var reviews: [ReviewModel] = []
+    @Published var reviewShowing: UUID?
+
+    /// A page — Settings or a review — covers the terminal tabs.
+    var pageShowing: Bool { settingsShowing || reviewShowing != nil }
 
     var selected: Tab? { tabs.first { $0.id == selectedID } }
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }

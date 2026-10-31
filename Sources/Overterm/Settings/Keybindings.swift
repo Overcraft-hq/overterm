@@ -301,6 +301,7 @@ enum KeyCommands {
         .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),
         .init("notes.graph", "Graph View", group: "Panels", key: "alt+cmd+k"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
+        .init("review.branch", "Review Branch", group: "Panels", key: "shift+cmd+r"),
         .init("browser.toggle", "Browser", group: "Panels", key: "shift+cmd+b"),
         .init("usage.show", "Usage", group: "Panels", key: "alt+cmd+u"),
         .init("search.terminal", "Search Terminal & Files", group: "Panels", ghostty: "start_search", menu: false),

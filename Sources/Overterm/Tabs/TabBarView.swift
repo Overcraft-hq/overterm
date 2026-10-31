@@ -21,6 +21,9 @@ struct TabBarActions {
     /// The Settings tab: show it, close it.
     var showSettings: () -> Void
     var closeSettings: () -> Void
+    /// A review's tab: show it, close it.
+    var showReview: (ReviewModel) -> Void = { _ in }
+    var closeReview: (ReviewModel) -> Void = { _ in }
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
     var renameEnded: () -> Void
@@ -136,6 +139,11 @@ struct TabBarView: View {
                         branch: selectedBranch, group: group, tabs: tabs, store: store, theme: theme, actions: actions,
                         groupActions: groupActions)
                 }
+            }
+            ForEach(store.reviews) { review in
+                ReviewTabItem(
+                    review: review, selected: store.reviewShowing == review.id, theme: theme, select: { actions.showReview(review) },
+                    close: { actions.closeReview(review) })
             }
             if store.settingsOpen {
                 SettingsTabItem(selected: store.settingsShowing, theme: theme, select: actions.showSettings, close: actions.closeSettings)
@@ -280,7 +288,7 @@ struct TabItemView: View {
     @State private var hovering = false
 
     /// Not while the Settings tab shows: it covers this one.
-    private var isSelected: Bool { tab.id == store.selectedID && !store.settingsShowing }
+    private var isSelected: Bool { tab.id == store.selectedID && !store.pageShowing }
     private var isRenaming: Bool { tab.id == store.renamingID }
 
     private var symbol: String { tab.agent?.symbol ?? "terminal" }
@@ -468,6 +476,44 @@ struct TabItemView: View {
         )
         .help(tab.title)
         .padding(.horizontal, 2)
+    }
+}
+
+/// A review's tab: what it is of and its name, closable as any tab.
+private struct ReviewTabItem: View {
+    @ObservedObject var review: ReviewModel
+    let selected: Bool
+    @ObservedObject var theme: ChromeTheme
+    let select: () -> Void
+    let close: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: review.source.symbol).font(.system(size: 11)).foregroundStyle(selected ? theme.text : theme.dimText)
+            Text(verbatim: review.title)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(selected ? theme.text : theme.dimText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: close) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .opacity(selected || hovering ? 1 : 0)
+            .help("Close Review (⌘W)")
+        }
+        .padding(.horizontal, 10)
+        .frame(minWidth: 60, idealWidth: 180, maxWidth: 220, minHeight: TabCard.height, maxHeight: TabCard.height)
+        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? theme.selected : (hovering ? theme.hover : .clear)))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: select)
+        .onHover { hovering = $0 }
+        .padding(.horizontal, 2)
+        .help("Review: \(review.source.subtitle)")
+        .accessibilityIdentifier("review.tab")
     }
 }
 

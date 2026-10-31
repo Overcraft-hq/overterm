@@ -23,6 +23,11 @@ struct OvergitActions {
     var showChangedFile: (ChangedFile) -> Void = { _ in }
     /// What `head` has that `base` doesn't, in the right-hand pane.
     var compare: (_ base: String, _ head: String) -> Void = { _, _ in }
+    /// Review tabs: commits `from` through `to` (either order), a branch
+    /// against the base, a pull request.
+    var reviewCommits: (_ from: String, _ to: String) -> Void = { _, _ in }
+    var reviewBranch: (String) -> Void = { _ in }
+    var reviewPullRequest: (Int) -> Void = { _ in }
 }
 
 /// Overgit: one git home in the sidebar — where you are, what has
@@ -148,7 +153,10 @@ struct OvergitView: View {
                     CommitRowView(
                         commit: commit, row: nil, lanes: 0, isSelected: model.selected == commit.sha, theme: theme,
                         onOpen: { actions.showCommit(commit) }
-                    ) { CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions) }
+                    ) {
+                        ReviewMenuItems(commit: commit, model: model, actions: actions)
+                        CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions)
+                    }
                 }
             }
         } else if model.commits.isEmpty {
@@ -160,7 +168,10 @@ struct OvergitView: View {
                     commit: commit, row: model.graphRow(at: index), lanes: lanes,
                     isSelected: model.selected == commit.sha, theme: theme,
                     onOpen: { actions.showCommit(commit) }
-                ) { CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions) }
+                ) {
+                    ReviewMenuItems(commit: commit, model: model, actions: actions)
+                    CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions)
+                }
             }
         }
     }
@@ -207,7 +218,8 @@ struct OvergitView: View {
                     pullRequest: pr, isCurrent: pr.branch == diff.branch, theme: theme,
                     // In the right-hand pane, whichever it is; ↗ for GitHub.
                     onOpen: { actions.showPullRequestNumber(pr) },
-                    onOpenExternally: { actions.openPullRequest(pr) })
+                    onOpenExternally: { actions.openPullRequest(pr) },
+                    onReview: { actions.reviewPullRequest(pr.number) })
             }
         }
     }

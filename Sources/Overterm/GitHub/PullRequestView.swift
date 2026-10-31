@@ -10,6 +10,8 @@ struct PullRequestView: View {
     let onClose: () -> Void
     /// A thread's file, at its line, in the editor.
     let onOpenFile: (String, Int?) -> Void
+    /// The pull request's changes in a review tab.
+    var onReview: (Int) -> Void = { _ in }
     @State private var draft = ""
     @State private var replies: [Int: String] = [:]
     @State private var checksOpen = false
@@ -68,6 +70,9 @@ struct PullRequestView: View {
             }
             Spacer(minLength: 0)
             if model.phase == .loading { ProgressView().controlSize(.small) }
+            if let number = model.detail?.summary.number {
+                iconButton("rectangle.split.2x1", help: "Review Changes") { onReview(number) }
+            }
             if let url = model.detail?.summary.url {
                 iconButton("safari", help: "Open on GitHub") { NSWorkspace.shared.open(url) }
             }

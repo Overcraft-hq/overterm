@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.4.7 — 2026-10-31
 
 - notes: drawings — New Drawing opens an Excalidraw canvas, saved as Obsidian Excalidraw's own file; embedded drawings show as pictures, and agents can draw diagrams (notes_draw)
+- review: a branch, commits or a pull request in a tab of their own — the files on the left, each diff side by side or unified, viewed marks, j/k n/p v keys (⇧⌘R, Overgit, the changes and pull request panes)
 
 ## 1.4.6 — 2026-10-29
 

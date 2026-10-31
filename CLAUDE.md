@@ -47,6 +47,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Overterm/Tasks/` | New Task: worktree + branch + agent |
 | `Sources/Overterm/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
 | `Sources/Overterm/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
+| `Sources/Overterm/Review/` | review tabs (⇧⌘R) — docs/architecture.md, Review tabs: `ReviewSource` (branch, range, commits, pull request; `ReviewPatch` cuts a patch into files, `SplitDiff` lays a diff side by side — pure), `ReviewModel` (one review, read lazily), `ReviewView` (+ `ReviewHostingView`, the page's keys) |
 | `Sources/Overterm/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
 | `Sources/Overterm/Usage/` | what the agents have spent: `UsageTailScanner` (logs read backwards, bounded by the window), `ClaudeUsageSource` / `CodexUsageSource` (quota meters off the files each agent writes), `ModelPricing`, the pane and the strip's gauge |
 | `Sources/Overterm/Themes/` | Settings ▸ Themes: `TerminalTheme` (a Ghostty theme file, parsed), `ThemeCatalog` (the bundled ones and the user's), `ThemePreview` (a theme drawn as a little window), the gallery |
