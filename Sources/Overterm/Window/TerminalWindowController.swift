@@ -2651,7 +2651,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 cancel: {
                     close()
                     self?.askAgent.stop()
-                    self?.focusAfterSheet()
                 })
         }
     }
@@ -3090,7 +3089,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             window.endSheet(sheet)
         }
         sheet.contentViewController = NSHostingController(rootView: build(close))
-        window.beginSheet(sheet) { [weak self] _ in self?.focusSelectedTerminal() }
+        // Over the Docker page, its list: the terminal is hidden under it,
+        // and keys sent there would type into a shell nobody sees.
+        window.beginSheet(sheet) { [weak self] _ in self?.focusAfterSheet() }
     }
 
     private func showAlert(_ title: String, _ message: String) {

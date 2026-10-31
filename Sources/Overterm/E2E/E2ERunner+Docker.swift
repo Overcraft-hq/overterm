@@ -3427,6 +3427,14 @@ extension E2ERunner {
             name: "ot-pg", image: "postgres:16", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 5432, PublicPort: 55432, Type: "tcp")],
             env: ["POSTGRES_USER=shop", "POSTGRES_PASSWORD=hunter2", "POSTGRES_DB=orders"])
         _ = await eventually(5) { docker.container(pgID) != nil }
+        // The page on screen again (New Task's tab took it down), the list
+        // with the keyboard: the form's sheet is over the page.
+        let pageWasShown = app.store.showingOverlay == .docker
+        if !pageWasShown { app.toggleDockerPage(nil) }
+        _ = await eventually(3) {
+            if !self.app.dockerListHasKeyboard() { self.app.focusDockerList() }
+            return self.app.dockerListHasKeyboard()
+        }
         page.selection = [pgID]
         page.press("d")
         check("d opens a database container in the connection form", await eventually(5) { self.window.attachedSheet != nil })
@@ -3437,6 +3445,11 @@ extension E2ERunner {
                 && app.dockerDatabaseDraft?.password == "hunter2", "\(String(describing: draft))")
         if let sheet = window.attachedSheet { window.endSheet(sheet) }
         _ = await eventually(2) { self.window.attachedSheet == nil }
+        check(
+            "the form put away gives the keyboard back to the list, not the terminal under the page",
+            await eventually(3) { self.app.dockerListHasKeyboard() },
+            "\(String(describing: window.firstResponder)), page \(String(describing: app.store.showingOverlay))")
+        if !pageWasShown { app.toggleDockerPage(nil) }
         // q: its own client in a tab, signed in inside the container.
         var clients: [String] = []
         let saved = page.actions
