@@ -1313,7 +1313,10 @@ final class DockerRunSpecTests: XCTestCase {
     func testAContainerAsADockerRun() {
         let container = ContainerSummary(
             Id: "x", Names: ["/shop-db-1"], Image: "postgres:16", Created: 1,
-            Ports: [DockerPort(IP: "127.0.0.1", PrivatePort: 5432, PublicPort: 55432, Type: "tcp"), DockerPort(IP: "0.0.0.0", PrivatePort: 53, PublicPort: 5353, Type: "udp")],
+            Ports: [
+                DockerPort(IP: "127.0.0.1", PrivatePort: 5432, PublicPort: 55432, Type: "tcp"), DockerPort(IP: "0.0.0.0", PrivatePort: 53, PublicPort: 5353, Type: "udp"),
+                DockerPort(IP: "::1", PrivatePort: 6379, PublicPort: 16379, Type: "tcp"),
+            ],
             State: "running", Status: "")
         let detail = ContainerDetail(
             Id: "x", Name: "/shop-db-1", State: .init(Status: "running"),
@@ -1326,7 +1329,7 @@ final class DockerRunSpecTests: XCTestCase {
             ])
         let spec = DockerRunSpec.from(container, detail, imageEnv: ["PATH=/usr/bin", "PG_MAJOR=16"], imageCommand: ["postgres"])
         XCTAssertEqual(spec.env, ["POSTGRES_PASSWORD=pw"], "the image's own env left out")
-        XCTAssertEqual(spec.ports, ["5353:53/udp", "127.0.0.1:55432:5432"])
+        XCTAssertEqual(spec.ports, ["5353:53/udp", "[::1]:16379:6379", "127.0.0.1:55432:5432"], "an IPv6 address bracketed, as -p reads it")
         XCTAssertEqual(spec.volumes, ["shop_pgdata:/var/lib/postgresql/data", "/w/shop/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"])
         XCTAssertEqual(spec.restart, "unless-stopped")
         XCTAssertEqual(spec.network, "shop_default")

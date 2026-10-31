@@ -53,7 +53,9 @@ struct DockerRunSpec: Equatable, Sendable {
         let inherited = Set(imageEnv)
         spec.env = (detail.Config.Env ?? []).filter { !inherited.contains($0) }
         spec.ports = PublishedPort.of(container.Ports ?? []).map { port in
-            (port.hostIP.map { "\($0):" } ?? "") + "\(port.hostPort):\(port.containerPort)" + (port.proto == "tcp" ? "" : "/\(port.proto)")
+            // An IPv6 address in brackets, as -p reads it: `[::1]:8080:80`.
+            (port.hostIP.map { ($0.contains(":") ? "[\($0)]" : $0) + ":" } ?? "") + "\(port.hostPort):\(port.containerPort)"
+                + (port.proto == "tcp" ? "" : "/\(port.proto)")
         }
         spec.volumes = (detail.Mounts ?? []).compactMap { mount in
             let source = mount.Type == "volume" ? mount.Name : mount.Source
