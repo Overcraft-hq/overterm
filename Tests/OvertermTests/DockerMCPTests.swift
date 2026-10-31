@@ -244,6 +244,15 @@ final class DockerMCPTests: XCTestCase {
         let failed = try await text("docker_inspect", ["container": "shop-web-1"])
         XCTAssertTrue(failed.contains("Error: dial postgres://app:••••••@db:5432"), failed)
         XCTAssertFalse(failed.contains("pa55word") || failed.contains("s3cr3t"), failed)
+
+        // One value holding another's secret, and Redis's URL with no user.
+        fake.add(
+            name: "cache", image: "redis:7",
+            env: ["REDIS_PASSWORD=hunter22", "REDIS_ARGS=--requirepass hunter22", "REDIS_URL=redis://:hunter22@cache:6379"])
+        try await Task.sleep(for: .milliseconds(300))
+        let cache = try await text("docker_inspect", ["container": "cache"])
+        XCTAssertFalse(cache.contains("hunter22"), cache)
+        XCTAssertTrue(cache.contains("REDIS_URL=redis://:••••••@cache:6379"), cache)
     }
 
     /// Why a container was killed or is slow: its limits and restart

@@ -352,14 +352,15 @@ enum DockerMCP {
             lines.append("Health: \(status)" + (health.Log?.last?.Output.map { " — last check: \(scrub($0.trimmingCharacters(in: .whitespacesAndNewlines)))" } ?? ""))
         }
         // Compose has put .env's values into it: its flags say which.
-        lines.append("Command: " + DockerSecrets.maskArguments((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " "))
+        lines.append("Command: " + scrub(DockerSecrets.maskArguments((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " ")))
         let ports = PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost)
         if !ports.isEmpty { lines.append("Ports: " + ports.map(\.spoken).joined(separator: ", ")) }
         for mount in detail.Mounts ?? [] { lines.append("Mount: \(mount.Name ?? mount.Source ?? "") → \(mount.Destination)") }
         if let networks = detail.NetworkSettings?.Networks {
             lines.append("Networks: " + networks.keys.sorted().map { "\($0) \(networks[$0]?.IPAddress ?? "")" }.joined(separator: ", "))
         }
-        if !detail.env.isEmpty { lines.append("Env:\n" + detail.env.map { "  \($0.key)=\(DockerSecrets.masked($0.key, $0.value))" }.joined(separator: "\n")) }
+        // A value may hold another's secret (`REDIS_ARGS=--requirepass …`).
+        if !detail.env.isEmpty { lines.append("Env:\n" + detail.env.map { "  " + scrub("\($0.key)=\(DockerSecrets.masked($0.key, $0.value))") }.joined(separator: "\n")) }
         return lines.joined(separator: "\n")
     }
 

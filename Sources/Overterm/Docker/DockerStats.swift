@@ -172,7 +172,8 @@ enum DockerSecrets {
     /// and a later `@` (`http://api:8080/users/jane@example.com`) are no
     /// password.
     static func maskURL(_ value: String) -> String {
-        guard let range = value.range(of: #"://[^:/?#@\s]+:([^/?#@\s]+)@"#, options: .regularExpression) else { return value }
+        // No user is Redis's way: `redis://:pass@host`.
+        guard let range = value.range(of: #"://[^:/?#@\s]*:([^/?#@\s]+)@"#, options: .regularExpression) else { return value }
         let segment = value[range]
         guard let colon = segment.dropFirst(3).firstIndex(of: ":"), let at = segment.lastIndex(of: "@") else { return value }
         return value.replacingCharacters(in: segment.index(after: colon)..<at, with: "••••••")
