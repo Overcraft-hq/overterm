@@ -222,7 +222,9 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertTrue(flood.cut?.hasPrefix("output cut at") == true, flood.cut ?? "read whole")
         XCTAssertTrue(flood.stdout.hasPrefix("y\ny\n"))
         XCTAssertLessThan(flood.stdout.utf8.count, 2 << 20, "not the 4 MB it writes")
-        XCTAssertTrue(DockerMCP.execText(flood).hasPrefix("exit 0 — output cut at"), DockerMCP.execText(flood))
+        let answer = DockerMCP.execText(flood)
+        XCTAssertTrue(answer.hasPrefix("exit 0 — output cut at"), "how it ended, before the output is bounded: \(answer.prefix(80))")
+        XCTAssertLessThan(answer.count, 61_000)
 
         let quick = try await engine.exec(web, ["sh", "-c", "true"], limit: 1 << 20, timeout: .seconds(10))
         XCTAssertEqual(quick, .init(stdout: "", stderr: "", exitCode: 0))

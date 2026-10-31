@@ -159,9 +159,8 @@ enum DockerMCP {
             // An agent's command may never end, or never stop writing.
             let result = try await engine.exec(target.Id, command, limit: Self.execLimit, timeout: Self.execTimeout)
             let detail = try await engine.container(target.Id)
-            let text = execText(result)
             let names = DockerAgentText.names(of: target, image: detail.Config.Image)
-            return BrowserMCP.textResult(bounded(DockerSecrets.scrub(text, env: detail.env, keeping: names)))
+            return BrowserMCP.textResult(execText(result) { DockerSecrets.scrub($0, env: detail.env, keeping: names) })
         default:
             throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
@@ -250,10 +249,11 @@ enum DockerMCP {
     // MARK: Answers
 
     /// What `docker_exec` answers: how it ended — or that it hadn't, and
-    /// why the reading stopped — then its output.
-    static func execText(_ result: DockerEngine.ExecResult) -> String {
+    /// why the reading stopped — then its output, `scrub`bed and bounded:
+    /// the output alone, so its first line stays whatever it wrote.
+    static func execText(_ result: DockerEngine.ExecResult, scrub: (String) -> String = { $0 }) -> String {
         let head = (result.running ? "still running" : "exit \(result.exitCode)") + (result.cut.map { " — \($0)" } ?? "")
-        return head + "\n" + result.stdout + (result.stderr.isEmpty ? "" : "\nstderr:\n" + result.stderr)
+        return head + "\n" + bounded(scrub(result.stdout + (result.stderr.isEmpty ? "" : "\nstderr:\n" + result.stderr)))
     }
 
     /// How much of a `docker_exec` is read, and for how long.
