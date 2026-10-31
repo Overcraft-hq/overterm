@@ -15,6 +15,8 @@ struct DiffPanelView: View {
     let onDetach: () -> Void
     /// Opens a changed file in the editor pane.
     let onOpen: (URL) -> Void
+    /// The branch in a review tab.
+    var onReview: () -> Void = {}
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
     @State private var composing = false
@@ -182,6 +184,14 @@ struct DiffPanelView: View {
             .padding(2)
             .background(RoundedRectangle(cornerRadius: 7).fill(theme.selected.opacity(0.5)))
             Spacer(minLength: 0)
+            if model.shownScope == .branch, !model.branchFiles.isEmpty {
+                Button(action: onReview) {
+                    Label("Review", systemImage: "rectangle.split.2x1")
+                }
+                .controlSize(.small)
+                .help("Review it in a tab of its own, side by side — ⇧⌘R")
+                .accessibilityIdentifier("changes.review")
+            }
             if editable, !model.files.isEmpty {
                 Button {
                     composing.toggle()

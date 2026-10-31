@@ -247,7 +247,9 @@ struct NotesIndex: Sendable {
         for item in tree.allFiles {
             let path = vault.relativePath(of: item.url)
             files.append(path)
-            guard item.kind == .note else { continue }
+            // A `.excalidraw.md` is a note to Obsidian too: its text elements
+            // are searched, its links followed.
+            guard item.kind == .note || (item.kind == .drawing && item.url.pathExtension.lowercased() == "md") else { continue }
             if item.isEvicted {
                 // Not on this Mac yet: known by name, read when opened.
                 notes[path] = previous.notes[path] ?? Entry(document: NoteDocument(), modified: .distantPast, isEvicted: true)

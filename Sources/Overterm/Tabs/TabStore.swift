@@ -55,10 +55,12 @@ final class TabStore: ObservableObject {
     var settingsOpen: Bool { openOverlays.contains(.settings) }
     var settingsShowing: Bool { showingOverlay == .settings }
 
-    /// In the strip (if it wasn't) and over the body, in place of any other.
+    /// In the strip (if it wasn't) and over the body, in place of any other
+    /// page or review.
     func showOverlay(_ overlay: WorkspaceOverlay) {
         if !openOverlays.contains(overlay) { openOverlays.append(overlay) }
         if showingOverlay != overlay { showingOverlay = overlay }
+        if reviewShowing != nil { reviewShowing = nil }
     }
 
     /// The selected terminal tab uncovered; the pages stay in the strip.
@@ -71,6 +73,15 @@ final class TabStore: ObservableObject {
         if showingOverlay == overlay { showingOverlay = nil }
         openOverlays.removeAll { $0 == overlay }
     }
+
+    /// Review tabs: pages too, after the terminal tabs (before the other
+    /// pages), each a review of its own. `reviewShowing` is the one covering
+    /// the window — the selected terminal tab stays selected under it.
+    @Published var reviews: [ReviewModel] = []
+    @Published var reviewShowing: UUID?
+
+    /// A page — Settings, Docker or a review — covers the terminal tabs.
+    var pageShowing: Bool { showingOverlay != nil || reviewShowing != nil }
 
     var selected: Tab? { tabs.first { $0.id == selectedID } }
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }

@@ -19,6 +19,12 @@ struct PullRequestSummary: Equatable {
     /// `gh pr list` fields this parses.
     static let listFields = "number,title,headRefName,headRefOid,state,isDraft,url,statusCheckRollup"
 
+    /// Two lists as one, each pull request once (the first list's), newest first.
+    static func merged(_ first: [PullRequestSummary], _ second: [PullRequestSummary]) -> [PullRequestSummary] {
+        var seen = Set<Int>()
+        return (first + second).filter { seen.insert($0.number).inserted }.sorted { $0.number > $1.number }
+    }
+
     /// The pull request to show per head branch: an open one over a
     /// merged or closed one, then the newest (gh lists newest first).
     static func byBranch(_ list: [PullRequestSummary]) -> [String: PullRequestSummary] {

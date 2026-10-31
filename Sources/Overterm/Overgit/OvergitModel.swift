@@ -83,6 +83,8 @@ final class OvergitModel: ObservableObject {
     }
     /// A branch, tag or commit picked with "Select for Compare".
     @Published var compareBase: String?
+    /// A commit picked as one end of a run to review (Review from Here…).
+    @Published var reviewStart: Commit?
     /// What the search found — nil while there is no query.
     @Published private(set) var searchResults: [Commit]?
     @Published private(set) var isSearching = false

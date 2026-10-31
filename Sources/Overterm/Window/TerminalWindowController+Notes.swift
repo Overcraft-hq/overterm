@@ -84,6 +84,15 @@ extension TerminalWindowController {
         }
     }
 
+    func newDrawing(in folder: URL?) {
+        guard Settings.shared.notesEnabled else { return }
+        do {
+            openNote(try notes.newDrawing(in: folder))
+        } catch {
+            reportNotesError(error)
+        }
+    }
+
     func newNotesFolder(in folder: URL?) {
         do {
             let url = try notes.newFolder(in: folder)
@@ -160,6 +169,7 @@ extension TerminalWindowController {
         NotesActions(
             open: { [weak self] in self?.openNote($0) },
             newNote: { [weak self] in self?.newNote(in: $0) },
+            newDrawing: { [weak self] in self?.newDrawing(in: $0) },
             newFolder: { [weak self] in self?.newNotesFolder(in: $0) },
             dailyNote: { [weak self] in self?.openDailyNote(nil) },
             rename: { [weak self] in self?.renameNote($0) },

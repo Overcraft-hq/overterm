@@ -23,6 +23,8 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
     /// Drawn (mermaid's diagrams count when they are) — for the E2E run.
     private(set) var renderCount = 0
     private(set) var mermaidDrawn = 0
+    /// Embedded drawings drawn as pictures — for the E2E run.
+    private(set) var drawingsDrawn = 0
 
     let webView: WKWebView
     private let resources = NoteResources()
@@ -117,6 +119,8 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
         if body["rendered"] != nil {
             if let mermaid = body["mermaid"] as? Int {
                 mermaidDrawn = mermaid
+            } else if let drawings = body["drawings"] as? Int {
+                drawingsDrawn = drawings
             } else {
                 renderCount += 1
                 scrollToPendingAnchor()

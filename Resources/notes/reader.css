@@ -95,3 +95,7 @@ details.callout[open] > .callout-title::after { transform: rotate(90deg); }
 .footnotes-sep { margin-top: 2.4em; }
 .flash { animation: flash 1.2s ease-out; }
 @keyframes flash { from { background: color-mix(in srgb, var(--accent) 30%, transparent); } to { background: transparent; } }
+
+/* An embedded Excalidraw drawing: its picture, as wide as the note allows. */
+.embed.drawing { padding: 8px 0; }
+.embed.drawing svg { display: block; max-width: 100%; height: auto; margin-top: 6px; }

@@ -25,6 +25,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var onActiveChanged: ((URL?) -> Void)?
     /// A note's reading view, made the first time one is read.
     var noteReader: NoteReaderView?
+    /// The canvas showing, when the active buffer is a drawing.
+    var shownDrawing: DrawingView?
     var noteObserver: AnyCancellable?
     /// A #tag clicked in a note.
     var onNoteTag: ((String) -> Void)?
@@ -47,7 +49,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private(set) var gutter: EditorGutter!
     private(set) var scrollView: NSScrollView!
     private var header: EditorHeaderView!
-    private var breadcrumb: EditorBreadcrumbView!
+    private(set) var breadcrumb: EditorBreadcrumbView!
     private(set) var statusBar: EditorStatusBar!
     /// A `.sql` file's console, under its text (EditorViewController+Database).
     private(set) var consoleHost: NSHostingView<AnyView>!
@@ -297,6 +299,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         buffer.load(url, attributes: baseAttributes)
         attachRequest(buffer)
         attachNote(buffer)
+        attachDrawing(buffer)
         attachConsole(buffer)
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
@@ -393,6 +396,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             textView.breakUndoCoalescing()
         }
         bufferWillClose(buffer)
+        closeDrawing(buffer)
         // Read first: closing the document forgets its URL.
         let closed = buffer.url
         buffer.document.close()
@@ -504,6 +508,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             buffer.document.load(url)
             buffer.setText(buffer.document.text, attributes: baseAttributes)
             buffer.request?.textChanged(buffer.storage.string)
+            drawingTextChanged(buffer)
             buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
             bufferDidReload(buffer)
             if isActive {
@@ -595,6 +600,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         textView.selectedTextAttributes = [.backgroundColor: theme.selection]
         scrollView.backgroundColor = theme.background
         gutter.theme = theme
+        for buffer in buffers { buffer.drawing?.view.setDark(theme.isDark) }
         header.recolor(background: chrome.stripNS, text: theme.text, accent: theme.info)
         breadcrumb.recolor(background: theme.background, text: theme.text)
         statusBar.recolor(background: chrome.stripNS, text: theme.text)
@@ -680,7 +686,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     func textDidChange(_ notification: Notification) {
         guard let buffer = active else { return }
         buffer.request?.textChanged(buffer.storage.string)
-        if buffer.showsPreview, buffer.request == nil { schedulePreview() }
+        drawingTextChanged(buffer)
+        if buffer.showsPreview, buffer.request == nil, buffer.drawing == nil { schedulePreview() }
         buffer.document.markEdited()
         gutter.textDidChange()
         bufferDidChange(buffer)
@@ -768,7 +775,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     /// ⇧⌘V or the header's eye: the file rendered, or its text again.
     func toggleMarkdownPreview() {
-        guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil || buffer.isNote else { return }
+        guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil || buffer.isNote || buffer.drawing != nil else { return }
         buffer.showsPreview.toggle()
         updatePreview()
         if !buffer.showsPreview { focus() }
@@ -779,6 +786,15 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     func updatePreview() {
         guard isViewLoaded else { return }
         let buffer = active
+        if let buffer, let drawing = buffer.drawing, buffer.document.unavailable == nil {
+            requestHost.isHidden = true
+            preview.isHidden = true
+            noteReader?.isHidden = true
+            header.setPreview(available: true, showing: buffer.showsPreview)
+            showDrawing(buffer.showsPreview ? drawing : nil)
+            return
+        }
+        showDrawing(nil)
         if let request = buffer?.request, buffer?.document.unavailable == nil {
             header.setPreview(available: true, showing: buffer?.showsPreview == true, request: true)
             preview.isHidden = true

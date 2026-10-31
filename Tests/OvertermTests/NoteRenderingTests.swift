@@ -32,6 +32,19 @@ final class NoteRenderingTests: XCTestCase {
         XCTAssertEqual(payload.links["C"]?.path, "C.md")
     }
 
+    /// A drawing is embedded as its scene — its picture — never as the
+    /// markdown it is kept in; the link to it still resolves as Obsidian's.
+    func testAnEmbeddedDrawingIsItsScene() {
+        let drawing = DrawingFile.new(markdown: true)
+        let notes = ["A.md": "![[Board.excalidraw]]\n![[Sketch]]", "Excalidraw/Board.excalidraw.md": drawing, "Sketch.md": drawing]
+        let payload = NoteRenderPayload.make(path: "A.md", text: notes["A.md"]!, index: index(notes)) { notes[$0] }
+        XCTAssertEqual(payload.links["Board.excalidraw"]?.kind, .drawing)
+        XCTAssertEqual(payload.drawings["Board.excalidraw"], .init(scene: DrawingFile.emptyScene, encoding: .json))
+        XCTAssertEqual(payload.drawings["Sketch"]?.encoding, .json, "a plain .md the plugin made is one too")
+        XCTAssertNil(payload.embeds["Board.excalidraw"])
+        XCTAssertNil(payload.embeds["Sketch"])
+    }
+
     func testANoteEmbeddingItselfEnds() {
         let notes = ["A.md": "![[B]]", "B.md": "![[A]]"]
         let payload = NoteRenderPayload.make(path: "A.md", text: notes["A.md"]!, index: index(notes)) { notes[$0] }

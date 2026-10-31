@@ -302,6 +302,7 @@ final class Settings: ObservableObject {
     var notesEnabled: Bool { bool("notes.enabled") }
     var notesVaultPath: String { string("notes.vaultPath") }
     var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
+    var notesAgentDrawings: Bool { notesAgentAccess && bool("notes.agentDrawings") }
     var databaseEnabled: Bool { bool("database.enabled") }
     var sessionsEnabled: Bool { bool("general.sessions") }
     var snippetsEnabled: Bool { bool("general.snippets") }

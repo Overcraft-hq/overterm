@@ -125,7 +125,7 @@ extension TerminalWindowController {
         }
     }
 
-    private func alert(_ title: String, _ message: String) {
+    func alert(_ title: String, _ message: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title

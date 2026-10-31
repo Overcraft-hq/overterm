@@ -8,6 +8,8 @@ struct CompareView: View {
     let onClose: () -> Void
     let onCommit: (Commit) -> Void
     let onOpen: (String) -> Void
+    /// The comparison in a review tab.
+    var onReview: (_ base: String, _ head: String) -> Void = { _, _ in }
     @State private var behindOpen = false
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
@@ -44,6 +46,16 @@ struct CompareView: View {
             .foregroundStyle(theme.dimText)
             .help("Swap the two")
             Spacer(minLength: 0)
+            if let base = model.base, let head = model.head {
+                Button {
+                    onReview(base, head)
+                } label: {
+                    Image(systemName: "rectangle.split.2x1").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.dimText)
+                .help("Review in a tab of its own")
+            }
             Button(action: onClose) {
                 Image(systemName: "xmark").font(.system(size: 11))
             }
@@ -168,5 +180,25 @@ struct CompareMenuItems: View {
             }
         }
         Button("Select for Compare") { model.compareBase = ref }
+    }
+}
+
+/// A commit's review items: it alone, or the run from a commit picked
+/// before to it.
+struct ReviewMenuItems: View {
+    let commit: Commit
+    @ObservedObject var model: OvergitModel
+    let actions: OvergitActions
+
+    var body: some View {
+        Divider()
+        Button("Review Commit") { actions.reviewCommits(commit.sha, commit.sha) }
+        if let start = model.reviewStart, start.sha != commit.sha {
+            Button("Review Commits \(start.shortSHA)…\(commit.shortSHA)") {
+                actions.reviewCommits(start.sha, commit.sha)
+                model.reviewStart = nil
+            }
+        }
+        Button("Select as Start of Review") { model.reviewStart = commit }
     }
 }

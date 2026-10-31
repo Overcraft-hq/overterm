@@ -21,9 +21,17 @@ struct NoteRenderPayload: Equatable, Sendable {
     var links: [String: Target]
     /// Embedded notes' text, by `target` or `target#anchor` as written.
     var embeds: [String: String]
+    /// Embedded drawings' scenes, by target as written — drawn as pictures.
+    var drawings: [String: Drawing] = [:]
+
+    struct Drawing: Equatable, Sendable {
+        var scene: String
+        var encoding: DrawingFile.Encoding
+    }
 
     static func == (a: Self, b: Self) -> Bool {
         a.path == b.path && a.text == b.text && a.lineOffset == b.lineOffset && a.links == b.links && a.embeds == b.embeds
+            && a.drawings == b.drawings
             && a.properties.map { "\($0.0)\u{1}\($0.1)\u{1}\($0.2 ?? [])" } == b.properties.map { "\($0.0)\u{1}\($0.1)\u{1}\($0.2 ?? [])" }
     }
 
@@ -56,6 +64,16 @@ struct NoteRenderPayload: Equatable, Sendable {
                 }
                 guard link.isEmbed, depth < 3 else { continue }
                 let target = link.target.isEmpty ? source : index.resolver.resolve(link.target, from: source)
+                // A drawing is embedded as its picture: its scene, not its markdown.
+                if let target, payload.drawings[link.target] == nil, Self.mayBeDrawing(target), let full = read(target) {
+                    let url = URL(fileURLWithPath: target)
+                    if DrawingFile.isDrawing(url, text: full),
+                        let file = DrawingFile.parse(full, markdown: url.pathExtension.lowercased() == "md")
+                    {
+                        payload.drawings[link.target] = Drawing(scene: file.scene, encoding: file.encoding)
+                        continue
+                    }
+                }
                 guard let target, target.lowercased().hasSuffix(".md") else { continue }
                 let anchor = link.block.map { "^" + $0 } ?? link.heading
                 let key = link.target + (anchor.map { "#" + $0 } ?? "")
@@ -98,6 +116,13 @@ struct NoteRenderPayload: Equatable, Sendable {
         return ns as String
     }
 
+    /// Worth reading to see whether it is a drawing: one by its name, or a
+    /// plain `.md` (the plugin can be set to name them so).
+    static func mayBeDrawing(_ path: String) -> Bool {
+        let url = URL(fileURLWithPath: path)
+        return DrawingFile.isDrawing(url) || url.pathExtension.lowercased() == "md"
+    }
+
     /// The frontmatter's keys in the order they're written (a dictionary
     /// has none), with their values as parsed.
     static func properties(_ doc: NoteDocument) -> [(String, String, [String]?)] {
@@ -122,7 +147,8 @@ struct NoteRenderPayload: Equatable, Sendable {
         let object: [String: Any] = [
             "path": path, "text": text, "lineOffset": lineOffset,
             "properties": properties.map { [$0.0, $0.1, $0.2 as Any? ?? NSNull()] as [Any] },
-            "links": links, "embeds": embeds, "vault": vaultBase, "base": base, "breaks": breaks, "dark": dark, "colors": colors,
+            "links": links, "embeds": embeds, "vault": vaultBase,
+            "drawings": drawings.mapValues { ["scene": $0.scene, "encoding": $0.encoding.rawValue] }, "base": base, "breaks": breaks, "dark": dark, "colors": colors,
         ]
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)

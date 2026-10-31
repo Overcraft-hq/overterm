@@ -6,6 +6,9 @@ struct NotesActions {
     var open: (URL) -> Void
     /// A new note in a folder (nil: where Obsidian's settings say), opened.
     var newNote: (URL?) -> Void
+    /// A new Excalidraw drawing in a folder (nil: where Obsidian
+    /// Excalidraw's settings say), opened.
+    var newDrawing: (URL?) -> Void = { _ in }
     var newFolder: (URL?) -> Void
     /// Today's note, made from the daily template if it isn't there yet.
     var dailyNote: () -> Void
@@ -114,7 +117,19 @@ struct NotesPanelView: View {
             .accessibilityIdentifier("notesVault")
             Spacer(minLength: 4)
             if model.isLoading && model.tree != nil { ProgressView().controlSize(.mini) }
-            PanelHeaderButton(symbol: "square.and.pencil", help: "New Note", action: { actions.newNote(nil) }, theme: theme)
+            // A note or a drawing: the + asks which.
+            Menu {
+                Button("New Note") { actions.newNote(nil) }
+                Button("New Drawing") { actions.newDrawing(nil) }
+            } label: {
+                Image(systemName: "square.and.pencil").font(.system(size: 11)).frame(width: 22, height: 22)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .foregroundStyle(theme.text2)
+            .help("New Note or Drawing")
+            .accessibilityIdentifier("notesNew")
             PanelHeaderButton(symbol: "calendar", help: "Today’s Note", action: actions.dailyNote, theme: theme)
             Menu {
                 Button("New Folder") { actions.newFolder(nil) }
@@ -212,6 +227,7 @@ struct NotesPanelView: View {
 
     @ViewBuilder func folderMenu(_ folder: URL) -> some View {
         Button("New Note") { actions.newNote(folder) }
+        Button("New Drawing") { actions.newDrawing(folder) }
         Button("New Folder") { actions.newFolder(folder) }
     }
 
@@ -250,6 +266,7 @@ private struct NoteRowView: View {
         switch item.kind {
         case .folder: return "folder"
         case .note: return "doc.text"
+        case .drawing: return "scribble.variable"
         case .canvas: return "rectangle.3.group"
         case .image: return "photo"
         case .pdf: return "doc.richtext"
@@ -273,7 +290,7 @@ private struct NoteRowView: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(isCurrent ? theme.text : theme.text2)
-        .opacity(item.kind == .note || item.isFolder ? 1 : 0.7)
+        .opacity(item.kind == .note || item.kind == .drawing || item.isFolder ? 1 : 0.7)
         .padding(.leading, 8 + CGFloat(row.depth) * 14)
         .padding(.trailing, 8)
         .frame(height: 26)
@@ -306,6 +323,7 @@ private struct NoteRowView: View {
     @ViewBuilder private var menu: some View {
         let folder = item.isFolder ? item.url : item.url.deletingLastPathComponent()
         Button("New Note") { actions.newNote(folder) }
+        Button("New Drawing") { actions.newDrawing(folder) }
         Button("New Folder") { actions.newFolder(folder) }
         Divider()
         if !item.isFolder {
@@ -315,7 +333,7 @@ private struct NoteRowView: View {
                 let text = model.index.resolver.linkText(
                     for: model.path(of: item.url), from: source, format: model.vault.settings.newLinkFormat)
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(item.kind == .image ? "![[\(text)]]" : "[[\(text)]]", forType: .string)
+                NSPasteboard.general.setString(item.kind == .image || item.kind == .drawing ? "![[\(text)]]" : "[[\(text)]]", forType: .string)
             }
         }
         if item.isFolder { Button("New Tab Here") { actions.newTab(item.url) } }

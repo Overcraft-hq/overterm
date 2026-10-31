@@ -71,14 +71,23 @@ final class WorktreeModel: ObservableObject {
         await refresh()
     }
 
+    /// Open pull requests asked for at most — more than a repository has open.
+    static let maxOpenPullRequests = 500
+
     private func pullRequests(in repo: URL, force: Bool) async -> [String: PullRequestSummary] {
         if !force, let cached = pullRequestCache[repo], Date().timeIntervalSince(cached.at) < Self.pullRequestMaxAge {
             return cached.byBranch
         }
         do {
-            let data = try await GitHub.run(
+            // Every open one, then the newest of all for the merged: the
+            // newest 60 alone left out every open pull request older than
+            // the last 60 merged — a busy repository showed 1 of 7.
+            let open = try await GitHub.run(
+                ["pr", "list", "--state", "open", "--limit", "\(Self.maxOpenPullRequests)", "--json", PullRequestSummary.listFields], in: repo)
+            let recent = try await GitHub.run(
                 ["pr", "list", "--state", "all", "--limit", "60", "--json", PullRequestSummary.listFields], in: repo)
-            let byBranch = PullRequestSummary.byBranch(try PullRequestSummary.parseList(data))
+            let byBranch = PullRequestSummary.byBranch(
+                PullRequestSummary.merged(try PullRequestSummary.parseList(open), try PullRequestSummary.parseList(recent)))
             pullRequestCache[repo] = (Date(), byBranch)
             pullRequestErrors[repo] = nil
             return byBranch

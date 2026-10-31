@@ -250,6 +250,8 @@ struct BranchRowView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(branch.name, forType: .string)
                 }
+                Divider()
+                Button("Review Branch") { actions.reviewBranch(branch.name) }
                 CompareMenuItems(ref: branch.name, model: model, actions: actions)
             }
         }
@@ -276,6 +278,7 @@ struct PullRequestRowView: View {
     @ObservedObject var theme: ChromeTheme
     let onOpen: () -> Void
     let onOpenExternally: () -> Void
+    var onReview: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
@@ -305,6 +308,7 @@ struct PullRequestRowView: View {
         .onTapGesture(perform: onOpen)
         .help("#\(pullRequest.number) \(pullRequest.title)")
         .contextMenu {
+            Button("Review Changes", action: onReview)
             Button("Open on GitHub", action: onOpenExternally)
         }
     }

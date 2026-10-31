@@ -205,6 +205,23 @@ final class NotesModel: ObservableObject {
         return url
     }
 
+    /// A new Excalidraw drawing — in `folder`, else in Obsidian Excalidraw's
+    /// folder — named and started as the plugin would (its template, if
+    /// there is one).
+    func newDrawing(in folder: URL?, at date: Date = Date()) throws -> URL {
+        let settings = ExcalidrawSettings.read(from: vault.root)
+        let folder = folder ?? vault.root.appendingPathComponent(settings.folder, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = settings.fileName(at: date)
+        let url = NotesVault.freeName(name.base, extension: name.extension, in: folder)
+        let markdown = url.pathExtension.lowercased() == "md"
+        let template = settings.template(in: vault.root).flatMap { try? NoteFiles.read($0) }
+        try NoteFiles.write(DrawingFile.new(markdown: markdown, template: template), to: url)
+        expandFolders(of: url)
+        reload()
+        return url
+    }
+
     func newFolder(in folder: URL?) throws -> URL {
         let url = NotesVault.freeName("Untitled", extension: "", in: folder ?? vault.root)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

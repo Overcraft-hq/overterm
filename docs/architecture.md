@@ -635,6 +635,51 @@ its directory. A click selects that tab, else opens one with
 `claude --resume <id>` (`Agent.claudeResume`, UUIDs only — it is typed into
 a shell).
 
+## Review tabs (⇧⌘R)
+
+A branch, some commits or a pull request read as a reviewer reads them, in a
+tab of its own (`Sources/Overterm/Review/`) — the whole window under the
+strip, so full screen is the whole screen. Not the right-hand pane: that is
+one slot and a card wide, and a review side by side needs the width.
+
+- **A page, as Settings is.** `TabStore.reviews` are the open ones, after the
+  terminal tabs and before Settings; `reviewShowing` is the one covering the
+  body (`ReviewHostingView`, over it as Settings' page is). The terminal tab
+  under it stays `selectedID`, so nothing that assumes "a tab has terminals"
+  changes: choosing a terminal tab uncovers it, ⌘W while it shows closes
+  only it, Settings and a review never show at once. Reviews are not saved
+  with the session — they are cheap to open again.
+- **What is reviewed** (`ReviewSource`): `branch` — the checkout's branch
+  since its merge base with the changes pane's base, uncommitted and
+  untracked files included (what the changes pane's Branch lists);
+  `range` — `base...head`, against their merge base, as a pull request
+  reads (Overgit's Compare, a branch's Review Branch against that base);
+  `commits` — `from` through `to` against `from`'s first parent (the empty
+  tree for a root commit), picked in either order and put oldest first;
+  `pullRequest` — `gh pr diff N`, so the branch need not be here, with
+  `gh pr view` for the header. Opening the same thing again shows its tab.
+- **Read lazily.** `ReviewModel` lists the files at once (`--name-status`
+  with `--numstat`; for a pull request, `ReviewPatch.split` cuts the one
+  patch into files and reads each header: added, deleted, renamed, binary,
+  C-quoted names) and reads a file's diff only when it is picked, and the
+  next one ahead. Up to `ReviewModel.maxLines` lines a file (20,000), more
+  than the changes pane's: a review is for reading.
+- **Side by side** (`SplitDiff.rows`, pure): context on both sides; a run of
+  removed lines pairs in order with the added run right after it — as
+  `DiffHighlight.pairs` pairs them for what changed inside a line — and the
+  longer run's rest faces an empty side. Laid out once per file. The lines
+  are `FileDiff`'s, so colours and changed parts are the changes pane's.
+  Split or Unified is remembered (`reviewLayout` in `AppEnvironment.defaults`).
+- **Keys** (`ReviewHostingView.keyDown`, only what nothing on the page took):
+  j/k next and previous file, n/p next and previous change (past the last,
+  the next file), v viewed — which moves on to the next file not viewed.
+  Viewed marks belong to the review tab, not to the repository.
+- **Opened from** View ▸ Review Branch (⇧⌘R) and the palette (Review Branch,
+  Review Pull Request), the changes pane's Review (Branch scope), Overgit
+  (a commit's Review Commit / Select as Start of Review, a branch's Review
+  Branch, a pull request's Review Changes), and the Compare, Commit and Pull
+  Request panes' headers. Comments on lines are for later.
+
 ## Pull requests
 
 Everything GitHub goes through the user's own `gh` (`Sources/Overterm/GitHub/`;
@@ -1061,10 +1106,40 @@ in it, and `.obsidian/` is read for where things go, never written.
   were written; a task ticked anywhere is its `[ ]` in the text (the open
   buffer's, else the file's); templates, daily notes, pasted images,
   terminal text and branch notes go where Obsidian's settings put them.
+- **Drawings** (`DrawingFile`, `DrawingView`, `EditorViewController+Drawing`):
+  Excalidraw, in Obsidian Excalidraw's own file, so a drawing made in either
+  opens in the other. A `.excalidraw.md` is markdown: the frontmatter and
+  anything written above `# Excalidraw Data`, the text elements under
+  `## Text Elements` (search and links see them), the plugin's other
+  sections, then the scene under `## Drawing` — JSON, or lz-string's base64
+  in lines of 256 (`compressed-json`) when the plugin's "compress" is on.
+  Only the text elements and the scene are ever written again; every other
+  byte is kept (`DrawingFileTests` round-trips the plugin's file). New
+  Drawing reads the plugin's `data.json` for its folder, name, template and
+  compression, and never writes `.obsidian/`.
+
+  The canvas is a WKWebView (`Resources/notes/draw.html`) running
+  Excalidraw 0.18 offline: Excalidraw is ESM that imports bare packages, so
+  `Scripts/fetch-excalidraw.sh` bundles it with React and lz-string into one
+  script (esbuild; every package pinned with its hash in
+  `Scripts/excalidraw/package-lock.json`, mermaid and the other locales left
+  out, the 12 MB Chinese font left out) into `Resources/notes/excalidraw`.
+  A change on the canvas goes back as the scene's text, the editor writes it
+  into the buffer (`replaceText`, as a `.bru` request does) and saves a
+  second later: a drawing has no Save to forget. A change on disk (Obsidian,
+  an agent) is redrawn. ⇧⌘V shows the text.
+
+  A note embedding a drawing (`![[Board.excalidraw]]`) shows its picture:
+  Swift hands the reading view the scene (`NoteRenderPayload.drawings`), and
+  the page loads Excalidraw the first time it needs it and draws it with
+  `exportToSvg`.
 - **Agents** (`NotesMCP`): `notes_search` and `notes_read` beside the
   browser's and the API client's tools on the same MCP server, read-only,
   naming only the index's notes. Settings ▸ Notes ▸ "Agents can read the
-  notes".
+  notes". `notes_draw` (Settings ▸ Notes ▸ "Agents can add drawings") is the
+  one tool that writes: a new drawing, never over a file, from Excalidraw's
+  element skeletons, converted by Excalidraw itself on a page no window shows
+  (`DrawingConverter`) and opened in the front window's editor.
 - **Elsewhere**: ⌘F lists notes after the checkout (`NotesSearch`); the
   Graph View (`NotesGraph`, deterministic force layout off the main thread)
   joins the right-hand slot; the panel's lower half is backlinks, outline,
