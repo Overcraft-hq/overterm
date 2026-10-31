@@ -112,7 +112,9 @@ struct AskAgentView: View {
             // service), a chip each.
             if !model.parts.isEmpty {
                 HStack(spacing: 6) {
-                    ForEach(model.parts.indices, id: \.self) { index in chip(model.parts[index].title, $model.parts[index].on) }
+                    // By the part, not its place: a sheet given other parts
+                    // reuses no chip for a different one.
+                    ForEach($model.parts) { $part in chip(part.title, $part.on) }
                 }
             }
             TextField("What should it do with this?", text: $model.message)
