@@ -34,6 +34,21 @@ final class PullRequestTests: XCTestCase {
         XCTAssertEqual(byBranch["feat/c"]?.state, .merged)
     }
 
+    /// The open ones are asked for apart from the newest of all: an open
+    /// pull request older than the last 60 merged was missing (1 of 7).
+    func testOpenPullRequestsAndTheNewestOfAllMakeOneList() {
+        func pr(_ number: Int, _ branch: String, _ state: PullRequestSummary.State) -> PullRequestSummary {
+            PullRequestSummary(number: number, title: "", branch: branch, state: state, url: nil, checks: CheckSummary())
+        }
+        let open = [pr(574, "feat/masking", .open), pr(496, "feat/old-but-open", .open)]
+        let recent = [pr(580, "fix/x", .merged), pr(574, "feat/masking", .open)]
+        let list = PullRequestSummary.merged(open, recent)
+        XCTAssertEqual(list.map(\.number), [580, 574, 496])
+        let byBranch = PullRequestSummary.byBranch(list)
+        XCTAssertEqual(byBranch["feat/old-but-open"]?.state, .open)
+        XCTAssertEqual(byBranch["fix/x"]?.state, .merged)
+    }
+
     func testMergedByPullRequestOnlyWhenTheBranchIsStillAtTheMergedHead() throws {
         let byBranch = PullRequestSummary.byBranch(try PullRequestSummary.parseList(list))
         let merged = MergedWorktrees.mergedByPullRequest(
