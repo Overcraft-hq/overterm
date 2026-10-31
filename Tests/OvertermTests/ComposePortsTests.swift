@@ -807,11 +807,13 @@ final class ComposeUpTests: XCTestCase {
         try "services:\n  frontend:\n    environment: {DEBUG: \"1\"}\n".write(to: URL(fileURLWithPath: added), atomically: true, encoding: .utf8)
         XCTAssertEqual(store.files(for: plan), [base, added, store.file(of: now).path])
         XCTAssertTrue(store.needsRefresh(plan), "a file it wasn't written from")
-        page.compose("pull", plan)
-        try await until("pulled with it") { commands.count == 3 }
+        // The plan's read first: written again from the same files it reads.
+        _ = try await ComposeFileModel.compose(in: checkout, endpoint: nil, ports: store)
         XCTAssertTrue(calls.contains("compose -f \(base) -f \(added) --profile * config --format json"), calls)
         let with = try XCTUnwrap(store.override(in: real))
         XCTAssertEqual(with.baseFiles, [base, added])
+        page.compose("pull", plan)
+        try await until("pulled with it") { commands.count == 3 }
         XCTAssertFalse(store.needsRefresh(plan))
         XCTAssertEqual(commands.last?.0, "docker compose -p shop-wt-x -f \(base) -f \(added) -f \(store.file(of: with).path) pull")
         try FileManager.default.removeItem(atPath: added)

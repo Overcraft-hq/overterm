@@ -168,7 +168,9 @@ final class ComposeFileModel: ObservableObject {
             throw DockerError(status: 0, message: "docker isn't on this Mac, so Compose can't read the compose file.")
         }
         if !ports.overrides.isEmpty, let projectFolder = ComposeProjects.projectFolder(in: folder) {
-            await ports.refresh(projectFolder, endpoint: endpoint)
+            // From the files `arguments` reads, as a command's refresh does.
+            let base = ComposeProjects.composeFiles(in: folder).map(ComposeProjects.composePath)
+            await ports.refresh(projectFolder, endpoint: endpoint, base: base.isEmpty ? nil : base)
         }
         return try await cli.composeConfig(arguments(in: folder, ports: ports), in: folder, timeout: 15)
     }
