@@ -117,14 +117,20 @@ struct DockerImagesView: View {
                         found = []
                     }
                     .accessibilityIdentifier("docker.pull")
-                    .task(id: pullName) {
-                        // Asked once typing pauses; a name with a tag is already chosen.
-                        let term = pullName.trimmingCharacters(in: .whitespaces)
-                        guard term.count >= 2, !term.contains(":") else { return found = [] }
-                        try? await Task.sleep(for: .milliseconds(350))
-                        guard !Task.isCancelled else { return }
-                        found = await page.searchHub(term)
+                    .onChange(of: pullName) { _ in found = [] }
+                // Hub is asked only when you ask, never as you type: what is
+                // typed may be a private name.
+                if DockerPageModel.hubTerm(pullName) != nil {
+                    Button {
+                        let term = pullName
+                        Task { found = await page.searchHub(term) }
+                    } label: {
+                        Label("Search Docker Hub", systemImage: "magnifyingglass").font(.system(size: 11))
                     }
+                    .buttonStyle(.plain).foregroundStyle(theme.accentText)
+                    .help("Ask Docker Hub, through the engine, for images named like this")
+                    .accessibilityIdentifier("docker.pull.search")
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: 28)

@@ -223,6 +223,11 @@ extension E2ERunner {
             page.pulls["busybox:1.36"]?.summary ?? "no pull")
         let hub = await page.searchHub("redis")
         check("Docker Hub is searched through the engine", hub.first.map { $0.name == "redis" && $0.is_official == true } == true, "\(hub)")
+        let searches = fake.requests.filter { $0.contains("/images/search") }.count
+        let registry = await page.searchHub("ghcr.io/ot/private")
+        check(
+            "a registry's name never goes to Docker Hub",
+            registry.isEmpty && fake.requests.filter { $0.contains("/images/search") }.count == searches, "\(fake.requests.suffix(3))")
         page.pull("private/thing")
         check(
             "one the engine may not pull says where it can be",

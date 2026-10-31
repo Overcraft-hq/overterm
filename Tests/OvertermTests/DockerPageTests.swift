@@ -111,6 +111,20 @@ final class DockerPageTests: XCTestCase {
 
     // MARK: Keys
 
+    /// The pull field asks Docker Hub only for a name Hub could have: a
+    /// registry's, whole or half typed, never leaves for Hub.
+    func testWhatDockerHubIsAskedFor() {
+        XCTAssertEqual(DockerPageModel.hubTerm(" redis "), "redis")
+        XCTAssertEqual(DockerPageModel.hubTerm("bitnami/postgres"), "bitnami/postgres")
+        XCTAssertEqual(DockerPageModel.hubTerm("library/my.app"), "library/my.app", "a dot after the namespace is a name")
+        for typed in [
+            "r", "redis:7", "redis@sha256:abc", "ghcr.io/acme/billing", "registry.corp", "localhost/app", "localhost:5000/app",
+            "123456789012", "123456789012.dkr.ecr.eu-west-1.amazonaws.com/app", "two words",
+        ] {
+            XCTAssertNil(DockerPageModel.hubTerm(typed), typed)
+        }
+    }
+
     func testKeys() {
         XCTAssertEqual(DockerKey.of("s"), .startStop)
         XCTAssertEqual(DockerKey.of("D"), .composeDown)

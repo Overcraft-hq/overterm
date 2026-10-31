@@ -607,10 +607,25 @@ extension DockerPageModel {
         runCompose(project, "pull", services: services, in: project.workingDir.map { URL(fileURLWithPath: $0) })
     }
 
-    /// Docker Hub's images for a term, through the engine; none when it
+    /// Docker Hub's images for a term, through the engine — only when
+    /// asked, and only a name Hub could have (`hubTerm`); none when it
     /// can't reach Hub.
-    func searchHub(_ term: String) async -> [DockerEngine.SearchResult] {
-        (try? await docker.engine?.search(term)) ?? []
+    func searchHub(_ typed: String) async -> [DockerEngine.SearchResult] {
+        guard let term = Self.hubTerm(typed) else { return [] }
+        return (try? await docker.engine?.search(term)) ?? []
+    }
+
+    /// What of a name typed to pull may be asked of Docker Hub: nothing
+    /// with a registry in it (`ghcr.io/…`, `localhost:5000/…`, an ECR
+    /// account's host) — the engine sends that to the registry, and half
+    /// typed (`123456789012.dkr`) it would go to Hub as a word — and
+    /// nothing with a tag or digest, already chosen. Pure.
+    nonisolated static func hubTerm(_ typed: String) -> String? {
+        let term = typed.trimmingCharacters(in: .whitespaces).lowercased()
+        guard term.count >= 2, !term.contains(":"), !term.contains("@"), !term.contains(" ") else { return nil }
+        let first = String(term.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        guard !first.isEmpty, !first.contains("."), first != "localhost", !first.allSatisfy(\.isNumber) else { return nil }
+        return term
     }
 
     func tag(_ image: ImageSummary, as name: String) {
