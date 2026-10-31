@@ -198,28 +198,73 @@ extension DockerEngine {
         var stdout: String
         var stderr: String
         var exitCode: Int
+        /// Why the output stops short: past the limit, or the deadline.
+        var cut: String?
+        /// Still running when it was no longer read — its exit code isn't
+        /// known; the command goes on in the container.
+        var running = false
     }
 
     /// A command in a running container, no TTY and no input, its output
     /// back when it ends. The engine answers `start` by hijacking the
-    /// connection: the output comes framed until it closes.
-    func exec(_ id: String, _ command: [String]) async throws -> ExecResult {
+    /// connection: the output comes framed until it closes. `limit` (bytes)
+    /// and `timeout` stop the reading of a command an agent gave, which may
+    /// never end (`tail -f`) or never stop writing (`yes`).
+    func exec(_ id: String, _ command: [String], limit: Int? = nil, timeout: Duration? = nil) async throws -> ExecResult {
         struct Created: Decodable { var Id: String }
-        struct Inspect: Decodable { var ExitCode: Int? }
+        struct Inspect: Decodable {
+            var ExitCode: Int?
+            var Running: Bool?
+        }
         let json = [("Content-Type", "application/json")]
         let create = try JSONSerialization.data(withJSONObject: ["AttachStdout": true, "AttachStderr": true, "Tty": false, "Cmd": command])
         let made = try JSONDecoder().decode(Created.self, from: try await send(.POST, "/containers/\(id)/exec", body: create, headers: json).body)
         let start = try JSONSerialization.data(withJSONObject: ["Detach": false, "Tty": false])
-        var demuxer = DockerLogDemuxer(framed: true)
-        var stdout = ""
-        var stderr = ""
-        for try await data in transport.stream(.POST, path("/exec/\(made.Id)/start"), body: start, headers: json) {
-            for chunk in demuxer.feed(data) {
-                if chunk.stream == .stderr { stderr += chunk.text } else { stdout += chunk.text }
-            }
-        }
+        var result = try await Self.collect(transport.stream(.POST, path("/exec/\(made.Id)/start"), body: start, headers: json), limit: limit, timeout: timeout)
         let inspect = try await get(Inspect.self, "/exec/\(made.Id)/json")
-        return ExecResult(stdout: stdout, stderr: stderr, exitCode: inspect.ExitCode ?? 0)
+        result.exitCode = inspect.ExitCode ?? 0
+        result.running = inspect.Running == true
+        return result
+    }
+
+    /// An exec's frames, read till they end — or till `limit` bytes have
+    /// come, or `timeout` has passed; `cut` then says which. Leaving the
+    /// stream closes its connection.
+    nonisolated static func collect(_ frames: AsyncThrowingStream<Data, Error>, limit: Int?, timeout: Duration?) async throws -> ExecResult {
+        try await withThrowingTaskGroup(of: ExecResult?.self) { group in
+            group.addTask {
+                var result = ExecResult(stdout: "", stderr: "", exitCode: 0)
+                var demuxer = DockerLogDemuxer(framed: true)
+                var read = 0
+                for try await data in frames {
+                    read += data.count
+                    for chunk in demuxer.feed(data) {
+                        if chunk.stream == .stderr { result.stderr += chunk.text } else { result.stdout += chunk.text }
+                    }
+                    if let limit, read >= limit {
+                        result.cut = "output cut at \(DockerBytes.string(limit, memory: true))"
+                        break
+                    }
+                }
+                // The deadline's: the stream ends when its reader is cancelled.
+                if Task.isCancelled, result.cut == nil, let timeout { result.cut = "not read past \(timeout.formatted(.units(allowed: [.minutes, .seconds])))" }
+                return result
+            }
+            if let timeout {
+                group.addTask {
+                    try? await Task.sleep(for: timeout)
+                    return nil
+                }
+            }
+            let first = try await group.next() ?? nil
+            group.cancelAll()
+            if let first { return first }
+            // The deadline came first: what the frames said till then.
+            while let next = try await group.next() {
+                if let next { return next }
+            }
+            return ExecResult(stdout: "", stderr: "", exitCode: 0)
+        }
     }
 
     /// A folder's entries (DockerFiles), through `exec`.

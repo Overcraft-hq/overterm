@@ -204,6 +204,31 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertFalse(errors.contains("booting"), errors)
     }
 
+    /// `docker_exec`'s command may never end, or never stop writing: it
+    /// is read so long and so much, and the answer says where it stopped.
+    func testAnExecIsReadSoLongAndSoMuch() async throws {
+        let engine = try XCTUnwrap(model.engine)
+        let streams = fake.openStreams
+        let endless = try await engine.exec(web, ["sh", "-c", "tail -f /dev/null"], limit: 1 << 20, timeout: .seconds(1))
+        XCTAssertEqual(endless.stdout, "following\n")
+        XCTAssertTrue(endless.running)
+        XCTAssertTrue(endless.cut?.hasPrefix("not read past") == true, endless.cut ?? "read to its end")
+        XCTAssertTrue(DockerMCP.execText(endless).hasPrefix("still running — not read past"), DockerMCP.execText(endless))
+        let deadline = Date().addingTimeInterval(5)
+        while fake.openStreams > streams, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(fake.openStreams, streams, "its connection closed")
+
+        let flood = try await engine.exec(web, ["sh", "-c", "yes"], limit: 1 << 20, timeout: .seconds(10))
+        XCTAssertTrue(flood.cut?.hasPrefix("output cut at") == true, flood.cut ?? "read whole")
+        XCTAssertTrue(flood.stdout.hasPrefix("y\ny\n"))
+        XCTAssertLessThan(flood.stdout.utf8.count, 2 << 20, "not the 4 MB it writes")
+        XCTAssertTrue(DockerMCP.execText(flood).hasPrefix("exit 0 — output cut at"), DockerMCP.execText(flood))
+
+        let quick = try await engine.exec(web, ["sh", "-c", "true"], limit: 1 << 20, timeout: .seconds(10))
+        XCTAssertEqual(quick, .init(stdout: "", stderr: "", exitCode: 0))
+        XCTAssertEqual(DockerMCP.execText(quick), "exit 0\n")
+    }
+
     func testInspectMasksTheEnv() async throws {
         let inspect = try await text("docker_inspect", ["container": "shop-web-1"])
         XCTAssertTrue(inspect.contains("API_TOKEN=••••••"), inspect)

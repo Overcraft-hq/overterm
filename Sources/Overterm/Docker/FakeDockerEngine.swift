@@ -144,6 +144,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// index holds in the containerd store.
     private var imagePlatforms: [String: [ImagePlatform]] = [:]
     private var execs: [String: (container: String, command: [String])] = [:]
+    private var runningExecs: Set<String> = []
     private var committed: [Commit] = []
     /// What a committed image holds of a config, by its id.
     private var imageRecords: [String: ImageRecord] = [:]
@@ -1211,9 +1212,20 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// An exec's start and its exit: the listing script answered from the
     /// container's files; anything else isn't there (127, as a shell says).
+    /// `tail -f` never ends (its output stays open, the exec running), and
+    /// `yes` writes 4 MB.
     private func exec(_ method: HTTPMethod, _ execID: String, _ verb: String) -> Answer {
         guard let (containerID, command) = locked({ execs[execID] }) else { return Self.error(404, "No such exec instance: \(execID)") }
         switch (method, verb) {
+        case (.POST, "start") where command == ["sh", "-c", "tail -f /dev/null"]:
+            locked { runningExecs.insert(execID) }
+            return .follow(containerID, Self.frame(.stdout, "following\n"))
+        case (.POST, "start") where command == ["sh", "-c", "yes"]:
+            locked { exitCodes[execID] = 0 }
+            let frame = Self.frame(.stdout, String(repeating: "y\n", count: 4096))
+            return .raw(200, Data(Array(repeating: frame, count: 512).joined()), [("Content-Type", "application/vnd.docker.multiplexed-stream")])
+        case (.GET, "json") where locked({ runningExecs.contains(execID) }):
+            return .json(200, Data(#"{"ExitCode":null,"Running":true}"#.utf8))
         case (.POST, "start"):
             let (code, out, err) = run(command, in: containerID)
             locked { exitCodes[execID] = code }

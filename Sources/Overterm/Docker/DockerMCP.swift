@@ -156,9 +156,10 @@ enum DockerMCP {
             guard await allow("An agent wants to run this in “\(target.name)”", command.joined(separator: " ")) else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
-            let result = try await engine.exec(target.Id, command)
+            // An agent's command may never end, or never stop writing.
+            let result = try await engine.exec(target.Id, command, limit: Self.execLimit, timeout: Self.execTimeout)
             let detail = try await engine.container(target.Id)
-            let text = "exit \(result.exitCode)\n" + result.stdout + (result.stderr.isEmpty ? "" : "\nstderr:\n" + result.stderr)
+            let text = execText(result)
             let names = DockerAgentText.names(of: target, image: detail.Config.Image)
             return BrowserMCP.textResult(bounded(DockerSecrets.scrub(text, env: detail.env, keeping: names)))
         default:
@@ -247,6 +248,17 @@ enum DockerMCP {
     }
 
     // MARK: Answers
+
+    /// What `docker_exec` answers: how it ended — or that it hadn't, and
+    /// why the reading stopped — then its output.
+    static func execText(_ result: DockerEngine.ExecResult) -> String {
+        let head = (result.running ? "still running" : "exit \(result.exitCode)") + (result.cut.map { " — \($0)" } ?? "")
+        return head + "\n" + result.stdout + (result.stderr.isEmpty ? "" : "\nstderr:\n" + result.stderr)
+    }
+
+    /// How much of a `docker_exec` is read, and for how long.
+    static var execLimit = 1 << 20
+    static var execTimeout: Duration = .seconds(120)
 
     static func bounded(_ text: String, max: Int = 60_000) -> String {
         text.count > max ? String(text.suffix(max)) + "\n… (the last \(max) characters)" : text
@@ -508,7 +520,8 @@ enum DockerMCP {
                         "service": ["type": "string", "description": "Only this service (not with down)."],
                     ], required: ["project", "action"]),
                 tool(
-                    "docker_exec", "Run a command in a running container (no TTY, no input) and get its output and exit code. The user is asked first.",
+                    "docker_exec",
+                    "Run a command in a running container (no TTY, no input) and get its output and exit code. The user is asked first. Output is read for up to 2 minutes and 1 MB; a command still running then goes on in the container.",
                     [
                         "container": ["type": "string", "description": "Its name, from docker_containers."],
                         "command": ["type": "string", "description": "A shell command line (run with sh -c)."],
