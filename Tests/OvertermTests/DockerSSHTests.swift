@@ -103,6 +103,7 @@ final class DockerSSHTests: XCTestCase {
         open.Ports = [DockerPort(IP: "0.0.0.0", PrivatePort: 5432, PublicPort: 15432, Type: "tcp")]
         XCTAssertEqual(DockerDatabaseGuess.guess(open, env: [], endpoint: tcp)?.connection.host, "10.0.0.7")
         XCTAssertEqual(DockerDatabaseGuess.guess(open, env: [], endpoint: tcp)?.connection.sshEnabled, false)
+        XCTAssertNil(DockerDatabaseGuess.guess(container, env: [], endpoint: tcp), "a remote tcp engine's loopback port isn't reachable from here")
     }
 
     // MARK: A real forward

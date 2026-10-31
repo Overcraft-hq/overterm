@@ -50,7 +50,12 @@ enum DockerDatabaseGuess {
             connection.sshUser = target.user ?? ""
             connection.sshPort = target.port ?? 22
         case .tcp:
-            if let host = endpoint?.remoteHost { connection.host = published.hostIP ?? host }
+            if let host = endpoint?.remoteHost {
+                // Bound to that host's own loopback: only the host reaches it,
+                // and 127.0.0.1 here is this Mac.
+                if let ip = published.hostIP, ["127.0.0.1", "::1"].contains(ip) { return nil }
+                connection.host = published.hostIP ?? host
+            }
         default: break
         }
         var password: String?
