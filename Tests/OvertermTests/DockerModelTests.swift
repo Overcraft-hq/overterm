@@ -189,6 +189,16 @@ final class DockerModelTests: XCTestCase {
 
     /// Inspect's secrets are found in its own text: nothing of it goes up
     /// before they are known, whatever the detail's read is doing.
+    /// Inspect's text is JSON: a password with a quote or a backslash in
+    /// it is written escaped there, and a URL's password is in no secret
+    /// variable.
+    func testInspectMasksEscapedValuesAndURLs() {
+        let text = #"{"Config":{"Env":["POSTGRES_PASSWORD=pa\"ss\\word","DATABASE_URL=postgres://app:hunter2@db/app"],"Cmd":["app","--db","mysql://u:pw99@m/x"]}}"#
+        let shown = ContainerSession.redacted(inspect: text)
+        XCTAssertFalse(shown.contains(#"pa\"ss"#) || shown.contains("hunter2") || shown.contains("pw99"), shown)
+        XCTAssertTrue(shown.contains("postgres://app:••••••@db/app"), shown)
+    }
+
     func testInspectIsMaskedFromItsOwnText() {
         let text = #"{"Id":"x","Config":{"Env":["API_TOKEN=s3cr3t-value","DATABASE_URL=postgres://a:b@db/x","PORT=80"],"Image":"web"}}"#
         let shown = ContainerSession.redacted(inspect: text)

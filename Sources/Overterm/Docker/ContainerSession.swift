@@ -245,7 +245,14 @@ final class ContainerSession: ObservableObject {
             let parts = entry.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             return (String(parts[0]), parts.count > 1 ? String(parts[1]) : "")
         }
-        return DockerSecrets.redact(text, values: DockerSecrets.values(in: env))
+        // The text is JSON: a `"` or `\\` in a value is written escaped.
+        let values = DockerSecrets.values(in: env).flatMap { value -> [String] in
+            guard let data = try? JSONSerialization.data(withJSONObject: [value], options: [.withoutEscapingSlashes]),
+                let quoted = String(data: data, encoding: .utf8), quoted.count > 4
+            else { return [value] }
+            return [value, String(quoted.dropFirst(2).dropLast(2))]
+        }
+        return DockerSecrets.maskURLs(in: DockerSecrets.redact(text, values: values))
     }
 
     func close() {
