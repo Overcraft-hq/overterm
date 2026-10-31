@@ -193,7 +193,10 @@ final class DockerMCPTests: XCTestCase {
     func testLogsKeepSecretsOut() async throws {
         fake.log(web, "booting")
         fake.log(web, "[ERROR] auth with token s3cr3t-value failed", stream: .stderr)
+        fake.log(web, "connecting to postgres://app:pa55word@db:5432/app")
         let logs = try await text("docker_logs", ["container": "shop-web-1"])
+        XCTAssertFalse(logs.contains("pa55word"), "a URL's password, though no env holds it: \(logs)")
+        XCTAssertTrue(logs.contains("postgres://app:••••••@db"), logs)
         XCTAssertTrue(logs.contains("booting"), logs)
         XCTAssertFalse(logs.contains("s3cr3t-value"), "a secret from its env is taken out: \(logs)")
         XCTAssertTrue(logs.contains("token •••••• failed"), logs)

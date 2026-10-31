@@ -64,9 +64,11 @@ enum DockerMCP {
             }
             var filter = DockerLogFilter(text: string("contains") ?? "")
             if let level = string("level") { filter.level = level.hasPrefix("err") ? .errors : level.hasPrefix("warn") ? .warnings : .all }
-            let secrets = DockerSecrets.values(in: detail.env)
             let text = lines.filter(filter.matches).map(\.plain).joined(separator: "\n")
-            return BrowserMCP.textResult(bounded(DockerSecrets.redact(text.isEmpty ? "(no lines)" : text, values: secrets)))
+            // It lands in the agent's transcript: the env's secrets and every
+            // URL's password out, as the Ask Agent brief has it.
+            let names = DockerAgentText.names(of: target, image: detail.Config.Image)
+            return BrowserMCP.textResult(bounded(DockerSecrets.scrub(text.isEmpty ? "(no lines)" : text, env: detail.env, keeping: names)))
         case "docker_inspect":
             let target = try container()
             let detail = try await engine.container(target.Id)
@@ -155,9 +157,10 @@ enum DockerMCP {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
             let result = try await engine.exec(target.Id, command)
-            let secrets = DockerSecrets.values(in: try await engine.container(target.Id).env)
+            let detail = try await engine.container(target.Id)
             let text = "exit \(result.exitCode)\n" + result.stdout + (result.stderr.isEmpty ? "" : "\nstderr:\n" + result.stderr)
-            return BrowserMCP.textResult(bounded(DockerSecrets.redact(text, values: secrets)))
+            let names = DockerAgentText.names(of: target, image: detail.Config.Image)
+            return BrowserMCP.textResult(bounded(DockerSecrets.scrub(text, env: detail.env, keeping: names)))
         default:
             throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
