@@ -220,6 +220,9 @@ final class ContainerSession: ObservableObject {
                     tick += 1
                 }
             } catch {}
+            // Cancelled, it was let go already (hideStats), and a newer one
+            // may be in `sampling` now: only an end of its own clears it.
+            guard !Task.isCancelled else { return }
             self?.sampling = nil
         }
     }

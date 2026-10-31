@@ -123,6 +123,27 @@ final class DockerModelTests: XCTestCase {
         session.close()
     }
 
+    /// Stats hidden and shown again at once (Stats, Logs, Stats): the first
+    /// sampling ends after the second began, and mustn't take the second's
+    /// handle with it — or hiding again couldn't stop it, and its stream
+    /// went on with Stats off screen.
+    func testStatsShownAgainAtOnceCanStillBeHidden() async throws {
+        let id = fake.add(name: "api")
+        model.start()
+        try await eventually("the container") { model.container(id) != nil }
+        let session = ContainerSession(id: id, docker: model)
+        defer { session.close() }
+        try await eventually("its detail") { session.detail != nil }
+        let base = fake.openStreams
+        session.showStats()
+        try await eventually("a sample") { session.usage != nil }
+        session.hideStats()
+        session.showStats()
+        try await Task.sleep(for: .milliseconds(400))
+        session.hideStats()
+        try await eventually("no stats stream left") { self.fake.openStreams == base }
+    }
+
     /// Another folder opened: the last one's entries go at once, so no row
     /// names a file that isn't there while it is listed. The same folder
     /// listed again keeps them meanwhile.
