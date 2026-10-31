@@ -334,7 +334,11 @@ enum DockerMCP {
         } else if let platform {
             lines.append("Platform: \(platform.description)")
         }
-        if let error = detail.State.Error, !error.isEmpty { lines.append("Error: \(error)") }
+        // What the engine and the health check say is free text: a URL's
+        // password, a secret of its env, said back.
+        let names = DockerAgentText.names(of: container, image: detail.Config.Image)
+        let scrub = { (text: String) in DockerSecrets.scrub(text, env: detail.env, keeping: names) }
+        if let error = detail.State.Error, !error.isEmpty { lines.append("Error: \(scrub(error))") }
         if detail.State.OOMKilled == true { lines.append("Killed: out of memory") }
         // What it may use: why the kernel killed it, or why it is slow.
         let limits = DockerContainerSettings.Current(detail.HostConfig)
@@ -345,7 +349,7 @@ enum DockerMCP {
         if !said.isEmpty { lines.append("Limits: " + said.joined(separator: ", ")) }
         if limits.restart != "no" { lines.append("Restart: \(limits.restart)" + (limits.retries > 0 ? ":\(limits.retries)" : "")) }
         if let health = detail.State.Health, let status = health.Status {
-            lines.append("Health: \(status)" + (health.Log?.last?.Output.map { " — last check: \($0.trimmingCharacters(in: .whitespacesAndNewlines))" } ?? ""))
+            lines.append("Health: \(status)" + (health.Log?.last?.Output.map { " — last check: \(scrub($0.trimmingCharacters(in: .whitespacesAndNewlines)))" } ?? ""))
         }
         // Compose has put .env's values into it: its flags say which.
         lines.append("Command: " + DockerSecrets.maskArguments((detail.Config.Entrypoint ?? []) + (detail.Config.Cmd ?? [])).joined(separator: " "))

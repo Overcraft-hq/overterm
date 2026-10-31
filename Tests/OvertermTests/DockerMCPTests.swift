@@ -235,6 +235,13 @@ final class DockerMCPTests: XCTestCase {
         XCTAssertTrue(inspect.contains("DATABASE_URL=postgres://app:••••••@db/app"), inspect)
         XCTAssertTrue(inspect.contains("PORT=80"), inspect)
         XCTAssertFalse(inspect.contains("hunter2") || inspect.contains("s3cr3t"), inspect)
+
+        // The engine's error is free text: a URL's password, a secret of
+        // its env, said back in it.
+        fake.set(web, state: .exited, exitCode: 1, error: "dial postgres://app:pa55word@db:5432 with s3cr3t-value: refused")
+        let failed = try await text("docker_inspect", ["container": "shop-web-1"])
+        XCTAssertTrue(failed.contains("Error: dial postgres://app:••••••@db:5432"), failed)
+        XCTAssertFalse(failed.contains("pa55word") || failed.contains("s3cr3t"), failed)
     }
 
     /// Why a container was killed or is slow: its limits and restart
