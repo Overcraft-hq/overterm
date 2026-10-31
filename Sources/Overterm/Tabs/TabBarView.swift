@@ -18,9 +18,9 @@ struct TabBarActions {
     var showUsage: () -> Void
     /// The update chip: Settings ▸ About.
     var showUpdate: () -> Void
-    /// The Settings tab: show it, close it.
-    var showSettings: () -> Void
-    var closeSettings: () -> Void
+    /// A page's tab (Settings, Docker): show it, close it.
+    var showOverlay: (WorkspaceOverlay) -> Void
+    var closeOverlay: (WorkspaceOverlay) -> Void
     /// A review's tab: show it, close it.
     var showReview: (ReviewModel) -> Void = { _ in }
     var closeReview: (ReviewModel) -> Void = { _ in }
@@ -145,8 +145,10 @@ struct TabBarView: View {
                     review: review, selected: store.reviewShowing == review.id, theme: theme, select: { actions.showReview(review) },
                     close: { actions.closeReview(review) })
             }
-            if store.settingsOpen {
-                SettingsTabItem(selected: store.settingsShowing, theme: theme, select: actions.showSettings, close: actions.closeSettings)
+            ForEach(store.openOverlays, id: \.self) { overlay in
+                OverlayTabItem(
+                    overlay: overlay, selected: store.showingOverlay == overlay, theme: theme,
+                    select: { actions.showOverlay(overlay) }, close: { actions.closeOverlay(overlay) })
             }
         }
         .frame(maxHeight: .infinity)
@@ -287,7 +289,7 @@ struct TabItemView: View {
     var ghost = false
     @State private var hovering = false
 
-    /// Not while the Settings tab shows: it covers this one.
+    /// Not while a page (Settings, Docker, a review) shows: it covers this one.
     private var isSelected: Bool { tab.id == store.selectedID && !store.pageShowing }
     private var isRenaming: Bool { tab.id == store.renamingID }
 
@@ -517,8 +519,10 @@ private struct ReviewTabItem: View {
     }
 }
 
-/// The Settings tab in the strip: a gear and its name, closable as any tab.
-private struct SettingsTabItem: View {
+/// A page's tab in the strip (Settings): its symbol and its name,
+/// closable as any tab.
+private struct OverlayTabItem: View {
+    let overlay: WorkspaceOverlay
     let selected: Bool
     @ObservedObject var theme: ChromeTheme
     let select: () -> Void
@@ -527,8 +531,8 @@ private struct SettingsTabItem: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "gearshape").font(.system(size: 11)).foregroundStyle(selected ? theme.text : theme.dimText)
-            Text("Settings")
+            Image(systemName: overlay.symbol).font(.system(size: 11)).foregroundStyle(selected ? theme.text : theme.dimText)
+            Text(overlay.title)
                 .font(.system(size: 12))
                 .lineLimit(1)
                 .foregroundStyle(selected ? theme.text : theme.dimText)
@@ -539,7 +543,7 @@ private struct SettingsTabItem: View {
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .opacity(selected || hovering ? 1 : 0)
-            .help("Close Settings (⌘W)")
+            .help("Close \(overlay.title) (⌘W)")
         }
         .padding(.horizontal, 10)
         .frame(
@@ -551,7 +555,7 @@ private struct SettingsTabItem: View {
         .onTapGesture(perform: select)
         .onHover { hovering = $0 }
         .padding(.horizontal, 2)
-        .accessibilityIdentifier("settings.tab")
+        .accessibilityIdentifier("\(overlay.rawValue).tab")
     }
 }
 

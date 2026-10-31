@@ -66,6 +66,61 @@ The same script starts an S3 server (RustFS, :59000) for
 `StorageClientTests` (`OVERTERM_DB_TESTS=1`) and the `storage` scenario,
 which skips itself when nothing answers there.
 
+### Docker
+
+`DockerTransportTests`, `DockerModelTests` and the `docker` scenario talk to `FakeDockerEngine`
+(`Sources/Overterm/Docker/`): Docker's Engine API on a unix socket of its
+own in `/tmp` (a socket's path must stay under 104 bytes), with containers,
+images, volumes and networks held as values, events sent as the engine
+sends them, logs framed, files as tar. Nothing touches your Docker.
+`DockerSSHTests` and the scenario reach it as a remote engine too, through
+`FakeSSHHost`: a throwaway sshd on 127.0.0.1 with its own host key, the one
+client key it lets in and its own known_hosts — ssh told `-F /dev/null` and
+no agent, so nothing of your ~/.ssh is read or written (skipped where
+`/usr/sbin/sshd` won't start).
+
+```
+OVERTERM_DOCKER_TESTS=1 swift test --filter DockerTransportTests
+```
+
+adds calls to the engine your terminal's `docker` reaches, to check that
+the models still read what it answers: reads (`_ping`, `info`, the lists),
+then exec, files, a volume's export and import, and a container's limits
+and name changed, on a container and a volume of their own — labelled
+`overterm.test`, made from `debian:bookworm-slim` only if it is already
+there (nothing is pulled), and removed after.
+
+`OVERTERM_DOCKER_TESTS=1 swift test --filter ComposeConfigTests` runs your
+`docker compose config` on a project of its own, to check that Compose
+still answers what the plan reads. It reaches no engine: `DOCKER_HOST`
+names a socket that isn't there.
+
+An Up looks at a stack's ports first (`DockerPageModel+Ports`), which
+asks `docker compose` and probes ports: never in a unit test unless the
+test sets `DockerPageModel.checksPortsInTests` and a stub `docker` of its
+own (`ComposeUpTests`), never in a scenario without a stub. The `docker`
+scenario's one real `docker` call there is `compose … config` on the
+override it wrote, with `DOCKER_HOST` at the fake engine's socket: config
+reads files, not the engine.
+
+Builds come from recorded shapes: `Fixtures/buildkit-rawjson-*.jsonl`
+are BuildKit's `--progress rawjson` lines — SolveStatus as
+client/graph.go's json tags and Go's encoder write them — and
+`DockerBuildProgressTests` folds them as the plain printer does. The
+scenario's and `DockerBuildSessionTests`' `buildx history` is a stub
+`docker` (`DockerCLI.override`, `DockerCLI(executable:)`); a page in a
+test process reads builds from nothing else (`buildsCLI`). No test runs
+buildx.
+
+What SwiftUI draws itself has no AppKit view to find: a bordered
+`Button`, a plain `Text`. A `Text` with `.textSelection(.enabled)` is an
+`NSTextField`, which `find` reads. In-process accessibility stays empty
+without an assistive app, so the `docker` scenario reads a button's label
+off the window's pixels (Vision, `readWindow`) and clicks there with
+events queued for its own window (`click(at:)`) — queued, not sent: a
+mouse-down that tracks the mouse would wait forever for a mouse-up sent
+after it.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

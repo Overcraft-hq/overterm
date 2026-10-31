@@ -133,6 +133,21 @@ enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
     }
 
+    /// Docker's engine: OVERTERM_DOCKER_HOST's (a scenario's fake engine),
+    /// else the one the user's `docker` reaches (or `docker.endpoint`'s, the
+    /// setting, when not empty). An isolated run without the variable
+    /// reaches none: a scenario must never list the user's containers, let
+    /// alone stop one.
+    static func dockerEndpoint(setting: String = "", context: String = "") -> DockerEndpoint? {
+        if let host = env["OVERTERM_DOCKER_HOST"], !host.isEmpty {
+            return DockerEndpoint(address: DockerEndpoint.address(of: host), context: nil, source: "OVERTERM_DOCKER_HOST")
+        }
+        if isIsolated { return nil }
+        if !setting.isEmpty { return DockerEndpoint(address: DockerEndpoint.address(of: setting), context: nil, source: "docker.endpoint") }
+        if !context.isEmpty, let chosen = DockerEndpoint.chosen(context: context) { return chosen }
+        return DockerEndpoint.current()
+    }
+
     /// Codex's rollouts: ~/.codex/sessions, or $CODEX_HOME/sessions. Every
     /// turn ends with the quota the server reported.
     static var codexSessionsDirectory: URL {

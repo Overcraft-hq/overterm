@@ -477,6 +477,15 @@ What gets built is one string (`AskAgentModel.prompt`), which is the part
 worth testing; it is **typed, not sent**, so what to do with it is still
 yours to finish.
 
+Other places open the same sheet with what they know: a note, a browser
+page, an API response, a Docker container. What they bring is the text,
+a question already typed, and parts (`AskAgentModel.Part`), each a chip
+you can switch off. A container's last log lines are one part, its
+compose service another. The prompt is still one string, built in one
+place. Send hides a page over the tabs (Docker's) first, or the agent's
+tab would be chosen under it and the prompt typed out of sight; Cancel
+gives the keyboard back to that page's list, not to the hidden terminal.
+
 ## Live ports and links
 
 A pane's header shows what anything in its process tree is listening on
@@ -1248,6 +1257,931 @@ their buckets where a database's schemas would be.
   (`Scripts/database-test-servers.sh`); the `storage` scenario makes a
   bucket, uploads a file and a folder, previews both, deletes — skipped
   when nothing answers on :59000.
+
+## Docker (⌥⌘P, a page; the rail's shippingbox)
+
+Docker Desktop's work on a page of its own, over the body like Settings
+(`WorkspaceOverlay.docker`, made the first time it opens): the engine the
+user's `docker` reaches — Docker Desktop, OrbStack, Colima — and its
+containers, grouped by compose project. Settings ▸ Docker turns it off
+(nothing is read then) or points it at another engine.
+
+- **Where the engine is** (`DockerEndpoint`, pure once the files are read):
+  as the CLI finds it — `DOCKER_HOST`, `DOCKER_CONTEXT` or `config.json`'s
+  `currentContext`, that context's record (`contexts/meta/<sha256>/meta.json`),
+  the default socket. `docker.endpoint` overrides it with a host, and
+  `docker.context` (the engine menu's list) with a context — for Overterm
+  alone: the CLI's current context is never changed, and the commands
+  Overterm types carry `DOCKER_CONTEXT=`; an isolated run
+  reaches none unless `OVERTERM_DOCKER_HOST` names one (a scenario's fake).
+  `DockerRuntime` says which engine it is from the socket's path, the
+  context and `/info`, how to start, stop and restart it, and the rest its
+  own CLI does for it (`extras`: Docker Desktop's update check, update,
+  Kubernetes status, diagnose, logs; OrbStack's and Colima's status) —
+  the engine menu runs them in a terminal tab. Rancher Desktop is
+  `rdctl`'s: `start` (which opens the app), `shutdown`, and its app's
+  `/v1/backend_state` for whether the VM is up (`DISABLED` is up, with
+  Kubernetes off). Podman answers the same API (podman-compose writes
+  Compose's labels too, but never `oneoff`).
+- **A remote engine** (`ssh://user@host`, a context's or `DOCKER_HOST`;
+  `DockerSSH`): the system's ssh forwards a socket here to the engine's on
+  the host (`-L local.sock:/var/run/docker.sock`, the local end the user's
+  alone), so the transport talks to a unix socket as it does for a local
+  engine and one ssh carries every call and stream — the CLI's own way,
+  `docker system dial-stdio`, is an ssh per connection. The engine's socket
+  there is the URL's path, else what the host's `docker context inspect`
+  says, else `/var/run/docker.sock`. BatchMode, its own connection
+  (ControlMaster off), the user's ~/.ssh/config, keys and agent: whatever
+  `docker -H ssh://` does works; nothing is asked. A forward whose ssh has
+  gone is opened again by the next call, one per host, closed when it is
+  no longer the engine and when the app quits. What ssh says is the
+  engine bar's reason — a refused key, or the host's socket refused
+  (`connect failed: Permission denied`: the user isn't in its docker
+  group). A remote engine is `.engine` whatever `/info` calls it (Docker
+  Desktop's commands would start this Mac's); its ports open on the host
+  (`publishedHost`, the name `ssh -G` resolves; one bound to the host's
+  loopback has no link), aren't a checkout's servers or a port conflict
+  here, and a database in it is reached through the Database client's
+  own SSH tunnel to the host. The engine menu adds a shell on the host and
+  its `daemon.json` and log there, in a terminal tab.
+- **Talking to it** (`DockerEngine`, `DockerAPI`): the Engine API over the
+  unix socket with SwiftNIO's HTTP/1.1 (one connection a call, ~30 ms),
+  the API version settled with `/_ping`. Streams — events, followed logs,
+  stats, a pull — are `AsyncThrowingStream`s that close their connection
+  when the reader leaves. A request's body can be written as it is read,
+  its length said first: each piece is flushed before the next is read,
+  so the socket sets the pace (a folder copied in). A response's body can
+  be read the same way (`receive`, NIO's async channel): the socket is
+  read further only as the reader takes the pieces, so a folder copied
+  out to a slow disk slows the engine down rather than piling up in
+  memory, as a stream's unbounded buffer would. Pure helpers beside
+  it: log frames demuxed across any cut and lines read for their level
+  (`DockerFrames`), a plain ustar writer and an incremental reader for
+  `archive` (macOS's `tar` adds xattrs the engine fails on), stats as
+  `docker stats` works them out, ports once rather than once per
+  address family, secret-looking env values masked (`DockerStats`). A `;`
+  in a query is encoded: Go refuses one there, and a commit's comment may
+  hold one.
+- **`docker` itself** (`DockerCLI`): for what the API doesn't answer — a
+  runtime's own status while its socket is silent (`docker desktop
+  status`, `orb status`, `colima status`), and a checkout's compose file as
+  Compose resolves it (`compose config`, run in the checkout:
+  `DockerCLI.run(in:)`). Found where installers put it (an app from the
+  Dock has none of it on its PATH), run through `Git.run`, told the context
+  or host Overterm uses. Its stderr can be followed as it comes, while its
+  stdout is kept whole (Scout's progress, then its report).
+- **The model** (`DockerModel`, one for the app): whether the engine
+  answers, its containers, the compose projects among them
+  (`ComposeProjects` — Compose's only record is its labels; a checkout's
+  stack is the projects run in it or from a compose file in it, compared by
+  real path). Events keep it current, a burst read as one list 120 ms after
+  it starts, filtered to what changes a list (healthchecks' `exec_*` are
+  most of the traffic). It starts when the page first shows; a page on
+  screen adds a 15 s poll for "Up 2 minutes". An engine that goes away
+  empties the lists and is tried again at growing intervals.
+- **A checkout's project before it runs** (`ComposeConfig`, pure;
+  `ComposeFileModel`, one per window): Compose keeps no record of a project
+  until its containers exist. So the selected tab's checkout's compose file
+  is read the way `up` will read it: `docker compose config --format json
+  --no-env-resolution`, in the checkout, without `-f` (Compose before 2.35
+  doesn't know the flag, and is asked again without it). That is the only way
+  to get what `up` gets: the name as Compose settles it
+  (`COMPOSE_PROJECT_NAME` in `.env`, then `name:`, then the folder's,
+  lowercased), the override merged, `include` and `extends` resolved, `.env`
+  filled in, only the active profiles' services. It reaches no engine; that
+  was checked against a socket that counts connections. Only names, images,
+  build folders, published ports, dependencies, replicas and whether a
+  service has a `develop.watch` are kept, never `environment`: it holds the
+  variables' values. It is read while the
+  rail's panel or the page shows Docker: when one comes up, when the
+  checkout changes and its files did, and when a `.yaml`, `.yml` or `.env`
+  at the checkout's top changes (FSEvents, filtered to the top folder and
+  stamped by size and mtime). An isolated run asks only a scenario's stub.
+  When Compose can't read it, its own words are shown, warnings left out,
+  and the services read last are kept. An answer with no service (each
+  under a profile that isn't on) is no project: its Up could only fail.
+  The project is stopped, its services "Not created"; Up (`u`) is `docker
+  compose up -d` in a tab in the checkout. It names no project: Compose
+  takes the name from the files as they are then, so a name read earlier
+  never pins it. Once one of its containers exists, the project from
+  labels takes its place: one of its name, or one made from its compose
+  file under another (`-p`, the shell's `COMPOSE_PROJECT_NAME`), since its
+  Up would make the same services again, their ports taken
+  (`ComposeProjects.replaces`). On the page, one of that name from another
+  folder does too, and Up from here asks first: Compose would make that
+  stack again from this checkout's files (with Docker Compose 2.24.4 or
+  later, the question offers a name of its own — below). A checkout with
+  ports of its own is read with its override, under its name, so its plan
+  is the stack Overterm's Up makes; read again when an override comes or
+  goes (`readAgain`). Show Resolved Config is `docker
+  compose config` as YAML, in the editor: a copy, removed when its tab
+  closes. A copy is a file, so env files' contents aren't asked for, and
+  what Compose filled in from the variables is masked first
+  (`ComposeConfig.masked`): secret-looking values in `environment` and a
+  build's `args`, a URL's password, and `.env`'s secrets wherever they
+  landed.
+- **The page** (`DockerPageModel` per window, `DockerPageView`): sections
+  and the engine on the left, the list in the middle, the selected
+  container's detail (`ContainerDetailView`, `ContainerSession`) at the
+  right — the list keeps its place in the view tree whether or not the
+  detail is beside it, or SwiftUI makes its table again and the keyboard
+  and the scroll position go with it. The filter is `DockerFilter`
+  (`status:running project:api image:postgres port:5432 is:test`, `-`
+  negates).
+- **Verbs** (`DockerVerb`, `DockerPageModel+Verbs`): what can be done to a
+  container, a project, an image, a volume, a network, a build or a model
+  is one list, drawn twice — as the buttons under its detail's title
+  (`DockerActionBar`: the used ones labelled, the rest behind ⋯, removal
+  last as a red bin) and as its right-click menu (`DockerVerbMenu`) — so
+  nothing is only in the menu and the two never disagree. A verb that
+  can't be done now (a mounted volume's removal, the shell of a stopped
+  container) is greyed with the reason in its help. Too narrow for the
+  words, the bar keeps them on its first two buttons, then on none
+  (`ViewThatFits`; the right-hand pane). The panel's menus and pane use
+  the page's verbs acting through the panel (`DockerPanelModel.verbs`),
+  whose errors are its own. A network's detail puts a container on it and
+  takes one off (`/networks/{id}/connect`, `…/disconnect`): the engine
+  sends no event a list reads for that (it sends one at every start), so
+  both lists are read again after it.
+- **A container's detail**: Overview (ports, command, health, mounts,
+  networks, env with secrets masked), Logs, Inspect, Stats. A session
+  (`ContainerSession`) reads logs only while Logs shows and stats only
+  while Stats does — nothing while the page is hidden. The log is the last
+  500 lines, then followed; Docker ends a followed log when the container
+  stops, and the session follows it again on the container's own `start`
+  event (a list read after a quick restart can look as before), from the
+  last line's second, dropping what it already has (timestamps compared
+  padded to nine digits: Docker trims a fraction's zeros). Lines go into an
+  NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
+  Inspect is the engine's JSON with the env's secret values taken out.
+- **CPU and memory in the list** (`DockerUsageMonitor`, one for the app;
+  `DockerUsageReadings`, pure): each running or paused container's use,
+  a compose project's added up, sorted by either at a click on its
+  column — read only while a page's Containers section is on screen, and
+  stopped when the last such page goes (another section, the page hidden,
+  the window closed: `DockerPageModel.close`, or the window under another
+  app's, minimized or hidden: its occlusion, `windowVisible`; an isolated
+  run's window, often under the user's own, counts as shown). Every 3 s
+  each container is read once, four at a time, with
+  `/containers/{id}/stats?stream=false&one-shot=true` (API 1.41): it
+  answers at once but carries no `precpu_stats`, so the CPU is the read
+  set against the one before it, over the seconds between; `stream=false`
+  alone has the engine wait for two of its own samples, a second or two a
+  call. A container read for the first time is read again a second later,
+  so its columns fill quickly. A read has 5 s: one that hangs (moby's
+  stats have, for a container whose shim stopped answering) is cancelled,
+  which closes its connection, and the round ends — else nothing is read
+  again and every cell keeps its last number. A failed read keeps what it
+  showed one round, then a dash, never an old number as if current; it
+  doesn't hurry the next round as a first read does. `docker stats
+  --no-stream` was the other way, and lost: a process every interval, the
+  same calls without one-shot (all at once, each waiting), numbers
+  printed for people (`2.352MiB / 982.5MiB`) and read back, and over
+  `ssh://` an ssh a call.
+  A page takes the values only while it wants them (`DockerPageModel.usage`):
+  a hidden page in another window draws nothing again for them. The
+  detail's Stats tab keeps its own stream, a sample a second.
+- **Images, volumes, networks** (the page's sections 2–4,
+  `DockerResourceViews`): read only while their section shows
+  (`DockerModel.want`) and then kept current by their own events (the
+  event filter takes images, volumes and networks too, but not a volume's
+  mount or a network's connect at every start). Volumes come from
+  `/system/df`, the only place that says each one's size and users. An
+  image pulls with its layers' progress summed (`DockerPull`); one a
+  registry won't give without credentials says to pull it in a terminal
+  tab, where the credential helper signs in — Overterm never handles a
+  registry password. Typing in the pull field asks Docker Hub through
+  the engine's own `/images/search` (as `docker search` does) and suggests
+  images with their stars and the official mark. Tag, remove (asked first; never what a running
+  container uses), a shell on a volume in a tab (a throwaway container);
+  its files in the detail's Files tab. Overterm's own helpers are never
+  listed: one mounting a volume would make it look in use.
+- **Emulation** (`DockerPlatform`, `DockerEmulation`, pure): an image built
+  for another architecture than the engine's — amd64 on Apple silicon —
+  runs translated (Rosetta or QEMU), often several times slower. The
+  engine's architecture is `/info`'s (`uname -m`: `aarch64`, `x86_64`),
+  read once a connection; an image's is its inspect data's `Architecture`
+  and `Variant`. `/images/json` doesn't say it. It is read only for what
+  is on screen: the badge (`DockerEmulationBadge`) on a container's row,
+  an image's row and a detail asks as it appears, eight images at a time,
+  once an id (`DockerModel.platforms`). The page's overlay is hidden, not
+  removed, and the sidebar's panel stays while it is collapsed, so their
+  views live on: each host says whether it is on screen
+  (`\.dockerShown`), and a badge off screen asks nothing.
+- **What a container runs** is not what its image says now. In the
+  containerd image store (Docker Desktop's default) an id is the image's
+  index, a pull can add the engine's own platform to it, and inspect then
+  describes that one — while the container made before still runs amd64.
+  From API 1.48 a container says its own (`ImageManifestDescriptor` in
+  `/containers/json` and inspect): the list and inspect are asked at 1.48
+  when the engine speaks it, every other call at 1.47. Before that, a
+  container is kept to what its image said when first read for it
+  (`containerPlatforms`) — read since the last image event, never after
+  one, which may have changed the index. After an image event an image's
+  row asks again (`platformEpoch`); a container's, once known, never does.
+  An agent asking waits for the read, a view's on its way too.
+- **Running it natively**: a container marked says `amd64` on its row; its
+  detail says why, and its verb runs it natively in a terminal tab. A
+  service its compose files build (`ComposeFacts.built`, from `docker
+  compose config`) is built again with DOCKER_DEFAULT_PLATFORM and never
+  pulled: `image:` may name what `build:` makes, and a pull would put a
+  registry's image in place of the checkout's. Its image's name can't
+  tell: a tag moves on. Any other service's image is pulled for the
+  engine's platform, then the service recreated alone (Compose applies
+  DOCKER_DEFAULT_PLATFORM only to the services it builds). The verb waits
+  for the files' answer; files that can't be read get `--build` and no
+  pull. A lone container's image is only pulled: making it again is Run
+  Another Like It's. An image's own verb pulls its variant through the
+  engine (`/images/create?platform=`), and one with no such variant says
+  so.
+- **Builds** (section 5; `DockerBuildRecord`/`DockerBuildDetail` and
+  `DockerBuildProgress`, pure; `DockerBuildSession`): what `docker buildx
+  history` keeps — Docker Desktop's Builds view reads the same records —
+  through the CLI. The list is read every 3 s while the section shows and
+  its window can be seen (10 s over ssh, where each read is a
+  connection). So a build started anywhere — a tab, an agent, compose —
+  is there while it runs, and selected when nothing is, once.
+  A build's steps are BuildKit's own account: `buildx history logs
+  --progress rawjson <ref>` replays a finished record's stored progress
+  and follows a running one to its end. BuildKit answers from the record
+  once it is written and from the running job before, replayed from its
+  start either way. The JSON is on stderr, a SolveStatus a line, read by
+  `DockerCLI.lines` (no thread blocked) and decoded off the main thread.
+  It is folded as the plain printer folds it: a step numbered when it
+  first starts; its time its intervals merged; cached, failed or
+  canceled as BuildKit says; its output in lines (a half line waits for
+  the rest, colour and `\r` redraws out, 2 MB a step); Dockerfile
+  warnings with their line. The detail redraws at most five times a
+  second and reads only while it shows; hidden, the follow's process is
+  terminated, and shown again it reads from the start.
+  Overterm never starts a build to watch it: compose has no rawjson (its
+  `--progress json` is its own), and BuildKit records every build anyway.
+  Build args are masked as env is, and a secret one's value is taken out
+  of step names, output and Copy Log too — BuildKit expands an ARG into a
+  RUN step's name. So nothing of the steps is drawn or copied until
+  `buildx history inspect` has said the build args (`secretsKnown`); it is
+  asked again until it answers. buildx 0.20 has no `inspect --format`,
+  and its plain table is read instead (`parsePlain`). BuildKit ends the
+  stream before it writes the record's end, so the inspect is asked again
+  after the end until it says how the build ended, and once more when the
+  list says the record is over. Whether a build runs is the record's say
+  (the list) or the inspect's, never a guess. A follow that breaks off
+  keeps the steps it read and says why over them; a step still open then
+  is drawn as not known, not running. A list read that fails stands in
+  for the list and the detail, and the follow stops with them; Read Again
+  brings both back, and the poll. The steps are a table, but not the
+  list: the page's keys act only on its first table, and ⌫ asks before a
+  record goes. Log in a Tab (`t`) is the plain alternative. A
+  scenario points `DockerCLI.override` at a stub `docker`; a test process
+  or an isolated run reads builds from nothing else (`buildsCLI`).
+- **Image updates** (`DockerImageUpdates`; `DockerImageReference`, pure):
+  Check for Updates — the Images header, an image's menu, a project's, `C`
+  — asks each tag's registry what the tag names now. It goes through
+  `docker buildx imagetools inspect <ref>`, so the CLI's own credential
+  helpers sign in and Overterm never sees a password. The answer is
+  compared with the tag's repo digest (`RepoDigests`), an index's children
+  too, for an image pulled by its platform's digest. It reads the default
+  output, not `--format`: a template makes buildx fetch every platform's
+  config. It runs only when asked, since every answer is a GET of the
+  registry's manifest, which Docker Hub counts as a pull; four at a time,
+  a tag once however many names it has. A registry that doesn't answer
+  isn't asked about its other tags: behind a firewall each would wait out
+  its 30 s. Stop ends the check, and what it asked stays. In the classic
+  store a tag with no repo digest for its own name was built or tagged
+  here, and isn't asked. The containerd store records one for every named
+  image, a build's too (its own ID; `/info` says which store), so there it
+  proves nothing. Such a tag is asked, and "no such image", or a 401 to a
+  question asked without credentials, makes it "not in its registry"
+  rather than a failure. Another image in the registry is an update only
+  once an answer has named the one here, or a project's files pull it (an
+  `image:` they don't build); else it "differs", and nothing pulls over
+  it. A service its project's files build is never asked, from the project
+  or the Images section: a project's check reads its files first, and a
+  plan's say it themselves. Answers are kept in memory with their time,
+  for the app's run. The local side is read again when an image changes
+  (an image event, once something has been checked, unless the Images
+  section reads them anyway), so a pull — the page's, or `compose pull` in
+  a tab — makes an update current with no second question. The header
+  counts what wasn't asked: "Up to date" only when every image there was
+  to ask is current. Pull Updates pulls Docker Hub's through the engine,
+  with its progress. The engine pulls without credentials, so another
+  registry's goes to a terminal tab (`docker pull`), where the CLI signs
+  in as it did for the check; a project's runs `docker compose pull
+  <services>` in a tab. Each project's services' images are kept as the
+  engine lists its projects, for the services they have now: once a tag
+  moves, the engine lists a container by its image's ID (moby's
+  `refreshImage`, which the fake imitates when `refreshesImages` is on).
+  Its detail says "Up recreates web" when a container runs another image
+  than its tag names now. No buildx stops the check with how to get it.
+  Agents read the last answers (`docker_image_updates`) and never ask a
+  registry. A scenario's stub `docker` answers as buildx would, and the
+  fake engine's `setRegistryDigest` makes a pull bring a new image.
+- **Models** (section 6, `ModelRunner`, pure but for `read`): Docker
+  Model Runner's models — pulled, loaded, on disk — read from the
+  runner's own API and never `docker model`: on Docker Engine (OrbStack,
+  Colima) every one of its commands, `list` and `status` too, installs a
+  runner first — pulls its image, makes a container and a volume.
+  Docker Desktop's runner answers over the engine's socket under
+  `/exp/vDD4.40` (503 while it is off); an engine's is a
+  `docker/model-runner` container already there, at its published port;
+  a remote engine's isn't read. Enabling, installing, a pull and a chat
+  (`n`, `docker model run`) go to a terminal tab; a removal is asked
+  first and is the runner's `DELETE /models/…`. The header copies the
+  OpenAI-compatible base URL for a container and, for a runner
+  container, for this Mac; agents get the same in `docker_models`.
+- **Vulnerabilities** (`DockerScout`, pure; `DockerScoutScans`;
+  `DockerScoutView`): an image's detail has two tabs, Overview and
+  Vulnerabilities. A scan is `docker scout cves --format sarif
+  local://<name>` through `DockerCLI`, and it runs only when Scan is
+  pressed (or the image's Scan for Vulnerabilities): Scout sends the
+  image's packages to Docker's service, signed in as the user. `v` and
+  the tab itself run nothing, and Scan is no default button: Return is
+  the page's ↩, pressed out of habit. `local://` scans the engine's own copy and
+  never asks a registry; `--platform` is the image's own, when its
+  inspect says one. A scan may take ten minutes at most. The last line
+  Scout writes on stderr is its progress (`Git.run` hands stderr over as
+  it comes, while stdout is kept whole), and Cancel stops the process.
+  SARIF, because its rules carry the fixed version, the affected range,
+  the package URLs, the severity, a score and the advisory's link;
+  GitLab's format gives the fix only as prose, and `cves` has no json.
+  One rule covers every package a CVE is in, but its properties describe
+  only the first package, so each result's message wins
+  (CVE-2023-44487 is fixed in nghttp2 but not in nginx). Older Scouts
+  write no package URLs (`name version`), and text after the JSON is
+  tolerated (scout-cli#78). Every field is read on its own, and a wrong
+  type is ignored, never fatal. `security-severity` is the advisory's CVSS
+  where it has one, but Scout puts 3.1 where there is none: the page calls
+  it Scout's score, never CVSS, and hides it for Unspecified. Scans are
+  kept in memory for the app, by image ID: a rebuilt image starts
+  unscanned, two windows show the same scan, and the Images list's row
+  says `1C 2H 5M`. Signed out is said so, with `docker login` in a tab;
+  a missing plugin, an image the engine doesn't have and the timeout are
+  said in words too, and anything else is Scout's own last lines, with
+  Run in a Tab. An isolated run or a test process never runs the real
+  Scout (`DockerScout.mayRunReal`); a scenario's stub runs through
+  `DockerCLI.override`. Quitting cancels every scan. The three "in a
+  Tab" verbs stay in the image's Docker Scout menu (`quickview`, `cves`,
+  `recommendations`), when the plugin is there (`DockerCLI.hasPlugin`).
+- **MCP Toolkit** (`DockerMCPToolkit`, pure but for `read`): whether
+  Claude Code and Codex reach Docker's MCP gateway — `docker mcp client
+  ls --global --json`, which reads their config files and nothing else,
+  each time the page shows (an isolated run asks only a scenario's stub).
+  Connect and Disconnect are `docker mcp client connect|disconnect
+  --global <agent>` in a terminal tab: they rewrite that agent's config,
+  so the user sees them do it. Without Docker Desktop's plugin the block
+  isn't there.
+- **Export and import**: a container's filesystem (`/export`, `docker
+  export`) and an image (`/images/…/get`, `docker save`) stream to a file
+  as they come. A volume goes through a helper: a container created with
+  the volume at `/volume` and never started — the archive endpoint mounts
+  it anyway (the live test checks that against the real engine) — so any
+  image on the Mac will do and nothing runs; it is named
+  `overterm-helper-…`, labelled, recorded in `DockerHelpers` and removed
+  before the call returns — one left by a quit mid-export is removed at
+  quit too. Export reads `/volume`, import makes the volume and writes the
+  tar back at `/`, a clone is both.
+- **Clean Up** (`c`, `DockerPrunePlan`, pure): what the engine's prunes
+  would remove, listed before anything goes — the prunes say what they
+  removed only afterwards. It follows their rules: stopped containers
+  first, so an image or a network only they kept counts as unused; images
+  untagged only unless asked; volumes only when asked, anonymous ones only
+  unless named ones are asked for; a network stays while any container,
+  stopped too, is on it (`/containers/json`'s `NetworkSettings`, since a
+  network's own record lists only running members).
+- **Ports in the panes** (`ComposeProjects.ports`, `Tab.containerPorts`):
+  Docker's own process (`com.docker.backend`) holds a container's
+  published ports, so lsof never finds them under a tab. What the compose
+  projects of a tab's checkout publish is shown beside its own ports, with
+  a shippingbox; Stop goes through the engine, Docker shows it on the page.
+  Kept apart from `ports`: a stack running doesn't make the shell a server.
+  Tab Info lists them too, and the API client's discovery asks them for
+  an OpenAPI document as it asks the tab's own ports.
+- **Files of the Mac in the editor**: a project's compose file (its
+  `config_files` label), what Compose makes of it — `docker compose
+  config`, variables filled in and overrides merged, written to a copy
+  under Overterm's folder — and the engine's own settings
+  (`DockerRuntime.configFile`: Docker Desktop's `daemon.json`, which is
+  its Settings ▸ Docker Engine; OrbStack's `docker.json`; Colima's
+  profile), applied when the engine restarts.
+- **Run** (`n`, `DockerRunSpec`, pure; `DockerRunSheet`): an image in a
+  new container — name, ports, env, volumes, command, restart policy,
+  in the background or in the tab — the `docker run` written out as it is
+  filled in, run in a terminal tab where it pulls and starts. Copy as
+  `docker run` and Run Another Like It read a container's own settings
+  back: its env less what its image sets (the image's inspect data), its
+  published ports, mounts (`:ro` kept), restart policy, network, and its
+  command when it isn't the image's.
+- **A container's settings** (`,`, `DockerContainerSettings`, pure;
+  `DockerSettingsSheet`): its memory limit, CPUs and restart policy, read
+  from inspect and changed in place with `POST /containers/{id}/update`,
+  running or stopped — what `docker update` does, written out in the sheet
+  as it is edited. The engine reads every zero as "unchanged", so a limit
+  can be changed but never taken away; the sheet says so rather than send
+  an empty one. A new memory limit always goes with its swap: the engine
+  refuses a limit above the swap it has when none is given, and a
+  container with no limit has a swap of 0 — so the swap keeps what it was
+  (none, unlimited, the same on top), or is twice the limit, as
+  `docker run -m` makes it. A container made with `--cpu-quota` (Compose's
+  `cpu_quota`) is changed by its quota: the engine won't put NanoCpus over
+  one. What the engine would refuse — under 6m, more CPUs than it has, a
+  restart policy for a `--rm` container — is said before it is sent; a
+  number of CPUs is held inside an Int before it is converted, since a
+  byte count pasted there would trap as nano-CPUs. The `,` key goes
+  through the verb, so a container Docker is removing has none. A
+  running container's memory in use is one sample (`one-shot`), read when
+  the sheet opens. The detail reads itself again at the `update` event, so
+  a change from the CLI shows too. A compose service's container keeps
+  these until Compose makes it again from its file, and the sheet says to
+  write them there.
+- **Rename and Save as Image** (`DockerCommit`, pure): Rename is
+  `/containers/{id}/rename`; a name Docker would refuse, or one that is
+  taken, is asked again with the reason. Compose finds its containers by
+  their labels, so a service's container renamed still runs as the
+  service, but the next up that makes it again gives it its old name back:
+  that is asked about first. Save as Image is `/commit` — the running
+  container paused while it is copied, its volumes not in it. Its env and
+  labels can only be overridden there, not removed, so the image gets
+  `ENV KEY=""` for each value that looks like a secret (by its name, or a
+  URL's password) and that its own image didn't set, and `LABEL key=""`
+  for Compose's and Testcontainers' labels: kept, a container run from the
+  image would be counted as one of the service's replicas by the next
+  `compose up`, or reaped by Ryuk. An emptied label reads as none
+  (`composeProject` is nil for `""`), so such a container is no service of
+  a project called "". The classic image store also writes the committed
+  container's own config into the image (`container_config`, the secrets
+  in it), and `docker save` and `docker push` carry it; no parameter
+  changes that. There (`EngineInfo.containerdStore` is false, or unknown)
+  the commit is made twice (`commitAnew`): untagged with the changes, then
+  from a container of that one, never started and removed after — whose
+  own config is the changed one. The first image stays as the second's
+  parent, which the engine lists no more than a layer. The containerd
+  store keeps nothing of the container, and one commit does. What a
+  commit can't change is said instead: a password in the command or the
+  health check (Compose puts `.env`'s values there) stays in the image,
+  and the question says so before, the note after. The inspect is read
+  before the question for that. Both verbs bring the page up first from
+  the panel's menu and the right-hand pane, where their progress and
+  failures are shown.
+- **New Task's stack**: with Docker on and a compose file at the
+  repository's top (`ComposeProjects.composeFile`), New Task offers to
+  start the new worktree's own stack — through the same Up as everywhere,
+  which looks at its ports and its name first (below).
+- **Port conflicts** (`PortConflicts`, pure; `ContainerSession.conflict`):
+  worktrees of one repository run the same compose file, and its fixed
+  host ports (`5432:5432`) leave the second stack's container `created`,
+  Docker saying only "port is already allocated" (or, for a process,
+  "address already in use"). The detail says who holds the port — another
+  container (its project and folder, usually another worktree's), a
+  process in one of the windows' tabs, or one outside them (lsof) — and
+  offers the way out: stop that one and start this one, or show the tab.
+  A compose container's detail also offers Up on Free Ports for its stack.
+- **A worktree's stack on its own ports** (`ComposePorts`, pure;
+  `ComposePortStore`; `DockerPageModel+Ports`): worktrees of one repository
+  run one compose file, so their stacks want the same host ports — and,
+  with a `name:` in the file or `COMPOSE_PROJECT_NAME` in `.env`, the same
+  project, which an Up would take over. Before any Up of a checkout's stack
+  (the project's `u`, its row's play button, the panel's, View ▸ Compose
+  Up, the palette's, New Task's, a rebuild, Up With Profiles…) Overterm
+  asks Compose what it would publish: `docker compose -f … --profile '*'
+  config --no-env-resolution --format json` — variables filled in, the
+  overrides merged, ranges spread, no env file read. The files are the
+  checkout's as Compose finds them (`ComposeProjects.composeFiles`):
+  `COMPOSE_FILE` in `.env`, else `compose.yaml` and its
+  `compose.override.yaml`. Given `-f`, Compose discovers nothing itself.
+  Each port is looked for among the other stacks' containers (their own
+  containers' ports are theirs: Docker binds them), then on this Mac: a
+  bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1
+  (`ListeningPorts.isBound`) meets what Docker's own bind would, TIME_WAIT
+  aside, and never listens, so no firewall asks; lsof names the holder for
+  the question. A remote engine's are its containers only. A taken port of
+  a service that starts, or a name another checkout's stack has, asks
+  first: Up on Free Ports, Up as Written, Cancel. Free Ports writes an
+  override into Overterm's folder (`Compose/Ports`, never the repository),
+  passed with `-f` after the checkout's files. It holds the moved services'
+  ports under `!override`, because an override's `ports` are added to the
+  file's and the taken one would stay (Compose 2.24.4 and later; an older
+  one goes up as written), and a project name of its own when the files'
+  is another checkout's (the worktree's folder, `shop-wt-feat-x`). A
+  moved port goes 10 000 up while that stays below the system's ephemeral
+  range (8080 → 18080), else to the next free one; no two overrides give
+  out the same port, and an answer given long after the question looks at
+  the ports again before it writes anything (another window may have given
+  one out meanwhile). A project run from the checkout's folder is its
+  stack only when it was made from these files, or takes the plan's
+  place: a test stack started there from others (`-f compose.test.yaml
+  -p shop-test`) is another stack, whose ports are taken. A compose file
+  is passed as named, its folder a real path (`composePath`): Compose
+  resolves no link, so a linked `compose.yaml` keeps the checkout as its
+  project folder. The override is remembered per Compose folder (a plan
+  finds it by that folder too, which `COMPOSE_FILE` can put in a
+  subfolder) and written again from the files before each Up, which asks
+  nothing more; a moved port stays where it was put while it is free, so
+  its URL doesn't change, and one taken since moves again or goes back to
+  the file's (the page says so). With nothing left to move and the files'
+  name its own, it is forgotten rather than kept empty. When the files
+  change, it is written again before whatever reads them next — Pull,
+  Watch, Run, the plan's read, Compose's facts, Show Resolved Config, an
+  agent's up (`ComposePortStore.refresh`, by the files' sizes and dates):
+  Compose refuses an override naming a service the files no longer have,
+  and `!override` would pin a service's old ports. That reads the base
+  files and keeps each move whose port they still ask for; only an Up
+  moves ports. Every compose command that reads files is made by
+  `ComposePortStore.command`, which leaves out a forgotten override that
+  the containers' `config_files` label still names; Down, Stop and Restart
+  go by name. The project's detail, the pane headers' pills
+  (`:8080→18080`) and `docker_projects` say what moved, and an agent's
+  `docker_compose up` uses the override. ⋯ ▸ Back to the File's Ports
+  forgets it; `U` moves ports without asking. Settings ▸ Docker ▸ Compose
+  turns the check off. A Compose that doesn't say its version, or one too
+  old, leaves a kept override as it was — its name, its ports — rather
+  than let the files' name take another checkout's stack over, and says
+  so. Up on Free Ports where the files aren't on this Mac (a remote
+  engine's project) moves nothing and says why; its verb and a conflict's
+  button are greyed with the reason. What an Up says shows on the page,
+  and in an alert when the page isn't on screen (an Up from the panel,
+  the right slot, a menu or New Task). An Up with nothing to look at (no
+  files on this Mac, the check off) is typed at once; the rest about
+  0.3 s later, the project's row busy meanwhile. Unit tests never look
+  (`mayCheckPorts`) unless one asks with a stub `docker` of its own.
+- **A project's detail** (`ProjectDetailView`, `ProjectSession`): a
+  compose project's row selected shows its verbs, its services, and their
+  logs merged by time — `docker compose logs -f`, in the app. Logs go
+  through a feed (`DockerLogFeed`: the lines, a revision when they must be
+  drawn again) filled by one follower a container (`DockerLogFollower`:
+  the tail, then the stream, again after a restart from where it stopped,
+  nothing twice); a project's lines are merged in time order, at the end
+  when they are the newest, else merged and drawn again. Each service's
+  name has a colour of its own.
+- **Testcontainers** (`Testcontainers`, pure; `DockerPageModel+Testcontainers`):
+  a test run's containers say so in their labels — `org.testcontainers=true`
+  and the run's session, which Java and Go write as
+  `org.testcontainers.sessionId` and Node, Python and .NET as
+  `org.testcontainers.session-id`. Reading only one key would miss three
+  libraries. Ryuk, the reaper (`testcontainers/ryuk`), carries no session
+  where Java and Python start it, so its name says it instead
+  (`testcontainers-ryuk-<session>`; Go's `reaper_<session>`). They are
+  taken out before the compose projects are grouped (`DockerModel.reload`):
+  Go's compose module labels a stack both ways, and a test's stack is not
+  a checkout's — not its panel, its pane headers' ports, nor
+  `docker_projects`. The list keeps them last, a block a run, newest first,
+  folded the first time a run shows: `DockerPageModel.folding` seeds
+  `collapsed` once a session, from the runs the model emits (a turn later,
+  a new run would show unfolded for a frame). A filter doesn't unfold one;
+  revealing one of its containers does. A run's row stands for its
+  containers less Ryuk, so `s` and Stop All leave Ryuk to remove them when
+  the run ends. Its age is `UsageFormat.age` in a `TimelineView` — once a
+  minute, only while it shows. Remove All (⌫ on the row, asked first) does
+  what Ryuk does at a run's end, in its order: the containers forced out
+  with their anonymous volumes (`?force=1&v=1`), then the networks, the
+  volumes and the images labelled with the session — each list read once,
+  at the yes — and Ryuk last, only when everything else went. Ryuk prunes
+  all four kinds once the run is over; killed before the rest goes, it
+  would leave a built image or a named volume on the engine for good, and
+  kept, it still removes what couldn't go. A 404, or Ryuk's own removal
+  racing ours ("already in progress"), counts as gone. Containers kept for reuse carry no session and are a
+  block of their own. `is:test` and `session:` filter them; in the rail's
+  panel, "Running elsewhere" sums the runs up in one row; an agent's
+  `docker_containers` says which run a container is for.
+- **A project's services** (the Services tab, `DockerPageModel+Compose`):
+  each service has its verbs on its header and in its right-click menu.
+  Rebuild and Start (`up -d --build <service>`), Pull, Run a One-Off
+  (`run --rm`) and its logs followed go to a terminal tab in the project's
+  folder. Restart goes through the engine, on that service's containers, as
+  the project's does. Show Its Logs narrows the merged log to that service
+  (`DockerLogFilter.service`); every service is still followed, so All
+  services comes back at once. The feed keeps its last 5,000 lines and each
+  service's last 1,000 before them (`DockerLogFeed.trimmed`): a service that
+  logs every request would otherwise push a quiet one's lines out, and the
+  picker would show it blank. A service with nothing to show says so. The
+  choice is kept on the `ProjectSession`,
+  so another project starts with all of them, and the pane's "Follow in a
+  Terminal Tab" follows the same one. `b` rebuilds the selected
+  containers' services, or all of a project's row: one command a project,
+  four at most. A one-off is no service's.
+- **What the files say** (`ComposeFacts`): the labels don't say what a
+  service watches or which profiles there are. So Compose is asked, with
+  `docker compose -p … -f … config --format json` (the services `up`
+  starts, read by `ComposeConfig`, and which of them have `develop.watch`)
+  and `config --profiles`, both with `--no-env-resolution` where Compose
+  knows it. Both read the files and never the engine. They are asked when
+  something on screen draws a project's verbs (the page, the panel's menu,
+  the palette), once a change of its files or its `.env` (their sizes and
+  dates; a link's target's, since that is what is edited), and kept by the
+  page. A failure that is the files' (Compose ran and said no) is kept the
+  same way, so a fixed file is read again, and the Services tab says what
+  Compose said in one dim line. One that isn't (no answer in 15 s, no
+  `docker`, a `docker` that didn't start) is asked again: by a view after
+  30 s, by a key or a menu item at once. A key or a menu item asks on demand. A view's body only starts
+  a read: the answer is published later, never during the update. Nothing
+  is asked for a project none of whose files are on this Mac (a remote
+  engine's), nor in an isolated run without a stub `docker`. A project
+  before it runs is its plan's: `ComposeConfig` already read its JSON.
+  Watch (`w`, `compose watch` in a tab) is offered only when a service has
+  `develop.watch`, because Compose refuses a project with none; it is
+  typed plainly, with no profiles, so it watches exactly the services in
+  that JSON. Up With Profiles… lists the profiles in a sheet, ticked as last
+  time in this run (never on disk), and types `--profile a --profile b up
+  -d`.
+- **A container's files** (the detail's Files tab, `DockerFiles`, pure):
+  a folder at a time, listed by a plain `sh` script run with `exec` —
+  `archive` hands a folder over as its whole tree. `exec start` hijacks
+  the connection and the output comes framed until it closes; the live
+  test checks that against the real engine. An image without a shell
+  can't be listed, but a file in it can be opened by its path. A file
+  opens in the editor as a copy under Overterm's folder
+  (`Containers/<name>/<path>`, `.` and `..` left out) and is written back
+  through `archive` when the editor saves it — asked first when it
+  changed in the container since it was opened (its stat's size and
+  mtime), and kept with its mode and owner. Its Changes view is the engine's
+  `/changes`: what was added, modified and deleted since it started, a
+  file a click from the editor. Stats shows its processes (`top`, every
+  other sample while the tab shows).
+- **Files dragged in and out** (`DockerFileTransfers`, `DockerFileDrag`;
+  a container's Files tab and a volume's): files and folders dropped from
+  Finder, or picked with Copy Here…, go into the folder shown, or a folder
+  row they are dropped on, as one plain ustar archive made as it is sent
+  (`DockerTar.Plan`, `DockerTarWriter`). Its length is said first, so
+  nothing is held in memory and a bar follows it. A file that changes size
+  while it goes fails the copy: the length was said. The archive is sent
+  with `noOverwriteDirNonDir`, as `docker cp` sends it: a file never
+  replaces a folder, nor a folder a file. Names already there are asked
+  about first: from the list when it is the folder shown and listed, else
+  a stat each, at most 20 — while a folder is being listed, the list is
+  another folder's, or this one's before the last copy (a folder's
+  entries go as soon as another is opened, so no row names a file that
+  isn't there). Files of the same name are replaced. A folder there is
+  merged into without the dropped folder's own entry: the engine gives a
+  folder it merges into the entry's owner and mode, so node's
+  `/home/node/app` would become root's. The folder is looked at before
+  anything is sent, so a path that isn't
+  there or isn't a folder is said at once — and the engine, refusing
+  partway (a read-only rootfs), may close before reading it all: the
+  write's failure then waits for its answer, which is what is said.
+  Links stay links, but one that points above the drop is left out: the
+  engine refuses the whole archive for it. Owners are root's, as with
+  `docker cp` without `-a`; `copyUIDGID` fails on engines before moby 29
+  for a numeric `USER`. GNU's long names and links are used past ustar's
+  name and prefix. A file over ustar's 8 GB is refused, with `docker cp`
+  in a tab as the way. A stopped or distroless container still takes a
+  drop: the archive endpoint needs no shell and nothing running.
+  A row dragged out is a file promise. SwiftUI's drags can't promise a
+  file, so the row's drag is AppKit's (`DockerFileDragSourceView`): it
+  takes only a left press, opening the row on a click, so the menu, the
+  pointer and the scroll wheel still reach SwiftUI. The list is a lazy
+  stack in a scroll view, as a bucket's folders are, rather than a
+  `List`, whose table has row drags of its own. Finder names the place,
+  and the archive's GET is read into it as it comes, the next piece only
+  once this one is written (`DockerTar.Reader`, `DockerTarExtractor`), a
+  folder's tree kept inside it: `..`, absolute names and anything under a
+  link it wrote are left out, a folder entry of a link's name replaces the
+  link, and what is there is looked at without following one — a folder's
+  mode set through a link would change the folder outside. Modes and
+  times are kept, owners never, a folder's mode set last so one that
+  can't be written still gets what is in it. Save to the Mac… streams the
+  same way, folders too; over something the user said to replace, it is
+  written beside it first and swapped in once whole, with its own mode
+  and times (the swap keeps the old item's by default). The promise's
+  delegate isn't the main actor's: AppKit asks it to write on its own
+  queue. The copies are the app's (`DockerFileTransfers`), not a
+  detail's: one outlives its container being deselected. Each is a row in
+  its pane's strip, a container's matched by its id so a rename keeps it
+  — a finished one goes after 3 s, a failed one keeps the engine's words
+  until OK. A volume's go through a helper made for the copy and removed
+  after (`DockerEngine.reaching`), so the tab's own helper coming and
+  going can't take it away under one.
+- **A volume's files** (the volume detail's Files tab, `VolumeFilesSession`,
+  `DockerVolumeFiles` pure; the list is `DockerFolderList`, a container's
+  too): its folders are listed as a container's are, by the same `sh`
+  script through `exec`, so they need a container that runs. `archive` on
+  a folder hands over its whole tree, written as it is walked in name
+  order: a folder's entries are spread through its subfolders' until the
+  end, so a database's volume would be gigabytes a click. The helper is a
+  container of an image already here that has a shell (busybox, alpine,
+  debian, ubuntu, the debug shell's image, what mounts the volume, then the
+  rest by size; at most three tried, each checked with `sh -c true`). It
+  has the volume at `/volume`, runs `exec sleep 1800` as root with no
+  network, and is labelled `overterm.helper=1`. It is made when the tab
+  first lists, and removed when the tab stops showing: another tab,
+  another volume, the page hidden, the window closed. A helper gone under
+  the tab (its sleep ended) is made again at the next listing. At quit,
+  what is left is removed (`DockerHelpers`), before a remote engine's
+  forward closes. After a crash, its sleep ends and AutoRemove takes it.
+  A file opens, saves and downloads through a helper made for the call and
+  never started, as export's is (`DockerEngine.reaching`): any image will
+  do, and the editor's copy (`Volumes/<name>/<path>`) still saves after the
+  tab has gone. A save keeps the file's owner: the engine gives what
+  `archive` writes the tar's uid and gid, and a database won't read a
+  config that root now owns. The copy saves only to the engine it was
+  read from: a volume's name is on every engine, and the context may have
+  changed since. With no image with a shell here, the tab offers to pull
+  busybox, and only when asked; a failure of another kind (a volume that
+  won't mount, a full disk) is said as the engine said it, since busybox
+  would fail the same way.
+- **Helpers** (`DockerHelpers`): a helper is made only for a volume the
+  engine has (`GET /volumes/<name>`). Bound by its name, one would make
+  the volume again, empty: a volume pruned or removed in a terminal would
+  come back, and a save would land in it. The tab makes none for a volume
+  the list no longer has, as its detail isn't drawn then. A helper is
+  removed once however many ask, and the removal returns only when the
+  engine no longer has it: the engine refuses a second at once (409,
+  already in progress) while the first still kills the container, which
+  still holds its volume. Its anonymous volumes go with it (`v=1`): an
+  image's `VOLUME` (postgres', redis') makes one at create, and the volume
+  it was given by name is never one of them. A running helper holds its
+  volume, so Remove and Clean Up remove the helpers holding one first and
+  wait for them, and the Files tab makes none meanwhile. They ask the
+  engine too, by the mount: one a crash left, or a version before
+  `overterm.volume`, is in no list and in no record. Each helper carries
+  its run (`overterm.run`); when an engine connects, the helpers of
+  another run that don't run and were made over ten minutes ago are
+  removed — a never-started one would hold its volume for good, and
+  another Overterm may still be reading through a newer one.
+- **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
+  MySQL, MariaDB or ClickHouse container as a connection — the kind from
+  its image, user, password and database from the variables its image's
+  documentation asks for, the host port it publishes — in the Database
+  panel's form, filled in. Nothing is saved until the form is, and then
+  the password goes to the keychain as any connection's does. A port not
+  published can't be reached from the Mac (the containers live in a VM),
+  and says so.
+- **A database's own client** (`q`, `DockerClient`, pure): a running
+  PostgreSQL, MySQL, MariaDB, Redis, Valkey, MongoDB, ClickHouse,
+  Cassandra or Scylla, Neo4j or SQL Server container opens its own
+  client — psql, mysql, redis-cli, mongosh… — in a terminal tab,
+  `docker exec -it` into it. The image says which, by the words of its
+  name; one named for a tool beside a database (an exporter, a UI,
+  PostgREST, a keeper) is not one, and `DockerDatabaseGuess` reads the
+  same table. A compose project's name leading an image's is dropped
+  first: Compose names a built image `<project>-<service>`, and New
+  Task's worktree carries its branch into the project — a branch about
+  Redis gave every built service a redis-cli. Docker lists an image by
+  its ID once its tag names a newer one (a pull); then the name inspect
+  keeps (`Config.Image`) says, when a detail has read it or `q` reads
+  it. The env says who to sign in as, and only by name: Overterm
+  reads which variables the container has, and the command says
+  `"$POSTGRES_PASSWORD"` inside `sh -c '…'`, which the container's own
+  shell expands — so no secret is on the tab's command line, in the
+  shell's history or in Overterm. A client is given it the way it takes
+  it off argv where there is one (PGPASSWORD, REDISCLI_AUTH,
+  SQLCMDPASSWORD, clickhouse-client's own variables); mysql and mongosh
+  take it on argv inside the container, as the images' documentation
+  does, and blank it there. A `_FILE` variable — a Docker secret — is
+  read inside too. The users are the ones the image made: MySQL's app
+  user only with its password (else root), Bitnami's PostgreSQL database
+  `postgres` whoever the user. With no password in the env, mysql,
+  mariadb, sqlcmd, cypher-shell — and mongosh and cqlsh given a user —
+  ask for one; psql asks if the server wants one (the official image
+  trusts its socket); redis-cli and clickhouse-client connect without,
+  as a server with no password expects. A client renamed between
+  versions (mariadb, mongosh) falls back to the old name, decided in the
+  container. Nothing to expand, no shell: an image without one still
+  gets its client. Inspect is read when the button is pressed, never to
+  draw it; a failure off the page (the panel's menu, the right-hand
+  pane) is an alert, as the page isn't there to say it.
+- **A failing container marks its tab** (`DockerAttention`, pure;
+  `TabActivity.containerFailed`): a container of a tab's checkout that
+  exits non-zero, runs out of memory or turns unhealthy marks the tab
+  failed — the strip, the Dock badge, a notification while you are
+  elsewhere, as a long command failing does. A stop someone asked for
+  isn't news: Docker sends `kill` before such a `die`, and a crash gets
+  `die` alone. Whose checkout is the compose project's working folder
+  against each tab's (`DockerAttention.belongs`), the selected tab first.
+  Settings ▸ Docker ▸ Attention turns it off.
+- **Why did it fail? Ask an agent** (`DockerAgentBrief`,
+  `DockerAttention.trouble`, pure but for the reads). A container that
+  exited non-zero, ran out of memory, is dead or is unhealthy — what the
+  list paints red — and one that keeps restarting, or was created and
+  couldn't start (the engine's error), has Ask Why among its buttons
+  (`a`; ⌘L while the list has the keyboard). It reads the container
+  once, when asked; nothing polls for it. Its inspect data says how it
+  ended: the exit code and what 137 or 127 means, OOMKilled with its
+  memory limit, restarts and the policy, the health check and its last
+  output, ports, mounts, the other services, and the env masked. A
+  stopped container's health is said only as a failing streak: the
+  engine calls every stopped container with a check unhealthy. Its ports
+  are its bindings while it is stopped, since the list's exist only while
+  it runs — a port conflict is exactly a container that never ran. Its
+  last 80 log lines are one chip, the newest cut rather than dropped when
+  it alone is over the budget. Its compose service is another, as `docker
+  compose config --no-interpolate --no-env-resolution --format json` has
+  it: variables as written, env files unread, so a .env password never
+  comes in. With --no-interpolate Compose ignores a service name and
+  renders the whole model, so the service is picked here. Lines picked
+  out of a log go the same way with ⌘L, as whole lines, the container (or
+  the project) as context. The log's text view answers ⌘L itself
+  (`DockerLogTextView`), so the menu's action reaches it before the
+  terminal hidden under the page; without a selection it passes the
+  action on. Every word that can carry a secret goes through
+  `DockerSecrets.scrub`: the env's secret values and every URL's
+  password come out, since the prompt is typed into an agent and lands
+  in its transcript. A command and a health check are masked by their
+  flags too (`maskArguments`: `--requirepass`, redis-cli's `-a`): Compose
+  has put `.env`'s values into them, and the container's env needn't
+  hold those. The names, paths and states come from the engine and
+  Compose's labels and are said as they are, and a secret value that is
+  one of those names (`POSTGRES_PASSWORD=postgres`) is left alone: taking
+  it out would blank the container's name and its log, not a secret. A
+  brief that can't be scrubbed — no engine, no inspect, so no env to
+  take out — isn't made.
+  The agents of the container's checkout come first, the closest first
+  (`DockerAttention.closeness`): a folder above it that is no repository,
+  such as `~`, holds every project, so its agent isn't this one's. A new
+  one opens in its compose folder.
+- **Agents** (`DockerMCP`, on BrowserBridge's server beside the
+  browser's, the API client's, the notes' and the databases' tools):
+  `docker_containers`, `docker_projects`, `docker_logs` (levels read,
+  filtered), `docker_inspect` (state, error, health, its limits and
+  restart policy, platform — emulated or not, and what runs it natively —
+  ports, mounts, env) and `docker_stats` read; `docker_containers` marks
+  what runs emulated, reading the platforms it needs first;
+  `docker_action`, `docker_update` (a container's limits or restart
+  policy, checked as the sheet checks them), `docker_compose` and
+  `docker_exec` act, each asked about in the window first (`allow`; a
+  test answers through `askOverride`), compose up, rebuild (`up --build`)
+  and down in a terminal tab the user sees. `docker_compose` takes a
+  `service` too, for all but down. `docker_vulnerabilities` reads a scan
+  the user ran (from memory, without the engine) and never starts one,
+  even with agents allowed to act. A name means the image that holds it
+  now: after a rebuild the old image's report is not the image's. A long
+  list is cut at its end, never its head — the worst come first. Settings ▸ Docker ▸ Agents: reading, and asking to
+  act — on by default, as decided. No secret leaves in an answer: env
+  values that look like secrets are masked, and their values taken out of
+  logs and exec output.
+- **Watched in the background**: the model starts when Docker is shown,
+  or when the selected tab's checkout has a compose file at its top. While
+  nothing shows Docker, a retry asks Docker Desktop's own CLI first (the
+  host's side) and doesn't ping a VM that Resource Saver has paused, or
+  one that is stopped — the ping would wake it; showing Docker tries at
+  once.
+- **The rail's panel** (`DockerPanelView`, `DockerPanelModel` per window):
+  the selected tab's checkout's stack — its compose projects
+  (`DockerModel.projects(in:)`) — then what else runs. A container picked
+  opens in the right-hand pane (`RightPane.Mode.container`,
+  `DockerSlotView`), the same detail as the page's, which reads its logs
+  and stats only while that pane shows it — the models that own a session
+  start and stop its streams (`ContainerSession.follow`), not the view's
+  appearing: SwiftUI swaps a view's instances, and the one leaving
+  stopped what the next had started. Until a project of its name (or one
+  made from its files) runs here, the checkout's compose file is also
+  listed as its stack before it runs (above); when Compose can't be asked,
+  the file still offers `up`. The panel, like the page,
+  starts the model and holds its poll only while it is on screen.
+- **Keys** (`DockerKey`, a pure table, `?` shows it): single letters while
+  the list's table has the keyboard — `s` start/stop, `r` restart, `p`
+  pause, `e` a shell, `t` logs followed, `o` its port, `u`/`D` compose
+  up/down, `b` rebuild, `w` watch, `v` an image's vulnerabilities (on a
+  container, its image's; nothing is scanned for a key), `⌫` remove, `/`
+  the filter. The window's key monitor
+  (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
+  and an AppKit table would eat letters for type-select.
+- **The switcher** (⇧⌥⌘P): the palette scoped to its Docker group —
+  every container and compose project (`dockerPaletteItems`), restocked as
+  they come and go. ↩ shows one on the page, selected and unfolded; ⌥↩ is
+  a shell in a running container, a start for a stopped one, `up` for a
+  project. Compose Up, Down…, Restart and Watch act on the selected tab's
+  checkout's stack (View menu, palette; no keys); the palette offers Watch
+  only for a stack with something to watch, and is restocked when Compose
+  answers. With no stack, Compose
+  Up is the plan's Up — asked first when that name runs from another
+  folder — if the plan was read from the files as they are
+  (`ComposeFileModel.isCurrent`: nothing reads them while Docker is
+  hidden); else `docker compose up -d` in the checkout. Compose Watch
+  with no stack is the plan's, the same way. A tab running
+  `docker exec -it …` (or attach, debug, an interactive run, Compose's
+  exec and run, past Compose's own `-p`/`-f`/`--profile`) is a
+  `TabKind.container`, its icon the shippingbox. The title is read in the
+  shell's words (`TabKind.shellWords`): a path with a space is quoted, and
+  split on spaces its second half would pass for the command.
+- **A debug shell** (`E`, `DockerCommands.debugShell`): for an image
+  with no shell of its own (distroless, scratch), a toolbox container
+  beside it in a tab — `--pid` and `--network` its own, its volumes
+  mounted, its files at `/proc/1/root`; Docker Debug's work without its
+  subscription. The toolbox is `docker.debugImage` (netshoot), pulled in
+  the tab where the user sees it.
+- **What runs in a terminal** (`DockerCommands`, pure): compose up, down,
+  pull and logs, watch, up with profiles, a service rebuilt, pulled, run
+  once or its logs followed, a shell in a container, its logs followed —
+  typed into a new tab in the project's folder, where the user sees them
+  and can run them again. `-f` goes with up, pull, build, run and watch,
+  and with every command that has profiles: those read the files; the
+  rest find the project by name. A command is told the engine (`DOCKER_HOST=`) only when the
+  shell wouldn't find the same one by itself.
+- **Tests**: `FakeDockerEngine` plays the API on a socket of its own
+  (containers, events, logs framed, files as tar; `/info`'s Architecture
+  and each image's platform, a platform pull of `amd64only/…` refused;
+  `containerdStore` for the containerd store's indexes and, at
+  `apiVersion` 1.48, each container's own platform; one-shot stats from a
+  use a test sets, `setUsage`, and a stopped container's empty, as the
+  engine answers them — or a 500, or no answer at all, `setStatsAnswer`);
+  `DockerTransportTests`,
+  `DockerModelTests` and the `docker` scenario run against it, which records
+  rather than types what would reach a real `docker`; a stub `docker`
+  answers `compose config` for the scenario (a checkout's plan, a
+  project's watch and profiles), and plays Compose before 2.35 too.
+  Scout's SARIF is a fixture written after real 1.17 reports
+  (`Fixtures/scout-cves.sarif.json`) and the fake's `scoutReport`, which
+  a stub `docker` prints with its progress, for the store's tests and the
+  scenario; a stub signed out, a slow one and a timeout are tested too.
 
 ## Simulator
 

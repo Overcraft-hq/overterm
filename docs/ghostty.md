@@ -18,8 +18,30 @@ as the sentinel — so only a bundled app gets `TERM=xterm-ghostty` and shell
 integration; a bare `.build/debug/Overterm` falls back to `xterm-256color`.
 
 Pinned to **v1.3.1 / Zig 0.15.2** because Ghostty main needs Xcode 26 and the
-macOS 26 SDK (this machine: Xcode 16.4). The pin is the macOS *app's*
-requirement; the library builds with Xcode 16.
+macOS 26 SDK (CI: Xcode 16.4). The pin is the macOS *app's* requirement; the
+library builds with Xcode 16.
+
+With Xcode 26 the same build breaks twice, and the script works around both
+(`Scripts/ghosttykit-xcode26.py`, put in front on `PATH` as `xcrun` and
+`libtool`):
+
+- **The SDK's stubs.** From the 26.4 SDK, `libsystem_c.tbd`,
+  `libsystem_malloc.tbd` and others list only `arm64e-macos`. Zig 0.15.2's
+  linker wants an exact `arm64-macos` (ziglang/zig#31665), so not even
+  `zig build`'s own runner links: `undefined symbol: _abort`, `_malloc_size`…
+  Zig gets a copy of the SDK — symlinks, and `usr/lib`'s stubs with
+  `arm64-macos` added — through an `xcrun` that answers `--show-sdk-path`
+  with it.
+- **libtool.** Zig doesn't pad an archive's members; Xcode 26's libtool drops
+  a 64-bit member that isn't 8-byte aligned, with only a warning. The
+  combined `libghostty-fat.a` came out without libghostty itself, imgui and
+  wuffs, and the app's link failed on every `ghostty_` symbol. The `libtool`
+  in front repacks each archive aligned first. The script then checks the
+  archive has `ghostty_app_new`; a libtool run cached from a broken build
+  needs `rm -rf vendor/ghostty/.zig-cache`.
+
+Xcode 26 also no longer ships the Metal toolchain the shaders need:
+`xcodebuild -downloadComponent MetalToolchain`, once.
 
 `Package.swift` links `c++` and the system frameworks libghostty's Zig code
 uses (Carbon, CoreText, Metal, QuartzCore, IOSurface, UniformTypeIdentifiers).

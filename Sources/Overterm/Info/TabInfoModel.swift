@@ -108,8 +108,9 @@ final class TabInfoModel: ObservableObject {
         processes = tree
     }
 
+    /// Its processes' ports, then what its checkout's containers publish.
     func refreshPorts() async {
-        ports = await ListeningPorts.of(processes.flatMap(\.flattened).map(\.pid))
+        ports = await ListeningPorts.of(processes.flatMap(\.flattened).map(\.pid)) + tab.containerPorts
     }
 
     /// Where Claude Code runs in this tab: a running `claude`'s directory,

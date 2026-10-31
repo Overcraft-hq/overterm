@@ -140,7 +140,8 @@ struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
-    static let all: [SettingSpec] = general + appearance + terminal + agents + editor + browser + api + notes + database + notifications + updates
+    static let all: [SettingSpec] =
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -466,6 +467,53 @@ enum SettingsSchema {
             key: "database.agentWrites", section: .database, group: "Agents", title: "Agents can ask to write",
             help: "A statement that writes is shown to you in the window, and runs only if you say so. Read-only connections refuse it anyway.",
             kind: .toggle, defaultValue: .bool(false), requires: "database.agentAccess"),
+    ]
+
+    private static let docker: [SettingSpec] = [
+        SettingSpec(
+            key: "docker.enabled", section: .docker, group: "Docker", title: "Docker in Overterm",
+            help:
+                "Containers and compose projects of the engine your terminal's docker reaches — Docker Desktop, OrbStack, Colima — on a page of their own (⌥⌘P). Nothing is read while it is off.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "docker.endpoint", section: .docker, group: "Docker", title: "Engine",
+            help: "Empty: the one docker uses — DOCKER_HOST, else the current context. Or a socket or an address of your own.",
+            kind: .text(placeholder: "unix:///var/run/docker.sock, tcp://host:2375", monospaced: true), defaultValue: .string(""),
+            requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.context", section: .docker, group: "Docker", title: "Context",
+            help:
+                "Empty: the one docker uses now. A context's name (docker context ls) for Overterm alone — your terminal's current context isn't changed; the commands Overterm types are given it. The Docker page's engine menu picks one.",
+            kind: .text(placeholder: "desktop-linux, orbstack, colima", monospaced: true), defaultValue: .string(""), requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.debugImage", section: .docker, group: "Docker", title: "Debug shell's image",
+            help: "The toolbox a debug shell runs beside a container (E): it shares the container's processes and network; the container's files are at /proc/1/root.",
+            kind: .text(placeholder: "nicolaka/netshoot", monospaced: true), defaultValue: .string("nicolaka/netshoot"), requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.checkPorts", section: .docker, group: "Compose", title: "Look at a stack's ports before an Up",
+            help:
+                "A checkout's stack whose host ports another worktree's stack or a program holds — or whose project name another checkout's has — is offered free ones first: an override in Overterm's folder, never in the repository. Off: Up runs as written; Up on Free Ports is still in the project's menu.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.notifyOnExit", section: .docker, group: "Attention", title: "Mark a checkout's tab when its container fails",
+            help:
+                "A container of the tab's checkout that exits with an error, runs out of memory or turns unhealthy marks the tab as a failed command does, and notifies you while you are elsewhere. One you stopped doesn't.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.agentAccess", section: .docker, group: "Agents", title: "Agents can see Docker",
+            help:
+                "Claude Code started from Overterm gets MCP tools to list the containers and compose projects, read a container's logs, inspect data and use. Env values that look like secrets are masked, and taken out of logs.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+        SettingSpec(
+            key: "docker.agentWrites", section: .docker, group: "Agents", title: "Agents can ask to act",
+            help:
+                "Start, stop, restart or remove a container, change its memory, CPUs or restart policy, run compose, exec in a container — each asked about in the window first, and run only if you say so.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess"),
+        SettingSpec(
+            key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
+            help:
+                "Under the selected tab's checkout's stack, the containers of other projects and of none that are running — Testcontainers' test runs in one row.",
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

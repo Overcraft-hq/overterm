@@ -22,7 +22,7 @@ final class BrowserBridge {
     /// Agents get the browser, the API client, the notes, the databases — any of them.
     private var wanted: Bool {
         Settings.shared.browserAgentControl || Settings.shared.apiAgentControl || Settings.shared.notesAgentAccess
-            || Settings.shared.databaseAgentAccess
+            || Settings.shared.databaseAgentAccess || Settings.shared.dockerAgentAccess
     }
 
     private var server: BridgeServer?

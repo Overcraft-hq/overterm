@@ -10,7 +10,7 @@ final class SidebarRailTests: XCTestCase {
     /// API client and the notes — the order the rail draws and the order
     /// somebody reaches for them in.
     func testThePanelsInOrder() {
-        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes, .database])
+        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes, .database, .docker])
         XCTAssertEqual(SidebarPanel.files.title, "Files")
         XCTAssertEqual(SidebarPanel.git.title, "Overgit")
         XCTAssertEqual(SidebarPanel.api.title, "API")
@@ -23,6 +23,7 @@ final class SidebarRailTests: XCTestCase {
         XCTAssertEqual(SidebarPanel.shown.contains(.api), Settings.shared.apiEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.notes), Settings.shared.notesEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.database), Settings.shared.databaseEnabled)
+        XCTAssertEqual(SidebarPanel.shown.contains(.docker), Settings.shared.dockerEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.sessions), Settings.shared.sessionsEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.snippets), Settings.shared.snippetsEnabled)
         XCTAssertEqual(SidebarPanel.shown, SidebarPanel.order.filter(\.isEnabled), "in the user's order")
@@ -35,20 +36,20 @@ final class SidebarRailTests: XCTestCase {
         XCTAssertEqual(SidebarPanel.ordered([]), SidebarPanel.allCases)
         XCTAssertEqual(
             SidebarPanel.ordered(["database", "files", "nope", "database", "git"]),
-            [.database, .files, .git, .sessions, .snippets, .api, .notes])
+            [.database, .files, .git, .sessions, .snippets, .api, .notes, .docker])
     }
 
     /// Moving goes past the next icon you can see: a hidden panel between
     /// the two is not a step that does nothing.
     func testMovingSkipsHiddenPanels() {
         let order = SidebarPanel.allCases
-        let visible: [SidebarPanel] = [.files, .git, .api, .database]  // sessions, snippets, notes off
+        let visible: [SidebarPanel] = [.files, .git, .api, .database]  // sessions, snippets, notes, docker off
         XCTAssertEqual(
             SidebarPanel.moving(.api, by: -1, in: order, visible: visible),
-            [.files, .api, .git, .sessions, .snippets, .notes, .database])
+            [.files, .api, .git, .sessions, .snippets, .notes, .database, .docker])
         XCTAssertEqual(
             SidebarPanel.moving(.api, by: 1, in: order, visible: visible),
-            [.files, .git, .sessions, .snippets, .notes, .database, .api])
+            [.files, .git, .sessions, .snippets, .notes, .database, .api, .docker])
         XCTAssertEqual(SidebarPanel.moving(.files, by: -1, in: order, visible: visible), order, "nothing before the first")
         XCTAssertEqual(SidebarPanel.moving(.database, by: 1, in: order, visible: visible), order, "nothing after the last")
     }

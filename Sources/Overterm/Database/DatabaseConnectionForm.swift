@@ -9,6 +9,9 @@ struct DatabaseConnectionForm: View {
     let isNew: Bool
     let store: DatabaseStore
     let done: (DatabaseConnection?) -> Void
+    /// Filled in from elsewhere (a container's env): shown masked, kept
+    /// only if the connection is saved — then in the keychain.
+    var suggestedPassword = ""
 
     @State private var password = ""
     @State private var serviceAccount = ""
@@ -24,6 +27,7 @@ struct DatabaseConnectionForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(isNew ? "New Connection" : "Edit Connection").font(.system(size: 15, weight: .semibold))
+                .onAppear { if password.isEmpty { password = suggestedPassword } }
             Form {
                 TextField("Name", text: $connection.name)
                 Picker("Database", selection: $connection.kind) {

@@ -165,6 +165,26 @@ final class TabStoreTests: XCTestCase {
         XCTAssertEqual(TerminalWindowController.closeWarning(for: [idle]), "Its shell is idle.")
         XCTAssertEqual(TerminalWindowController.closeWarning(for: [idle, tab("b")]), "Their shells are idle.")
     }
+
+    func testAPageCoversTheSelectedTabWithoutTakingItsSelection() {
+        let store = TabStore()
+        let a = tab("a")
+        store.insert(a, after: nil)
+        store.showOverlay(.settings)
+        store.showOverlay(.settings)
+        XCTAssertEqual(store.openOverlays, [.settings], "shown twice, in the strip once")
+        XCTAssertEqual(store.showingOverlay, .settings)
+        XCTAssertEqual(store.selected?.title, "a", "the terminal tab stays selected underneath")
+
+        store.hideOverlay()
+        XCTAssertNil(store.showingOverlay)
+        XCTAssertEqual(store.openOverlays, [.settings], "hidden, it stays in the strip")
+
+        store.showOverlay(.settings)
+        store.closeOverlay(.settings)
+        XCTAssertNil(store.showingOverlay)
+        XCTAssertTrue(store.openOverlays.isEmpty)
+    }
 }
 
 @MainActor
@@ -191,4 +211,5 @@ final class CheckoutSourceTests: XCTestCase {
         XCTAssertFalse(TerminalWindowController.isAgent(node("zsh", "-zsh")))
         XCTAssertFalse(TerminalWindowController.isAgent(node("vim", "vim claude.md")))
     }
+
 }

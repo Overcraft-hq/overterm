@@ -153,10 +153,115 @@ connections, read a schema, run a query that reads, browse a bucket and
 read a file — never seeing a password. A write is shown to you first, and
 only if you allow agents to ask (Settings ▸ Database).
 
+### Docker, Docker Desktop's work
+
+<kbd>⌥⌘P</kbd>: the containers of the engine your terminal's `docker`
+reaches — Docker Desktop, OrbStack, Colima — on a page of their own,
+grouped by compose project, kept current as they start, stop and crash.
+Each running container's CPU and memory sit in the list — a compose
+project's added up — and a click on either column sorts by it, the
+busiest first (again: by name). They are read only while the list is on
+screen: not on another section, nor with the window minimized, hidden or
+under another app's.
+<kbd>⇧⌥⌘P</kbd> finds any container or project by name from anywhere.
+Single keys while the list has the keyboard: `s` starts or stops, `r`
+restarts, `e` opens a shell in a tab, `E` a debug shell beside an image
+with none, `q` a database's own client — psql, mysql, redis-cli,
+mongosh — signed in from its environment without the password on the
+command line, `t` follows its logs, `f` its files, `o` opens its
+port, `u` and `D` bring a project up and down — in a terminal tab, where you
+see the command — and `v` shows an image's vulnerabilities. Filter with
+`status:running project:api port:5432 is:test`; `?` lists the keys. `n` runs an image with a window that writes the
+`docker run` as you fill it in; any container copies as the `docker run`
+that would make it again. A compose project's services' logs are merged as
+`compose logs` merges them, each service in its colour. Containers
+Testcontainers makes for a test run sit apart at the bottom, folded, a run
+each — how many, since when — and Remove All clears a run's containers,
+networks, volumes and images as Ryuk would, asked first. A project's
+services rebuild and start (`b`), pull and run a one-off, each in a tab
+where you see it, and restart here; its log narrows to one of them. Watch (`w`) is
+there when a service has `develop.watch`, and Up With Profiles… lists the
+profiles its files name. A container's logs are followed as they are written,
+coloured by level and filtered, and picked up again after a restart; its
+inspect data and its CPU, memory, network and disk sit beside it. Secrets
+in a container's environment stay masked. On Apple silicon, a container
+running an amd64 image — emulated, and slow — says `amd64` on its row; its
+detail says why and runs it natively in a tab: built again for arm64 when
+its compose file builds it, else from its image's arm64 variant. Images
+show their platform. Images (pulled with their
+progress, tagged, their layers), volumes with their sizes and who mounts
+them, and networks with who is on them sit in sections of their own, and
+Clean Up lists what nothing uses before anything goes. Check for Updates
+(`C`) asks each image's registry, through your own `docker` and signed in
+as you, whether its tag now names another image. It marks the ones that
+do and pulls them: Docker Hub's on the page, another registry's and a
+compose project's in a tab, where `docker` signs in. What your compose
+files build is never asked about, and nothing goes over the network
+until you ask. Every detail has
+its actions as buttons, the same ones its right-click menu has; a
+network's puts a container on it or takes one off. A volume exports,
+imports and clones; a container's filesystem and an image save as tars.
+A container's memory, CPUs and restart policy change in place from its
+Settings… (`,`), the `docker update` written out as you go; it renames —
+warning you when Compose would put the old name back — and saves as an
+image, its secrets and Compose's labels left out. A password in its
+command can't be, and it says so before you save.
+Builds show every build buildx keeps, one still running too, step by step
+as BuildKit reports it: how long each took, which came from cache, which
+failed and why, each one's output, Dockerfile warnings with their line,
+the Dockerfile a click away — and the plain log in a tab. Models lists Docker Model Runner's local
+LLMs — which are loaded, what they take — with a chat with one in a tab
+and the OpenAI base URL to give your code. An `ssh://` context reaches a
+remote engine through your own ssh, its ports opening on the host. An
+image's Vulnerabilities tab asks Docker Scout when you press Scan — it
+sends the image's package list to Docker's service, signed in as you — and
+lists its CVEs by severity: the package, the version you have, the one that
+fixes it, the advisory a click away; filter to the severities you care
+about, or to what can be fixed. With Docker's MCP Toolkit, the page
+says whether Claude Code and Codex reach its MCP servers, and connects
+them in a tab. The rail's shippingbox keeps the
+selected tab's checkout's stack beside the terminal — before it runs too:
+its compose file's services as Compose will make them, with Up (`u` on
+the page) to start them — a container's logs a click away in the
+right-hand pane, what runs elsewhere under it (Testcontainers' test runs
+in one row), and the ports its containers publish
+sit in its panes' headers beside the ones its own processes listen on. A
+container that crashes, runs out of memory or turns unhealthy marks the
+tab whose checkout it belongs to, as a failed command does. One that
+failed has Ask Why (`a`): Overterm's Ask Agent sheet opens for Claude
+Code or Codex with the question typed, and with it go how the container
+ended, what its exit code means, its health check's last output, its
+last log lines and its compose service, secrets taken out. Lines picked
+out of any container's log go the same way with ⌘L. Two
+worktrees' stacks wanting the same port: before an Up, Overterm sees it
+taken — by another worktree's stack or a program — and offers Up on Free
+Ports. The stack moves to free ones (web 8080 → 18080) under a project name
+of its own, through an override kept in Overterm's folder, never in your
+repository, and every Up from Overterm uses it until you take it back; the
+pane headers say where each port went. One that couldn't start still says
+which stack, or which tab's process, has the port — and stops that one for
+you. `d` on a
+PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
+its connection filled in from the container. A container's files are a
+tab of its own: browse its folders, open a config in the editor, and the
+save goes back into the container. Drop files or folders from Finder on it
+to copy them in, or drag one out to Finder to copy it out, each with its
+progress. A volume's files are a tab too: a
+database's config opened and saved back, its owner kept, through a small
+container Overterm runs only while the tab shows.
+
+Claude Code started in Overterm can read Docker too, through MCP: the
+containers and compose projects, a container's logs, why it failed, what
+it uses, and the vulnerabilities of an image you scanned — secrets kept
+out. Starting, stopping, changing a container's limits, compose and exec
+are asked about in the window each time, and
+Settings ▸ Docker can take them away.
+
 ### And the work around the work
 
 **New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started
-in it. **Merged worktrees** are marked and cleaned up in one click, keeping
+in it — and, with a compose file in the repository, can start the worktree's
+own stack, on free ports when another worktree's has them. **Merged worktrees** are marked and cleaned up in one click, keeping
 anything with changes, a tab or unpushed commits. **Pull requests** and CI
 (through your `gh`) sit on the worktree, in the strip, and in a pane of their
 own. **Claude sessions** lists every conversation ever run in the repository,
@@ -214,7 +319,7 @@ The defaults; every one of them is rebindable in Settings ▸ Keyboard Shortcuts
 | ⌃⌘1…9 | Go to a group · ⌃⌘F focus · ⌃⌘S stash · ⌃⌘B broadcast |
 | ⌘R / ⇧⌘C | Run the last command again / copy its output |
 | ⌘↑ / ⌘↓ | Previous / next prompt |
-| ⌘L | Ask an agent about the selection |
+| ⌘L | Ask an agent about the selection — a terminal's, or a Docker log's |
 | ⌘F | Search the terminal and the files |
 | ⌘B / ⌥⌘D | Sidebar / changes |
 | ⇧⌘E | Tab Peek (or three fingers down) |

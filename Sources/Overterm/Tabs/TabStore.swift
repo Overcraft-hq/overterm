@@ -45,20 +45,43 @@ final class TabStore: ObservableObject {
     }
 
     func isMarked(_ tab: Tab) -> Bool { multiSelection.contains(tab.id) }
-    /// The Settings tab: a page, not a terminal, after the terminal tabs
-    /// while open (Warp's). Selecting it covers the window's body; the
-    /// selected terminal tab stays selected underneath.
-    @Published var settingsOpen = false
-    @Published var settingsShowing = false
-    /// Review tabs: pages too, after the terminal tabs (before Settings),
-    /// each a review of its own. `reviewShowing` is the one covering the
-    /// window — the selected terminal tab stays selected under it, as
-    /// under Settings.
+    /// Pages, not terminals, after the terminal tabs while open (Warp's
+    /// Settings tab), in the order they were opened. Selecting one covers
+    /// the window's body; the selected terminal tab stays selected
+    /// underneath. One shows at a time.
+    @Published private(set) var openOverlays: [WorkspaceOverlay] = []
+    @Published private(set) var showingOverlay: WorkspaceOverlay?
+
+    var settingsOpen: Bool { openOverlays.contains(.settings) }
+    var settingsShowing: Bool { showingOverlay == .settings }
+
+    /// In the strip (if it wasn't) and over the body, in place of any other
+    /// page or review.
+    func showOverlay(_ overlay: WorkspaceOverlay) {
+        if !openOverlays.contains(overlay) { openOverlays.append(overlay) }
+        if showingOverlay != overlay { showingOverlay = overlay }
+        if reviewShowing != nil { reviewShowing = nil }
+    }
+
+    /// The selected terminal tab uncovered; the pages stay in the strip.
+    func hideOverlay() {
+        if showingOverlay != nil { showingOverlay = nil }
+    }
+
+    /// Out of the strip, and uncovering the terminal tab if it showed.
+    func closeOverlay(_ overlay: WorkspaceOverlay) {
+        if showingOverlay == overlay { showingOverlay = nil }
+        openOverlays.removeAll { $0 == overlay }
+    }
+
+    /// Review tabs: pages too, after the terminal tabs (before the other
+    /// pages), each a review of its own. `reviewShowing` is the one covering
+    /// the window — the selected terminal tab stays selected under it.
     @Published var reviews: [ReviewModel] = []
     @Published var reviewShowing: UUID?
 
-    /// A page — Settings or a review — covers the terminal tabs.
-    var pageShowing: Bool { settingsShowing || reviewShowing != nil }
+    /// A page — Settings, Docker or a review — covers the terminal tabs.
+    var pageShowing: Bool { showingOverlay != nil || reviewShowing != nil }
 
     var selected: Tab? { tabs.first { $0.id == selectedID } }
     var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }

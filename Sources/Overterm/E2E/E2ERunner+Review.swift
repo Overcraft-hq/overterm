@@ -85,7 +85,7 @@ extension E2ERunner {
         app.showReview(review)
         app.openSettings()
         check("Settings and a review don't show at once", app.store.settingsShowing && app.store.reviewShowing == nil)
-        app.closeSettings()
+        app.closeOverlay(.settings)
         app.showReview(review)
 
         // A commit.

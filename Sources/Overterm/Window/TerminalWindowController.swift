@@ -26,6 +26,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var paletteView: NSView?
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
+    /// The Docker list's single-letter keys (DockerKey).
+    var dockerKeys: Any?
+    /// What the engine's events say went wrong (DockerAttention).
+    var dockerAttention = DockerAttention()
+    /// The last connection a container was opened in the Database panel with.
+    var dockerDatabaseDraft: DockerDatabaseGuess.Guess?
+    /// Containers' files open in the editor, by their local copy's path.
+    var dockerFileCopies: [String: DockerFileCopy] = [:]
+    var dockerSaveHooked = false
+    /// Copies made to be read (a resolved compose config), by path: each
+    /// removed when its editor tab closes, or the window does.
+    var dockerReadCopies: Set<String> = []
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
@@ -72,8 +84,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var overviewPoll: Timer?
     /// The Settings tab's page (Warp's): over the window's body while it shows.
     let settingsPage = SettingsPageModel()
-    private(set) var settingsView: NSView?
-    /// The review tabs' page: the one showing, over the body as Settings is.
+    /// The pages that cover the body (WorkspaceOverlay), each its own view.
+    private var overlayViews: [WorkspaceOverlay: NSView] = [:]
+    var settingsView: NSView? { overlayViews[.settings] }
+    var dockerView: NSView? { overlayViews[.docker] }
+    /// Where a page made later goes: the window's content, under the strip.
+    private weak var overlayContent: NSView?
+    private var overlayTop: NSLayoutYAxisAnchor?
+    /// The Docker page's own state; its view is made the first time it opens.
+    let dockerPage = DockerPageModel()
+    /// The rail's Docker panel and the container it put on the right.
+    let dockerPanel = DockerPanelModel()
+    /// Whether this window's panel holds the model's poll.
+    var dockerPanelShown = false
+    /// The review tabs' page: the one showing, over the body as the pages are.
     var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
     let focus = GroupFocus()
@@ -201,7 +225,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 // Another terminal tab chosen (⌘T, ⇧⌘], a click): it comes
                 // out from under the Settings tab — and from under a zoomed
                 // editor.
-                self?.hideSettingsPage(focus: false)
+                self?.hideOverlay(focus: false)
                 self?.hideReviewPage(focus: false)
                 self?.setEditorZoomed(false)
             }
@@ -234,9 +258,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 browser: browserButton,
                 actions: TabBarActions(
                     select: { [weak self] tab in
-                        // The terminal tab under the Settings tab is still the
+                        // The terminal tab under a page (Settings) is still the
                         // selected one: clicking it only uncovers it.
-                        self?.hideSettingsPage()
+                        self?.hideOverlay()
                         self?.hideReviewPage()
                         self?.store.select(tab)
                     },
@@ -248,8 +272,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     showPullRequest: { [weak self] in self?.showPullRequest(nil) },
                     showUsage: { [weak self] in self?.showUsage(nil) },
                     showUpdate: { [weak self] in self?.openSettings(.about) },
-                    showSettings: { [weak self] in self?.showSettingsPage() },
-                    closeSettings: { [weak self] in self?.closeSettings() },
+                    showOverlay: { [weak self] in self?.showOverlay($0) },
+                    closeOverlay: { [weak self] in self?.closeOverlay($0) },
                     showReview: { [weak self] in self?.showReview($0) },
                     closeReview: { [weak self] in self?.closeReview($0) },
                     renameEnded: { [weak self] in self?.focusSelectedTerminal() },
@@ -299,6 +323,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 api: apiWorkspace,
                 notes: NotesModel.shared,
                 database: DatabaseModel.shared,
+                dockerPanel: dockerPanel,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -361,6 +386,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 ),
                 notesActions: notesActions,
                 databaseActions: databaseActions,
+                dockerActions: dockerActions,
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -535,6 +561,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     },
                     onReview: { [weak self] base, head in self?.reviewRange(base: base, head: head) }),
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
+                container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
@@ -604,6 +631,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireAPI()
         wireNotes()
         wireDatabase()
+        watchDockerPage().store(in: &cancellables)
+        wireDockerPanel()
+        wireDockerPorts()
+        wireDockerAttention()
+        watchDockerPalette().store(in: &cancellables)
+        installDockerKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -655,19 +688,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
         ])
 
-        // The Settings tab's page covers the body, under the tab strip.
-        let settingsView = NSHostingView(
-            rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme))
-        settingsView.translatesAutoresizingMaskIntoConstraints = false
-        settingsView.isHidden = true
-        content.addSubview(settingsView)
-        NSLayoutConstraint.activate([
-            settingsView.topAnchor.constraint(equalTo: titleBottom),
-            settingsView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            settingsView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            settingsView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
-        self.settingsView = settingsView
+        // The pages (Settings's tab) cover the body, under the title bar
+        // where the tab strip is.
+        addOverlay(
+            .settings,
+            NSHostingView(rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme)),
+            in: content, below: titleBottom)
 
         // A review tab's page, the same way.
         let reviewView = ReviewHostingView(rootView: ReviewPageView(store: store, theme: theme, actions: reviewActions))
@@ -813,7 +839,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     tab: tab, pane: pane, store: self.store, blocks: self.blocks(of: pane), theme: theme,
                     actions: PaneHeaderActions(
                         copyOutput: { [weak self] in self?.copyOutput(of: $0) },
-                        killPort: { port in
+                        killPort: { [weak self] port in
+                            // A container's: stopped through the engine.
+                            if let container = port.container {
+                                self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
+                                return
+                            }
                             // The exact pid lsof reported. Never a pattern:
                             // `pkill -f` once killed the shell running the
                             // tests (CLAUDE.md).
@@ -830,6 +861,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         openPort: { [weak self, weak tab] port in
                             guard let url = port.url else { return }
                             self?.openLink(url, for: tab)
+                        },
+                        showContainer: { [weak self] name in
+                            guard let id = DockerModel.shared.container(name)?.Id else { return }
+                            self?.revealOnDockerPage(id)
                         })))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -1107,6 +1142,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
         tab.activity.seen()
         AttentionNotifier.withdraw(tab: tab)
+        updateAttentionBadge()
+    }
+
+    /// A container of `tab`'s checkout went wrong on its own: marked as a
+    /// failed command is, and told while you are elsewhere.
+    func markContainerFailure(_ note: String, on tab: Tab) {
+        if tab.activity.containerFailed(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
 
@@ -1550,6 +1592,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 guard readPorts else { return }
                 let ports = await ListeningPorts.of(pids)
                 if tab.ports != ports { tab.ports = ports }
+                // Its folder may have moved: its checkout's containers again.
+                self.updateContainerPorts(of: tab)
             }
         }
     }
@@ -1784,10 +1828,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 defaultBase: base ?? (Settings.shared.taskBase.isEmpty ? worktrees.main?.branch ?? "HEAD" : Settings.shared.taskBase),
                 defaultAgent: Settings.shared.defaultTaskAgent,
                 location: Settings.shared.worktreeLocation,
-                onCreate: { [weak self] branch, base, agent in
+                composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
+                onCreate: { [weak self] branch, base, agent, startStack in
                     guard let self else { return nil }
                     do {
-                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent)
+                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack)
                         close()
                         return nil
                     } catch {
@@ -2030,11 +2075,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// capture its own window without Screen Recording permission;
     /// cacheDisplay misses layer-backed content here.
     func captureWindow(to path: String, window: NSWindow? = nil) {
-        guard let window = window ?? self.window,
-            let image = CGWindowListCreateImage(
-                .null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
-        else { return }
+        guard let image = windowImage(window) else { return }
         try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
+    /// The composited window, as on screen: its frame, at its backing scale.
+    func windowImage(_ window: NSWindow? = nil) -> CGImage? {
+        guard let window = window ?? self.window else { return nil }
+        return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
     }
 
     // MARK: Tab context menu
@@ -2193,8 +2241,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     if event.clickCount >= 2, !tab.isPinned {
                         store.renamingID = tab.id
                     } else {
-                        // Under the Settings tab, a click only uncovers it.
-                        hideSettingsPage()
+                        // Under a page (Settings, a review), a click only uncovers it.
+                        hideOverlay()
                         hideReviewPage()
                         store.select(tab)
                     }
@@ -2335,6 +2383,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             guard let field = Self.firstTextField(in: paletteView) else { return }
             self?.window?.makeFirstResponder(field)
         }
+    }
+
+    /// The open palette's items again — containers came or went.
+    func restockPalette() {
+        guard paletteView?.isHidden == false else { return }
+        palette.restock(paletteItems(matching: palette.query))
     }
 
     static func firstTextField(in view: NSView) -> NSTextField? {
@@ -2547,8 +2601,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         hideSelectionBar()
     }
 
-    /// ⌘L. Without a selection there is nothing to ask about.
+    /// ⌘L. Without a selection there is nothing to ask about. Over the
+    /// Docker page it means the selected container that failed, never the
+    /// terminal hidden under the page (lines picked in a log view answer
+    /// it themselves: `DockerLogTextView`).
     @objc func askAboutSelection(_ sender: Any?) {
+        if store.showingOverlay == .docker {
+            if !dockerPage.askWhySelected() { NSSound.beep() }
+            return
+        }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
             let text = pane.selectionText
         else { return }
@@ -2560,8 +2621,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The Ask Agent sheet over `text`: to one of `targets` (agent tabs, in
-    /// that order) or a new agent tab in `folder`.
-    func presentAskAgent(text: String, command: CommandBlock?, folder: String?, targets agents: [Tab]) {
+    /// that order) or a new agent tab in `folder`. `message`: the question
+    /// already typed; `subject`: what the fixed chip calls the text;
+    /// `parts`: what else goes with it, a chip each; `diff`: whether the
+    /// git diff chip is offered (the window's checkout, by default).
+    func presentAskAgent(
+        text: String, command: CommandBlock?, folder: String?, targets agents: [Tab], message: String = "", subject: String? = nil,
+        parts: [AskAgentModel.Part] = [], diff: Bool? = nil
+    ) {
         var targets = agents.map { other in
             AskAgentModel.Target(
                 id: other.id, title: other.title,
@@ -2570,7 +2637,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         targets.append(
             AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
-        askAgent.begin(selection: text, command: command, folder: folder, targets: targets, diff: diff.isRepository)
+        askAgent.begin(
+            selection: text, command: command, folder: folder, targets: targets, diff: diff ?? self.diff.isRepository, message: message,
+            subject: subject, parts: parts)
         guard let theme else { return }
         presentSheet { [weak self] close in
             AskAgentView(
@@ -2582,9 +2651,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 cancel: {
                     close()
                     self?.askAgent.stop()
-                    self?.focusSelectedTerminal()
                 })
         }
+    }
+
+    /// The keyboard back where it was before a sheet: the Docker page's
+    /// list while the page shows (the terminal is hidden under it), else
+    /// the selected terminal.
+    func focusAfterSheet() {
+        if store.showingOverlay == .docker { focusDockerList() } else { focusSelectedTerminal() }
     }
 
     /// Types the prompt into the chosen agent, or into a new agent tab.
@@ -2628,6 +2703,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let chosen = askAgent.chosen
         askAgent.stop()
         guard !prompt.isEmpty else { return }
+        // A page over the tabs (Docker's) steps aside: the agent's tab is
+        // selected under it otherwise, and the prompt typed out of sight.
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
         let target: Tab?
         if let chosen {
             target = store.tabs.first { $0.id == chosen }
@@ -2922,6 +3000,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 }
             }
         }
+        items += dockerPaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
@@ -2950,11 +3029,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What New Task does once the sheet is filled in: the worktree, then a
     /// tab in it named after the branch, with the agent started.
-    func createTask(repo: URL, branch: String, base: String, agent: Agent?) async throws {
+    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false) async throws {
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
         newTab(in: path, agent: agent)
         store.selected?.customTitle = branch
         await worktrees.refresh()
+        // Its own stack, in a tab beside it — the page's Up, which looks at
+        // its ports and its name first, and which a scenario records.
+        if startStack, ComposeProjects.composeFile(in: path) != nil { await dockerPage.up(.checkout(path)) }
     }
 
     // MARK: Snippets
@@ -3007,7 +3089,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             window.endSheet(sheet)
         }
         sheet.contentViewController = NSHostingController(rootView: build(close))
-        window.beginSheet(sheet) { [weak self] _ in self?.focusSelectedTerminal() }
+        // Over the Docker page, its list: the terminal is hidden under it,
+        // and keys sent there would type into a shell nobody sees.
+        window.beginSheet(sheet) { [weak self] _ in self?.focusAfterSheet() }
     }
 
     private func showAlert(_ title: String, _ message: String) {
@@ -3127,6 +3211,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
+                if keys.contains(where: { $0.hasPrefix("docker.") }) { self.dockerSettingsChanged(keys) }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
@@ -3167,39 +3252,70 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if Settings.shared.writeGhosttyOverrides(keybindings: Keybindings.shared.ghosttyLines) { GhosttyRuntime.shared.reloadConfig() }
     }
 
-    // MARK: The Settings tab
+    // MARK: Pages over the body (Settings)
 
-    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
-    func openSettings(_ section: SettingsSection? = nil) {
-        if let section { settingsPage.show(section) }
-        store.settingsOpen = true
-        showSettingsPage()
+    /// A page's view, hidden, covering everything under the tab strip.
+    private func addOverlay(_ overlay: WorkspaceOverlay, _ view: NSView, in content: NSView, below top: NSLayoutYAxisAnchor) {
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        // Beside the pages already there, under what floats over them (the
+        // palette, the switcher) — a page made later must not cover those.
+        if let sibling = overlayViews.values.first {
+            content.addSubview(view, positioned: .above, relativeTo: sibling)
+        } else {
+            content.addSubview(view)
+        }
+        overlayContent = content
+        overlayTop = top
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: top),
+            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ])
+        overlayViews[overlay] = view
     }
 
-    func showSettingsPage() {
-        guard let settingsView else { return }
+    /// A page, opened if it isn't, over the body — in place of whichever
+    /// page showed: they take turns.
+    func showOverlay(_ overlay: WorkspaceOverlay) {
+        if overlayViews[overlay] == nil, let content = overlayContent, let top = overlayTop, let made = makeOverlay(overlay) {
+            addOverlay(overlay, made, in: content, below: top)
+        }
+        guard let view = overlayViews[overlay] else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
         hideSpotlight(keepTerminalSearch: false)
+        if let showing = store.showingOverlay, showing != overlay { overlayViews[showing]?.isHidden = true }
+        // A review's page and these take turns too.
         hideReviewPage(focus: false)
-        store.settingsShowing = true
-        settingsView.isHidden = false
-        window?.makeFirstResponder(settingsView)
+        store.showOverlay(overlay)
+        view.isHidden = false
+        window?.makeFirstResponder(view)
     }
 
-    /// Uncovers the selected terminal tab; the Settings tab stays in the strip.
-    func hideSettingsPage(focus: Bool = true) {
-        guard store.settingsShowing else { return }
-        store.settingsShowing = false
-        settingsView?.isHidden = true
+    /// Uncovers the selected terminal tab; the pages stay in the strip.
+    func hideOverlay(focus: Bool = true) {
+        guard let showing = store.showingOverlay else { return }
+        store.hideOverlay()
+        overlayViews[showing]?.isHidden = true
         if focus { focusSelectedTerminal() }
     }
 
     /// Its ✕, or ⌘W while it shows.
-    func closeSettings() {
-        hideSettingsPage()
-        store.settingsOpen = false
-        settingsPage.draft = nil
+    func closeOverlay(_ overlay: WorkspaceOverlay) {
+        if store.showingOverlay == overlay { hideOverlay() }
+        store.closeOverlay(overlay)
+        switch overlay {
+        case .settings: settingsPage.draft = nil
+        case .docker: dockerPage.selection = []
+        }
+    }
+
+    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
+    func openSettings(_ section: SettingsSection? = nil) {
+        if let section { settingsPage.show(section) }
+        showOverlay(.settings)
     }
 
     /// What closing these tabs would end — running processes by name, agents
@@ -3341,7 +3457,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
     /// ⌘W: the focused pane of a split tab, else the tab.
     @objc func closeSelectedTab(_ sender: Any?) {
-        if store.settingsShowing { return closeSettings() }
+        if let overlay = store.showingOverlay { return closeOverlay(overlay) }
         if let review = shownReview { return closeReview(review) }
         guard let tab = store.selected else { return }
         if tab.isSplit {
@@ -3456,6 +3572,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         commitDetail.visible = shown && rightPane.mode == .commit
         compare.visible = shown && rightPane.mode == .compare
         storageObject.visible = shown && rightPane.mode == .object
+        dockerPanel.slotVisible = shown && rightPane.mode == .container
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -3467,6 +3584,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         updateOvergitVisibility()
         updateAPIVisibility()
         updateNotesVisibility()
+        updateDockerVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).
@@ -3613,8 +3731,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         peek.relayout()
     }
 
+    func windowDidChangeOcclusionState(_ notification: Notification) { updateDockerWindowVisible() }
+
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
+        if let dockerKeys { NSEvent.removeMonitor(dockerKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peek.close()
@@ -3625,6 +3746,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
+        dockerPage.close()
+        removeDockerReadCopies()
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }

@@ -7,9 +7,11 @@ struct PaletteItem: Identifiable {
         case action = "Action"
         case tab = "Tab"
         case worktree = "Worktree"
+        /// Containers and compose projects (⇧⌥⌘P scopes the palette to them).
+        case container = "Docker"
 
         /// The scopes the field offers, in the order the designs have them.
-        static let scopes: [Group] = [.history, .snippet, .action]
+        static let scopes: [Group] = [.history, .snippet, .action, .container]
     }
 
     let id: String

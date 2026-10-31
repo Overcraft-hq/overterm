@@ -108,6 +108,41 @@ final class AskAgentTests: XCTestCase {
         model.begin(selection: "", command: nil, folder: nil, targets: [], diff: false)
         XCTAssertFalse(model.isOpen)
     }
+
+    /// What came with the text (a container's logs, its compose service)
+    /// goes after it, in order, and each chip can leave its part out.
+    func testPartsGoAfterTheSelectionAndCanBeLeftOut() {
+        let model = AskAgentModel()
+        model.begin(
+            selection: "Container shop-worker-1", command: nil, folder: nil, targets: [], diff: false,
+            parts: [.init(title: "last 3 log lines", text: "Its last 3 log lines:\nboom"), .init(title: "compose service", text: "image: node:22")])
+        XCTAssertEqual(model.prompt(diff: nil), "Container shop-worker-1\n\nIts last 3 log lines:\nboom\n\nimage: node:22")
+        model.parts[0].on = false
+        XCTAssertEqual(model.prompt(diff: nil), "Container shop-worker-1\n\nimage: node:22")
+    }
+
+    /// The fixed chip says what the text is when it isn't lines picked out.
+    func testASubjectNamesTheFixedChip() {
+        let model = AskAgentModel()
+        model.begin(
+            selection: "Container shop-worker-1", command: nil, folder: nil, targets: [], diff: false, subject: "shop-worker-1 ran out of memory",
+            parts: [.init(title: "compose service", text: "image: node:22")])
+        XCTAssertEqual(model.subject, "shop-worker-1 ran out of memory")
+        model.stop()
+        XCTAssertNil(model.subject)
+        XCTAssertTrue(model.parts.isEmpty, "the next sheet starts without them")
+        model.begin(selection: "a line", command: nil, folder: nil, targets: [], diff: false)
+        XCTAssertNil(model.subject)
+    }
+
+    /// A question can be started for you, and is still yours to change.
+    func testAQuestionCanBeStartedFor() {
+        let model = AskAgentModel()
+        model.begin(selection: "Container shop-worker-1", command: nil, folder: nil, targets: [], diff: false, message: "Why did it exit?")
+        XCTAssertTrue(model.prompt(diff: nil).hasPrefix("Why did it exit?\n\nContainer shop-worker-1"), model.prompt(diff: nil))
+        model.message = "Fix it"
+        XCTAssertTrue(model.prompt(diff: nil).hasPrefix("Fix it"))
+    }
 }
 
 /// The other half of the chip: the window has to read the diff and hand

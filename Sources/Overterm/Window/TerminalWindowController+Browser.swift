@@ -76,7 +76,7 @@ extension TerminalWindowController {
     func showSelectedBrowser() {
         guard let browser, let tab = store.selected else { return }
         let create = browserItem?.isCollapsed == false && pendingBrowserPages[tab.id] != nil
-        browser.show(browserWorkspace(for: tab, create: create), ports: tab.ports)
+        browser.show(browserWorkspace(for: tab, create: create), ports: tab.ports + tab.containerPorts)
     }
 
     @objc func toggleBrowser(_ sender: Any?) {

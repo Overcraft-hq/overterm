@@ -14,6 +14,8 @@ struct PaneHeaderActions {
     var zoom: (TerminalView) -> Void
     var close: (TerminalView) -> Void
     var openPort: (ListeningPort) -> Void
+    /// A container's port: the container on the Docker page.
+    var showContainer: (String) -> Void = { _ in }
 }
 
 /// The bar across the top of every terminal pane: what is running here,
@@ -69,7 +71,7 @@ struct PaneHeaderView: View {
             } else if isFocused {
                 status
             }
-            ForEach(tab.ports) { port in
+            ForEach(tab.ports + tab.containerPorts) { port in
                 PortPill(port: port, theme: theme, actions: actions)
             }
             HStack(spacing: 0) {
@@ -194,8 +196,12 @@ private struct PortPill: View {
             showing.toggle()
         } label: {
             HStack(spacing: 5) {
-                Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
-                Text(verbatim: ":\(port.port)")
+                if port.container != nil {
+                    Image(systemName: "shippingbox.fill").font(.system(size: 8))
+                } else {
+                    Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
+                }
+                Text(verbatim: port.movedFrom.map { ":\($0)→\(port.port)" } ?? ":\(port.port)")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
             }
             .foregroundStyle(theme.greenText)
@@ -206,16 +212,22 @@ private struct PortPill: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(port.process) is listening on \(port.port)")
+        .help(help)
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     Text(verbatim: "localhost:\(port.port)")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(theme.text)
-                    Text(verbatim: "· \(port.process) · pid \(port.pid)")
+                    Text(verbatim: port.container.map { "· \(port.process) · \($0)" } ?? "· \(port.process) · pid \(port.pid)")
                         .font(.system(size: 12))
                         .foregroundStyle(theme.text3)
+                }
+                if let from = port.movedFrom {
+                    Text(verbatim: "\(from) in the compose file — this checkout's stack is on ports of its own.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(theme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
                     action("Open", filled: true) {
@@ -228,9 +240,20 @@ private struct PortPill: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     }
-                    action("Kill") {
-                        showing = false
-                        actions.killPort(port)
+                    if let container = port.container {
+                        action("Docker") {
+                            showing = false
+                            actions.showContainer(container)
+                        }
+                        action("Stop") {
+                            showing = false
+                            actions.killPort(port)
+                        }
+                    } else {
+                        action("Kill") {
+                            showing = false
+                            actions.killPort(port)
+                        }
                     }
                 }
             }
@@ -238,6 +261,12 @@ private struct PortPill: View {
             .frame(width: 280)
             .environment(\.colorScheme, theme.isDark ? .dark : .light)
         }
+    }
+
+    private var help: String {
+        guard let container = port.container else { return "\(port.process) is listening on \(port.port)" }
+        guard let from = port.movedFrom else { return "\(container) publishes \(port.port)" }
+        return "\(container) publishes \(port.port) — \(from) in the compose file, moved for this checkout (Up on Free Ports)"
     }
 
     private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {

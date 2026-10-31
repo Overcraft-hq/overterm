@@ -54,14 +54,19 @@ enum Git {
     }
 
     /// Any tool, the same way: a GCD thread, output read as it comes, no prompts.
+    /// - Parameter stderr: what stderr says, as it comes (a long tool's
+    ///   progress), on FileHandle's queue; all of it is still kept for
+    ///   the error.
     static func run(
         _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32> = [0],
-        timeout: TimeInterval? = defaultTimeout, outputLimit: Int? = nil
+        timeout: TimeInterval? = defaultTimeout, outputLimit: Int? = nil, stderr: (@Sendable (Data) -> Void)? = nil
     ) async throws -> String {
         let running = RunningProcess()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                enqueue(tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit, running: running, continuation)
+                enqueue(
+                    tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit, stderr: stderr, running: running,
+                    continuation)
             }
         } onCancel: {
             running.cancel()
@@ -76,13 +81,14 @@ enum Git {
     /// call killed the app (dispatch_assert_queue — CLAUDE.md).
     private nonisolated static func enqueue(
         _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>, timeout: TimeInterval?, outputLimit: Int?,
-        running: RunningProcess, _ continuation: CheckedContinuation<String, Error>
+        stderr: (@Sendable (Data) -> Void)?, running: RunningProcess, _ continuation: CheckedContinuation<String, Error>
     ) {
         let work: @Sendable () -> Void = {
             continuation.resume(
                 with: Result {
                     try runBlocking(
-                        tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit, running: running)
+                        tool, arguments, in: directory, success: success, timeout: timeout, outputLimit: outputLimit, stderr: stderr,
+                        running: running)
                 })
         }
         queue.addOperation(work)
@@ -95,7 +101,7 @@ enum Git {
 
     static func runBlocking(
         _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>, timeout: TimeInterval?,
-        outputLimit: Int? = nil, running: RunningProcess = RunningProcess()
+        outputLimit: Int? = nil, stderr: (@Sendable (Data) -> Void)? = nil, running: RunningProcess = RunningProcess()
     ) throws -> String {
         guard arguments.count <= maxArguments else {
             throw GitError(arguments: Array(arguments.prefix(4)), status: -1, stderr: "too many arguments (\(arguments.count))")
@@ -120,7 +126,7 @@ enum Git {
         let outReader = PipeReader(out, limit: outputLimit) { [weak process] in
             if process?.isRunning == true { process?.terminate() }
         }
-        let errReader = PipeReader(err)
+        let errReader = PipeReader(err, onData: stderr)
         let exited = DispatchSemaphore(value: 0)
         process.terminationHandler = { _ in exited.signal() }
         guard try running.start(process) else { throw CancellationError() }
@@ -180,6 +186,7 @@ final class RunningProcess: @unchecked Sendable {
 
 /// Collects what a pipe delivers, on FileHandle's own queue — up to `limit`
 /// bytes, if given; then `onLimit` runs once and the rest is ignored.
+/// `onData` is handed each piece as it comes, outside the lock.
 private final class PipeReader: @unchecked Sendable {
     private let handle: FileHandle
     private let lock = NSLock()
@@ -190,7 +197,7 @@ private final class PipeReader: @unchecked Sendable {
     private var hitLimit = false
     var reachedLimit: Bool { lock.withLock { hitLimit } }
 
-    init(_ pipe: Pipe, limit: Int? = nil, onLimit: (() -> Void)? = nil) {
+    init(_ pipe: Pipe, limit: Int? = nil, onLimit: (() -> Void)? = nil, onData: (@Sendable (Data) -> Void)? = nil) {
         handle = pipe.fileHandleForReading
         self.limit = limit
         self.onLimit = onLimit
@@ -211,6 +218,7 @@ private final class PipeReader: @unchecked Sendable {
                 return self.onLimit
             }
             hit?()
+            onData?(chunk)
         }
     }
 

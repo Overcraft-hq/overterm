@@ -12,6 +12,48 @@ final class ListeningPortsTests: XCTestCase {
         XCTAssertEqual(ports.first?.url?.absoluteString, "http://localhost:5173")
     }
 
+    /// What Docker's own bind would run into: a listener on loopback (no
+    /// firewall prompt), and nothing once it has closed — TIME_WAIT aside.
+    /// A port the system gave, listened on and closed again: free.
+    private static func closedPortIsFree() -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        _ = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        listen(fd, 1)
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
+        close(fd)
+        return !ListeningPorts.isBound(Int(UInt16(bigEndian: address.sin_port)))
+    }
+
+    func testAPortInUseIsBound() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        XCTAssertEqual(bound, 0)
+        XCTAssertEqual(listen(fd, 1), 0)
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
+        let port = Int(UInt16(bigEndian: address.sin_port))
+        XCTAssertTrue(ListeningPorts.isBound(port), "\(port) is listened on")
+        XCTAssertFalse(ListeningPorts.isBound(port, proto: "udp"), "TCP's only")
+        close(fd)
+        // Closed, it is free — unless another process's outgoing connection
+        // took the same ephemeral port at once, as a busy machine's can:
+        // a fresh one is asked about then, a few times at most.
+        XCTAssertTrue(
+            ListeningPorts.isBound(port) == false || (0..<5).contains { _ in Self.closedPortIsFree() }, "closed, a port is free")
+        XCTAssertFalse(ListeningPorts.isBound(0))
+    }
+
     func testFindsARealListener() async throws {
         // A server on an OS-chosen port; it prints the port, then waits.
         let server = Process()

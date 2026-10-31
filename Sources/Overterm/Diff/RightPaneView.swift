@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container
     }
 
     @Published var mode: Mode = .changes
@@ -14,6 +14,8 @@ final class RightPane: ObservableObject {
     @Published var compareOpened = false
     /// A stored file was opened (Database panel): its tab stays from then on.
     @Published var objectOpened = false
+    /// A container was picked in the Docker panel: its tab stays from then on.
+    @Published var containerOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -37,6 +39,7 @@ struct RightPaneView: View {
     let runner: APIRunnerView
     let compare: CompareView
     let object: StorageObjectView
+    let container: DockerSlotView
     let graph: NotesGraphView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
@@ -96,6 +99,11 @@ struct RightPaneView: View {
                         Image(systemName: "doc").font(.system(size: 11))
                     }
                 }
+                if pane.containerOpened {
+                    tab(.container, help: "The container picked in the Docker panel") {
+                        Image(systemName: "shippingbox").font(.system(size: 11))
+                    }
+                }
                 if pane.compareOpened {
                     tab(.compare, help: "The comparison picked in Overgit") {
                         Image(systemName: "arrow.left.arrow.right.square").font(.system(size: 11))
@@ -119,6 +127,7 @@ struct RightPaneView: View {
             case .graph: graph
             case .compare: compare
             case .object: object
+            case .container: container
             }
         }
         .background(theme.strip)

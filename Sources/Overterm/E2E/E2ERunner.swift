@@ -83,6 +83,7 @@ final class E2ERunner {
         "overgit": { await $0.overgitScenario() },
         "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
+        "docker": { await $0.dockerScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 
@@ -115,7 +116,7 @@ final class E2ERunner {
     // MARK: Primitives
 
     /// A measurement, printed whether or not a check passes.
-    private func note(_ text: String) {
+    func note(_ text: String) {
         print("E2E INFO \(text)")
         fflush(stdout)
     }
@@ -156,7 +157,7 @@ final class E2ERunner {
 
     /// At a prompt, and past the moment a shell may still be reading the
     /// terminal while drawing it (see runAndExpect).
-    private func settledPrompt() async {
+    func settledPrompt() async {
         await waitForPrompt()
         // A new shell's first prompt keeps working (git status for the
         // theme, deferred integration init) after it first reports; keys
@@ -232,7 +233,7 @@ final class E2ERunner {
 
     /// Clicks the button titled `title` in the window's attached sheet.
     @discardableResult
-    private func clickSheetButton(_ title: String) -> Bool {
+    func clickSheetButton(_ title: String) -> Bool {
         guard let sheet = window.attachedSheet, let button = Self.find(NSButton.self, in: sheet.contentView, where: { $0.title == title })
         else { return false }
         button.performClick(nil)
@@ -264,7 +265,7 @@ final class E2ERunner {
     }
 
     /// An item of the menu bar's `menu`, as the menu bar has it.
-    private func menuItem(_ menu: String, _ title: String) -> NSMenuItem? {
+    func menuItem(_ menu: String, _ title: String) -> NSMenuItem? {
         NSApp.mainMenu?.items.first { $0.submenu?.title == menu }?.submenu?.items.first { $0.title == title }
     }
 
@@ -273,7 +274,7 @@ final class E2ERunner {
     /// window is never key, so NSApp.sendAction wouldn't find it). Then the
     /// item is validated, as before the menu opens again.
     @discardableResult
-    private func perform(_ item: NSMenuItem) -> Bool {
+    func perform(_ item: NSMenuItem) -> Bool {
         guard let action = item.action, (window.firstResponder ?? window).tryToPerform(action, with: item) else { return false }
         _ = app.validateMenuItem(item)
         return true
@@ -4004,7 +4005,7 @@ final class E2ERunner {
         // view around the terminal is redrawn — and must not take the
         // keyboard off it, which a SwiftUI root rebuilt under a text field
         // has done before.
-        app.closeSettings()
+        app.closeOverlay(.settings)
         settings.set("appearance.theme", .string("Claude Light"))
         check("a theme set while the page is closed still arrives", await eventually(3) { self.app.theme?.isDark == false })
         await runAndExpect(
@@ -4306,7 +4307,7 @@ final class E2ERunner {
         (NSApp.delegate as? AppDelegate)?.showChangelog(nil)
         check("View Latest Changelog opens it", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
         ChangelogWindowController.shared.window?.close()
-        app.closeSettings()
+        app.closeOverlay(.settings)
     }
 
     /// How heavy Overterm is to live in: idle with ten tabs (two split),

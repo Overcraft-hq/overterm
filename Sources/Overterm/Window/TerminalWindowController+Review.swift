@@ -35,7 +35,8 @@ extension TerminalWindowController {
         hideAgentOverview()
         if peek.isOpen { peek.close() }
         hideSpotlight(keepTerminalSearch: false)
-        hideSettingsPage(focus: false)
+        // The pages (Settings, Docker) and a review take turns.
+        hideOverlay(focus: false)
         store.reviewShowing = review.id
         reviewView.isHidden = false
         window?.makeFirstResponder(reviewView)

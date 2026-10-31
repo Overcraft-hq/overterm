@@ -95,6 +95,17 @@ struct TabActivity: Equatable {
         return true
     }
 
+    /// A container of the tab's checkout went wrong on its own
+    /// (DockerAttention): a failure, as a long command failing is. Returns
+    /// true when the mark just went up.
+    @discardableResult
+    mutating func containerFailed(_ text: String, visible: Bool) -> Bool {
+        guard !visible, Mark.failed > mark else { return false }
+        mark = .failed
+        note = text
+        return true
+    }
+
     /// You looked at the tab.
     mutating func seen() {
         mark = .none
