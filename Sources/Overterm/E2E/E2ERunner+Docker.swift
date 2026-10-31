@@ -2225,7 +2225,8 @@ extension E2ERunner {
         // line, whose middle is between them.
         let button = conflicted ? await wordFrame("Up on Free Ports") : nil
         if let button { await click(at: CGPoint(x: button.midX, y: button.midY)) }
-        let movedAgain = button != nil ? await eventually(5) { commands.count == count + 1 } : false
+        // Its Up asks Compose (the stub) and lsof first: seconds on a busy machine.
+        let movedAgain = button != nil ? await eventually(15) { commands.count == count + 1 } : false
         check(
             "a conflict's own Up on Free Ports moves its stack",
             movedAgain && commands.last?.command == upCommand && page.ports.override(in: real)?.moves.map(\.from) == [held, 38080] && alerts.isEmpty,
@@ -2635,14 +2636,16 @@ extension E2ERunner {
         await drawn("and says it under its name", await shownText { $0.contains("linux/amd64") })
         page.imageSelection = [legacy]
         await drawn("an emulated image's detail says so", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
-        // Vision may read the row's two halves as two lines: the platform is
-        // then beside it, at the same height.
-        let platformRow = await shownText { $0.contains("emulated here") }
-        var platformBeside = platformRow?.text.contains("linux/amd64") == true
-        if !platformBeside, let row = platformRow {
-            platformBeside = await readWindow().contains { $0.text.contains("linux/amd64") && abs($0.frame.midY - row.frame.midY) < row.frame.height }
+        // Vision reads the row's parts as lines of their own — the label,
+        // "linux/amd64 -", "emulated" — so they are looked for side by side.
+        let platformLabel = await shownText { $0 == "Platform" }
+        var platformRow = false
+        var platformRead: [String] = []
+        if let label = platformLabel {
+            platformRead = await readWindow().filter { abs($0.frame.midY - label.frame.midY) < label.frame.height }.map(\.text)
+            platformRow = platformRead.contains { $0.contains("linux/amd64") } && platformRead.contains { $0.contains("emulated") }
         }
-        check("with its Platform row", platformBeside, platformRow?.text ?? "not drawn")
+        check("with its Platform row", platformRow, platformLabel == nil ? "not drawn" : "\(platformRead)")
         await capture("emulated-image")
         let read = inspects(legacy)
         let pullButton = await shownText { $0.contains("Pull the arm64") }
