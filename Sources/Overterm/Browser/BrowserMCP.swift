@@ -194,6 +194,9 @@ enum BrowserMCP {
         if Settings.shared.notesAgentAccess {
             parts.append(
                 "The user's notes (an Obsidian vault): notes_search finds notes by name, #tag or what they say, notes_read reads one with its links — for context the user keeps there. Read-only."
+                    + (Settings.shared.notesAgentDrawings
+                        ? " notes_draw makes a new Excalidraw drawing from boxes, arrows and text — a diagram the user asked for, opened beside the terminal."
+                        : "")
             )
         }
         if Settings.shared.databaseAgentAccess {

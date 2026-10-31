@@ -15,6 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         try? FileManager.default.removeItem(at: APIWorkspace.draftsDirectory)
         // Before any pane: a pane learns the browser's MCP address as it is made.
         BrowserBridge.shared.start()
+        // A drawing an agent made (notes_draw) opens in the front window's editor.
+        DrawingConverter.open = { url in
+            for window in NSApp.orderedWindows {
+                guard let controller = window.windowController as? TerminalWindowController else { continue }
+                controller.openNote(url)
+                return
+            }
+        }
 
         let controller = TerminalWindowController()
         // An isolated run (E2E, layout dump) reads and writes its own support

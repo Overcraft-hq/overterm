@@ -436,8 +436,12 @@ enum SettingsSchema {
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
         SettingSpec(
             key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
-            help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. Agents never write to it.",
+            help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. They never change a note.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
+        SettingSpec(
+            key: "notes.agentDrawings", section: .notes, group: "Agents", title: "Agents can add drawings",
+            help: "notes_draw: an agent draws boxes, arrows and text into a new Excalidraw drawing, in the vault's Excalidraw folder. Only new files.",
+            kind: .toggle, defaultValue: .bool(true), requires: "notes.agentAccess"),
     ]
 
     private static let database: [SettingSpec] = [

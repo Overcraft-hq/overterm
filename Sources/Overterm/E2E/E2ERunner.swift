@@ -24,6 +24,7 @@ final class E2ERunner {
         "api": { await $0.apiScenario() },
         "apiImport": { await $0.apiImportScenario() },
         "notes": { await $0.notesScenario() },
+        "drawing": { await $0.drawingScenario() },
         "database": { await $0.databaseScenario() },
         "storage": { await $0.storageScenario() },
         "suspend": { await $0.suspendScenario() },

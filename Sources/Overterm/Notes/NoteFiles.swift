@@ -152,15 +152,20 @@ enum NoteFiles {
 /// A folder or a file of the vault.
 struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
     enum Kind: String, Sendable {
-        case folder, note, canvas, image, pdf, other
+        case folder, note, drawing, canvas, image, pdf, other
 
         init(_ url: URL) {
+            // Before `.md`: an Excalidraw drawing is markdown too.
+            if DrawingFile.isDrawing(url) {
+                self = .drawing
+                return
+            }
             switch url.pathExtension.lowercased() {
             case "md": self = .note
-            case "canvas", "excalidraw": self = .canvas
+            case "canvas": self = .canvas
             case "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "avif": self = .image
             case "pdf": self = .pdf
-            default: self = url.lastPathComponent.hasSuffix(".excalidraw.md") ? .canvas : .other
+            default: self = .other
             }
         }
     }
@@ -176,8 +181,15 @@ struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
 
     var id: String { url.path }
     var isFolder: Bool { kind == .folder }
-    /// As Obsidian shows it: a note without `.md`, anything else whole.
-    var name: String { kind == .note ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent }
+    /// As Obsidian shows it: a note without `.md`, a drawing without
+    /// `.excalidraw.md`, anything else whole.
+    var name: String {
+        switch kind {
+        case .note: url.deletingPathExtension().lastPathComponent
+        case .drawing: DrawingFile.title(of: url)
+        default: url.lastPathComponent
+        }
+    }
 
     var allNotes: [NoteItem] {
         guard let children else { return kind == .note ? [self] : [] }

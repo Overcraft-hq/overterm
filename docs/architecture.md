@@ -1052,10 +1052,40 @@ in it, and `.obsidian/` is read for where things go, never written.
   were written; a task ticked anywhere is its `[ ]` in the text (the open
   buffer's, else the file's); templates, daily notes, pasted images,
   terminal text and branch notes go where Obsidian's settings put them.
+- **Drawings** (`DrawingFile`, `DrawingView`, `EditorViewController+Drawing`):
+  Excalidraw, in Obsidian Excalidraw's own file, so a drawing made in either
+  opens in the other. A `.excalidraw.md` is markdown: the frontmatter and
+  anything written above `# Excalidraw Data`, the text elements under
+  `## Text Elements` (search and links see them), the plugin's other
+  sections, then the scene under `## Drawing` — JSON, or lz-string's base64
+  in lines of 256 (`compressed-json`) when the plugin's "compress" is on.
+  Only the text elements and the scene are ever written again; every other
+  byte is kept (`DrawingFileTests` round-trips the plugin's file). New
+  Drawing reads the plugin's `data.json` for its folder, name, template and
+  compression, and never writes `.obsidian/`.
+
+  The canvas is a WKWebView (`Resources/notes/draw.html`) running
+  Excalidraw 0.18 offline: Excalidraw is ESM that imports bare packages, so
+  `Scripts/fetch-excalidraw.sh` bundles it with React and lz-string into one
+  script (esbuild; every package pinned with its hash in
+  `Scripts/excalidraw/package-lock.json`, mermaid and the other locales left
+  out, the 12 MB Chinese font left out) into `Resources/notes/excalidraw`.
+  A change on the canvas goes back as the scene's text, the editor writes it
+  into the buffer (`replaceText`, as a `.bru` request does) and saves a
+  second later: a drawing has no Save to forget. A change on disk (Obsidian,
+  an agent) is redrawn. ⇧⌘V shows the text.
+
+  A note embedding a drawing (`![[Board.excalidraw]]`) shows its picture:
+  Swift hands the reading view the scene (`NoteRenderPayload.drawings`), and
+  the page loads Excalidraw the first time it needs it and draws it with
+  `exportToSvg`.
 - **Agents** (`NotesMCP`): `notes_search` and `notes_read` beside the
   browser's and the API client's tools on the same MCP server, read-only,
   naming only the index's notes. Settings ▸ Notes ▸ "Agents can read the
-  notes".
+  notes". `notes_draw` (Settings ▸ Notes ▸ "Agents can add drawings") is the
+  one tool that writes: a new drawing, never over a file, from Excalidraw's
+  element skeletons, converted by Excalidraw itself on a page no window shows
+  (`DrawingConverter`) and opened in the front window's editor.
 - **Elsewhere**: ⌘F lists notes after the checkout (`NotesSearch`); the
   Graph View (`NotesGraph`, deterministic force layout off the main thread)
   joins the right-hand slot; the panel's lower half is backlinks, outline,

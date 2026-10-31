@@ -13,6 +13,8 @@
   // drops any value with `-->` in it — every flowchart arrow.
   let mermaidSources = [];
   let mermaidReady = false;
+  // Embedded drawings, by index — their targets, out of the attributes too.
+  let drawingKeys = [];
 
   const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const vaultURL = (path) => payload.vault + path.split("/").map(encodeURIComponent).join("/");
@@ -68,6 +70,9 @@
   function renderEmbed(md, link, inner, env) {
     const resolved = link.target === "" ? { path: payload.path, kind: "note" } : payload.links[link.target];
     if (!resolved) return `<span class="embed missing">${escapeHtml(inner)}</span>`;
+    if (payload.drawings && payload.drawings[link.target]) {
+      return `<div class="embed drawing" data-drawing="${drawingKeys.push(link.target) - 1}"></div>`;
+    }
     if (resolved.kind === "image") {
       let size = "";
       const m = link.alias && link.alias.match(/^(\d+)(?:x(\d+))?$/);
@@ -400,6 +405,7 @@
     base.href = next.base;
     const main = document.getElementById("note");
     mermaidSources = [];
+    drawingKeys = [];
     const html = properties() + md.render(next.text, { depth: 0 });
     main.innerHTML = window.DOMPurify ? DOMPurify.sanitize(html, purifyOptions) : html;
     callouts(main);
@@ -419,6 +425,68 @@
     }
     post({ rendered: true });
     drawMermaid(main);
+    drawDrawings(main);
+  }
+
+  // MARK: Embedded drawings
+
+  /** Excalidraw, loaded the first time a note embeds a drawing (it is megabytes). */
+  let excalidraw = null;
+  function loadExcalidraw() {
+    if (excalidraw) return excalidraw;
+    window.EXCALIDRAW_ASSET_PATH = "overterm-note://app/excalidraw/";
+    const script = (src) =>
+      new Promise((resolve, reject) => {
+        const tag = document.createElement("script");
+        tag.src = src;
+        tag.onload = resolve;
+        tag.onerror = () => reject(new Error("couldn't load " + src));
+        document.head.appendChild(tag);
+      });
+    excalidraw = script("overterm-note://app/excalidraw/excalidraw.js").then(() => script("overterm-note://app/drawing-file.js"));
+    return excalidraw;
+  }
+
+  /** Each `![[Drawing.excalidraw]]` as its picture, as Obsidian shows it. */
+  async function drawDrawings(root) {
+    const nodes = [...root.querySelectorAll(".embed.drawing[data-drawing]")];
+    if (!nodes.length) return;
+    const keys = drawingKeys;
+    try {
+      await loadExcalidraw();
+    } catch (error) {
+      for (const node of nodes) node.textContent = String(error.message || error);
+      return;
+    }
+    const X = window.Draw.Excalidraw;
+    let drawn = 0;
+    for (const node of nodes) {
+      const key = keys[Number(node.dataset.drawing)];
+      const drawing = payload.drawings[key];
+      if (!drawing || !node.isConnected) continue;
+      try {
+        const restored = X.restore(DrawingFile.read(drawing.scene, drawing.encoding), null, null);
+        const svg = await X.exportToSvg({
+          elements: restored.elements,
+          appState: { ...restored.appState, exportBackground: false, exportWithDarkMode: payload.dark },
+          files: restored.files,
+        });
+        svg.removeAttribute("width");
+        svg.removeAttribute("height");
+        node.replaceChildren(svg);
+        const title = document.createElement("a");
+        title.href = "#";
+        title.className = "embed-title internal-link";
+        title.dataset.target = key;
+        title.dataset.anchor = "";
+        title.textContent = key;
+        node.prepend(title);
+        drawn += 1;
+      } catch (error) {
+        node.textContent = "This drawing can't be shown: " + String(error.message || error);
+      }
+    }
+    post({ rendered: true, drawings: drawn });
   }
 
   function scrollToAnchor(anchor) {

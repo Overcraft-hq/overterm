@@ -1,0 +1,1 @@
+Excalidraw 0.18.1 — MIT License, https://github.com/excalidraw/excalidraw/blob/master/LICENSE

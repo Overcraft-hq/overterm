@@ -32,6 +32,8 @@ final class EditorBuffer {
     var request: APIRequestModel?
     /// A note of the vault: its preview is the reading view (NoteReaderView).
     var isNote = false
+    /// An Excalidraw drawing: shown as its canvas (DrawingView) over its text.
+    var drawing: DrawingModel?
     /// A `.sql` file: the console under it (connection, results).
     var sqlConsole: SQLConsole?
     /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.

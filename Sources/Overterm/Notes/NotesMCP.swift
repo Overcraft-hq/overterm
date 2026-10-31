@@ -2,8 +2,9 @@ import Foundation
 
 /// The notes vault's MCP tools, beside the browser's and the API client's
 /// on the same server (BrowserBridge): an agent searches the vault and
-/// reads a note — its links and what links to it too. Read-only: agents
-/// never write to the vault (Settings ▸ Notes says so).
+/// reads a note — its links and what links to it too. Agents never change
+/// a note; with Settings ▸ Notes' "Agents can add drawings" they may add a
+/// new Excalidraw drawing (`notes_draw`), and nothing else.
 @MainActor
 enum NotesMCP {
     static func call(_ name: String, _ arguments: [String: Any], notes: NotesModel) async throws -> [String: Any] {
@@ -39,9 +40,45 @@ enum NotesMCP {
             // Bounded both ways: a negative prefix traps.
             let limit = min(max(arguments["max_chars"] as? Int ?? 40_000, 100), 1_000_000)
             return BrowserMCP.textResult(read(path, text: anchor.map { NoteSections.extract(text, anchor: $0) } ?? text, index: index, limit: limit))
+        case "notes_draw":
+            guard Settings.shared.notesAgentDrawings else {
+                throw BrowserMCP.ToolError(message: "Drawings aren't open to agents — Settings ▸ Notes ▸ Agents can add drawings.")
+            }
+            guard let elements = arguments["elements"] as? [[String: Any]], !elements.isEmpty else {
+                throw BrowserMCP.ToolError(message: "notes_draw needs “elements”: a list of Excalidraw element skeletons.")
+            }
+            let url = try await draw(
+                title: string("title") ?? "Drawing", elements: elements, folder: string("folder"), notes: notes)
+            if arguments["open"] as? Bool ?? true { DrawingConverter.open?(url) }
+            return BrowserMCP.textResult("Drew \(elements.count) elements into \(vault.relativePath(of: url)).")
         default:
             throw BrowserMCP.ToolError(message: "No tool \(name).")
         }
+    }
+
+    /// Writes a new drawing of `elements` (Excalidraw's skeletons), in
+    /// `folder` of the vault or Obsidian Excalidraw's folder — never over a
+    /// file that is there.
+    static func draw(title: String, elements: [[String: Any]], folder: String?, notes: NotesModel) async throws -> URL {
+        let vault = notes.vault
+        let settings = ExcalidrawSettings.read(from: vault.root)
+        let place = vault.root.appendingPathComponent(folder ?? settings.folder, isDirectory: true).standardizedFileURL
+        guard vault.contains(place.appendingPathComponent("x")) else {
+            throw BrowserMCP.ToolError(message: "“\(folder ?? "")” isn't a folder of the vault.")
+        }
+        // A name, not a path: slashes and colons can't make it leave the folder.
+        let name = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespaces)
+        let saveAs: DrawingFile.Encoding = settings.compress ? .compressed : .json
+        let drawn = try await DrawingConverter.shared.convert(elements, saveAs: saveAs)
+        guard let empty = DrawingFile.parse(DrawingFile.new(markdown: true), markdown: true) else {
+            throw BrowserMCP.ToolError(message: "The drawing couldn't be made.")
+        }
+        let text = empty.updated(scene: drawn.scene, encoding: saveAs, texts: drawn.texts).text
+        try FileManager.default.createDirectory(at: place, withIntermediateDirectories: true)
+        let url = NotesVault.freeName(name.isEmpty ? "Drawing" : name, extension: settings.useExcalidrawExtension ? "excalidraw.md" : "md", in: place)
+        try NoteFiles.write(text, to: url)
+        notes.reload()
+        return url
     }
 
     /// Names, aliases and tags first, then lines that hold every word.
@@ -72,7 +109,23 @@ enum NotesMCP {
         return out
     }
 
-    static let tools: [[String: Any]] = [
+    static var tools: [[String: Any]] { readTools + (Settings.shared.notesAgentDrawings ? [drawTool] : []) }
+
+    static let drawTool = tool(
+        "notes_draw",
+        "Draw a diagram for the user: a new Excalidraw drawing in their vault (Obsidian Excalidraw's file), opened beside the terminal. "
+            + "Give Excalidraw element skeletons: {type: rectangle|ellipse|diamond, x, y, width, height, label: {text}, id}, "
+            + "{type: text, x, y, text, fontSize}, {type: arrow|line, x, y, width, height, start: {id}, end: {id}, label: {text}} — "
+            + "an arrow's start/end bind it to the shapes with those ids. Optional: strokeColor, backgroundColor (\"#a5d8ff\"), "
+            + "fillStyle (solid|hachure), strokeStyle (dashed). Lay shapes out left to right or top to bottom, ~200×80 each, 100 apart.",
+        [
+            "title": ["type": "string", "description": "The drawing's name (its file is <title>.excalidraw.md)."],
+            "elements": ["type": "array", "items": ["type": "object"], "description": "Excalidraw element skeletons."],
+            "folder": ["type": "string", "description": "A folder of the vault; default Obsidian Excalidraw's folder."],
+            "open": ["type": "boolean", "description": "Open it in the editor (default true)."],
+        ], required: ["title", "elements"])
+
+    static let readTools: [[String: Any]] = [
         tool(
             "notes_search",
             "Search the user's notes (an Obsidian vault of Markdown): note names and aliases, then lines holding every word. `#tag` lists the notes with that tag.",

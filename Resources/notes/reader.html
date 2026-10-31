@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src overterm-note:; script-src overterm-note: 'unsafe-eval'; style-src overterm-note: 'unsafe-inline'; img-src overterm-note: data: https:; font-src overterm-note: data:; media-src overterm-note: https:; connect-src 'none'; frame-src 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src overterm-note:; script-src overterm-note: 'unsafe-eval' 'wasm-unsafe-eval'; style-src overterm-note: 'unsafe-inline'; img-src overterm-note: data: https:; font-src overterm-note: data:; media-src overterm-note: https:; connect-src overterm-note: data: blob:; worker-src overterm-note: blob:; frame-src 'none'; object-src 'none'">
 <link rel="stylesheet" href="overterm-note://app/vendor/katex.min.css">
 <link rel="stylesheet" href="overterm-note://app/reader.css">
 <script src="overterm-note://app/vendor/markdown-it.min.js"></script>

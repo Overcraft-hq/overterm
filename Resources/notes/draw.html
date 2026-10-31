@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src overterm-note:; script-src overterm-note: 'unsafe-eval' 'wasm-unsafe-eval'; style-src overterm-note: 'unsafe-inline'; img-src overterm-note: data: blob:; font-src overterm-note: data:; connect-src overterm-note: data: blob:; worker-src overterm-note: blob:; frame-src 'none'; object-src 'none'">
+<link rel="stylesheet" href="overterm-note://app/excalidraw/excalidraw.css">
+<link rel="stylesheet" href="overterm-note://app/draw.css">
+<script>
+window.EXCALIDRAW_ASSET_PATH = "overterm-note://app/excalidraw/";
+// What goes wrong on the page, for the app's log.
+const report = (text) => window.webkit.messageHandlers.draw.postMessage({ log: text });
+window.addEventListener("error", (e) => report(`${e.message} (${e.filename}:${e.lineno})`));
+window.addEventListener("unhandledrejection", (e) => report(String(e.reason && (e.reason.stack || e.reason))));
+</script>
+<script defer src="overterm-note://app/excalidraw/excalidraw.js"></script>
+<script defer src="overterm-note://app/drawing-file.js"></script>
+<script defer src="overterm-note://app/draw.js"></script>
+</head>
+<body>
+<div id="canvas"></div>
+</body>
+</html>
