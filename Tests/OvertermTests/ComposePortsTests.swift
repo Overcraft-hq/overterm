@@ -801,6 +801,21 @@ final class ComposeUpTests: XCTestCase {
         XCTAssertEqual(output, json([(8080, 80)], service: "frontend"))
         XCTAssertTrue(calls.contains("compose -p shop-wt-x -f \(base) -f \(store.file(of: now).path) config --format json"), calls)
 
+        // A compose.override.yaml added since: Compose finds it, so the
+        // commands are given it, and the override is written from it too.
+        let added = real + "/compose.override.yaml"
+        try "services:\n  frontend:\n    environment: {DEBUG: \"1\"}\n".write(to: URL(fileURLWithPath: added), atomically: true, encoding: .utf8)
+        XCTAssertEqual(store.files(for: plan), [base, added, store.file(of: now).path])
+        XCTAssertTrue(store.needsRefresh(plan), "a file it wasn't written from")
+        page.compose("pull", plan)
+        try await until("pulled with it") { commands.count == 3 }
+        XCTAssertTrue(calls.contains("compose -f \(base) -f \(added) --profile * config --format json"), calls)
+        let with = try XCTUnwrap(store.override(in: real))
+        XCTAssertEqual(with.baseFiles, [base, added])
+        XCTAssertFalse(store.needsRefresh(plan))
+        XCTAssertEqual(commands.last?.0, "docker compose -p shop-wt-x -f \(base) -f \(added) -f \(store.file(of: with).path) pull")
+        try FileManager.default.removeItem(atPath: added)
+
         // Its name the files' now, nothing moved: forgotten.
         try stub(version: "2.29.7", config: json([(8080, 80)], name: "shop-wt-x", service: "frontend"))
         try "services:\n  frontend: {image: x}\n".write(to: URL(fileURLWithPath: base), atomically: true, encoding: .utf8)

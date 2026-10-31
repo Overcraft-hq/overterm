@@ -117,8 +117,18 @@ final class ComposePortStore: ObservableObject {
     func files(for project: ComposeProject) -> [String] {
         var files = project.configFiles.filter { !isOurs($0) }
         guard let kept = override(of: project) else { return files }
-        if files.isEmpty { files = kept.baseFiles }
+        if files.isEmpty { files = base(of: project, kept) }
         return files + [file(of: kept).path]
+    }
+
+    /// What an override is read with and written from, before it: a
+    /// project before it runs is its checkout's files as Compose finds them
+    /// now — a `compose.override.yaml` added since is one of them, as it is
+    /// in the plan's read — else the ones it was made from.
+    func base(of project: ComposeProject, _ kept: ComposePortOverride) -> [String] {
+        guard project.planned, let checkout = project.workingDir else { return kept.baseFiles }
+        let files = ComposeProjects.composeFiles(in: URL(fileURLWithPath: checkout))
+        return files.isEmpty ? kept.baseFiles : files.map(ComposeProjects.composePath)
     }
 
     /// A compose verb for a project, with the files it should read. One
@@ -153,20 +163,24 @@ final class ComposePortStore: ObservableObject {
         return stamp
     }
 
-    /// Whether the files changed since it was written.
-    func isStale(_ kept: ComposePortOverride) -> Bool {
-        kept.stamp != Self.stamp(of: kept.baseFiles, folder: kept.folder)
+    /// Whether the files changed since it was written: `base`, the files
+    /// it is read with now (`base(of:_:)`), not the same list, or one of
+    /// them edited.
+    func isStale(_ kept: ComposePortOverride, base: [String]? = nil) -> Bool {
+        let base = base ?? kept.baseFiles
+        return base != kept.baseFiles || kept.stamp != Self.stamp(of: base, folder: kept.folder)
     }
 
     /// Whether a project's override must be written again before a command
     /// reads it (`refresh`).
     func needsRefresh(_ project: ComposeProject) -> Bool {
-        override(of: project).map(isStale) ?? false
+        guard let kept = override(of: project) else { return false }
+        return isStale(kept, base: base(of: project, kept))
     }
 
     /// A project's override as its files are now (`refresh`).
     func refresh(for project: ComposeProject, endpoint: DockerEndpoint?) async {
-        if let kept = override(of: project) { await refresh(kept.folder, endpoint: endpoint) }
+        if let kept = override(of: project) { await refresh(kept.folder, endpoint: endpoint, base: base(of: project, kept)) }
     }
 
     /// The folder's override written again from its files when they changed
@@ -179,18 +193,21 @@ final class ComposePortStore: ObservableObject {
     /// Nothing is looked at or moved: that is an Up's. Forgotten when
     /// nothing is left of it; left as it was when Compose can't read the
     /// files — the command says why. One read at a time a folder.
-    func refresh(_ folder: String, endpoint: DockerEndpoint?) async {
-        guard let kept = overrides[folder], isStale(kept) else { return }
+    func refresh(_ folder: String, endpoint: DockerEndpoint?, base: [String]? = nil) async {
+        guard let kept = overrides[folder] else { return }
+        let base = base ?? kept.baseFiles
+        guard isStale(kept, base: base) else { return }
         if let reading = refreshing[folder] { return await reading.value }
         let task = Task { [weak self] in
             guard DockerPageModel.mayCheckPorts, let cli = DockerCLI(endpoint: endpoint) else { return }
-            let stamp = Self.stamp(of: kept.baseFiles, folder: folder)
-            guard let config = await Self.readConfig(cli, base: kept.baseFiles, folder: folder), let self, self.overrides[folder] == kept else { return }
+            let stamp = Self.stamp(of: base, folder: folder)
+            guard let config = await Self.readConfig(cli, base: base, folder: folder), let self, self.overrides[folder] == kept else { return }
             let plan = ComposePortPlan.refreshed(kept, config: config)
             guard plan.changes else { return self.forget(folder) }
             var next = kept
             next.fileName = config.name
             next.moves = plan.moves
+            next.baseFiles = base
             next.stamp = stamp
             try? self.save(next, yaml: ComposePorts.overrideYAML(plan: plan, config: config, folder: folder))
         }
