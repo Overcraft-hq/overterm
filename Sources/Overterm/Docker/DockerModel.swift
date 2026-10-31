@@ -192,6 +192,9 @@ final class DockerModel: ObservableObject {
             // wake it — its own CLI (the host's side) is asked instead.
             if viewers == 0, attemptQuietly(endpoint) {
                 let status = await DockerCLI.status(of: .dockerDesktop, endpoint: endpoint)
+                // Someone looking meanwhile reconnected: the new watch has
+                // the engine, and this answer is not this one's to act on.
+                guard !Task.isCancelled else { return }
                 runtimeStatus = status
                 if status == .paused || status == .stopped {
                     connection = .down(status == .paused ? "Docker Desktop is resting (Resource Saver)." : "Docker Desktop isn't running.")
@@ -241,7 +244,11 @@ final class DockerModel: ObservableObject {
             }
             self.engine = nil
             clear()
-            if viewers > 0 { runtimeStatus = await DockerCLI.status(of: runtime, endpoint: endpoint) }
+            if viewers > 0 {
+                let status = await DockerCLI.status(of: runtime, endpoint: endpoint)
+                guard !Task.isCancelled else { return }
+                runtimeStatus = status
+            }
             let wait = retries.isEmpty ? .seconds(30) : retries[min(attempt, retries.count - 1)]
             attempt += 1
             try? await Task.sleep(for: wait)

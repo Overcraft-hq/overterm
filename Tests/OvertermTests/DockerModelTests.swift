@@ -74,6 +74,49 @@ final class DockerModelTests: XCTestCase {
         XCTAssertEqual(heard, ["die", "create"])
     }
 
+    /// Someone looks while the background watch waits on Docker Desktop's
+    /// CLI: the reconnect's engine stays, whatever the old check answers.
+    func testALookDuringTheQuietCheckKeepsTheEngine() async throws {
+        let folder = URL(fileURLWithPath: "/tmp/ot-dd-\(UUID().uuidString.prefix(8))")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let run = folder.appendingPathComponent(".docker/run")
+        try FileManager.default.createDirectory(at: run, withIntermediateDirectories: true)
+        let socket = run.appendingPathComponent("docker.sock").path
+        let desktop = FakeDockerEngine(socket: socket)
+        try desktop.start()
+        defer { desktop.stop() }
+        desktop.add(name: "redis", image: "redis:7")
+        // Docker Desktop's CLI, slow to say Resource Saver has it paused.
+        let stub = folder.appendingPathComponent("docker")
+        try "#!/bin/sh\nsleep 1\necho '{\"Status\":\"running\",\"PauseType\":\"resource-saver\"}'\n".write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        DockerCLI.override = stub
+        defer { DockerCLI.override = nil }
+        let endpoint = DockerEndpoint(address: .unix(socket), context: nil, source: "test")
+        let model = DockerModel(endpoint: { endpoint }, retries: [.milliseconds(50)], poll: .milliseconds(200))
+        defer { model.stop() }
+        // Whatever it says once the new watch has the engine.
+        var up = false
+        var after: [String] = []
+        let connections = model.$connection.sink { connection in
+            if case .running = connection { up = true } else if up { after.append("connection \(connection)") }
+        }
+        let statuses = model.$runtimeStatus.sink { status in if up, status != .running { after.append("status \(status)") } }
+        defer { _ = (connections, statuses) }
+        model.start()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(model.connection.isRunning, "still asking the CLI: \(model.connection)")
+        model.show()
+        defer { model.hide() }
+        try await eventually("the engine, once someone looks") { model.containers.count == 1 }
+        // The old check's answer comes.
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(after, [], "the old watch, after the new one had the engine")
+        XCTAssertEqual(desktop.listening, 1, "one watch on the engine's events")
+        XCTAssertEqual(model.connection, .running("1.47"))
+        XCTAssertEqual(model.containers.map(\.name), ["redis"])
+    }
+
     func testAnEngineThatGoesAwayIsRetried() async throws {
         shop()
         model.start()
