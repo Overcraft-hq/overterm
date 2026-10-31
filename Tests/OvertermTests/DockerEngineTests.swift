@@ -36,6 +36,11 @@ final class DockerEngineTests: XCTestCase {
         XCTAssertEqual(DockerEndpoint.address(of: "tcp://192.168.1.4:2376"), .tcp(host: "192.168.1.4", port: 2376))
         XCTAssertEqual(DockerEndpoint.address(of: "tcp://localhost"), .tcp(host: "localhost", port: 2375))
         XCTAssertEqual(DockerEndpoint.address(of: "http://:2375/"), .tcp(host: "127.0.0.1", port: 2375))
+        // An IPv6 host: its brackets are the URL's.
+        let v6 = DockerEndpoint(address: DockerEndpoint.address(of: "tcp://[::1]:2375"), context: nil, source: "DOCKER_HOST")
+        XCTAssertEqual(v6.address, .tcp(host: "::1", port: 2375))
+        XCTAssertEqual(v6.host, "tcp://[::1]:2375", "bracketed once for the CLI")
+        XCTAssertNil(v6.remoteHost, "::1 is this Mac")
         XCTAssertEqual(DockerEndpoint.address(of: "ssh://me@box"), .ssh(DockerSSHTarget(user: "me", host: "box")))
         XCTAssertEqual(DockerEndpoint.address(of: "npipe:////./pipe/docker_engine"), .unsupported("npipe:////./pipe/docker_engine"))
     }

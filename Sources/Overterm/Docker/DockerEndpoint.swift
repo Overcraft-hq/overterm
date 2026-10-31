@@ -70,7 +70,10 @@ struct DockerEndpoint: Equatable, Sendable {
             let rest = host.dropFirst(scheme.count).split(separator: "/").first.map(String.init) ?? ""
             let parts = rest.split(separator: ":", omittingEmptySubsequences: false)
             let port = parts.count > 1 ? Int(parts[parts.count - 1]) ?? 2375 : 2375
-            let name = parts.count > 1 ? parts.dropLast().joined(separator: ":") : rest
+            var name = parts.count > 1 ? parts.dropLast().joined(separator: ":") : rest
+            // `[::1]`: the brackets are the URL's, not the address's — kept,
+            // `host` would bracket it again and NIO couldn't connect.
+            if name.hasPrefix("["), name.hasSuffix("]") { name = String(name.dropFirst().dropLast()) }
             return .tcp(host: name.isEmpty ? "127.0.0.1" : name, port: port)
         }
         return .unsupported(host)
