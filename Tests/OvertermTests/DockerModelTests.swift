@@ -144,6 +144,16 @@ final class DockerModelTests: XCTestCase {
         try await eventually("no stats stream left") { self.fake.openStreams == base }
     }
 
+    /// Inspect's secrets are found in its own text: nothing of it goes up
+    /// before they are known, whatever the detail's read is doing.
+    func testInspectIsMaskedFromItsOwnText() {
+        let text = #"{"Id":"x","Config":{"Env":["API_TOKEN=s3cr3t-value","DATABASE_URL=postgres://a:b@db/x","PORT=80"],"Image":"web"}}"#
+        let shown = ContainerSession.redacted(inspect: text)
+        XCTAssertFalse(shown.contains("s3cr3t-value"), shown)
+        XCTAssertTrue(shown.contains("PORT=80"), "not a secret")
+        XCTAssertEqual(ContainerSession.redacted(inspect: "not json"), "not json", "nothing to find: as it is")
+    }
+
     /// Another folder opened: the last one's entries go at once, so no row
     /// names a file that isn't there while it is listed. The same folder
     /// listed again keeps them meanwhile.

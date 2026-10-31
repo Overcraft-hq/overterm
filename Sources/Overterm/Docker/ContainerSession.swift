@@ -232,9 +232,20 @@ final class ContainerSession: ObservableObject {
     func loadJSON() {
         Task { [weak self, docker, id] in
             guard let engine = docker.engine, let text = try? await engine.containerJSON(id) else { return }
-            let secrets = DockerSecrets.values(in: self?.detail?.env ?? [])
-            self?.json = DockerSecrets.redact(text, values: secrets)
+            self?.json = Self.redacted(inspect: text)
         }
+    }
+
+    /// Inspect's text with its env's secrets taken out — the env read from
+    /// the same text: a detail read apart may not have come yet, and the
+    /// text went up unmasked then.
+    nonisolated static func redacted(inspect text: String) -> String {
+        let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        let env = ((json?["Config"] as? [String: Any])?["Env"] as? [String] ?? []).map { entry -> (key: String, value: String) in
+            let parts = entry.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return (String(parts[0]), parts.count > 1 ? String(parts[1]) : "")
+        }
+        return DockerSecrets.redact(text, values: DockerSecrets.values(in: env))
     }
 
     func close() {
