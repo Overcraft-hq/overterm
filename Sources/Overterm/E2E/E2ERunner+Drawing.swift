@@ -44,6 +44,21 @@ extension E2ERunner {
         }
         let last = await drawing.view.state()
         check("Excalidraw runs in it", ready, "\(last) \(drawing.view.lastLog ?? "")")
+        await checkDrawingFits(drawing.view, "as it opens")
+        if let window = drawing.view.window {
+            let frame = window.frame
+            // As narrow as the columns go; then a path far longer than the pane.
+            window.setFrame(NSRect(x: frame.minX, y: frame.minY, width: 600, height: frame.height), display: true)
+            await pause(0.3)
+            let narrowest = window.frame.width
+            editor.breadcrumb.update(path: Array(repeating: "a folder with a long name", count: 30), symbol: nil)
+            window.contentView?.layoutSubtreeIfNeeded()
+            await pause(0.3)
+            check("a long path in the breadcrumb doesn't widen the window", window.frame.width <= narrowest + 0.5, "\(narrowest) → \(window.frame.width)")
+            await checkDrawingFits(drawing.view, "in a narrower window")
+            window.setFrame(frame, display: true)
+            await checkDrawingFits(drawing.view, "in a wider one again")
+        }
 
         let skeletons: [[String: Any]] = [
             ["type": "rectangle", "x": 100, "y": 100, "width": 200, "height": 100, "label": ["text": "Login service"]],
@@ -118,5 +133,23 @@ extension E2ERunner {
         check(
             "a note embedding a drawing shows its picture",
             await eventually(10) { (editor.noteReader?.drawingsDrawn ?? 0) >= 1 }, "\(editor.noteReader?.drawingsDrawn ?? -1)")
+    }
+
+    /// The canvas is as wide as its pane — no wider (its tools went off the right), no narrower.
+    private func checkDrawingFits(_ view: DrawingView, _ when: String) async {
+        let width = Int(view.bounds.width.rounded())
+        var last = DrawingView.State()
+        var fits = false
+        for _ in 0..<15 {
+            last = await view.state()
+            fits = abs(last.page - width) <= 1 && abs(last.width - width) <= 1 && abs(last.appWidth - width) <= 1
+            if fits { break }
+            await pause(0.2)
+        }
+        if let window = view.window, let content = window.contentView {
+            let frame = view.convert(view.bounds, to: content)
+            check("the canvas is inside the window \(when)", frame.maxX <= content.bounds.width + 0.5, "canvas \(frame), window \(content.bounds.width)")
+        }
+        check("the canvas fits its pane \(when)", fits, "view \(width), page \(last.page), box \(last.width), Excalidraw \(last.appWidth)")
     }
 }

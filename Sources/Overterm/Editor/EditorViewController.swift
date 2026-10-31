@@ -47,7 +47,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private(set) var gutter: EditorGutter!
     private(set) var scrollView: NSScrollView!
     private var header: EditorHeaderView!
-    private var breadcrumb: EditorBreadcrumbView!
+    private(set) var breadcrumb: EditorBreadcrumbView!
     private(set) var statusBar: EditorStatusBar!
     /// A `.sql` file's console, under its text (EditorViewController+Database).
     private(set) var consoleHost: NSHostingView<AnyView>!

@@ -99,7 +99,16 @@
     /** What is on the canvas, for checks. */
     state() {
       const elements = api ? api.getSceneElements() : [];
-      return { ready: !!api, count: elements.length, types: elements.map((e) => e.type), texts: DrawingFile.texts(elements) };
+      const box = document.querySelector(".excalidraw")?.getBoundingClientRect();
+      return {
+        ready: !!api,
+        count: elements.length,
+        types: elements.map((e) => e.type),
+        texts: DrawingFile.texts(elements),
+        page: window.innerWidth,
+        width: box ? Math.round(box.width) : 0,
+        appWidth: api ? Math.round(api.getAppState().width) : 0,
+      };
     },
 
     /** A scene made from skeletons, without a canvas — what an agent's drawing is written as. */

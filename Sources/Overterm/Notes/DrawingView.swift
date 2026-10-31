@@ -89,6 +89,10 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
         var ready = false
         var count = 0
         var texts: [String] = []
+        /// The page's width, Excalidraw's box in it, and the width Excalidraw thinks it has.
+        var page = 0
+        var width = 0
+        var appWidth = 0
     }
 
     func state() async -> State {
@@ -96,7 +100,10 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
             call("state", NSNull()) { value in
                 let body = value as? [String: Any] ?? [:]
                 let texts = (body["texts"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
-                continuation.resume(returning: State(ready: body["ready"] as? Bool ?? false, count: body["count"] as? Int ?? 0, texts: texts))
+                continuation.resume(
+                    returning: State(
+                        ready: body["ready"] as? Bool ?? false, count: body["count"] as? Int ?? 0, texts: texts,
+                        page: body["page"] as? Int ?? 0, width: body["width"] as? Int ?? 0, appWidth: body["appWidth"] as? Int ?? 0))
             }
         }
     }

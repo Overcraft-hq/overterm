@@ -330,6 +330,10 @@ final class EditorBreadcrumbView: NSView {
         if #available(macOS 14, *) { clipsToBounds = true }
         label.font = .systemFont(ofSize: 11.5)
         label.lineBreakMode = .byTruncatingHead
+        // Below the window's own hold on its size (500): a long path is
+        // cut short, it never widens the window — past the screen's edge
+        // in full screen, a drawing's canvas with it.
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         NSLayoutConstraint.activate([
