@@ -138,6 +138,13 @@ final class DockerEngineTests: XCTestCase {
     func testATTYsBytesArePlain() {
         var demuxer = DockerLogDemuxer(framed: false)
         XCTAssertEqual(demuxer.feed(Data("\u{1B}[32mok\u{1B}[0m\r\n".utf8)), [.init(stream: .stdout, text: "\u{1B}[32mok\u{1B}[0m\r\n")])
+        // A line and a character cut where the socket's read ended: whole
+        // once the rest comes, never two lines or a broken letter.
+        let line = Data("2026-11-01T10:00:00Z gün başladı\n".utf8)
+        let cut = line.firstIndex(of: 0xC3)! + 1
+        XCTAssertEqual(demuxer.feed(line.prefix(cut)), [])
+        XCTAssertEqual(demuxer.feed(line.dropFirst(cut) + Data("tail".utf8)), [.init(stream: .stdout, text: "2026-11-01T10:00:00Z gün başladı\n")])
+        XCTAssertEqual(demuxer.flush(), [.init(stream: .stdout, text: "tail")], "the last line, at the end")
     }
 
     func testLinesAreSplitAcrossPieces() {

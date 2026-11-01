@@ -148,8 +148,11 @@ final class DockerLogFollower {
             self?.set(following: true)
             do {
                 for try await chunks in stream {
+                    // Parsed off the main thread (JSON, nine patterns a
+                    // line): a service writing thousands of lines a second
+                    // made the window and the terminal stutter.
+                    var added = await Self.lines(of: chunks, service: service)
                     guard let self else { return }
-                    var added = chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true, service: service) }
                     // `since` is whole seconds: the lines already shown that second come again.
                     if let last = self.lastStamp.map(DockerLogFeed.sortable) { added.removeAll { DockerLogFeed.sortable($0.timestamp ?? "") <= last } }
                     guard !added.isEmpty else { continue }
@@ -164,6 +167,11 @@ final class DockerLogFollower {
             guard !Task.isCancelled, (try? await engine.container(id).State.Running) == true else { return }
             self?.start(tail: tail, tty: tty)
         }
+    }
+
+    /// `chunks` as lines — nonisolated, so on the cooperative pool.
+    nonisolated private static func lines(of chunks: [DockerLogChunk], service: String?) async -> [DockerLogLine] {
+        chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true, service: service) }
     }
 
     func stop() {

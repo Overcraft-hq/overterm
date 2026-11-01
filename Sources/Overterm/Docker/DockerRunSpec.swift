@@ -38,6 +38,19 @@ struct DockerRunSpec: Equatable, Sendable {
         return prefix + words.joined(separator: " ")
     }
 
+    /// A secret's entry as its name alone: `-e POSTGRES_PASSWORD` passes the
+    /// value from the shell running it, if it has one. Copied whole, the
+    /// password went to the clipboard, the tab's command line, the
+    /// shell's history and `ps` — what CLAUDE.md says a secret never does.
+    /// A URL's password the same way (`DATABASE_URL=postgres://u:p@db`).
+    static func withoutSecret(_ entry: String) -> String {
+        guard let equals = entry.firstIndex(of: "=") else { return entry }
+        let key = String(entry[..<equals])
+        let value = String(entry[entry.index(after: equals)...])
+        let secret = DockerSecrets.isSecret(key) || DockerSecrets.maskURL(value) != value
+        return secret && !value.isEmpty ? key : entry
+    }
+
     /// One a line, blank lines dropped: what the window's text boxes hold.
     static func lines(_ text: String) -> [String] {
         text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -51,7 +64,7 @@ struct DockerRunSpec: Equatable, Sendable {
         var spec = DockerRunSpec(image: detail.Config.Image ?? container.Image)
         spec.name = container.name
         let inherited = Set(imageEnv)
-        spec.env = (detail.Config.Env ?? []).filter { !inherited.contains($0) }
+        spec.env = (detail.Config.Env ?? []).filter { !inherited.contains($0) }.map(Self.withoutSecret)
         spec.ports = PublishedPort.of(container.Ports ?? []).map { port in
             // An IPv6 address in brackets, as -p reads it: `[::1]:8080:80`.
             (port.hostIP.map { ($0.contains(":") ? "[\($0)]" : $0) + ":" } ?? "") + "\(port.hostPort):\(port.containerPort)"

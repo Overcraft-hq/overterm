@@ -184,6 +184,10 @@ final class ComposeConfigTests: XCTestCase {
             XCTAssertTrue(masked.contains(kept), kept)
         }
         XCTAssertEqual(masked.components(separatedBy: "\n").count, yaml.components(separatedBy: "\n").count, "line for line")
+        // Not from the .env: an environment's own secret, filled into a
+        // command too, is taken out there as well.
+        let fromElsewhere = ComposeConfig.masked(yaml, secrets: [])
+        XCTAssertFalse(fromElsewhere.contains("hunter22"), fromElsewhere)
         XCTAssertEqual(
             ComposeConfig.redact("hunter22x hunter22 xhunter22 :hunter22@", ["hunter22"]), "hunter22x •••••• xhunter22 :••••••@",
             "a secret inside a longer word isn't that secret")

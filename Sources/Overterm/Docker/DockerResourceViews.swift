@@ -814,7 +814,7 @@ struct DockerRunSheet: View {
                 TextField("Image", text: $spec.image, prompt: Text("postgres:16"))
                 TextField("Name", text: $spec.name, prompt: Text("optional"))
                 field("Ports", $ports, "8080:80 — one a line")
-                field("Environment", $env, "KEY=value — one a line")
+                field("Environment", $env, "KEY=value — one a line; a KEY alone takes its value from the tab's shell")
                 field("Volumes", $volumes, "name:/data or /host/path:/in — one a line")
                 TextField("Command", text: $spec.command, prompt: Text("the image's own"))
                 Picker("Restart", selection: $spec.restart) {

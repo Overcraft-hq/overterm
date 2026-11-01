@@ -149,6 +149,9 @@ extension DockerEngine {
                         let chunks = demuxer.feed(data)
                         if !chunks.isEmpty { continuation.yield(chunks) }
                     }
+                    // A TTY's last line, with no newline after it.
+                    let rest = demuxer.flush()
+                    if !rest.isEmpty { continuation.yield(rest) }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -328,10 +331,15 @@ extension DockerEngine {
         defer { try? handle.close() }
         var written = 0
         do {
-            for try await data in stream(path, query) {
+            // `receive`, not `stream`: the socket is read only as the disk
+            // takes it — a 5 GB image to a slow disk piled up in memory —
+            // and a connection closed early throws rather than ending.
+            try await receive(path, query) { data in
                 try handle.write(contentsOf: data)
                 written += data.count
             }
+            // Cancelled midway is no archive.
+            try Task.checkCancellation()
         } catch {
             try? FileManager.default.removeItem(at: file)
             throw error
@@ -499,11 +507,22 @@ extension DockerEngine {
     /// A volume made (if it isn't there) and filled from a tar `export`
     /// wrote.
     func `import`(volume name: String, from file: URL, using image: String) async throws {
+        let existed = (try? await send(.GET, "/volumes/\(name)")) != nil
         let body = try JSONSerialization.data(withJSONObject: ["Name": name, "Labels": ["overterm.imported": "1"]])
         try await send(.POST, "/volumes/create", body: body, headers: [("Content-Type", "application/json")])
-        let tar = try Data(contentsOf: file, options: .mappedIfSafe)
-        try await withHelper(mounting: name, image: image) { helper in
-            _ = try await self.send(.PUT, "/containers/\(helper)/archive", ["path": "/"], body: tar, headers: [("Content-Type", "application/x-tar")])
+        // Read from disk as it is sent: the whole tar in memory — twice, once
+        // more in NIO's buffer — took a 6 GB volume's clone to 12 GB.
+        let reader = try DockerFileChunks(file)
+        do {
+            try await withHelper(mounting: name, image: image) { helper in
+                _ = try await self.send(
+                    .PUT, "/containers/\(helper)/archive", ["path": "/"], length: reader.length, body: { try reader.next() },
+                    headers: [("Content-Type", "application/x-tar")])
+            }
+        } catch {
+            // A volume this made and half filled isn't left behind.
+            if !existed { _ = try? await send(.DELETE, "/volumes/\(name)") }
+            throw error
         }
     }
 
@@ -694,6 +713,30 @@ extension DockerEngine {
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
+
+/// A file read a piece at a time for a request's body.
+final class DockerFileChunks: @unchecked Sendable {
+    let length: Int
+    private let handle: FileHandle
+    private let lock = NSLock()
+
+    init(_ file: URL) throws {
+        handle = try FileHandle(forReadingFrom: file)
+        length = Int(try handle.seekToEnd())
+        try handle.seek(toOffset: 0)
+    }
+
+    deinit { try? handle.close() }
+
+    /// The next megabyte, or nil at the end.
+    func next() throws -> Data? {
+        try lock.withLock {
+            guard let data = try handle.read(upToCount: 1 << 20), !data.isEmpty else { return nil }
+            return data
         }
     }
 }

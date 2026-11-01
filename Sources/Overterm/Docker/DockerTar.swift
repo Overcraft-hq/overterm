@@ -352,7 +352,9 @@ enum DockerTar {
                 return Int(field(start, length).trimmingCharacters(in: CharacterSet(charactersIn: " \0")), radix: 8) ?? 0
             }
             let type = block[156]
-            var size = number(124, 12)
+            // Octal text may say `-1`; a size below nothing is no size, and
+            // a meta entry's would make an inverted range and trap.
+            var size = max(0, number(124, 12))
             switch type {
             case UInt8(ascii: "L"), UInt8(ascii: "K"), UInt8(ascii: "x"), UInt8(ascii: "g"):
                 // Past a megabyte it is no name: passed over, as Go caps them.

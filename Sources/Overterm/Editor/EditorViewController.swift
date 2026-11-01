@@ -14,6 +14,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var onToggleZoom: (() -> Void)?
     /// A file was saved (the browser's reload on save).
     var onSaved: (() -> Void)?
+    /// The file the last save wrote, for `onSaved` — not always the active
+    /// one: closing a tab saves the buffer being closed.
+    private(set) var lastSaved: URL?
     /// A file's tab closed (a copy made to be read goes with it).
     var onBufferClosed: ((URL) -> Void)?
     /// Where Go to File looks: the window's checkout.
@@ -990,6 +993,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         do {
             try buffer.document.save(buffer.storage.string, overwriting: overwriting)
             bufferDidSave(buffer)
+            lastSaved = buffer.url
             onSaved?()
             refreshGitBase(buffer)
         } catch is EditorDocument.ChangedOnDisk {

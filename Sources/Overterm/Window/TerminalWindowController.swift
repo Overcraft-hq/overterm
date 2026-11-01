@@ -97,6 +97,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let dockerPanel = DockerPanelModel()
     /// Whether this window's panel holds the model's poll.
     var dockerPanelShown = false
+    /// Whether this window holds `DockerModel.show()` for its page.
+    var dockerPageHeld = false
     /// The review tabs' page: the one showing, over the body as the pages are.
     var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
@@ -3737,7 +3739,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         peek.relayout()
     }
 
-    func windowDidChangeOcclusionState(_ notification: Notification) { updateDockerWindowVisible() }
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        updateDockerWindowVisible()
+        updateDockerVisibility()
+        updateDockerPageHold()
+    }
 
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
@@ -3752,6 +3758,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
+        // What this window holds of Docker's polling goes with it: kept,
+        // the app reloaded the list every 15 s for good, and Docker Desktop
+        // never rested (Resource Saver) — a closed window still "looking".
+        if dockerPanelShown {
+            dockerPanelShown = false
+            DockerModel.shared.hide()
+        }
+        if dockerPageHeld {
+            dockerPageHeld = false
+            DockerModel.shared.hide()
+        }
         dockerPage.close()
         removeDockerReadCopies()
         updateMenuBarItem(count: 0)
@@ -3763,6 +3780,8 @@ extension TerminalWindowController: NSMenuItemValidation {
     /// View ▸ Changes is ticked while the pane shows. Everything else it
     /// handles stays enabled, as without validation.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let compose: [Selector] = [#selector(composeUp(_:)), #selector(composeDown(_:)), #selector(composeRestart(_:)), #selector(composeWatch(_:))]
+        if let action = menuItem.action, compose.contains(action), !Settings.shared.dockerEnabled { return false }
         if menuItem.action == #selector(toggleBrowser(_:)) {
             menuItem.state = browserItem?.isCollapsed == false ? .on : .off
             return Settings.shared.browserEnabled

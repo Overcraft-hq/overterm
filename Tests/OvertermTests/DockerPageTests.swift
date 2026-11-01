@@ -1335,14 +1335,19 @@ final class DockerRunSpecTests: XCTestCase {
         let detail = ContainerDetail(
             Id: "x", Name: "/shop-db-1", State: .init(Status: "running"),
             Config: .init(
-                Image: "postgres:16", Env: ["PATH=/usr/bin", "PG_MAJOR=16", "POSTGRES_PASSWORD=pw"], Cmd: ["postgres"], Tty: false),
+                Image: "postgres:16",
+                Env: ["PATH=/usr/bin", "PG_MAJOR=16", "POSTGRES_PASSWORD=pw", "DATABASE_URL=postgres://u:hunter2@db/shop", "TZ=UTC"],
+                Cmd: ["postgres"], Tty: false),
             HostConfig: .init(RestartPolicy: .init(Name: "unless-stopped"), NetworkMode: "shop_default"),
             Mounts: [
                 DockerMountPoint(Type: "volume", Name: "shop_pgdata", Destination: "/var/lib/postgresql/data", RW: true),
                 DockerMountPoint(Type: "bind", Source: "/w/shop/init.sql", Destination: "/docker-entrypoint-initdb.d/init.sql", RW: false),
             ])
         let spec = DockerRunSpec.from(container, detail, imageEnv: ["PATH=/usr/bin", "PG_MAJOR=16"], imageCommand: ["postgres"])
-        XCTAssertEqual(spec.env, ["POSTGRES_PASSWORD=pw"], "the image's own env left out")
+        // A secret, and a URL with a password, go by name alone: their
+        // values never reach the clipboard, a command line or history.
+        XCTAssertEqual(spec.env, ["POSTGRES_PASSWORD", "DATABASE_URL", "TZ=UTC"], "the image's own env left out")
+        XCTAssertFalse(spec.line().contains("pw") || spec.line().contains("hunter2"), spec.line())
         XCTAssertEqual(spec.ports, ["5353:53/udp", "[::1]:16379:6379", "127.0.0.1:55432:5432"], "an IPv6 address bracketed, as -p reads it")
         XCTAssertEqual(spec.volumes, ["shop_pgdata:/var/lib/postgresql/data", "/w/shop/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"])
         XCTAssertEqual(spec.restart, "unless-stopped")

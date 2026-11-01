@@ -143,6 +143,37 @@ struct DockerEmulationBadge: View {
     }
 }
 
+/// A list row's emulation badge, handed what to show: the row reads it.
+struct DockerEmulationTag: View {
+    let emulation: DockerEmulation?
+    /// What the platform was read for; asked once while on screen.
+    let key: String
+    let want: () -> Void
+    @Environment(\.dockerShown) private var shown
+
+    var body: some View {
+        Group {
+            if let emulation {
+                Text(verbatim: emulation.image.short)
+                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(TabStatusStyle.waiting)
+                    .padding(.horizontal, 4)
+                    .frame(height: 14)
+                    .background(Capsule().fill(TabStatusStyle.waiting.opacity(0.14)))
+                    .fixedSize()
+                    .help(emulation.help)
+                    .accessibilityIdentifier("docker.emulated")
+            } else {
+                Color.clear.frame(width: 0, height: 0)
+            }
+        }
+        .task(id: shown ? key : "") {
+            guard shown else { return }
+            want()
+        }
+    }
+}
+
 /// An emulated container's or image's box: why it is slow, what runs it
 /// natively, and the verb that does — the port-conflict box's way.
 struct DockerEmulationNote: View {
@@ -213,7 +244,12 @@ struct DockerContainerRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(container.state.isUp ? theme.text : theme.text2).lineLimit(1)
-                    DockerEmulationBadge(subject: .container(container), docker: docker)
+                    // Its values read here, once: a badge observing the
+                    // whole model was 160 more subscribers, each drawn
+                    // again on every change to the engine's state.
+                    DockerEmulationTag(emulation: docker.emulation(of: container), key: docker.platformKey(of: container)) {
+                        docker.wantPlatform(of: container)
+                    }
                 }
                 Text(verbatim: container.Image).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             }

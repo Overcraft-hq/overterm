@@ -11,7 +11,9 @@ import AppKit
 enum DockerMCP {
     /// Compose's up and down go to a terminal tab (the window sets this):
     /// the user sees them run.
-    static var runInTab: ((String, URL?) -> Void)?
+    /// Runs a command in a terminal tab of the window in front; false when
+    /// no window is open to run it in.
+    static var runInTab: ((String, URL?) -> Bool)?
     /// Set by tests and the E2E runner: answers instead of the alert.
     static var askOverride: ((String) -> Bool)?
 
@@ -62,13 +64,20 @@ enum DockerMCP {
             for try await chunks in engine.logs(target.Id, tty: detail.Config.Tty ?? false, tail: tail, follow: false) {
                 lines += chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true) }
             }
-            var filter = DockerLogFilter(text: string("contains") ?? "")
+            var filter = DockerLogFilter()
             if let level = string("level") { filter.level = level.hasPrefix("err") ? .errors : level.hasPrefix("warn") ? .warnings : .all }
-            let text = lines.filter(filter.matches).map(\.plain).joined(separator: "\n")
             // It lands in the agent's transcript: the env's secrets and every
-            // URL's password out, as the Ask Agent brief has it.
+            // URL's password out, as the Ask Agent brief has it — before
+            // `contains` looks at a line. Matched against the raw text, the
+            // filter answered whether a secret starts with "u:h", "u:hu"…
+            // and gave it away a character at a time.
             let names = DockerAgentText.names(of: target, image: detail.Config.Image)
-            return BrowserMCP.textResult(bounded(DockerSecrets.scrub(text.isEmpty ? "(no lines)" : text, env: detail.env, keeping: names)))
+            let contains = string("contains") ?? ""
+            let text = lines.filter(filter.matches)
+                .map { DockerSecrets.scrub($0.plain, env: detail.env, keeping: names) }
+                .filter { contains.isEmpty || $0.localizedCaseInsensitiveContains(contains) }
+                .joined(separator: "\n")
+            return BrowserMCP.textResult(bounded(text.isEmpty ? "(no lines)" : text))
         case "docker_inspect":
             let target = try container()
             let detail = try await engine.container(target.Id)
@@ -134,8 +143,9 @@ enum DockerMCP {
             let lasting = project.containers.filter { !$0.isOneOff && (service == nil || $0.composeService == service) }
             switch action {
             case "up", "rebuild", "down":
-                guard let runInTab else { throw BrowserMCP.ToolError(message: "No window to run it in.") }
-                runInTab(command, project.workingDir.map { URL(fileURLWithPath: $0) })
+                guard let runInTab, runInTab(command, project.workingDir.map { URL(fileURLWithPath: $0) }) else {
+                    throw BrowserMCP.ToolError(message: "No window to run it in.")
+                }
                 return BrowserMCP.textResult("Running in a terminal tab the user sees: \(command)")
             default:
                 for container in lasting {
@@ -153,7 +163,9 @@ enum DockerMCP {
             } else {
                 throw BrowserMCP.ToolError(message: "docker_exec needs “command”.")
             }
-            guard await allow("An agent wants to run this in “\(target.name)”", command.joined(separator: " ")) else {
+            // Quoted as a shell reads it: joined with spaces, where one
+            // argument ended and the next began didn't show.
+            guard await allow("An agent wants to run this in “\(target.name)”", command.map(DockerCommands.quote).joined(separator: " ")) else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
             // An agent's command may never end, or never stop writing.
@@ -232,10 +244,25 @@ enum DockerMCP {
     }
 
     static func allow(_ title: String, _ detail: String) async -> Bool {
-        if let answer = askOverride { return answer(title + "\n" + detail) }
+        let shown = displayed(detail)
+        if let answer = askOverride { return answer(title + "\n" + shown) }
         let alert = NSAlert()
         alert.messageText = title
-        alert.informativeText = String(detail.prefix(2000))
+        // All of it, never cut: the first 2,000 characters were shown and
+        // all of it ran — `ls` and two thousand spaces hid what came after.
+        if shown.count <= 600 {
+            alert.informativeText = shown
+        } else {
+            let scroll = NSTextView.scrollableTextView()
+            scroll.frame = NSRect(x: 0, y: 0, width: 460, height: 220)
+            if let text = scroll.documentView as? NSTextView {
+                text.string = shown
+                text.isEditable = false
+                text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+            }
+            alert.informativeText = "\(shown.count) characters — all of it below."
+            alert.accessoryView = scroll
+        }
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't")
         alert.alertStyle = .warning
@@ -244,6 +271,36 @@ enum DockerMCP {
         return await withCheckedContinuation { continuation in
             alert.beginSheetModal(for: window) { continuation.resume(returning: $0 == .alertFirstButtonReturn) }
         }
+    }
+
+    /// What a write's confirmation shows: every character visible — a
+    /// control character or a direction override as its code, a long run
+    /// of blank space said as such — so nothing that runs is out of sight.
+    static func displayed(_ text: String) -> String {
+        var out = ""
+        var blank = ""
+        func flushBlank() {
+            if blank.count > 4 {
+                let lines = blank.filter(\.isNewline).count
+                out += lines > 0 ? " ⟨\(blank.count) blank characters, \(lines) line breaks⟩ " : " ⟨\(blank.count) spaces⟩ "
+            } else {
+                out += blank
+            }
+            blank = ""
+        }
+        for scalar in text.unicodeScalars {
+            if scalar == " " || scalar == "\n" || scalar == "\t" {
+                blank.unicodeScalars.append(scalar)
+                continue
+            }
+            flushBlank()
+            let hidden =
+                scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format
+                || (0x2028...0x2029).contains(scalar.value)
+            out += hidden ? "\\u{\(String(scalar.value, radix: 16, uppercase: true))}" : String(scalar)
+        }
+        flushBlank()
+        return out
     }
 
     // MARK: Answers

@@ -185,6 +185,10 @@ struct ComposeConfig: Equatable, Sendable {
         var block: Int?
         // The entry before, for the lines of a block scalar under it.
         var entry: (indent: Int, secret: Bool)?
+        // Every secret value an `environment` holds: Compose fills the same
+        // one into a `command` (`--requirepass ${REDIS_PASSWORD}`) or a
+        // healthcheck, from wherever it came — not only the `.env`.
+        var found: [String] = []
         for line in yaml.components(separatedBy: "\n") {
             let indent = line.prefix { $0 == " " }.count
             let body = line.dropFirst(indent).trimmingCharacters(in: .whitespaces)
@@ -199,6 +203,7 @@ struct ComposeConfig: Equatable, Sendable {
                     continue
                 }
                 let masked = maskedEntry(body)
+                if masked.secret, let value = masked.value, value.count >= 4 { found.append(value) }
                 entry = (indent, masked.secret)
                 lines.append(pad + masked.text)
                 continue
@@ -206,30 +211,31 @@ struct ComposeConfig: Equatable, Sendable {
             if body == "environment:" || body == "args:" { block = indent }
             lines.append(line)
         }
-        return redact(lines.joined(separator: "\n"), secrets)
+        return redact(lines.joined(separator: "\n"), secrets + found)
     }
 
     /// One `KEY: value` (or `- KEY=value`) of an `environment` or `args`.
-    private static func maskedEntry(_ body: String) -> (text: String, secret: Bool) {
+    private static func maskedEntry(_ body: String) -> (text: String, secret: Bool, value: String?) {
         if body.hasPrefix("- "), let equals = body.firstIndex(of: "=") {
             let key = body[body.index(body.startIndex, offsetBy: 2)..<equals].trimmingCharacters(in: .whitespaces)
-            return ("- \(key)=" + DockerSecrets.masked(key, String(body[body.index(after: equals)...])), DockerSecrets.isSecret(key))
+            let value = String(body[body.index(after: equals)...])
+            return ("- \(key)=" + DockerSecrets.masked(key, value), DockerSecrets.isSecret(key), value)
         }
         guard let colon = body.range(of: ": ") ?? (body.hasSuffix(":") ? body.range(of: ":", options: .backwards) : nil) else {
-            return (body, false)
+            return (body, false, nil)
         }
         var key = String(body[..<colon.lowerBound])
         if let quote = key.first, quote == "\"" || quote == "'", key.count >= 2, key.last == quote { key = String(key.dropFirst().dropLast()) }
         let secret = DockerSecrets.isSecret(key)
         var value = body[colon.upperBound...].trimmingCharacters(in: .whitespaces)
-        guard !value.isEmpty, value != "null", value != "~", !value.hasPrefix("|"), !value.hasPrefix(">") else { return (body, secret) }
+        guard !value.isEmpty, value != "null", value != "~", !value.hasPrefix("|"), !value.hasPrefix(">") else { return (body, secret, nil) }
         var quote = ""
         if let first = value.first, first == "\"" || first == "'", value.count >= 2, value.last == first {
             quote = String(first)
             value = String(value.dropFirst().dropLast())
         }
         let masked = DockerSecrets.masked(key, value)
-        return masked == value ? (body, secret) : (String(body[..<colon.upperBound]) + quote + masked + quote, secret)
+        return masked == value ? (body, secret, value) : (String(body[..<colon.upperBound]) + quote + masked + quote, secret, value)
     }
 
     /// Each of `values` taken out of `text` where it stands on its own —

@@ -111,6 +111,8 @@ final class DockerModel: ObservableObject {
     /// before this left (`DockerHelpers.sweep`).
     private weak var sweptHelpers: DockerEngine?
     private var viewers = 0
+    /// How many pages and panels are looking — for checks.
+    var viewerCount: Int { viewers }
     private var attempt = 0
 
     /// - Parameter endpoint: where to look, asked at each (re)connection —
@@ -206,12 +208,17 @@ final class DockerModel: ObservableObject {
             if !connection.isRunning { connection = .connecting }
             let engine = DockerEngine(endpoint: endpoint)
             do {
-                let version = try await engine.ping()
+                // Bounded: a socket that takes the connection while Docker
+                // Desktop's VM is wedged or waking never answered, and the
+                // watch stayed on "Connecting…" with no retry.
+                guard let version = await DockerUsageMonitor.within(.seconds(10), { try? await engine.ping() }) else {
+                    throw DockerError.unreachable("Docker didn't answer within 10 seconds.")
+                }
                 // Events first, so a change while the list is read is not
                 // missed: the stream connects as it is made.
                 let events = engine.events()
                 self.engine = engine
-                info = try? await engine.info()
+                info = await DockerUsageMonitor.within(.seconds(10), { try? await engine.info() })
                 runtime = DockerRuntime.of(endpoint, operatingSystem: info?.OperatingSystem)
                 runtimeStatus = .running
                 connection = .running(version)

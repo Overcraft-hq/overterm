@@ -334,6 +334,37 @@ final class DockerFileTransferTests: XCTestCase {
         XCTAssertEqual(untouched[.modificationDate] as? Date, when, "and its time")
     }
 
+    /// The Mac's disk ignores case: a link `Evil`, then `evil/x`, would be
+    /// written through the link — the names alone don't say so, the disk does.
+    func testNothingGoesThroughALinkByAnotherCase() throws {
+        let outside = root.appendingPathComponent("outside-case", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        var archive = try XCTUnwrap(DockerTar.header(name: "top/", size: 0, mode: 0o755, modified: Date(), type: "5"))
+        archive += try XCTUnwrap(DockerTar.header(name: "top/Evil", size: 0, mode: 0o777, modified: Date(), type: "2", link: outside.path))
+        archive += try XCTUnwrap(DockerTar.archive(name: "top/evil/x", data: Data("through".utf8))).dropLast(2 * DockerTar.block)
+        archive += Data(count: 2 * DockerTar.block)
+        let destination = root.appendingPathComponent("case-out", isDirectory: true)
+        let extractor = DockerTarExtractor(destination: destination, folder: true)
+        var reader = DockerTar.Reader()
+        for event in reader.feed(archive) { try extractor.apply(event) }
+        let summary = try extractor.finish()
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: outside.path), [], "nothing written through the link")
+        XCTAssertEqual(summary.skipped, ["top/evil/x"])
+    }
+
+    /// A size of -1 in a long-name header — only a hostile engine writes
+    /// one — reads as nothing, not as a range that traps.
+    func testANegativeSizeDoesntTrap() throws {
+        var block = try XCTUnwrap(DockerTar.header(name: "././@LongLink", size: 0, mode: 0o644, modified: Date(), type: "L"))
+        let size = Array("-0000000001\0".utf8)
+        block.replaceSubrange(124..<136, with: size)
+        var archive = block
+        archive += try XCTUnwrap(DockerTar.archive(name: "a", data: Data("a".utf8)))
+        var reader = DockerTar.Reader()
+        let events = reader.feed(archive)
+        XCTAssertFalse(events.isEmpty)
+    }
+
     func testAFailedCopyLeavesNothing() throws {
         let destination = root.appendingPathComponent("gone", isDirectory: true)
         let extractor = DockerTarExtractor(destination: destination, folder: true)

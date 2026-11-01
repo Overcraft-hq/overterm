@@ -400,7 +400,6 @@ struct DockerPageView: View {
                     )
                     .tag(group.id)
                     .listRowSeparator(.hidden)
-                    .contextMenu { projectMenu(group) }
                     if !page.collapsed.contains(group.id) {
                         ForEach(group.containers) { container in
                             DockerContainerRow(
@@ -410,14 +409,12 @@ struct DockerPageView: View {
                             )
                             .tag(container.Id)
                             .listRowSeparator(.hidden)
-                            .contextMenu { containerMenu(container) }
                         }
                         // A project before it runs: its services, none created.
                         ForEach(group.services) { service in
                             DockerPlannedServiceRow(service: service, theme: theme, folder: group.project?.workingDir, columns: true)
                                 .tag(DockerPageModel.serviceTag(service))
                                 .listRowSeparator(.hidden)
-                                .contextMenu { projectMenu(group) }
                         }
                     }
                 }
@@ -428,6 +425,10 @@ struct DockerPageView: View {
                 DockerListColumns(sort: $page.sort, theme: theme)
             }
         }
+        // One menu for the list, made when it opens: a `.contextMenu` a
+        // row built every row's verbs (compose files stat'ed, a config
+        // read) each time a row was drawn — 39 ms a scroll step at 160.
+        .contextMenu(forSelectionType: String.self) { ids in listMenu(ids) }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .focused($focus, equals: .list)
@@ -468,8 +469,18 @@ struct DockerPageView: View {
 
     // MARK: Menus
 
-    @ViewBuilder private func containerMenu(_ container: ContainerSummary) -> some View {
-        DockerVerbMenu(verbs: page.verbs(for: container, targets: page.selection.contains(container.Id) ? page.selectedContainers : nil))
+    /// The menu for the rows right-clicked: the selection when the click
+    /// was on it, else the one row.
+    @ViewBuilder private func listMenu(_ ids: Set<String>) -> some View {
+        let groups = page.groups
+        let containers = groups.flatMap(\.containers).filter { ids.contains($0.Id) }
+        if let first = containers.first {
+            DockerVerbMenu(verbs: page.verbs(for: first, targets: containers.count > 1 ? containers : nil))
+        } else if let id = ids.first,
+            let group = groups.first(where: { $0.id == id || $0.services.contains { DockerPageModel.serviceTag($0) == id } })
+        {
+            projectMenu(group)
+        }
     }
 
     @ViewBuilder private func projectMenu(_ group: DockerListGroup) -> some View {

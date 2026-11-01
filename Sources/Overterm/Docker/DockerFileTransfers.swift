@@ -243,6 +243,19 @@ final class DockerTarExtractor {
         if made { try? FileManager.default.removeItem(at: destination) }
     }
 
+    /// Whether each of `parts` under `root` is, where it exists, a real
+    /// folder — never a link (lstat).
+    static func onlyFolders(between root: URL, and parts: some Collection<String>) -> Bool {
+        var url = root
+        for part in parts {
+            url.appendPathComponent(part)
+            var info = stat()
+            guard lstat(url.path, &info) == 0 else { return true }  // not there yet: made as a folder
+            guard info.st_mode & S_IFMT == S_IFDIR else { return false }
+        }
+        return true
+    }
+
     private func begin(_ header: DockerTar.Reader.Header) throws {
         let files = FileManager.default
         guard folder else {
@@ -272,6 +285,14 @@ final class DockerTarExtractor {
         }
         let key = parts.joined(separator: "/")
         let url = parts.reduce(destination) { $0.appendingPathComponent($1) }
+        // And on the disk itself: `links` compares names exactly, the Mac's
+        // disk doesn't (case, Unicode normalization) — `Evil` a link, then
+        // `evil/x`, wrote through it. Every folder on the way that is
+        // there must be a folder, looked at without following it.
+        if !Self.onlyFolders(between: destination, and: parts.dropLast()) {
+            summary.skipped.append(header.name)
+            return
+        }
         try files.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         switch header.kind {
         case .directory:

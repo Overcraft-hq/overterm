@@ -35,6 +35,12 @@ struct DockerSSHTarget: Hashable, Sendable {
             port = Int(rest[rest.index(after: colon)...])
         }
         guard !host.isEmpty else { return nil }
+        // A host or user ssh would read as an option — `ssh://-oProxyCommand=…`
+        // in a context's meta.json ran that command here — or with a space
+        // or a control character in it, is no address at all.
+        for word in [host, user ?? ""] where word.hasPrefix("-") || word.contains(where: { $0.isWhitespace || $0.isNewline || $0.asciiValue.map { $0 < 32 } == true }) {
+            return nil
+        }
         return DockerSSHTarget(user: user.flatMap { $0.isEmpty ? nil : $0 }, host: host, port: port, socket: socket)
     }
 
@@ -48,7 +54,8 @@ struct DockerSSHTarget: Hashable, Sendable {
         var words: [String] = []
         if let user { words += ["-l", user] }
         if let port, port != 22 { words += ["-p", "\(port)"] }
-        return words + [host]
+        // `--` ends ssh's options: nothing after it is read as one.
+        return words + ["--", host]
     }
 
     /// What the engine menu offers on the host — where the engine's
@@ -140,7 +147,7 @@ final class DockerSSHForward: @unchecked Sendable {
     /// What asks the host's `docker` where its engine is — the context
     /// `docker system dial-stdio` would use, which is what the CLI runs there.
     static func socketQuery(_ target: DockerSSHTarget) -> [String] {
-        ["-T"] + common() + target.destination + ["--", "docker context inspect --format '{{.Endpoints.docker.Host}}'"]
+        ["-T"] + common() + target.destination + ["docker context inspect --format '{{.Endpoints.docker.Host}}'"]
     }
 
     static let defaultRemoteSocket = "/var/run/docker.sock"
@@ -189,7 +196,18 @@ final class DockerSSHForward: @unchecked Sendable {
         let errors = Pipe()
         process.standardError = errors
         let said = Said()
-        errors.fileHandleForReading.readabilityHandler = { handle in said.append(handle.availableData) }
+        // Cleared at EOF: a handler left on fires again and again with
+        // nothing, a core spinning for the life of the app (once per
+        // reopened forward), as Git.run and DockerCLI already know.
+        errors.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                said.finish()
+            } else {
+                said.append(data)
+            }
+        }
         do {
             try process.run()
         } catch {
@@ -200,8 +218,11 @@ final class DockerSSHForward: @unchecked Sendable {
         while Date() < deadline {
             if !process.isRunning {
                 forward.close()
+                // What it said, from the handler: never readDataToEndOfFile,
+                // which waits for every writer — a ProxyCommand that
+                // outlives ssh held a cooperative thread for good.
+                for _ in 0..<10 where !said.finished { try? await Task.sleep(nanoseconds: 50_000_000) }
                 errors.fileHandleForReading.readabilityHandler = nil
-                said.append(errors.fileHandleForReading.readDataToEndOfFile())
                 throw DockerError.unreachable("SSH: " + Self.said(said.text, fallback: "ssh exited (\(process.terminationStatus))."))
             }
             if accepts(local) { return forward }
@@ -253,10 +274,21 @@ final class DockerSSHForward: @unchecked Sendable {
         }
     }
 
-    private final class Said: @unchecked Sendable {
+    /// What ssh said on stderr — its last 16 KB: a forward lives as long
+    /// as the app, and every refused connection adds a line.
+    final class Said: @unchecked Sendable {
+        static let limit = 16 << 10
         private let lock = NSLock()
         private var data = Data()
-        func append(_ more: Data) { lock.withLock { data.append(more) } }
+        private var ended = false
+        func append(_ more: Data) {
+            lock.withLock {
+                data.append(more)
+                if data.count > Self.limit { data = Data(data.suffix(Self.limit)) }
+            }
+        }
+        func finish() { lock.withLock { ended = true } }
+        var finished: Bool { lock.withLock { ended } }
         var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
     }
 }

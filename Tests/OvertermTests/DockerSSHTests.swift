@@ -22,8 +22,12 @@ final class DockerSSHTests: XCTestCase {
         for url in ["ssh://me@box:2222", "ssh://ops@[fd00::5]:22", "ssh://box/run/user/1000/docker.sock"] {
             XCTAssertEqual(DockerSSHTarget.parse(url)?.url, url)
         }
-        XCTAssertEqual(DockerSSHTarget(user: "me", host: "box", port: 2222).destination, ["-l", "me", "-p", "2222", "box"])
-        XCTAssertEqual(DockerSSHTarget(host: "box", port: 22).destination, ["box"], "the default port says nothing")
+        XCTAssertEqual(DockerSSHTarget(user: "me", host: "box", port: 2222).destination, ["-l", "me", "-p", "2222", "--", "box"])
+        XCTAssertEqual(DockerSSHTarget(host: "box", port: 22).destination, ["--", "box"], "the default port says nothing")
+        // ssh would read these as options: `-oProxyCommand=…` ran a command here.
+        XCTAssertNil(DockerSSHTarget.parse("ssh://-oProxyCommand=touch /tmp/x"))
+        XCTAssertNil(DockerSSHTarget.parse("ssh://-oProxyCommand=sh@box"))
+        XCTAssertNil(DockerSSHTarget.parse("ssh://box\nevil"))
     }
 
     func testAnSSHEndpointIsRemoteAndTheCLIGetsItAsWritten() {
@@ -46,10 +50,10 @@ final class DockerSSHTests: XCTestCase {
         for option in ["BatchMode=yes", "ExitOnForwardFailure=yes", "StreamLocalBindUnlink=yes", "StreamLocalBindMask=0177", "ControlMaster=no"] {
             XCTAssertTrue(arguments.contains(option), option)
         }
-        XCTAssertEqual(Array(arguments.suffix(5)), ["-l", "deploy", "-p", "2222", "box"])
+        XCTAssertEqual(Array(arguments.suffix(6)), ["-l", "deploy", "-p", "2222", "--", "box"])
         let query = DockerSSHForward.socketQuery(target)
         XCTAssertEqual(query.last, "docker context inspect --format '{{.Endpoints.docker.Host}}'", "one word for the host's shell")
-        XCTAssertEqual(query[query.count - 2], "--")
+        XCTAssertEqual(Array(query.suffix(3).prefix(2)), ["--", "box"], "the host after `--`, then its command")
         let local = DockerSSHForward.localSocket(for: target)
         XCTAssertLessThan(local.utf8.count, 104, "a unix socket's path")
         XCTAssertEqual(local, DockerSSHForward.localSocket(for: target), "one a host")
@@ -82,8 +86,8 @@ final class DockerSSHTests: XCTestCase {
         let remote = PublishedPort.of(ports, remoteHost: "10.0.0.7")
         XCTAssertEqual(remote.map(\.url?.absoluteString), [nil, "http://10.0.0.7:8080"], "the host's loopback is the host's alone")
         let commands = DockerSSHTarget(user: "me", host: "box").commands.map(\.command)
-        XCTAssertEqual(commands.first, "ssh -l me box")
-        XCTAssertTrue(commands.contains("ssh -t -l me box sudoedit /etc/docker/daemon.json"), "\(commands)")
+        XCTAssertEqual(commands.first, "ssh -l me -- box")
+        XCTAssertTrue(commands.contains("ssh -t -l me -- box sudoedit /etc/docker/daemon.json"), "\(commands)")
     }
 
     func testARemoteDatabaseIsReachedThroughTheHost() throws {

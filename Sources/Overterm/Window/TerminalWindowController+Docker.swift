@@ -22,7 +22,9 @@ extension TerminalWindowController {
             downloadFile: { [weak self] source, path in self?.downloadDockerFile(source, path) },
             showTab: { [weak self] id in
                 guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
-                if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                // `select` does nothing for the tab already selected: then
+                // the page's going gives the keyboard back to its terminal.
+                if self.store.showingOverlay != nil { self.hideOverlay(focus: tab.id == self.store.selectedID) }
                 self.store.select(tab)
             },
             edit: { [weak self] url in
@@ -100,7 +102,17 @@ extension TerminalWindowController {
         }
         dockerPanel.showRun = { [weak self] session in self?.revealOnDockerPage(DockerPageModel.sessionTag(session)) }
         // An agent's compose up or down runs in a tab of this window.
-        DockerMCP.runInTab = { [weak self] command, folder in self?.runDockerCommand(command, in: folder) }
+        // The window in front when it is asked — not the window that set
+        // this last: once that one closed, an approved command ran nowhere
+        // while the agent was told it was running.
+        DockerMCP.runInTab = { command, folder in
+            for window in NSApp.orderedWindows {
+                guard let controller = window.windowController as? TerminalWindowController else { continue }
+                controller.runDockerCommand(command, in: folder)
+                return true
+            }
+            return false
+        }
         // A port a container wanted, held by a process in a tab: any window's.
         ContainerSession.tabHolding = { port in
             for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
@@ -178,6 +190,9 @@ extension TerminalWindowController {
     /// A container's file in the editor.
     func openContainerFile(_ container: ContainerSummary, _ path: String) { openDockerFile(.of(container), path) }
 
+    /// The largest container or volume file the editor opens.
+    nonisolated static let dockerFileEditLimit = 50 << 20
+
     /// A container's or a volume's file in the editor: a copy under
     /// Overterm's folder, written back where it came from when the editor
     /// saves it — a volume's through a helper made for the call.
@@ -189,6 +204,12 @@ extension TerminalWindowController {
                 let (stat, entry) = try await engine.reaching(source, path) { id, at in
                     let stat = try await engine.stat(id, path: at)
                     guard !stat.isDirectory else { throw DockerError(status: 0, message: "\(path) is a folder.") }
+                    // Read whole, and held twice on the way: a 3 GB log took
+                    // 9 GB for the editor. Saving it to the Mac streams it.
+                    guard stat.size <= Self.dockerFileEditLimit else {
+                        throw DockerError(
+                            status: 0, message: "\(path) is \(DockerBytes.string(stat.size)) — too large for the editor. Save it to the Mac instead.")
+                    }
                     return (stat, try await engine.readEntry(id, file: at))
                 }
                 let local = DockerFiles.localCopy(of: path, from: source, under: AppEnvironment.supportDirectory)
@@ -239,7 +260,9 @@ extension TerminalWindowController {
         let saved = editor.onSaved
         editor.onSaved = { [weak self] in
             saved?()
-            guard let self, let url = self.editor?.active?.url, let copy = self.dockerFileCopies[url.path] else { return }
+            // The file saved, not the active one: Save at a tab's close is
+            // another buffer's, and that container kept its old file.
+            guard let self, let url = self.editor?.lastSaved, let copy = self.dockerFileCopies[url.path] else { return }
             self.saveDockerFile(copy, from: url)
         }
     }
@@ -346,10 +369,14 @@ extension TerminalWindowController {
         return DockerAttention.belongs(folder, to: checkout)
     }
 
-    /// The tab's repository, else its folder; real paths, as Compose's
-    /// labels say a project's folder.
+    /// The tab's checkout as the panel and the changes pane see it
+    /// (`Tab.checkoutSource`: an agent's folder, an attached checkout), else
+    /// its folder; real paths, as Compose's labels say a project's folder.
+    /// The shell's folder alone marked, and listed the ports of, another
+    /// stack than the one the panel showed for an agent tab.
     private func checkout(of tab: Tab) -> String? {
-        tab.workingDirectory.map { FileTreeModel.realPath(FileTreeModel.treeRoot(for: $0)) }
+        let folder = tab.checkoutSource?.root.path ?? tab.workingDirectory
+        return folder.map { FileTreeModel.realPath(FileTreeModel.treeRoot(for: $0)) }
     }
 
     // MARK: Asking an agent
@@ -426,8 +453,7 @@ extension TerminalWindowController {
         let docker = DockerModel.shared
         var ports: [ListeningPort] = []
         // A remote engine's ports are its host's, not this checkout's servers.
-        if docker.connection.isRunning, docker.publishedHost == nil, !docker.projects.isEmpty, let directory = tab.workingDirectory {
-            let checkout = FileTreeModel.realPath(FileTreeModel.treeRoot(for: directory))
+        if docker.connection.isRunning, docker.publishedHost == nil, !docker.projects.isEmpty, let checkout = checkout(of: tab) {
             let here = ComposeProjects.projects(docker.projects, in: checkout)
             ports = ComposeProjects.ports(of: here, overrides: ComposePortStore.shared.overrides(of: here))
         }
@@ -435,7 +461,11 @@ extension TerminalWindowController {
     }
 
     func updateDockerVisibility(panel: SidebarPanel? = nil) {
-        let shown = sidebarItem?.isCollapsed == false && (panel ?? sidebarPanel.panel) == .docker && Settings.shared.dockerEnabled
+        // On screen too: the rail's choice is kept, and a minimized or
+        // covered window polled the engine every 15 s with nobody looking.
+        let shown =
+            sidebarItem?.isCollapsed == false && (panel ?? sidebarPanel.panel) == .docker && Settings.shared.dockerEnabled
+            && dockerPage.windowVisible
         guard shown != dockerPanelShown else { return }
         dockerPanelShown = shown
         dockerPanel.panelVisible = shown
@@ -508,17 +538,24 @@ extension TerminalWindowController {
     /// The model polls only while a page shows it; events run regardless
     /// once it has started.
     func watchDockerPage() -> AnyCancellable {
-        var shown = false
-        return store.$showingOverlay
+        store.$showingOverlay
             .map { $0 == .docker }
             .removeDuplicates()
             .sink { [weak self] visible in
                 self?.dockerPage.visible = visible
                 self?.updateComposeFile()
-                guard visible != shown else { return }
-                shown = visible
-                if visible { DockerModel.shared.show() } else { DockerModel.shared.hide() }
+                // The emitted value: `showingOverlay` isn't set yet.
+                self?.updateDockerPageHold(pageShowing: visible)
             }
+    }
+
+    /// Holds `DockerModel.show()` while the page shows in a window on
+    /// screen, and gives it back otherwise — and when the window closes.
+    func updateDockerPageHold(pageShowing: Bool? = nil) {
+        let held = (pageShowing ?? (store.showingOverlay == .docker)) && dockerPage.windowVisible
+        guard held != dockerPageHeld else { return }
+        dockerPageHeld = held
+        if held { DockerModel.shared.show() } else { DockerModel.shared.hide() }
     }
 
     /// The list's CPU and memory are read only while the window is on
@@ -766,6 +803,8 @@ extension TerminalWindowController {
     /// runs, when it was read from the files as they are. Each looks at its
     /// ports first (`DockerPageModel.startUp`).
     @objc func composeUp(_ sender: Any?) {
+        // Off in Settings ▸ Docker, nothing is read or run.
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let stack = dockerPanelStack()
         if stack.isEmpty {
             guard let checkout = dockerPanel.checkout, dockerPanel.composeFile != nil else { return NSSound.beep() }
@@ -780,6 +819,8 @@ extension TerminalWindowController {
     }
 
     @objc func composeDown(_ sender: Any?) {
+        // Off in Settings ▸ Docker, nothing is read or run.
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let stack = dockerPanelStack()
         guard !stack.isEmpty else { return NSSound.beep() }
         let endpoint = DockerModel.shared.endpoint
@@ -796,6 +837,8 @@ extension TerminalWindowController {
 
     /// Restarted here, through the engine: nothing for a tab to show.
     @objc func composeRestart(_ sender: Any?) {
+        // Off in Settings ▸ Docker, nothing is read or run.
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let stack = dockerPanelStack()
         guard !stack.isEmpty else { return NSSound.beep() }
         dockerPage.act(.restart, on: stack.flatMap(\.containers).filter { !$0.isOneOff })
@@ -806,6 +849,8 @@ extension TerminalWindowController {
     /// not; with no stack, the plan's, as Compose Up does. A beep when none
     /// has one.
     @objc func composeWatch(_ sender: Any?) {
+        // Off in Settings ▸ Docker, nothing is read or run.
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let projects = composeWatchable(dockerPanelStack())
         guard !projects.isEmpty else { return NSSound.beep() }
         Task {

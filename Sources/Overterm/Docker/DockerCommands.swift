@@ -91,7 +91,7 @@ enum DockerCommands {
 
     /// An image's variant for a platform: `docker pull --platform linux/arm64 …`.
     static func pull(_ image: String, platform: DockerPlatform, endpoint: DockerEndpoint? = nil) -> String {
-        prefix(for: endpoint) + "docker pull --platform \(platform.description) \(quote(image))"
+        prefix(for: endpoint) + "docker pull --platform \(quote(platform.description)) \(quote(image))"
     }
 
     /// `docker pull a; docker pull b`: each tried, one refused or not.
@@ -116,7 +116,7 @@ enum DockerCommands {
         _ container: ContainerSummary, reference: String? = nil, project: ComposeProject?, platform: DockerPlatform, built: Bool?,
         endpoint: DockerEndpoint? = nil, files: [String]? = nil
     ) -> String? {
-        let env = "DOCKER_DEFAULT_PLATFORM=\(platform.description) "
+        let env = "DOCKER_DEFAULT_PLATFORM=\(quote(platform.description)) "
         if let project, let service = container.composeService, DockerEmulation.isService(container) {
             if built != false {
                 return env + compose(project, "up -d --no-deps --force-recreate --build", services: [service], endpoint: endpoint, files: files)

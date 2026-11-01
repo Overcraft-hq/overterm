@@ -26,7 +26,17 @@ struct DockerLogDemuxer: Sendable {
     }
 
     mutating func feed(_ data: Data) -> [DockerLogChunk] {
-        guard framed else { return [DockerLogChunk(stream: .stdout, text: String(decoding: data, as: UTF8.self))] }
+        guard framed else {
+            // Plain bytes come in whatever pieces the socket reads: up to the
+            // last newline out, decoded whole, the rest kept. Each piece as
+            // its own text cut lines in two (the half without a timestamp
+            // then dropped as already shown) and a character in two.
+            pending.append(data)
+            guard let newline = pending.lastIndex(of: 0x0A) else { return [] }
+            let text = String(decoding: pending[pending.startIndex...newline], as: UTF8.self)
+            pending = Data(pending[pending.index(after: newline)...])
+            return [DockerLogChunk(stream: .stdout, text: text)]
+        }
         pending.append(data)
         var chunks: [DockerLogChunk] = []
         var offset = pending.startIndex
@@ -41,6 +51,14 @@ struct DockerLogDemuxer: Sendable {
         }
         pending = Data(pending[offset...])
         return chunks
+    }
+
+    /// What a TTY's stream ended with after its last newline; a frame cut
+    /// short is no line.
+    mutating func flush() -> [DockerLogChunk] {
+        defer { pending = Data() }
+        guard !framed, !pending.isEmpty else { return [] }
+        return [DockerLogChunk(stream: .stdout, text: String(decoding: pending, as: UTF8.self))]
     }
 }
 

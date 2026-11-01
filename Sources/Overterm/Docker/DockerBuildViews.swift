@@ -55,12 +55,14 @@ struct DockerBuildsView: View {
 /// A build in the list: a running one's time ticks, once a second, only
 /// while it runs.
 private struct DockerBuildRow: View {
+    /// The clock ticks only while someone can see it, as Scout's does.
+    @Environment(\.dockerShown) private var shown
     let build: DockerBuildRecord
     @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         if build.running {
-            TimelineView(.periodic(from: .now, by: 1)) { context in row(now: context.date) }
+            TimelineView(.animation(minimumInterval: 1, paused: !shown)) { context in row(now: context.date) }
         } else {
             row(now: Date())
         }
@@ -83,6 +85,8 @@ private struct DockerBuildRow: View {
 /// A build beside the list: how it went, where it was built from, its
 /// Dockerfile's warnings and where it failed, then its steps.
 struct DockerBuildDetailView: View {
+    /// The clock ticks only while someone can see it, as Scout's does.
+    @Environment(\.dockerShown) private var shown
     let build: DockerBuildRecord
     @ObservedObject var session: DockerBuildSession
     @ObservedObject var page: DockerPageModel
@@ -128,7 +132,7 @@ struct DockerBuildDetailView: View {
     @ViewBuilder private var summary: some View {
         Group {
             if session.isRunning {
-                TimelineView(.periodic(from: .now, by: 0.5)) { context in summaryText(context.date) }
+                TimelineView(.animation(minimumInterval: 0.5, paused: !shown)) { context in summaryText(context.date) }
             } else {
                 summaryText(Date())
             }
@@ -319,6 +323,8 @@ struct DockerBuildStepsView: View {
 
 /// A step's row: how it is, its number and name, how long it took.
 private struct DockerBuildStepRow: View {
+    /// The clock ticks only while someone can see it, as Scout's does.
+    @Environment(\.dockerShown) private var onScreen
     let step: DockerBuildProgress.Step
     let state: DockerBuildProgress.Step.State
     let shown: (String) -> String
@@ -365,7 +371,7 @@ private struct DockerBuildStepRow: View {
         case .canceled: Text(verbatim: "CANCELED").font(font).foregroundStyle(theme.text3)
         case .unknown: Text(verbatim: "?").font(font).foregroundStyle(theme.text3).help("Still running when the follow stopped")
         case .running:
-            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            TimelineView(.animation(minimumInterval: 0.5, paused: !onScreen)) { context in
                 Text(verbatim: DockerBuildRecord.duration(step.duration(until: context.date))).font(font).foregroundStyle(TabStatusStyle.working)
             }
         case .done: Text(verbatim: DockerBuildRecord.duration(step.duration(until: Date()))).font(font).foregroundStyle(theme.text3)
@@ -376,6 +382,8 @@ private struct DockerBuildStepRow: View {
 /// The shown step: its name, how it went, its sub-progress, its error,
 /// then its output as plain progress prints it.
 private struct DockerBuildStepPane: View {
+    /// The clock ticks only while someone can see it, as Scout's does.
+    @Environment(\.dockerShown) private var shown
     let step: DockerBuildProgress.Step
     let state: DockerBuildProgress.Step.State
     @ObservedObject var session: DockerBuildSession
@@ -387,7 +395,7 @@ private struct DockerBuildStepPane: View {
                 Text(verbatim: "#\(step.number) " + session.shown(step.name)).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
                     .lineLimit(2).textSelection(.enabled)
                 if state == .running {
-                    TimelineView(.periodic(from: .now, by: 0.5)) { context in stateLine(context.date) }
+                    TimelineView(.animation(minimumInterval: 0.5, paused: !shown)) { context in stateLine(context.date) }
                 } else {
                     stateLine(Date())
                 }
