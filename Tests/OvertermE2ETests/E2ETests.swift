@@ -44,6 +44,11 @@ final class E2ETests: XCTestCase {
         let failed = lines.filter { $0.hasPrefix("E2E FAIL") }
         for failure in failed { XCTFail("\(scenario): \(failure.dropFirst("E2E FAIL ".count))") }
         XCTAssertTrue(lines.contains { $0.hasPrefix("E2E DONE") }, "\(scenario): never finished — crashed? exit \(process.terminationStatus)")
+        // A scenario that needs something this machine hasn't got (a test
+        // server) says so, and is skipped rather than failed.
+        if passed.isEmpty, failed.isEmpty, let skip = lines.first(where: { $0.hasPrefix("E2E SKIP") }) {
+            throw XCTSkip(String(skip.dropFirst("E2E SKIP ".count)))
+        }
         XCTAssertFalse(passed.isEmpty, "\(scenario): no checks ran")
         print("\(scenario): \(passed.count) checks passed")
     }
@@ -59,6 +64,7 @@ final class E2ETests: XCTestCase {
     func testNotes() throws { try run("notes") }
     func testDrawing() throws { try run("drawing") }
     func testReview() throws { try run("review") }
+    func testReviewPerf() throws { try run("reviewPerf") }
     func testDatabase() throws { try run("database") }
     func testStorage() throws { try run("storage") }
     // The whole Docker page, end to end: 80–110 s on a busy machine.

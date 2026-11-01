@@ -43,8 +43,11 @@ struct ReviewView: View {
                 note("Nothing changed.")
             case .loaded:
                 HStack(spacing: 0) {
-                    ReviewFileList(model: model, theme: theme)
-                        .frame(width: 290)
+                    ReviewFileTable(
+                        rows: model.listRows, selected: model.selected, viewed: model.viewed, theme: theme,
+                        select: { model.select($0) }, toggleViewed: { model.toggleViewed($0) }
+                    )
+                    .frame(width: 290)
                     Rectangle().fill(theme.border).frame(width: 1)
                     ReviewFilePane(model: model, theme: theme, actions: actions)
                 }
@@ -132,117 +135,6 @@ private struct ReviewHeader: View {
         case .none: break
         }
         return parts.joined(separator: " · ")
-    }
-}
-
-/// The files, by folder, each with how it changed and whether it is read.
-private struct ReviewFileList: View {
-    @ObservedObject var model: ReviewModel
-    @ObservedObject var theme: ChromeTheme
-
-    private var groups: [(folder: String, files: [ChangedFile])] {
-        var result: [(String, [ChangedFile])] = []
-        for file in model.files {
-            let folder = (file.path as NSString).deletingLastPathComponent
-            if result.last?.0 == folder {
-                result[result.count - 1].1.append(file)
-            } else {
-                result.append((folder, [file]))
-            }
-        }
-        return result
-    }
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(groups, id: \.folder) { group in
-                        if !group.folder.isEmpty {
-                            Text(verbatim: group.folder)
-                                .font(.system(size: 11))
-                                .foregroundStyle(theme.dimText)
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                                .padding(.horizontal, 12)
-                                .padding(.top, 8)
-                                .padding(.bottom, 2)
-                        }
-                        ForEach(group.files) { file in
-                            ReviewFileRow(
-                                file: file, selected: model.selected == file.path, viewed: model.viewed.contains(file.path),
-                                indented: !group.folder.isEmpty, theme: theme, select: { model.select(file.path) },
-                                toggleViewed: { model.toggleViewed(file.path) }
-                            )
-                            .id(file.path)
-                        }
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-            .onChange(of: model.selected) { selected in
-                guard let selected else { return }
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(selected) }
-            }
-        }
-    }
-}
-
-private struct ReviewFileRow: View {
-    let file: ChangedFile
-    let selected: Bool
-    let viewed: Bool
-    let indented: Bool
-    @ObservedObject var theme: ChromeTheme
-    let select: () -> Void
-    let toggleViewed: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Button(action: toggleViewed) {
-                Image(systemName: viewed ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(viewed ? DiffColors.added : theme.dimText.opacity(0.6))
-            }
-            .buttonStyle(.plain)
-            .help(viewed ? "Viewed — v" : "Mark as Viewed — v")
-            Text(verbatim: file.letter)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(color)
-                .frame(width: 10)
-            Text(verbatim: (file.path as NSString).lastPathComponent)
-                .font(.system(size: 12))
-                .foregroundStyle(viewed ? theme.dimText : theme.text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 4)
-            if let added = file.added, let removed = file.removed {
-                HStack(spacing: 3) {
-                    if added > 0 { Text(verbatim: "+\(added)").foregroundStyle(DiffColors.added) }
-                    if removed > 0 { Text(verbatim: "−\(removed)").foregroundStyle(DiffColors.removed) }
-                }
-                .font(.system(size: 10, design: .monospaced))
-                .opacity(viewed ? 0.6 : 1)
-            }
-        }
-        .padding(.leading, indented ? 18 : 12)
-        .padding(.trailing, 12)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: 5).fill(selected ? theme.selected : (hovering ? theme.hover : .clear)).padding(.horizontal, 6))
-        .contentShape(Rectangle())
-        .onTapGesture(perform: select)
-        .onHover { hovering = $0 }
-        .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
-    }
-
-    private var color: Color {
-        switch file.kind {
-        case .added, .untracked: DiffColors.added
-        case .deleted: DiffColors.removed
-        case .renamed: .blue
-        default: .orange
-        }
     }
 }
 
@@ -342,8 +234,14 @@ private struct ReviewDiffView: View {
                             DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable().id(line.id)
                         }
                     case .split:
+                        let colors = ReviewRowColors(theme)
                         ForEach(rows) { row in
-                            SplitRowView(row: row, diff: diff, palette: palette, theme: theme).id(row.id)
+                            SplitRowView(
+                                row: row, left: row.left.map(diff.style(of:)) ?? DiffLineStyle(),
+                                right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors
+                            )
+                            .equatable()
+                            .id(row.id)
                         }
                     }
                     if diff.truncated {
@@ -352,7 +250,9 @@ private struct ReviewDiffView: View {
                 }
                 .padding(.vertical, 4)
                 .font(.system(size: 12, design: .monospaced))
-                .textSelection(.enabled)
+                // No .textSelection: it cost 40% of every scroll step (a
+                // 3,000-line file side by side, 17 ms a step → 10.5 ms).
+                // Open in Editor is where a line is copied from.
             }
             .onChange(of: target) { target in
                 guard let target else { return }
@@ -362,55 +262,79 @@ private struct ReviewDiffView: View {
     }
 }
 
+/// The colours a diff row is drawn in, read once from the chrome — rows
+/// hold these, not the theme: a row observing the theme was one more
+/// thing to check on every row for every step of a scroll.
+struct ReviewRowColors: Equatable {
+    var text: Color
+    var dim: Color
+    var border: Color
+    var empty: Color
+    var hunk: Color
+
+    @MainActor init(_ theme: ChromeTheme) {
+        text = theme.text
+        dim = theme.dimText
+        border = theme.border
+        empty = theme.selected.opacity(0.25)
+        hunk = theme.selected.opacity(0.6)
+    }
+}
+
 /// One row side by side: the old line on the left, the new on the right,
-/// each half its own colour; a hunk's header across both.
-private struct SplitRowView: View {
+/// each half its own colour; a hunk's header across both. Equatable: a
+/// row is drawn again only when it or its colours change.
+private struct SplitRowView: View, Equatable {
     let row: SplitDiff.Row
-    let diff: DiffModel.FileDiff
+    let left: DiffLineStyle
+    let right: DiffLineStyle
     let palette: DiffPalette
-    @ObservedObject var theme: ChromeTheme
+    let colors: ReviewRowColors
+
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.row == b.row && a.left == b.left && a.right == b.right && a.colors == b.colors
+    }
 
     var body: some View {
         if let full = row.full {
             Text(verbatim: full.text)
-                .foregroundStyle(theme.dimText)
+                .foregroundStyle(colors.dim)
                 .lineLimit(1)
                 .padding(.leading, 8)
-                .padding(.vertical, 1)
                 .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
-                .background(full.kind == .hunk ? theme.selected.opacity(0.6) : .clear)
+                .background(full.kind == .hunk ? colors.hunk : .clear)
         } else {
             HStack(alignment: .top, spacing: 0) {
-                half(row.left, number: row.left?.oldNumber, side: .removed)
-                Rectangle().fill(theme.border).frame(width: 1)
-                half(row.right, number: row.right?.newNumber, side: .added)
+                half(row.left, style: left, number: row.left?.oldNumber, side: .removed)
+                colors.border.frame(width: 1)
+                half(row.right, style: right, number: row.right?.newNumber, side: .added)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func half(_ line: DiffLine?, number: Int?, side: DiffLine.Kind) -> some View {
+    private func half(_ line: DiffLine?, style: DiffLineStyle, number: Int?, side: DiffLine.Kind) -> some View {
         let changed = line?.kind == side
         let tint = side == .added ? DiffColors.added : DiffColors.removed
         return HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(verbatim: number.map(String.init) ?? "")
-                .foregroundStyle(theme.dimText.opacity(0.7))
+                .foregroundStyle(colors.dim.opacity(0.7))
                 .frame(width: 40, alignment: .trailing)
                 .padding(.trailing, 8)
-            text(line)
-                .foregroundStyle(theme.text)
-                .fixedSize(horizontal: false, vertical: true)
+            text(line, style)
+                .foregroundStyle(colors.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, minHeight: 18, maxHeight: .infinity, alignment: .topLeading)
-        .background(line == nil ? theme.selected.opacity(0.25) : (changed ? tint.opacity(0.14) : .clear))
-        .overlay(alignment: .leading) { Rectangle().fill(changed ? tint : .clear).frame(width: 3) }
+        .background(line == nil ? colors.empty : (changed ? tint.opacity(0.14) : .clear))
+        .overlay(alignment: .leading) {
+            if changed { tint.frame(width: 3) }
+        }
     }
 
-    private func text(_ line: DiffLine?) -> Text {
+    private func text(_ line: DiffLine?, _ style: DiffLineStyle) -> Text {
         guard let line, !line.text.isEmpty else { return Text(verbatim: " ") }
-        let style = diff.style(of: line)
         if style.isEmpty { return Text(verbatim: line.text) }
         return Text(palette.text(line, style))
     }

@@ -6,7 +6,7 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
-## 1.5.0 — 2026-10-31
+## 1.5.0 — 2026-11-01
 
 - docker: Docker's work on a page of its own (⌥⌘P) — the containers of the engine your terminal's `docker` reaches, grouped by compose project and kept current as they start, stop and crash; a container's logs followed and coloured by level, its inspect data with secrets masked, its CPU, memory and network; single keys while the list has the keyboard, `?` lists them
 - docker: the rail's shippingbox keeps the selected tab's checkout's stack beside the terminal, a container's logs a click away in the right-hand pane
@@ -49,6 +49,12 @@ version is tagged `v<version>`.
 - docker: Check for Updates asks the registries whether your images have newer builds, and pulls them
 - docker: a build shown as it runs, step by step with its time and cache
 - docker: an image's vulnerabilities on its detail when you scan it — by severity, the fixable ones apart
+
+## 1.4.8 — 2026-11-01
+
+- review: a big review scrolls smoothly — the file list is an AppKit table, the diff draws only what changed
+- review: uncommitted changes in a review tab — on main too, where ⇧⌘R said there was nothing to review
+- terminal: an oh-my-zsh prompt (user@host:path) is no longer taken for a command — blocks, ⇧⌘C and ⌘L's exit code follow the right command again
 
 ## 1.4.7 — 2026-10-31
 
