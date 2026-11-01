@@ -4772,7 +4772,14 @@ final class E2ERunner {
         clipboard.clearContents()
         clipboard.setString("first line\nsecond line\n", forType: .string)
         let pasted = out("pasted")
-        check("cat reads the terminal", await run("cat > \(pasted.path)") { self.terminal?.needsConfirmClose == true })
+        // Started for sure: `cat > file` makes the file as it starts. A
+        // running process alone (needsConfirmClose) could be the shell's
+        // own, and the paste then went to the prompt — no sheet, no file.
+        check(
+            "cat reads the terminal",
+            await run("cat > \(pasted.path)") {
+                FileManager.default.fileExists(atPath: pasted.path) && self.terminal?.needsConfirmClose == true
+            })
         terminal?.paste(nil)
         check("a paste that could run commands asks first", await eventually(5) { self.window.attachedSheet != nil })
         check("the sheet shows the paste", sheetPreview == "first line\nsecond line\n", sheetPreview?.debugDescription ?? "no preview")
@@ -4796,9 +4803,12 @@ final class E2ERunner {
 
         // A program in a tab you aren't looking at is refused without a sheet.
         let background = out("background")
+        let waiting = out("background-waiting")
         check(
             "a reader waits in this tab",
-            await run("sleep 2; python3 \(reader.path) \(background.path)") { self.terminal?.needsConfirmClose == true })
+            await run("touch \(waiting.path); sleep 2; python3 \(reader.path) \(background.path)") {
+                FileManager.default.fileExists(atPath: waiting.path)
+            })
         app.newTab(nil)
         await eventually(15) { contents(background) != nil }
         check(

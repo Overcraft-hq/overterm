@@ -19,7 +19,7 @@ final class E2ETests: XCTestCase {
         try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: Self.app.path), "build the app first: make app")
     }
 
-    private func run(_ scenario: String, env extra: [String: String] = [:], timeout: TimeInterval = 120) throws {
+    private func run(_ scenario: String, env extra: [String: String] = [:], timeout: TimeInterval = 120, attempt: Int = 0) throws {
         let process = Process()
         process.executableURL = Self.app
         var env = ProcessInfo.processInfo.environment
@@ -40,6 +40,14 @@ final class E2ETests: XCTestCase {
         }
         let lines = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             .split(separator: "\n").map(String.init).filter { $0.hasPrefix("E2E ") }
+        // Dead before a line, by a signal: launched in quick succession,
+        // macOS's LaunchServices connection can trap in NSApplication's
+        // own +initialize (_xpc_api_misuse) before any of the app runs.
+        // Not a result: launched once more.
+        if lines.isEmpty, process.terminationReason == .uncaughtSignal, attempt == 0 {
+            Thread.sleep(forTimeInterval: 1)
+            return try run(scenario, env: extra, timeout: timeout, attempt: 1)
+        }
         let passed = lines.filter { $0.hasPrefix("E2E PASS") }
         let failed = lines.filter { $0.hasPrefix("E2E FAIL") }
         for failure in failed { XCTFail("\(scenario): \(failure.dropFirst("E2E FAIL ".count))") }
