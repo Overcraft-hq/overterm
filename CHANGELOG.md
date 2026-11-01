@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.0 — 2026-11-11
 
 - build: Xcode 27 builds the app — TreeSitterKit's headers in a folder of their own
+- build: an app built with Xcode 27 takes clicks on macOS 27 — the binary names the SDK it was built with
 
 ## 1.5.4 — 2026-11-09
 

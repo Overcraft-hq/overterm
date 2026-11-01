@@ -44,6 +44,23 @@ if [[ ! -x "$BIN_PATH" ]]; then
   exit 1
 fi
 
+# The SDK the binary says it was built with. AppKit and SwiftUI keep an
+# older SDK's behaviour for a binary that names one: Swift 6.4's build
+# system (Xcode 27) writes the deployment target there (13.0), and on
+# macOS 27 the window's hidden overlays then took every click. Linked
+# again with the real one when it is wrong; refused if it still is.
+recorded_sdk() { otool -l "$1" | awk '/LC_BUILD_VERSION/ { found = 1 } found && $1 == "sdk" { print $2; exit }'; }
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+if [[ "$(recorded_sdk "$BIN_PATH")" != "$SDK_VERSION" ]]; then
+  MIN_OS="$(sed -nE 's/.*\.macOS\(\.v([0-9]+)\).*/\1.0/p' Package.swift | head -1)"
+  echo "==> linking again against the macOS $SDK_VERSION SDK (it said $(recorded_sdk "$BIN_PATH"))"
+  swift build -c release -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_OS" -Xlinker "$SDK_VERSION"
+  if [[ "$(recorded_sdk "$BIN_PATH")" != "$SDK_VERSION" ]]; then
+    echo "error: $BIN_PATH says SDK $(recorded_sdk "$BIN_PATH"), not $SDK_VERSION" >&2
+    exit 1
+  fi
+fi
+
 APP_DIR="$ROOT/${APP_NAME}.app"
 CONTENTS="$APP_DIR/Contents"
 
