@@ -1619,15 +1619,12 @@ final class E2ERunner {
         let x = sidebar.superview!.frame.maxX + splitView.dividerThickness / 2 + 3
         let start = splitView.convert(NSPoint(x: x, y: splitView.bounds.midY), to: nil)
         let end = NSPoint(x: start.x + 80, y: start.y)
-        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
-            NSEvent.mouseEvent(
-                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
-        }
-        NSApp.postEvent(mouse(.leftMouseDragged, end), atStart: false)
-        NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown, start))
-        check("the sidebar divider drags from 3 pt off the line", abs(sidebar.frame.width - before - 80) < 2, "\(before) → \(sidebar.frame.width)")
+        // In steps, as a hand drags: since macOS 27 a divider's tracking
+        // loop takes the first drag of a press for nothing.
+        await queuedDrag(from: start, to: end)
+        check(
+            "the sidebar divider drags from 3 pt off the line", abs(sidebar.frame.width - before - 80) < 2,
+            "\(before) → \(sidebar.frame.width), the press answered by \(Self.answering(window, at: start))")
         let terminalWidth = app.store.selected?.terminal.frame.width ?? 0
         check("the terminal keeps its minimum", terminalWidth >= 240, "\(terminalWidth)")
 
@@ -2735,6 +2732,18 @@ final class E2ERunner {
         await pause(0.2)
     }
 
+    /// What answers a press at `point` (window coordinates), as AppKit asks
+    /// the frame view — the view and its chain up, for a failing check.
+    static func answering(_ window: NSWindow, at point: NSPoint) -> String {
+        guard let frame = window.contentView?.superview, var view = frame.hitTest(frame.convert(point, from: nil)) else { return "nothing" }
+        var chain = [String(describing: Swift.type(of: view))]
+        while let parent = view.superview, chain.count < 6 {
+            chain.append(String(describing: Swift.type(of: parent)))
+            view = parent
+        }
+        return chain.joined(separator: " < ")
+    }
+
     /// A drag as a hand makes it: the drag and the release are already
     /// queued when the press is handled, so a tracking loop the press starts
     /// (the title bar's) takes them from the queue, as it does a real hand's
@@ -3513,17 +3522,13 @@ final class E2ERunner {
         // the way down, clear of where the right column's divider meets it.
         let start = host.convert(NSPoint(x: first.frame.maxX + 3, y: host.bounds.height / 4), to: nil)
         let end = NSPoint(x: start.x - 80, y: start.y)
-        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
-            NSEvent.mouseEvent(
-                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
-        }
         let widthBefore = first.frame.width
-        // The divider tracks the drag in its own loop: queue the rest first.
-        NSApp.postEvent(mouse(.leftMouseDragged, end), atStart: false)
-        NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown, start))
-        check("the divider drags", abs(first.frame.width - (widthBefore - 80)) <= 2, "\(widthBefore) → \(first.frame.width)")
+        // The divider tracks the drag in its own loop: queued first, in
+        // steps as a hand drags.
+        await queuedDrag(from: start, to: end)
+        check(
+            "the divider drags", abs(first.frame.width - (widthBefore - 80)) <= 2,
+            "\(widthBefore) → \(first.frame.width), the press answered by \(Self.answering(window, at: start))")
 
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             await pause(0.8)
