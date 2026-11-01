@@ -488,7 +488,7 @@ final class ComposeUpTests: XCTestCase {
     /// What the question is answered: Up on Free Ports.
     private var answer: (@escaping (Int) -> Void) -> Void = { $0(0) }
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("ot-up-\(UUID().uuidString.prefix(8))", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         DockerPageModel.checksPortsInTests = true
@@ -499,7 +499,7 @@ final class ComposeUpTests: XCTestCase {
         answer = { $0(0) }
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         DockerPageModel.checksPortsInTests = false
         DockerCLI.override = nil
         for listener in listeners { close(listener) }
