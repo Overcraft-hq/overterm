@@ -128,6 +128,23 @@ final class SplitDiffTests: XCTestCase {
     }
 }
 
+/// The file list's rows: each folder once, above its files.
+final class ReviewListRowTests: XCTestCase {
+    private func file(_ path: String) -> ChangedFile {
+        ChangedFile(path: path, originalPath: nil, kind: .modified, isStaged: false, hasUnstaged: false)
+    }
+
+    func testFoldersAreNamedOnceAboveTheirFiles() {
+        let files = ReviewModel.ordered(["README.md", "src/a.swift", "src/b.swift", "src/x/c.swift"].map(file))
+        XCTAssertEqual(
+            ReviewListRow.rows(files),
+            [
+                .file(file("README.md"), indented: false), .folder("src"), .file(file("src/a.swift"), indented: true),
+                .file(file("src/b.swift"), indented: true), .folder("src/x"), .file(file("src/x/c.swift"), indented: true),
+            ])
+    }
+}
+
 final class ReviewSourceTests: XCTestCase {
     func testTitlesShortenShasAndKeepNames() {
         let sha = String(repeating: "a", count: 40)
@@ -205,6 +222,29 @@ final class ReviewModelTests: XCTestCase {
         for _ in 0..<100 where model.diffs["untracked.txt"] == nil { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(model.diffs["untracked.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["u1", "u2"])
         XCTAssertEqual(model.files.last?.added, 2, "an untracked file is counted once read")
+    }
+
+    func testUncommittedIsAgainstHeadWithUntrackedFiles() async throws {
+        try await git(["checkout", "-q", "main"])
+        try write("a.txt", "one\ntwo\nTHREE\n")
+        try write("loose.txt", "x\n")
+        let model = await loaded(.uncommitted(branch: "main"))
+        XCTAssertEqual(model.phase, .loaded)
+        XCTAssertEqual(model.files.map(\.path), ["a.txt", "loose.txt"])
+        XCTAssertEqual(model.diffs["a.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["THREE"])
+        XCTAssertEqual(model.title, "Uncommitted")
+    }
+
+    func testUncommittedBeforeAnyCommitIsAgainstTheEmptyTree() async throws {
+        let fresh = repo.appendingPathComponent("fresh")
+        try FileManager.default.createDirectory(at: fresh, withIntermediateDirectories: true)
+        _ = try await Git.run(["init", "-q", "-b", "main"], in: fresh)
+        try "first\n".write(to: fresh.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
+        _ = try await Git.run(["add", "-A"], in: fresh)
+        let model = ReviewModel(root: fresh, source: .uncommitted(branch: nil), defaults: defaults)
+        await model.load()
+        XCTAssertEqual(model.phase, .loaded)
+        XCTAssertEqual(model.files.map(\.path), ["new.txt"])
     }
 
     func testARangeIsWhatHeadHasThatBaseDoesnt() async throws {

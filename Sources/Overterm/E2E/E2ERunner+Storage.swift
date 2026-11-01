@@ -8,7 +8,7 @@ extension E2ERunner {
         var probe = URLRequest(url: URL(string: "http://127.0.0.1:59000/")!)
         probe.timeoutInterval = 2
         guard (try? await URLSession.shared.data(for: probe)) != nil else {
-            print("E2E INFO storage: no S3 server on :59000 — Scripts/database-test-servers.sh starts one")
+            print("E2E SKIP storage: no S3 server on :59000 — Scripts/database-test-servers.sh starts one")
             return
         }
         let model = DatabaseModel.shared

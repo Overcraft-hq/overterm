@@ -528,7 +528,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     onClose: { [weak self] in self?.toggleDiff(nil) },
                     onDetach: { [weak self] in self?.detach() },
                     onOpen: { [weak self] in self?.openInEditor($0) },
-                    onReview: { [weak self] in self?.reviewBranch(nil) }),
+                    onReview: { [weak self] scope in
+                        if scope == .uncommitted { self?.reviewUncommitted(nil) } else { self?.reviewBranch(nil) }
+                    }),
                 pullRequest: PullRequestView(
                     model: pullRequest, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
@@ -2876,6 +2878,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side  ⇧⌘R",
                 symbol: "rectangle.split.2x1"
             ) { [weak self] _, _ in self?.reviewBranch(nil) },
+            PaletteItem(
+                id: "a.reviewUncommitted", group: .action, title: "Review Uncommitted Changes",
+                subtitle: "What isn't committed yet, in a tab", symbol: "plusminus"
+            ) { [weak self] _, _ in self?.reviewUncommitted(nil) },
             PaletteItem(
                 id: "a.reviewPullRequest", group: .action, title: "Review Pull Request", subtitle: "This branch's pull request, in a tab",
                 symbol: "arrow.triangle.pull"

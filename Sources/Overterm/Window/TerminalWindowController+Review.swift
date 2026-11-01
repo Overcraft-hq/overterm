@@ -77,9 +77,20 @@ extension TerminalWindowController {
     @objc func reviewBranch(_ sender: Any?) {
         guard let root = diff.root else { return NSSound.beep() }
         guard case .since(let mergeBase, let base) = diff.comparison else {
+            // On the base branch (main), or before a first commit: what
+            // isn't committed is what there is to review.
+            if !diff.files.isEmpty { return reviewUncommitted(nil) }
             return alert("Nothing to review", diff.comparison?.unavailable ?? "This checkout has no branch to compare.")
         }
         openReview(.branch(mergeBase: mergeBase, base: base, branch: diff.branch ?? "HEAD"), in: root)
+    }
+
+    /// The changes pane's Uncommitted, and the palette's: staged, unstaged
+    /// and untracked, against HEAD.
+    @objc func reviewUncommitted(_ sender: Any?) {
+        guard let root = diff.root else { return NSSound.beep() }
+        guard !diff.files.isEmpty else { return alert("Nothing to review", "There are no uncommitted changes in this checkout.") }
+        openReview(.uncommitted(branch: diff.branch), in: root)
     }
 
     /// Overgit's commits: one, or a run of them — picked in either order,

@@ -104,7 +104,7 @@ extension E2ERunner {
     /// (:52222) opens as any other, and closing it ends its ssh.
     func databaseTunnelScenario() async {
         guard Self.portAnswers(52222) else {
-            print("E2E INFO databaseTunnel: no SSH server on :52222 — Scripts/database-test-servers.sh starts one")
+            print("E2E SKIP databaseTunnel: no SSH server on :52222 — Scripts/database-test-servers.sh starts one")
             return
         }
         SSHTunnel.knownHostsFile = scratch.appendingPathComponent("known_hosts").path

@@ -6,49 +6,21 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
-## 1.5.0 — 2026-10-31
+## 1.5.0 — 2026-11-01
 
-- docker: Docker's work on a page of its own (⌥⌘P) — the containers of the engine your terminal's `docker` reaches, grouped by compose project and kept current as they start, stop and crash; a container's logs followed and coloured by level, its inspect data with secrets masked, its CPU, memory and network; single keys while the list has the keyboard, `?` lists them
-- docker: the rail's shippingbox keeps the selected tab's checkout's stack beside the terminal, a container's logs a click away in the right-hand pane
-- docker: ⇧⌥⌘P finds any container or compose project by name, from anywhere
-- docker: images (pulled with their progress, tagged, their layers), volumes with their sizes and who mounts them, networks with who is on them; Clean Up lists what nothing uses before anything goes
-- docker: a container that crashes, runs out of memory or turns unhealthy marks its checkout's tab, as a failed command does
-- docker: `d` on a PostgreSQL, MySQL or ClickHouse container opens it in the Database panel, its connection filled in from the container
-- docker: a container's files — browse its folders, open a config in the editor, and the save goes back into the container
-- docker: agents started in Overterm read Docker through MCP — containers, projects, logs, why one failed — with secrets kept out; starting, stopping, compose and exec are asked about in the window each time
-- docker: a compose project's logs merged as `compose logs` merges them, each service in its colour
-- docker: two stacks wanting the same port — the one that couldn't start says which stack, or which tab's process, has it, and stops that one for you
-- docker: any context the `docker` CLI knows, picked for Overterm alone; Docker Desktop, OrbStack and Colima started, stopped and restarted from the page
-- docker: `n` runs an image from a window that writes the `docker run` as you fill it in; any container copies as the `docker run` that would make it again
-- docker: a container's processes, and the files it changed since it started
-- docker: a compose project's file and its resolved config, and the engine's own settings, open in the editor
-- docker: `E` opens a debug shell beside a container whose image has no tools of its own
-- docker: the ports a checkout's containers publish sit in its panes' headers, in Tab Info and in the API client's discovery
-- docker: a volume exports, imports and clones; a container's filesystem and an image save as tars
-- tasks: New Task can start the new worktree's compose stack with it
-- docker: Builds shows what buildx kept of each — how long, how much from cache, its log, the Dockerfile a click away
-- docker: Docker Hub is searched as you type the image to pull
-- docker: Docker Desktop's update check, diagnose and Kubernetes status in the engine menu, in a terminal tab
-- docker: an `ssh://` context reaches a remote engine through your own ssh, its ports opening on the host
-- docker: Docker Model Runner's models — which are loaded, what they take — with a chat in a tab and the OpenAI base URL to give your code
-- docker: with Docker's MCP Toolkit, the page says whether your agents reach its MCP servers, and connects them in a tab
-- docker: Rancher Desktop started, stopped and asked about through `rdctl`
-- docker: Docker Scout looks an image over in a tab
-- docker: every detail has its actions as buttons — the same ones its right-click menu has; a network's puts a container on it or takes one off
-- docker: a checkout's compose project shows before it has run, ready to bring up
-- docker: a compose service rebuilt, restarted or pulled on its own; Watch, and Up with profiles
-- docker: a worktree's stack comes up on free ports when another worktree's holds them — the repository stays untouched
-- docker: a database container's own client in a tab — psql, mysql, redis-cli, mongosh… — its password never on the command line
-- docker: ask an agent why a container failed — its state, last logs and compose service, secrets left out; selected log lines with ⌘L
-- docker: a container running under emulation on Apple silicon says so, with what to do
-- docker: CPU and memory columns in the container list
-- docker: Testcontainers' containers apart, by test run, removed together
-- docker: a container's memory, CPUs and restart policy changed in place; renamed; saved as an image
-- docker: a volume's files browsed, opened and saved back, as a container's are
-- docker: files dragged from Finder into a container, and out of it
-- docker: Check for Updates asks the registries whether your images have newer builds, and pulls them
-- docker: a build shown as it runs, step by step with its time and cache
-- docker: an image's vulnerabilities on its detail when you scan it — by severity, the fixable ones apart
+- docker: Docker beside the terminal (⌥⌘P) — the containers your `docker` reaches, grouped by compose project and kept live; logs followed and coloured by level, inspect with secrets masked, CPU, memory, network, processes and changed files; ⇧⌥⌘P finds any container or project
+- docker: images, volumes, networks and builds — pulls with progress and Docker Hub search, layers, Check for Updates, Scout's vulnerabilities, buildx history and builds followed step by step; volumes exported, imported and cloned; Clean Up lists what nothing uses before anything goes
+- docker: compose — a checkout's project shown before it runs, Up with profiles, Watch, one service rebuilt, restarted or pulled, logs merged by service; a worktree's stack on free ports when another holds them, and a port clash says who holds it; New Task can start the stack
+- docker: inside a container — its files browsed, edited and dragged in and out (a volume's too), a database container in the Database panel or its own client in a tab, a debug shell for images without tools, its memory, CPUs and restart policy changed, renamed or saved as an image; `n` runs an image as its `docker run` is written
+- docker: beside your work — the rail's shippingbox shows the selected checkout's stack; published ports in pane headers, Tab Info and the API client; a container that crashes, runs out of memory or turns unhealthy marks its tab, and an agent can be asked why
+- docker: agents read Docker through MCP with secrets kept out, and every write is asked about first; Docker's MCP Toolkit and Model Runner (models, a chat, the base URL) from the page
+- docker: any engine — every `docker` context, `ssh://` through your own ssh; Docker Desktop, OrbStack, Colima and Rancher Desktop started and stopped from the page; Testcontainers' runs kept apart
+
+## 1.4.8 — 2026-11-01
+
+- review: a big review scrolls smoothly — the file list is an AppKit table, the diff draws only what changed
+- review: uncommitted changes in a review tab — on main too, where ⇧⌘R said there was nothing to review
+- terminal: an oh-my-zsh prompt (user@host:path) is no longer taken for a command — blocks, ⇧⌘C and ⌘L's exit code follow the right command again
 
 ## 1.4.7 — 2026-10-31
 

@@ -7,6 +7,10 @@ enum ReviewSource: Hashable, Sendable {
     /// yet — the changes pane's Branch: `git diff <merge-base>` and the
     /// untracked files. `branch` is only its name, for the title.
     case branch(mergeBase: String, base: String, branch: String)
+    /// What isn't committed yet — staged, unstaged and untracked — against
+    /// HEAD: the changes pane's Uncommitted. Also on the base branch itself,
+    /// where a branch has nothing to compare with.
+    case uncommitted(branch: String?)
     /// What `head` has that `base` doesn't: `base...head`, as a pull request
     /// reads — against their merge base.
     case range(base: String, head: String)
@@ -21,6 +25,7 @@ enum ReviewSource: Hashable, Sendable {
     var title: String {
         switch self {
         case .branch(_, _, let branch): branch
+        case .uncommitted: "Uncommitted"
         case .range(let base, let head): "\(Self.short(base))…\(Self.short(head))"
         case .commits(let from, let to): from == to ? Self.short(from) : "\(Self.short(from))…\(Self.short(to))"
         case .pullRequest(let number): "#\(number)"
@@ -31,6 +36,7 @@ enum ReviewSource: Hashable, Sendable {
     var subtitle: String {
         switch self {
         case .branch(_, let base, let branch): "\(branch) against \(base), with uncommitted changes"
+        case .uncommitted(let branch): branch.map { "Changes on \($0) not yet committed" } ?? "Changes not yet committed"
         case .range(let base, let head): "What \(head) has that \(base) doesn't"
         case .commits(let from, let to): from == to ? "One commit" : "Commits \(Self.short(from)) through \(Self.short(to))"
         case .pullRequest(let number): "Pull request #\(number)"
@@ -40,6 +46,7 @@ enum ReviewSource: Hashable, Sendable {
     var symbol: String {
         switch self {
         case .branch, .range: "arrow.triangle.branch"
+        case .uncommitted: "plusminus"
         case .commits: "smallcircle.filled.circle"
         case .pullRequest: "arrow.triangle.pull"
         }

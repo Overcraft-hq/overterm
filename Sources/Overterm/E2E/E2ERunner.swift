@@ -26,6 +26,7 @@ final class E2ERunner {
         "notes": { await $0.notesScenario() },
         "drawing": { await $0.drawingScenario() },
         "review": { await $0.reviewScenario() },
+        "reviewPerf": { await $0.reviewPerfScenario() },
         "database": { await $0.databaseScenario() },
         "storage": { await $0.storageScenario() },
         "suspend": { await $0.suspendScenario() },
@@ -126,6 +127,14 @@ final class E2ERunner {
         let suffix = ok ? "" : " — \(detail())"
         print("E2E \(ok ? "PASS" : "FAIL") \(name)\(suffix)")
         fflush(stdout)
+    }
+
+    /// The app to the background, as a run started from a terminal is
+    /// meant to be.
+    func stepBack() async {
+        guard NSApp.isActive else { return }
+        NSApp.deactivate()
+        _ = await eventually(3) { !NSApp.isActive }
     }
 
     /// Polls until `condition` holds or `timeout` passes. Returns whether it held.
@@ -309,14 +318,14 @@ final class E2ERunner {
         await runAndExpect(
             "echo ${GHOSTTY_SHELL_FEATURES:+integrated} > \(out("si").path)", file: out("si"), content: "integrated", "shell integration is on")
         await runAndExpect("echo 'Mixed Case_!' > \(out("chars").path)", file: out("chars"), content: "Mixed Case_!", "shifted characters survive")
-        versionChecks()
+        await versionChecks()
     }
 
     /// The version, from the bundle (Scripts/make-app.sh): VERSION of the
     /// checkout it was built in — the run's app is that checkout's
     /// Overterm.app — the commit count as the build, the commit. About
     /// Overterm shows them.
-    private func versionChecks() {
+    private func versionChecks() async {
         let info = Bundle.main.infoDictionary ?? [:]
         let file = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("VERSION")
         let version = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -331,6 +340,11 @@ final class E2ERunner {
         // the commit as its credits.
         guard let about = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title == "About Overterm" }), let action = about.action
         else { return check("the app menu has About Overterm", false) }
+        // Launched by the app in front (a terminal), macOS may bring this
+        // one forward at start: step back first, so "not forward" means
+        // About did not bring it.
+        await stepBack()
+        let wasActive = NSApp.isActive
         let before = Set(NSApp.windows.map(ObjectIdentifier.init))
         NSApp.sendAction(action, to: about.target, from: about)
         let panel = NSApp.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
@@ -343,7 +357,14 @@ final class E2ERunner {
         panel?.contentView.map(walk)
         check("About Overterm shows the version and build", texts.contains { $0.contains("\(shown) (\(build))") }, "\(texts)")
         check("…and the commit it was built from", texts.contains { $0.hasPrefix("commit \(commit) · ") }, "\(texts)")
-        check("…without bringing the app forward", !NSApp.isActive)
+        // Only measurable from the background: in front already (the app
+        // in front launched it, and it wouldn't step back), there is no
+        // "forward" for About to bring it.
+        if wasActive {
+            note("terminal: in front already — whether About brings the app forward isn't checked")
+        } else {
+            check("…without bringing the app forward", !NSApp.isActive)
+        }
         panel?.close()
     }
 
@@ -1820,6 +1841,12 @@ final class E2ERunner {
             "a command failed, with something worth selecting",
             await eventually(12) { (pane.visibleText ?? "").contains("AssertionError 401") },
             String((pane.visibleText ?? "").suffix(60)).debugDescription)
+        // Its exit comes with COMMAND_FINISHED, which can land after the
+        // prompt's title has closed the block — wait for it, as a person
+        // selecting text always has.
+        check(
+            "the command's exit is known", await eventually(5) { self.app.blocks(of: pane).ledger.lastFinished?.exit != nil },
+            "\(self.app.blocks(of: pane).ledger.blocks.map { "\($0.command)=\($0.exit ?? -1)" })")
         pane.perform(binding: "select_all")
         let selected = await eventually(5) { pane.selectionText?.contains("AssertionError 401") == true }
         check("the selection can be read", selected, String((pane.selectionText ?? "none").prefix(40)).debugDescription)
@@ -1930,7 +1957,12 @@ final class E2ERunner {
         app.answer(prompt.choices[0], in: entry.id)
         check(
             "answering types the choice into the agent",
-            await eventually(8) { (agent.terminal.visibleText ?? "").contains("command not found: 1") },
+            // The shell under the fake agent answers `1`: not found in a
+            // plain zsh, a `cd -1` in oh-my-zsh (its alias). Either says it arrived.
+            await eventually(8) {
+                let text = agent.terminal.visibleText ?? ""
+                return text.contains("command not found: 1") || text.contains("no such entry in dir stack")
+            },
             String((agent.terminal.visibleText ?? "").suffix(60)).debugDescription)
 
         app.toggleInbox(nil)
@@ -2538,6 +2570,10 @@ final class E2ERunner {
         let failed = app.store.selected!
         failed.customTitle = "chore/deps"
         for tab in app.store.tabs { _ = await eventually(15) { tab.terminal.needsConfirmClose == false } }
+        // A mark stays only on a tab nobody is looking at: in the
+        // background, as the showcase shows them (launched by the app in
+        // front, this one may have come forward).
+        await stepBack()
         emit("9;4;3;0", from: working)
         emit("777;notify;Codex;approve the migration?", from: waiting)
         emit("9;4;2;0", from: failed)
@@ -2546,7 +2582,9 @@ final class E2ERunner {
         emit("9;4;0;0", from: shell)
         check(
             "a tab in each state",
-            await eventually { shell.activity.mark == .done && failed.activity.mark == .failed })
+            await eventually { shell.activity.mark == .done && failed.activity.mark == .failed },
+            "shell \(String(describing: shell.activity.mark)), failed \(String(describing: failed.activity.mark)), active \(NSApp.isActive), screen \(String((failed.terminal.visibleText ?? "").suffix(200)).debugDescription)"
+        )
         app.store.select(acme)
         await pause(1.0)
         dump("tabs")

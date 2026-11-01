@@ -113,6 +113,23 @@ extension E2ERunner {
         check("with its title", await eventually(5) { pr?.title == "#9 Speed up the server" }, pr?.title ?? "")
         check("a file's diff is its part of the patch", await eventually(5) { pr?.diffs["lib/new.go"]?.lines.contains { $0.text == "package lib" } == true })
 
+        // On the base branch itself, with changes not yet committed: ⇧⌘R
+        // reviews those (it said "nothing to review" — reported by hand).
+        for open in app.store.reviews { app.closeReview(open) }
+        try? await git(["checkout", "-q", "-m", "main"], in: repo)
+        try? "keep, and more\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        await app.diff.refresh()
+        _ = await eventually(8) { self.app.diff.branch == "main" && !self.app.diff.files.isEmpty }
+        app.reviewBranch(nil)
+        let uncommitted = app.store.reviews.last
+        check(
+            "on main, ⇧⌘R reviews what isn't committed",
+            await eventually(8) {
+                uncommitted?.source == .uncommitted(branch: "main") && uncommitted?.phase == .loaded
+                    && uncommitted?.files.map(\.path).contains("README.md") == true
+            }, "\(String(describing: uncommitted?.source)) \(uncommitted?.files.map(\.path) ?? [])")
+        app.reviewPullRequest(9)
+
         // ⌘W closes the one showing, and nothing else.
         let before = app.store.reviews.count
         app.closeSelectedTab(nil)
