@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.4.8 — 2026-11-01
 
 - review: a big review scrolls smoothly — the file list is an AppKit table, the diff draws only what changed
+- review: uncommitted changes in a review tab — on main too, where ⇧⌘R said there was nothing to review
 
 ## 1.4.7 — 2026-10-31
 

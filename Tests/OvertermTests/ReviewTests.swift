@@ -224,6 +224,29 @@ final class ReviewModelTests: XCTestCase {
         XCTAssertEqual(model.files.last?.added, 2, "an untracked file is counted once read")
     }
 
+    func testUncommittedIsAgainstHeadWithUntrackedFiles() async throws {
+        try await git(["checkout", "-q", "main"])
+        try write("a.txt", "one\ntwo\nTHREE\n")
+        try write("loose.txt", "x\n")
+        let model = await loaded(.uncommitted(branch: "main"))
+        XCTAssertEqual(model.phase, .loaded)
+        XCTAssertEqual(model.files.map(\.path), ["a.txt", "loose.txt"])
+        XCTAssertEqual(model.diffs["a.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["THREE"])
+        XCTAssertEqual(model.title, "Uncommitted")
+    }
+
+    func testUncommittedBeforeAnyCommitIsAgainstTheEmptyTree() async throws {
+        let fresh = repo.appendingPathComponent("fresh")
+        try FileManager.default.createDirectory(at: fresh, withIntermediateDirectories: true)
+        _ = try await Git.run(["init", "-q", "-b", "main"], in: fresh)
+        try "first\n".write(to: fresh.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
+        _ = try await Git.run(["add", "-A"], in: fresh)
+        let model = ReviewModel(root: fresh, source: .uncommitted(branch: nil), defaults: defaults)
+        await model.load()
+        XCTAssertEqual(model.phase, .loaded)
+        XCTAssertEqual(model.files.map(\.path), ["new.txt"])
+    }
+
     func testARangeIsWhatHeadHasThatBaseDoesnt() async throws {
         // main moving on doesn't show as removals.
         try await git(["checkout", "-q", "main"])

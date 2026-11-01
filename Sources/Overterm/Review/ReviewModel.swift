@@ -97,8 +97,9 @@ final class ReviewModel: ObservableObject, Identifiable {
                 if let data = try? await GitHub.run(["pr", "view", "\(number)", "--json", PullRequestDetail.viewFields], in: root) {
                     pullRequest = try? PullRequestDetail.parse(data)
                 }
-            case .branch(let mergeBase, _, _):
-                list = try await changedFiles(against: [mergeBase])
+            case .branch, .uncommitted:
+                let base = try await workingTreeBase()
+                list = try await changedFiles(against: [base])
                 let untracked = try await Git.run(["ls-files", "--others", "--exclude-standard", "-z"], in: root)
                 for path in untracked.split(separator: "\0").map(String.init) where !list.contains(where: { $0.path == path }) {
                     list.append(ChangedFile(path: path, originalPath: nil, kind: .untracked, isStaged: false, hasUnstaged: true))
@@ -125,6 +126,18 @@ final class ReviewModel: ObservableObject, Identifiable {
             phase = .failed(error.stderr.split(separator: "\n").first.map(String.init) ?? "git couldn’t read it.")
         } catch {
             phase = .failed(error.localizedDescription)
+        }
+    }
+
+    /// What the working tree is compared with: the branch's merge base, or
+    /// HEAD for what isn't committed — the empty tree before a first commit.
+    private func workingTreeBase() async throws -> String {
+        switch source {
+        case .branch(let mergeBase, _, _): return mergeBase
+        default:
+            let head = try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)
+            let sha = head?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return sha.isEmpty ? DiffModel.emptyTree : sha
         }
     }
 
@@ -180,12 +193,12 @@ final class ReviewModel: ObservableObject, Identifiable {
         switch source {
         case .pullRequest:
             return patches[file.path] ?? ""
-        case .branch(let mergeBase, _, _):
+        case .branch, .uncommitted:
             if file.kind == .untracked {
                 return try await Git.run(
                     ["diff", "--no-color", "--no-index", "--", "/dev/null", file.path], in: root, success: [0, 1], outputLimit: limit)
             }
-            return try await Git.run(["diff", "--no-color", "-M", mergeBase, "--"] + paths, in: root, outputLimit: limit)
+            return try await Git.run(["diff", "--no-color", "-M", try await workingTreeBase(), "--"] + paths, in: root, outputLimit: limit)
         case .range(let base, let head):
             return try await Git.run(["diff", "--no-color", "-M", "\(base)...\(head)", "--"] + paths, in: root, outputLimit: limit)
         case .commits(_, let to):
