@@ -27,6 +27,10 @@ enum AgentUsageCommand {
 
     static func executable() -> URL? {
         if let executableOverride { return executableOverride }
+        // An isolated run (E2E, the layout dump) never runs the user's own
+        // agent: it talked to their account and wrote their ~/.claude.json,
+        // and the usage scenario's meters waited out its seconds.
+        if AppEnvironment.isIsolated { return nil }
         lock.lock()
         defer { lock.unlock() }
         if let found { return found }

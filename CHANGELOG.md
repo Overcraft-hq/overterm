@@ -11,6 +11,7 @@ version is tagged `v<version>`.
 - build: Xcode 27 builds the app — TreeSitterKit's headers in a folder of their own
 - build: an app built with Xcode 27 takes clicks on macOS 27 — the binary names the SDK it was built with
 - tabs: double-clicking the strip's empty space zooms the window again on macOS 27
+- usage: an isolated run never runs your own claude for its usage
 
 ## 1.5.4 — 2026-11-09
 

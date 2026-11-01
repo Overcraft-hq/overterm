@@ -4036,6 +4036,10 @@ final class E2ERunner {
             to: rollouts.appendingPathComponent("rollout-2026-10-15T10-00-00-e2e.jsonl"), atomically: true, encoding: .utf8)
 
         // Nothing is walked while the pane is shut.
+        check(
+            "an isolated run never runs your own claude for its usage",
+            AgentUsageCommand.executableOverride != nil || AgentUsageCommand.executable() == nil,
+            AgentUsageCommand.executable()?.path ?? "")
         app.usage.refresh()
         check("the gauge reads the limits without the pane", await eventually(5) { self.app.usage.chipMeter() != nil })
         // The window you are in, not the weekly one that moves slowly:
