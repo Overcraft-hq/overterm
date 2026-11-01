@@ -989,6 +989,7 @@ extension E2ERunner {
         let summary = updates.summary(of: project)
         check("the project says which service has one", summary.available.map(\.service) == ["web"], "\(summary)")
         await drawn("its row has a chip", await shownText(15, chip))
+        await capture("update-chip")
         await drawn("its detail says which", await shownText { $0.contains("Newer in the registry") })
         let pullVerb = page.verbs(for: project).first { $0.title == "Pull Updates in a Tab" }
         check("Pull Updates is a button on the project", pullVerb?.place == .button)
@@ -1566,9 +1567,10 @@ extension E2ERunner {
             run.map { "\($0.members.count) \($0.started) vs \(started)" } ?? "no run")
         check("folded at first", page.collapsed.contains(tag) && !page.rows.contains(pg), "\(page.rows)")
         // Its row's own words, and the session's start drawn: Vision reads
-        // "java" as "iava" and the 1 of "3f2a9c1e" as an l.
+        // "java" as "iava", the 1 of "3f2a9c1e" as an l, and on macOS 27
+        // its f as a ł — the middle of it is what is looked for.
         check("its row says the library and the session", run?.subtitle == "java · 3f2a9c1e", run?.subtitle ?? "no run")
-        await drawn("and draws them", await shownText { $0.contains("3f2a9c") })
+        await drawn("and draws them", await shownText { $0.contains("2a9c") })
         await drawn("and how long ago the run started", await shownText { $0.contains("5 min ago") })
         page.toggleFold(tag)
         check("unfolded with a click", page.rows.contains(pg) && page.rows.contains(kafka), "\(page.rows)")
@@ -2112,8 +2114,9 @@ extension E2ERunner {
         let line = "Own ports: db \(held) → \(dbTo) · web 38080 → \(webTo)"
         var drawn = ""
         let drawnLine = await eventually(5) {
-            // SwiftUI's selectable Text is an AppKit text field.
-            drawn = Self.find(NSTextField.self, in: self.app.dockerView) { $0.stringValue.hasPrefix("Own ports") }?.stringValue ?? ""
+            // SwiftUI's selectable Text, as VoiceOver reads it: an AppKit
+            // text field before macOS 27, its own text view since.
+            drawn = Self.staticText(in: self.app.dockerView) { $0.hasPrefix("Own ports") } ?? ""
             return drawn == line
         }
         check("the project's detail says what moved", drawnLine, drawn.isEmpty ? "nothing drawn" : drawn)
@@ -2433,29 +2436,27 @@ extension E2ERunner {
         check(
             "and the tab it follows in is that service's",
             page.projectSession?.feed.terminalCommand?.hasSuffix(" logs -f --tail 100 web") == true, page.projectSession?.feed.terminalCommand ?? "nil")
-        // The picker over the log, as a click picks in it.
-        func picker() -> NSPopUpButton? { Self.find(NSPopUpButton.self, in: app.dockerView) { $0.itemTitles.contains("All services") } }
-        func pick(_ title: String) {
-            guard let popup = picker(), let menu = popup.menu else { return }
-            let index = popup.indexOfItem(withTitle: title)
-            if index >= 0 { menu.performActionForItem(at: index) }
+        // The picker over the log, as a click picks in it: its menu, opened
+        // by a press on it, read and picked in while it tracks.
+        func filterField() -> NSView? {
+            Self.find(NSTextField.self, in: app.dockerView) { $0.placeholderString == "Filter the log" && !$0.isHiddenOrHasHiddenAncestor }
         }
-        func wiring() -> String {
-            guard let popup = picker() else { return "no picker" }
-            return "button \(popup.action.map(NSStringFromSelector) ?? "-"), items \(popup.itemArray.map { $0.action.map(NSStringFromSelector) ?? "-" })"
+        func pick(_ title: String) async -> MenuPicked? {
+            await Self.menuPicker(in: app.dockerView, rightOf: filterField(), containing: "All services", choose: title)
         }
+        let shown = await Self.menuPicker(in: app.dockerView, rightOf: filterField(), containing: "All services")
         check(
-            "the log's picker lists the services, on the one shown", picker()?.itemTitles == ["All services", "db", "web"] && picker()?.titleOfSelectedItem == "web",
-            "\(picker()?.itemTitles ?? []) \(picker()?.titleOfSelectedItem ?? "no picker")")
-        pick("db")
+            "the log's picker lists the services, on the one shown", shown?.titles == ["All services", "db", "web"] && shown?.selected == "web",
+            "\(shown?.titles ?? []) \(shown?.selected ?? "no picker")")
+        let picked = await pick("db")
         check(
             "db picked there shows db's lines alone",
             await eventually(5) { page.projectSession?.service == "db" && logText().contains("db-line-e2e") && !logText().contains("web-line-e2e") },
-            "\(page.projectSession?.service ?? "all") \(wiring()) | \(logText().suffix(300))")
+            "\(page.projectSession?.service ?? "all") \(picked == nil ? "no picker" : "picked") | \(logText().suffix(300))")
         check(
             "and follows db in a tab", page.projectSession?.feed.terminalCommand?.hasSuffix(" logs -f --tail 100 db") == true,
             page.projectSession?.feed.terminalCommand ?? "nil")
-        pick("All services")
+        _ = await pick("All services")
         check(
             "All services merges them again",
             await eventually(5) { page.projectSession?.service == nil && logText().contains("web-line-e2e") && logText().contains("db-line-e2e") },
@@ -2464,13 +2465,13 @@ extension E2ERunner {
         page.projectSession?.feed.clear()
         fake.log(web, "web-after-clear")
         _ = await eventually(5) { fed() == ["web-after-clear"] }
-        pick("db")
+        _ = await pick("db")
         check(
             "a service with nothing to show says so, in place of the text",
             await eventually(5) {
                 page.projectSession?.service == "db" && Self.find(NSTextView.self, in: self.app.dockerView) { $0.accessibilityIdentifier() == "docker.text" } == nil
             }, "\(fed()) | \(logText().suffix(100))")
-        pick("All services")
+        _ = await pick("All services")
         check("all of them shown again", await eventually(5) { logText().contains("web-after-clear") }, logText().suffix(100).description)
 
         // The files changed: read again; nothing to watch, Watch goes.
@@ -3740,4 +3741,96 @@ extension E2ERunner {
         check("and closed, it stops looking", await eventually(3) { docker.viewerCount == looking }, "\(docker.viewerCount) of \(looking)")
 
     }
+}
+
+/// What a menu picker's menu held when it opened: its items and the one
+/// ticked.
+struct MenuPicked: Equatable {
+    let titles: [String]
+    let selected: String?
+}
+
+extension E2ERunner {
+    /// The first static text under `view` whose text matches, as VoiceOver
+    /// reads it. SwiftUI's selectable `Text` was an `NSTextField` before
+    /// macOS 27; since, it is a private text-interaction view that only
+    /// says its text through accessibility.
+    static func staticText(in view: NSView?, where match: (String) -> Bool) -> String? {
+        let hit = find(NSView.self, in: view) { view in
+            guard view.accessibilityRole() == .staticText else { return false }
+            let text = (view as? NSTextField)?.stringValue ?? (view.accessibilityValue() as? String) ?? ""
+            return match(text)
+        }
+        return hit.map { ($0 as? NSTextField)?.stringValue ?? ($0.accessibilityValue() as? String) ?? "" }
+    }
+
+    /// A SwiftUI menu `Picker`, as a click opens it: the items of the menu
+    /// that holds `title`, the ticked one, and `choose` picked in it.
+    ///
+    /// Before macOS 27 the picker is an `NSPopUpButton` in the tree. Since,
+    /// SwiftUI draws it itself — no AppKit view, no accessibility element
+    /// until an assistive app asks, and its menu made only when it is
+    /// pressed. So the press goes where it is drawn — its focus ring's
+    /// frame, on the row of `anchor` and right of it (the controls beside
+    /// a field: a press elsewhere could press a button) — and the menu is
+    /// read and picked in while it tracks; one that isn't it is closed
+    /// untouched. The press is the window's (`sendEvent`), never the
+    /// system's.
+    static func menuPicker(in view: NSView?, rightOf anchor: NSView?, containing title: String, choose: String? = nil) async -> MenuPicked? {
+        if let popup = find(NSPopUpButton.self, in: view, where: { $0.itemTitles.contains(title) }) {
+            let seen = MenuPicked(titles: popup.itemTitles, selected: popup.titleOfSelectedItem)
+            if let choose, let menu = popup.menu {
+                let index = popup.indexOfItem(withTitle: choose)
+                if index >= 0 { menu.performActionForItem(at: index) }
+            }
+            return seen
+        }
+        guard let view, let anchor, let window = view.window else { return nil }
+        let row = anchor.convert(anchor.bounds, to: nil)
+        var rings: [(view: NSView, frame: NSRect)] = []
+        func collect(_ candidate: NSView) {
+            if String(describing: type(of: candidate)).hasSuffix("FocusRingView"), !candidate.isHiddenOrHasHiddenAncestor {
+                let frame = candidate.convert(candidate.bounds, to: nil)
+                if abs(frame.midY - row.midY) < 8, frame.minX >= row.maxX - 1 { rings.append((candidate, frame)) }
+            }
+            candidate.subviews.forEach(collect)
+        }
+        collect(view)
+        // Rightmost first: the toolbar ends with the service picker.
+        for ring in rings.sorted(by: { $0.frame.minX > $1.frame.minX }) {
+            let point = NSPoint(x: ring.frame.midX, y: ring.frame.midY)
+            let seen = MenuSeen()
+            let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in
+                nonisolated(unsafe) let tracked = note.object as? NSMenu
+                MainActor.assumeIsolated {
+                    guard let menu = tracked else { return }
+                    let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+                    let ours = titles.contains(title)
+                    if ours { seen.picked = MenuPicked(titles: titles, selected: menu.items.first { $0.state == .on }?.title) }
+                    let index = ours ? choose.flatMap { choose in menu.items.firstIndex { $0.title == choose } } : nil
+                    // Once it tracks: picked, then closed.
+                    DispatchQueue.main.async {
+                        if let index { menu.performActionForItem(at: index) }
+                        menu.cancelTracking()
+                    }
+                }
+            }
+            func mouse(_ type: NSEvent.EventType) -> NSEvent {
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            NSApp.postEvent(mouse(.leftMouseUp), atStart: false)
+            window.sendEvent(mouse(.leftMouseDown))
+            try? await Task.sleep(for: .milliseconds(300))
+            NotificationCenter.default.removeObserver(observer)
+            if let picked = seen.picked { return picked }
+        }
+        return nil
+    }
+}
+
+/// What the menu said, from its tracking notification.
+private final class MenuSeen: @unchecked Sendable {
+    var picked: MenuPicked?
 }
