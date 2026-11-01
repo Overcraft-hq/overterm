@@ -30,7 +30,11 @@ final class ReviewModel: ObservableObject, Identifiable {
 
     @Published private(set) var phase: Phase = .loading
     /// In the order the list shows them: by folder, then name.
-    @Published private(set) var files: [ChangedFile] = []
+    @Published private(set) var files: [ChangedFile] = [] {
+        didSet { listRows = ReviewListRow.rows(files) }
+    }
+    /// The list's rows: folders over their files, laid out once per change.
+    private(set) var listRows: [ReviewListRow] = []
     @Published private(set) var diffs: [String: DiffModel.FileDiff] = [:]
     /// Each file's diff side by side, laid out once.
     private(set) var rows: [String: [SplitDiff.Row]] = [:]

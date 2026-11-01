@@ -128,6 +128,23 @@ final class SplitDiffTests: XCTestCase {
     }
 }
 
+/// The file list's rows: each folder once, above its files.
+final class ReviewListRowTests: XCTestCase {
+    private func file(_ path: String) -> ChangedFile {
+        ChangedFile(path: path, originalPath: nil, kind: .modified, isStaged: false, hasUnstaged: false)
+    }
+
+    func testFoldersAreNamedOnceAboveTheirFiles() {
+        let files = ReviewModel.ordered(["README.md", "src/a.swift", "src/b.swift", "src/x/c.swift"].map(file))
+        XCTAssertEqual(
+            ReviewListRow.rows(files),
+            [
+                .file(file("README.md"), indented: false), .folder("src"), .file(file("src/a.swift"), indented: true),
+                .file(file("src/b.swift"), indented: true), .folder("src/x"), .file(file("src/x/c.swift"), indented: true),
+            ])
+    }
+}
+
 final class ReviewSourceTests: XCTestCase {
     func testTitlesShortenShasAndKeepNames() {
         let sha = String(repeating: "a", count: 40)

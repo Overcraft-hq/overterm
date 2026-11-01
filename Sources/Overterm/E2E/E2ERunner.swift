@@ -26,6 +26,7 @@ final class E2ERunner {
         "notes": { await $0.notesScenario() },
         "drawing": { await $0.drawingScenario() },
         "review": { await $0.reviewScenario() },
+        "reviewPerf": { await $0.reviewPerfScenario() },
         "database": { await $0.databaseScenario() },
         "storage": { await $0.storageScenario() },
         "suspend": { await $0.suspendScenario() },
@@ -115,7 +116,7 @@ final class E2ERunner {
     // MARK: Primitives
 
     /// A measurement, printed whether or not a check passes.
-    private func note(_ text: String) {
+    func note(_ text: String) {
         print("E2E INFO \(text)")
         fflush(stdout)
     }
