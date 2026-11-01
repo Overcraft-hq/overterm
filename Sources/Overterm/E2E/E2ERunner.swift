@@ -27,6 +27,7 @@ final class E2ERunner {
         "drawing": { await $0.drawingScenario() },
         "review": { await $0.reviewScenario() },
         "reviewPerf": { await $0.reviewPerfScenario() },
+        "dockerPerf": { await $0.dockerPerfScenario() },
         "database": { await $0.databaseScenario() },
         "storage": { await $0.storageScenario() },
         "suspend": { await $0.suspendScenario() },

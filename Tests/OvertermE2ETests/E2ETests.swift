@@ -65,6 +65,7 @@ final class E2ETests: XCTestCase {
     func testDrawing() throws { try run("drawing") }
     func testReview() throws { try run("review") }
     func testReviewPerf() throws { try run("reviewPerf") }
+    func testDockerPerf() throws { try run("dockerPerf") }
     func testDatabase() throws { try run("database") }
     func testStorage() throws { try run("storage") }
     // The whole Docker page, end to end: 80–110 s on a busy machine.

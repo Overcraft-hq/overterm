@@ -83,7 +83,10 @@ extension E2ERunner {
         // One service, rebuilt: in a tab, recorded here.
         let runInTab = DockerMCP.runInTab
         var typed: [String] = []
-        DockerMCP.runInTab = { command, _ in typed.append(command) }
+        DockerMCP.runInTab = { command, _ in
+            typed.append(command)
+            return true
+        }
         let rebuilt = await call("docker_compose", ["project": "ot-shop", "action": "rebuild", "service": "web"])
         check(
             "docker_compose rebuilds one service, in a tab", !rebuilt.isError && typed.last?.hasSuffix(" up -d --build web") == true,
@@ -2599,7 +2602,15 @@ extension E2ERunner {
             "and so does the panel's menu", app.dockerPanel.verbs(apiSummary).contains { $0.title == rebuildTitle },
             "\(app.dockerPanel.verbs(apiSummary).map(\.title))")
         await drawn("its detail says it runs emulated", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
-        await drawn("and its Platform row", await shownText { $0.contains("emulated here") }) { $0.contains("linux/amd64") }
+        // The row's value may wrap in the detail's column ("linux/amd64 —"
+        // then "emulated here"): the platform read as a line, "emulated"
+        // anywhere after it.
+        let emulatedRow = await shownText { $0.hasPrefix("linux/amd64") }
+        let words = await readWindow().map(\.text)
+        let afterRow = emulatedRow.flatMap { row in words.firstIndex(of: row.text).map { Array(words[$0...].prefix(4)) } } ?? []
+        check(
+            "and its Platform row", afterRow.contains { $0.contains("emulated") },
+            words.joined(separator: " | "))
         await capture("emulated")
         let button = await shownText { $0.contains("Rebuild as arm64") }
         if let button { await click(at: CGPoint(x: button.frame.midX, y: button.frame.midY)) }
@@ -3180,6 +3191,7 @@ extension E2ERunner {
             await eventually(5) { page.groups.map(\.id) == ["project:ot-shop", "loose"] }, "\(page.groups.map(\.id))")
         check("its services by name", page.groups.first?.containers.map(\.composeService) == ["db", "web"])
         check("the list has the keyboard", await eventually(3) { self.app.dockerListHasKeyboard() }, "\(String(describing: window.firstResponder))")
+
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
             page.selection = [web]
             await pause(1)
@@ -3713,5 +3725,17 @@ extension E2ERunner {
         docker.usage.first = .seconds(1)
         docker.use(nil)
         check("an isolated run left alone reaches no Docker", await eventually(3) { docker.connection == .off })
+
+        // A second window on the page, closed: what it held of the polling
+        // goes with it (kept, the list was reloaded every 15 s for good).
+        let looking = docker.viewerCount
+        let second = TerminalWindowController()
+        second.newTab(in: scratch)
+        second.showWindow(nil)
+        second.toggleDockerPage(nil)
+        check("a second window's page looks too", await eventually(3) { docker.viewerCount == looking + 1 }, "\(docker.viewerCount)")
+        second.window?.close()
+        check("and closed, it stops looking", await eventually(3) { docker.viewerCount == looking }, "\(docker.viewerCount) of \(looking)")
+
     }
 }
