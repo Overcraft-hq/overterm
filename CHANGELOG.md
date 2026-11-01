@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.0 — 2026-11-11
+
+- build: Xcode 27 builds the app — TreeSitterKit's headers in a folder of their own
+
 ## 1.5.4 — 2026-11-09
 
 - database: a connection whose password can't be had says why — none saved, or the keychain refused — and saving one no longer fails silently
