@@ -389,51 +389,68 @@ struct DockerPageView: View {
 
     private var list: some View {
         let groups = page.groups
-        return List(selection: $page.selection) {
-            // The columns' names in the list's own header: the rows' insets.
-            Section {
-                ForEach(groups) { group in
-                    DockerProjectRow(
-                        group: group, folded: page.collapsed.contains(group.id), busy: page.busy.contains(group.id), theme: theme,
-                        fold: { page.toggleFold(group.id) }, act: { verb in if let project = group.project { page.compose(verb, project) } },
-                        usage: page.usage(of: group), columns: true, updates: group.project.map { updates.summary(of: $0).available.count } ?? 0
-                    )
-                    .tag(group.id)
-                    .listRowSeparator(.hidden)
-                    if !page.collapsed.contains(group.id) {
-                        ForEach(group.containers) { container in
-                            DockerContainerRow(
-                                container: container, inProject: group.project != nil || group.session != nil, busy: page.busy.contains(container.Id),
-                                docker: docker,
-                                theme: theme, open: actions.open, remoteHost: docker.publishedHost, usage: page.usage(of: container), columns: true
-                            )
-                            .tag(container.Id)
-                            .listRowSeparator(.hidden)
-                        }
-                        // A project before it runs: its services, none created.
-                        ForEach(group.services) { service in
-                            DockerPlannedServiceRow(service: service, theme: theme, folder: group.project?.workingDir, columns: true)
-                                .tag(DockerPageModel.serviceTag(service))
-                                .listRowSeparator(.hidden)
-                        }
-                    }
-                }
-                if groups.isEmpty {
-                    Text("Nothing matches “\(page.filter)”.").font(.system(size: 12)).foregroundStyle(theme.text3).padding(.vertical, 8)
-                }
-            } header: {
-                DockerListColumns(sort: $page.sort, theme: theme)
+        return VStack(alignment: .leading, spacing: 0) {
+            DockerListColumns(sort: $page.sort, theme: theme)
+                .padding(.horizontal, 20)
+            if groups.isEmpty {
+                Text("Nothing matches “\(page.filter)”.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                    .padding(.horizontal, 20).padding(.vertical, 8)
+                Spacer(minLength: 0)
+            } else {
+                // An AppKit table of the same rows (DockerContainerTable): as a
+                // SwiftUI List, 160 containers took 39 ms a scroll step.
+                DockerContainerTable(
+                    rows: DockerTableRow.rows(groups, collapsed: page.collapsed), selection: $page.selection,
+                    cell: { row in rowView(row) }, verbs: { ids in listVerbs(ids, in: groups) },
+                    copy: {
+                        let names = page.selectedContainers.map(\.name)
+                        guard !names.isEmpty else { return }
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(names.joined(separator: "\n"), forType: .string)
+                    })
             }
         }
-        // One menu for the list, made when it opens: a `.contextMenu` a
-        // row built every row's verbs (compose files stat'ed, a config
-        // read) each time a row was drawn — 39 ms a scroll step at 160.
-        .contextMenu(forSelectionType: String.self) { ids in listMenu(ids) }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
-        .focused($focus, equals: .list)
-        .onCopyCommand { page.selectedContainers.map { NSItemProvider(object: $0.name as NSString) } }
-        .accessibilityIdentifier("docker.list")
+    }
+
+    /// A row of the list, with what the page's views have around them —
+    /// a table's cell is its own SwiftUI root, and inherits none of it.
+    private func rowView(_ row: DockerTableRow) -> AnyView {
+        let view: AnyView
+        switch row {
+        case .group(let group):
+            view = AnyView(
+                DockerProjectRow(
+                    group: group, folded: page.collapsed.contains(group.id), busy: page.busy.contains(group.id), theme: theme,
+                    fold: { page.toggleFold(group.id) }, act: { verb in if let project = group.project { page.compose(verb, project) } },
+                    usage: page.usage(of: group), columns: true, updates: group.project.map { updates.summary(of: $0).available.count } ?? 0
+                ))
+        case .container(let container, let group):
+            view = AnyView(
+                DockerContainerRow(
+                    container: container, inProject: group.project != nil || group.session != nil, busy: page.busy.contains(container.Id),
+                    docker: docker,
+                    theme: theme, open: actions.open, remoteHost: docker.publishedHost, usage: page.usage(of: container), columns: true
+                ))
+        case .service(let service, let group):
+            view = AnyView(DockerPlannedServiceRow(service: service, theme: theme, folder: group.project?.workingDir, columns: true))
+        }
+        return AnyView(
+            view
+                .padding(.horizontal, 8)
+                .environment(\.dockerShown, page.visible)
+                .environment(\.colorScheme, theme.isDark ? .dark : .light))
+    }
+
+    /// The right-click menu's verbs for the rows clicked: the selection
+    /// when the click was on it, else the one row.
+    private func listVerbs(_ ids: Set<String>, in groups: [DockerListGroup]) -> [DockerVerb] {
+        let containers = groups.flatMap(\.containers).filter { ids.contains($0.Id) }
+        if let first = containers.first { return page.verbs(for: first, targets: containers.count > 1 ? containers : nil) }
+        guard let id = ids.first, let group = groups.first(where: { $0.id == id || $0.services.contains { DockerPageModel.serviceTag($0) == id } })
+        else { return [] }
+        if let project = group.project { return page.verbs(for: project) }
+        if let session = group.session { return page.verbs(for: session) }
+        return []
     }
 
     private func empty(_ title: String, _ detail: String) -> some View {
@@ -465,30 +482,6 @@ struct DockerPageView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("docker.down")
-    }
-
-    // MARK: Menus
-
-    /// The menu for the rows right-clicked: the selection when the click
-    /// was on it, else the one row.
-    @ViewBuilder private func listMenu(_ ids: Set<String>) -> some View {
-        let groups = page.groups
-        let containers = groups.flatMap(\.containers).filter { ids.contains($0.Id) }
-        if let first = containers.first {
-            DockerVerbMenu(verbs: page.verbs(for: first, targets: containers.count > 1 ? containers : nil))
-        } else if let id = ids.first,
-            let group = groups.first(where: { $0.id == id || $0.services.contains { DockerPageModel.serviceTag($0) == id } })
-        {
-            projectMenu(group)
-        }
-    }
-
-    @ViewBuilder private func projectMenu(_ group: DockerListGroup) -> some View {
-        if let project = group.project {
-            DockerVerbMenu(verbs: page.verbs(for: project))
-        } else if let session = group.session {
-            DockerVerbMenu(verbs: page.verbs(for: session))
-        }
     }
 
     private var cheatSheet: some View {
