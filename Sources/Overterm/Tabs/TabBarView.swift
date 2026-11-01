@@ -89,6 +89,9 @@ struct TabBarView: View {
             // window as the title bar should.
             .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Where the tabs scroll: the host's hit test hands what is in
+            // here but off the tabs' row to the drag area.
+            .background(StripExtent(role: .scroller))
             chips
         }
         .padding(.trailing, 8)
@@ -152,6 +155,10 @@ struct TabBarView: View {
             }
         }
         .frame(maxHeight: .infinity)
+        // The row's own extent, for the host's hit test: inside it is the
+        // tabs' (a review's or a page's tab is SwiftUI's own gesture, the
+        // island's + a SwiftUI button), beside it is empty title bar.
+        .background(StripExtent(role: .row))
     }
 
     /// What sits at the right end, whatever the tabs do: these keep their
@@ -614,6 +621,35 @@ private struct TabRenameField: View {
     }
 }
 
+/// Where the tabs are, for the strip's hit test
+/// (`TabStripHostingView.hitTest`): the scroll view's frame and the tabs'
+/// row in it, measured by AppKit views SwiftUI lays out with them. They
+/// answer no hit themselves.
+///
+/// What SwiftUI puts under the pointer can't say it: on macOS 27 the
+/// scroll view's content is one plain container
+/// (`HostingScrollView.PlatformGroupContainer`) as wide as the clip view,
+/// answering alike for a review's tab, the island's + and the empty space
+/// after the last tab — where macOS 26 had the clip view answer for the
+/// space alone.
+final class StripExtentNSView: NSView {
+    enum Role { case scroller, row }
+    var role: Role = .row
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+struct StripExtent: NSViewRepresentable {
+    let role: StripExtentNSView.Role
+
+    func makeNSView(context: Context) -> StripExtentNSView {
+        let view = StripExtentNSView()
+        view.role = role
+        return view
+    }
+
+    func updateNSView(_ view: StripExtentNSView, context: Context) { view.role = role }
+}
+
 /// Empty strip space drags the window, as a title bar should.
 private struct WindowDragArea: NSViewRepresentable {
     typealias DragView = WindowDragView
@@ -792,31 +828,62 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBar
 
     /// The empty strip belongs to the drag area, whatever is over it.
     ///
-    /// The tabs scroll now, and the scroll view's clip view answers for the
-    /// space beside them. That space still moved the window (the clip view's
-    /// `mouseDownCanMoveWindow`), but AppKit zooms no window for a
-    /// background drag, so double-clicking the title bar stopped zooming it
-    /// — the one half of the behaviour a check that calls the drag area
-    /// itself can't see. Nothing interactive is there: a tab answers from
-    /// the document view inside the clip view, a chip from this host.
-    /// A tab or a chip answers with its own press view (`StripPressView`).
+    /// The tabs scroll now, and the scroll view answers for the space beside
+    /// them — on macOS 26 its clip view, on 27 a plain container inside it.
+    /// That space still moved the window (their `mouseDownCanMoveWindow`),
+    /// but AppKit zooms no window for a background drag, so double-clicking
+    /// the title bar stopped zooming it — the one half of the behaviour a
+    /// check that calls the drag area itself can't see. Which view answers
+    /// is SwiftUI's business and changes, so it is asked by place: in the
+    /// scroll view but off the tabs' row (`StripExtent`). A tab or a chip
+    /// answers with its own press view (`StripPressView`), a chip from this
+    /// host.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        guard Self.isEmptyStrip(hit) else { return hit }
-        if dragArea == nil { dragArea = Self.dragArea(in: self) }
+        let extents = self.extents()
+        guard Self.isEmptyStrip(hit, at: point, scroller: extents.scroller, row: extents.row) else { return hit }
+        if dragArea == nil { dragArea = Self.find(WindowDragView.self, in: self) }
         return dragArea ?? hit
     }
 
-    /// Whether `view` is the scroll machinery the tabs live in, which has
-    /// nothing of its own under the pointer.
-    static func isEmptyStrip(_ view: NSView?) -> Bool { view is NSClipView || view is NSScrollView }
+    /// Whether `view`, answering at `point` (the superview's coordinates,
+    /// as `hitTest` takes it), has nothing of the strip's own under it:
+    /// the scroll machinery itself, or anything but a press view or a
+    /// control inside the scroll view (`scroller`) and off the tabs' row.
+    static func isEmptyStrip(_ view: NSView?, at point: NSPoint = .zero, scroller: NSRect? = nil, row: NSRect? = nil) -> Bool {
+        guard let view, !(view is WindowDragView), !(view is StripPressNSView), !(view is NSControl) else { return false }
+        if view is NSClipView || view is NSScrollView { return true }
+        guard let scroller, let row else { return false }
+        return scroller.contains(point) && !row.contains(point)
+    }
 
     private weak var dragArea: WindowDragView?
 
-    private static func dragArea(in view: NSView) -> WindowDragView? {
-        if let drag = view as? WindowDragView { return drag }
+    /// The scroll view's frame and the tabs' row, in the superview's
+    /// coordinates. Looked up each time: SwiftUI remakes the row's view
+    /// when the strip changes.
+    private func extents() -> (scroller: NSRect?, row: NSRect?) {
+        guard let superview else { return (nil, nil) }
+        var scroller: NSRect?
+        var row: NSRect?
+        func walk(_ view: NSView) {
+            if let extent = view as? StripExtentNSView {
+                let frame = extent.convert(extent.bounds, to: superview)
+                switch extent.role {
+                case .scroller: scroller = frame
+                case .row: row = frame
+                }
+            }
+            view.subviews.forEach(walk)
+        }
+        walk(self)
+        return (scroller, row)
+    }
+
+    private static func find<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
+        if let found = view as? T { return found }
         for subview in view.subviews {
-            if let found = dragArea(in: subview) { return found }
+            if let found = find(type, in: subview) { return found }
         }
         return nil
     }
