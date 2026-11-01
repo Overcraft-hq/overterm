@@ -144,6 +144,19 @@ final class CommandLedgerTests: XCTestCase {
         XCTAssertTrue(CommandLedger.isPrompt("   ", cwd: nil))
     }
 
+    /// oh-my-zsh's title at every prompt: `user@host:path`. Taken for a
+    /// command, each prompt opened a block and took the exit code and the
+    /// rows of the command before it (blocks, ⇧⌘C, ⌥⌘↓ all broke).
+    func testAUserAtHostTitleIsThePrompt() {
+        let cwd = NSHomeDirectory() + "/src/app"
+        XCTAssertTrue(CommandLedger.isPrompt("bahattincinic@192:~", cwd: cwd))
+        XCTAssertTrue(CommandLedger.isPrompt("me@Bahattins-MacBook-Pro-2:~/src/app", cwd: cwd))
+        XCTAssertTrue(CommandLedger.isPrompt("root@db-1:/var/log", cwd: cwd))
+        XCTAssertFalse(CommandLedger.isPrompt("scp file me@host:~/x", cwd: cwd))
+        XCTAssertFalse(CommandLedger.isPrompt("git@github.com:o/r.git", cwd: cwd))
+        XCTAssertFalse(CommandLedger.isPrompt("ssh me@host", cwd: cwd))
+    }
+
     /// A command that happens to start with a path is still a command, and
     /// so is `cd` — the shell announces it before showing where it landed.
     func testACommandIsStillACommand() {

@@ -122,7 +122,22 @@ struct CommandLedger: Equatable {
         }
         // A bare path with no arguments is not something anybody ran.
         if title.hasPrefix("~") && !title.contains(" ") { return true }
-        return title.hasPrefix("/") && !title.contains(" ")
+        if title.hasPrefix("/") && !title.contains(" ") { return true }
+        // oh-my-zsh (and many prompts) title the window `user@host:path`
+        // at every prompt — taken for a command, each prompt opened a block
+        // that took the exit code and rows of the command before it.
+        return isUserAtHost(title)
+    }
+
+    /// `user@host:path`, nothing else: a user, a host and a path, no spaces.
+    /// `scp a user@host:path` has its command in front, so it isn't one.
+    private static func isUserAtHost(_ title: String) -> Bool {
+        guard !title.contains(" "), let at = title.firstIndex(of: "@"), at > title.startIndex,
+            let colon = title[at...].firstIndex(of: ":")
+        else { return false }
+        let host = title[title.index(after: at)..<colon]
+        let path = title[title.index(after: colon)...]
+        return !host.isEmpty && (path.hasPrefix("~") || path.hasPrefix("/"))
     }
 
     /// The prompt is back: whatever was running has ended, and this is not

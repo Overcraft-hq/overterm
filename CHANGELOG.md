@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - review: a big review scrolls smoothly — the file list is an AppKit table, the diff draws only what changed
 - review: uncommitted changes in a review tab — on main too, where ⇧⌘R said there was nothing to review
+- terminal: an oh-my-zsh prompt (user@host:path) is no longer taken for a command — blocks, ⇧⌘C and ⌘L's exit code follow the right command again
 
 ## 1.4.7 — 2026-10-31
 
