@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.0 — 2026-11-13
+
+- build: Xcode 27 builds the app — TreeSitterKit's headers in a folder of their own
+
 ## 1.5.6 — 2026-11-13
 
 - database: Prometheus, Loki and Tempo — PromQL graphed (and as a table), Targets, Alerts and Rules; LogQL's lines with their levels, filtered and followed Live; TraceQL's traces and a trace's waterfall, opened from a log line's trace id; metrics, labels and tags in the panel, a value a click from its query; a time window per connection; Basic or token auth, a tenant, a path behind a proxy, TLS and SSH tunnels
