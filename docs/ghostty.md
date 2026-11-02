@@ -17,11 +17,25 @@ from the executable to `Contents/Resources` with `terminfo/78/xterm-ghostty`
 as the sentinel — so only a bundled app gets `TERM=xterm-ghostty` and shell
 integration; a bare `.build/debug/Overterm` falls back to `xterm-256color`.
 
-Pinned to **v1.3.1 / Zig 0.15.2** because Ghostty main needs Xcode 26 and the
-macOS 26 SDK (CI: Xcode 16.4). The pin is the macOS *app's* requirement; the
-library builds with Xcode 16.
+Pinned to **v1.4.0 / Zig 0.17.0**, built with Xcode 16.4 (CI's and the
+release's). Ghostty's docs ask for Xcode 26 and the macOS 26 SDK — for its
+macOS *app*; the library (GhosttyKit) builds with Xcode 16. libtool warns of
+a duplicate member (`ext.o`) as it merges the archive; the app links with
+nothing missing, which is what would show a member dropped.
 
-With Xcode 26 the same build breaks twice, and the script works around both
+Changes from v1.3.1 that reached Overterm:
+
+- **The clipboard API.** `read_clipboard_cb` is asked for MIME types and
+  answers whether it started (`ghostty_clipboard_read_result_e`); contents
+  carry their length; `confirm_read_clipboard_cb` gets a
+  `ghostty_clipboard_confirm_s`; a request is completed with a
+  `ghostty_clipboard_complete_s`, or denied with
+  `ghostty_surface_deny_clipboard_request` (see Clipboard, below).
+- **Its themes**: 819, among them every one `Resources/themes` added
+  (identical) — that folder stays for the next theme Ghostty doesn't ship.
+
+With Xcode 26, v1.3.1's build (Zig 0.15.2) broke twice, and the script still
+works around both — untried with v1.4.0's Zig 0.17.0, which may need neither
 (`Scripts/ghosttykit-xcode26.py`, put in front on `PATH` as `xcrun` and
 `libtool`):
 
@@ -80,7 +94,8 @@ Ghostty's own macOS app is the reference for how libghostty wants to be fed —
 
 A Ghostty binding is consumed in `performKeyEquivalent` before the menu sees
 the key. If the action is then unhandled, the key does **nothing**. Checked
-against v1.3.1 defaults:
+against v1.4.0 defaults (v1.4.0 added only ⌃⇧↑/↓, jump_to_prompt — free in
+Overterm):
 
 | Key | Ghostty action | Overterm |
 |---|---|---|
@@ -104,9 +119,14 @@ bracketed-paste end sequence inside it) and a program reading the clipboard
 `confirm_read_clipboard_cb`. `ClipboardConfirmation` says what to ask, and
 the window asks in a sheet: for the selected tab only, one sheet at a time —
 anything else is refused at once — and only a click hands anything over
-(Return answers Deny, Esc answers Cancel). Both answers complete the request
-*confirmed*, with the text or `""`: completed unconfirmed, libghostty asks
-again at once, and Overterm once looped that way until the stack overflowed.
+(Return answers Deny, Esc answers Cancel). Allowed, the request is completed
+*confirmed* with the text the sheet showed; denied, it is denied
+(`ghostty_surface_deny_clipboard_request`, Ghostty 1.4): a denied OSC 52
+read gets an empty reply from libghostty, a denied paste doesn't happen.
+Before 1.4 there was no deny — a denial was completed confirmed with `""`,
+since completed unconfirmed libghostty asks again at once, and Overterm once
+looped that way until the stack overflowed. A read serves `text/plain`
+alone (files as their quoted paths).
 A write with `confirm = true` (`clipboard-write = ask`) is still dropped.
 
 The macOS "selection clipboard" is a private named pasteboard. An isolated

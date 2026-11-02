@@ -9,8 +9,8 @@ final class ClipboardConfirmationTests: XCTestCase {
     func testEveryAnswerCompletesTheRequestConfirmed() throws {
         for request in [GHOSTTY_CLIPBOARD_REQUEST_PASTE, GHOSTTY_CLIPBOARD_REQUEST_OSC_52_READ] {
             let confirmation = try XCTUnwrap(ClipboardConfirmation(request: request, text: "secret"))
-            XCTAssertEqual(confirmation.reply(allowed: true), .init(text: "secret", confirmed: true))
-            XCTAssertEqual(confirmation.reply(allowed: false), .init(text: "", confirmed: true), "denied: nothing handed over, still confirmed")
+            XCTAssertEqual(confirmation.reply(allowed: true), .hand("secret"))
+            XCTAssertEqual(confirmation.reply(allowed: false), .deny, "denied: libghostty's deny, nothing handed over")
         }
     }
 

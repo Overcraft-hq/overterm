@@ -779,20 +779,21 @@ final class TerminalView: NSView {
         urls.map { TerminalWindowController.shellQuoted($0.path) }.joined(separator: " ")
     }
 
-    func readClipboard(_ location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?) -> Bool {
-        guard let surface, let pasteboard = GhosttyRuntime.pasteboard(location) else { return false }
-        let string: String
+    /// A read libghostty asks for: the text (`text/plain` — files as their
+    /// paths), when it asked for that; a listing of what there is, when it
+    /// asked for one. Overterm serves text alone.
+    func readClipboard(_ location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?, mimes: [String], list: Bool) -> ghostty_clipboard_read_result_e {
+        guard let surface, let pasteboard = GhosttyRuntime.pasteboard(location) else { return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
+        var string: String?
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             string = Self.pastedPaths(urls)
-        } else if let text = pasteboard.string(forType: .string) {
-            string = text
         } else {
-            return false
+            string = pasteboard.string(forType: .string)
         }
-        string.withCString { ptr in
-            ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
-        }
-        return true
+        let served = mimes.contains("text/plain") ? string : nil
+        guard served != nil || list else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+        GhosttyRuntime.complete(surface, text: served, state: state, confirmed: false, list: list && string != nil)
+        return GHOSTTY_CLIPBOARD_READ_STARTED
     }
 }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Resources/themes: a few colour themes our pinned Ghostty does not ship.
 #
-# Ghostty bundles a snapshot of iTerm2-Color-Schemes — 463 themes in v1.3.1 —
+# Ghostty bundles a snapshot of iTerm2-Color-Schemes — 463 themes in v1.3.1,
+# 819 in v1.4.0, which has every one listed here too —
 # and upstream has kept going. Rather than take all 349 of the newer ones,
 # THEMES below is a hand-picked list; add a name to it and run this again.
 # Scripts/make-app.sh copies them into Contents/Resources/ghostty/themes,

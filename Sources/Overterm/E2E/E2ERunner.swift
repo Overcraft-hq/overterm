@@ -3993,7 +3993,9 @@ final class E2ERunner {
         check("dark and light split the lot", dark > 200 && light > 50 && dark + light == catalog.entries.count, "\(dark) dark, \(light) light")
         check(
             "and the search is by name",
-            ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", showing: .light).map(\.id) == ["Claude Light"],
+            // Ghostty 1.4 ships "Claude" too, a light one, beside ours.
+            Set(ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", showing: .light).map(\.id)).isSuperset(of: ["Claude Light"])
+                && ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", showing: .light).allSatisfy { $0.id.localizedCaseInsensitiveContains("claude") },
             "\(ThemeCatalog.filter(catalog.entries, search: " CLAUDE ", showing: .light).map(\.id))")
 
         // Picking one is the only way to judge it: it applies at once.

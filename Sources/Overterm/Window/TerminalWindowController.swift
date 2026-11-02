@@ -941,13 +941,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         pane.onOpenLink = { [weak self, weak tab, weak pane] text in
             guard let self, let tab else { return false }
             let directories = [pane?.workingDirectory, tab.workingDirectory, self.diff.root?.path].compactMap { $0 }
+            // Decided now, done a turn later: libghostty sends a ⌘-click's
+            // link from inside ghostty_surface_mouse_button with the
+            // surface locked (1.4), and the editor or the browser taking
+            // the keyboard makes this pane resign it —
+            // ghostty_surface_set_focus waits for that lock, for good.
             if let link = FileLink.resolve(text, in: directories) {
-                self.openInEditor(link.url, line: link.line)
+                DispatchQueue.main.async { [weak self] in self?.openInEditor(link.url, line: link.line) }
                 return true
             }
             // A web link: here when Settings ▸ Browser says so.
             guard let url = URL(string: text), BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks) else { return false }
-            self.openInBrowser(url, for: tab)
+            DispatchQueue.main.async { [weak self, weak tab] in
+                guard let self, let tab else { return }
+                self.openInBrowser(url, for: tab)
+            }
             return true
         }
         pane.onEvent = { [weak self, weak tab, weak pane] event in

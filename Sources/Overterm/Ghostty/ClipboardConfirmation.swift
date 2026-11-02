@@ -5,10 +5,11 @@ import GhosttyKit
 /// program in the terminal reading the clipboard (OSC 52). The window asks
 /// in a sheet (TerminalWindowController.confirmClipboard).
 ///
-/// Either answer completes the request *confirmed*: allowing hands over the
-/// text, denying hands over nothing. Completed unconfirmed, libghostty asks
-/// again at once — Overterm answered that way before and looped until the
-/// stack overflowed.
+/// Allowing completes the request *confirmed*, with the text the sheet
+/// showed; denying denies it (`ghostty_surface_deny_clipboard_request`,
+/// Ghostty 1.4). Completed unconfirmed, libghostty asks again at once —
+/// Overterm answered a denial that way once and looped until the stack
+/// overflowed.
 struct ClipboardConfirmation: Equatable {
     enum Kind: Equatable {
         /// A paste libghostty flags: a line break no bracketed paste frames,
@@ -18,10 +19,10 @@ struct ClipboardConfirmation: Equatable {
         case read
     }
 
-    /// What `ghostty_surface_complete_clipboard_request` gets.
-    struct Reply: Equatable {
-        let text: String
-        let confirmed: Bool
+    /// What libghostty is answered: the text, confirmed, or a denial.
+    enum Reply: Equatable {
+        case hand(String)
+        case deny
     }
 
     let kind: Kind
@@ -47,7 +48,7 @@ struct ClipboardConfirmation: Equatable {
     }
 
     func reply(allowed: Bool) -> Reply {
-        Reply(text: allowed ? text : "", confirmed: true)
+        allowed ? .hand(text) : .deny
     }
 
     var title: String {

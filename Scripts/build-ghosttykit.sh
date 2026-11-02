@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Build Frameworks/GhosttyKit.xcframework from a pinned Ghostty release.
 #
-# Why a release tag and not main: Ghostty main needs Xcode 26 / the macOS 26
-# SDK; the v1.3.x line builds GhosttyKit with Xcode 16. We only take the
-# library — Ghostty's own macOS app is not built.
+# Why a release tag and not main: a release is what was tested. Ghostty's
+# docs ask Xcode 26 / the macOS 26 SDK of its macOS app; v1.4.0's library
+# builds with Xcode 16.4 (CI's). We only take the library — Ghostty's own
+# macOS app is not built.
 set -euo pipefail
 
 GHOSTTY_REPO="https://github.com/ghostty-org/ghostty.git"
-GHOSTTY_REF="v1.3.1"
-GHOSTTY_SHA="332b2aefc6e72d363aa93ab6ecfc86eeeeb5ed28"
+GHOSTTY_REF="v1.4.0"
+GHOSTTY_SHA="83fb95624b0439ee660c2679b43b38c8b63769cd"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$ROOT/vendor/ghostty"
@@ -31,11 +32,11 @@ if [[ "$actual" != "$GHOSTTY_SHA" ]]; then
   exit 1
 fi
 
-# Xcode 26 breaks v1.3.1's build twice — its SDK's stubs, which Zig can't
+# Xcode 26 broke v1.3.1's build (Zig 0.15.2) twice — its SDK's stubs, which Zig can't
 # link against, and its libtool, which drops what Zig archived
 # (Scripts/ghosttykit-xcode26.py). With it, Zig gets a fixed copy of the
 # SDK and libtool a fixed copy of each archive, by tools in front on PATH.
-# CI's Xcode 16 needs none of it.
+# CI's Xcode 16 needs none of it; untried with v1.4.0's Zig 0.17.0.
 xcode_major="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode \([0-9]*\).*/\1/p')"
 if [[ "${xcode_major:-0}" -ge 26 ]]; then
   echo "==> Xcode $xcode_major: an SDK and a libtool Zig 0.15.2 can work with"
