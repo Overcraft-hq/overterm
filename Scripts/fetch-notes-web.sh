@@ -13,12 +13,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 # name|registry path|sha256
 PACKAGES=(
-  "markdown-it|markdown-it/-/markdown-it-14.1.0|7c4fab4d4d39fe98206a7fbbed4b1e3578f2b70b6b69d309413e33eec140e19f"
+  "markdown-it|markdown-it/-/markdown-it-15.0.3|98a7453983ab0e268c17dbd5260bf7190ba46b4cca912327fc1c1a2578e4b56d"
   "markdown-it-footnote|markdown-it-footnote/-/markdown-it-footnote-4.0.0|319e1c784b74a73b473e76a1bb725d3770c5a2e409dfd8c30c504f3a2712e272"
-  "dompurify|dompurify/-/dompurify-3.1.7|2626fa6a51d2959df24633f11ee970fca72caac1a1c83ea87db927c7041742fc"
-  "katex|katex/-/katex-0.16.11|8c5494c5f7d8e8bf73ff3fe64d4bd09a340e4878b7eec9bbd9ef8d8f3e24193f"
-  "highlight.js|@highlightjs/cdn-assets/-/cdn-assets-11.10.0|5df5f63aad9acb3660d0d008cd68bdf5a6b7121816f517e2434d1e2f027b220f"
-  "mermaid|mermaid/-/mermaid-11.4.1|ec7b61b391aaa24bf666fd20e48d0a626eeb4a95b95bc6b3016a122d7f0bc2af"
+  "dompurify|dompurify/-/dompurify-3.4.17|056cbdae276897208b88c21d1d779adfa09ad7be488a2f510a28e900d3bbffe7"
+  "katex|katex/-/katex-0.19.1|24da5a599eb2fcede2e270b99a6ff48bca816beecc95feeb84e8cccbd1bb34fd"
+  "highlight.js|@highlightjs/cdn-assets/-/cdn-assets-11.12.0|b8a006d30f45afe783072569f3d69c5b60c0e7b9ca28cd474e12f2584e2a3bd9"
+  "mermaid|mermaid/-/mermaid-12.2.0|071914164d0f6d53e5c26a10a220230d4ae8d37ed0f2263fbf072266f0af3a0a"
 )
 
 for entry in "${PACKAGES[@]}"; do
@@ -37,7 +37,9 @@ done
 rm -rf "$OUT"
 mkdir -p "$OUT/fonts" "$OUT/licenses"
 P() { echo "$WORK/$1/package"; }
-cp "$(P markdown-it)/dist/markdown-it.min.js" "$OUT/"
+# markdown-it 15 ships its browser build as UMD under dist/browser; the
+# reader loads it by the old name.
+cp "$(P markdown-it)/dist/browser/markdown-it.umd.min.js" "$OUT/markdown-it.min.js"
 cp "$(P markdown-it-footnote)/dist/markdown-it-footnote.min.js" "$OUT/"
 cp "$(P dompurify)/dist/purify.min.js" "$OUT/"
 cp "$(P katex)/dist/katex.min.js" "$(P katex)/dist/katex.min.css" "$OUT/"

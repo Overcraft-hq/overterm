@@ -208,6 +208,16 @@ extension E2ERunner {
           A --> B
         ```
 
+        ```swift
+        let answer = 42
+        ```
+
+        Said once.[^why]
+
+        <img src="nowhere.png" onerror="window.pwned = 1"><script>window.pwned = 2</script>
+
+        [^why]: The footnote itself.
+
         - [ ] first task
         - [x] second task
 
@@ -245,6 +255,26 @@ extension E2ERunner {
             hasMath = (value as? Int ?? 0) > 0
         }
         check("math is typeset", await eventually(2) { hasMath })
+        // What the bundled libraries do, each: highlight.js colours code,
+        // the footnote plugin numbers its note, and DOMPurify takes out a
+        // note's script and handlers — the reading view's safety is its.
+        var drawn: [String: Int] = [:]
+        reader.webView.evaluateJavaScript(
+            """
+            ({ code: document.querySelectorAll('pre code .hljs-keyword').length,
+               footnotes: document.querySelectorAll('.footnotes li').length,
+               scripts: document.querySelectorAll('main script').length,
+               handlers: [...document.querySelectorAll('main *')].filter(e => [...e.attributes].some(a => a.name.startsWith('on'))).length,
+               pwned: window.pwned ? 1 : 0 })
+            """
+        ) { value, _ in
+            drawn = (value as? [String: Any] ?? [:]).compactMapValues { $0 as? Int }
+        }
+        _ = await eventually(2) { !drawn.isEmpty }
+        check("code is highlighted", (drawn["code"] ?? 0) > 0, "\(drawn)")
+        check("a footnote is numbered and listed", drawn["footnotes"] == 1, "\(drawn)")
+        check(
+            "a note's script and handlers are taken out", drawn["scripts"] == 0 && drawn["handlers"] == 0 && drawn["pwned"] == 0, "\(drawn)")
         // An embedded image loads, through the app's scheme and DOMPurify.
         var loaded = -1
         for _ in 0..<20 where loaded <= 0 {
