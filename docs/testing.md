@@ -141,7 +141,10 @@ What makes it end-to-end without being dangerous:
   activated (it stays behind your windows), and Claude Code's transcripts an
   empty projects directory of its own until a scenario points
   `ClaudeUsageReader.projectsDirectory` at the ones it wrote — never the
-  real `~/.claude`.
+  real `~/.claude`. The first tab starts in an empty folder of the run's
+  (`start` in the support dir; `OVERTERM_E2E_CWD` names another), never
+  your home folder: the window follows that tab, and its panels read what
+  they find there — the API panel once found a real Bruno collection.
 - **Scratch files** in a temp dir removed at the end; repos are created with
   a throwaway git identity.
 

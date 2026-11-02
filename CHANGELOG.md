@@ -6,6 +6,11 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.5.2 — 2026-11-02
+
+- build: one weekly check for every pinned dependency — the Swift packages too, which Dependabot can't resolve here
+- e2e: a test run's first tab starts in an empty folder of its own, never the home folder of whoever runs it
+
 ## 1.5.1 — 2026-11-02
 
 - terminal: Ghostty 1.4.0 underneath (Zig 0.17.0, still Xcode 16.4) — its clipboard API, and a ⌘-clicked path that froze the app

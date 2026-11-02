@@ -30,7 +30,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let env = ProcessInfo.processInfo.environment
         if Settings.shared.restoreTabs, let saved = SessionState.load(), !saved.tabs.isEmpty {
             controller.restore(saved)
-        } else if AppEnvironment.isIsolated, let cwd = env["OVERTERM_E2E_CWD"] ?? env["OVERTERM_DUMP_CWD"] {
+        } else if AppEnvironment.isIsolated {
+            // Never the home folder of whoever runs it: the window follows the
+            // first tab's folder, and its panels read what they find there —
+            // a scenario's picture once showed the user's own Bruno collection.
+            // An empty folder of the run's own unless one is named.
+            let start = AppEnvironment.supportDirectory.appendingPathComponent("start", isDirectory: true)
+            if env["OVERTERM_E2E_CWD"] == nil, env["OVERTERM_DUMP_CWD"] == nil {
+                try? FileManager.default.createDirectory(at: start, withIntermediateDirectories: true)
+            }
+            let cwd = env["OVERTERM_E2E_CWD"] ?? env["OVERTERM_DUMP_CWD"] ?? start.path
             controller.newTab(in: URL(fileURLWithPath: cwd))
         } else {
             controller.newTab(from: nil)
