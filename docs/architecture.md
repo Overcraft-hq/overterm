@@ -822,9 +822,10 @@ with credits from the other two: `commit 7e68283 · 26 Sep 2026`
 no credits for a bundle with neither key). The credits get an explicit
 colour: the panel draws them as given, black in dark mode otherwise.
 
-`CHANGELOG.md` is the history; the commit that brings a version carries an
-annotated tag `v<version>`, made by the post-commit hook (`.githooks`,
-`make hooks`).
+`CHANGELOG.md` is the history; the commit a version is released from carries
+the tag `v<version>`, made when releasing (CLAUDE.md, Commits) — the
+pre-commit hook (`.githooks`, `make hooks`) reads the newest one to know
+what is released.
 
 ## Dropping onto a terminal
 

@@ -29,8 +29,8 @@ permissions:
 
 jobs:
   # The pre-commit hook's rule (CLAUDE.md, Commits), for contributors who
-  # never ran `make hooks`: a change to the app bumps VERSION, with its line
-  # in CHANGELOG.md.
+  # never ran `make hooks`: a change to the app goes into a version not yet
+  # released — VERSION past the newest v* tag — with its CHANGELOG.md entry.
   version:
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -39,23 +39,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          fetch-tags: true
 
-      - name: VERSION bumped with an app change
+      - name: An app change goes into an unreleased version
         run: |
           base="${{ github.event.pull_request.base.sha }}"
           changed="$(git diff --name-only "$base"...HEAD)"
-          if ! grep -qE '^(Sources/|Resources/|Scripts/|Package\.swift$|Makefile$|mise\.toml$)' <<<"$changed"; then
-            echo "No app change: no bump needed."; exit 0
+          if ! grep -qE '^(Sources/|Resources/|Scripts/|Package\.swift$|Package\.resolved$|Makefile$|mise\.toml$)' <<<"$changed"; then
+            echo "No app change: the version stays."; exit 0
           fi
-          old="$(git show "$base:VERSION" | tr -d '[:space:]')"
           new="$(tr -d '[:space:]' < VERSION)"
-          if [[ "$old" == "$new" ]]; then
-            echo "::error::This changes the app but VERSION is still $old — run Scripts/bump-version.sh major|minor|patch \"<subject>\" (CLAUDE.md, Commits)"; exit 1
+          released="$(git tag -l 'v*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          if [[ -n "$released" && "$(printf '%s\n%s\n' "$released" "$new" | sort -V | tail -1)" == "$released" ]]; then
+            echo "::error::This changes the app but VERSION is $new and v$released is released — start the next version: Scripts/bump-version.sh patch \"<subject>\" (CLAUDE.md, Commits)"; exit 1
           fi
           if ! grep -q "^## $new " CHANGELOG.md; then
             echo "::error::VERSION is $new but CHANGELOG.md has no entry for it — Scripts/bump-version.sh writes both"; exit 1
           fi
-          echo "VERSION $old → $new"
+          echo "VERSION $new, past v${released:-nothing}"
 
   build:
     # Draft pull requests don't run.

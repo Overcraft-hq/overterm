@@ -2,7 +2,8 @@
 # to ship. The version is VERSION's; the notes are its CHANGELOG.md entry
 # (Scripts/release-notes.sh). It tests, builds Overterm.app, packs it in a
 # DMG, and publishes release v<version> with the DMG attached — on the tag
-# the post-commit hook made, once pushed, or a new one on this commit.
+# made when releasing (CLAUDE.md, Commits), once pushed, or a new one on
+# this commit.
 #
 # Manual only: a macOS runner is expensive, so nothing triggers it on push.
 name: Release

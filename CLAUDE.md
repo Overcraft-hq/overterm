@@ -10,7 +10,7 @@ macOS terminal for agent-driven work — Swift/AppKit around libghostty
 mise trust && mise install   # pinned Zig (only needed to build GhosttyKit)
 make ghosttykit              # Frameworks/GhosttyKit.xcframework + GhosttyResources (once; ~2 min)
 make treesitter              # Frameworks/TreeSitterKit.xcframework + the editor's queries (once; ~1 min)
-make hooks                   # .githooks: VERSION bump check, v<VERSION> tags (once per clone)
+make hooks                   # .githooks: an app change goes into an unreleased version (once per clone)
 make test                    # unit + integration tests (~3 s)
 make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
                              # both: run OUTSIDE the Bash sandbox — docs/testing.md
@@ -141,10 +141,8 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 
 **Versioning.** `VERSION` is the app's version (SemVer), `CHANGELOG.md` what each version changed; About Overterm shows it with the commit (docs/architecture.md, Build metadata).
 
-- A commit that changes the app bumps VERSION in the same commit. "Changes the app": anything under `Sources/`, `Resources/` or `Scripts/`, or `Package.swift`, the `Makefile` or `mise.toml`.
-- **MAJOR**: incompatible — a saved-state format older versions can't read (session.json, snippets.json…), or a removed feature or shortcut.
-- **MINOR**: a new user-visible feature or capability.
-- **PATCH**: a fix, performance work, polish, or an internal step of a larger feature.
-- Docs- and tests-only commits don't bump.
-- Bump with `Scripts/bump-version.sh major|minor|patch "<the commit's subject>"`: it sets VERSION and adds the line to CHANGELOG.md under the new version and today's date; commit both with the change. Run again before committing, it adds a line to the same entry — it counts from the committed VERSION, so it never bumps twice.
-- `make hooks` (once per clone) turns on `.githooks`: pre-commit refuses an app change without VERSION (`SKIP_VERSION_CHECK=1` lets one through — e.g. amending a commit that bumped already: the check compares with HEAD), post-commit tags the commit `v<VERSION>`. Tags stay local; push them yourself (`git push origin v1.10.0`).
+- **A version gathers commits until it is released.** Work happens on a branch (`fix/release-v<version>`); the owner tries it as Overterm Dev, then it is merged to main, tagged and released. The first commit that changes the app after a release starts the next version; the commits after it go into that same version — no bump each, a CHANGELOG line each when it is worth one, and a version's entry kept short and grouped (one line per thing a person would notice, not per commit). "Changes the app": anything under `Sources/`, `Resources/` or `Scripts/`, or `Package.swift`, `Package.resolved`, the `Makefile` or `mise.toml`.
+- **Which version is the owner's call**: patch (1.5.x) unless told otherwise — a new feature has shipped as a patch, and a minor or major is named, never chosen here. As a guide when asked: MAJOR is incompatible (a saved-state format older versions can't read, a removed feature or shortcut); MINOR a new capability; PATCH a fix, performance work, polish.
+- Docs-, tests- and CI-only commits don't touch the version.
+- Start a version with `Scripts/bump-version.sh patch "<the commit's subject>"`: it sets VERSION one past the committed one and adds the line to CHANGELOG.md under the new version and today's date; commit both with the change. Later commits of the same version add their line to that entry by hand — running the script again then would start yet another version.
+- `make hooks` (once per clone) turns on `.githooks`: pre-commit refuses an app change unless VERSION is past the last release (the newest `v*` tag) and CHANGELOG.md has its entry (`SKIP_VERSION_CHECK=1` for a change to no behaviour, a comment). Nothing tags automatically: `v<VERSION>` is made when releasing, on the merged commit, and pushed then (`git tag v1.5.1 && git push origin v1.5.1`) — a tag made earlier pointed at the version's first commit, not its last.

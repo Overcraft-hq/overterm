@@ -62,7 +62,7 @@ endif
 	@echo "==> installed /Applications/$(APP)"
 
 ## hooks: use the repository's git hooks (once per clone): pre-commit refuses an
-## app change without a VERSION bump, post-commit tags v<VERSION>
+## app change unless VERSION is past the last release, with a CHANGELOG entry
 hooks:
 	git config core.hooksPath .githooks
 

@@ -1,33 +1,51 @@
 #!/usr/bin/env bash
-# A commit that changes the app bumps VERSION in the same commit (CLAUDE.md,
+# A commit that changes the app goes into a version not yet released (CLAUDE.md,
 # Commits). Enabled by `make hooks`.
 #
-# SKIP_VERSION_CHECK=1 lets a commit through — for instance amending a commit
-# that bumped it already: the check compares with HEAD, which an amend
-# replaces.
+# A version gathers commits until it is released: the first app change after
+# a release bumps VERSION (Scripts/bump-version.sh), the next ones go into the
+# same version, each with its CHANGELOG line if it's worth one. So the check is
+# not "does this commit change VERSION" — that asked for SKIP_VERSION_CHECK on
+# every commit after the first — but "is VERSION past the last release, with a
+# CHANGELOG entry". The last release is the newest v<MAJOR.MINOR.PATCH> tag;
+# tags are made when releasing, never by a hook (`git fetch --tags` to see
+# releases made elsewhere).
+#
+# SKIP_VERSION_CHECK=1 lets a commit through that changes no behaviour (a
+# comment in the Makefile, say).
 set -euo pipefail
 
 if [[ "${SKIP_VERSION_CHECK:-}" == 1 ]]; then exit 0; fi
 
 # What this commit changes (both sides of a rename), paths unquoted.
 staged="$(git -c core.quotePath=false diff --cached --name-only --no-renames -z | tr '\0' '\n')"
-app="$(printf '%s\n' "$staged" | grep -E '^(Sources/|Resources/|Scripts/|Package\.swift$|Makefile$|mise\.toml$)' || true)"
+app="$(printf '%s\n' "$staged" | grep -E '^(Sources/|Resources/|Scripts/|Package\.swift$|Package\.resolved$|Makefile$|mise\.toml$)' || true)"
 if [[ -z "$app" ]]; then exit 0; fi
-if printf '%s\n' "$staged" | grep -qx 'VERSION'; then exit 0; fi
+
+semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+version="$(git show :VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+released="$(git tag -l 'v*' | sed 's/^v//' | grep -E "$semver" | sort -V | tail -1 || true)"
+
+problem=""
+if [[ ! "$version" =~ $semver ]]; then
+  problem="VERSION is '$version', not MAJOR.MINOR.PATCH."
+elif [[ -n "$released" && "$(printf '%s\n%s\n' "$released" "$version" | sort -V | tail -1)" == "$released" ]]; then
+  problem="VERSION is $version, and v$released is released: this change goes into the next version."
+elif ! git show :CHANGELOG.md 2>/dev/null | grep -qE "^## $(printf '%s' "$version" | sed 's/\./\\./g')( |$)"; then
+  problem="CHANGELOG.md has no entry for $version."
+fi
+if [[ -z "$problem" ]]; then exit 0; fi
 
 {
-  echo "pre-commit: this commit changes the app but not VERSION:"
+  echo "pre-commit: this commit changes the app — $problem"
   printf '%s\n' "$app" | sed -n '1,8s/^/    /p'
   if (($(printf '%s\n' "$app" | wc -l) > 8)); then echo "    …"; fi
   echo
-  echo "Bump it in the same commit; the change's effect picks the part (CLAUDE.md, Commits):"
-  echo "    Scripts/bump-version.sh patch|minor|major \"area: what changed\""
+  echo "Start the next version (the part is the owner's to name; patch unless told):"
+  echo "    Scripts/bump-version.sh patch \"area: what changed\""
   echo "    git add VERSION CHANGELOG.md"
-  echo "  major: incompatible (a saved-state format older versions can't read, a removed feature or shortcut)"
-  echo "  minor: a new user-visible feature or capability"
-  echo "  patch: a fix, performance work, polish, or an internal step of a larger feature"
   echo
-  echo "Not a change to the app after all, or amending a commit that bumped it already:"
+  echo "A change to no behaviour (a comment):"
   echo "    SKIP_VERSION_CHECK=1 git commit …"
 } >&2
 exit 1

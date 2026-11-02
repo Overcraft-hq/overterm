@@ -212,8 +212,9 @@ final class VersioningTests: XCTestCase {
 
     // MARK: .githooks, in a scratch repository
 
-    /// A repository on this checkout's hooks, one commit in: VERSION 1.0.0,
-    /// a source file, a doc and a test.
+    /// A repository on this checkout's hooks, one commit in and released:
+    /// VERSION 1.0.0 with its CHANGELOG entry, tagged v1.0.0 (as releasing
+    /// tags it), a source file, a doc and a test.
     private func scratchRepo() async throws -> URL {
         let repo = try scratchDirectory("hooks")
         try await git(["init", "-q", "-b", "main"], in: repo)
@@ -224,12 +225,19 @@ final class VersioningTests: XCTestCase {
             try await git(["config", key, value], in: repo)
         }
         try write("1.0.0\n", to: "VERSION", in: repo)
+        try write(Self.changelog(["1.0.0"]), to: "CHANGELOG.md", in: repo)
         try write("let a = 1\n", to: "Sources/Overterm/App.swift", in: repo)
         try write("# Doc\n", to: "docs/doc.md", in: repo)
         try write("// test\n", to: "Tests/OvertermTests/ATests.swift", in: repo)
         try await git(["add", "-A"], in: repo)
         try await git(["commit", "-q", "-m", "init"], in: repo)
+        try await git(["tag", "v1.0.0"], in: repo)
         return repo
+    }
+
+    /// A CHANGELOG with an entry for each of `versions`, newest first.
+    private static func changelog(_ versions: [String]) -> String {
+        "# Changelog\n\n" + versions.map { "## \($0) — 2026-01-01\n\n- a change\n" }.joined(separator: "\n")
     }
 
     private func commits(in repo: URL) async throws -> Int {
@@ -240,29 +248,49 @@ final class VersioningTests: XCTestCase {
         try await git(["tag", "--list"], in: repo).split(separator: "\n").map(String.init)
     }
 
-    /// The refusal lists the app paths it found — each kind — and nothing else.
-    func testAnAppChangeWithoutVersionIsRefused() async throws {
+    /// An app change on a released version is refused: the refusal lists the
+    /// app paths it found — each kind — and nothing else.
+    func testAnAppChangeOnAReleasedVersionIsRefused() async throws {
         let repo = try await scratchRepo()
-        let app = ["Sources/Overterm/App.swift", "Resources/Icon.svg", "Scripts/tool.sh", "Package.swift", "Makefile", "mise.toml"]
+        let app = ["Sources/Overterm/App.swift", "Resources/Icon.svg", "Scripts/tool.sh", "Package.swift", "Package.resolved", "Makefile", "mise.toml"]
         for path in app + ["docs/doc.md"] { try write("changed\n", to: path, in: repo) }
         try await git(["add", "-A"], in: repo)
         let error = await failure { try await self.git(["commit", "-q", "-m", "app: no bump"], in: repo) }
         let listed = (error?.stderr ?? "").split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         for path in app { XCTAssertTrue(listed.contains(path), "\(path) named: \(error?.stderr ?? "")") }
         XCTAssertFalse(listed.contains("docs/doc.md"), "not an app change")
-        XCTAssertTrue(error?.stderr.contains("Scripts/bump-version.sh patch|minor|major") == true, "says how to bump")
+        XCTAssertTrue(error?.stderr.contains("v1.0.0 is released") == true, "says why: \(error?.stderr ?? "")")
+        XCTAssertTrue(error?.stderr.contains("Scripts/bump-version.sh patch") == true, "says how to start the next version")
         XCTAssertTrue(error?.stderr.contains("SKIP_VERSION_CHECK=1") == true, "says how to skip")
         let count = try await commits(in: repo)
         XCTAssertEqual(count, 1, "nothing was committed")
     }
 
-    func testAnAppChangeWithVersionIsCommitted() async throws {
+    func testABumpWithoutItsChangelogEntryIsRefused() async throws {
         let repo = try await scratchRepo()
         try write("let a = 2\n", to: "Sources/Overterm/App.swift", in: repo)
         try write("1.0.1\n", to: "VERSION", in: repo)
+        let error = await failure { try await self.git(["commit", "-q", "-am", "app: fix"], in: repo) }
+        XCTAssertTrue(error?.stderr.contains("CHANGELOG.md has no entry for 1.0.1") == true, error?.stderr ?? "committed")
+    }
+
+    /// A version gathers commits until it is released: the first bumps, the
+    /// next ones go in as they are — no SKIP_VERSION_CHECK each.
+    func testAnUnreleasedVersionTakesMoreCommits() async throws {
+        let repo = try await scratchRepo()
+        try write("let a = 2\n", to: "Sources/Overterm/App.swift", in: repo)
+        try write("1.0.1\n", to: "VERSION", in: repo)
+        try write(Self.changelog(["1.0.1", "1.0.0"]), to: "CHANGELOG.md", in: repo)
         try await git(["commit", "-q", "-am", "app: fix"], in: repo)
+        try write("let a = 3\n", to: "Sources/Overterm/App.swift", in: repo)
+        try await git(["commit", "-q", "-am", "app: another fix, same version"], in: repo)
         let count = try await commits(in: repo)
-        XCTAssertEqual(count, 2)
+        XCTAssertEqual(count, 3)
+        // Released (tagged), the next change starts another version again.
+        try await git(["tag", "v1.0.1"], in: repo)
+        try write("let a = 4\n", to: "Sources/Overterm/App.swift", in: repo)
+        let error = await failure { try await self.git(["commit", "-q", "-am", "app: after the release"], in: repo) }
+        XCTAssertTrue(error?.stderr.contains("v1.0.1 is released") == true, error?.stderr ?? "committed")
     }
 
     func testDocsAndTestsOnlyNeedNoBump() async throws {
@@ -279,39 +307,21 @@ final class VersioningTests: XCTestCase {
     func testSkipVersionCheckLetsOneThrough() async throws {
         let repo = try await scratchRepo()
         try write("let a = 3\n", to: "Sources/Overterm/App.swift", in: repo)
-        try await git(["commit", "-q", "-am", "app: amend-like"], in: repo, env: ["SKIP_VERSION_CHECK": "1"])
+        try await git(["commit", "-q", "-am", "app: a comment"], in: repo, env: ["SKIP_VERSION_CHECK": "1"])
         let count = try await commits(in: repo)
         XCTAssertEqual(count, 2)
     }
 
-    /// A commit that changes VERSION gets `v<VERSION>`, annotated; a tag that
-    /// exists is never moved or made twice.
-    func testACommitThatChangesVersionIsTaggedOnce() async throws {
+    /// Nothing tags on commit: a version is tagged when it is released, on
+    /// the commit it is released from — a tag made at the bump pointed at
+    /// the version's first commit, not its last.
+    func testACommitIsNeverTagged() async throws {
         let repo = try await scratchRepo()
-        let first = try await git(["rev-parse", "HEAD"], in: repo)
-        var listed = try await tags(in: repo)
-        XCTAssertEqual(listed, ["v1.0.0"], "the first commit brought VERSION")
-
         try write("let a = 4\n", to: "Sources/Overterm/App.swift", in: repo)
         try write("1.1.0\n", to: "VERSION", in: repo)
+        try write(Self.changelog(["1.1.0", "1.0.0"]), to: "CHANGELOG.md", in: repo)
         try await git(["commit", "-q", "-am", "app: a feature"], in: repo)
-        let bumped = try await git(["rev-parse", "HEAD"], in: repo)
-        let kind = try await git(["cat-file", "-t", "v1.1.0"], in: repo)
-        XCTAssertEqual(kind, "tag\n", "annotated")
-        let message = try await git(["tag", "--list", "--format=%(contents:subject)", "v1.1.0"], in: repo)
-        XCTAssertEqual(message, "Overterm 1.1.0\n")
-        let tagged = try await git(["rev-parse", "v1.1.0^{commit}"], in: repo)
-        XCTAssertEqual(tagged, bumped)
-
-        try write("# Doc, again\n", to: "docs/doc.md", in: repo)
-        try await git(["commit", "-q", "-am", "docs: again"], in: repo)
-        try write("1.0.0\n", to: "VERSION", in: repo)
-        try await git(["commit", "-q", "-am", "back to a version that has its tag"], in: repo)
-        listed = try await tags(in: repo)
-        XCTAssertEqual(listed, ["v1.0.0", "v1.1.0"])
-        let stillFirst = try await git(["rev-parse", "v1.0.0^{commit}"], in: repo)
-        XCTAssertEqual(stillFirst, first, "an existing tag stays where it is")
-        let stillBumped = try await git(["rev-parse", "v1.1.0^{commit}"], in: repo)
-        XCTAssertEqual(stillBumped, bumped)
+        let listed = try await tags(in: repo)
+        XCTAssertEqual(listed, ["v1.0.0"], "only the release's own")
     }
 }
