@@ -14,263 +14,115 @@
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-1d1d1f">
   <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-arm64-1d1d1f">
   <img alt="Swift 6.1" src="https://img.shields.io/badge/Swift-6.1-f05138">
-  <img alt="libghostty v1.3.1" src="https://img.shields.io/badge/libghostty-v1.3.1-2bb35d">
+  <img alt="libghostty v1.4.0" src="https://img.shields.io/badge/libghostty-v1.4.0-2bb35d">
 </p>
 
 <p align="center">
-  <img alt="The overterm window: sidebar, terminal, pane header" src="docs/assets/screenshot-window.png" width="900">
+  <img alt="Tabs marked done, working, waiting and failed; the changes pane beside the terminal" src="docs/assets/screenshot-window.png" width="900">
 </p>
 
-The terminal itself is [libghostty](https://github.com/ghostty-org/ghostty)
-(`GhosttyKit`) inside a Swift/AppKit app, so your `~/.config/ghostty/config`
-— font, theme, keybinds — applies as it is. Everything around it is built for
-one thing: keeping five or ten agent sessions straight.
+The terminal is [libghostty](https://github.com/ghostty-org/ghostty) inside a
+Swift/AppKit app, so your `~/.config/ghostty/config` — font, theme, keybinds —
+applies as it is. Everything around it is built for one thing: keeping five or
+ten agent sessions straight. Each tab says what it is and what it wants —
+**working**, **done**, **failed**, **needs you** — in the strip, in a
+notification and on the Dock; Claude Code needs no setup for it.
 
 ---
 
-## What it does
+## What's in it
 
-### Tabs that say what is happening in them
+<table>
+  <tr>
+    <td width="50%"><img alt="A branch reviewed side by side" src="docs/assets/screenshot-review.png"></td>
+    <td>
+      <h3>Review <kbd>⇧⌘R</kbd></h3>
+      A branch, some commits, what isn't committed yet, or a pull request
+      (through your <code>gh</code>) in a tab of its own — the files on the left,
+      each diff <b>side by side</b> or unified, viewed marks, and
+      <code>j</code>/<code>k</code>, <code>n</code>/<code>p</code>, <code>v</code>
+      to move through it. Full screen, it is the whole screen.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="A note in the reading view" src="docs/assets/screenshot-notes.png"></td>
+    <td>
+      <h3>Notes — your Obsidian vault <kbd>⌥⌘N</kbd></h3>
+      Your vault as it is, in iCloud or anywhere: Live Preview, or the reading
+      view with callouts, math, mermaid and code drawn offline. Backlinks,
+      outline, tags, tasks and a graph; a rename takes its links with it; today's
+      note and templates go where Obsidian's settings say.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="A diagram an agent drew, on its Excalidraw canvas" src="docs/assets/screenshot-drawing.png"></td>
+    <td>
+      <h3>Drawings</h3>
+      New Drawing opens an Excalidraw canvas, saved as Obsidian Excalidraw's own
+      file — drawn here, opened there, and back. A drawing embedded in a note is
+      a picture in the reading view, and agents can draw a diagram for you
+      (<code>notes_draw</code>).
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="A SQL console and its results" src="docs/assets/screenshot-database.png"></td>
+    <td>
+      <h3>Database <kbd>⌥⌘B</kbd></h3>
+      PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery: schemas in the
+      sidebar, any <code>.sql</code> file a console with completion, results in a
+      grid you export. Passwords stay in your keychain; SSH tunnels through your own
+      <code>~/.ssh</code>. S3 and Google Cloud Storage in the same panel.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="Docker's containers and a container's logs" src="docs/assets/screenshot-docker.png"></td>
+    <td>
+      <h3>Docker <kbd>⌥⌘P</kbd></h3>
+      The containers your <code>docker</code> reaches, by compose project, kept
+      live: logs coloured by level, files, CPU and memory, images, volumes,
+      networks, builds and Scout's vulnerabilities. Two worktrees' stacks come up
+      on free ports, a container that crashes marks its tab, and an agent can be
+      asked why.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="Overgit: the commit graph and a commit" src="docs/assets/screenshot-overgit.png"></td>
+    <td>
+      <h3>Overgit <kbd>⌥⌘G</kbd></h3>
+      One git home in the sidebar: changes to stage and commit, the commit graph,
+      branches, pull requests and CI, worktrees, stashes, tags. A commit opens
+      beside the terminal; any two compare. Merged worktrees clean up in a click.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="Tab Peek: every tab as a card" src="docs/assets/screenshot-peek.png"></td>
+    <td>
+      <h3>Tab Peek <kbd>⇧⌘E</kbd></h3>
+      Every tab as a live card — three fingers down on the trackpad, too. Tabs of
+      one checkout group into <b>islands</b> you can fold, stash, focus on or
+      broadcast to; splits give each pane a header with its status and ports.
+    </td>
+  </tr>
+</table>
 
-<img alt="Tabs marked done, working, waiting and failed" src="docs/assets/screenshot-tabs.png" width="900">
+### And
 
-Each tab carries what it is (agent, server, shell, ssh) and what it wants:
-**working** (a spinner), **done**, **failed**, or **needs you** — a bell, or an
-agent's permission prompt. In the background it is also a macOS notification
-and a Dock badge, and ⌥⌘↓ jumps to the next one. Claude Code needs no setup
-for it: it already speaks the Ghostty notification and progress sequences.
+| | |
+|---|---|
+| **Agent Inbox** <kbd>⌘I</kbd> | Every agent waiting on you, most urgent first, with its question and choices — answered from there. |
+| **Changes** <kbd>⌥⌘D</kbd> | The worktree's files live, Uncommitted or the whole Branch — and *why* each changed, from what Claude said as it edited it. |
+| **Command blocks** | A command's output, time and exit; ⇧⌘C copies it, ⌘R reruns it, ⌥⌘↓ jumps to the next failure. |
+| **Palette** <kbd>⌘K</kbd> | Actions, tabs, worktrees, snippets — and what this machine has actually run, this folder's first. |
+| **API client** <kbd>⌥⌘R</kbd> | A checkout's [Bruno](https://www.usebruno.com) collection: requests, environments, scripts and tests, written back to the `.bru` files you commit. |
+| **Browser** <kbd>⇧⌘B</kbd> | A column beside the terminal that agents drive over MCP — and the iOS simulator, live and clickable, in the same place. |
+| **Usage** <kbd>⌥⌘U</kbd> | What is left of Claude's and Codex's windows, and what the day would cost — read from their own files, nothing over the network. |
+| **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
+| **New Task** <kbd>⇧⌘N</kbd> | A worktree, a branch and an agent tab in one go — and its compose stack, on free ports if another worktree's has them. |
+| **Search** <kbd>⌘F</kbd> | The scrollback, the checkout's file names and their contents; ⌘-click a `path:line` to open it. |
+| **Agents over MCP** | Claude Code started here reaches the browser, the notes, the API client, the databases and Docker — reads freely, asks you before anything writes. |
+| **Restored** | Tabs, names, splits and islands come back on relaunch: shells with their last 2000 lines, agent tabs resuming their conversation. |
 
-### Groups, as islands in the strip
-
-Tabs of one checkout become an **island**: a coloured chip, its own run in the
-strip, and the tabs' marks summed on it. Collapse one, **stash** it out of the
-way (it keeps running), **focus** on it so the strip shows nothing else, or
-**broadcast** a line into every tab in it. ⌃⌘1…9 go straight to one.
-
-A new tab never silently joins an island — ⌘T and the strip's `+` open outside
-it; the island's own `+` opens inside it.
-
-### Agent Inbox (⌘I)
-
-Every agent waiting on you in one list, most urgent first, with the question
-and its choices read off the screen: **Approve ↩**, **Always allow**,
-**Deny ⌫** — answered where you are, without walking the tabs.
-
-### Changes, with the reason each file changed
-
-<img alt="The changes pane beside the terminal" src="docs/assets/screenshot-changes.png" width="900">
-
-The ± badge counts the tab's worktree; the pane shows the files, live, with
-**Uncommitted** (stage, discard, commit) or **Branch** (everything since the
-branch left `main`, its commits listed). Each file can say *why* it changed:
-what Claude said when it edited it, read from Claude Code's own session files
-on this Mac — nothing leaves it.
-
-### Panes, and a card of every tab
-
-<img alt="Tab Peek: every tab as a card" src="docs/assets/screenshot-peek.png" width="900">
-
-Split a tab (⌘D, ⇧⌘D) and every pane gets a 38 pt header: what runs in it,
-its island, its status, the ports it listens on, and split / zoom / close.
-Drag a tab onto a pane to split with it. **Tab Peek** (⇧⌘E, or three fingers
-down) scales every tab into a card.
-
-### The things a terminal should have known
-
-- **Command blocks** — what a command printed, how long it took and how it
-  ended; a failed one is ringed in the grid, with **Copy output** (⇧⌘C) and
-  **Rerun** (⌘R) pinned in the pane's header. A gutter down the pane's edge
-  maps the blocks in the scrollback.
-- **⌘K palette** over your actions, tabs, worktrees, snippets and **what this
-  machine has actually run** — this folder's commands first, with the exit
-  code and how long they took. ↩ runs, ⌥↩ pastes without running.
-- **Live ports** — a pill in the pane header for whatever is listening:
-  open it, copy the URL, or kill the exact pid.
-- **⌘L** hands the selection to an agent, with the command it came from, the
-  exit code and the diff, if you want them.
-- **Search** (⌘F) — one overlay over the scrollback, the checkout's file names
-  and their contents. ⌘-click a `path:line` in the output to open it in the
-  editor at that line.
-- **Drop files on a terminal** from Finder, Safari, Photos or the sidebar: a
-  shell gets quoted paths, Claude Code gets `@`-mentions and images it can
-  read. Nothing runs until you press Return.
-
-### What the agents are costing you
-
-<kbd>⌥⌘U</kbd>, or the gauge at the right of the strip: what is left of
-Claude's five-hour and weekly windows and of Codex's, with the countdown to
-each reset, and what the day's tokens would cost at list prices. Both are
-read from the files the agents write on this Mac — nothing is asked over
-the network, and nothing needs a key.
-
-### An API client that is Bruno's files
-
-<kbd>⌥⌘R</kbd>, or the rail's ⇄: the checkout's [Bruno](https://www.usebruno.com)
-collection — its requests by folder, its environments — and a request opens
-beside the terminal with Bruno's tabs (params, body, headers, auth, vars,
-scripts, assert, tests, docs) and the response under them. Scripts and tests
-run as in Bruno (`bru`, `req`, `res`, `expect`), a collection or a folder runs
-top to bottom into a Runner, and the files stay Bruno's: an edit here is a
-minimal edit to the `.bru` file you commit, and Bruno and `bru run` open the
-same collection. No collection yet? It offers the OpenAPI document in the
-checkout, or the one the tab's dev server publishes, and imports Postman,
-`.http` files and a cURL command too. Agents get it over MCP: list the
-requests, send one with its tests, run the collection.
-
-### Notes that are your Obsidian vault
-
-<kbd>⌥⌘N</kbd>, or the rail's note: a folder of Markdown — your Obsidian
-vault as it is, in iCloud or anywhere — beside the terminal. Notes open in
-Live Preview (headings, links, tasks as they read; the Markdown on the
-line you are editing) or the reading view, with mermaid diagrams, math,
-callouts, embeds and code drawn offline. Backlinks, outline, tags, tasks
-and a graph; `[[` completes your notes; a rename takes its links with it;
-today's note, templates and pasted images go where Obsidian's settings
-put them. A terminal selection or a command's output goes into today's
-note in a click, and agents can search and read the vault over MCP —
-never write to it.
-
-### A database client, DataGrip's work
-
-<kbd>⌥⌘B</kbd>, or the rail's cylinder: PostgreSQL, MySQL, SQLite, Redshift,
-ClickHouse and BigQuery — the connections with their schemas, tables and
-columns, and any `.sql` file a console under the editor: ⌘↩ runs the
-statement at the caret, completion knows your tables and an alias's
-columns, results land in a grid you sort, copy and save as CSV, JSON,
-Markdown or INSERTs. Passwords and BigQuery's service account keys stay in
-your keychain; a read-only connection refuses anything that writes, and a
-DROP or an UPDATE without WHERE is asked about first. A database behind a
-bastion connects through an SSH tunnel, with your own `~/.ssh` setup.
-
-S3 and Google Cloud Storage sit in the same panel — AWS, DigitalOcean
-Spaces, MinIO, R2, B2, Wasabi or any S3 endpoint: browse buckets and
-folders, preview a file (CSV as rows, JSON and logs as text, images, PDFs),
-drop files and folders from Finder to upload them, download, delete, copy a
-link that works for an hour.
-
-Claude Code started in Overterm can use them too, through MCP: list your
-connections, read a schema, run a query that reads, browse a bucket and
-read a file — never seeing a password. A write is shown to you first, and
-only if you allow agents to ask (Settings ▸ Database).
-
-### Docker, Docker Desktop's work
-
-<kbd>⌥⌘P</kbd>: the containers of the engine your terminal's `docker`
-reaches — Docker Desktop, OrbStack, Colima — on a page of their own,
-grouped by compose project, kept current as they start, stop and crash.
-Each running container's CPU and memory sit in the list — a compose
-project's added up — and a click on either column sorts by it, the
-busiest first (again: by name). They are read only while the list is on
-screen: not on another section, nor with the window minimized, hidden or
-under another app's.
-<kbd>⇧⌥⌘P</kbd> finds any container or project by name from anywhere.
-Single keys while the list has the keyboard: `s` starts or stops, `r`
-restarts, `e` opens a shell in a tab, `E` a debug shell beside an image
-with none, `q` a database's own client — psql, mysql, redis-cli,
-mongosh — signed in from its environment without the password on the
-command line, `t` follows its logs, `f` its files, `o` opens its
-port, `u` and `D` bring a project up and down — in a terminal tab, where you
-see the command — and `v` shows an image's vulnerabilities. Filter with
-`status:running project:api port:5432 is:test`; `?` lists the keys. `n` runs an image with a window that writes the
-`docker run` as you fill it in; any container copies as the `docker run`
-that would make it again. A compose project's services' logs are merged as
-`compose logs` merges them, each service in its colour. Containers
-Testcontainers makes for a test run sit apart at the bottom, folded, a run
-each — how many, since when — and Remove All clears a run's containers,
-networks, volumes and images as Ryuk would, asked first. A project's
-services rebuild and start (`b`), pull and run a one-off, each in a tab
-where you see it, and restart here; its log narrows to one of them. Watch (`w`) is
-there when a service has `develop.watch`, and Up With Profiles… lists the
-profiles its files name. A container's logs are followed as they are written,
-coloured by level and filtered, and picked up again after a restart; its
-inspect data and its CPU, memory, network and disk sit beside it. Secrets
-in a container's environment stay masked. On Apple silicon, a container
-running an amd64 image — emulated, and slow — says `amd64` on its row; its
-detail says why and runs it natively in a tab: built again for arm64 when
-its compose file builds it, else from its image's arm64 variant. Images
-show their platform. Images (pulled with their
-progress, tagged, their layers), volumes with their sizes and who mounts
-them, and networks with who is on them sit in sections of their own, and
-Clean Up lists what nothing uses before anything goes. Check for Updates
-(`C`) asks each image's registry, through your own `docker` and signed in
-as you, whether its tag now names another image. It marks the ones that
-do and pulls them: Docker Hub's on the page, another registry's and a
-compose project's in a tab, where `docker` signs in. What your compose
-files build is never asked about, and nothing goes over the network
-until you ask. Every detail has
-its actions as buttons, the same ones its right-click menu has; a
-network's puts a container on it or takes one off. A volume exports,
-imports and clones; a container's filesystem and an image save as tars.
-A container's memory, CPUs and restart policy change in place from its
-Settings… (`,`), the `docker update` written out as you go; it renames —
-warning you when Compose would put the old name back — and saves as an
-image, its secrets and Compose's labels left out. A password in its
-command can't be, and it says so before you save.
-Builds show every build buildx keeps, one still running too, step by step
-as BuildKit reports it: how long each took, which came from cache, which
-failed and why, each one's output, Dockerfile warnings with their line,
-the Dockerfile a click away — and the plain log in a tab. Models lists Docker Model Runner's local
-LLMs — which are loaded, what they take — with a chat with one in a tab
-and the OpenAI base URL to give your code. An `ssh://` context reaches a
-remote engine through your own ssh, its ports opening on the host. An
-image's Vulnerabilities tab asks Docker Scout when you press Scan — it
-sends the image's package list to Docker's service, signed in as you — and
-lists its CVEs by severity: the package, the version you have, the one that
-fixes it, the advisory a click away; filter to the severities you care
-about, or to what can be fixed. With Docker's MCP Toolkit, the page
-says whether Claude Code and Codex reach its MCP servers, and connects
-them in a tab. The rail's shippingbox keeps the
-selected tab's checkout's stack beside the terminal — before it runs too:
-its compose file's services as Compose will make them, with Up (`u` on
-the page) to start them — a container's logs a click away in the
-right-hand pane, what runs elsewhere under it (Testcontainers' test runs
-in one row), and the ports its containers publish
-sit in its panes' headers beside the ones its own processes listen on. A
-container that crashes, runs out of memory or turns unhealthy marks the
-tab whose checkout it belongs to, as a failed command does. One that
-failed has Ask Why (`a`): Overterm's Ask Agent sheet opens for Claude
-Code or Codex with the question typed, and with it go how the container
-ended, what its exit code means, its health check's last output, its
-last log lines and its compose service, secrets taken out. Lines picked
-out of any container's log go the same way with ⌘L. Two
-worktrees' stacks wanting the same port: before an Up, Overterm sees it
-taken — by another worktree's stack or a program — and offers Up on Free
-Ports. The stack moves to free ones (web 8080 → 18080) under a project name
-of its own, through an override kept in Overterm's folder, never in your
-repository, and every Up from Overterm uses it until you take it back; the
-pane headers say where each port went. One that couldn't start still says
-which stack, or which tab's process, has the port — and stops that one for
-you. `d` on a
-PostgreSQL, MySQL or ClickHouse container opens it in the Database panel,
-its connection filled in from the container. A container's files are a
-tab of its own: browse its folders, open a config in the editor, and the
-save goes back into the container. Drop files or folders from Finder on it
-to copy them in, or drag one out to Finder to copy it out, each with its
-progress. A volume's files are a tab too: a
-database's config opened and saved back, its owner kept, through a small
-container Overterm runs only while the tab shows.
-
-Claude Code started in Overterm can read Docker too, through MCP: the
-containers and compose projects, a container's logs, why it failed, what
-it uses, and the vulnerabilities of an image you scanned — secrets kept
-out. Starting, stopping, changing a container's limits, compose and exec
-are asked about in the window each time, and
-Settings ▸ Docker can take them away.
-
-### And the work around the work
-
-**New Task** (⇧⌘N) makes a worktree, a branch and a tab with an agent started
-in it — and, with a compose file in the repository, can start the worktree's
-own stack, on free ports when another worktree's has them. **Merged worktrees** are marked and cleaned up in one click, keeping
-anything with changes, a tab or unpushed commits. **Pull requests** and CI
-(through your `gh`) sit on the worktree, in the strip, and in a pane of their
-own. **Claude sessions** lists every conversation ever run in the repository,
-and resumes one where it ran. The **editor** opens a file beside the terminal;
-a double-click opens it in the app you chose.
-
-Tabs, their names, colours, pins, directories, splits and islands come back on
-relaunch — shell panes with their last 2000 lines, agent tabs resuming their
-conversation.
+How each works, in detail: [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -292,129 +144,97 @@ and not notarized, so macOS stops the first open: right-click → **Open** (macO
 xattr -dr com.apple.quarantine /Applications/Overterm.app
 ```
 
-**With Xcode — from source.** The Command Line Tools alone can't build
-GhosttyKit; it needs `xcodebuild` and the Metal compiler.
-
-```sh
-mise trust && mise install   # the pinned Zig
-make ghosttykit              # GhosttyKit from the pinned Ghostty (once, ~2 min)
-make install                 # build Overterm.app and copy it to /Applications
-```
+**From source** — see [Build](#build).
 
 ## Keys
 
-The defaults; every one of them is rebindable in Settings ▸ Keyboard Shortcuts
-(or `keybindings.json`), menu items and the terminal's keys alike.
+The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
+`keybindings.json`).
 
 | | |
 |---|---|
 | ⌘T / ⌘W | New tab / close the pane, else the tab |
 | ⌥⌘C / ⌥⌘X | New Claude / Codex tab here |
 | ⇧⌘N | New Task — worktree, branch, agent |
-| ⌘K | Command palette: actions, tabs, worktrees, snippets, history |
+| ⌘K | Command palette |
 | ⌘I | Agent Inbox · ⌃⌘I Tab Info · ⇧⌘A agent overview |
-| ⌥⌘↓ | Jump to the next failure or tab that needs you |
+| ⌥⌘↓ | The next failure, or tab that needs you |
 | ⌘D / ⇧⌘D | Split right / down · ⌘[ ⌘] between panes · ⇧⌘↩ zoom |
 | ⌃⌘N / ⌃⌘G | Group the selected tabs / the group switcher |
 | ⌃⌘1…9 | Go to a group · ⌃⌘F focus · ⌃⌘S stash · ⌃⌘B broadcast |
 | ⌘R / ⇧⌘C | Run the last command again / copy its output |
-| ⌘↑ / ⌘↓ | Previous / next prompt |
-| ⌘L | Ask an agent about the selection — a terminal's, or a Docker log's |
+| ⌘L | Ask an agent about the selection |
 | ⌘F | Search the terminal and the files |
+| ⇧⌘R | Review the branch |
 | ⌘B / ⌥⌘D | Sidebar / changes |
+| ⌥⌘G · ⌥⌘N · ⌥⌘R · ⌥⌘B | Overgit · notes · API client · database |
+| ⌥⌘P / ⇧⌥⌘P | Docker / find a container |
+| ⇧⌘B · ⌥⌘U | Browser · usage |
 | ⇧⌘E | Tab Peek (or three fingers down) |
 | ⌘, / ⌥⌘O | Settings / what's new |
-| ⌘-click | Open a printed `path:line` in the editor |
-| ⌥ while dropping | Plain quoted paths, even where Claude Code runs |
 
 ## Settings
 
 ⌘, opens a tab, not a window. Every section switches between controls and the
 JSON behind it — `settings.json` and `keybindings.json` in
 `~/Library/Application Support/Overterm/`, VS Code's two files, editable by
-hand (only what you changed is in them, comments are fine, and a hand edit
-applies at once). General, Appearance, **Themes**, Terminal (over your Ghostty
-config, applied to open terminals immediately), Agents, Editor, Notifications,
-Keyboard Shortcuts, and About — the version, what's new, and updates from
-GitHub releases.
-
-**Themes** is a gallery, not a menu of names: each one drawn as a little
-window in its own colours. It opens on ten — the ones people name — and
-**All** is the whole catalogue of 473: Ghostty's own, ten more bundled beside
-them, and anything in your `~/.config/ghostty/themes`, marked *Yours*. Pick
-one and the terminals you have open change as you do — the strip, the
-sidebar and the panes with them. "Follow macOS between a
-light and a dark theme" keeps one of each and switches with the system.
+hand: only what you changed is in them, comments are fine, and an edit applies
+at once. **Themes** is a gallery — each theme drawn as a little window in its
+own colours: Ghostty's 800-odd, and yours from `~/.config/ghostty/themes`.
 
 ## Build
 
-Requirements: macOS 13+, Xcode 16 or 26.2, [mise](https://mise.jdx.dev).
-Newer SDKs don't work yet: the pinned Zig 0.15.2 can't link against the macOS
-26.5 and 27 SDKs (their libSystem lists only arm64e), and Xcode 27's SwiftPM
-builds an app macOS runs in 13.0 compatibility mode. With such an Xcode
-selected, point the shell at a supported one; the system's choice stays:
+Requirements: macOS 13+, Xcode 16.4 (what CI and releases build with),
+[mise](https://mise.jdx.dev). With another Xcode selected, point the shell at
+16.4 — the system's choice stays:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode-26.2.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode-16.4.app/Contents/Developer
 ```
-
-Xcode 26 downloads the Metal compiler separately — if `make ghosttykit` can't
-find `metal`: `xcodebuild -downloadComponent MetalToolchain`.
 
 ```sh
 mise trust && mise install   # the pinned Zig
-make ghosttykit              # GhosttyKit from the pinned Ghostty (once, ~2 min)
-make hooks                   # git hooks: version bump check, release tags (once)
-make test                    # unit + integration tests (~30 s)
-make e2e                     # end-to-end scenarios in the real app (~2 min)
+make ghosttykit              # GhosttyKit from the pinned Ghostty (once, a few minutes)
+make treesitter              # the editor's grammars (once)
+make hooks                   # the git hooks (once)
+make test                    # unit and integration tests
+make e2e                     # end-to-end scenarios in the real app (opens windows)
 make run                     # build Overterm.app and open it
 make install                 # …and copy it to /Applications
 ```
 
-Builds are signed ad hoc, which makes every one of them a new app to macOS: a
-permission such as the microphone would be asked for again after each update.
-Set `SIGN_IDENTITY` — in the environment, or an untracked `local.mk` next to
-the Makefile — and `make install` re-signs the installed copy with it, so the
-grants stay (`make app`, `test` and `e2e` stay ad hoc and never touch the
-keychain):
+Builds are signed ad hoc, so each one is a new app to macOS, and a permission
+such as the microphone is asked for again. Set `SIGN_IDENTITY` — in the
+environment, or an untracked `local.mk` next to the Makefile — and
+`make install` re-signs the installed copy with it:
 
 ```make
 # local.mk (gitignored); list yours with: security find-identity -v -p codesigning
 SIGN_IDENTITY ?= Apple Development: Your Name (TEAMID1234)
 ```
 
-## Releasing
+## Versions and releases
 
-Push the commit and its `v<VERSION>` tag (`git push origin main --tags`), then
-GitHub → Actions → **Release** → Run workflow: a macOS runner tests, builds the
-app and a DMG, and publishes `v<VERSION>` with that version's `CHANGELOG.md`
-entry as the notes. It refuses a version already released — bump first.
-Nothing triggers it on push. Locally, the same pieces are `make app dmg` and
-`Scripts/release-notes.sh`.
+`VERSION` is the version, `CHANGELOG.md` what each one changed; **About
+Overterm** shows it with the commit it was built from. A version gathers
+commits on a branch until it is released: the first change after a release
+starts it (`Scripts/bump-version.sh patch "area: what changed"`), the next ones
+add their line to its entry. Released, it is merged to `main` and tagged
+`v<VERSION>`; then GitHub → Actions → **Release** → Run workflow builds the app
+and a DMG on a macOS runner and publishes it with its `CHANGELOG.md` entry as
+the notes. `make hooks` keeps an app change from landing on a version already
+released. The details: [CLAUDE.md](CLAUDE.md), Commits.
 
-## Versioning
-
-`VERSION` holds the version ([SemVer](https://semver.org)), `CHANGELOG.md` what
-each version changed, and the commit that brings a version is tagged
-`v<version>`. **Overterm ▸ About Overterm** shows it — "Version 1.30.0 (147)",
-the brackets counting commits — with the commit it was built from and the day.
-
-```sh
-make hooks                                          # once per clone
-Scripts/bump-version.sh minor "tabs: what changed"  # or patch, major
-git add VERSION CHANGELOG.md                        # commit them with the change
-```
-
-The pre-commit hook refuses a change to the app without a new VERSION; the
-post-commit hook adds the tag. Tags stay local until you push them.
+The README's pictures are taken by the app itself, in its isolated test mode,
+from made-up data — `OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=… ./Overterm.app/Contents/MacOS/Overterm`,
+and the review, notes, drawing, database, overgit and docker scenarios the same way.
 
 ## Under the hood
 
-Ghostty is pinned to v1.3.1 (`Scripts/build-ghosttykit.sh`); state lives in
-`~/Library/Application Support/Overterm/` — `session.json`, `snippets.json`,
-`history.json`, the saved scrollback.
+Ghostty v1.4.0 with Zig 0.17.0 (`Scripts/build-ghosttykit.sh`, `mise.toml`);
+state in `~/Library/Application Support/Overterm/` — `session.json`,
+`snippets.json`, `history.json`, the saved scrollback.
 
 More in `docs/`: [architecture](docs/architecture.md),
 [the Ghostty embedding](docs/ghostty.md), [testing](docs/testing.md),
-[debugging](docs/debugging.md). The house rules are in
-[CLAUDE.md](CLAUDE.md).
+[debugging](docs/debugging.md). The house rules are in [CLAUDE.md](CLAUDE.md).

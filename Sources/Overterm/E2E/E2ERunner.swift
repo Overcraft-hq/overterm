@@ -103,6 +103,9 @@ final class E2ERunner {
         let runner = E2ERunner(app: app)
         Task { @MainActor in
             try? FileManager.default.createDirectory(at: runner.scratch, withIntermediateDirectories: true)
+            // Photographing (README's pictures): every scenario in one
+            // fixed frame, so the pictures match whichever scenario took them.
+            if ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false { await runner.photoFrame() }
             if let scenario = scenarios[name] {
                 await scenario(runner)
             } else {
@@ -2509,19 +2512,21 @@ final class E2ERunner {
     /// writes `-window`, `-tabs`, `-changes` and `-peek` beside that
     /// path. Nothing is typed into the UI to arrange it: the scenario
     /// opens the tabs and panes through the same calls the menus use.
+    /// The frame README's pictures are taken in: the same size every time,
+    /// and the whole strip in it — five tabs and the chips do not fit in
+    /// the window a test happens to open with.
+    func photoFrame() async {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let size = CGSize(width: 1_400, height: 880)
+        window.setFrame(
+            NSRect(
+                x: screen.visibleFrame.midX - size.width / 2,
+                y: screen.visibleFrame.midY - size.height / 2, width: size.width,
+                height: size.height), display: true)
+        await pause(0.4)
+    }
+
     private func showcase() async {
-        // A fixed frame, so the pictures are the same size every time and
-        // the whole strip is in them — five tabs and the chips do not fit
-        // in the window a test happens to open with.
-        if let screen = window.screen ?? NSScreen.main {
-            let size = CGSize(width: 1_400, height: 880)
-            window.setFrame(
-                NSRect(
-                    x: screen.visibleFrame.midX - size.width / 2,
-                    y: screen.visibleFrame.midY - size.height / 2, width: size.width,
-                    height: size.height), display: true)
-            await pause(0.4)
-        }
         let repo = scratch.appendingPathComponent("acme")
         for dir in ["api", "docs", "web"] {
             try? FileManager.default.createDirectory(

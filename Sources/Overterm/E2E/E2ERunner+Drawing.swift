@@ -116,6 +116,11 @@ extension E2ERunner {
         check("notes_draw writes an agent's diagram as a new drawing", made != nil && written != nil, "\(made ?? [:])")
         check("with its labels as text elements", Set(written?.texts.map(\.text) ?? []) == ["API", "Postgres"], "\(written?.texts ?? [])")
         check("and opens it", await eventually(3) { editor.active?.url?.lastPathComponent == "Architecture.excalidraw.md" })
+        // README's picture of a drawing: the agent's diagram, on its canvas.
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(2)
+            app.captureWindow(to: png)
+        }
         let again = try? await NotesMCP.call("notes_draw", ["title": "Architecture", "elements": [["type": "ellipse", "x": 0, "y": 0]]], notes: notes)
         check(
             "never over a drawing that is there",

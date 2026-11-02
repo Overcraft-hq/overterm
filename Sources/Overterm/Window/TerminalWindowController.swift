@@ -2087,8 +2087,34 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// capture its own window without Screen Recording permission;
     /// cacheDisplay misses layer-backed content here.
     func captureWindow(to path: String, window: NSWindow? = nil) {
+        let restore = window == nil ? stageForPhoto() : {}
+        defer { restore() }
         guard let image = windowImage(window) else { return }
         try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
+    /// README's pictures (an isolated run with OVERTERM_DUMP_PNG): a tab
+    /// that has no name of its own goes by its folder's — not the shell's
+    /// title, which is whoever runs the scenario, `user@host:~` — and an
+    /// editor that shows is zoomed, not a strip beside an empty terminal.
+    /// Returns what puts it all back.
+    private func stageForPhoto() -> () -> Void {
+        guard AppEnvironment.isIsolated, ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false else { return {} }
+        let named = store.tabs.filter { $0.customTitle == nil }
+        for tab in named {
+            // The home folder's name is the user's: `~`, as a prompt says it.
+            let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+            tab.customTitle = tab.workingDirectory.map { URL(fileURLWithPath: $0).standardizedFileURL.path == home ? "~" : ($0 as NSString).lastPathComponent } ?? "shell"
+        }
+        let zoom = editorItem?.isCollapsed == false && columnZoom == nil
+        if zoom { setEditorZoomed(true) }
+        // Laid out and drawn — a web view (a note, a drawing) a moment later.
+        window?.contentView?.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(zoom ? 1.2 : 0.3))
+        return { [weak self] in
+            for tab in named { tab.customTitle = nil }
+            if zoom { self?.setEditorZoomed(false) }
+        }
     }
 
     /// The composited window, as on screen: its frame, at its backing scale.
