@@ -45,6 +45,28 @@ notification and on the Dock; Claude Code needs no setup for it.
     </td>
   </tr>
   <tr>
+    <td><img alt="A request sent, its response and its tests" src="docs/assets/screenshot-api.png"></td>
+    <td>
+      <h3>API testing — Bruno's files <kbd>⌥⌘R</kbd></h3>
+      The checkout's <a href="https://www.usebruno.com">Bruno</a> collection —
+      requests by folder, environments — with Bruno's tabs: params, body, headers,
+      auth, vars, scripts, asserts, tests, docs. Scripts and tests run as in Bruno,
+      a folder runs top to bottom, and every edit is a minimal edit to the
+      <code>.bru</code> you commit. Imports OpenAPI, Postman, <code>.http</code> and
+      cURL; agents send requests over MCP.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="A TypeScript file in the editor" src="docs/assets/screenshot-editor.png"></td>
+    <td>
+      <h3>Editor</h3>
+      A file opens beside the terminal, Zed's way: tree-sitter colours, language
+      servers (completion, go to definition, problems), Zed's keys and pickers,
+      git marks in the gutter, and Vim mode if you want it. <kbd>⇧⎋</kbd> gives it
+      the whole window; a double-click opens a file in the app you chose instead.
+    </td>
+  </tr>
+  <tr>
     <td><img alt="A note in the reading view" src="docs/assets/screenshot-notes.png"></td>
     <td>
       <h3>Notes — your Obsidian vault <kbd>⌥⌘N</kbd></h3>
@@ -113,7 +135,9 @@ notification and on the Dock; Claude Code needs no setup for it.
 | **Changes** <kbd>⌥⌘D</kbd> | The worktree's files live, Uncommitted or the whole Branch — and *why* each changed, from what Claude said as it edited it. |
 | **Command blocks** | A command's output, time and exit; ⇧⌘C copies it, ⌘R reruns it, ⌥⌘↓ jumps to the next failure. |
 | **Palette** <kbd>⌘K</kbd> | Actions, tabs, worktrees, snippets — and what this machine has actually run, this folder's first. |
-| **API client** <kbd>⌥⌘R</kbd> | A checkout's [Bruno](https://www.usebruno.com) collection: requests, environments, scripts and tests, written back to the `.bru` files you commit. |
+| **Agent overview** <kbd>⇧⌘A</kbd> | Every agent tab as a card: what it is working on, what it last said, and whether it waits for you. |
+| **Claude sessions** | Every conversation ever run in the repository, in the sidebar — one click resumes it where it ran. |
+| **Snippets** | Commands you keep, by name: pasted into the terminal or run, and found from ⌘K. |
 | **Browser** <kbd>⇧⌘B</kbd> | A column beside the terminal that agents drive over MCP — and the iOS simulator, live and clickable, in the same place. |
 | **Usage** <kbd>⌥⌘U</kbd> | What is left of Claude's and Codex's windows, and what the day would cost — read from their own files, nothing over the network. |
 | **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
@@ -156,6 +180,7 @@ The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
 | ⌘T / ⌘W | New tab / close the pane, else the tab |
 | ⌥⌘C / ⌥⌘X | New Claude / Codex tab here |
 | ⇧⌘N | New Task — worktree, branch, agent |
+| ⇧⎋ | The editor across the window, and back |
 | ⌘K | Command palette |
 | ⌘I | Agent Inbox · ⌃⌘I Tab Info · ⇧⌘A agent overview |
 | ⌥⌘↓ | The next failure, or tab that needs you |
@@ -226,8 +251,10 @@ the notes. `make hooks` keeps an app change from landing on a version already
 released. The details: [CLAUDE.md](CLAUDE.md), Commits.
 
 The README's pictures are taken by the app itself, in its isolated test mode,
-from made-up data — `OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=… ./Overterm.app/Contents/MacOS/Overterm`,
-and the review, notes, drawing, database, overgit and docker scenarios the same way.
+from made-up data — `OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=… OVERTERM_E2E_CWD=<an empty folder> ./Overterm.app/Contents/MacOS/Overterm`,
+and the api, review, notes, drawing, database, overgit and docker scenarios the
+same way. The empty folder matters: the first tab starts there, and the window
+follows it — from your home folder it would find your own collections.
 
 ## Under the hood
 

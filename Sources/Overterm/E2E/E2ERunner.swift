@@ -629,6 +629,15 @@ final class E2ERunner {
         check(
             "its test and assertion pass", model.result?.tests.count == 2 && model.result?.failed == 0,
             "\(model.result?.tests.map { "\($0.name): \($0.error ?? "ok")" } ?? [])")
+        // README's picture of the API client: a request, answered, its tests
+        // passed — beside its collection, which the window may have left
+        // for the tab's own folder meanwhile.
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            api.setRoot(checkout)
+            _ = await eventually(3) { api.collection?.name == "Shop API" }
+            await pause(1.0)
+            app.captureWindow(to: png)
+        }
 
         // ✦: the request and its response to an agent, in Ask Agent's sheet.
         model.askAgent()
@@ -763,12 +772,6 @@ final class E2ERunner {
             "its tab follows it there", editor.active?.url?.standardizedFileURL == named.standardizedFileURL,
             editor.active?.url?.path ?? "nil")
         check("and the draft is gone", !FileManager.default.fileExists(atPath: draft.path) && !api.isDraft(named))
-        await pause(0.5)
-        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
-            app.openInEditor(echo)
-            await pause(0.8)
-            app.captureWindow(to: png)
-        }
     }
 
     /// A checkout without a collection: the panel finds the API a tab's
@@ -2509,7 +2512,7 @@ final class E2ERunner {
     ///     OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=docs/assets/screenshot \
     ///       ./Overterm.app/Contents/MacOS/Overterm
     ///
-    /// writes `-window`, `-tabs`, `-changes` and `-peek` beside that
+    /// writes `-window`, `-tabs`, `-changes`, `-peek` and `-editor` beside that
     /// path. Nothing is typed into the UI to arrange it: the scenario
     /// opens the tabs and panes through the same calls the menus use.
     /// The frame README's pictures are taken in: the same size every time,
@@ -2608,6 +2611,48 @@ final class E2ERunner {
         await pause(0.9)
         dump("peek")
         app.toggleTabPeek(nil)
+
+        // The editor: a file of the checkout's, coloured by tree-sitter.
+        let handler = repo.appendingPathComponent("api/orders.ts")
+        try? #"""
+        import { Router } from "express";
+        import { db } from "./db";
+
+        /** An order, as the API returns it. */
+        export interface Order {
+          id: number;
+          total: number;
+          note?: string;
+        }
+
+        export const orders = Router();
+
+        // The newest first, a page at a time.
+        orders.get("/", async (req, res) => {
+          const limit = Math.min(Number(req.query.limit ?? 50), 200);
+          const rows = await db.query<Order>(
+            "SELECT id, total, note FROM orders ORDER BY id DESC LIMIT $1",
+            [limit],
+          );
+          res.json(rows);
+        });
+
+        orders.post("/", async (req, res) => {
+          const { total, note } = req.body as Partial<Order>;
+          if (typeof total !== "number" || total <= 0) {
+            return res.status(400).json({ error: "total must be a positive number" });
+          }
+          const [order] = await db.query<Order>(
+            "INSERT INTO orders (total, note) VALUES ($1, $2) RETURNING *",
+            [total, note ?? null],
+          );
+          res.status(201).json(order);
+        });
+        """#.write(to: handler, atomically: true, encoding: .utf8)
+        app.openInEditor(handler)
+        _ = await eventually(3) { self.app.editor?.document.url == handler }
+        await pause(1.0)
+        dump("editor")
     }
 
     /// One of the showcase's pictures, named after what it shows.
