@@ -1,0 +1,34 @@
+# Weekly: have the web libraries bundled into the app — the notes' reading
+# view (markdown-it, DOMPurify, KaTeX, highlight.js, mermaid) and Excalidraw's
+# bundle (Excalidraw, esbuild) — had a release newer than their pin? If so,
+# open an issue per library (once per release) — the bump itself is by hand:
+# a bundle is rebuilt and checked in. Logic: Scripts/check-web-releases.sh.
+#
+# Like the Ghostty release check: git, curl and gh on the cheapest runner,
+# for a few seconds a week.
+name: Web release check
+
+on:
+  schedule:
+    - cron: "15 4 * * 1"  # Mondays 07:15 Istanbul, after the Ghostty check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: web-release-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the pins with npm's latest releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: ./Scripts/check-web-releases.sh

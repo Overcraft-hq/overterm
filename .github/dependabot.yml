@@ -1,18 +1,25 @@
-# Dependabot for Terminus.
+# Dependabot for Overterm.
 #
 # What it watches, and what it can't — documented so nobody "fixes" it by
 # adding entries that only log "no dependency files":
 #
-# - SwiftPM: Package.swift declares no remote packages (GhosttyKit is a
-#   local binary target built by `make ghosttykit`).
+# - SwiftPM: the database drivers and Docker's engine client — PostgresNIO,
+#   MySQLNIO, SwiftNIO and NIO SSL, swift-log, swift-crypto — and what they
+#   bring (Package.resolved, checked in: 16 pins). GhosttyKit is a local
+#   binary target built by `make ghosttykit`, not a package. A bump's PR
+#   changes Package.resolved; CI builds it and runs the unit tests, and the
+#   drivers' own tests want real servers (Scripts/database-test-servers.sh,
+#   OVERTERM_DB_TESTS=1) — run those before merging a NIO bump.
 # - GitHub Actions: the weekly Ghostty release check's actions/checkout.
 # - The real pins — Ghostty (GHOSTTY_REF/SHA in Scripts/build-ghosttykit.sh)
 #   and Zig (mise.toml) — are formats Dependabot can't read. The weekly
 #   ghostty-release-check workflow opens an issue when Ghostty tags a new
 #   release; bump them together by hand (see CLAUDE.md).
-#
-# Add a `package-ecosystem: swift` block (directory: /) the day the manifest
-# gains an external package — same weekly/grouped shape.
+# - The web libraries bundled into the app — the notes' reading view's
+#   (Scripts/fetch-notes-web.sh, SHA-checked tarballs) and Excalidraw's
+#   (Scripts/excalidraw/package.json, bundled by esbuild and checked in) —
+#   are rebuilt, not just re-pinned, so a Dependabot PR would be half a
+#   bump. The weekly web-release-check workflow opens an issue instead.
 #
 # Cadence: one batched PR per week,
 # minor + patch grouped so review stays cheap; a major gets its own PR.
@@ -35,3 +42,19 @@ updates:
     labels:
       - dependencies
       - ci
+
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Istanbul
+    open-pull-requests-limit: 3
+    groups:
+      swift-minor-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
