@@ -1,12 +1,12 @@
-# Weekly: have the web libraries bundled into the app — the notes' reading
-# view (markdown-it, DOMPurify, KaTeX, highlight.js, mermaid) and Excalidraw's
-# bundle (Excalidraw, esbuild) — had a release newer than their pin? If so,
-# open an issue per library (once per release) — the bump itself is by hand:
-# a bundle is rebuilt and checked in. Logic: Scripts/check-web-releases.sh.
+# Weekly: have the dependencies pinned here had a release newer than their
+# pin — the web libraries bundled into the app (the notes' reading view's,
+# Excalidraw's) and the Swift packages Package.swift names? If so, open an
+# issue per dependency (once per release); the bump itself is by hand.
+# Logic: Scripts/check-dependencies.sh.
 #
 # Like the Ghostty release check: git, curl and gh on the cheapest runner,
 # for a few seconds a week.
-name: Web release check
+name: Dependency check
 
 on:
   schedule:
@@ -18,7 +18,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: web-release-check
+  group: dependency-check
   cancel-in-progress: true
 
 jobs:
@@ -27,8 +27,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - name: Compare the pins with npm's latest releases
+      - name: Compare the pins with their latest releases
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-        run: ./Scripts/check-web-releases.sh
+        run: ./Scripts/check-dependencies.sh
