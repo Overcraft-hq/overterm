@@ -5,16 +5,19 @@ import SwiftUI
 /// list in the middle as the server formats it, how the context's proxy
 /// stands along the bottom. On a production context a red band runs across
 /// the top of everything on the page. Single letters act while the list has
-/// the keyboard (`KubernetesKey`; `?` lists them). It reads only: no verb
-/// here changes a cluster.
+/// the keyboard (`KubernetesKey`; `?` lists them); `n` and `c` pick a
+/// namespace or a context over the page (`KubePicker`). It reads only: no
+/// verb here changes a cluster.
 struct KubernetesPageView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var model: KubernetesModel
     @ObservedObject var theme: ChromeTheme
 
-    enum Focus: Hashable { case list, filter, namespace }
+    /// The filter field's focus. The list's is the window's to give
+    /// (`giveListTheKeyboard`, `focusPageList`): a `FocusState` no view is
+    /// bound to takes the keyboard from the table and leaves it with the window.
+    enum Focus: Hashable { case filter }
     @FocusState private var focus: Focus?
-    @State private var typedNamespace = ""
 
     /// Production's colour: the band, the context's dot, its card's edge.
     static let production = Color(red: 0.86, green: 0.17, blue: 0.17)
@@ -43,9 +46,18 @@ struct KubernetesPageView: View {
         .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .overlay { if page.cheatSheet { ResourceKeySheet<KubernetesKey>(theme: theme, identifier: "kubernetes.keys") { page.cheatSheet = false } } }
-        .onChange(of: page.focusList) { _ in focus = .list }
+        .overlay(alignment: .top) {
+            if page.picker != nil { KubePickerView(page: page, theme: theme).padding(.top, 70) }
+        }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
-        .onAppear { focus = .list }
+        // A table with no columns refuses the keyboard: given it while the
+        // pods are asked for (the page opened, a namespace or a context
+        // picked), the window keeps it. Once the server's columns come the
+        // list takes it — if nothing else has it.
+        .onChange(of: model.pods.columns.isEmpty) { empty in
+            guard !empty, focus != .filter, page.picker == nil else { return }
+            DispatchQueue.main.async { page.offerListTheKeyboard() }
+        }
     }
 
     // MARK: The left
@@ -139,11 +151,7 @@ struct KubernetesPageView: View {
                 Button(name) { model.setScope(.namespace(name)) }
             }
             Divider()
-            Button("Other Namespace…") {
-                typedNamespace = ""
-                page.typingNamespace = true
-                focus = .namespace
-            }
+            Button("Other Namespace…  n") { page.openPicker(.namespace) }
         } label: {
             Text(verbatim: page.scopeLabel).font(.system(size: 12)).lineLimit(1)
         }
@@ -151,23 +159,6 @@ struct KubernetesPageView: View {
         .padding(.horizontal, 10)
         .frame(height: 26)
         .accessibilityIdentifier("kubernetes.namespace")
-        if page.typingNamespace {
-            TextField("a namespace", text: $typedNamespace)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
-                .focused($focus, equals: .namespace)
-                .onSubmit {
-                    let name = typedNamespace.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty { model.setScope(.namespace(name)) }
-                    page.typingNamespace = false
-                    focus = .list
-                }
-                .onExitCommand {
-                    page.typingNamespace = false
-                    focus = .list
-                }
-                .padding(.horizontal, 8)
-        }
         if let refused = model.namespacesRefused {
             Text(verbatim: refused).font(.system(size: 10.5)).foregroundStyle(theme.text3).padding(.horizontal, 10)
         }
@@ -242,10 +233,13 @@ struct KubernetesPageView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($focus, equals: .filter)
-                    .onSubmit { focus = .list }
+                    .onSubmit {
+                        page.applySelector()
+                        page.giveListTheKeyboard()
+                    }
                     .onExitCommand {
                         page.filter = ""
-                        focus = .list
+                        page.giveListTheKeyboard()
                     }
                     .accessibilityIdentifier("kubernetes.filter")
             }
@@ -264,38 +258,73 @@ struct KubernetesPageView: View {
         .frame(height: 56)
     }
 
-    @ViewBuilder private var content: some View {
-        if case .failed(let reason, let problem) = model.podState, model.pods.count == 0 {
-            failed(reason, problem)
-        } else if model.pods.columns.isEmpty {
-            VStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                if let reason = model.proxyStatus.reason {
-                    Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            VStack(spacing: 0) {
+    /// The list keeps its place in the view tree whatever it shows — loading,
+    /// empty, failed — so the keyboard given to it (`n`, `c`, a context
+    /// picked) finds it, and its selection and scroll survive a new list:
+    /// the Docker page's lesson. What it says instead lies over it.
+    private var content: some View {
+        let rows = page.rows
+        let failedOutright: (String, KubeProxyProblem?)? =
+            if case .failed(let reason, let problem) = model.podState, model.pods.count == 0 { (reason, problem) } else { nil }
+        return VStack(spacing: 0) {
+            if failedOutright == nil {
                 if case .failed(let reason, _) = model.podState { banner(reason) }
                 if case .retrying(let reason) = model.podState { banner("Trying again: \(reason)") }
-                let rows = page.rows
-                if rows.isEmpty {
+            }
+            selectorLine
+            ZStack(alignment: .topLeading) {
+                ResourceTable(
+                    rows: rows, selection: $page.selection, columns: page.columns, sort: $page.sort, cell: { row, column in cell(row, column) },
+                    verbs: { page.verbs(for: $0) },
+                    copy: {
+                        let names = page.selectedNames
+                        if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
+                    }, accessibilityIdentifier: "kubernetes.list")
+                if let (reason, problem) = failedOutright {
+                    failed(reason, problem).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
+                } else if model.pods.columns.isEmpty {
+                    VStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        if let reason = model.proxyStatus.reason {
+                            Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+                } else if rows.isEmpty {
                     Text(verbatim: page.filter.isEmpty ? "No pods in \(page.scopeLabel)." : "Nothing matches “\(page.filter)”.")
                         .font(.system(size: 12)).foregroundStyle(theme.text3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20).padding(.vertical, 10)
-                    Spacer(minLength: 0)
-                } else {
-                    ResourceTable(
-                        rows: rows, selection: $page.selection, columns: page.columns, sort: $page.sort, cell: { row, column in cell(row, column) },
-                        verbs: { page.verbs(for: $0) },
-                        copy: {
-                            let names = page.selectedNames
-                            if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
-                        }, accessibilityIdentifier: "kubernetes.list")
+                        .padding(.horizontal, 20).padding(.top, 34)
+                        .allowsHitTesting(false)
                 }
             }
+        }
+    }
+
+    /// What `label:` asks the server for, or why a word of it can't be —
+    /// or that the list is another window's, asked with its own filter.
+    @ViewBuilder private var selectorLine: some View {
+        let reading = page.labelReading
+        let ours = page.listIsOurs
+        if reading.selector != nil || !reading.refused.isEmpty || !ours {
+            HStack(spacing: 6) {
+                Image(systemName: reading.refused.isEmpty && ours ? "server.rack" : "exclamationmark.triangle").font(.system(size: 10))
+                if !ours {
+                    Text(verbatim: "Another window's list (\(model.labelSelector.map { "label: \($0)" } ?? "every pod")) — ↩ in the filter asks for this one's")
+                        .foregroundStyle(TabStatusStyle.failed)
+                } else if let selector = model.labelSelector {
+                    Text(verbatim: "Asked of the server: \(selector)")
+                }
+                if !reading.refused.isEmpty {
+                    Text(verbatim: "Not a label selector: \(reading.refused.joined(separator: " "))").foregroundStyle(TabStatusStyle.failed)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(theme.text3)
+            .padding(.horizontal, 20)
+            .frame(height: 22)
+            .accessibilityIdentifier("kubernetes.selector")
         }
     }
 

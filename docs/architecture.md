@@ -2217,10 +2217,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 
 The design is `docs/design/kubernetes/analysis.md`; this is what exists of
 it (`Sources/Overterm/Kubernetes/`). So far: the kubeconfigs, the contexts
-and their classes, the settings, the proxies a request would go through,
-and the client that reads through them (and the fake API server it is
-tested against) — no page or panel asks for one yet, so nothing reaches a
-cluster in the app.
+and their classes, the settings, the proxies a request goes through, the
+client that reads through them (and the fake API server it is tested
+against), and the page (⌥⌘J) with the Pods list, its pickers and the ⌃⌘J
+switcher — stage 1a of the design. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2488,7 +2488,17 @@ published change each; a `.retrying` says so while the rows stand, and
 a failure (a `KubeProxyProblem`, a 403) is the list's state with its
 reason and, for a sign-in, the command to run. The server's version and
 the namespaces (the context's `accessibleNamespaces`, else the server's
-list; a 403 means one is typed) are read once a context is picked. The
+list; a 403 means one is typed, `namespacesRefused`) are read once a
+context is picked. `labelSelector` is what the pods are asked for with
+(a page's `label:` words): set to something else, the list is asked
+for again with it. It belongs to the page that asked last
+(`selectorOwner`): the list is the app's, and two windows can show the
+page at once, so the one that asked last has it and the other says so
+(`listIsOurs`, a line over its list), and a window becoming key asks
+with its page's filter. A page that hides gives it back
+(`releaseLabelSelector`) and a hidden one asks for nothing, so the ⌃⌘J
+switcher, or another page, never gets a list narrowed by a filter not on
+screen; the last `hide` drops it, and a page held again asks anew. The
 proxy's state (`KubeProxies.status`: open, signing in, waiting behind
 another context's browser sign-in, stopped with its reason) is asked
 once a second while a page shows. Every request is a GET; the model has
@@ -2507,16 +2517,23 @@ scrolled away isn't drawn, so only the visible ones are recomputed.
 **The page** (⌥⌘J, `kubernetes.page`; `WorkspaceOverlay.kubernetes`,
 declared as a `WorkspacePage` in `TerminalWindowController+Kubernetes`):
 `KubernetesPageModel` (a window's: section, filter, selection, sort,
-`wide`, the keys) and `KubernetesPageView`. Left: the contexts, each
+`wide`, the pickers, the keys) and `KubernetesPageView`. Left: the contexts, each
 with its class's colour and kubectl's current marked, the namespace
-picker (all, the favourites, the server's list, one typed), the sections
+menu (all, the favourites, the server's list, Other… for the `n` picker), the sections
 (Pods only, for now) and the context's card (class, writable or
 read-only, how it signs in, its server). Middle: the Pods list as a
 `ResourceTable` of the server's columns — those `kubectl get pods`
 shows, `-o wide`'s too with `w`, Namespace first across all of them as
 `kubectl get -A` adds it — sorted by any column (numbers as numbers, ages
-by age) or by namespace and name, filtered by text, `status:`, `ns:` and
-`-` (`KubePodFilterKey`, through `ResourceFilter`). A failing pod's
+by age) or by namespace and name, filtered by text, `status:`, `ns:`,
+`label:` and `-` (`KubePodFilterKey`, through `ResourceFilter`). A row is
+only cells — no labels — so `label:` words are the server's:
+`KubeLabelSelector` reads them as typed (labels are case-sensitive) into
+the list's `labelSelector` — `label:app=web`, `app!=web`, `-label:app`
+(`!app`), `label:a=1,b=2` — refusing what the server wouldn't take (a
+negated pair, a bad key) and saying so; the list is asked for again once
+the typing stops (`selectorDelay`, 350 ms) or on ↩, and the page says what
+went to the server. The rest of the filter matches the rows that came. A failing pod's
 Status is its reason in red (`KubePodSummary.exitReason`:
 `CrashLoopBackOff`, `OOMKilled`, `… (init container)`), and the header
 counts the failing ones. Bottom: the context bar — the proxy's state,
@@ -2526,10 +2543,41 @@ production context a red band runs across the top of the whole page,
 above the sidebar and the list, with the context's name, and its card is
 edged in red. The empty states: Kubernetes off (Settings ▸ Kubernetes),
 no kubeconfig (an isolated run says only OVERTERM_KUBECONFIG's file is
-read; what couldn't be read is listed), loading. The keys
-(`KubernetesKey`, while the list has the keyboard): `1` Pods, `w`, `0`,
-`/`, `?`. The right-click menu only copies names: nothing here changes a
-cluster.
+read; what couldn't be read is listed), loading. The list keeps its
+place in the view tree through all of them — loading, empty, failed lie
+over it — so a keyboard given to it finds it; a table with no columns
+refuses the keyboard, so when the server's columns come the list takes it
+if nothing else has it (`offerListTheKeyboard`). The keys
+(`KubernetesKey`, through `ResourceKey`, while the list has the
+keyboard): `1` Pods, `n`, `c`, `w`, `0`, `/`, `?`. The right-click menu
+only copies names: nothing here changes a cluster.
+
+**The pickers** (`n`, `c`; `KubePicker`, pure, and `KubePickerView`): a
+field over the page and the namespaces or contexts it lets through,
+ranked by `FuzzyMatch` as the palette is (the field is the palette's
+`PaletteField`: ↑↓, ↩, Esc). Namespaces: all of them first, the
+context's favourites, its own (or `defaultNamespace`) and the one showing,
+then the server's list (or `accessibleNamespaces`); a name typed in full
+(RFC 1123, lowercased) is one more item when nothing listed is it — first
+where listing is refused (a context that carries a namespace often
+means its user is held to it), with the reason shown. An open
+picker follows the namespaces listed after it opened, what is typed kept.
+Contexts: each with its class, read-only or not, kubectl's current,
+production in red; none is typed. ↩ is `setScope` or `select`, and the
+list has the keyboard again.
+
+**The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
+Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
+`]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
+context, the context's namespaces and the pods showing, each a palette
+item the page's `paletteItems` gives (so ⌘K finds them too; pods only
+while something looks at them, never a list left from before). It looks
+as the page does: it holds the model while the palette shows it
+(`kubernetesSwitcherHeld`), so the kubeconfig is read and the pods
+followed with the page hidden, and lets go after the palette closes — once
+what was picked has opened the page, so the watch runs on. ↩ on a context
+or a namespace switches to it on the page; on a pod, the page on the Pods
+list with the pod selected and in view (`revealOnKubernetesPage`).
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
@@ -2543,9 +2591,15 @@ a stand-in connection goes to the fake's socket. It checks the pods
 listed as rows only in the server's columns, a crashing pod's reason
 (and drawn, read off the window), the watch's changes, the keys, all
 namespaces (two same-named pods apart, metadata asked for there),
+`label:` sent to the server through the proxy (and said); `n` by the key
+as the window takes it, a namespace picked by typing, one typed that
+nobody listed, Esc; `c` to `fake-prod` and back;
 `fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a
 DELETE, an exec and a port-forward; that the fake recorded no write and
 no subresource; that hidden the page's watch ends and nothing is asked;
+⌃⌘J from the terminal — the model held, a pod (with its reason), a
+context and a namespace found, ↩ showing the pod selected on the page,
+the hold let go;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
 

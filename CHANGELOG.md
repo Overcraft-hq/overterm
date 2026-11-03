@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.0 — 2026-11-11
 
 - kubernetes: a Kubernetes page (⌥⌘J) — your kubeconfig's contexts, the Pods list kept live as rows the server formats, a crashing pod's reason; read-only, production marked everywhere
+- kubernetes: `n` and `c` pick a namespace (or take one typed, where listing them isn't allowed) and a context; ⌃⌘J finds a context, namespace or pod; `label:app=web` in the filter is asked of the server
 - build: Xcode 27 builds the app — TreeSitterKit's headers in a folder of their own
 - build: an app built with Xcode 27 takes clicks on macOS 27 — the binary names the SDK it was built with
 - tabs: double-clicking the strip's empty space zooms the window again on macOS 27

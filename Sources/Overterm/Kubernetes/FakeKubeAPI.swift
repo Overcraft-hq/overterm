@@ -131,6 +131,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var failingGroups: Set<String> = []
         var interimBookmarks = false
         var unversionedLists = false
+        var forbidden: Set<String> = []
     }
 
     /// What `/version` says: a minor of 34 serves streaming lists.
@@ -173,6 +174,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         get { locked { settings.unversionedLists } }
         set { locked { settings.unversionedLists = newValue } }
     }
+    /// Resources (`namespaces`, `pods`…) the user may not read: every
+    /// request for one is a 403, as RBAC refuses it — a context limited to
+    /// its namespace can't list the others.
+    var forbidden: Set<String> {
+        get { locked { settings.forbidden } }
+        set { locked { settings.forbidden = newValue } }
+    }
 
     /// One open watch.
     private struct Watcher {
@@ -182,7 +190,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var table: Bool
         var includeObject: String
         var bookmarks: Bool
-        var labels: [String: String]
+        var labels: LabelSelector
         var sentColumns = false
     }
 
@@ -415,19 +423,49 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// Where a page ended, ordered as the list is (namespace, then name).
     private static func pageKey(_ object: Object) -> String { (object.namespace ?? "") + "\u{0}" + object.name }
 
-    private static func matches(_ object: Object, _ resource: String, _ namespace: String?, _ labels: [String: String]) -> Bool {
-        object.resource == resource && (namespace == nil || object.namespace == namespace) && labels.allSatisfy { object.labels[$0.key] == $0.value }
+    private static func matches(_ object: Object, _ resource: String, _ namespace: String?, _ labels: LabelSelector) -> Bool {
+        object.resource == resource && (namespace == nil || object.namespace == namespace) && labels.matches(object.labels)
     }
 
-    /// `a=b,c=d` — equality only, as far as the fake reads selectors.
-    private static func selector(_ text: String?) -> [String: String] {
-        var labels: [String: String] = [:]
-        for part in (text ?? "").split(separator: ",") {
-            let pair = part.split(separator: "=", maxSplits: 1).map(String.init)
-            if pair.count == 2 { labels[pair[0].trimmingCharacters(in: CharacterSet(charactersIn: "= "))] = pair[1] }
+    /// A label selector as far as the fake reads one: `a=b`, `a==b`,
+    /// `a!=b`, `a` (has it) and `!a` (hasn't), comma-separated — no sets.
+    struct LabelSelector: Sendable {
+        enum Requirement: Sendable {
+            case equals(String, String)
+            case notEquals(String, String)
+            case exists(String)
+            case missing(String)
         }
-        return labels
+
+        var requirements: [Requirement] = []
+
+        init(_ text: String?) {
+            for part in (text ?? "").split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
+                if let range = part.range(of: "!=") {
+                    requirements.append(.notEquals(String(part[..<range.lowerBound]), String(part[range.upperBound...])))
+                } else if let range = part.range(of: "==") ?? part.range(of: "=") {
+                    requirements.append(.equals(String(part[..<range.lowerBound]), String(part[range.upperBound...])))
+                } else if part.hasPrefix("!") {
+                    requirements.append(.missing(String(part.dropFirst())))
+                } else {
+                    requirements.append(.exists(part))
+                }
+            }
+        }
+
+        func matches(_ labels: [String: String]) -> Bool {
+            requirements.allSatisfy { requirement in
+                switch requirement {
+                case .equals(let key, let value): labels[key] == value
+                case .notEquals(let key, let value): labels[key] != value
+                case .exists(let key): labels[key] != nil
+                case .missing(let key): labels[key] == nil
+                }
+            }
+        }
     }
+
+    private static func selector(_ text: String?) -> LabelSelector { LabelSelector(text) }
 
     // MARK: Answers
 
@@ -489,6 +527,14 @@ final class FakeKubeAPI: @unchecked Sendable {
             return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource"))
         }
         if kind.namespaced == false && route.namespace != nil { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
+        if settings.forbidden.contains(resource) {
+            let scope = route.namespace.map { "in the namespace \"\($0)\"" } ?? "at the cluster scope"
+            return .json(
+                403,
+                Self.status(
+                    403, "Forbidden",
+                    "\(resource) is forbidden: User \"system:anonymous\" cannot list resource \"\(resource)\" in API group \"\(kind.group)\" \(scope)"))
+        }
         if let name = route.name {
             guard let object = locked({ objects[Self.key(kind.fullName, route.namespace, name)] }) else {
                 return .json(404, Self.status(404, "NotFound", "\(resource) \"\(name)\" not found"))
@@ -504,7 +550,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         return list(kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels)
     }
 
-    private func list(_ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: [String: String]) -> Answer {
+    private func list(_ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: LabelSelector) -> Answer {
         locked {
             var version = current
             var after: String?
@@ -548,7 +594,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     private func watch(
-        _ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: [String: String], channel: Channel
+        _ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: LabelSelector, channel: Channel
     ) -> Answer {
         let timeout = Int(query["timeoutSeconds"] ?? "")
         let bookmarks = query["allowWatchBookmarks"] == "true"

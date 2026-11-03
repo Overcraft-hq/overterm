@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 // MARK: The Kubernetes page (⌥⌘J), as the window wires it (WorkspacePage)
@@ -38,6 +39,7 @@ extension TerminalWindowController {
             self?.updateKubernetesPageHold()
         }
         page.windowClosing = { [weak self] in self?.kubernetesWindowClosing() }
+        page.paletteItems = { [weak self] in self?.kubernetesPaletteItems() ?? [] }
         return page
     }
 
@@ -47,6 +49,14 @@ extension TerminalWindowController {
         kubernetesPage.$focusList
             .dropFirst()
             .sink { [weak self] _ in self?.focusPageList(.kubernetes) }
+            .store(in: &cancellables)
+        // Offered: taken only when the window itself has it — nobody does.
+        kubernetesPage.$offerList
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self, let window = self.window, window.firstResponder === window || window.firstResponder == nil else { return }
+                self.focusPageList(.kubernetes)
+            }
             .store(in: &cancellables)
     }
 
@@ -66,7 +76,13 @@ extension TerminalWindowController {
         let held = (pageShowing ?? (store.showingOverlay == .kubernetes)) && kubernetesPage.windowVisible
         guard held != kubernetesPageHeld else { return }
         kubernetesPageHeld = held
-        if held { KubernetesModel.shared.show() } else { KubernetesModel.shared.hide() }
+        if held {
+            KubernetesModel.shared.show()
+            // The last hide dropped every selector: this page's filter asks again.
+            kubernetesPage.applySelector()
+        } else {
+            KubernetesModel.shared.hide()
+        }
     }
 
     /// Whether the window is on screen at all. An isolated run stays in the
@@ -78,8 +94,128 @@ extension TerminalWindowController {
     }
 
     func kubernetesWindowClosing() {
+        releaseKubernetesSwitcher(now: true)
+        kubernetesPage.visible = false
         guard kubernetesPageHeld else { return }
         kubernetesPageHeld = false
         KubernetesModel.shared.hide()
+    }
+}
+
+// MARK: The switcher and the palette
+
+extension TerminalWindowController {
+    /// ⌃⌘J: the palette, on contexts, namespaces and the pods showing. The
+    /// switcher looks as the page does: it holds the model while it shows,
+    /// so the kubeconfig is read and the context's pods followed, and what
+    /// it lists comes in as the cluster answers. With Kubernetes off, its
+    /// settings.
+    @objc func showKubernetesSwitcher(_ sender: Any?) {
+        guard Settings.shared.kubernetesEnabled else { return openSettings(.kubernetes) }
+        togglePalette(scope: .kubernetes)
+        guard paletteView?.isHidden == false, palette.scope == .kubernetes, !kubernetesSwitcherHeld else { return }
+        kubernetesSwitcherHeld = true
+        KubernetesModel.shared.show()
+    }
+
+    /// The palette closed: the switcher's hold goes — after what was picked
+    /// has opened the page, so the page's hold comes first and the watch
+    /// runs on rather than starting again.
+    func releaseKubernetesSwitcher(now: Bool = false) {
+        guard kubernetesSwitcherHeld else { return }
+        let release = { [weak self] in
+            guard let self, self.kubernetesSwitcherHeld, self.paletteView?.isHidden != false else { return }
+            self.kubernetesSwitcherHeld = false
+            KubernetesModel.shared.hide()
+        }
+        if now {
+            kubernetesSwitcherHeld = false
+            KubernetesModel.shared.hide()
+        } else {
+            DispatchQueue.main.async(execute: release)
+        }
+    }
+
+    /// What the switcher lists changed while the palette shows it.
+    func watchKubernetesPalette() -> AnyCancellable {
+        let model = KubernetesModel.shared
+        return model.$contexts.dropFirst().map { _ in () }
+            .merge(with: model.$namespaces.dropFirst().map { _ in () }, model.$pods.dropFirst().map { _ in () }, model.$scope.dropFirst().map { _ in () })
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.restockPalette() } }
+    }
+
+    /// What the palette offers of Kubernetes: the page; every context of the
+    /// kubeconfig once read; the context's namespaces; and its pods while
+    /// something looks at them (the page or the switcher) — never a list
+    /// left from before: a page's `label:` goes when it hides, and one that
+    /// shows in some window is said on each pod. ↩ shows each on the page: a context or a namespace
+    /// switched to, a pod selected.
+    func kubernetesPaletteItems() -> [PaletteItem] {
+        guard Settings.shared.kubernetesEnabled else { return [] }
+        let model = KubernetesModel.shared
+        var items = [
+            PaletteItem(
+                id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, pods  ⌥⌘J", symbol: "steeringwheel"
+            ) { [weak self] _, _ in self?.toggleKubernetesPage(nil) }
+        ]
+        guard model.contextsRead else { return items }
+        items += model.contexts.contexts.map { context in
+            let detail = [
+                "Context", context.contextClass.title, context.isWritable ? "writable" : "read-only",
+                context.name == model.selectedName ? "showing" : nil,
+            ]
+            return PaletteItem(
+                id: "k.c.\(context.name)", group: .kubernetes, title: context.displayName,
+                subtitle: detail.compactMap { $0 }.joined(separator: " · "), symbol: context.isProduction ? "exclamationmark.octagon" : "steeringwheel"
+            ) { [weak self] _, _ in
+                KubernetesModel.shared.select(context.name)
+                self?.showKubernetesPage()
+            }
+        }
+        guard let context = model.selected else { return items }
+        let favourites = context.settings.favouriteNamespaces
+        let own = context.settings.defaultNamespace ?? context.namespace
+        var namespaces = favourites
+        for name in [own].compactMap({ $0 }) + model.namespaces where !namespaces.contains(name) { namespaces.append(name) }
+        items += namespaces.map { name in
+            PaletteItem(
+                id: "k.n.\(name)", group: .kubernetes, title: name,
+                subtitle: "Namespace in \(context.displayName)" + (model.scope == .namespace(name) ? " · showing" : ""), symbol: "square.dashed"
+            ) { [weak self] _, _ in
+                KubernetesModel.shared.setScope(.namespace(name))
+                self?.showKubernetesPage()
+            }
+        }
+        guard model.isShown else { return items }
+        let columns = model.pods.columns
+        // A page showing somewhere asked with its filter: the pods are only those.
+        let selected = model.labelSelector.map { ["label: \($0)"] } ?? []
+        items += model.pods.sorted.map { row in
+            let summary = KubePodSummary(row: row, columns: columns)
+            let status = summary.map { $0.isFailing ? ($0.exitReason ?? $0.status) : $0.status }
+            return PaletteItem(
+                id: "k.p.\(row.id.description)", group: .kubernetes, title: row.id.name,
+                subtitle: (["Pod", status, row.id.namespace].compactMap { $0 } + [context.displayName] + selected).joined(separator: " · "),
+                symbol: summary?.isFailing == true ? "exclamationmark.triangle" : "cube.box"
+            ) { [weak self] _, _ in self?.revealOnKubernetesPage(row.id) }
+        }
+        return items
+    }
+
+    /// The page, its list given the keyboard.
+    func showKubernetesPage() {
+        if store.showingOverlay != .kubernetes { showOverlay(.kubernetes) }
+        focusPageList(.kubernetes)
+    }
+
+    /// The page, on the Pods list, with this pod selected and in view — the
+    /// filter cleared when it hides it, or has a `label:` that may: the rows
+    /// the switcher saw weren't asked for with it.
+    func revealOnKubernetesPage(_ id: KubeRowID) {
+        let page = kubernetesPage
+        page.section = .pods
+        if page.labelReading.selector != nil || !page.rows.contains(where: { $0.row.id == id }) { page.filter = "" }
+        page.selection = [id.description]
+        showKubernetesPage()
     }
 }
