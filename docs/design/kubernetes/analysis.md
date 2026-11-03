@@ -96,6 +96,37 @@ What follows from this:
 - **Context names are long.** The EKS ones are ARNs. A socket path must stay under 104 bytes, so sockets are named by a short hash of the context, not by its name.
 - **`kubectl proxy`** supports `--unix-socket`, refuses `exec` and `attach` by default (`--reject-paths`), and accepts only localhost Host headers (`--accept-hosts`). Section 4 corrects what this means in practice.
 
+### The spike (2026-11-03), read-only, on the two dev clusters
+
+The proxy ran with the read-only flags of decision 12. Production was never contacted, and no Secret was read.
+
+| | `acme-dev` (aws) | `globex-eu-west-1-dev` (oidc) |
+|---|---|---|
+| Proxy socket ready | 0.13 s; credentials come on the first request | 0.13 s |
+| First request (token) | 1.9 s | 3.9 s |
+| Later requests | 75–200 ms | ~100 ms |
+| API groups | 36 | 78 |
+| Pods | 56 in all | 260 in `globex`, 2886 in all |
+| metrics.k8s.io | 404, no metrics-server | present |
+| POST, exec, a wrong Host | 403 | 403 |
+
+A cluster-wide pod list on `globex-eu-west-1-dev`, 2886 pods:
+
+| Form | Size | Time |
+|---|---|---|
+| Table, `includeObject=Metadata` (the default) | 35 MB | 1.9 s |
+| **Table, `includeObject=None`** | **885 KB** | **0.15 s** |
+| Plain JSON, the full objects | 81 MB | 4.0 s |
+| `PartialObjectMetadataList` | 33 MB | 0.9 s |
+| Protobuf | 28 MB | 1.1 s |
+
+What it decided:
+- **Lists and watches ask for rows only** (`includeObject=None`). A row is known by its namespace and name columns. The full object is one GET when its detail opens. `managedFields` alone averaged 4.4–5.4 KB a pod.
+- **A watch answers as a Table too**, and the streaming list (`sendInitialEvents`) works and ends with a bookmark.
+- **The socket folder must be short.** In the support folder the path was 132 bytes and the bind failed; the limit is 104. Sockets go in a private folder under `/tmp` (mode 0700), named by a short hash.
+- **A credential failure is not retried.** With an expired AWS SSO token every request was an HTTP 500 with a short text body ("getting credentials: exec: executable aws failed with exit code 255"), and the proxy ran `aws` again for each one, 1.3–4.6 s apiece. The first such answer stops the context's requests and says what to run (`aws sso login`).
+- **An oidc sign-in waits in the browser.** With nobody signing in, the first request waited 181 s and then failed. The page says a sign-in is waiting rather than looking stuck.
+
 ## 2. Feature inventory
 
 The tables go through Lens and Freelens area by area. Columns:
