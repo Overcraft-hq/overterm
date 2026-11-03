@@ -90,6 +90,20 @@ jobs:
         if: steps.frameworks.outputs.cache-hit != 'true'
         run: make ghosttykit treesitter
 
+      # The release build of the last run on main: the Swift packages are
+      # compiled once per Package.resolved, not every run. The Release
+      # workflow restores the same cache — CI's build is the release's.
+      - name: Restore the Swift build
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            .build
+            !.build/debug
+            !.build/*/debug
+          key: spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-
+
       - name: Unit tests
         run: make test
 
@@ -104,3 +118,15 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" | grep -qx 42
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" | grep -qx io.github.overcraft-hq.overterm
           codesign --verify --strict Overterm.app
+
+      # Main's only: a pull request's would be its branch's alone. The debug
+      # build (the tests') is left out — the release doesn't use it.
+      - name: Save the Swift build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            .build
+            !.build/debug
+            !.build/*/debug
+          key: spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}

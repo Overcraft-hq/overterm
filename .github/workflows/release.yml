@@ -1,9 +1,18 @@
 # Release: run it by hand (Actions → Release → Run workflow) on the commit
 # to ship. The version is VERSION's; the notes are its CHANGELOG.md entry
-# (Scripts/release-notes.sh). It tests, builds Overterm.app, packs it in a
-# DMG, and publishes release v<version> with the DMG attached — on the tag
-# made when releasing (CLAUDE.md, Commits), once pushed, or a new one on
-# this commit.
+# (Scripts/release-notes.sh). It builds Overterm.app, packs it in a DMG, and
+# publishes release v<version> with the DMG attached — on the tag made when
+# releasing (CLAUDE.md, Commits), once pushed, or a new one on this commit.
+#
+# Fast, because it repeats nothing CI did. The unit tests ran in CI on this
+# very commit with the same Xcode: the release asks for that run's result
+# (waiting if it is still going) instead of running them again — ten minutes
+# of a 30-minute release. And the release build starts from CI's: CI saves
+# .build after building the app on main (the Swift packages — SwiftNIO,
+# swift-crypto's BoringSSL — compiled once per Package.resolved), the release
+# restores it. The build metadata About shows is Info.plist's, not compiled
+# in, so CI's build is the release's. `run_tests` runs the tests here anyway;
+# `clean_build` builds without the cache.
 #
 # Manual only: a macOS runner is expensive, so nothing triggers it on push.
 name: Release
@@ -16,9 +25,20 @@ on:
         required: false
         type: boolean
         default: false
+      run_tests:
+        description: "Run the unit tests here too, instead of trusting CI's run on this commit"
+        required: false
+        type: boolean
+        default: false
+      clean_build:
+        description: "Build without the Swift build cache"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  actions: read  # CI's run on this commit
 
 concurrency:
   group: release
@@ -27,7 +47,8 @@ concurrency:
 jobs:
   release:
     runs-on: macos-15
-    timeout-minutes: 45
+    # Up to 30 of them waiting for CI on this commit to finish.
+    timeout-minutes: 75
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -53,6 +74,30 @@ jobs:
           Scripts/release-notes.sh "$version" > /dev/null  # fails early without a changelog entry
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
+      # The unit tests are CI's: its run on this commit, waited for while it
+      # runs. Red, cancelled (a newer push cancels an older run) or missing,
+      # the release stops — run CI on the commit (Actions → CI → Run
+      # workflow), or release with run_tests.
+      - name: CI passed on this commit
+        if: ${{ !inputs.run_tests }}
+        run: |
+          for _ in $(seq 1 60); do
+            run="$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --limit 20 \
+              --json databaseId,event,status,conclusion \
+              --jq '[.[] | select(.event != "pull_request")] | first // empty')"
+            if [[ -z "$run" ]]; then
+              echo "::error::No CI run on ${GITHUB_SHA:0:7}: run CI on it (Actions → CI → Run workflow), or release with run_tests"; exit 1
+            fi
+            status="$(jq -r .status <<<"$run")"; conclusion="$(jq -r .conclusion <<<"$run")"; id="$(jq -r .databaseId <<<"$run")"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then echo "CI passed on ${GITHUB_SHA:0:7} (run $id)"; exit 0; fi
+              echo "::error::CI on ${GITHUB_SHA:0:7} is $conclusion (run $id): fix it, or run CI again on it"; exit 1
+            fi
+            echo "CI on ${GITHUB_SHA:0:7} is $status (run $id) — waiting"
+            sleep 30
+          done
+          echo "::error::CI on ${GITHUB_SHA:0:7} didn't finish in 30 minutes"; exit 1
+
       # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 16.4.
       - name: Use Xcode 16.4
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
@@ -72,7 +117,22 @@ jobs:
         if: steps.frameworks.outputs.cache-hit != 'true'
         run: make ghosttykit treesitter
 
+      # CI's release build on main (see the top): the newest for these
+      # packages and this Xcode. Restored only — CI is what saves it.
+      - name: Restore the Swift build
+        if: ${{ !inputs.clean_build }}
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            .build
+            !.build/debug
+            !.build/*/debug
+          key: spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          restore-keys: |
+            spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-
+
       - name: Unit tests
+        if: ${{ inputs.run_tests }}
         run: make test
 
       - name: Build Overterm.app and the DMG
