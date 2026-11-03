@@ -104,6 +104,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var dockerPanelShown = false
     /// Whether this window holds `DockerModel.show()` for its page.
     var dockerPageHeld = false
+    /// The Kubernetes page's own state; its view is made the first time it opens.
+    let kubernetesPage = KubernetesPageModel()
+    /// Whether this window holds `KubernetesModel.show()` for its page.
+    var kubernetesPageHeld = false
     /// The review tabs' page: the one showing, over the body as the pages are.
     var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
@@ -647,6 +651,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDatabase()
         declarePage(settingsWorkspacePage())
         wireDockerPage()
+        wireKubernetesPage()
         wireDockerPanel()
         wireDockerPorts()
         wireDockerAttention()

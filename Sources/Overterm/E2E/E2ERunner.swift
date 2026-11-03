@@ -88,6 +88,7 @@ final class E2ERunner {
         "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
         "docker": { await $0.dockerScenario() },
+        "kubernetes": { await $0.kubernetesScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 

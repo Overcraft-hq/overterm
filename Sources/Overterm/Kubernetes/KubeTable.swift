@@ -128,6 +128,10 @@ struct KubeRowID: Hashable, Comparable, Sendable, CustomStringConvertible {
 struct KubeRow: Equatable, Sendable, Identifiable {
     var id: KubeRowID
     var cells: [KubeCell]
+    /// When the object was made, from the embedded metadata — only where
+    /// the rows carry it (across all namespaces, `includeObject=Metadata`);
+    /// with rows only, the server's Age cell is all there is (`KubeAge`).
+    var created: Date? = nil
 
     func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
@@ -205,12 +209,14 @@ enum KubeTableReader {
         let name = cells[nameIndex].text
         guard !name.isEmpty else { return nil }
         var rowNamespace = namespace
+        let metadata = object?["metadata"] as? [String: Any]
+        let created = (metadata?["creationTimestamp"] as? String).flatMap { try? Date($0, strategy: .iso8601) }
         if let index = KubeColumn.index(of: "Namespace", in: columns), index != nameIndex, index < cells.count, !cells[index].text.isEmpty {
             rowNamespace = cells[index].text
-        } else if let embedded = (object?["metadata"] as? [String: Any])?["namespace"] as? String {
+        } else if let embedded = metadata?["namespace"] as? String {
             rowNamespace = embedded
         }
-        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells)
+        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created)
     }
 }
 

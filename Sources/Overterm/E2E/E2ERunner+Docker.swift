@@ -1884,18 +1884,18 @@ extension E2ERunner {
     /// bottom left, as an event's location) — for what SwiftUI draws itself,
     /// which no AppKit view holds and, without an assistive app, no
     /// accessibility element either.
-    private func readWindow() async -> [(text: String, frame: CGRect)] {
+    func readWindow() async -> [(text: String, frame: CGRect)] {
         guard let image = app.windowImage(window) else { return [] }
         let pixels = WindowPixels(image: image)
         let size = window.frame.size
         return await Task.detached { Self.recognize(pixels, size: size) }.value
     }
 
-    private struct WindowPixels: @unchecked Sendable {
+    struct WindowPixels: @unchecked Sendable {
         let image: CGImage
     }
 
-    nonisolated private static func recognize(_ pixels: WindowPixels, size: CGSize) -> [(text: String, frame: CGRect)] {
+    nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize) -> [(text: String, frame: CGRect)] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
@@ -1940,7 +1940,7 @@ extension E2ERunner {
     /// shows (SwiftUI draws a moment later). A Vision pass can take seconds
     /// on a busy machine, so the wait is long — it only runs out when
     /// something isn't drawn.
-    private func shownText(_ timeout: TimeInterval = 15, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
+    func shownText(_ timeout: TimeInterval = 15, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if let line = await readWindow().first(where: { match($0.text) }) { return line }
