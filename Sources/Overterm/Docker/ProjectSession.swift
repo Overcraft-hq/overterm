@@ -109,7 +109,7 @@ struct ProjectDetailView: View {
                 Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
                 updatesLine
                 if let kept = ports.override(of: project) { ownPorts(kept) }
-                DockerActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
+                ResourceActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
                 if project.planned, let planError {
                     Text(verbatim: planError).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -237,10 +237,10 @@ struct ProjectDetailView: View {
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 8)
-                            DockerActionBar(verbs: verbs, theme: theme, words: 0)
+                            ResourceActionBar(verbs: verbs, theme: theme, words: 0)
                         }
                         .contentShape(Rectangle())
-                        .contextMenu { DockerVerbMenu(verbs: verbs) }
+                        .contextMenu { ResourceVerbMenu(verbs: verbs) }
                         .accessibilityIdentifier("docker.service." + service.name)
                         ForEach(service.containers) { container in
                             Button {

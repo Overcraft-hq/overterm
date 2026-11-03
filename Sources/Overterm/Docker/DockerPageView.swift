@@ -443,7 +443,7 @@ struct DockerPageView: View {
 
     /// The right-click menu's verbs for the rows clicked: the selection
     /// when the click was on it, else the one row.
-    private func listVerbs(_ ids: Set<String>, in groups: [DockerListGroup]) -> [DockerVerb] {
+    private func listVerbs(_ ids: Set<String>, in groups: [DockerListGroup]) -> [ResourceVerb] {
         let containers = groups.flatMap(\.containers).filter { ids.contains($0.Id) }
         if let first = containers.first { return page.verbs(for: first, targets: containers.count > 1 ? containers : nil) }
         guard let id = ids.first, let group = groups.first(where: { $0.id == id || $0.services.contains { DockerPageModel.serviceTag($0) == id } })
