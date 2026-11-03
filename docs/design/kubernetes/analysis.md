@@ -121,7 +121,9 @@ A cluster-wide pod list on `globex-eu-west-1-dev`, 2886 pods:
 | Protobuf | 28 MB | 1.1 s |
 
 What it decided:
-- **Lists and watches ask for rows only** (`includeObject=None`). A row is known by its namespace and name columns. The full object is one GET when its detail opens. `managedFields` alone averaged 4.4–5.4 KB a pod.
+- **Lists and watches ask for rows only** (`includeObject=None`). A row is known by its namespace and name. The full object is one GET when its detail opens.
+  - Across all namespaces a namespaced kind asks for `includeObject=Metadata`: no core kind's Table has a Namespace column (`kubectl get -A` adds it from the metadata), so with rows only a row's namespace is unknown and same-named pods in two namespaces are one row. In one namespace the request's namespace is the row's.
+  - Ages: the metadata's `creationTimestamp` where a row has it; a namespace's rows-only list has only the Age cell as the server rendered it. Which the page recomputes from is the page step's to decide. `managedFields` alone averaged 4.4–5.4 KB a pod.
 - **A watch answers as a Table too**, and the streaming list (`sendInitialEvents`) works and ends with a bookmark.
 - **The socket folder must be short.** In the support folder the path was 132 bytes and the bind failed; the limit is 104. Sockets go in a private folder under `/tmp` (mode 0700), named by a short hash.
 - **A credential failure is not retried.** With an expired AWS SSO token every request was an HTTP 500 with a short text body ("getting credentials: exec: executable aws failed with exit code 255"), and the proxy ran `aws` again for each one, 1.3–4.6 s apiece. The first such answer stops the context's requests and says what to run (`aws sso login`).
