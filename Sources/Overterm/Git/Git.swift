@@ -187,7 +187,7 @@ final class RunningProcess: @unchecked Sendable {
 /// Collects what a pipe delivers, on FileHandle's own queue — up to `limit`
 /// bytes, if given; then `onLimit` runs once and the rest is ignored.
 /// `onData` is handed each piece as it comes, outside the lock.
-private final class PipeReader: @unchecked Sendable {
+final class PipeReader: @unchecked Sendable {
     private let handle: FileHandle
     private let lock = NSLock()
     private var buffer = Data()
