@@ -79,18 +79,17 @@ struct DockerSSHTarget: Hashable, Sendable {
 /// request and stream. The user's ~/.ssh/config, keys and agent do for it
 /// what they do for `docker -H ssh://`; nothing is asked (BatchMode) — a
 /// prompt nobody can answer would hang it.
-final class DockerSSHForward: @unchecked Sendable {
+final class DockerSSHForward: ManagedResource {
     let target: DockerSSHTarget
     /// The local end: only this user may use it (the engine is root on the host).
     let socket: String
-    private let process: Process
-    private let said: Said
+    /// The ssh, which removes the local end when it is closed.
+    let process: ManagedProcess
 
-    private init(target: DockerSSHTarget, socket: String, process: Process, said: Said) {
+    private init(target: DockerSSHTarget, socket: String, process: ManagedProcess) {
         self.target = target
         self.socket = socket
         self.process = process
-        self.said = said
     }
 
     var isOpen: Bool { process.isRunning }
@@ -98,7 +97,7 @@ final class DockerSSHForward: @unchecked Sendable {
     /// Why the host's end refused the last request, as ssh said it
     /// (`connect failed: Permission denied` — the user isn't in the docker
     /// group there): the local end takes the connection either way.
-    var refusal: String? { Self.refusal(in: said.text) }
+    var refusal: String? { Self.refusal(in: process.stderr.text) }
 
     static func refusal(in text: String) -> String? {
         let line = text.components(separatedBy: .newlines).last { $0.contains("open failed") }
@@ -106,10 +105,7 @@ final class DockerSSHForward: @unchecked Sendable {
         return line[range.upperBound...].trimmingCharacters(in: .whitespaces)
     }
 
-    func close() {
-        if process.isRunning { process.terminate() }
-        unlink(socket)
-    }
+    func close() { process.close() }
 
     /// Tests keep their hosts and keys out of ~/.ssh: `-F`, `-i`,
     /// `UserKnownHostsFile`, before the destination.
@@ -187,49 +183,24 @@ final class DockerSSHForward: @unchecked Sendable {
     static func open(_ target: DockerSSHTarget) async throws -> DockerSSHForward {
         let remote = try await remoteSocket(of: target)
         let local = localSocket(for: target)
-        unlink(local)
-        let process = Process()
-        process.executableURL = ssh
-        process.arguments = arguments(target, localSocket: local, remoteSocket: remote)
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        let errors = Pipe()
-        process.standardError = errors
-        let said = Said()
-        // Cleared at EOF: a handler left on fires again and again with
-        // nothing, a core spinning for the life of the app (once per
-        // reopened forward), as Git.run and DockerCLI already know.
-        errors.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                said.finish()
-            } else {
-                said.append(data)
-            }
-        }
         do {
-            try process.run()
-        } catch {
-            throw DockerError.unreachable("ssh couldn't start: \(error.localizedDescription)")
+            let process = try await ManagedProcess.start(launch(target, localSocket: local, remoteSocket: remote))
+            return DockerSSHForward(target: target, socket: local, process: process)
+        } catch ManagedProcess.Failure.couldNotStart(let reason) {
+            throw DockerError.unreachable("ssh couldn't start: \(reason)")
+        } catch ManagedProcess.Failure.exited(let status, let stderr) {
+            throw DockerError.unreachable("SSH: " + Self.said(stderr, fallback: "ssh exited (\(status))."))
+        } catch ManagedProcess.Failure.timedOut {
+            throw DockerError.unreachable("SSH: \(target.host) didn't open the forward in 20 seconds.")
         }
-        let forward = DockerSSHForward(target: target, socket: local, process: process, said: said)
-        let deadline = Date().addingTimeInterval(20)
-        while Date() < deadline {
-            if !process.isRunning {
-                forward.close()
-                // What it said, from the handler: never readDataToEndOfFile,
-                // which waits for every writer — a ProxyCommand that
-                // outlives ssh held a cooperative thread for good.
-                for _ in 0..<10 where !said.finished { try? await Task.sleep(nanoseconds: 50_000_000) }
-                errors.fileHandleForReading.readabilityHandler = nil
-                throw DockerError.unreachable("SSH: " + Self.said(said.text, fallback: "ssh exited (\(process.terminationStatus))."))
-            }
-            if accepts(local) { return forward }
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        forward.close()
-        throw DockerError.unreachable("SSH: \(target.host) didn't open the forward in 20 seconds.")
+    }
+
+    /// The forward as a process: ready when the local end takes a
+    /// connection, the local end removed before and after — pure.
+    static func launch(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> ManagedProcess.Launch {
+        ManagedProcess.Launch(
+            executable: ssh, arguments: arguments(target, localSocket: localSocket, remoteSocket: remoteSocket),
+            readiness: .socket(localSocket), timeout: 20, removing: [localSocket])
     }
 
     /// The host's real name, as ~/.ssh/config makes it (`ssh -G`, which
@@ -256,41 +227,6 @@ final class DockerSSHForward: @unchecked Sendable {
             .filter { !$0.isEmpty && !$0.hasPrefix("Warning: Permanently added") }
         return lines.last ?? fallback
     }
-
-    private static func accepts(_ path: String) -> Bool {
-        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return false }
-        defer { Darwin.close(fd) }
-        var address = sockaddr_un()
-        address.sun_family = sa_family_t(AF_UNIX)
-        let bytes = Array(path.utf8)
-        guard bytes.count < MemoryLayout.size(ofValue: address.sun_path) else { return false }
-        withUnsafeMutableBytes(of: &address.sun_path) { buffer in
-            buffer.copyBytes(from: bytes)
-            buffer[bytes.count] = 0
-        }
-        return withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0 }
-        }
-    }
-
-    /// What ssh said on stderr — its last 16 KB: a forward lives as long
-    /// as the app, and every refused connection adds a line.
-    final class Said: @unchecked Sendable {
-        static let limit = 16 << 10
-        private let lock = NSLock()
-        private var data = Data()
-        private var ended = false
-        func append(_ more: Data) {
-            lock.withLock {
-                data.append(more)
-                if data.count > Self.limit { data = Data(data.suffix(Self.limit)) }
-            }
-        }
-        func finish() { lock.withLock { ended = true } }
-        var finished: Bool { lock.withLock { ended } }
-        var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
-    }
 }
 
 /// One forward a host, opened by the first request and again when its ssh
@@ -299,44 +235,20 @@ final class DockerSSHForward: @unchecked Sendable {
 actor DockerSSHForwards {
     static let shared = DockerSSHForwards()
 
-    private var forwards: [DockerSSHTarget: DockerSSHForward] = [:]
-    private var opening: [DockerSSHTarget: Task<DockerSSHForward, Error>] = [:]
-
-    /// Every forward, for closing when the app quits — or each ssh would
-    /// outlive it.
-    nonisolated(unsafe) private static var all: [DockerSSHForward] = []
-    private static let lock = NSLock()
+    private let pool = ManagedProcessPool<DockerSSHTarget, DockerSSHForward> { try await DockerSSHForward.open($0) }
 
     func socket(for target: DockerSSHTarget) async throws -> String {
-        if let forward = forwards[target], forward.isOpen { return forward.socket }
-        forwards[target]?.close()
-        forwards[target] = nil
-        let task =
-            opening[target]
-            ?? Task {
-                let forward = try await DockerSSHForward.open(target)
-                Self.lock.withLock { Self.all = Self.all.filter(\.isOpen) + [forward] }
-                return forward
-            }
-        opening[target] = task
-        defer { opening[target] = nil }
-        let forward = try await task.value
-        forwards[target] = forward
-        return forward.socket
+        try await pool.value(for: target).socket
     }
 
     /// Closes the forward to `target`, when it is no longer the engine.
-    func close(_ target: DockerSSHTarget) {
-        forwards.removeValue(forKey: target)?.close()
+    func close(_ target: DockerSSHTarget) async {
+        await pool.close(target)
     }
 
-    func refusal(_ target: DockerSSHTarget) -> String? { forwards[target]?.refusal }
+    func refusal(_ target: DockerSSHTarget) async -> String? { await pool.existing(target)?.refusal }
 
-    static func closeAll() {
-        let forwards = lock.withLock {
-            defer { all = [] }
-            return all
-        }
-        forwards.forEach { $0.close() }
-    }
+    /// Every forward, for closing when the app quits — or each ssh would
+    /// outlive it.
+    static func closeAll() { shared.pool.closeAll() }
 }
