@@ -68,6 +68,11 @@ extension E2ERunner {
         review.splitFraction = 0.5
         await pause(0.3)
         if let page = app.reviewView, let window = app.window {
+            // SwiftUI takes no drag from a press that only makes the window
+            // key: as a person's would, the window is in front first.
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            _ = await eventually(2) { window.isKeyWindow }
             let frame = page.convert(page.bounds, to: nil)
             let diffLeft = frame.minX + 291
             let start = NSPoint(x: (diffLeft + (frame.maxX - diffLeft) * 0.5).rounded(), y: frame.minY + frame.height * 0.4)
@@ -86,7 +91,7 @@ extension E2ERunner {
             let expected = 0.5 - 120 / (frame.maxX - diffLeft)
             check(
                 "the sides resize: their divider drags", await eventually(2) { abs(review.splitFraction - expected) < 0.03 },
-                "\(review.splitFraction), want \(expected)")
+                "\(review.splitFraction), want \(expected); at \(start) in \(frame): \(String(describing: window.contentView?.superview?.hitTest(start))), key \(window.isKeyWindow)")
             check("and is kept for the next review", AppEnvironment.defaults.double(forKey: ReviewModel.splitKey) == Double(review.splitFraction))
         }
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
