@@ -28,6 +28,8 @@ struct OvergitActions {
     var reviewCommits: (_ from: String, _ to: String) -> Void = { _, _ in }
     var reviewBranch: (String) -> Void = { _ in }
     var reviewPullRequest: (Int) -> Void = { _ in }
+    /// Pull, push, branches, commits, tags, stashes (`overgit(_:)`).
+    var git: (OvergitCommand) -> Void = { _ in }
 }
 
 /// Overgit: one git home in the sidebar — where you are, what has
@@ -136,8 +138,10 @@ struct OvergitView: View {
     private var overview: some View {
         OvergitOverview(
             branch: diff.branch, ref: model.branch(named: diff.branch), badge: diff.badge,
-            pullRequest: diff.branch.flatMap { worktrees.pullRequests[$0] }, theme: theme,
-            onChanges: actions.showChanges, onPullRequest: actions.showPullRequest)
+            pullRequest: diff.branch.flatMap { worktrees.pullRequests[$0] }, tracking: model.tracking, inProgress: model.inProgress,
+            running: model.running, theme: theme, onChanges: actions.showChanges, onPullRequest: actions.showPullRequest,
+            onCommand: actions.git,
+            onCommit: { if !model.isExpanded(.changes) { model.toggle(.changes) } })
     }
 
     // MARK: Commits
@@ -156,6 +160,7 @@ struct OvergitView: View {
                     ) {
                         ReviewMenuItems(commit: commit, model: model, actions: actions)
                         CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions)
+                        CommitGitMenuItems(commit: commit, current: diff.branch, actions: actions)
                     }
                 }
             }
@@ -171,6 +176,7 @@ struct OvergitView: View {
                 ) {
                     ReviewMenuItems(commit: commit, model: model, actions: actions)
                     CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions)
+                    CommitGitMenuItems(commit: commit, current: diff.branch, actions: actions)
                 }
             }
         }
@@ -194,7 +200,7 @@ struct OvergitView: View {
                             model.expandedBranchFolders.insert(node.id)
                         }
                     },
-                    actions: actions)
+                    actions: actions, current: diff.branch)
             }
         }
     }
@@ -283,7 +289,13 @@ struct OvergitView: View {
                     symbol: "tag", title: tag.name, detail: tag.subject, trailing: tag.sha, theme: theme,
                     help: "\(tag.name) · \(tag.sha)"
                 )
-                .contextMenu { CompareMenuItems(ref: tag.name, model: model, actions: actions) }
+                .contextMenu {
+                    Button("Check Out (Detached)") { actions.git(.checkOutCommit(tag.name)) }
+                    Button("Push to origin") { actions.git(.pushTag(tag)) }
+                    Button("Delete…", role: .destructive) { actions.git(.deleteTag(tag)) }
+                    Divider()
+                    CompareMenuItems(ref: tag.name, model: model, actions: actions)
+                }
             }
         }
     }
@@ -295,7 +307,15 @@ struct OvergitView: View {
             ForEach(model.remotes) { remote in
                 OvergitPlainRow(
                     symbol: "cloud", title: remote.name, detail: remote.host ?? remote.url, trailing: nil, theme: theme,
-                    help: remote.url)
+                    help: remote.url
+                )
+                .contextMenu {
+                    Button("Fetch") { actions.git(.fetchRemote(remote)) }
+                    Button("Copy URL") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(remote.url, forType: .string)
+                    }
+                }
             }
         }
     }

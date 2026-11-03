@@ -622,6 +622,20 @@ the readers it uses are in `Sources/Overterm/Git/`.
   asset catalog and no SVG pipeline, and one glyph is not reason enough to
   add either.
 
+- **What it does to the repository** goes through one place:
+  `OvergitCommand` (`Git/GitState.swift`) names it, the window runs it
+  (`TerminalWindowController.overgit(_:)`) — Pull and Push in the overview;
+  a branch made, merged, rebased onto, renamed, pushed or deleted; a commit
+  cherry-picked, reverted, reset to, branched or tagged from; tags pushed and
+  deleted; stashes made and popped. A name is asked in a sheet; what loses
+  work (a hard reset, an unmerged branch, a remote branch, a tag) is asked
+  about first. The overview reads the branch's upstream and ahead/behind
+  itself (`BranchTracking`) — the Branches section is often shut — and a
+  merge, rebase, cherry-pick or revert stopped on a conflict
+  (`GitInProgress`, from the files git leaves in the git dir) puts Continue
+  and Abort above everything. The `overgitGit` scenario runs every command
+  against a real remote.
+
 ## Claude sessions (sidebar)
 
 `ClaudeSessions.list` finds transcripts in `~/.claude/projects` for the

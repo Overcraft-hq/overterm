@@ -69,6 +69,13 @@ final class OvergitModel: ObservableObject {
     /// What git said when it refused, in its own words.
     @Published private(set) var error: String?
     @Published private(set) var isReading = false
+    /// The checked-out branch against its upstream, for Pull and Push —
+    /// read every refresh, whichever sections are open.
+    @Published private(set) var tracking = BranchTracking()
+    /// A merge, rebase, cherry-pick or revert stopped half way.
+    @Published private(set) var inProgress: GitInProgress?
+    /// What a command of the panel's is doing ("Pulling…"), while it runs.
+    @Published var running: String?
     /// Which sections are open, remembered between launches.
     @Published private(set) var expanded: Set<Section>
     /// Which folders of the branch tree are open (`feature`, `origin`).
@@ -173,6 +180,16 @@ final class OvergitModel: ObservableObject {
             error = nil
             return
         }
+
+        // Cheap, and what the overview's buttons and banner stand on.
+        let upstream = try? await Git.run(BranchTracking.arguments, in: root)
+        let counts = upstream == nil ? nil : try? await Git.run(BranchTracking.countArguments, in: root)
+        let gitDir = (try? await Git.run(["rev-parse", "--absolute-git-dir"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard root.standardizedFileURL == self.root?.standardizedFileURL else { return }
+        let nowTracking = BranchTracking.parse(upstream: upstream, counts: counts)
+        if tracking != nowTracking { tracking = nowTracking }
+        let state = gitDir.flatMap { GitInProgress.read(gitDir: URL(fileURLWithPath: $0)) }
+        if inProgress != state { inProgress = state }
 
         var failure: String?
         func run(_ arguments: [String]) async -> String? {

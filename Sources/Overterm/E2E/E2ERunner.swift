@@ -83,6 +83,7 @@ final class E2ERunner {
         "askAgent": { await $0.askAgentScenario() },
         "dropSplit": { await $0.dropSplitScenario() },
         "overgit": { await $0.overgitScenario() },
+        "overgitGit": { await $0.overgitGitScenario() },
         "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
         "docker": { await $0.dockerScenario() },

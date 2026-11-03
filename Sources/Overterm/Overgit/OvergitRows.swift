@@ -10,9 +10,17 @@ struct OvergitOverview: View {
     let ref: BranchRef?
     let badge: DiffModel.Badge?
     let pullRequest: PullRequestSummary?
+    /// Against its upstream, read whatever sections are open.
+    var tracking = BranchTracking()
+    var inProgress: GitInProgress?
+    /// A command running ("Pulling…").
+    var running: String?
     @ObservedObject var theme: ChromeTheme
     let onChanges: () -> Void
     let onPullRequest: () -> Void
+    var onCommand: (OvergitCommand) -> Void = { _ in }
+    /// Opens the Changes section, where the message and Commit are.
+    var onCommit: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -21,12 +29,12 @@ struct OvergitOverview: View {
                 Text(verbatim: branch ?? "detached")
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
                     .lineLimit(1).truncationMode(.middle)
-                if let ref, ref.ahead > 0 || ref.behind > 0 {
-                    if ref.ahead > 0 { track("arrow.up", ref.ahead) }
-                    if ref.behind > 0 { track("arrow.down", ref.behind) }
-                }
+                if tracking.ahead > 0 { track("arrow.up", tracking.ahead) }
+                if tracking.behind > 0 { track("arrow.down", tracking.behind) }
                 Spacer(minLength: 0)
             }
+            if let inProgress { banner(inProgress) }
+            sync
             HStack(spacing: 8) {
                 Button(action: onChanges) {
                     HStack(spacing: 4) {
@@ -66,6 +74,88 @@ struct OvergitOverview: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// Pull, Push, and the rest of what a checkout's branch does.
+    private var sync: some View {
+        HStack(spacing: 6) {
+            if branch != nil, tracking.upstream != nil {
+                syncButton("Pull", symbol: "arrow.down", count: tracking.behind, help: "git pull from \(tracking.upstream ?? "")") {
+                    onCommand(.pull(rebase: false))
+                }
+                .accessibilityIdentifier("overgitPull")
+            }
+            if branch != nil {
+                let publish = tracking.upstream == nil
+                syncButton(
+                    publish ? "Publish" : "Push", symbol: "arrow.up", count: tracking.ahead,
+                    help: publish ? "Push the branch to origin, tracking it" : "git push to \(tracking.upstream ?? "")"
+                ) { onCommand(.push) }
+                .accessibilityIdentifier("overgitPushBranch")
+            }
+            Menu {
+                Button("Commit…", action: onCommit)
+                Button("Fetch All") { onCommand(.fetch) }
+                if tracking.upstream != nil { Button("Pull with Rebase") { onCommand(.pull(rebase: true)) } }
+                Divider()
+                Button("New Branch…") { onCommand(.newBranch(from: nil)) }
+                Button("Stash Changes…") { onCommand(.stash) }
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 11))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More: commit, fetch, a new branch, stash")
+            if let running {
+                ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 14, height: 14)
+                Text(verbatim: running).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .disabled(running != nil)
+    }
+
+    private func syncButton(_ title: String, symbol: String, count: Int, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .medium))
+                if count > 0 { Text(verbatim: "\(count)").font(.system(size: 10, design: .monospaced)) }
+            }
+            .foregroundStyle(count > 0 ? theme.text : theme.text2)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
+            .contentShape(Rectangle())
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    /// A merge or rebase stopped half way: what it is, and the two ways out.
+    private func banner(_ state: GitInProgress) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+                Text(verbatim: "\(state.title) stopped").font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(theme.orangeText)
+            Text("Resolve the conflicts in Changes and stage them, then continue.")
+                .font(.system(size: 10.5)).foregroundStyle(theme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                syncButton("Continue", symbol: "play.fill", count: 0, help: "git \(state.command) --continue") {
+                    onCommand(.continueOperation)
+                }
+                .accessibilityIdentifier("overgitContinue")
+                syncButton("Abort", symbol: "xmark", count: 0, help: "git \(state.command) --abort") { onCommand(.abortOperation) }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(theme.attnBg))
     }
 
     private var counts: (added: Int, removed: Int)? {
@@ -209,6 +299,8 @@ struct BranchRowView: View {
     @ObservedObject var theme: ChromeTheme
     let onToggle: () -> Void
     let actions: OvergitActions
+    /// The checked-out branch: what Merge goes into and Rebase moves.
+    var current: String?
     @State private var hovering = false
 
     var body: some View {
@@ -244,13 +336,28 @@ struct BranchRowView: View {
         .help(node.branch.map { "\($0.name)\n\($0.sha) · \($0.subject)" } ?? node.id)
         .contextMenu {
             if let branch = node.branch {
-                Button("Check Out") { actions.checkOut(branch) }
+                if !isCurrent { Button("Check Out") { actions.checkOut(branch) } }
+                Button("New Branch From Here…") { actions.git(.newBranch(from: branch.name)) }
                 Button("New Worktree Here…") { actions.newWorktree(branch) }
+                if let current, !isCurrent, current != branch.name {
+                    Divider()
+                    Button("Merge into \(current)") { actions.git(.merge(branch.name)) }
+                    Button("Rebase \(current) onto This") { actions.git(.rebase(onto: branch.name)) }
+                }
+                Divider()
+                if isCurrent {
+                    if branch.upstream != nil { Button("Pull") { actions.git(.pull(rebase: false)) } }
+                    Button(branch.upstream == nil ? "Publish" : "Push") { actions.git(.push) }
+                } else if !branch.isRemote {
+                    Button(branch.upstream == nil ? "Publish" : "Push") { actions.git(.pushBranch(branch)) }
+                }
+                if !branch.isRemote { Button("Rename…") { actions.git(.renameBranch(branch)) } }
+                if !isCurrent { Button("Delete…", role: .destructive) { actions.git(.deleteBranch(branch)) } }
+                Divider()
                 Button("Copy Name") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(branch.name, forType: .string)
                 }
-                Divider()
                 Button("Review Branch") { actions.reviewBranch(branch.name) }
                 CompareMenuItems(ref: branch.name, model: model, actions: actions)
             }
@@ -339,6 +446,7 @@ struct StashRowView: View {
         .onHover { hovering = $0 }
         .help(stash.subject)
         .contextMenu {
+            Button("Pop") { actions.git(.popStash(stash)) }
             Button("Apply") { actions.applyStash(stash) }
             Button("Drop…", role: .destructive) { actions.dropStash(stash) }
         }
@@ -348,5 +456,28 @@ struct StashRowView: View {
 extension CommitRowView where Extra == EmptyView {
     init(commit: Commit, row: GraphRow?, lanes: Int, isSelected: Bool, theme: ChromeTheme, onOpen: @escaping () -> Void) {
         self.init(commit: commit, row: row, lanes: lanes, isSelected: isSelected, theme: theme, onOpen: onOpen) { EmptyView() }
+    }
+}
+
+/// What a commit's menu runs on the checked-out branch: a branch or a tag
+/// on it, it picked onto the branch, it undone, the branch reset to it.
+struct CommitGitMenuItems: View {
+    let commit: Commit
+    let current: String?
+    let actions: OvergitActions
+
+    var body: some View {
+        Divider()
+        Button("New Branch Here…") { actions.git(.newBranch(from: commit.sha)) }
+        Button("New Tag Here…") { actions.git(.tag(at: commit.sha)) }
+        Button("Check Out (Detached)") { actions.git(.checkOutCommit(commit.sha)) }
+        Divider()
+        Button("Cherry-Pick onto \(current ?? "HEAD")") { actions.git(.cherryPick(commit)) }
+        Button("Revert") { actions.git(.revert(commit)) }
+        Menu("Reset \(current ?? "HEAD") to Here") {
+            Button("Soft — keep changes staged") { actions.git(.reset(commit, .soft)) }
+            Button("Mixed — keep changes unstaged") { actions.git(.reset(commit, .mixed)) }
+            Button("Hard — discard changes…", role: .destructive) { actions.git(.reset(commit, .hard)) }
+        }
     }
 }

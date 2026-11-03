@@ -16,6 +16,7 @@ version is tagged `v<version>`.
 - settings: About ▸ Acknowledgements lists the software Overterm is built on — Ghostty and what it links, tree-sitter, the Swift packages, the notes' libraries, Excalidraw and its fonts — each with its licence
 - build: swift-nio-ssl 2.37.6
 - review: side by side, the line between the old and the new drags to resize them (double-click for half and half)
+- overgit: Pull and Push at the top; branches merged, rebased, renamed, deleted and pushed, commits cherry-picked, reverted and reset to, tags and stashes made — and a merge or rebase stopped on a conflict continued or aborted
 - e2e: a test run's first tab starts in an empty folder of its own, never the home folder of whoever runs it
 
 ## 1.5.1 — 2026-11-02

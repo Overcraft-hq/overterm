@@ -365,7 +365,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     compare: { [weak self] base, head in self?.showCompare(base: base, head: head) },
                     reviewCommits: { [weak self] from, to in self?.reviewCommits(from: from, to: to) },
                     reviewBranch: { [weak self] in self?.reviewBranchRef($0) },
-                    reviewPullRequest: { [weak self] in self?.reviewPullRequest($0) }
+                    reviewPullRequest: { [weak self] in self?.reviewPullRequest($0) },
+                    git: { [weak self] command in Task { await self?.overgit(command) } }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
