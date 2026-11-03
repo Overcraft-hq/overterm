@@ -6,12 +6,30 @@ enum SettingValue: Equatable, Sendable {
     case int(Int)
     case double(Double)
     case string(String)
-    /// A list of names, in order (`SettingKind.order`).
+    /// A list of names, in order (`SettingKind.order`, `SettingKind.list`).
     case list([String])
+    /// Named entries, each a few fields of its own (`SettingKind.entries`):
+    /// `{ "a context": { "class": "production" } }`.
+    case entries([String: [String: SettingValue]])
 
     /// From what JSONSerialization made of the file; nil for anything else
-    /// (objects, null, a list holding something other than strings).
+    /// (null, a list holding something other than strings, an object that
+    /// isn't one of objects). A field that isn't a plain value is passed over.
     init?(json: Any) {
+        if let object = json as? [String: Any] {
+            var entries: [String: [String: SettingValue]] = [:]
+            for (name, raw) in object {
+                guard let fields = raw as? [String: Any] else { return nil }
+                var values: [String: SettingValue] = [:]
+                for (field, rawValue) in fields {
+                    guard let value = SettingValue(json: rawValue), value.entries == nil else { continue }
+                    values[field] = value
+                }
+                entries[name] = values
+            }
+            self = .entries(entries)
+            return
+        }
         if let number = json as? NSNumber {
             if CFGetTypeID(number) == CFBooleanGetTypeID() {
                 self = .bool(number.boolValue)
@@ -42,12 +60,20 @@ enum SettingValue: Equatable, Sendable {
         case .list(let values):
             // On one line, so the file can still be edited in place.
             "[" + values.map { SettingValue.string($0).json }.joined(separator: ", ") + "]"
+        case .entries(let entries):
+            // On one line too, sorted, so the same entries write the same text.
+            "{"
+                + entries.keys.sorted().map { name in
+                    let fields = entries[name]!.keys.sorted().map { SettingValue.string($0).json + ": " + entries[name]![$0]!.json }
+                    return SettingValue.string(name).json + ": {" + fields.joined(separator: ", ") + "}"
+                }.joined(separator: ", ") + "}"
         }
     }
 
     var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
     var string: String? { if case .string(let value) = self { value } else { nil } }
     var list: [String]? { if case .list(let value) = self { value } else { nil } }
+    var entries: [String: [String: SettingValue]]? { if case .entries(let value) = self { value } else { nil } }
     var number: Double? {
         switch self {
         case .int(let value): Double(value)
@@ -84,6 +110,27 @@ enum SettingKind: Sendable {
     /// Names it doesn't know are passed over, and options it leaves out
     /// come last — so a file from another version still reads.
     case order([SettingOption])
+    /// A list of the user's own: paths, names. Empty is none.
+    case list(placeholder: String)
+    /// Named entries — a context's own settings, say — each holding some
+    /// of `fields`. A field that doesn't fit is reported and left out; the
+    /// rest of the entry, and the other entries, still apply.
+    case entries(SettingEntries)
+}
+
+/// What a `SettingKind.entries` setting's entries are and may hold.
+struct SettingEntries: Sendable {
+    /// What an entry is named by, for the page: "context".
+    let noun: String
+    let fields: [SettingField]
+}
+
+/// One field of an entry: its name in the file and what it may hold
+/// (`toggle`, `choice`, `text` or `list`).
+struct SettingField: Sendable {
+    let name: String
+    let kind: SettingKind
+    var help: String? = nil
 }
 
 enum SettingSource: Sendable {
@@ -128,6 +175,10 @@ struct SettingSpec: Identifiable, Sendable {
             return value.list == nil ? "must be a list of names, like [\"files\", \"git\"]" : nil
         case .lines:
             return value.list == nil ? "must be a list of strings, like [\"~/Projects/prod-* = Red Alert\"]" : nil
+        case .list:
+            return value.list == nil ? "must be a list of strings, like [\"a\", \"b\"]" : nil
+        case .entries(let entries):
+            return value.entries == nil ? "must be an object of \(entries.noun)s, like { \"name\": { … } }" : nil
         case .integer(let range, _, _):
             guard case .int(let number) = value, range.contains(number) else {
                 return "must be a whole number from \(range.lowerBound) to \(range.upperBound)"
@@ -141,6 +192,33 @@ struct SettingSpec: Identifiable, Sendable {
         }
     }
 
+    /// `value` with each entry's fields that don't fit left out, and why —
+    /// for `entries`; anything else comes back as it is. A typo in one
+    /// field must not drop a context's hand-set class with it.
+    func fitted(_ value: SettingValue) -> (value: SettingValue, problems: [String]) {
+        guard case .entries(let kind) = self.kind, let entries = value.entries else { return (value, []) }
+        var kept: [String: [String: SettingValue]] = [:]
+        var problems: [String] = []
+        for name in entries.keys.sorted() {
+            var fields: [String: SettingValue] = [:]
+            for (field, fieldValue) in entries[name]!.sorted(by: { $0.key < $1.key }) {
+                let place = "\"\(key)\" › \"\(name)\": \"\(field)\""
+                guard let spec = kind.fields.first(where: { $0.name == field }) else {
+                    problems.append("\(place) isn't a field Overterm knows; it is left as it is.")
+                    continue
+                }
+                let probe = SettingSpec(key: key, section: section, group: group, title: title, kind: spec.kind, defaultValue: nil)
+                if let problem = probe.problem(with: fieldValue) {
+                    problems.append("\(place) \(problem); it is left out.")
+                    continue
+                }
+                fields[field] = fieldValue
+            }
+            kept[name] = fields
+        }
+        return (.entries(kept), problems)
+    }
+
     /// Searchable text: Settings' search matches the title, the help and the key.
     func matches(_ query: String) -> Bool {
         let query = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -152,7 +230,7 @@ struct SettingSpec: Identifiable, Sendable {
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
     static let all: [SettingSpec] =
-        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + notifications + updates
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -615,6 +693,34 @@ enum SettingsSchema {
             help:
                 "Under the selected tab's checkout's stack, the containers of other projects and of none that are running — Testcontainers' test runs in one row.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+    ]
+
+    private static let kubernetes: [SettingSpec] = [
+        SettingSpec(
+            key: "kubernetes.enabled", section: .kubernetes, group: "Kubernetes", title: "Kubernetes in Overterm",
+            help:
+                "The contexts of your kubeconfig, their namespaces and pods. Nothing runs and no cluster is asked anything until the page or the panel opens.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "kubernetes.kubeconfigs", section: .kubernetes, group: "Kubeconfigs", title: "More kubeconfig files",
+            help:
+                "Read after KUBECONFIG's files (else ~/.kube/config), merged as kubectl merges them: a context, cluster or user an earlier file names wins. A folder adds every file in it. Overterm never writes a kubeconfig.",
+            kind: .list(placeholder: "~/.kube/other.kubeconfig"), defaultValue: .list([]), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.contexts", section: .kubernetes, group: "Contexts", title: "Each context's own settings",
+            help:
+                "By the context's name: its class (production, remote or local; unset, its name decides), whether a remote or local one may be written to — a production one never is, its writes are turned on for a session — and its namespaces.",
+            kind: .entries(SettingEntries(noun: "context", fields: KubeContextSettings.fields)), defaultValue: .entries([:]),
+            requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.pinnedContexts", section: .kubernetes, group: "Contexts", title: "Pinned contexts",
+            help: "At the top of the context picker and in the palette, in this order.",
+            kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.maxProxies", section: .kubernetes, group: "Connections", title: "Contexts connected at once",
+            help:
+                "Each context in use has one kubectl proxy, and kubectl keeps its credentials. One is always kept for the page's context; past this many, the least recently used idle one closes.",
+            kind: .integer(1...16, step: 1, unit: "proxies"), defaultValue: .int(4), requires: "kubernetes.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

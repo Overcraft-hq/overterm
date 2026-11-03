@@ -177,7 +177,9 @@ final class Settings: ObservableObject {
                 found.append("\"\(key)\" \(problem); its default applies.")
                 continue
             }
-            parsed[key] = fitted
+            let (kept, fieldProblems) = spec.fitted(fitted)
+            found += fieldProblems
+            parsed[key] = kept
         }
         problems = found
         let changed = Set(parsed.keys).union(values.keys).filter { parsed[$0] != values[$0] }
@@ -332,6 +334,13 @@ final class Settings: ObservableObject {
     var dockerCheckPorts: Bool { dockerEnabled && bool("docker.checkPorts") }
     var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
     var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
+    var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
+    /// The setting's extra kubeconfig files and folders, as written (`~` unexpanded).
+    var kubernetesKubeconfigs: [String] { value("kubernetes.kubeconfigs")?.list ?? [] }
+    /// Each context's own settings, by its name.
+    var kubernetesContexts: [String: KubeContextSettings] { KubeContextSettings.all(from: value("kubernetes.contexts")) }
+    var kubernetesPinnedContexts: [String] { value("kubernetes.pinnedContexts")?.list ?? [] }
+    var kubernetesMaxProxies: Int { Int(number("kubernetes.maxProxies") ?? 4) }
 
     // MARK: Ghostty overrides
 

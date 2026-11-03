@@ -154,6 +154,31 @@ enum AppEnvironment {
         return DockerEndpoint.current()
     }
 
+    /// Whether this process is a unit test's: XCTest is loaded. The app
+    /// itself never links it.
+    static let isUnitTest = NSClassFromString("XCTestCase") != nil
+
+    /// Whether the user's own kubeconfig is out of bounds: an isolated run
+    /// or a unit test. This Mac's current context is production.
+    static var guardsKubeconfig: Bool { isIsolated || isUnitTest }
+
+    /// The kubeconfig files Overterm reads, in kubectl's order: the shell's
+    /// KUBECONFIG list (else ~/.kube/config), then `extra`
+    /// (`kubernetes.kubeconfigs`). OVERTERM_KUBECONFIG — a scenario's fake
+    /// clusters — replaces them all. An isolated run or a unit test reads
+    /// only OVERTERM_KUBECONFIG's files, never one under ~/.kube, and
+    /// without it none: it never asks the shell, so an inherited KUBECONFIG
+    /// is never seen either. Blocking the first time (the shell is asked):
+    /// off the main thread.
+    static func kubeconfigs(extra: [String]) -> [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let overterm = env["OVERTERM_KUBECONFIG"]
+        let guarded = guardsKubeconfig
+        let hasOwn = !(overterm ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+        let variable = guarded || hasOwn ? nil : ShellEnvironment.environment()["KUBECONFIG"]
+        return KubeconfigSources.paths(overterm: overterm, guarded: guarded, kubeconfig: variable, extra: extra, home: home)
+    }
+
     /// Codex's rollouts: ~/.codex/sessions, or $CODEX_HOME/sessions. Every
     /// turn ends with the quota the server reported.
     static var codexSessionsDirectory: URL {
