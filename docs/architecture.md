@@ -2299,8 +2299,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 
 The design is `docs/design/kubernetes/analysis.md`; this is what exists of
 it (`Sources/Overterm/Kubernetes/`). So far: the kubeconfigs, the contexts
-and their classes, and the settings — nothing runs kubectl and nothing
-reaches a cluster yet.
+and their classes, the settings, and the proxies a request would go
+through — no page or panel asks for one yet, so nothing reaches a cluster
+in the app.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2359,7 +2360,89 @@ line and edited in place there, its fields checked one by one
 (`SettingSpec.fitted`) — a field that doesn't fit is reported and left
 out, the rest of the entry kept, so a typo never takes a hand-set
 production class with it. The page lists the entries and sends you to
-settings.json to edit them.
+settings.json to edit them. `kubernetes.proxyIdleMinutes` (10) and
+`kubernetes.kubectlPath` (empty: found) are the proxies'
+(`Settings.kubernetesProxyConfiguration`).
+
+**The proxies** (`KubeProxies`, one for the app). Everything Overterm asks a
+cluster goes through the context's own long-lived `kubectl proxy --context
+C --unix-socket S`, started by its first request (`KubeProxy.open`, a
+`ManagedProcess`: ready on kubectl's `Starting to serve on` line, its
+socket removed before and after, closed by its pid and at quit) and kept
+in a `ManagedProcessPool` keyed by the whole `KubeProxySpec`, so a dead
+one is opened again on the next use. kubectl keeps the credentials — exec
+plugins, certificates, token refresh — and Overterm speaks plain HTTP on
+the socket (`UnixHTTPTransport.kubernetes`: `Host: localhost`, readiness
+`/version`).
+
+- **The flags** (`KubeProxyFlags`, decision 12): every proxy refuses
+  exec, attach, port-forward and the pod, service and node proxy
+  subresources (and KubeVirt's console) with `--reject-paths` — which
+  replaces kubectl's defaults, so the list repeats them — and answers only
+  `Host: localhost` (`--accept-hosts=^localhost$`); a read-only context's
+  (`!KubeContext.isWritable`: production and remote by default) also
+  `--reject-methods` every write method, POST included, since a path
+  can't tell a permission review from a create. A context that becomes
+  writable, or stops being, gets a new proxy with the other flags. No
+  kuberc can switch the filters off: kubectl (1.33+) reads `~/.kube/kuberc`,
+  whose `defaults` set any flag the command line leaves out, so every
+  proxy gets `--disable-filter=false` and runs with `KUBERC=off` (and
+  `KUBECTL_KUBERC=false`), whatever the login shell exported. kubectl
+  redirects `//api/…` and `/./` before it proxies anything, and decodes
+  `%2F` before the filter: `KubeProxyTests` runs the real kubectl (when
+  installed) against a server of its own on 127.0.0.1 through a
+  kubeconfig of its own and checks that GET passes, every write and every
+  listed subresource is 403 on a read-only context, writes pass on a
+  writable one while exec stays 403, a wrong Host is 403, and nothing else
+  reached the server.
+- **The socket** (`KubeSocketFolder`): `/tmp/ot-kube-<uid>-<pid>/`, 0700,
+  checked to be a folder (not a link) of this user's; not the support
+  folder, where the spike's path was 132 bytes and the bind failed. The
+  socket is named by the first 12 hex digits of the context's SHA-256, its
+  path checked against the 103 bytes a unix socket has. The folder is
+  removed at quit, and a dead run's swept when the next one makes its own.
+- **The environment** (`KubeProxyEnvironment`): the login shell's
+  (`ShellEnvironment`; `aws` and `kubectl-oidc_login` must be found), with
+  `KUBECONFIG` set to exactly `AppEnvironment.kubeconfigs`' files. Guarded
+  (an isolated run, a unit test) it is the process's own environment, no
+  `AWS_*`, `KUBECONFIG` only `OVERTERM_KUBECONFIG`'s files — never one under
+  `~/.kube` — and a cache folder and a `HOME` of the run's own (in the
+  socket folder), so nothing under the user's home is read; without those files the
+  planner throws `noKubeconfig` before it looks for kubectl or asks any
+  shell (`KubeProxyTests`, and the `settings` scenario).
+- **Which kubectl** (`KubectlLocator`, decision 22): `kubernetes.kubectlPath`
+  if set (it overrides), else `/usr/local/bin`, `/opt/homebrew/bin`, Docker
+  Desktop's bundle, `~/.rd/bin`, then the login shell's PATH, one each with
+  symlinks followed; once a `/version` answer gave the server's minor, the
+  next proxy gets the copy closest to it (`Kubectls` asks each `version
+  --client` once). An isolated run uses only the setting.
+- **Before it starts** (`KubeProxyPlanner`): a plugin with
+  `interactiveMode: Always` needs a terminal the proxy hasn't
+  (`needsTerminal`: run `kubectl --context C version` in a tab), and a
+  plugin that isn't on the PATH says so with its `installHint`.
+- **Slots**: at most `maxProxies`, one always the page's (`setPage`, or a
+  `.page` request): background requests use `maxProxies − 1` at most and
+  are refused (`noSlot`) when none is idle; the page takes the least
+  recently used idle one's slot, else a busy background one's. A proxy no
+  request has used for `idleTime` is closed (a sweep every minute while any
+  is open); a request or stream in flight keeps it. A request counts
+  itself in its context's entry by the entry's id: two first requests
+  that wait for a slot share one entry, and one whose entry was closed
+  while it waited (another's slot, `retry`, `close`) ends with
+  `closedWhileOpening` — a retry may go — and the kubectl that finished
+  opening for it is ended, not left uncounted.
+- **oidc one at a time**: kubelogin opens a browser and listens on
+  127.0.0.1:8000, so a context whose user signs in with it holds a gate
+  until its first answer; others wait (`status`: `signingIn` — "Waiting
+  for the browser sign-in" — and `waitingForSignIn(behind:)`).
+- **Errors** (`KubeProxyProblem.classify`): the server's own errors pass
+  through as Status JSON and stay responses; the proxy's own failures are
+  a 500 with plain text. "getting credentials: exec: …" stops the
+  context's requests — each would run the plugin again (the spike: 1.3–4.6 s
+  of `aws` apiece) — until `retry`: for `aws`, "Sign in again: aws sso
+  login [--profile p]" (`command`, to run in a tab later); for kubelogin a
+  sign-in that timed out or failed; a missing plugin. A dial error is "the
+  cluster can't be reached (VPN?)" and doesn't stop anything.
 
 ## Simulator
 

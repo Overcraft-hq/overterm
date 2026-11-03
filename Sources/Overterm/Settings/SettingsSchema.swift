@@ -721,6 +721,15 @@ enum SettingsSchema {
             help:
                 "Each context in use has one kubectl proxy, and kubectl keeps its credentials. One is always kept for the page's context; past this many, the least recently used idle one closes.",
             kind: .integer(1...16, step: 1, unit: "proxies"), defaultValue: .int(4), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.proxyIdleMinutes", section: .kubernetes, group: "Connections", title: "Close a context's proxy after",
+            help: "A proxy nothing has used for this long is closed; the next request starts it again.",
+            kind: .integer(1...240, step: 1, unit: "minutes"), defaultValue: .int(10), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.kubectlPath", section: .kubernetes, group: "Connections", title: "kubectl",
+            help:
+                "Empty: the installed kubectl closest to the cluster's version — /usr/local/bin, /opt/homebrew/bin, Docker Desktop's, your shell's PATH. Overterm never downloads one.",
+            kind: .text(placeholder: "/usr/local/bin/kubectl", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [
