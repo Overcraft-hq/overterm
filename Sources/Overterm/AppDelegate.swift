@@ -103,8 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // A volume's helpers, while a remote engine's forward is still open.
         DockerHelpers.removeAll(waiting: 2)
         // Every long-lived child Overterm started (a remote engine's ssh
-        // forward), by its own pid.
+        // forward, each context's kubectl proxy), by its own pid.
         ManagedProcess.closeAll()
+        // The proxies' sockets' folder, once kubectl is gone.
+        KubeSocketFolder.app.remove()
         // A scan's Scout, or it outlives the app.
         DockerScoutScans.shared.cancelAll()
         BrowserBridge.shared.stop()

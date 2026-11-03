@@ -4231,6 +4231,8 @@ final class E2ERunner {
         check("and Keyboard Shortcuts by a command", app.settingsPage.sections.contains(.shortcuts), "\(app.settingsPage.sections)")
         app.settingsPage.search = "kubeconfig"
         check("and Kubernetes by its kubeconfigs", app.settingsPage.sections.contains(.kubernetes), "\(app.settingsPage.sections)")
+        app.settingsPage.search = "kubectl"
+        check("and by which kubectl its proxies run", app.settingsPage.sections.contains(.kubernetes), "\(app.settingsPage.sections)")
         app.settingsPage.search = ""
         app.settingsPage.show(.kubernetes)
         await pause(0.3)
@@ -4241,6 +4243,20 @@ final class E2ERunner {
             "an isolated run reads no kubeconfig of the user's",
             AppEnvironment.guardsKubeconfig && AppEnvironment.kubeconfigs(extra: ["~/.kube/config"]).isEmpty
                 && KubeContextList.fromEnvironment(extra: ["~/.kube/config"], settings: [:]).contexts.isEmpty)
+        // So no proxy can start: the planner refuses before it asks for a kubectl.
+        let noProxy = await Task.detached {
+            do {
+                _ = try await KubeProxyPlanner().plan(
+                    KubeContext(
+                        name: "fake-dev", cluster: "fake", server: nil, namespace: nil, user: "u", auth: nil, file: nil, contextClass: .remote,
+                        settings: KubeContextSettings()),
+                    configuration: KubeProxies.Configuration(extraKubeconfigs: ["~/.kube/config"]), serverMinor: nil)
+                return false
+            } catch {
+                return (error as? KubeProxyProblem) == .noKubeconfig
+            }
+        }.value
+        check("and starts no kubectl proxy without OVERTERM_KUBECONFIG", noProxy)
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             app.settingsPage.show(.appearance)
             await pause(0.8)
