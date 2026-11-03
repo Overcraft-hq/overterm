@@ -28,10 +28,26 @@ struct HTTPResponse: Sendable {
 struct HTTPError: LocalizedError, Equatable, Sendable {
     var status: Int
     var message: String
+    /// The error's answer whole — its headers (`Content-Type`, a 429's
+    /// `Retry-After`) and body — when a stream's server sent one.
+    var response: HTTPResponse?
+
+    init(status: Int, message: String, response: HTTPResponse? = nil) {
+        self.status = status
+        self.message = message
+        self.response = response
+    }
+
+    /// From an answer that isn't a success.
+    init(_ response: HTTPResponse) {
+        self.init(status: response.status, message: response.errorMessage, response: response)
+    }
 
     var errorDescription: String? { message }
 
     static func unreachable(_ detail: String) -> HTTPError { HTTPError(status: 0, message: detail) }
+
+    static func == (lhs: HTTPError, rhs: HTTPError) -> Bool { lhs.status == rhs.status && lhs.message == rhs.message }
 }
 
 /// How bytes get to a server and back: NIO over a socket for the app, the
@@ -265,11 +281,13 @@ struct UnixHTTPTransport: HTTPTransport {
                     try await outbound.write(.head(head))
                     try await outbound.write(.end(nil))
                     var status = 0
+                    var answerHeaders: [(String, String)] = []
                     var errorBody = Data()
                     for try await part in inbound {
                         switch part {
                         case .head(let head):
                             status = Int(head.status.code)
+                            answerHeaders = head.headers.map { ($0.name, $0.value) }
                             answered.value = true
                         case .body(let buffer):
                             guard status < 400 else {
@@ -282,9 +300,7 @@ struct UnixHTTPTransport: HTTPTransport {
                                 throw BodyFailure(error: error)
                             }
                         case .end:
-                            guard status < 400 else {
-                                throw HTTPError(status: status, message: HTTPResponse(status: status, headers: [], body: errorBody).errorMessage)
-                            }
+                            guard status < 400 else { throw HTTPError(HTTPResponse(status: status, headers: answerHeaders, body: errorBody)) }
                             return
                         }
                     }
@@ -407,6 +423,7 @@ private final class ResponseStreamer: ChannelInboundHandler, @unchecked Sendable
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     private var status = 0
+    private var headers: [(String, String)] = []
     private var errorBody = Data()
 
     init(_ continuation: AsyncThrowingStream<Data, Error>.Continuation) {
@@ -417,12 +434,13 @@ private final class ResponseStreamer: ChannelInboundHandler, @unchecked Sendable
         switch unwrapInboundIn(data) {
         case .head(let head):
             status = Int(head.status.code)
+            headers = head.headers.map { ($0.name, $0.value) }
         case .body(var buffer):
             guard let bytes = buffer.readBytes(length: buffer.readableBytes) else { return }
             if status >= 400 { errorBody.append(contentsOf: bytes) } else { continuation.yield(Data(bytes)) }
         case .end:
             if status >= 400 {
-                continuation.finish(throwing: HTTPError(status: status, message: HTTPResponse(status: status, headers: [], body: errorBody).errorMessage))
+                continuation.finish(throwing: HTTPError(HTTPResponse(status: status, headers: headers, body: errorBody)))
             } else {
                 continuation.finish()
             }

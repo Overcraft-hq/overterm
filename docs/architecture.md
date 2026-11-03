@@ -2217,9 +2217,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 
 The design is `docs/design/kubernetes/analysis.md`; this is what exists of
 it (`Sources/Overterm/Kubernetes/`). So far: the kubeconfigs, the contexts
-and their classes, the settings, and the proxies a request would go
-through — no page or panel asks for one yet, so nothing reaches a cluster
-in the app.
+and their classes, the settings, the proxies a request would go through,
+and the client that reads through them (and the fake API server it is
+tested against) — no page or panel asks for one yet, so nothing reaches a
+cluster in the app.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2361,6 +2362,105 @@ the socket (`UnixHTTPTransport.kubernetes`: `Host: localhost`, readiness
   login [--profile p]" (`command`, to run in a tab later); for kubelogin a
   sign-in that timed out or failed; a missing plugin. A dial error is "the
   cluster can't be reached (VPN?)" and doesn't stop anything.
+
+**The client** (`KubeClient`) reads a cluster over a `KubeConnection`: a
+context's proxy (`KubeProxyConnection`, through `KubeProxies`) or any
+transport (`KubeSocketConnection`: a socket spoken to directly, the
+tests'). The connection has no method to pass — every request is a GET;
+writes, when they come, are a path of their own with their review and
+confirmation.
+
+- **Discovery** (`discover`, `KubeDiscovery`): aggregated discovery when
+  the server has it (always since 1.33) — `/api` and `/apis` asked for
+  `APIGroupDiscoveryList`, two requests — else the legacy walk: the core
+  version's resource list, then each group's preferred version's, eight
+  at a time. A group that is down is noted in `failedGroups` rather than
+  thrown: the aggregated list marks an aggregated API that is down
+  (metrics.k8s.io's, often) with `freshness: Stale` — that version is
+  skipped, the group's next one used, as client-go does — and the legacy
+  walk's list answers 503. A kind (`KubeResourceKind`)
+  says its group, version, plural, Kind, scope, verbs, short names and
+  subresources (legacy's `pods/log` folded into `pods`); `kind(_:)` finds
+  one by any of kubectl's names (`po`, `pod`, `Pod`, `deploy`,
+  `deployments.apps`), the core group first, as kubectl resolves `events`.
+- **Lists are Table rows only** (`list`): `Accept: application/json;as=Table;
+  v=v1;g=meta.k8s.io, application/json` and `includeObject=None` — the
+  spike's 2886 pods were 885 KB that way, 35 MB with the default metadata —
+  paged with `limit=500` and `continue`; an expired `continue` (410) lists
+  again from the start. Selectors go to the server. Across all namespaces
+  a namespaced kind's rows carry their metadata (`includeObject=Metadata`,
+  `KubeClient.includeObject`): no core kind's Table has a Namespace column
+  — `kubectl get -A` adds it from the metadata — and with rows only, two
+  pods called `postgres-0` in two namespaces would be one row, a DELETED
+  for one removing the other. In one namespace the request's is the
+  row's, and rows stay cells only. `KubeTableReader` reads
+  a Table (columns with their `priority`: 0 is the default view, the rest
+  `-o wide`'s; `format: name` the identifier) or, from an API without
+  Table support, a plain List as Name and Created At. A row
+  (`KubeRow`) is known by its namespace and name (`KubeRowID`): a
+  Namespace column (a CRD's printer column may have one), else the
+  embedded metadata's, else the request's.
+  `KubePodSummary` reads a pod's Ready, Status and Restarts cells
+  (`7 (2m ago)` since 1.22) into whether it is ready, failing and why
+  (`CrashLoopBackOff`, `OOMKilled`, `Init:…` said as the init container's).
+- **One object** (`object`) is one plain GET, whole, when its detail opens.
+- **Following a list** (`follow`) is the informer's loop, as
+  `KubeFollowUpdate`s a `KubeRows` applies: `.listed` (the whole list),
+  then the watch from the list's resourceVersion (`watch=1`,
+  `allowWatchBookmarks`, `includeObject=None`, `timeoutSeconds` 5–10
+  minutes at random) — `.changed` rows, `.bookmark` where it has got. A
+  watch on a Table sends `columnDefinitions` in its first event only, so
+  `KubeWatchDecoder` keeps the list's headers for the rest. A watch the
+  server ends is watched again from the last resourceVersion, not listed;
+  a 410 — an in-stream `ERROR` event or the watch's answer — lists again.
+  With `streamingLists` (1.32, 1.34+: `servesStreamingLists`) the first
+  list is a watch with `sendInitialEvents`, its ADDED events the list until
+  the bookmark annotated `k8s.io/initial-events-end` (another bookmark
+  before it only moves the version on); one cut before that end is listed
+  and watched instead, as is a server that refuses it (422, the gate off).
+  A list without a resourceVersion (metrics.k8s.io's, which has no watch)
+  is listed again every `unversionedPoll` (30 s), never watched from "".
+  A 429 or the server's 5xx — on the list, as the watch's answer or in
+  the stream — is `.retrying` and tried again from where it got: after
+  the `Retry-After` (10 s at most), else backing off. A watch that ends at
+  once, again and again, waits longer each time (to `maxBackoff`).
+- **Errors**: a proxy's own 500 in plain text is `KubeProxyProblem`
+  (`classify`, with the connection's `KubeSignIn`: an expired AWS session
+  is "aws sso login --profile p"), and a follow ends at it — no retry runs
+  the plugin again; the server's own Status is `KubeAPIError` (status,
+  reason, message); a 429 is retried after its `Retry-After`, three times.
+  A stream's error keeps its answer whole (`HTTPError.response`: the
+  `Content-Type`, the Status, the `Retry-After`), so a watch's JSON 500 is
+  the server's `KubeAPIError`, not the proxy's plain text.
+
+**The fake** (`FakeKubeAPI`, `Sources/`, for the tests and the scenario to
+come): an API server on a unix socket of its own and on 127.0.0.1
+(`listenTCP`, for a real `kubectl proxy` in front of it), holding
+namespaces and pods as values versioned as the server versions them — and
+serving empty lists of the other kinds it discovers. It answers
+`/version`, both discoveries (`aggregatedDiscovery`; `failingGroups`
+`Stale` in the aggregated list, 503 in the walk),
+lists as Tables (`includeObject` None, Metadata or Object) or plain JSON,
+paged (`expireContinueTokens`), one object, and watches: replayed from a
+version, sent as `addPod`/`updatePod`/`deletePod` change things,
+`bookmark()`, a 410 for a version before `compact()` (in the stream, or
+as the answer with `goneAsAnswer`), `expireWatches` (an in-stream 410),
+`endWatches` (the server's timeout), `sendInitialEvents` (refused with a
+422 without `streamingLists`; `interimBookmarks` puts a plain bookmark
+among the initial events). `unversionedLists` answers lists without a
+resourceVersion. `failCredentials` makes every answer the proxy's 500 in
+plain text, `throttle` 429s, `failWatches` answers the next watches with a
+429 or a 5xx. What a test sets is behind the fake's lock, as its state
+is. It records every request
+(method, path, query, Accept), so a test shows that no write method and
+no subresource reached it (`writes`, `subresourceRequests` — a
+Namespace's own `finalize` and `status` included); it has no
+exec, attach or port-forward. `KubeClientTests` checks all of the client
+against it — every test ends by asserting only GETs arrived — and runs
+the real kubectl (when installed) as a read-only context's proxy in
+front of it through a kubeconfig of its own: discovery, a list, a followed
+change and a 410 pass through. A unit test also shows the app's own
+proxies reach nothing from a unit test: no kubeconfig, so no kubectl.
 
 ## Simulator
 

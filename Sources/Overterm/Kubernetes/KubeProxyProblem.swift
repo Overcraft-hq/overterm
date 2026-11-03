@@ -110,6 +110,18 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
         return .transport(detail.isEmpty ? "kubectl proxy failed." : detail)
     }
 
+    /// A stream's error answer, read as `classify` reads a response: its
+    /// `Content-Type` and body when the transport kept them (a JSON
+    /// Status's message is not the proxy's plain text), else its message.
+    static func classify(_ error: HTTPError, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+        guard let response = error.response else {
+            return classify(status: error.status, contentType: nil, text: error.message, stderr: stderr, signIn: signIn)
+        }
+        return classify(
+            status: response.status, contentType: response.header("Content-Type"), text: String(decoding: response.body.prefix(4096), as: UTF8.self),
+            stderr: stderr, signIn: signIn)
+    }
+
     /// The last line that says something.
     static func lastLine(of text: String) -> String? {
         text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty }

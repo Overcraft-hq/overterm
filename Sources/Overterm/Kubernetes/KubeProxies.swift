@@ -169,7 +169,7 @@ actor KubeProxies {
             await finish(context.name, id, holds: holds, problem: nil, answered: true)
             continuation.finish()
         } catch let error as HTTPError {
-            let problem = KubeProxyProblem.classify(status: error.status, contentType: nil, text: error.message, stderr: proxy.stderr, signIn: proxy.signIn)
+            let problem = KubeProxyProblem.classify(error, stderr: proxy.stderr, signIn: proxy.signIn)
             await finish(context.name, id, holds: holds, problem: problem, answered: error.status != 0)
             continuation.finish(throwing: problem ?? error)
         } catch {
