@@ -2544,6 +2544,93 @@ front of it through a kubeconfig of its own: discovery, a list, a followed
 change and a 410 pass through. A unit test also shows the app's own
 proxies reach nothing from a unit test: no kubeconfig, so no kubectl.
 
+**The model** (`KubernetesModel`, one for the app, as `DockerModel` is):
+the contexts, the one the page shows and its namespace, that context's
+pods, how its proxy stands. Each window's page holds it while it shows in
+a window on screen (`show`/`hide`, counted, through
+`updateKubernetesPageHold` — the emitted visibility, since
+`showingOverlay` isn't set yet); nothing is read until then — not the
+kubeconfig, not a cluster — and the last `hide` ends the watch and the
+status poll (a proxy is left to its idle close, so coming back needs no
+new sign-in). The kubeconfig is read on a GCD thread
+(`KubeContextList.fromEnvironment`, so `AppEnvironment`'s guard holds)
+each time a page first shows, and again when `kubernetes.kubeconfigs` or
+`kubernetes.contexts` change while one does; the model follows
+`kubernetes.*` itself, and `kubernetes.enabled` off stops everything and
+closes every proxy. The context shown is the one it showed, else the
+one last picked (remembered in `AppEnvironment.defaults`), else the first
+pinned, else kubectl's current, else the first (`choose`); its namespace
+is the one last picked for it, else `defaultNamespace`, else the
+context's own, else `default`, as kubectl has it (`defaultScope`); `0`
+is all of them. The pods are `KubeClient.follow(.pods)` over the
+context's `KubeProxyConnection` (a test's or the scenario's stand-in
+connection through `connectOverride`): the first list is applied at
+once, the watch's changes in batches every `flushInterval` (120 ms), one
+published change each; a `.retrying` says so while the rows stand, and
+a failure (a `KubeProxyProblem`, a 403) is the list's state with its
+reason and, for a sign-in, the command to run. The server's version and
+the namespaces (the context's `accessibleNamespaces`, else the server's
+list; a 403 means one is typed) are read once a context is picked. The
+proxy's state (`KubeProxies.status`: open, signing in, waiting behind
+another context's browser sign-in, stopped with its reason) is asked
+once a second while a page shows. Every request is a GET; the model has
+no verb that writes.
+
+**Ages** (`KubeAge`, pure). The server renders Age when it answers, so a
+cell is stale once it arrives. A row across all namespaces carries its
+metadata (`KubeRow.created`, from the embedded `creationTimestamp`) and
+its age is that one's; with rows only (one namespace) the cell is all
+there is, so the age is what it said (`seconds` reads kubectl's
+`2d3h`) plus the time since the row came (`Anchor`, kept per row as
+rows arrive and change). `format` is apimachinery's `HumanDuration`.
+Each visible Age cell is a `TimelineView` a second apart — a cell
+scrolled away isn't drawn, so only the visible ones are recomputed.
+
+**The page** (⌥⌘J, `kubernetes.page`; `WorkspaceOverlay.kubernetes`,
+declared as a `WorkspacePage` in `TerminalWindowController+Kubernetes`):
+`KubernetesPageModel` (a window's: section, filter, selection, sort,
+`wide`, the keys) and `KubernetesPageView`. Left: the contexts, each
+with its class's colour and kubectl's current marked, the namespace
+picker (all, the favourites, the server's list, one typed), the sections
+(Pods only, for now) and the context's card (class, writable or
+read-only, how it signs in, its server). Middle: the Pods list as a
+`ResourceTable` of the server's columns — those `kubectl get pods`
+shows, `-o wide`'s too with `w`, Namespace first across all of them as
+`kubectl get -A` adds it — sorted by any column (numbers as numbers, ages
+by age) or by namespace and name, filtered by text, `status:`, `ns:` and
+`-` (`KubePodFilterKey`, through `ResourceFilter`). A failing pod's
+Status is its reason in red (`KubePodSummary.exitReason`:
+`CrashLoopBackOff`, `OOMKilled`, `… (init container)`), and the header
+counts the failing ones. Bottom: the context bar — the proxy's state,
+the server's version, a stopped context's reason with Try Again and the
+command that signs in again (in a terminal tab), the class. On a
+production context a red band runs across the top of the whole page,
+above the sidebar and the list, with the context's name, and its card is
+edged in red. The empty states: Kubernetes off (Settings ▸ Kubernetes),
+no kubeconfig (an isolated run says only OVERTERM_KUBECONFIG's file is
+read; what couldn't be read is listed), loading. The keys
+(`KubernetesKey`, while the list has the keyboard): `1` Pods, `w`, `0`,
+`/`, `?`. The right-click menu only copies names: nothing here changes a
+cluster.
+
+**The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
+names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
+the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
+and 127.0.0.1 and writes there two contexts on it, `fake-dev` (remote,
+so read-only although its server is loopback) and `fake-prod`
+(production by name). With kubectl installed, `kubernetes.kubectlPath`
+names it and the real `kubectl proxy` runs in front of the fake (that
+file as its only KUBECONFIG, `--context`, a HOME of the run's own); else
+a stand-in connection goes to the fake's socket. It checks the pods
+listed as rows only in the server's columns, a crashing pod's reason
+(and drawn, read off the window), the watch's changes, the keys, all
+namespaces (two same-named pods apart, metadata asked for there),
+`fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a
+DELETE, an exec and a port-forward; that the fake recorded no write and
+no subresource; that hidden the page's watch ends and nothing is asked;
+the page with Kubernetes off; and that every kubectl it started ends —
+the scenario's `exit` isn't the app's quit.
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a

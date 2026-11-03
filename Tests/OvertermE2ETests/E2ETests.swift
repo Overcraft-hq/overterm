@@ -80,6 +80,16 @@ final class E2ETests: XCTestCase {
     func testObservability() throws { try run("observability") }
     // The whole Docker page, end to end: 80–110 s on a busy machine.
     func testDocker() throws { try run("docker", timeout: 300) }
+    /// The Kubernetes page against the fake API server: the run's only
+    /// kubeconfig is this temporary file, which the scenario writes once
+    /// the fake listens — never ~/.kube/config, whose current context is
+    /// production.
+    func testKubernetes() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kube-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try run("kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 180)
+    }
     func testSuspend() throws { try run("suspend") }
     func testDatabaseAgent() throws { try run("databaseAgent") }
     func testDatabaseTunnel() throws { try run("databaseTunnel") }
