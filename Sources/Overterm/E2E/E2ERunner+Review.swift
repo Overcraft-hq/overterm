@@ -62,6 +62,33 @@ extension E2ERunner {
         check("n: the first change", review.scrollTarget == review.changes.first)
         press("n")
         check("n again: the second", review.scrollTarget == review.changes.dropFirst().first)
+
+        // Side by side, the line between the sides drags: a real press on
+        // it, in the window — the files' column is 290 pt and a 1 pt line.
+        review.splitFraction = 0.5
+        await pause(0.3)
+        if let page = app.reviewView, let window = app.window {
+            let frame = page.convert(page.bounds, to: nil)
+            let diffLeft = frame.minX + 291
+            let start = NSPoint(x: (diffLeft + (frame.maxX - diffLeft) * 0.5).rounded(), y: frame.minY + frame.height * 0.4)
+            let end = NSPoint(x: start.x - 120, y: start.y)
+            func mouse(_ type: NSEvent.EventType, _ point: NSPoint) -> NSEvent {
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            window.sendEvent(mouse(.leftMouseDown, start))
+            for step in 1...6 {
+                window.sendEvent(mouse(.leftMouseDragged, NSPoint(x: start.x - CGFloat(step) * 20, y: start.y)))
+                await pause(0.02)
+            }
+            window.sendEvent(mouse(.leftMouseUp, end))
+            let expected = 0.5 - 120 / (frame.maxX - diffLeft)
+            check(
+                "the sides resize: their divider drags", await eventually(2) { abs(review.splitFraction - expected) < 0.03 },
+                "\(review.splitFraction), want \(expected)")
+            check("and is kept for the next review", AppEnvironment.defaults.double(forKey: ReviewModel.splitKey) == Double(review.splitFraction))
+        }
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             await pause(0.8)
             app.captureWindow(to: png)

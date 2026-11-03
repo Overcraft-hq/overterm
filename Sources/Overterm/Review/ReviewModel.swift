@@ -46,6 +46,13 @@ final class ReviewModel: ObservableObject, Identifiable {
     @Published var layout: Layout {
         didSet { defaults.set(layout.rawValue, forKey: Self.layoutKey) }
     }
+    /// Side by side: how much of the width the old side takes — its
+    /// divider dragged, kept for every review after.
+    @Published var splitFraction: CGFloat {
+        didSet { defaults.set(Double(splitFraction), forKey: Self.splitKey) }
+    }
+    static let splitKey = "reviewSplitFraction"
+    static let splitRange: ClosedRange<CGFloat> = 0.15...0.85
     /// The pull request, for the header (title, author, branches, checks).
     @Published private(set) var pullRequest: PullRequestDetail?
     /// The change (`n`/`p`) to bring into view: its first line's id. The
@@ -64,6 +71,8 @@ final class ReviewModel: ObservableObject, Identifiable {
         self.source = source
         self.defaults = defaults
         layout = Layout(rawValue: defaults.string(forKey: Self.layoutKey) ?? "") ?? .split
+        let fraction = defaults.double(forKey: Self.splitKey)
+        splitFraction = fraction == 0 ? 0.5 : min(max(CGFloat(fraction), Self.splitRange.lowerBound), Self.splitRange.upperBound)
     }
 
     var title: String {

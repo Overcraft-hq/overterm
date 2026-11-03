@@ -193,8 +193,11 @@ private struct ReviewFilePane: View {
             if diff.lines.isEmpty {
                 note(file.kind == .renamed ? "Renamed, content unchanged." : "No textual diff (binary or empty).")
             } else {
-                ReviewDiffView(diff: diff, layout: model.layout, target: model.scrollTarget, rows: model.rows[file.path] ?? [], theme: theme)
-                    .id(file.path)
+                ReviewDiffView(
+                    diff: diff, layout: model.layout, target: model.scrollTarget, rows: model.rows[file.path] ?? [], theme: theme,
+                    fraction: $model.splitFraction
+                )
+                .id(file.path)
             }
         } else if let failure = model.failures[file.path] {
             note(failure)
@@ -219,12 +222,53 @@ private struct ReviewDiffView: View {
     let target: Int?
     let rows: [SplitDiff.Row]
     @ObservedObject var theme: ChromeTheme
+    /// The old side's share of the width (ReviewModel.splitFraction).
+    @Binding var fraction: CGFloat
+    /// The fraction as a drag began.
+    @State private var dragStart: CGFloat?
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
     var body: some View {
+        GeometryReader { geometry in
+            let left = (geometry.size.width * fraction).rounded()
+            content(left: layout == .split ? left : nil)
+                .overlay(alignment: .topLeading) {
+                    if layout == .split { divider(at: left, width: geometry.size.width) }
+                }
+        }
+    }
+
+    /// A band over the 1 pt line between the sides, the whole height: drag
+    /// it, or double-click it for half and half.
+    private func divider(at x: CGFloat, width: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 9)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .offset(x: x - 4)
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let start = dragStart ?? fraction
+                        if dragStart == nil { dragStart = start }
+                        guard width > 0 else { return }
+                        let moved = start + drag.translation.width / width
+                        fraction = min(max(moved, ReviewModel.splitRange.lowerBound), ReviewModel.splitRange.upperBound)
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            .onTapGesture(count: 2) { fraction = 0.5 }
+            .help("Drag to resize the sides; double-click for half and half")
+            .accessibilityIdentifier("reviewSplitDivider")
+    }
+
+    private func content(left: CGFloat?) -> some View {
         let palette = palette
-        ScrollViewReader { proxy in
+        return ScrollViewReader { proxy in
             ScrollView {
                 // Lazy: a file at the cap is twenty thousand lines.
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -238,7 +282,8 @@ private struct ReviewDiffView: View {
                         ForEach(rows) { row in
                             SplitRowView(
                                 row: row, left: row.left.map(diff.style(of:)) ?? DiffLineStyle(),
-                                right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors
+                                right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors,
+                                leftWidth: left
                             )
                             .equatable()
                             .id(row.id)
@@ -290,9 +335,11 @@ private struct SplitRowView: View, Equatable {
     let right: DiffLineStyle
     let palette: DiffPalette
     let colors: ReviewRowColors
+    /// The old side's width, the divider's place (nil: half each).
+    let leftWidth: CGFloat?
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
-        a.row == b.row && a.left == b.left && a.right == b.right && a.colors == b.colors
+        a.row == b.row && a.left == b.left && a.right == b.right && a.colors == b.colors && a.leftWidth == b.leftWidth
     }
 
     var body: some View {
@@ -306,6 +353,7 @@ private struct SplitRowView: View, Equatable {
         } else {
             HStack(alignment: .top, spacing: 0) {
                 half(row.left, style: left, number: row.left?.oldNumber, side: .removed)
+                    .frame(width: leftWidth.map { max(0, $0 - 0.5) })
                 colors.border.frame(width: 1)
                 half(row.right, style: right, number: row.right?.newNumber, side: .added)
             }
