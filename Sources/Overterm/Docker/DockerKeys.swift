@@ -1,9 +1,9 @@
 import Foundation
 
-/// The Docker lists' keys: single letters, only while a list has the
-/// keyboard — the terminal never sees them, and a list is where a
-/// keystroke can't be text. `?` shows this table. Pure.
-enum DockerKey: String, CaseIterable, Sendable {
+/// The Docker lists' keys (`ResourceKey`): single letters, only while a
+/// list has the keyboard — the terminal never sees them, and a list is
+/// where a keystroke can't be text. `?` shows this table. Pure.
+enum DockerKey: String, ResourceKey {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, files, open, database, vulnerabilities, settings, remove,
         composeUp, composeUpFreePorts, composeDown, checkUpdates, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models,
         help
@@ -97,18 +97,6 @@ enum DockerKey: String, CaseIterable, Sendable {
         case .builds: "Builds"
         case .models: "Models — Docker Model Runner's"
         case .help: "These keys"
-        }
-    }
-
-    /// The key a typed character is, if any. Case matters: `D` is compose
-    /// down, `d` the Database panel; `U` up on free ports; `C` checks for
-    /// updates, `c` cleans up.
-    static func of(_ characters: String) -> DockerKey? {
-        switch characters {
-        case "\r": .details
-        case " ": .toggleDetail
-        case "\u{7F}", "\u{08}": .remove
-        default: allCases.first { $0.key.count == 1 && $0.key == characters }
         }
     }
 }
