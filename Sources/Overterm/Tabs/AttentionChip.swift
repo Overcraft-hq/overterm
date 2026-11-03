@@ -1,4 +1,35 @@
+import Combine
 import SwiftUI
+
+/// The tabs that need you, kept up as any tab's mark changes. The strip
+/// observes the store, which says nothing when one tab's activity does: a
+/// mark cleared by looking at the tab left the chip saying "1 need you",
+/// and its list, read afresh when opened, empty.
+@MainActor
+final class AttentionWatch: ObservableObject {
+    /// Blocked first, then failed, then finished — the order you want to
+    /// deal with them in. `Mark` is already ordered by urgency.
+    @Published private(set) var waiting: [Tab] = []
+    private var subscription: AnyCancellable?
+
+    init(store: TabStore) {
+        waiting = Self.waiting(in: store.tabs)
+        subscription = store.$tabs
+            .map { tabs in Publishers.MergeMany(tabs.map { $0.$activity.map { _ in () } }).prepend(()) }
+            .switchToLatest()
+            // `@Published` emits before the change: read the tabs after it.
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak store] in
+                guard let self, let store else { return }
+                let now = Self.waiting(in: store.tabs)
+                if now.map(\.id) != self.waiting.map(\.id) { self.waiting = now }
+            }
+    }
+
+    static func waiting(in tabs: [Tab]) -> [Tab] {
+        tabs.filter(\.activity.needsAttention).sorted { $0.activity.mark > $1.activity.mark }
+    }
+}
 
 /// "3 need you" in the strip, and the list behind it.
 ///
@@ -9,15 +40,19 @@ import SwiftUI
 /// "what is outstanding", next to the Dock badge's.
 struct AttentionChip: View {
     @ObservedObject var store: TabStore
+    @StateObject private var attention: AttentionWatch
     @ObservedObject var theme: ChromeTheme
     let select: (Tab) -> Void
     @State private var showing = false
 
-    /// Blocked first, then failed, then finished — the order you want to
-    /// deal with them in. `Mark` is already ordered by urgency.
-    private var waiting: [Tab] {
-        store.tabs.filter(\.activity.needsAttention).sorted { $0.activity.mark > $1.activity.mark }
+    init(store: TabStore, theme: ChromeTheme, select: @escaping (Tab) -> Void) {
+        self.store = store
+        self.theme = theme
+        self.select = select
+        _attention = StateObject(wrappedValue: AttentionWatch(store: store))
     }
+
+    private var waiting: [Tab] { attention.waiting }
 
     var body: some View {
         if !waiting.isEmpty {
