@@ -3617,11 +3617,13 @@ extension E2ERunner {
             await eventually(8) { (try? String(contentsOf: mark, encoding: .utf8))?.contains("docker-e2e-42") == true }
                 && app.store.selected?.workingDirectory == folder.path)
 
-        // Its ports in the tab's pane headers, though Docker's process holds them.
+        // Its ports reach the tab, though Docker's process holds them — but
+        // not a pane's header: nothing in any pane listens there.
         if let tab = app.store.selected {
             app.updateContainerPorts(of: tab)
             check("a checkout's container ports reach its tab", await eventually(5) { tab.containerPorts.map(\.port) == [58080] }, "\(tab.containerPorts)")
             check("and don't make it a server", tab.kind != .server)
+            check("nor a pane's header", tab.terminals.allSatisfy { tab.ports(of: $0).isEmpty }, "\(tab.panePorts)")
             let info = TabInfoModel(tab: tab, inspector: ProcessInspector(), claudeReader: ClaudeUsageReader())
             await info.refreshPorts()
             check("Tab Info lists them", info.ports.contains { $0.port == 58080 && $0.container == "ot-shop-web-1" }, "\(info.ports)")

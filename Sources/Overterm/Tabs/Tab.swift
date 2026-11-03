@@ -86,6 +86,11 @@ final class Tab: ObservableObject, Identifiable {
     /// as a shell until you do, which is the cheap half of the trade: the
     /// scan is an `lsof`.
     @Published var ports: [ListeningPort] = []
+    /// `ports` by the pane whose tree listens on each: a pane's header says
+    /// its own, never its neighbour's server.
+    @Published var panePorts: [ObjectIdentifier: [ListeningPort]] = [:]
+
+    func ports(of pane: TerminalView) -> [ListeningPort] { panePorts[ObjectIdentifier(pane)] ?? [] }
     /// What the compose projects of its checkout publish (DockerModel).
     /// Apart from `ports`: they don't make the tab a server.
     @Published var containerPorts: [ListeningPort] = []

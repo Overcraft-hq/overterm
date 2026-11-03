@@ -3406,6 +3406,15 @@ final class E2ERunner {
         await eventually(2) { self.app.infoPopover?.isShown != true }
         window.makeFirstResponder(right)
 
+        // A server in one pane is that pane's: its header says the port, its
+        // neighbour's doesn't (the tab's ports were every header's).
+        await runAndExpect(
+            "nc -l 127.0.0.1 47819 >/dev/null 2>&1 & echo up > \(out("server").path)", file: out("server"), content: "up", "a server in the right pane")
+        check(
+            "its port is the right pane's", await eventually(15) { tab.ports(of: right).contains { $0.port == 47819 } },
+            "\(tab.ports.map(\.port))")
+        check("not the left one's", !tab.ports(of: first).contains { $0.port == 47819 }, "\(tab.ports(of: first).map(\.port))")
+
         right.perform(binding: "new_split:down")
         check("Ghostty's new_split makes a third", tab.terminals.count == 3)
         let below = tab.terminals[2]

@@ -865,10 +865,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         openPort: { [weak self, weak tab] port in
                             guard let url = port.url else { return }
                             self?.openLink(url, for: tab)
-                        },
-                        showContainer: { [weak self] name in
-                            guard let id = DockerModel.shared.container(name)?.Id else { return }
-                            self?.revealOnDockerPage(id)
                         })))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -1586,10 +1582,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             // time the scan stops at the first pane with an agent in it.
             let agent: ProcessNode?
             var pids: [pid_t] = []
+            var paneOf: [pid_t: Int] = [:]
             if readPorts {
                 let trees = roots.map { inspector.tree(root: $0.0, tag: $0.1) }
                 agent = Self.firstAgent(in: trees)
-                pids = trees.flatMap { $0.flatMap(\.flattened) }.map(\.pid)
+                for (index, tree) in trees.enumerated() {
+                    for pid in tree.flatMap(\.flattened).map(\.pid) {
+                        pids.append(pid)
+                        paneOf[pid] = paneOf[pid] ?? index
+                    }
+                }
             } else {
                 agent = Self.firstAgent(in: roots) { inspector.tree(root: $0, tag: $1) }
             }
@@ -1604,6 +1606,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 guard readPorts else { return }
                 let ports = await ListeningPorts.of(pids)
                 if tab.ports != ports { tab.ports = ports }
+                var byPane: [ObjectIdentifier: [ListeningPort]] = [:]
+                for port in ports {
+                    guard let index = paneOf[port.pid] else { continue }
+                    byPane[ObjectIdentifier(panes[index]), default: []].append(port)
+                }
+                if tab.panePorts != byPane { tab.panePorts = byPane }
                 // Its folder may have moved: its checkout's containers again.
                 self.updateContainerPorts(of: tab)
             }

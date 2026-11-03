@@ -11,6 +11,7 @@ version is tagged `v<version>`.
 - build: one weekly check for every pinned dependency — the Swift packages too, which Dependabot can't resolve here
 - notes: typing at the end of a long note no longer jumps the page, and prose isn't offered the file's words as you type
 - tabs: "N need you" goes when the tabs are seen, instead of staying with an empty list behind it
+- terminal: a pane's header shows only the ports its own processes listen on — not a neighbouring pane's, nor the checkout's Docker stack
 - e2e: a test run's first tab starts in an empty folder of its own, never the home folder of whoever runs it
 
 ## 1.5.1 — 2026-11-02
