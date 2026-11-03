@@ -83,7 +83,9 @@ final class AgentOverviewTests: XCTestCase {
     func testARefreshInFlightIsNotStartedAgain() async {
         let model = AgentOverviewModel()
         let first = Task { await model.refresh([], inspector: ProcessInspector()) }
-        await Task.yield()
+        // Started when the task first runs on the main actor — one yield
+        // wasn't always enough on a loaded CI runner.
+        for _ in 0..<200 where !model.isRefreshing { await Task.yield() }
         XCTAssertTrue(model.isRefreshing, "the first refresh is reading off the main thread")
         await model.refresh([], inspector: ProcessInspector())  // returns at once
         XCTAssertTrue(model.isRefreshing, "the skipped call did not end the first one's flag")
