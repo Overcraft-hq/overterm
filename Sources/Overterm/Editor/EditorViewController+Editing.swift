@@ -241,7 +241,13 @@ extension EditorViewController: CodeTextViewHost {
 
     private func didType(_ text: String) {
         guard let buffer = active, textView.selectedRanges.count == 1 else { return dismissCompletion() }
-        if buffer.isNote, updateNoteCompletion() { return }
+        // A note completes what Obsidian does — a `[[link`, a `#tag` — and
+        // nothing else: the file's words, offered two letters into every
+        // word of prose, took the Return that ended a line.
+        if buffer.isNote {
+            if !updateNoteCompletion() { dismissCompletion() }
+            return
+        }
         if completion?.isNote == true { dismissCompletion() }
         if buffer.sqlConsole?.session?.isOpen == true {
             if text.count == 1, text == "." || text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }),

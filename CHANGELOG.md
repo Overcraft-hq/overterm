@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.5.2 — 2026-11-02
 
 - build: one weekly check for every pinned dependency — the Swift packages too, which Dependabot can't resolve here
+- notes: typing at the end of a long note no longer jumps the page, and prose isn't offered the file's words as you type
 - e2e: a test run's first tab starts in an empty folder of its own, never the home folder of whoever runs it
 
 ## 1.5.1 — 2026-11-02

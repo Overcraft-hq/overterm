@@ -356,6 +356,34 @@ extension E2ERunner {
         let body = (editor.textView.textStorage?.attribute(.font, at: 22, effectiveRange: nil) as? NSFont)?.pointSize ?? 0
         check("a heading keeps its size as the caret moves", Set(sizes).count == 1 && (sizes.first ?? 0) < 40, "\(sizes)")
         check("and the text under it is the body's", body > 0 && body < 20, "\(body)")
+
+        // Typing at the end of a long note: the page stays where it is. Every
+        // keystroke restyled a screen above the caret, the lines there were
+        // estimated again, and the page jumped up as the last line was typed.
+        let long = root.appendingPathComponent("Long.md")
+        let sections = (1...60).map { "## Part \($0)\n\nSome **bold** text with a [[Rich]] link, a #tag and `code`.\n\n- [ ] a task\n- a point\n" }
+        try? (sections.joined(separator: "\n") + "\nThe end").write(to: long, atomically: true, encoding: .utf8)
+        app.openNote(long)
+        _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Long.md" }
+        if editor.active?.showsPreview == true { editor.toggleMarkdownPreview() }
+        let end = (editor.textView.string as NSString).length
+        editor.textView.setSelectedRange(NSRange(location: end, length: 0))
+        editor.textView.scrollRangeToVisible(NSRange(location: end, length: 0))
+        await pause(0.4)
+        var tops: [CGFloat] = []
+        for character in " and more Som" {
+            editor.textView.insertText(String(character), replacementRange: editor.textView.selectedRange())
+            await pause(0.08)
+            tops.append(editor.scrollView.contentView.bounds.origin.y.rounded())
+        }
+        check("typing at a long note's end keeps the page still", Set(tops).count == 1, "\(tops)")
+        let caret =
+            editor.textView.layoutManager.map { layout in
+                layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: NSRange(location: end, length: 1), actualCharacterRange: nil), in: editor.textView.textContainer!)
+            } ?? .zero
+        check("with the caret on screen", editor.textView.visibleRect.intersects(caret), "\(caret) in \(editor.textView.visibleRect)")
+        check("and prose isn't offered the file's words", editor.completion == nil, "\(editor.completion.map { $0.shown.count } ?? 0) offered")
+        editor.saveDocument(nil)
         app.openNote(rich)
         _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Rich.md" }
         if editor.active?.showsPreview == false { editor.toggleMarkdownPreview() }

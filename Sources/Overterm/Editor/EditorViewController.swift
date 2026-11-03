@@ -744,8 +744,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         let boldItalic = manager.convert(bold, toHaveTrait: .italicFontMask)
         var styles: [String: EditorTheme.Style?] = [:]
         let selection = textView.selectedRanges
-        storage.beginEditing()
-        storage.setAttributes(base, range: range)
+        // Styled aside, then only what changed written back (`write`): the
+        // range reaches a screen above the caret, and every run set again
+        // there is laid out again.
+        let styled = NSMutableAttributedString(string: (storage.string as NSString).substring(with: range), attributes: base)
         for span in spans {
             let clipped = NSIntersectionRange(span.range, range)
             guard clipped.length > 0 else { continue }
@@ -757,15 +759,18 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
                 styles[span.capture] = style
             }
             guard let style else { continue }
-            storage.addAttribute(.foregroundColor, value: style.color, range: clipped)
+            let local = NSRange(location: clipped.location - range.location, length: clipped.length)
+            styled.addAttribute(.foregroundColor, value: style.color, range: local)
             if style.bold || style.italic {
-                storage.addAttribute(.font, value: style.bold && style.italic ? boldItalic : style.bold ? bold : italic, range: clipped)
+                styled.addAttribute(.font, value: style.bold && style.italic ? boldItalic : style.bold ? bold : italic, range: local)
             }
-            if style.underline { storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: clipped) }
-            if style.strikethrough { storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: clipped) }
+            if style.underline { styled.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: local) }
+            if style.strikethrough { styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: local) }
         }
+        if buffer.livePreview { styleLive(styled, at: range.location, in: buffer) }
+        storage.beginEditing()
+        Self.write(styled, at: range.location, into: storage)
         storage.endEditing()
-        if buffer.livePreview { applyLivePreview(over: range, in: buffer) }
         buffer.painted.insert(integersIn: range.location..<NSMaxRange(range))
         if buffer === active {
             // Recolouring mustn't move the caret or the selection.

@@ -360,22 +360,69 @@ extension EditorViewController {
         let text = storage.string as NSString
         guard range.length > 0, NSMaxRange(range) <= text.length else { return }
         let lines = text.lineRange(for: range)
+        let styled = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: lines))
+        styleLive(styled, at: lines.location, in: buffer)
+        storage.beginEditing()
+        Self.write(styled, at: lines.location, into: storage)
+        storage.endEditing()
+    }
+
+    /// Live Preview's attributes over `target` — the note's whole lines from
+    /// `location` on, coloured as code.
+    func styleLive(_ target: NSMutableAttributedString, at location: Int, in buffer: EditorBuffer) {
+        let text = buffer.storage.string as NSString
+        let lines = NSRange(location: location, length: target.length)
+        guard lines.length > 0, NSMaxRange(lines) <= text.length else { return }
         if buffer.liveBlocks?.version != buffer.version {
             buffer.liveBlocks = (buffer.version, NoteLivePreview.blocks(in: text))
         }
         let editing = buffer === active ? textView.selectedRanges.map(\.rangeValue) : buffer.selection
         buffer.liveEditing = editing.map { text.lineRange(for: $0) }
         let runs = liveStyle.runs(in: text, range: lines, editing: editing, blocks: buffer.liveBlocks?.blocks ?? [])
-        storage.beginEditing()
+        let all = NSRange(location: 0, length: target.length)
         for key in [NSAttributedString.Key.noteHidden, .noteDecoration, .noteLink, .noteURL, .backgroundColor, .strikethroughStyle, .cursor] {
-            storage.removeAttribute(key, range: lines)
+            target.removeAttribute(key, range: all)
         }
         for (index, run) in runs.enumerated() {
-            let clipped = NSIntersectionRange(run.range, NSRange(location: 0, length: storage.length))
+            let clipped = NSIntersectionRange(NSRange(location: run.range.location - location, length: run.range.length), all)
             guard clipped.length > 0 else { continue }
-            if index == 0 { storage.setAttributes(run.attributes, range: clipped) } else { storage.addAttributes(run.attributes, range: clipped) }
+            if index == 0 { target.setAttributes(run.attributes, range: clipped) } else { target.addAttributes(run.attributes, range: clipped) }
         }
-        storage.endEditing()
+    }
+
+    /// `styled` into the storage at `location` — only the runs whose
+    /// attributes differ. Setting the same ones again still lays the text out
+    /// again, and with lines of every height (headings, markup laid out as
+    /// nothing) the lines above the screen were estimated anew on every
+    /// keystroke: a long note jumped while its last lines were typed.
+    static func write(_ styled: NSAttributedString, at location: Int, into storage: NSTextStorage) {
+        styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length)) { attributes, run, _ in
+            let target = NSRange(location: run.location + location, length: run.length)
+            var position = target.location
+            while position < NSMaxRange(target) {
+                var current = NSRange()
+                let existing = storage.attributes(at: position, longestEffectiveRange: &current, in: target)
+                let end = min(NSMaxRange(current), NSMaxRange(target))
+                if !sameAttributes(existing, attributes) {
+                    storage.setAttributes(attributes, range: NSRange(location: position, length: end - position))
+                }
+                position = end
+            }
+        }
+    }
+
+    static func sameAttributes(_ a: [NSAttributedString.Key: Any], _ b: [NSAttributedString.Key: Any]) -> Bool {
+        guard a.count == b.count else { return false }
+        for (key, value) in a {
+            guard let other = b[key] else { return false }
+            // A Swift enum boxed for Objective-C compares by identity there.
+            if let left = value as? NoteDecoration {
+                guard let right = other as? NoteDecoration, left == right else { return false }
+                continue
+            }
+            guard (value as AnyObject).isEqual(other) else { return false }
+        }
+        return true
     }
 
     /// The caret moved to other lines: those it left hide their markup,
