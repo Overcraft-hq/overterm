@@ -132,6 +132,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
   same files to draw each one — adding a theme is `Scripts/fetch-themes.sh`,
   never a palette in Swift. `appearance.theme` keeps its key under the new
   page: it is in people's settings.json.
+- **What Overterm ships of others' is acknowledged with its licence**: Settings ▸ About ▸ Acknowledgements reads `Resources/licenses` (`index.json` and each licence as its authors wrote it), made by `Scripts/fetch-licenses.sh` from what the builds left on disk. A new dependency, or one moved, runs it again — `AcknowledgementsTests` fails when Package.resolved, Ghostty's or tree-sitter's pins no longer match the list.
 - **A new setting is a `SettingsSchema` entry** (key, section, kind, default): the page, validation and search follow. A new shortcut is a `KeyCommands` entry — and, for a menu item, `MainMenu.command(…, id)`. Never read UserDefaults for a setting.
 - **Isolated runs** (`OVERTERM_E2E`, `OVERTERM_DUMP_LAYOUT`) go through `AppEnvironment` for every piece of persistent state; new state must too, or tests will write into the user's real app.
 

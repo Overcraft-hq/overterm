@@ -1,0 +1,634 @@
+[
+ {
+  "group": "Terminal",
+  "name": "Ghostty",
+  "version": "1.4.0",
+  "license": "MIT",
+  "url": "https://ghostty.org",
+  "file": "licenses/ghostty.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "FreeType",
+  "version": "in Ghostty 1.4.0",
+  "license": "FTL",
+  "url": "https://freetype.org",
+  "file": "licenses/freetype.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "libpng",
+  "version": "in Ghostty 1.4.0",
+  "license": "libpng-2.0",
+  "url": "http://www.libpng.org/pub/png/libpng.html",
+  "file": "licenses/libpng.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "zlib",
+  "version": "in Ghostty 1.4.0",
+  "license": "Zlib",
+  "url": "https://zlib.net",
+  "file": "licenses/zlib.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Oniguruma",
+  "version": "in Ghostty 1.4.0",
+  "license": "BSD-2-Clause",
+  "url": "https://github.com/kkos/oniguruma",
+  "file": "licenses/oniguruma.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Highway",
+  "version": "in Ghostty 1.4.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/google/highway",
+  "file": "licenses/highway.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "glslang",
+  "version": "in Ghostty 1.4.0",
+  "license": "BSD-3-Clause and others",
+  "url": "https://github.com/KhronosGroup/glslang",
+  "file": "licenses/glslang.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "SPIRV-Cross",
+  "version": "in Ghostty 1.4.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/KhronosGroup/SPIRV-Cross",
+  "file": "licenses/spirv-cross.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Wuffs",
+  "version": "in Ghostty 1.4.0",
+  "license": "Apache-2.0 OR MIT",
+  "url": "https://github.com/google/wuffs",
+  "file": "licenses/wuffs.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Sentry Native",
+  "version": "in Ghostty 1.4.0",
+  "license": "MIT",
+  "url": "https://github.com/getsentry/sentry-native",
+  "file": "licenses/sentry-native.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Breakpad",
+  "version": "in Ghostty 1.4.0",
+  "license": "BSD-3-Clause",
+  "url": "https://chromium.googlesource.com/breakpad/breakpad",
+  "file": "licenses/breakpad.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Dear ImGui",
+  "version": "in Ghostty 1.4.0",
+  "license": "MIT",
+  "url": "https://github.com/ocornut/imgui",
+  "file": "licenses/dear-imgui.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "libxev",
+  "version": "in Ghostty 1.4.0",
+  "license": "MIT",
+  "url": "https://github.com/mitchellh/libxev",
+  "file": "licenses/libxev.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "z2d",
+  "version": "in Ghostty 1.4.0",
+  "license": "MPL-2.0",
+  "url": "https://github.com/vancluever/z2d",
+  "file": "licenses/z2d.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "zig-objc",
+  "version": "in Ghostty 1.4.0",
+  "license": "MIT",
+  "url": "https://github.com/mitchellh/zig-objc",
+  "file": "licenses/zig-objc.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "uucode",
+  "version": "in Ghostty 1.4.0",
+  "license": "MIT",
+  "url": "https://github.com/jacobsandlund/uucode",
+  "file": "licenses/uucode.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "JetBrains Mono",
+  "version": "in Ghostty 1.4.0",
+  "license": "OFL-1.1",
+  "url": "https://www.jetbrains.com/lp/mono/",
+  "file": "licenses/jetbrains-mono.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "Symbols Nerd Font",
+  "version": "in Ghostty 1.4.0",
+  "license": "MIT",
+  "url": "https://www.nerdfonts.com",
+  "file": "licenses/symbols-nerd-font.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "simdutf",
+  "version": "9.0.0, in Ghostty 1.4.0",
+  "license": "Apache-2.0 OR MIT",
+  "url": "https://github.com/simdutf/simdutf",
+  "file": "licenses/simdutf.txt"
+ },
+ {
+  "group": "Terminal",
+  "name": "iTerm2 Color Schemes",
+  "version": "themes",
+  "license": "MIT",
+  "url": "https://github.com/mbadolato/iTerm2-Color-Schemes",
+  "file": "licenses/iterm2-color-schemes.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter",
+  "version": "0.25.10",
+  "license": "MIT",
+  "url": "https://tree-sitter.github.io",
+  "file": "licenses/tree-sitter.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "Helix queries",
+  "version": "25.07.1",
+  "license": "MPL-2.0",
+  "url": "https://github.com/helix-editor/helix",
+  "file": "licenses/helix-queries.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-swift",
+  "version": "57c1c6d6ffa1",
+  "license": "MIT",
+  "url": "https://github.com/alex-pinkus/tree-sitter-swift",
+  "file": "licenses/tree-sitter-swift.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-go",
+  "version": "64457ea6b73e",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-go",
+  "file": "licenses/tree-sitter-go.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-typescript",
+  "version": "b1bf4825d9ea",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-typescript",
+  "file": "licenses/tree-sitter-typescript.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-javascript",
+  "version": "f772967f7b7b",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-javascript",
+  "file": "licenses/tree-sitter-javascript.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-rust",
+  "version": "1f63b33efee1",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-rust",
+  "file": "licenses/tree-sitter-rust.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-python",
+  "version": "4bfdd9033a22",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-python",
+  "file": "licenses/tree-sitter-python.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-json",
+  "version": "73076754005a",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-json",
+  "file": "licenses/tree-sitter-json.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-bash",
+  "version": "487734f87fd8",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-bash",
+  "file": "licenses/tree-sitter-bash.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-c",
+  "version": "7175a6dd5fc1",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-c",
+  "file": "licenses/tree-sitter-c.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-cpp",
+  "version": "56455f4245ba",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-cpp",
+  "file": "licenses/tree-sitter-cpp.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-markdown",
+  "version": "62516e8c7838",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter-grammars/tree-sitter-markdown",
+  "file": "licenses/tree-sitter-markdown.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-yaml",
+  "version": "0e36bed17176",
+  "license": "MIT",
+  "url": "https://github.com/ikatyang/tree-sitter-yaml",
+  "file": "licenses/tree-sitter-yaml.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-toml",
+  "version": "7cff70bbcbbc",
+  "license": "MIT",
+  "url": "https://github.com/ikatyang/tree-sitter-toml",
+  "file": "licenses/tree-sitter-toml.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-zig",
+  "version": "eb7d58c2dc4f",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter-grammars/tree-sitter-zig",
+  "file": "licenses/tree-sitter-zig.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-sql",
+  "version": "b9d109588d5b",
+  "license": "MIT",
+  "url": "https://github.com/DerekStride/tree-sitter-sql",
+  "file": "licenses/tree-sitter-sql.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-html",
+  "version": "cbb91a0ff362",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-html",
+  "file": "licenses/tree-sitter-html.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-css",
+  "version": "769203d0f9ab",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-css",
+  "file": "licenses/tree-sitter-css.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-dockerfile",
+  "version": "087daa20438a",
+  "license": "MIT",
+  "url": "https://github.com/camdencheek/tree-sitter-dockerfile",
+  "file": "licenses/tree-sitter-dockerfile.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-make",
+  "version": "a4b9187417d6",
+  "license": "MIT",
+  "url": "https://github.com/alemuller/tree-sitter-make",
+  "file": "licenses/tree-sitter-make.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-lua",
+  "version": "88e446476a1e",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter-grammars/tree-sitter-lua",
+  "file": "licenses/tree-sitter-lua.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-ruby",
+  "version": "206c70771643",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-ruby",
+  "file": "licenses/tree-sitter-ruby.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-java",
+  "version": "09d650def6cd",
+  "license": "MIT",
+  "url": "https://github.com/tree-sitter/tree-sitter-java",
+  "file": "licenses/tree-sitter-java.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-kotlin",
+  "version": "c4ddea359a7f",
+  "license": "MIT",
+  "url": "https://github.com/fwcd/tree-sitter-kotlin",
+  "file": "licenses/tree-sitter-kotlin.txt"
+ },
+ {
+  "group": "Editor",
+  "name": "tree-sitter-diff",
+  "version": "fd74c78fa88a",
+  "license": "MIT",
+  "url": "https://github.com/the-mikedavis/tree-sitter-diff",
+  "file": "licenses/tree-sitter-diff.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "mysql-nio",
+  "version": "1.9.2",
+  "license": "MIT",
+  "url": "https://github.com/vapor/mysql-nio",
+  "file": "licenses/mysql-nio.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "postgres-nio",
+  "version": "1.33.2",
+  "license": "MIT",
+  "url": "https://github.com/vapor/postgres-nio",
+  "file": "licenses/postgres-nio.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-algorithms",
+  "version": "1.2.1",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-algorithms",
+  "file": "licenses/swift-algorithms.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-asn1",
+  "version": "1.7.3",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-asn1",
+  "file": "licenses/swift-asn1.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-async-algorithms",
+  "version": "1.1.7",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-async-algorithms",
+  "file": "licenses/swift-async-algorithms.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-atomics",
+  "version": "1.3.1",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-atomics",
+  "file": "licenses/swift-atomics.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-collections",
+  "version": "1.6.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-collections",
+  "file": "licenses/swift-collections.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-crypto",
+  "version": "4.5.2",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-crypto",
+  "file": "licenses/swift-crypto.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-log",
+  "version": "1.15.1",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-log",
+  "file": "licenses/swift-log.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-metrics",
+  "version": "2.11.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-metrics",
+  "file": "licenses/swift-metrics.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-nio",
+  "version": "2.104.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-nio",
+  "file": "licenses/swift-nio.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-nio-ssl",
+  "version": "2.37.5",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-nio-ssl",
+  "file": "licenses/swift-nio-ssl.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-nio-transport-services",
+  "version": "1.28.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-nio-transport-services",
+  "file": "licenses/swift-nio-transport-services.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-numerics",
+  "version": "1.1.1",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-numerics",
+  "file": "licenses/swift-numerics.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-service-lifecycle",
+  "version": "2.12.1",
+  "license": "Apache-2.0",
+  "url": "https://github.com/swift-server/swift-service-lifecycle",
+  "file": "licenses/swift-service-lifecycle.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-system",
+  "version": "1.8.1",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-system",
+  "file": "licenses/swift-system.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "markdown-it",
+  "version": "15.0.3",
+  "license": "MIT",
+  "url": "https://github.com/markdown-it/markdown-it",
+  "file": "notes/vendor/licenses/markdown-it.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "markdown-it-footnote",
+  "version": "4.0.0",
+  "license": "MIT",
+  "url": "https://github.com/markdown-it/markdown-it-footnote",
+  "file": "notes/vendor/licenses/markdown-it-footnote.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "dompurify",
+  "version": "3.4.17",
+  "license": "MPL-2.0 OR Apache-2.0",
+  "url": "https://github.com/cure53/DOMPurify",
+  "file": "notes/vendor/licenses/dompurify.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "katex",
+  "version": "0.19.1",
+  "license": "MIT",
+  "url": "https://katex.org",
+  "file": "notes/vendor/licenses/katex.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "highlight.js",
+  "version": "11.12.0",
+  "license": "BSD-3-Clause",
+  "url": "https://highlightjs.org",
+  "file": "notes/vendor/licenses/highlight.js.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "mermaid",
+  "version": "12.2.0",
+  "license": "MIT",
+  "url": "https://mermaid.js.org",
+  "file": "notes/vendor/licenses/mermaid.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Excalidraw",
+  "version": "0.18.1",
+  "license": "MIT",
+  "url": "https://excalidraw.com",
+  "file": "licenses/excalidraw.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "React",
+  "version": "18.3.1",
+  "license": "MIT",
+  "url": "https://react.dev",
+  "file": "notes/excalidraw/licenses/react.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "lz-string",
+  "version": "1.5.0",
+  "license": "MIT",
+  "url": "https://github.com/pieroxy/lz-string",
+  "file": "notes/excalidraw/licenses/lz-string.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Assistant (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://fonts.google.com/specimen/Assistant",
+  "file": "licenses/assistant-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Cascadia Code (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://github.com/microsoft/cascadia-code",
+  "file": "licenses/cascadia-code-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Comic Shanns (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "MIT",
+  "url": "https://github.com/shannpersand/comic-shanns",
+  "file": "licenses/comic-shanns-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Excalifont (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://plus.excalidraw.com/excalifont",
+  "file": "licenses/excalifont-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Liberation Sans (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://github.com/liberationfonts/liberation-fonts",
+  "file": "licenses/liberation-sans-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Lilita One (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://fonts.google.com/specimen/Lilita+One",
+  "file": "licenses/lilita-one-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Nunito (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://fonts.google.com/specimen/Nunito",
+  "file": "licenses/nunito-font.txt"
+ },
+ {
+  "group": "Notes",
+  "name": "Virgil (font)",
+  "version": "in Excalidraw 0.18.1",
+  "license": "OFL-1.1",
+  "url": "https://github.com/excalidraw/virgil",
+  "file": "licenses/virgil-font.txt"
+ }
+]

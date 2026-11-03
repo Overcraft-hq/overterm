@@ -74,6 +74,9 @@ cp "$ROOT/Resources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 # A note's reading view: its page and the scripts it runs, offline
 # (Scripts/fetch-notes-web.sh; NoteResources serves them).
 cp -R "$ROOT/Resources/notes" "$CONTENTS/Resources/notes"
+# Settings ▸ About ▸ Acknowledgements: what Overterm ships of others', and
+# their licences (Scripts/fetch-licenses.sh).
+cp -R "$ROOT/Resources/licenses" "$CONTENTS/Resources/licenses"
 # Settings ▸ About shows this version's entry; View Latest Changelog, all of it.
 cp "$ROOT/CHANGELOG.md" "$CONTENTS/Resources/CHANGELOG.md"
 

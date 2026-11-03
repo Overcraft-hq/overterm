@@ -4412,6 +4412,22 @@ final class E2ERunner {
         ChangelogWindowController.shared.show()
         check("and again once closed", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
         ChangelogWindowController.shared.window?.close()
+
+        // About ▸ Acknowledgements: the bundled list, each with its licence.
+        check("the app carries its acknowledgements", Acknowledgement.load().count > 50, "\(Acknowledgement.load().count)")
+        check("Ghostty's licence among them", Acknowledgement.load().first { $0.name == "Ghostty" }?.text().contains("MIT License") == true)
+        AcknowledgementsWindowController.shared.show()
+        check("Acknowledgements opens", await eventually(2) { AcknowledgementsWindowController.shared.window?.isVisible == true })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty,
+            let view = AcknowledgementsWindowController.shared.window?.contentView
+        {
+            await pause(0.6)
+            if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: (png as NSString).deletingPathExtension + "-acknowledgements.png"))
+            }
+        }
+        AcknowledgementsWindowController.shared.window?.close()
         app.closeOverlay(.settings)
     }
 

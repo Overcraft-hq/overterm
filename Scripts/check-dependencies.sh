@@ -114,7 +114,8 @@ for pin in "${pins[@]}"; do
 
 To bump:
 $steps
-4. A commit of its own, in a version not yet released (\`Scripts/bump-version.sh patch\` if none is under way)
+4. \`Scripts/fetch-licenses.sh\` — About ▸ Acknowledgements lists the new version, its licence as it now reads (\`AcknowledgementsTests\` fails until then)
+5. A commit of its own, in a version not yet released (\`Scripts/bump-version.sh patch\` if none is under way)
 
 _Opened by the weekly dependency check._
 MD

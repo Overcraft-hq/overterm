@@ -801,6 +801,7 @@ private struct AboutSettings: View {
             HStack(spacing: 8) {
                 Button("Check for Updates") { Task { await updates.check() } }.disabled(updates.state == .checking)
                 Button("View the Full Changelog") { ChangelogWindowController.shared.show() }
+                Button("Acknowledgements") { AcknowledgementsWindowController.shared.show() }
             }
             status
             if !whatsNew.isEmpty {
