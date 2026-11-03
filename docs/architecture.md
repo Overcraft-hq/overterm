@@ -1358,7 +1358,8 @@ their buckets where a database's schemas would be.
 ## Docker (⌥⌘P, a page; the rail's shippingbox)
 
 Docker Desktop's work on a page of its own, over the body like Settings
-(`WorkspaceOverlay.docker`, made the first time it opens): the engine the
+(`WorkspaceOverlay.docker`, made the first time it opens; the window wires
+it from its declaration, `dockerWorkspacePage` — a `WorkspacePage`): the engine the
 user's `docker` reaches — Docker Desktop, OrbStack, Colima — and its
 containers, grouped by compose project. Settings ▸ Docker turns it off
 (nothing is read then) or points it at another engine.
@@ -2229,7 +2230,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   up/down, `b` rebuild, `w` watch, `v` an image's vulnerabilities (on a
   container, its image's; nothing is scanned for a key), `⌫` remove, `/`
   the filter. The window's key monitor
-  (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
+  (`handlePageKey`, the page's declared `press`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
   and an AppKit table would eat letters for type-select.
 - **The switcher** (⇧⌥⌘P): the palette scoped to its Docker group —
   every container and compose project (`dockerPaletteItems`), restocked as
