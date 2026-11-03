@@ -1486,11 +1486,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   and the scroll position go with it. The filter is `DockerFilter`
   (`status:running project:api image:postgres port:5432 is:test`, `-`
   negates).
-- **Verbs** (`DockerVerb`, `DockerPageModel+Verbs`): what can be done to a
-  container, a project, an image, a volume, a network, a build or a model
-  is one list, drawn twice — as the buttons under its detail's title
-  (`DockerActionBar`: the used ones labelled, the rest behind ⋯, removal
-  last as a red bin) and as its right-click menu (`DockerVerbMenu`) — so
+- **Verbs** (`ResourceVerb`, shared in `ResourcePage/`;
+  `DockerPageModel+Verbs`): what can be done to a container, a project,
+  an image, a volume, a network, a build or a model is one list, drawn twice — as the buttons under its detail's title
+  (`ResourceActionBar`: the used ones labelled, the rest behind ⋯, removal
+  last as a red bin) and as its right-click menu (`ResourceVerbMenu`) — so
   nothing is only in the menu and the two never disagree. A verb that
   can't be done now (a mounted volume's removal, the shell of a stopped
   container) is greyed with the reason in its help. Too narrow for the

@@ -179,7 +179,7 @@ struct DockerEmulationTag: View {
 struct DockerEmulationNote: View {
     let emulation: DockerEmulation
     let text: String
-    let verb: DockerVerb?
+    let verb: ResourceVerb?
     @ObservedObject var theme: ChromeTheme
 
     var body: some View {

@@ -50,7 +50,7 @@ struct DockerContainerTable: NSViewRepresentable {
     /// A row's view; the page makes it, with what it observes.
     let cell: (DockerTableRow) -> AnyView
     /// The right-click menu's verbs for these rows.
-    let verbs: (Set<String>) -> [DockerVerb]
+    let verbs: (Set<String>) -> [ResourceVerb]
     /// ⌘C: the selected containers' names.
     let copy: () -> Void
 
@@ -158,57 +158,9 @@ struct DockerContainerTable: NSViewRepresentable {
             let ids =
                 table.selectedRowIndexes.contains(clicked)
                 ? Set(table.selectedRowIndexes.compactMap { rows.indices.contains($0) ? rows[$0].id : nil }) : [rows[clicked].id]
-            for item in Self.items(view.verbs(ids)) { menu.addItem(item) }
-        }
-
-        /// A resource's verbs as its SwiftUI menu has them (`DockerVerbMenu`):
-        /// the buttons', the rest's, then removal, apart; a divider where
-        /// the group changes.
-        static func items(_ verbs: [DockerVerb]) -> [NSMenuItem] {
-            var items: [NSMenuItem] = []
-            for place in [DockerVerb.Place.button, .more, .remove] {
-                let these = verbs.filter { $0.place == place }
-                guard !these.isEmpty else { continue }
-                if !items.isEmpty { items.append(.separator()) }
-                items += group(these)
-            }
-            return items
-        }
-
-        private static func group(_ verbs: [DockerVerb]) -> [NSMenuItem] {
-            var items: [NSMenuItem] = []
-            for (index, verb) in verbs.enumerated() {
-                if index > 0, verb.group != verbs[index - 1].group { items.append(.separator()) }
-                let item = DockerVerbMenuItem(verb)
-                if !verb.children.isEmpty {
-                    let submenu = NSMenu(title: verb.title)
-                    for child in group(verb.children) { submenu.addItem(child) }
-                    item.submenu = submenu
-                }
-                items.append(item)
-            }
-            return items
+            for item in ResourceVerbMenuItem.items(view.verbs(ids)) { menu.addItem(item) }
         }
     }
-}
-
-/// A verb as a menu item: its title, disabled when it can't be done now.
-@MainActor
-final class DockerVerbMenuItem: NSMenuItem {
-    private let verb: DockerVerb
-
-    init(_ verb: DockerVerb) {
-        self.verb = verb
-        super.init(title: verb.title, action: verb.children.isEmpty ? #selector(runVerb) : nil, keyEquivalent: "")
-        target = self
-        isEnabled = verb.unavailable == nil
-        toolTip = verb.unavailable
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) { fatalError() }
-
-    @objc private func runVerb() { verb.perform() }
 }
 
 /// The list's table: ⌘C copies the selected containers' names, and a

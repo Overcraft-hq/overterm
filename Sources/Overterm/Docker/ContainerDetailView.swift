@@ -18,7 +18,7 @@ struct ContainerDetailView: View {
     /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`):
     /// asked as it draws, so its inspect arriving can add one (an image
     /// listed by its ID, named there).
-    let verbs: () -> [DockerVerb]
+    let verbs: () -> [ResourceVerb]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -90,7 +90,7 @@ struct ContainerDetailView: View {
                 Spacer(minLength: 0)
             }
             Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
-            DockerActionBar(verbs: verbs(), theme: theme).padding(.top, 4)
+            ResourceActionBar(verbs: verbs(), theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

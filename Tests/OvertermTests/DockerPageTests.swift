@@ -600,7 +600,7 @@ final class DockerPageTests: XCTestCase {
     @MainActor
     func testAFailedContainerOffersToAskWhy() {
         let page = DockerPageModel(docker: DockerModel(endpoint: { nil }))
-        func ask(_ container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerVerb? {
+        func ask(_ container: ContainerSummary, detail: ContainerDetail? = nil) -> ResourceVerb? {
             page.verbs(for: container, detail: detail).first { $0.title == "Ask an Agent Why…" }
         }
         let failed = container("worker", state: "exited", status: "Exited (1) 3 seconds ago")

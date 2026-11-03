@@ -1,10 +1,12 @@
+import AppKit
 import SwiftUI
 
-/// One thing a container, an image, a volume… can have done to it. A
-/// resource's verbs are one list (`DockerPageModel.verbs(for:)`) drawn
-/// twice: as the buttons on its detail and as its right-click menu — so
-/// nothing is only in the menu, and the two never disagree.
-struct DockerVerb: Identifiable {
+/// One thing a resource — a container, an image, a volume… — can have
+/// done to it. A resource's verbs are one list (Docker's is
+/// `DockerPageModel.verbs(for:)`) drawn twice: as the buttons on its
+/// detail and as its right-click menu — so nothing is only in the menu,
+/// and the two never disagree. Shared by the pages that list resources.
+struct ResourceVerb: Identifiable {
     enum Place { case button, more, remove }
 
     /// As the menu says it: `Browse in a Tab`.
@@ -20,7 +22,7 @@ struct DockerVerb: Identifiable {
     /// Verbs of another group are set apart in a menu.
     var group = 0
     /// A submenu instead (Docker Scout's, the containers to connect).
-    var children: [DockerVerb] = []
+    var children: [ResourceVerb] = []
     /// What a detail's box says of it, the box whose button it is: an
     /// emulated container's why and what this does (`DockerEmulationNote`).
     var note: String?
@@ -39,12 +41,15 @@ struct DockerVerb: Identifiable {
 /// buttons give up their words first, one at a time down to the first
 /// two: a database's fifth button, its client, doesn't cost Shell its
 /// word. Narrower still (the right-hand pane), all icons.
-struct DockerActionBar: View {
-    let verbs: [DockerVerb]
+struct ResourceActionBar: View {
+    let verbs: [ResourceVerb]
     @ObservedObject var theme: ChromeTheme
     /// How many buttons say their words, always: a row's own small bar (a
     /// project's service) is icons, whatever fits.
     var words: Int? = nil
+
+    /// What the accessibility tree calls the bar; its ⋯ is `<this>.more`.
+    var identifier = "docker.actions"
 
     var body: some View {
         Group {
@@ -60,7 +65,7 @@ struct DockerActionBar: View {
                 }
             }
         }
-        .accessibilityIdentifier("docker.actions")
+        .accessibilityIdentifier(identifier)
     }
 
     /// `words`: how many of the buttons say theirs.
@@ -71,7 +76,7 @@ struct DockerActionBar: View {
             let more = verbs.filter { $0.place == .more }
             if !more.isEmpty {
                 Menu {
-                    DockerVerbItems(verbs: more)
+                    ResourceVerbItems(verbs: more)
                 } label: {
                     face("More", "ellipsis", labelled: false)
                 }
@@ -82,7 +87,7 @@ struct DockerActionBar: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("More")
-                .accessibilityIdentifier("docker.actions.more")
+                .accessibilityIdentifier(identifier + ".more")
             }
             let remove = verbs.filter { $0.place == .remove }
             // A bar across a detail puts removal at its far end; a row's
@@ -92,7 +97,7 @@ struct DockerActionBar: View {
         }
     }
 
-    @ViewBuilder private func item(_ verb: DockerVerb, labelled: Bool, destructive: Bool = false) -> some View {
+    @ViewBuilder private func item(_ verb: ResourceVerb, labelled: Bool, destructive: Bool = false) -> some View {
         if verb.children.isEmpty {
             Button {
                 verb.perform()
@@ -105,7 +110,7 @@ struct DockerActionBar: View {
             .help(verb.help)
         } else {
             Menu {
-                DockerVerbItems(verbs: verb.children)
+                ResourceVerbItems(verbs: verb.children)
             } label: {
                 face(verb.label ?? verb.title, verb.symbol, labelled: labelled)
             }
@@ -134,27 +139,27 @@ struct DockerActionBar: View {
 
 /// The same verbs as a right-click menu: the buttons' first, then More's,
 /// then removal.
-struct DockerVerbMenu: View {
-    let verbs: [DockerVerb]
+struct ResourceVerbMenu: View {
+    let verbs: [ResourceVerb]
 
     var body: some View {
-        DockerVerbItems(verbs: verbs.filter { $0.place == .button })
+        ResourceVerbItems(verbs: verbs.filter { $0.place == .button })
         let more = verbs.filter { $0.place == .more }
         if !more.isEmpty {
             Divider()
-            DockerVerbItems(verbs: more)
+            ResourceVerbItems(verbs: more)
         }
         let remove = verbs.filter { $0.place == .remove }
         if !remove.isEmpty {
             Divider()
-            DockerVerbItems(verbs: remove)
+            ResourceVerbItems(verbs: remove)
         }
     }
 }
 
 /// Verbs as menu items, a divider where the group changes.
-struct DockerVerbItems: View {
-    let verbs: [DockerVerb]
+struct ResourceVerbItems: View {
+    let verbs: [ResourceVerb]
 
     var body: some View {
         ForEach(Array(verbs.enumerated()), id: \.element.id) { index, verb in
@@ -162,8 +167,57 @@ struct DockerVerbItems: View {
             if verb.children.isEmpty {
                 Button(verb.title) { verb.perform() }.disabled(verb.unavailable != nil)
             } else {
-                Menu(verb.title) { DockerVerbItems(verbs: verb.children) }.disabled(verb.unavailable != nil)
+                Menu(verb.title) { ResourceVerbItems(verbs: verb.children) }.disabled(verb.unavailable != nil)
             }
         }
+    }
+}
+
+/// A verb as an AppKit menu item (a table's right-click menu): its title,
+/// disabled when it can't be done now, the reason as its tooltip.
+@MainActor
+final class ResourceVerbMenuItem: NSMenuItem {
+    private let verb: ResourceVerb
+
+    init(_ verb: ResourceVerb) {
+        self.verb = verb
+        super.init(title: verb.title, action: verb.children.isEmpty ? #selector(runVerb) : nil, keyEquivalent: "")
+        target = self
+        isEnabled = verb.unavailable == nil
+        toolTip = verb.unavailable
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError() }
+
+    @objc private func runVerb() { verb.perform() }
+
+    /// Verbs as their SwiftUI menu has them (`ResourceVerbMenu`): the
+    /// buttons', the rest's, then removal, apart; a divider where the
+    /// group changes; a verb with children a submenu.
+    static func items(_ verbs: [ResourceVerb]) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        for place in [ResourceVerb.Place.button, .more, .remove] {
+            let these = verbs.filter { $0.place == place }
+            guard !these.isEmpty else { continue }
+            if !items.isEmpty { items.append(.separator()) }
+            items += group(these)
+        }
+        return items
+    }
+
+    private static func group(_ verbs: [ResourceVerb]) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        for (index, verb) in verbs.enumerated() {
+            if index > 0, verb.group != verbs[index - 1].group { items.append(.separator()) }
+            let item = ResourceVerbMenuItem(verb)
+            if !verb.children.isEmpty {
+                let submenu = NSMenu(title: verb.title)
+                for child in group(verb.children) { submenu.addItem(child) }
+                item.submenu = submenu
+            }
+            items.append(item)
+        }
+        return items
     }
 }

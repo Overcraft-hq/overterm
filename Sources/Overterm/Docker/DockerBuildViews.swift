@@ -27,7 +27,7 @@ struct DockerBuildsView: View {
                         DockerBuildRow(build: build, theme: theme)
                             .tag(build.id)
                             .listRowSeparator(.hidden)
-                            .contextMenu { DockerVerbMenu(verbs: page.verbs(for: build)) }
+                            .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: build)) }
                     }
                     if page.builds.isEmpty { Text("No builds yet.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
                 }
@@ -102,7 +102,7 @@ struct DockerBuildDetailView: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
-                DockerActionBar(verbs: page.verbs(for: build), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: build), theme: theme)
                 summary
                 if let detail = session.detail { builtFrom(detail) }
                 failure

@@ -164,7 +164,7 @@ struct DockerImagesView: View {
                         .listRowSeparator(.hidden)
                         .contextMenu {
                             let selected = docker.images.filter { page.imageSelection.contains($0.Id) }
-                            DockerVerbMenu(verbs: page.verbs(for: image, targets: page.imageSelection.contains(image.Id) ? selected : nil))
+                            ResourceVerbMenu(verbs: page.verbs(for: image, targets: page.imageSelection.contains(image.Id) ? selected : nil))
                         }
                     }
                 }
@@ -263,7 +263,7 @@ private struct DockerImageDetail: View {
                         .textSelection(.enabled)
                     DockerEmulationBadge(subject: .image(image.Id), docker: docker)
                 }
-                DockerActionBar(verbs: verbs, theme: theme)
+                ResourceActionBar(verbs: verbs, theme: theme)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -320,7 +320,7 @@ private struct DockerImageDetail: View {
         .padding(.bottom, 8)
     }
 
-    private func overview(_ verbs: [DockerVerb]) -> some View {
+    private func overview(_ verbs: [ResourceVerb]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if let emulation = docker.emulation(ofImage: image.Id) {
                 DockerEmulationNote(
@@ -446,7 +446,7 @@ struct DockerVolumesView: View {
                     )
                     .tag(volume.Name)
                     .listRowSeparator(.hidden)
-                    .contextMenu { DockerVerbMenu(verbs: page.verbs(for: volume)) }
+                    .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: volume)) }
                 }
             }
             .listStyle(.inset)
@@ -477,7 +477,7 @@ private struct DockerVolumeDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(verbatim: volume.shortName).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                DockerActionBar(verbs: page.verbs(for: volume), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: volume), theme: theme)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -574,7 +574,7 @@ struct DockerNetworksView: View {
                     )
                     .tag(network.Id)
                     .listRowSeparator(.hidden)
-                    .contextMenu { DockerVerbMenu(verbs: page.verbs(for: network)) }
+                    .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: network)) }
                 }
             }
             .listStyle(.inset)
@@ -585,7 +585,7 @@ struct DockerNetworksView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(verbatim: network.Name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                        DockerActionBar(verbs: page.verbs(for: network), theme: theme)
+                        ResourceActionBar(verbs: page.verbs(for: network), theme: theme)
                         DockerDetailBlock(title: "Network", theme: theme) {
                             DockerDetailRow(key: "Driver", value: network.Driver ?? "", theme: theme)
                             DockerDetailRow(key: "Subnet", value: network.subnet ?? "—", theme: theme)
@@ -662,7 +662,7 @@ struct TestcontainersSessionView: View {
                         Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(2)
                     }
                 }
-                DockerActionBar(verbs: page.verbs(for: session), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: session), theme: theme)
                 DockerDetailBlock(title: "Run", theme: theme) {
                     DockerDetailRow(key: "Session", value: session.id.isEmpty ? "none — kept for reuse" : session.id, theme: theme)
                     DockerDetailRow(key: "Library", value: library ?? "—", theme: theme)
@@ -899,7 +899,7 @@ struct DockerModelsView: View {
                 )
                 .tag(model.id)
                 .listRowSeparator(.hidden)
-                .contextMenu { DockerVerbMenu(verbs: page.verbs(for: model)) }
+                .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: model)) }
             }
             if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
         }
@@ -976,7 +976,7 @@ private struct DockerModelDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(verbatim: model.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                DockerActionBar(verbs: page.verbs(for: model), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: model), theme: theme)
                 DockerDetailBlock(title: "Model", theme: theme) {
                     DockerDetailRow(key: "Name", value: model.reference, theme: theme)
                     DockerDetailRow(key: "ID", value: model.shortID, theme: theme)

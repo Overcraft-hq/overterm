@@ -551,7 +551,7 @@ extension E2ERunner {
         page.actions?.run = { command, _ in commands.append(command) }
         page.actions?.askName = { _, _, _, then in then("ot/tagged:2") }
         defer { page.actions = actions }
-        func titles(_ verbs: [DockerVerb], _ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        func titles(_ verbs: [ResourceVerb], _ place: ResourceVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
         page.showDetail = true
 
         // A volume: the used verbs as buttons, the rest behind More.
@@ -1614,7 +1614,7 @@ extension E2ERunner {
         check("a run selected is its own detail", page.detailedSession?.id == session && page.detailed == nil)
         check("the selection means its containers, not Ryuk", Set(page.selectedContainers.map(\.Id)) == [pg, kafka], "\(page.selectedContainers.map(\.name))")
         let verbs = page.detailedSession.map { page.verbs(for: $0) } ?? []
-        func titles(_ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        func titles(_ place: ResourceVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
         check(
             "its verbs as buttons, Remove All last", titles(.button) == ["Stop All", "Copy Session ID"] && titles(.remove) == ["Remove All…"],
             "\(verbs.map(\.title))")
@@ -1713,7 +1713,7 @@ extension E2ERunner {
         page.detailTab = .overview
         _ = await eventually(3) { self.app.dockerListHasKeyboard() }
 
-        func askWhy(_ verbs: [DockerVerb]) -> DockerVerb? { verbs.first { $0.title == "Ask an Agent Why…" } }
+        func askWhy(_ verbs: [ResourceVerb]) -> ResourceVerb? { verbs.first { $0.title == "Ask an Agent Why…" } }
         // The sheet's SwiftUI buttons are no NSButtons to click: what each
         // runs, the sheet's own closures.
         func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
@@ -2322,7 +2322,7 @@ extension E2ERunner {
         page.showDetail = true
         page.selection = [tag]
         page.projectTab = .services
-        func titles(_ verbs: [DockerVerb], _ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        func titles(_ verbs: [ResourceVerb], _ place: ResourceVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
 
         _ = page.verbs(for: project)
         check(
