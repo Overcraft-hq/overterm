@@ -61,6 +61,14 @@ final class KubernetesModel: ObservableObject {
     /// Why the namespaces couldn't be listed (RBAC often refuses it): one is typed.
     @Published private(set) var namespacesRefused: String?
     @Published private(set) var pods = KubeRows()
+    /// What the pods are asked for with: a page's `label:` words, sent to
+    /// the server (`KubeLabelSelector`). Nil: every pod in the scope. It is
+    /// the page's that asked last (`selectorOwner`), and goes when that page
+    /// hides: a window's page, or the switcher, never gets a list narrowed
+    /// by a filter that isn't on screen.
+    @Published private(set) var labelSelector: String?
+    /// The page whose filter `labelSelector` is; nil when nobody's is.
+    private(set) var selectorOwner: ObjectIdentifier?
     /// Where each row's age is counted from.
     @Published private(set) var anchors: [KubeRowID: KubeAge.Anchor] = [:]
     @Published private(set) var podState: ListState = .idle
@@ -125,6 +133,9 @@ final class KubernetesModel: ObservableObject {
     func hide() {
         viewers = max(0, viewers - 1)
         guard viewers == 0 else { return }
+        // Whoever looks next asks with its own filter.
+        selectorOwner = nil
+        labelSelector = nil
         stopReading()
     }
 
@@ -265,6 +276,36 @@ final class KubernetesModel: ObservableObject {
         restartReading(side: false)
     }
 
+    /// The pods asked for again, for `owner`'s filter, with only those the
+    /// selector picks — or all of them, nil. The namespaces and the version
+    /// stay as read. Two pages showing at once share one list: the one that
+    /// asked last has it, and the other says so (`isSelector(of:)`).
+    func setLabelSelector(_ selector: String?, for owner: AnyObject) {
+        selectorOwner = ObjectIdentifier(owner)
+        changeSelector(selector)
+    }
+
+    /// `owner`'s page hides: the list it narrowed is every pod's again.
+    /// Another page's selector is left alone.
+    func releaseLabelSelector(for owner: AnyObject) {
+        guard selectorOwner == ObjectIdentifier(owner) else { return }
+        selectorOwner = nil
+        changeSelector(nil)
+    }
+
+    /// Whether the list is asked for with `selector` on `owner`'s behalf —
+    /// or, for no selector, with none at all.
+    func isSelector(_ selector: String?, of owner: AnyObject) -> Bool {
+        selector == labelSelector && (selector == nil || selectorOwner == ObjectIdentifier(owner))
+    }
+
+    private func changeSelector(_ selector: String?) {
+        guard selector != labelSelector else { return }
+        labelSelector = selector
+        guard selectedName != nil else { return }
+        restartReading(side: false)
+    }
+
     /// After a sign-in, or a failure put right: the context's requests may go again.
     func retry() {
         guard let name = selectedName else { return }
@@ -301,10 +342,11 @@ final class KubernetesModel: ObservableObject {
         podState = .loading
         let client = KubeClient(connection(for: context))
         let scope = self.scope
+        let options = KubeListOptions(labelSelector: labelSelector)
         let generation = self.generation
         following = Task { [weak self] in
             do {
-                for try await update in client.follow(.pods, in: scope) {
+                for try await update in client.follow(.pods, in: scope, options: options) {
                     guard let self, self.generation == generation else { return }
                     self.received(update)
                 }
@@ -336,6 +378,7 @@ final class KubernetesModel: ObservableObject {
                 let table = try await client.list(.namespaces)
                 guard let self, self.selectedName == name else { return }
                 self.namespaces = table.rows.map(\.id.name).sorted()
+                self.namespacesRefused = nil
             } catch let error as KubeAPIError where error.isForbidden {
                 guard let self, self.selectedName == name else { return }
                 self.namespacesRefused = "Listing namespaces isn't allowed here: type one."

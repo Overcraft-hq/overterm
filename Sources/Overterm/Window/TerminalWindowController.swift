@@ -108,6 +108,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let kubernetesPage = KubernetesPageModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
+    /// …and for the ⌃⌘J switcher, while the palette shows it.
+    var kubernetesSwitcherHeld = false
     /// The review tabs' page: the one showing, over the body as the pages are.
     var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
@@ -658,6 +660,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDockerPorts()
         wireDockerAttention()
         watchDockerPalette().store(in: &cancellables)
+        watchKubernetesPalette().store(in: &cancellables)
         installPageKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
@@ -1316,6 +1319,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
+        // The Kubernetes list is the app's: the window looked at asks with its filter.
+        if kubernetesPage.visible { kubernetesPage.applySelector() }
         editor?.reloadIfChangedOnDisk()
         // Catches what the watchers can't see: they cover the checkout and its
         // git state, not all of .git (packed-refs, say).
@@ -2939,6 +2944,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func hidePalette() {
         paletteView?.isHidden = true
         focusSelectedTerminal()
+        releaseKubernetesSwitcher()
     }
 
     /// Actions first, then tabs, worktrees and snippets — the order shown

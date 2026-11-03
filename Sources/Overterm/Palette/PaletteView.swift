@@ -85,6 +85,7 @@ struct PaletteView: View {
         case .worktree: "Worktrees"
         case .history: "History"
         case .container: "Docker"
+        case .kubernetes: "Kubernetes"
         }
     }
 
@@ -128,6 +129,7 @@ struct PaletteView: View {
         case .tab: "go to the tab"
         case .worktree: "open the worktree"
         case .container: "show it on the Docker page"
+        case .kubernetes: "show it on the Kubernetes page"
         }
     }
 
@@ -238,19 +240,37 @@ struct PaletteField: NSViewRepresentable {
     /// The chrome is dark whatever the system appearance; the field's default
     /// label colour would follow the system and go dark-on-dark.
     var textColor: NSColor = .white
+    /// Takes the keyboard once it is in a window (a picker over a page);
+    /// the palette's is given it by the window.
+    var focusesOnAppear = false
+    var fontSize: CGFloat = 16
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: ChromeMetrics.text(16))
+        field.font = .systemFont(ofSize: ChromeMetrics.text(fontSize))
         field.textColor = textColor
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder,
-            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: ChromeMetrics.text(16))])
+            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: ChromeMetrics.text(fontSize))])
         field.delegate = context.coordinator
+        if focusesOnAppear { Self.focus(field) }
         return field
+    }
+
+    /// The keyboard to the field once it is in a window — SwiftUI puts it
+    /// there after making it; tried again shortly.
+    static func focus(_ field: NSTextField, attempts: Int = 10) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempts == 10 ? 0 : 0.05)) { [weak field] in
+            guard let field else { return }
+            if let window = field.window {
+                window.makeFirstResponder(field)
+            } else if attempts > 0 {
+                focus(field, attempts: attempts - 1)
+            }
+        }
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {

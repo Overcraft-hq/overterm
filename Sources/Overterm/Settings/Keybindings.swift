@@ -306,6 +306,10 @@ enum KeyCommands {
         .init("docker.composeRestart", "Compose Restart (the checkout's stack)", group: "Panels"),
         .init("docker.composeWatch", "Compose Watch (the checkout's stack)", group: "Panels"),
         .init("kubernetes.page", "Kubernetes", group: "Panels", key: "alt+cmd+j"),
+        // Not ⇧⌥⌘J, as Docker's ⇧⌥⌘P would have it: Ghostty v1.3.1 binds
+        // that (write_screen_file:open), and ⌘J, ⇧⌘J and ⌃⇧⌘J. Its ⌃⌘
+        // defaults are only [ and ].
+        .init("kubernetes.switch", "Kubernetes Switcher", group: "Panels", key: "ctrl+cmd+j"),
         .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),
         .init("notes.graph", "Graph View", group: "Panels", key: "alt+cmd+k"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),

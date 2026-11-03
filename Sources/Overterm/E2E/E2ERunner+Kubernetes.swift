@@ -128,7 +128,18 @@ extension E2ERunner {
         check("the filter's text picks rows", page.rows.map(\.id) == ["shop/worker-5c"], "\(page.rows.map(\.id))")
         page.filter = "status:oomkilled"
         check("and a status", page.rows.map(\.id) == ["shop/web-7d9"], "\(page.rows.map(\.id))")
+        page.filter = "label:app=web"
+        page.applySelector()
+        check(
+            "label: is asked of the server", await eventually(10) { model.pods.sorted.map(\.id.description) == ["shop/web-7d9"] },
+            "\(model.pods.sorted.map(\.id.description))")
+        check(
+            "as the list's selector, through the proxy",
+            fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["labelSelector"] == "app=web" })
+        check("and the page says so", await shownText(15) { $0.contains("Asked of the server: app=web") } != nil)
         page.filter = ""
+        page.applySelector()
+        check("cleared, every pod again", await eventually(10) { model.pods.count == 2 }, "\(model.pods.count)")
         let filterFocus = page.focusFilter
         check("/ goes to the filter", page.press("/") && page.focusFilter == filterFocus + 1)
         page.giveListTheKeyboard()
@@ -136,6 +147,7 @@ extension E2ERunner {
         check("? shows the keys", page.cheatSheet)
         _ = page.press("x")
         check("any key closes them", !page.cheatSheet)
+        await namespaceAndContextPickers(model, page)
 
         // All namespaces: same-named pods in two are two rows.
         check("0 is all namespaces", page.press("0") && model.scope == .all)
@@ -150,8 +162,11 @@ extension E2ERunner {
             fake.requests.contains { $0.path == "/api/v1/pods" && $0.query["includeObject"] == "Metadata" })
         check("whose creation time the age counts from", model.anchors[KubeRowID(namespace: "payments", name: "api-0")]?.created != nil)
 
-        // Production: the band over the whole page.
-        model.select("fake-prod")
+        // Production: the band over the whole page — reached by c.
+        check("c opens the contexts", page.press("c") && page.picker?.kind == .context)
+        page.picker?.query = "prod"
+        check("prod finds fake-prod", page.picker?.selected?.title == "fake-prod" && page.picker?.selected?.production == true)
+        page.choosePicked()
         check("fake-prod is picked", model.selected?.isProduction == true)
         check("its band says production", page.band?.hasPrefix("PRODUCTION · fake-prod") == true, page.band ?? "none")
         check("and is drawn across the page", await shownText(15) { $0.contains("PRODUCTION") } != nil)
@@ -162,8 +177,10 @@ extension E2ERunner {
         if kubectl != nil {
             check("its proxy is up", await eventually(5) { model.proxyStatus == .open }, "\(model.proxyStatus)")
         }
-        model.select("fake-dev")
-        check("back on fake-dev the band goes", page.band == nil)
+        page.openPicker(.context)
+        page.picker?.move(-1)
+        page.choosePicked()
+        check("back on fake-dev the band goes", model.selectedName == "fake-dev" && page.band == nil)
         check("and its namespace is as it was left", model.scope == .all)
 
         // What reached the fake: reads only.
@@ -173,14 +190,22 @@ extension E2ERunner {
         check("the fake was sent no write", fake.writes.isEmpty, "\(fake.writes)")
         check("nor reached by any subresource", fake.subresourceRequests.isEmpty, "\(fake.subresourceRequests)")
 
-        // Hidden, it reads nothing.
+        // Hidden, it reads nothing — and its label: goes with it.
+        _ = page.press("n")
+        page.picker?.query = "shop"
+        page.choosePicked()
+        page.filter = "label:app=web"
+        page.applySelector()
+        check("a label: on the page", await eventually(10) { model.pods.sorted.map(\.id.description) == ["shop/web-7d9"] })
         check("a watch is open while it shows", await eventually(5) { fake.openWatches >= 1 }, "\(fake.openWatches) open")
         app.toggleKubernetesPage(nil)
         check("back to the terminal", app.store.showingOverlay == nil)
+        check("hidden, its label: is the list's no more", model.labelSelector == nil && page.filter == "label:app=web", model.labelSelector ?? "none")
         check("hidden, its watch ends", await eventually(5) { fake.openWatches == 0 }, "\(fake.openWatches) open")
         fake.forgetRequests()
         await pause(1.5)
         check("and nothing is asked", fake.requests.isEmpty, "\(fake.requests)")
+        await kubernetesSwitcher(model, page, fake)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -206,6 +231,86 @@ extension E2ERunner {
         model.connectOverride = nil
         model.statusOverride = nil
         try? FileManager.default.removeItem(at: kubeconfig)
+    }
+
+    /// `n`, by the key as the window takes it: the namespaces, one picked by
+    /// typing, one typed that nobody listed, then back.
+    private func namespaceAndContextPickers(_ model: KubernetesModel, _ page: KubernetesPageModel) async {
+        guard
+            let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "n",
+                charactersIgnoringModifiers: "n", isARepeat: false, keyCode: 45)
+        else { return check("an n key", false) }
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        check("n is the list's", app.handlePageKey(event))
+        check(
+            "and lists the namespaces", page.picker?.kind == .namespace && page.picker?.results.map(\.title) == ["All namespaces", "shop", "payments"],
+            "\(page.picker?.results.map(\.title) ?? [])")
+        check("the one showing highlighted", page.picker?.selected?.title == "shop")
+        check("drawn over the page", await shownText(15) { $0.contains("payments") } != nil)
+        check("its field has the keyboard", await eventually(3) { !self.app.kubernetesListHasKeyboard() && self.window.firstResponder is NSTextView })
+        page.picker?.query = "pay"
+        page.choosePicked()
+        check("pay picks payments", model.scope == .namespace("payments") && page.picker == nil)
+        check(
+            "whose pods are listed", await eventually(10) { model.pods.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9"] },
+            "\(model.pods.sorted.map(\.id.description))")
+        check("and the list has the keyboard again", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+        _ = page.press("n")
+        page.picker?.query = "Nowhere"
+        check("a name nobody listed can be typed", page.picker?.selected?.typed == true && page.picker?.selected?.title == "nowhere")
+        page.choosePicked()
+        check("and is the namespace", model.scope == .namespace("nowhere"))
+        check("with no pods in it", await shownText(15) { $0.contains("No pods in nowhere.") } != nil)
+        _ = page.press("n")
+        page.picker?.query = "shop"
+        page.choosePicked()
+        check("back to shop", model.scope == .namespace("shop") && page.picker == nil)
+        check("its pods again", await eventually(10) { model.pods.count == 2 }, "\(model.pods.count)")
+        _ = page.press("n")
+        check("Esc", page.picker != nil)
+        page.closePicker()
+        check("closes it, the namespace as it was", page.picker == nil && model.scope == .namespace("shop"))
+    }
+
+    /// ⌃⌘J from the terminal, the page hidden: it reads as the page would,
+    /// finds a context, a namespace and a pod, and ↩ shows the pod on the page.
+    private func kubernetesSwitcher(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        app.showKubernetesSwitcher(nil)
+        check("⌃⌘J opens the palette on Kubernetes", app.paletteView?.isHidden == false && app.palette.scope == .kubernetes)
+        check("and holds the model while it shows", app.kubernetesSwitcherHeld && model.isShown)
+        app.palette.query = "worker"
+        check(
+            "it finds a pod the hidden page's label: would leave out", await eventually(10) { self.app.palette.results.first?.id == "k.p.shop/worker-5c" },
+            "\(app.palette.results.prefix(3).map(\.id))")
+        check("saying why it fails", app.palette.results.first?.subtitle?.contains("CrashLoopBackOff") == true, app.palette.results.first?.subtitle ?? "")
+        app.palette.query = "fake-prod"
+        check("a context", app.palette.results.first?.id == "k.c.fake-prod", "\(app.palette.results.prefix(3).map(\.id))")
+        app.palette.query = "payments"
+        check("a namespace", app.palette.results.contains { $0.id == "k.n.payments" }, "\(app.palette.results.prefix(3).map(\.id))")
+        app.palette.query = "worker"
+        guard let worker = app.palette.results.first(where: { $0.id == "k.p.shop/worker-5c" }) else { return }
+        // As the palette's ↩ does: closed, then performed.
+        app.hidePalette()
+        worker.perform(true, [:])
+        check("↩ shows the page", app.store.showingOverlay == .kubernetes)
+        check(
+            "with the pod selected, the label: that could hide it cleared",
+            await eventually(10) { page.selection == ["shop/worker-5c"] && page.rows.contains { $0.id == "shop/worker-5c" } } && page.filter.isEmpty,
+            "\(page.selection) \(page.filter)")
+        check("and the list has the keyboard", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+        check("the switcher lets go once the page holds", await eventually(3) { !self.app.kubernetesSwitcherHeld } && model.isShown)
+        check(
+            "⌃⌘J again closes it",
+            { () -> Bool in
+                self.app.showKubernetesSwitcher(nil)
+                self.app.showKubernetesSwitcher(nil)
+                return self.app.paletteView?.isHidden == true
+            }())
+        check("and lets go", await eventually(3) { !self.app.kubernetesSwitcherHeld })
+        app.toggleKubernetesPage(nil)
+        check("the page hidden again, nobody looks", await eventually(5) { !model.isShown && fake.openWatches == 0 }, "\(fake.openWatches) open")
     }
 
     /// The real proxy of a read-only context: a write and an exec, sent as

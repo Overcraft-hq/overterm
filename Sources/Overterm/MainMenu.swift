@@ -112,6 +112,7 @@ enum MainMenu {
         command(viewMenu, "Compose Watch", #selector(TerminalWindowController.composeWatch(_:)), "docker.composeWatch")
         // Docker's way: ⌥⌘J again goes back to the terminal.
         command(viewMenu, "Kubernetes", #selector(TerminalWindowController.toggleKubernetesPage(_:)), "kubernetes.page")
+        command(viewMenu, "Kubernetes Switcher", #selector(TerminalWindowController.showKubernetesSwitcher(_:)), "kubernetes.switch")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
