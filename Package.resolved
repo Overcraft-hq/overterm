@@ -1,5 +1,5 @@
 {
-  "originHash" : "cff1b41b1924c208f9a45d98fee9fd10c18540909552c1456428f558f74eabc4",
+  "originHash" : "b1f22c2ff1ebf6aa6af455ec04084332727b840281370dff788276b054ed5e53",
   "pins" : [
     {
       "identity" : "mysql-nio",
@@ -105,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio-ssl.git",
       "state" : {
-        "revision" : "322f3c2a4a21df31c84ca416bf65ee5e9059e440",
-        "version" : "2.37.5"
+        "revision" : "15e0b9e495786807272dd4891fa4bac76aa43034",
+        "version" : "2.37.6"
       }
     },
     {

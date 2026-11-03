@@ -14,6 +14,7 @@ version is tagged `v<version>`.
 - terminal: a pane's header shows only the ports its own processes listen on — not a neighbouring pane's, nor the checkout's Docker stack
 - settings: View the Full Changelog opens over a full-screen window, on the desktop you are on
 - settings: About ▸ Acknowledgements lists the software Overterm is built on — Ghostty and what it links, tree-sitter, the Swift packages, the notes' libraries, Excalidraw and its fonts — each with its licence
+- build: swift-nio-ssl 2.37.6
 - e2e: a test run's first tab starts in an empty folder of its own, never the home folder of whoever runs it
 
 ## 1.5.1 — 2026-11-02

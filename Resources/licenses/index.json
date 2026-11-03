@@ -458,7 +458,7 @@
  {
   "group": "Swift packages",
   "name": "swift-nio-ssl",
-  "version": "2.37.5",
+  "version": "2.37.6",
   "license": "Apache-2.0",
   "url": "https://github.com/apple/swift-nio-ssl",
   "file": "licenses/swift-nio-ssl.txt"
