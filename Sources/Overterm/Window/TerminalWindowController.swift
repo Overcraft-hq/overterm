@@ -26,8 +26,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var paletteView: NSView?
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
-    /// The Docker list's single-letter keys (DockerKey).
-    var dockerKeys: Any?
+    /// The pages' lists' single-letter keys (DockerKey, for Docker's).
+    var pageKeys: Any?
     /// What the engine's events say went wrong (DockerAttention).
     var dockerAttention = DockerAttention()
     /// The last connection a container was opened in the Database panel with.
@@ -90,13 +90,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var overviewPoll: Timer?
     /// The Settings tab's page (Warp's): over the window's body while it shows.
     let settingsPage = SettingsPageModel()
-    /// The pages that cover the body (WorkspaceOverlay), each its own view.
-    private var overlayViews: [WorkspaceOverlay: NSView] = [:]
-    var settingsView: NSView? { overlayViews[.settings] }
-    var dockerView: NSView? { overlayViews[.docker] }
-    /// Where a page made later goes: the window's content, under the strip.
-    private weak var overlayContent: NSView?
-    private var overlayTop: NSLayoutYAxisAnchor?
+    /// The pages that cover the body (WorkspaceOverlay): what each is
+    /// declared to do, and its view.
+    let pages = WorkspacePages()
+    var settingsView: NSView? { pages.view(.settings) }
+    var dockerView: NSView? { pages.view(.docker) }
     /// The Docker page's own state; its view is made the first time it opens.
     let dockerPage = DockerPageModel()
     /// The rail's Docker panel and the container it put on the right.
@@ -646,12 +644,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireAPI()
         wireNotes()
         wireDatabase()
-        watchDockerPage().store(in: &cancellables)
+        declarePage(settingsWorkspacePage())
+        wireDockerPage()
         wireDockerPanel()
         wireDockerPorts()
         wireDockerAttention()
         watchDockerPalette().store(in: &cancellables)
-        installDockerKeys()
+        installPageKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -708,7 +707,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
         // The pages (Settings's tab) cover the body, under the title bar
         // where the tab strip is.
-        addOverlay(
+        pages.add(
             .settings,
             NSHostingView(rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme)),
             in: content, below: titleBottom)
@@ -2689,8 +2688,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// terminal hidden under the page (lines picked in a log view answer
     /// it themselves: `DockerLogTextView`).
     @objc func askAboutSelection(_ sender: Any?) {
-        if store.showingOverlay == .docker {
-            if !dockerPage.askWhySelected() { NSSound.beep() }
+        if let overlay = store.showingOverlay, let ask = pages[overlay]?.askAboutSelection {
+            if !ask() { NSSound.beep() }
             return
         }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
@@ -2738,11 +2737,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
-    /// The keyboard back where it was before a sheet: the Docker page's
-    /// list while the page shows (the terminal is hidden under it), else
+    /// The keyboard back where it was before a sheet: the page's list
+    /// while a page with one shows (the terminal is hidden under it), else
     /// the selected terminal.
     func focusAfterSheet() {
-        if store.showingOverlay == .docker { focusDockerList() } else { focusSelectedTerminal() }
+        if let overlay = store.showingOverlay, pages[overlay]?.hasList == true {
+            focusPageList(overlay)
+        } else {
+            focusSelectedTerminal()
+        }
     }
 
     /// Types the prompt into the chosen agent, or into a new agent tab.
@@ -3087,7 +3090,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 }
             }
         }
-        items += dockerPaletteItems()
+        for page in pages.all { items += page.paletteItems?() ?? [] }
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
@@ -3422,39 +3425,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Pages over the body (Settings)
 
-    /// A page's view, hidden, covering everything under the tab strip.
-    private func addOverlay(_ overlay: WorkspaceOverlay, _ view: NSView, in content: NSView, below top: NSLayoutYAxisAnchor) {
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isHidden = true
-        // Beside the pages already there, under what floats over them (the
-        // palette, the switcher) — a page made later must not cover those.
-        if let sibling = overlayViews.values.first {
-            content.addSubview(view, positioned: .above, relativeTo: sibling)
-        } else {
-            content.addSubview(view)
-        }
-        overlayContent = content
-        overlayTop = top
-        NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: top),
-            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
-        overlayViews[overlay] = view
-    }
-
     /// A page, opened if it isn't, over the body — in place of whichever
     /// page showed: they take turns.
     func showOverlay(_ overlay: WorkspaceOverlay) {
-        if overlayViews[overlay] == nil, let content = overlayContent, let top = overlayTop, let made = makeOverlay(overlay) {
-            addOverlay(overlay, made, in: content, below: top)
-        }
-        guard let view = overlayViews[overlay] else { return }
+        guard let view = pages.made(overlay) else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
         hideSpotlight(keepTerminalSearch: false)
-        if let showing = store.showingOverlay, showing != overlay { overlayViews[showing]?.isHidden = true }
+        if let showing = store.showingOverlay, showing != overlay { pages.view(showing)?.isHidden = true }
         // A review's page and these take turns too.
         hideReviewPage(focus: false)
         store.showOverlay(overlay)
@@ -3466,7 +3444,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func hideOverlay(focus: Bool = true) {
         guard let showing = store.showingOverlay else { return }
         store.hideOverlay()
-        overlayViews[showing]?.isHidden = true
+        pages.view(showing)?.isHidden = true
         if focus { focusSelectedTerminal() }
     }
 
@@ -3474,10 +3452,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func closeOverlay(_ overlay: WorkspaceOverlay) {
         if store.showingOverlay == overlay { hideOverlay() }
         store.closeOverlay(overlay)
-        switch overlay {
-        case .settings: settingsPage.draft = nil
-        case .docker: dockerPage.selection = []
-        }
+        pages[overlay]?.closed?()
     }
 
     /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
@@ -3902,14 +3877,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
-        updateDockerWindowVisible()
-        updateDockerVisibility()
-        updateDockerPageHold()
+        for page in pages.all { page.occlusionChanged?() }
     }
 
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
-        if let dockerKeys { NSEvent.removeMonitor(dockerKeys) }
+        if let pageKeys { NSEvent.removeMonitor(pageKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peek.close()
@@ -3920,19 +3893,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
-        // What this window holds of Docker's polling goes with it: kept,
-        // the app reloaded the list every 15 s for good, and Docker Desktop
-        // never rested (Resource Saver) — a closed window still "looking".
-        if dockerPanelShown {
-            dockerPanelShown = false
-            DockerModel.shared.hide()
-        }
-        if dockerPageHeld {
-            dockerPageHeld = false
-            DockerModel.shared.hide()
-        }
-        dockerPage.close()
-        removeDockerReadCopies()
+        for page in pages.all { page.windowClosing?() }
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }

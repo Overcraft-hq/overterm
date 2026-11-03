@@ -3,7 +3,8 @@ import Foundation
 /// A page that covers the window's body in place of the selected terminal
 /// tab, and sits in the strip after the terminal tabs while open
 /// (`TabStore.openOverlays`). Not a `Tab`: no terminal, no group, no ⌘1–9.
-enum WorkspaceOverlay: String, Equatable {
+/// The window wires each from its declaration (`WorkspacePage`).
+enum WorkspaceOverlay: String, Equatable, CaseIterable {
     case settings, docker
 
     var title: String {

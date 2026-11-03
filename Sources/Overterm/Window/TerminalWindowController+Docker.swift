@@ -490,63 +490,82 @@ extension TerminalWindowController {
         updateRightPaneVisibility()
     }
 
-    /// The page's view, made the first time it opens.
-    func makeOverlay(_ overlay: WorkspaceOverlay) -> NSView? {
-        switch overlay {
-        case .settings: return nil
-        case .docker:
-            guard let theme else { return nil }
-            dockerPage.actions = dockerActions
+    /// The Docker page, as the window wires it (WorkspacePage).
+    func dockerWorkspacePage() -> WorkspacePage {
+        var page = WorkspacePage(.docker)
+        // Made the first time it opens.
+        page.makeView = { [weak self] in
+            guard let self, let theme = self.theme else { return nil }
+            self.dockerPage.actions = self.dockerActions
             return NSHostingView(
                 rootView: DockerPageView(
-                    page: dockerPage, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, updates: dockerPage.updates, theme: theme,
-                    actions: dockerActions))
+                    page: self.dockerPage, docker: .shared, checkoutCompose: self.dockerPanel.checkoutCompose, updates: self.dockerPage.updates,
+                    theme: theme, actions: self.dockerActions))
         }
+        // The model polls only while a page shows it; events run regardless
+        // once it has started.
+        page.visibilityChanged = { [weak self] visible in
+            self?.dockerPage.visible = visible
+            self?.updateComposeFile()
+            // The emitted value: `showingOverlay` isn't set yet.
+            self?.updateDockerPageHold(pageShowing: visible)
+        }
+        page.closed = { [weak self] in self?.dockerPage.selection = [] }
+        page.hasList = true
+        page.press = { [weak self] characters in self?.dockerPage.press(characters) ?? false }
+        // ⌘L over the page means the selected container that failed (lines
+        // picked in a log view answer it themselves: `DockerLogTextView`).
+        page.askAboutSelection = { [weak self] in self?.dockerPage.askWhySelected() ?? false }
+        page.paletteItems = { [weak self] in self?.dockerPaletteItems() ?? [] }
+        page.occlusionChanged = { [weak self] in
+            self?.updateDockerWindowVisible()
+            self?.updateDockerVisibility()
+            self?.updateDockerPageHold()
+        }
+        page.windowClosing = { [weak self] in self?.dockerWindowClosing() }
+        return page
+    }
+
+    /// The page declared, and its list given the keyboard when it asks.
+    func wireDockerPage() {
+        declarePage(dockerWorkspacePage())
+        dockerPage.$focusList
+            .dropFirst()
+            .sink { [weak self] _ in self?.focusDockerList() }
+            .store(in: &cancellables)
     }
 
     /// View ▸ Docker (⌥⌘P): the page, or back to the terminal from it.
     @objc func toggleDockerPage(_ sender: Any?) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
-        if store.showingOverlay == .docker {
-            hideOverlay()
-        } else {
-            showOverlay(.docker)
-            focusDockerList()
-        }
+        togglePage(.docker)
     }
 
-    /// The keyboard to the list's table — AppKit's way, since SwiftUI's
-    /// focus wouldn't take it back from the filter field. Its table exists
-    /// only once SwiftUI has laid the list out: tried again shortly.
-    func focusDockerList(attempts: Int = 10) {
-        guard store.showingOverlay == .docker, let page = dockerView else { return }
-        if let table = Self.firstTable(in: page) {
-            window?.makeFirstResponder(table)
-        } else if attempts > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.focusDockerList(attempts: attempts - 1) }
-        }
-    }
+    /// The keyboard to the list's table (`focusPageList`).
+    func focusDockerList(attempts: Int = 10) { focusPageList(.docker, attempts: attempts) }
 
-    private static func firstTable(in view: NSView) -> NSTableView? {
-        if let table = view as? NSTableView { return table }
-        for subview in view.subviews {
-            if let table = firstTable(in: subview) { return table }
-        }
-        return nil
-    }
+    /// The page shows in this window and its list has the keyboard
+    /// (`pageListHasKeyboard`).
+    func dockerListHasKeyboard(_ event: NSEvent? = nil) -> Bool { pageListHasKeyboard(.docker, event) }
 
-    /// The model polls only while a page shows it; events run regardless
-    /// once it has started.
-    func watchDockerPage() -> AnyCancellable {
-        store.$showingOverlay
-            .map { $0 == .docker }
-            .removeDuplicates()
-            .sink { [weak self] visible in
-                self?.dockerPage.visible = visible
-                self?.updateComposeFile()
-                // The emitted value: `showingOverlay` isn't set yet.
-                self?.updateDockerPageHold(pageShowing: visible)
-            }
+    /// A key down: the list's when it has the keyboard and the key means
+    /// something there (DockerKey) — `handlePageKey`, for Docker's page.
+    func handleDockerKey(_ event: NSEvent) -> Bool { store.showingOverlay == .docker && handlePageKey(event) }
+
+    /// What this window holds of Docker's polling goes with it: kept, the
+    /// app reloaded the list every 15 s for good, and Docker Desktop never
+    /// rested (Resource Saver) — a closed window still "looking".
+    func dockerWindowClosing() {
+        if dockerPanelShown {
+            dockerPanelShown = false
+            DockerModel.shared.hide()
+        }
+        if dockerPageHeld {
+            dockerPageHeld = false
+            DockerModel.shared.hide()
+        }
+        dockerPage.close()
+        removeDockerReadCopies()
     }
 
     /// Holds `DockerModel.show()` while the page shows in a window on
@@ -567,39 +586,6 @@ extension TerminalWindowController {
         guard !AppEnvironment.isIsolated, let window else { return }
         let shown = window.occlusionState.contains(.visible)
         if dockerPage.windowVisible != shown { dockerPage.windowVisible = shown }
-    }
-
-    /// Letters act on the list while its table has the keyboard; in the
-    /// filter field they are text. SwiftUI's own key handling is macOS 14.
-    func installDockerKeys() {
-        dockerKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.handleDockerKey(event) else { return event }
-            return nil
-        }
-        dockerPage.$focusList
-            .dropFirst()
-            .sink { [weak self] _ in self?.focusDockerList() }
-            .store(in: &cancellables)
-    }
-
-    /// A key down: the list's when it has the keyboard and the key means
-    /// something there (DockerKey), with no ⌘, ⌃ or ⌥ — those are menus'.
-    func handleDockerKey(_ event: NSEvent) -> Bool {
-        guard dockerListHasKeyboard(event), event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-            let characters = event.characters
-        else { return false }
-        return dockerPage.press(characters)
-    }
-
-    /// The page shows in this window and its list — the page's first table,
-    /// the one `focusDockerList` gives the keyboard, not a text field's
-    /// editor — is the first responder. A table in a detail (a build's
-    /// steps) is not the list: there ⌫ would remove the selected build.
-    func dockerListHasKeyboard(_ event: NSEvent? = nil) -> Bool {
-        guard store.showingOverlay == .docker, event?.window ?? window === window, let page = dockerView,
-            let table = window?.firstResponder as? NSTableView
-        else { return false }
-        return table.isDescendant(of: page) && Self.firstTable(in: page) === table
     }
 
     func dockerSettingsChanged(_ keys: Set<String> = ["docker.enabled"]) {
@@ -685,9 +671,7 @@ extension TerminalWindowController {
     @objc func showDockerSwitcher(_ sender: Any?) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         DockerModel.shared.start()
-        if paletteView?.isHidden == false, palette.scope == .container { return hidePalette() }
-        if paletteView?.isHidden != false { showPalette(nil) }
-        palette.scope = .container
+        togglePalette(scope: .container)
     }
 
     /// Containers came or went while the palette shows them, or what a
