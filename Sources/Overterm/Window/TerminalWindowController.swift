@@ -26,7 +26,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var paletteView: NSView?
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
-    /// The pages' lists' single-letter keys (DockerKey, for Docker's).
+    /// The pages' lists' single-letter keys (each page's `ResourceKey`
+    /// table — DockerKey, for Docker's).
     var pageKeys: Any?
     /// What the engine's events say went wrong (DockerAttention).
     var dockerAttention = DockerAttention()

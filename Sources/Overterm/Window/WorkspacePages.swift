@@ -21,7 +21,9 @@ struct WorkspacePage {
     /// when it opens from the menu and when a sheet over it closes.
     var hasList = false
     /// A key down while its list has the keyboard, with no ⌘, ⌃ or ⌥ (those
-    /// are menus'): true when the key meant something there.
+    /// are menus'): true when the key meant something there. A page reads
+    /// it by its own table (`ResourceKey.press`); false lets it go on to
+    /// the list, never to the terminal under the page.
     var press: (@MainActor (String) -> Bool)?
     /// ⌘L while it shows: its own answer (false beeps), never the terminal
     /// hidden under it.
