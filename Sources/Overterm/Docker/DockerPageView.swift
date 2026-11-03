@@ -407,7 +407,7 @@ struct DockerPageView: View {
                         guard !names.isEmpty else { return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(names.joined(separator: "\n"), forType: .string)
-                    })
+                    }, accessibilityIdentifier: "docker.list")
             }
         }
     }

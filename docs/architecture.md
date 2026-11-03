@@ -1486,6 +1486,17 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   and the scroll position go with it. The filter is `DockerFilter`
   (`status:running project:api image:postgres port:5432 is:test`, `-`
   negates).
+- **The containers list** is a `ResourceTable` (shared in `ResourcePage/`;
+  `DockerTableRow`, the rows): an AppKit table whose rows are the page's
+  SwiftUI rows, a view only while on screen and reused as they scroll (as
+  a SwiftUI `List`, 160 containers took 39 ms a scroll step). A press goes
+  to the row's view whole — a project's chevron is its button — and
+  selects the row on release (⌘ adds or takes away, ⇧ extends); the
+  right-click menu is the clicked rows' verbs. Docker's has one column
+  under its own SwiftUI header (CPU and memory sort there); given several
+  `ResourceColumn`s the table draws their header and sets a
+  `ResourceSort`, a group's row laid across them — Kubernetes' lists, with
+  the server's columns.
 - **Verbs** (`ResourceVerb`, shared in `ResourcePage/`;
   `DockerPageModel+Verbs`): what can be done to a container, a project,
   an image, a volume, a network, a build or a model is one list, drawn twice — as the buttons under its detail's title
