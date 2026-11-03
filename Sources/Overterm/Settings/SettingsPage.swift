@@ -847,6 +847,10 @@ final class ChangelogWindowController: NSWindowController {
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered,
             defer: false)
         window.title = "Overterm Changelog"
+        // Over a full-screen Overterm, on the Space you are on: as a window
+        // of its own it opened on another desktop, and the button seemed dead.
+        window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
+        window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: ChangelogView(text: Changelog.bundled ?? "No changelog in this build."))
         super.init(window: window)
     }

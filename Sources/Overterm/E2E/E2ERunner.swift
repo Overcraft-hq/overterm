@@ -4407,6 +4407,11 @@ final class E2ERunner {
         (NSApp.delegate as? AppDelegate)?.showChangelog(nil)
         check("View Latest Changelog opens it", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
         ChangelogWindowController.shared.window?.close()
+        await pause(0.3)
+        // Closed, it opens again — About's button is pressed more than once.
+        ChangelogWindowController.shared.show()
+        check("and again once closed", await eventually(2) { ChangelogWindowController.shared.window?.isVisible == true })
+        ChangelogWindowController.shared.window?.close()
         app.closeOverlay(.settings)
     }
 
