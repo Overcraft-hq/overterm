@@ -4229,7 +4229,18 @@ final class E2ERunner {
         check("its search finds Themes by a setting in it", app.settingsPage.sections == [.themes, .editor], "\(app.settingsPage.sections)")
         app.settingsPage.search = "split"
         check("and Keyboard Shortcuts by a command", app.settingsPage.sections.contains(.shortcuts), "\(app.settingsPage.sections)")
+        app.settingsPage.search = "kubeconfig"
+        check("and Kubernetes by its kubeconfigs", app.settingsPage.sections.contains(.kubernetes), "\(app.settingsPage.sections)")
         app.settingsPage.search = ""
+        app.settingsPage.show(.kubernetes)
+        await pause(0.3)
+        check("Kubernetes' page shows", app.settingsPage.section == .kubernetes && app.settingsView?.isHidden == false)
+        // This Mac's current context is production: an isolated run sees no
+        // kubeconfig of the user's — not ~/.kube/config, not the setting's.
+        check(
+            "an isolated run reads no kubeconfig of the user's",
+            AppEnvironment.guardsKubeconfig && AppEnvironment.kubeconfigs(extra: ["~/.kube/config"]).isEmpty
+                && KubeContextList.fromEnvironment(extra: ["~/.kube/config"], settings: [:]).contexts.isEmpty)
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             app.settingsPage.show(.appearance)
             await pause(0.8)

@@ -146,9 +146,11 @@ enum SettingsJSON {
             }
             return nil
         }
-        // A list on one line, as the app writes them: to its closing bracket.
-        if rest[index] == "[" {
+        // A list or an object on one line, as the app writes them: to the
+        // bracket that closes it. Over several lines, it isn't edited in place.
+        if rest[index] == "[" || rest[index] == "{" {
             var i = rest.index(after: index)
+            var depth = 1
             var inString = false
             while i < rest.endIndex {
                 if inString, rest[i] == "\\" {
@@ -156,13 +158,17 @@ enum SettingsJSON {
                     continue
                 }
                 if rest[i] == "\"" { inString.toggle() }
-                if !inString, rest[i] == "]" { return rest.index(after: i) }
+                if !inString {
+                    if rest[i] == "[" || rest[i] == "{" { depth += 1 }
+                    if rest[i] == "]" || rest[i] == "}" {
+                        depth -= 1
+                        if depth == 0 { return rest.index(after: i) }
+                    }
+                }
                 i = rest.index(after: i)
             }
             return nil
         }
-        // Objects, and lists over several lines, aren't edited in place.
-        if rest[index] == "{" { return nil }
         var i = index
         while i < rest.endIndex, !",/ \t".contains(rest[i]) { i = rest.index(after: i) }
         return i

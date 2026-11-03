@@ -309,7 +309,10 @@ rewriting it whole only when it isn't laid out one key per line. A
 `DirectoryWatcher` applies a hand edit at once. A file that doesn't parse
 is never written over: the last good settings stay, the page says why.
 A value that doesn't fit its setting is listed and its default applies;
-an unknown key is listed and left alone. `changes` names the keys that
+an unknown key is listed and left alone. A `list` setting is the user's own
+names or paths; an `entries` one (`kubernetes.contexts`) is named entries
+with fields of their own, each field checked on its own (Kubernetes,
+below). `changes` names the keys that
 changed, for whatever acts on them. Before 1.17 settings were UserDefaults
 (`settings.*`): `Settings.migrate` carries them over once.
 
@@ -2209,6 +2212,72 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`Fixtures/scout-cves.sarif.json`) and the fake's `scoutReport`, which
   a stub `docker` prints with its progress, for the store's tests and the
   scenario; a stub signed out, a slow one and a timeout are tested too.
+
+## Kubernetes
+
+The design is `docs/design/kubernetes/analysis.md`; this is what exists of
+it (`Sources/Overterm/Kubernetes/`). So far: the kubeconfigs, the contexts
+and their classes, and the settings — nothing runs kubectl and nothing
+reaches a cluster yet.
+
+**Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
+list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
+(`ShellEnvironment`; a Dock-launched app has none of its own),
+colon-separated, empty entries and repeats passed over — else
+`~/.kube/config` — then `kubernetes.kubeconfigs`' files, a folder giving
+every file in it. Missing files are passed over, as kubectl does.
+
+**The guard.** This Mac's current context is production, so an isolated run
+(`OVERTERM_E2E`, `OVERTERM_DUMP_LAYOUT`) and a unit test
+(`AppEnvironment.isUnitTest`: XCTest is loaded) read only
+`OVERTERM_KUBECONFIG`'s files — a scenario's fake clusters — and without it
+none: no contexts, so nothing can start a proxy. The shell isn't asked
+there, so an inherited `KUBECONFIG` never comes through, and the setting's
+extras are ignored. A file under `~/.kube` (a symlink followed) is refused
+twice: when the list is built and when `KubeContextList.load` reads it.
+`KubeconfigTests` and the `settings` scenario check it.
+
+**Reading.** `Kubeconfig.parse` reads YAML (or JSON) through `YAMLReader`,
+the API client's tree-sitter reader. Overterm only has to tell contexts
+apart — kubectl signs in — so the credential keys (`client-key-data`,
+`token`, `password`, an auth provider's tokens and secret) are blanked in
+the text first (`Kubeconfig.redacted`), and only names, servers,
+namespaces and the kind of auth leave the parser (`KubeAuth`: an `exec`
+plugin, an auth provider, a token, a client certificate, basic, none). An
+exec plugin keeps its command, arguments, the names (not values) of its
+env, `apiVersion`, `interactiveMode` and `installHint`: the arguments are
+for showing (an `aws sso login --profile` to offer), and `description`
+names the plugin alone (`exec: aws`, `exec: kubectl oidc-login`) so none
+reaches a log. `Kubeconfig.merged` is kubectl's merge: the first file to
+name a context, cluster or user wins, and the current context is the first
+file's that sets one. `KubeContextList` holds the resolved contexts (the
+cluster's server, the user's auth, the file), kubectl's current context,
+the files read and what couldn't be — by path, never a value.
+
+**Classes** (`KubeClassifier`, decision 31), first match wins: a class set
+by hand in `kubernetes.contexts`; production by name — the context's or
+the cluster's, `prod`, `prd`, `production` or `live` as a word split on
+`-_/.:@`, case aside (decision 25), so `…:cluster/acme-prod`,
+kubeadm's `kubernetes-admin@prod` and `kind-prod-copy` are production; local by name (`docker-desktop`,
+`orbstack`, `minikube`, `rancher-desktop`, `colima`, `kind-…`, `k3d-…`);
+else remote. A loopback server never makes a context local: a tunnel to a
+remote cluster is on 127.0.0.1 too. `isWritable`: production never by a
+setting (its writes will be turned on for a session), remote only by its
+`writable` flag, local unless the flag says no.
+
+**Settings** (Settings ▸ Kubernetes): `kubernetes.enabled` (on; nothing runs
+until the page or the panel opens), `kubernetes.kubeconfigs` and
+`kubernetes.pinnedContexts` (lists), `kubernetes.maxProxies` (4), and
+`kubernetes.contexts` — one entry per context name, the only place a
+context's own settings live (`KubeContextSettings`: `class`, `writable`,
+`displayName`, `defaultNamespace`, `accessibleNamespaces`,
+`favouriteNamespaces`; more fields join with the stages that read them).
+It is the first `entries` setting: `SettingValue.entries`, written on one
+line and edited in place there, its fields checked one by one
+(`SettingSpec.fitted`) — a field that doesn't fit is reported and left
+out, the rest of the entry kept, so a typo never takes a hand-set
+production class with it. The page lists the entries and sends you to
+settings.json to edit them.
 
 ## Simulator
 
