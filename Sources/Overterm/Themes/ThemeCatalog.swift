@@ -32,6 +32,8 @@ final class ThemeCatalog: ObservableObject {
     struct Entry: Identifiable, Sendable {
         let theme: TerminalTheme
         let source: Source
+        /// The file it was read from (nil in tests that make one up).
+        var url: URL? = nil
         var id: String { theme.name }
     }
 
@@ -63,6 +65,43 @@ final class ThemeCatalog: ObservableObject {
         }
     }
 
+    /// Again, after a theme was imported, edited or deleted.
+    func reload() {
+        isLoaded = false
+        load()
+    }
+
+    /// Theme files of other apps (ThemeImport), written into the user's
+    /// folder: the names they were saved under, and what went wrong with
+    /// the last one that failed.
+    @discardableResult
+    func importFiles(_ urls: [URL]) -> (saved: [String], problem: String?) {
+        guard let directory = Self.writableDirectory else { return ([], "No themes folder to write to.") }
+        var saved: [String] = []
+        var problem: String?
+        for url in urls {
+            do throws(ThemeImport.Failure) {
+                let (name, text) = try ThemeImport.theme(from: url)
+                do {
+                    saved.append(try ThemeImport.save(text, named: name, in: directory))
+                } catch {
+                    problem = "\(url.lastPathComponent): \(error.localizedDescription)"
+                }
+            } catch {
+                switch error {
+                case .unreadable(let why): problem = "\(url.lastPathComponent) \(why)."
+                case .noColours: problem = "\(url.lastPathComponent) names no background or text colour."
+                }
+            }
+        }
+        if !saved.isEmpty { reload() }
+        return (saved, problem)
+    }
+
+    /// Where a theme made here is written: the user's themes folder, which
+    /// Ghostty reads too.
+    static var writableDirectory: URL? { AppEnvironment.userThemesDirectory }
+
     /// The directories' theme files, parsed. A name found twice keeps the
     /// first — the same order Ghostty resolves `theme =` in, so what the
     /// gallery draws is what the terminal takes.
@@ -79,7 +118,7 @@ final class ThemeCatalog: ObservableObject {
                     let theme = TerminalTheme.parse(text, name: name)
                 else { continue }
                 seen.insert(name)
-                entries.append(Entry(theme: theme, source: source))
+                entries.append(Entry(theme: theme, source: source, url: directory.appendingPathComponent(name)))
             }
         }
         return entries.sorted { $0.theme.name.localizedCaseInsensitiveCompare($1.theme.name) == .orderedAscending }

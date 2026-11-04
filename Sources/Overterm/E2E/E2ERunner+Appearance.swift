@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Settings ▸ Appearance: the terminal's look, written for Ghostty and taken
 /// up live; the window translucent; a background image. Photographed with
@@ -139,6 +140,35 @@ extension E2ERunner {
         for key in ["appearance.tabWidth", "appearance.tabClose", "appearance.tabIcons"] { settings.set(key, nil) }
         check("regular tabs again", await eventually(3) { ChromeMetrics.tabWidth == .regular && ChromeMetrics.tabIcons })
         check("back to the default sizes", await eventually(3) { SplitHostView.headerHeight == 38 && CardColumn.gap == 10 && ChromeMetrics.text(11) == 11 })
+        // Another app's theme, imported: a file of Ghostty's in the user's folder.
+        let itermFile = scratch.appendingPathComponent("Sunset.itermcolors")
+        func entry(_ red: Double, _ green: Double, _ blue: Double) -> [String: Any] {
+            ["Red Component": red, "Green Component": green, "Blue Component": blue, "Color Space": "sRGB"]
+        }
+        var plist: [String: Any] = ["Background Color": entry(0.16, 0.08, 0.14), "Foreground Color": entry(0.98, 0.9, 0.85)]
+        for index in 0...15 { plist["Ansi \(index) Color"] = entry(Double(index % 8) / 7, 0.4, 0.6) }
+        try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: itermFile)
+        let catalog = ThemeCatalog.shared
+        let (saved, problem) = catalog.importFiles([itermFile])
+        check("an iTerm2 theme imports", saved == ["Sunset"] && problem == nil, "\(saved) \(problem ?? "")")
+        check(
+            "into the user's themes, where Ghostty reads them",
+            ThemeCatalog.writableDirectory.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Sunset").path) } == true)
+        check(
+            "and the gallery lists it as yours",
+            await eventually(5) { catalog.isLoaded && catalog.entries.contains { $0.theme.name == "Sunset" && $0.source == .user } })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty,
+            let sunset = catalog.entries.first(where: { $0.theme.name == "Sunset" }), let theme = app.theme
+        {
+            let editor = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+            editor.isReleasedWhenClosed = false
+            editor.contentView = NSHostingView(rootView: ThemeEditorView(target: .init(entry: sunset, duplicate: true), theme: theme) { _ in })
+            editor.setContentSize(editor.contentView!.fittingSize)
+            editor.orderFront(nil)
+            await pause(0.6)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-editor.png", window: editor)
+            editor.close()
+        }
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Which theme a pick in the gallery sets: the one theme, or — when the
 /// terminal follows macOS — its dark or its light half.
@@ -41,6 +42,11 @@ struct ThemesSettings: View {
     private var slot: ThemeSlot { followsSystem ? model.themeSlot : .dark }
     private var chosen: String { settings.value(slot.key)?.string ?? "" }
 
+    /// The theme the editor sheet is open on.
+    @State private var editing: ThemeEditorView.Target?
+    /// What an import or a save said went wrong.
+    @State private var problem: String?
+
     private var shown: [ThemeCatalog.Entry] {
         ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: model.themeShowing)
     }
@@ -49,9 +55,67 @@ struct ThemesSettings: View {
         VStack(alignment: .leading, spacing: 18) {
             current
             controls
+            if let problem {
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.orangeText)
+            }
             gallery
         }
         .onAppear { catalog.load() }
+        .sheet(item: $editing) { target in
+            ThemeEditorView(target: target, theme: theme) { saved in
+                editing = nil
+                guard let saved else { return }
+                catalog.reload()
+                settings.set(slot.key, .string(saved))
+            }
+        }
+    }
+
+    // MARK: Yours: imported, edited, deleted
+
+    /// Settings ▸ Themes ▸ Import…: an iTerm2 `.itermcolors` or a VS Code
+    /// theme, written as a Ghostty theme file into your themes folder.
+    private func chooseImport() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "itermcolors"), .json].compactMap { $0 }
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        importThemes(panel.urls)
+    }
+
+    func importThemes(_ urls: [URL]) {
+        let (saved, failure) = catalog.importFiles(urls)
+        problem = failure
+        guard let last = saved.last else { return }
+        settings.set(slot.key, .string(last))
+        model.themeShowing = .all
+        model.themeSearch = ""
+    }
+
+    /// The dropped file's URL, handed back on the main thread. Built here,
+    /// nonisolated: the provider answers on a queue of its own, and a
+    /// closure written in the view is main-actor-isolated — Swift 6 traps
+    /// when the system calls it there (CLAUDE.md).
+    nonisolated static func loadURL(from provider: NSItemProvider, then: @escaping @MainActor @Sendable (URL) -> Void) {
+        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+            guard let url else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { then(url) } }
+        }
+    }
+
+    /// One of yours, to the Trash — asked first; the theme in force stays
+    /// named, and Ghostty says it can't find it until another is picked.
+    private func delete(_ entry: ThemeCatalog.Entry) {
+        guard let url = entry.url else { return }
+        let alert = NSAlert()
+        alert.messageText = "Delete the theme \(entry.theme.name)?"
+        alert.informativeText = "Its file goes to the Trash."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        catalog.reload()
     }
 
     // MARK: What is on
@@ -169,6 +233,9 @@ struct ThemesSettings: View {
             }
             .pickerStyle(.segmented)
             .fixedSize()
+            Button("Import…", action: chooseImport)
+                .help("A theme from iTerm2 (.itermcolors) or VS Code (.json) — or drop one on the themes")
+                .accessibilityIdentifier("themes.import")
             Spacer()
             Text(verbatim: catalog.isLoaded ? "\(shown.count)" : "")
                 .font(.system(size: ChromeMetrics.text(11))).monospacedDigit()
@@ -188,10 +255,27 @@ struct ThemesSettings: View {
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, entry in
                 ThemeCard(
                     entry: entry, isSelected: entry.theme.name == chosen, index: index, theme: theme,
-                    pick: { settings.set(slot.key, .string(entry.theme.name)) })
+                    pick: { settings.set(slot.key, .string(entry.theme.name)) }
+                )
+                .contextMenu {
+                    Button("Duplicate and Edit…") { editing = .init(entry: entry, duplicate: true) }
+                    if entry.source == .user {
+                        Button("Edit…") { editing = .init(entry: entry, duplicate: false) }
+                        if let url = entry.url { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
+                        Divider()
+                        Button("Delete…", role: .destructive) { delete(entry) }
+                    }
+                }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: shown.count)
+        // A theme file dropped on the gallery is imported.
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                Self.loadURL(from: provider) { url in importThemes([url]) }
+            }
+            return !providers.isEmpty
+        }
         .overlay(alignment: .top) {
             if !catalog.isLoaded {
                 ProgressView().controlSize(.small).padding(.top, 40)

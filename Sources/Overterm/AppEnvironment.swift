@@ -76,10 +76,11 @@ enum AppEnvironment {
         Bundle.main.resourceURL?.appendingPathComponent("ghostty/themes", isDirectory: true)
     }
 
-    /// The user's own themes, where Ghostty looks for them too. Nil in an
-    /// isolated run: a scenario must not depend on what the user has put there.
+    /// The user's own themes, where Ghostty looks for them too. An isolated
+    /// run has an empty one of its own: a scenario must not depend on what
+    /// the user has put there, nor write a theme into it.
     static var userThemesDirectory: URL? {
-        guard !isIsolated else { return nil }
+        if isIsolated { return supportDirectory.appendingPathComponent("ghostty-themes", isDirectory: true) }
         if let config = env["XDG_CONFIG_HOME"], !config.isEmpty {
             return URL(fileURLWithPath: config, isDirectory: true).appendingPathComponent("ghostty/themes", isDirectory: true)
         }
