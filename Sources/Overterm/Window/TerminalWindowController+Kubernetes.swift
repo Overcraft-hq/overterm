@@ -28,7 +28,10 @@ extension TerminalWindowController {
             },
             save: { [weak self] name, text in self?.saveKubernetesFile(name, text) },
             askAgent: { [weak self] text, about in self?.askAgent(aboutKubernetes: text, about) },
-            openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) })
+            openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) },
+            runInTab: { [weak self] command, context, namespace in self?.runKubernetesCommand(command, in: context, namespace: namespace) },
+            confirm: { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, then) },
+            choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) })
     }
 
     // MARK: Terminal in this context (docs/design/kubernetes/analysis.md, 3.11)
@@ -52,7 +55,17 @@ extension TerminalWindowController {
         ) { [weak self] in self?.startKubernetesTerminal(context, pin) }
     }
 
-    private func startKubernetesTerminal(_ context: KubeContext, _ pin: KubeTerminalPin) {
+    /// A pod's command (`KubeCommands`: a shell, attach, a log followed) in a
+    /// new tab pinned to `context` and `namespace` as Terminal in this
+    /// context pins one — so what is typed there after it ends goes there
+    /// too. Whatever confirming it needed (on production a shell, an
+    /// attach, a log followed) was asked before. A scenario's recorder gets the command and the tab instead
+    /// of the command being typed.
+    func runKubernetesCommand(_ command: String, in context: KubeContext, namespace: String) {
+        startKubernetesTerminal(context, KubeTerminalPin(context, namespace: namespace), running: command)
+    }
+
+    private func startKubernetesTerminal(_ context: KubeContext, _ pin: KubeTerminalPin, running command: String? = nil) {
         let extra = Settings.shared.kubernetesKubeconfigs
         let home = FileManager.default.homeDirectoryForCurrentUser
         let directory = KubeTerminalDirectory.choose(setting: context.settings.terminalDirectory, checkout: nil, home: home)
@@ -64,7 +77,9 @@ extension TerminalWindowController {
                 let ready = try KubeTerminalLaunch.prepare(pin, kubeconfigs: files)
                 self.kubernetesPage.terminalProblem = nil
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
-                self.newTab(in: directory, environment: ready.environment, kubePin: ready.pin)
+                let recorder = command == nil ? nil : self.kubernetesCommandRecorder
+                let tab = self.newTab(in: directory, environment: ready.environment, kubePin: ready.pin, running: recorder == nil ? command : nil)
+                if let recorder, let command, let tab { recorder(command, tab) }
             } catch {
                 self.kubernetesPage.terminalProblem = "\(error)"
                 guard !AppEnvironment.isIsolated, let window = self.window else { return }

@@ -218,13 +218,13 @@ final class KubernetesPageTests: XCTestCase {
             verbs.map(\.title),
             [
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
-                "Terminal in This Context",
+                "Terminal in This Context", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab",
             ])
         var pinned: [String] = []
         page.actions = KubernetesActions(
             run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in },
             openTerminal: { context, namespace in pinned.append("\(context.name)/\(namespace ?? "-")") })
-        verbs.last?.perform()
+        verbs.first { $0.title == "Terminal in This Context" }?.perform()
         page.openTerminal()
         XCTAssertEqual(pinned, ["fake-dev/shop", "fake-dev/shop"], "the row's namespace; the card's, the one shown")
         XCTAssertEqual(page.verbs(for: ["shop/api-1", "shop/web-1"]).filter { $0.title.hasPrefix("Terminal") }.count, 0, "one row's only")
@@ -256,7 +256,8 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of("n"), .namespace)
         XCTAssertEqual(KubernetesKey.of("c"), .context)
         XCTAssertNil(KubernetesKey.of("N"), "case matters")
-        XCTAssertNil(KubernetesKey.of("e"), "no shell yet — and no key that writes")
+        XCTAssertEqual(KubernetesKey.of("e"), .shell, "a shell in a tab: the user's own kubectl")
+        for key in ["r", "+", "-", "y", "E", "\u{7F}"] { XCTAssertNil(KubernetesKey.of(key), "no key that writes: \(key)") }
     }
 
     // MARK: Navigating

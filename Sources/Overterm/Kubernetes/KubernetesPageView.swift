@@ -295,6 +295,10 @@ struct KubernetesPageView: View {
                     .font(.system(size: 12)).foregroundStyle(failing > 0 ? TabStatusStyle.failed : theme.text3)
                     .accessibilityIdentifier("kubernetes.counts")
             }
+            if page.detail == nil, let problem = page.commandProblem {
+                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
+                    .help(problem).accessibilityIdentifier("kubernetes.commandProblem")
+            }
             Spacer(minLength: 12)
             Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
                 .help("What kubectl get -o wide adds (\(KubernetesKey.wide.key))")

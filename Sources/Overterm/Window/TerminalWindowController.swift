@@ -167,6 +167,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// and band follow what its plain kubectl reaches (`followKubernetesPins`).
     var kubePinWatcher: DirectoryWatcher?
     var kubePinContexts: AnyCancellable?
+    /// A scenario's: a pod's command (a shell, a log followed) isn't typed
+    /// — its tab opens pinned, and the command is handed here with it.
+    var kubernetesCommandRecorder: ((String, Tab) -> Void)?
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
@@ -1163,11 +1166,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A shell tab after the selected one, in `directory`, its shell
     /// started with `environment` over the app's own — a Terminal in this
     /// context's `KUBECONFIG` — and pinned to `kubePin`'s context.
-    func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?) {
+    /// `command`, when given, is typed as soon as its shell starts.
+    @discardableResult
+    func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil) -> Tab? {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let terminal = TerminalView(workingDirectory: directory.path, fontSize: fontSize, environment: environment, kubePin: kubePin)
+        let terminal = TerminalView(
+            workingDirectory: directory.path, initialInput: command.map { $0 + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
         if kubePin != nil { followKubernetesPins() }
+        return tab(containing: terminal)
     }
 
     /// A shell tab after the selected one, in `directory`, that runs

@@ -2267,8 +2267,8 @@ kept live, in the page's sections and behind the `:` bar, any
 object's detail beside its list, a Secret's values shown only when
 asked, `label:` and `field:` sent to the server, the palette's page
 commands, Copy as kubectl and a list as CSV — stage 1c, a pod's
-logs, and of stage 1d, Terminal in this context. Nothing writes to a
-cluster.
+logs, and of stage 1d, Terminal in this context and a pod's shell,
+attach and followed log in a tab. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -3009,7 +3009,7 @@ production band are its guard.
   no key: the switcher with its query). On production it is asked first,
   naming the context and namespace. The page steps aside for the tab.
 - **What it shows**: the tab is a Kubernetes one (`TabKind.kubernetes`,
-  the helm glyph, unless an agent, a container or ssh), with `⎈ <context>`
+  the helm glyph, unless an agent, a container, a pod or ssh), with `⎈ <context>`
   after its title on every tab; the pane header's label is `⎈ <context> ·
   <namespace>` (`KubePinLabel`), and on production "PRODUCTION …" white on
   the page's red with a red band under the header; the tooltip says what a
@@ -3031,6 +3031,107 @@ production band are its guard.
   against a user's file whose current context is production: the pin's
   context, namespace, server and user win, a change typed in the tab
   writes the pin's file, helm reads its namespace and dials its server.
+
+**A pod's commands in a tab** (stage 1d; `KubeCommands.swift`,
+`KubeCanI.swift`; analysis Sections 2.6, 2.14 and 5): `e` a shell, `A`
+attach, `t` the log followed — kubectl processes with the user's own
+credentials, never the proxy's socket (which refuses exec and attach on
+every context), typed into a new tab pinned to the pod's context and
+namespace as Terminal in this context pins one.
+
+- **The process class check** (`KubeProcessVerb`, `KubeProcessCheck`,
+  pure — rule 1's second half): every process Section 5 names, those
+  not built yet too (port-forward, debug, drain, rollout undo, Helm's,
+  node shells, `auth can-i`/`whoami`/`version`/`kustomize`, `helm
+  template`, Terminal in this context), against the context's class,
+  writable flag and settings: what writes is refused on a read-only
+  context with why; a log followed and a port-forward start after `can-i`;
+  a shell and attach after `can-i`, confirmed on production, off where
+  the context's `shells` setting (`kubernetes.contexts`) is false (a log
+  followed is confirmed on production too: its tab is a pinned shell once
+  the follow ends); a
+  typed name where rule 4 says. `KubeCommands.command` builds nothing it
+  refuses.
+- **The lines** (`KubeCommands`, pure): `kubectl exec -it POD -c C
+  --context CTX -n NS -- sh -c 'command -v bash >/dev/null && exec bash
+  || exec sh'`, `kubectl attach -it POD -c C --context CTX -n NS`,
+  `kubectl logs -f --tail=200 POD -c C --context CTX -n NS` — `--context`
+  and `-n` always (rule 7), whatever the tab's pin says; every word that
+  isn't ours quoted for zsh as `KubectlLine.quoted` quotes it. The word is
+  `kubectl`, the tab's shell's own.
+- **The container** (`KubeContainerPick`, pure): read with one GET of
+  the pod as the verb runs (`KubeClient.object`, through the proxy);
+  one container is it; several are a picker (`KubernetesActions.choose`,
+  an alert's buttons), the Logs tab's default first — kubectl's
+  `default-container` annotation, else the first; a log offers init and
+  ephemeral containers too, a shell and attach only the pod's own.
+- **`kubectl auth can-i`** (`KubeCanI`, pure: its arguments — `--context`,
+  `-n`, guarded the run's `--cache-dir` — and its answer read: `yes`
+  exit 0, `no` with the server's reason after ` - `, anything else a
+  failure with kubectl's last stderr line): a short-lived process
+  (`KubeCanIRunner`, `KubeProcessRun`, on a GCD thread, 20 s — spawned in
+  a process group of its own, so an exec plugin it runs ends with it: the
+  group is ended after it, timed out or not, and every one still running
+  at quit, `KubeProcessRun.stopAll`, by the group's id) with the
+  kubectl and environment the context's proxy gets
+  (`KubeProxyPlanner.tool`, which `plan` now builds on: Overterm's
+  kubeconfig files as `KUBECONFIG`, kuberc off, guarded only
+  `OVERTERM_KUBECONFIG`'s and the run's own HOME), and under the proxies'
+  credential rules (`KubeProxies.beginShortLived`/`endShortLived`): a
+  context the proxies stopped starts no kubectl (its problem is the
+  answer), an oidc context's run waits for any other browser sign-in, a
+  proxy's included, and a credential failure (`KubeCanI.credentialProblem`,
+  read as the proxy's error is) stops the context as a proxy's does. The app's answers are
+  `KubernetesModel.access` (`KubeAccessChecks`, over `KubeAccessCache`,
+  pure: a minute each per context, namespace and verb, a failure ten
+  seconds; one process per question however many ask; a context's
+  questions one after another, never three plugins at once; what has run
+  out pruned as another is kept; a context's answers forgotten when the
+  kubeconfig read again no longer has it or names another cluster, user,
+  credential or class, `KubernetesModel.sameAccess`). Asked when a pod
+  is picked in the list, so the menu is ready; `check` publishes nothing
+  until the answer comes, so a view's update may call it.
+- **Greyed with why** (`KubeAccessState.unavailable`; the page's
+  `podVerbs`, `unavailable`): the three verbs are `ResourceVerb`s — the
+  pod's right-click menu (one pod picked) and its detail's buttons
+  (`ResourceActionBar`, `kubernetes.detail.actions`) — disabled with the
+  process check's refusal, "Checking kubectl auth can-i …" while it is
+  asked, or "kubectl auth can-i create pods/attach says no in shop[: the
+  reason]". A key pressed waits for the answer; refused, the page's
+  `commandProblem` says it (over the list, or under the detail's buttons)
+  until another pod, namespace or context is picked. With the detail
+  open the keys mean the pod it shows (a link followed, back and forward
+  leave the list's selection where it was); on another kind, nothing.
+- **Production** (rule 5): a shell or attach is asked first —
+  `KubernetesActions.confirm`, naming the context, namespace, pod and
+  container, and that the tab is pinned there — once per pod, context
+  and verb a session (`KubeShellConsent`, in memory). A log followed is
+  asked once per context a session, in Terminal in this context's words:
+  once the follow ends (or Ctrl-C) its tab is a plain shell whose kubectl,
+  helm and k9s go to production; it carries the red band.
+- **The tab** (`runKubernetesCommand`, the window's): the pin written and
+  the environment made as `startKubernetesTerminal` makes them, then
+  `newTab(in:environment:kubePin:running:)` through `addTab` — the
+  command typed as the shell starts. A shell or attach tab is a pod's
+  (`TabKind.pod`, `shippingbox.circle`: `kubectl exec`/`attach`/`debug`
+  with stdin, read off the title ahead of the pin). A scenario sets
+  `kubernetesCommandRecorder`: the tab opens pinned and the command is
+  handed to it, never typed.
+- **Checked** (`KubeCommandsTests`, `KubePodCommandsPageTests`): the
+  lines and their quoting, every verb against every class (this Mac's
+  context names among them), `shells: false`, the container picked,
+  can-i's arguments and answers, the cache's minute, one process per
+  question, the greyed reasons, the real runner against a stand-in
+  kubectl that records its `KUBECONFIG` and HOME, and on the page `e`,
+  `t` and `A` against the fake (a refused verb greyed and opening
+  nothing, a picker for two containers, production asked once per pod,
+  a log on production once per context, the detail's pod, the problem
+  gone with another pod or namespace, answers forgotten for a changed
+  user); `KubeCanIProcessTests`: on two oidc contexts no two sign-ins and
+  no two of a context's questions at once (a stand-in that logs each
+  run's start and end), a stopped context starting nothing and a
+  plugin's failure stopping one, a timed-out run and `stopAll` ending a
+  stand-in and the child it forked.
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
@@ -3057,10 +3158,13 @@ names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
 and 127.0.0.1 and writes there two contexts on it, `fake-dev` (remote,
 so read-only although its server is loopback) and `fake-prod`
-(production by name). With kubectl installed, `kubernetes.kubectlPath`
-names it and the real `kubectl proxy` runs in front of the fake (that
-file as its only KUBECONFIG, `--context`, a HOME of the run's own); else
-a stand-in connection goes to the fake's socket. It checks the pods
+(production by name). `kubernetes.kubectlPath` names a stand-in script
+of the run's own (`writeStandInKubectl`): it answers `auth can-i` itself
+— no for `pods/attach` — recording its KUBECONFIG and arguments, and
+`exec`s the real kubectl for the rest. With kubectl installed the real
+`kubectl proxy` runs through it in front of the fake (that file as its
+only KUBECONFIG, `--context`, a HOME of the run's own); else a stand-in
+connection goes to the fake's socket. It checks the pods
 listed as rows only in the server's columns, a crashing pod's reason
 (and drawn, read off the window), the watch's changes, the keys, all
 namespaces (two same-named pods apart, metadata asked for there),
@@ -3122,7 +3226,14 @@ kubeconfig alone and nothing else given the shell, the shell having it
 (a `printf`, never kubectl), its header's label drawn, a split pinned
 too, a row's verb recorded with the row's namespace, `fake-prod` from
 the palette asked first naming it (Cancel opens nothing), confirmed,
-its band drawn, and the kubeconfig never written;
+its band drawn, and the kubeconfig never written; a pod's commands —
+can-i asked of the stand-in as a pod is picked (the run's kubeconfig
+alone, `--context`, `-n`, once a minute), attach greyed with its reason,
+`e` and `t` recorded with their tabs (pinned to `fake-dev` in `shop`,
+their KUBECONFIG the pin's file and the run's), `A` opening nothing and
+saying why (drawn), two containers asking which (the default first),
+and on `fake-prod` a shell asked first naming the context and pod
+(Cancel opens nothing), its tab's band, and not asked again for the pod;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
 

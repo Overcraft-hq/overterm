@@ -38,6 +38,11 @@ final class KubernetesModel: ObservableObject {
     /// The production contexts whose Secrets Show was confirmed for this
     /// session (in memory; asked again after a relaunch).
     let secretConsent = KubeSecretConsent()
+    /// `kubectl auth can-i`'s answers, a minute each, for the verbs that
+    /// start kubectl in a tab (a shell, attach, a log followed).
+    let access = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
+    /// The shells and attaches on production confirmed this session (rule 5).
+    let shellConsent = KubeShellConsent()
 
     /// What the settings say, read once a page shows and on each change.
     struct Configuration: Equatable, Sendable {
@@ -159,7 +164,20 @@ final class KubernetesModel: ObservableObject {
 
     init(proxies: KubeProxies = .shared) {
         self.proxies = proxies
+        // The kubectl and the environment the context's proxy would get,
+        // as the settings say them when asked.
+        // Under the proxies' credential rules: a stopped context isn't
+        // asked, an oidc sign-in waits for any other.
+        access.run = { [weak self] context, namespace, access in
+            guard let (configuration, proxies) = await self?.canIRunWith else { return .failed("Kubernetes is off.") }
+            return await KubeCanIRunner.run(context, namespace: namespace, access, configuration: configuration, proxies: proxies)
+        }
     }
+
+    /// What the proxies are started with: which kubectl, the extra kubeconfigs.
+    var proxyConfiguration: KubeProxies.Configuration { configuration.proxies }
+
+    private var canIRunWith: (KubeProxies.Configuration, KubeProxies) { (configuration.proxies, proxies) }
 
     // MARK: Who looks
 
@@ -268,6 +286,11 @@ final class KubernetesModel: ObservableObject {
             discovery = nil
             catalog = KubeKindCatalog()
         }
+        // can-i's answers were about a user on a cluster: a context gone,
+        // or now another cluster, user, credential or class, is asked again.
+        for old in contexts.contexts where list.context(named: old.name).map({ !Self.sameAccess(old, $0) }) ?? true {
+            access.forget(context: old.name)
+        }
         contexts = list
         contextsRead = true
         guard let name = Self.choose(in: list, kept: selectedName, remembered: remembered, pinned: configuration.pinned) else {
@@ -293,6 +316,11 @@ final class KubernetesModel: ObservableObject {
     /// Whether two readings of a context reach the same cluster as the same user. Pure.
     static func sameCluster(_ old: KubeContext, _ new: KubeContext) -> Bool {
         old.server == new.server && old.cluster == new.cluster && old.user == new.user && old.auth == new.auth
+    }
+
+    /// The same cluster, and the same class: what can-i's answers hold for.
+    static func sameAccess(_ old: KubeContext, _ new: KubeContext) -> Bool {
+        sameCluster(old, new) && old.contextClass == new.contextClass
     }
 
     /// What `name` is known to serve: the selected context's discovery, or

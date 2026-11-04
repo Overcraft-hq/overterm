@@ -23,6 +23,13 @@ struct KubernetesActions {
     /// context, in the namespace (nil: the context's own). On production
     /// asked first, naming it.
     var openTerminal: (_ context: KubeContext, _ namespace: String?) -> Void = { _, _ in }
+    /// A pod's command — a shell, attach, a log followed (`KubeCommands`) —
+    /// typed into a new tab pinned to the context, in the namespace.
+    var runInTab: (_ command: String, _ context: KubeContext, _ namespace: String) -> Void = { _, _, _ in }
+    /// Asked first, with this button and Cancel (a shell on production).
+    var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void = { _, _, _, _ in }
+    /// One of these chosen, or Cancel: the index of the one chosen (a container).
+    var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -30,7 +37,7 @@ struct KubernetesActions {
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom
-    case open, back, forward, close, logs
+    case open, back, forward, close, logs, followInTab, shell, attach
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -43,6 +50,9 @@ enum KubernetesKey: String, ResourceKey {
         case .forward: return "]"
         case .close: return "Esc"
         case .logs: return "l"
+        case .followInTab: return "t"
+        case .shell: return "e"
+        case .attach: return "A"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -59,6 +69,9 @@ enum KubernetesKey: String, ResourceKey {
         switch self {
         case .open: return "The detail: overview, YAML, events — a pod's logs (a click opens it too)"
         case .logs: return "Logs: the pod's, followed — its containers, previous, since"
+        case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
+        case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
+        case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -161,6 +174,7 @@ final class KubernetesPageModel: ObservableObject {
     private var lastKind: [KubeSection: String] = [:]
     private var selectionWatch: AnyCancellable?
     private var contextWatch: AnyCancellable?
+    private var scopeWatch: AnyCancellable?
 
     /// The detail beside the list: one object, read once as it opens.
     @Published private(set) var detail: KubeDetailSession?
@@ -190,11 +204,19 @@ final class KubernetesPageModel: ObservableObject {
         // a click): the emitted value, the property isn't set yet.
         selectionWatch = $selection.dropFirst()
             .sink { [weak self] ids in
+                // Why the last command didn't open was about the pod picked then.
+                self?.commandProblem = nil
+                self?.askAccess(for: ids)
                 guard let self, self.detail != nil, ids.count == 1, let id = ids.first, let ref = self.ref(for: id) else { return }
                 self.open(ref, from: .list)
             }
         // Another context: its objects aren't this one's — the detail and
         // its history go.
+        // Another context or namespace: the last command's problem was
+        // about the one before.
+        scopeWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
+            .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () })
+            .sink { [weak self] in self?.commandProblem = nil }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
@@ -292,6 +314,9 @@ final class KubernetesPageModel: ObservableObject {
             case .allNamespaces: model.setScope(.all)
             case .copyKubectl: copyKubectl()
             case .logs: return openLogs()
+            case .followInTab: return runPodCommand(.followLogs)
+            case .shell: return runPodCommand(.shell)
+            case .attach: return runPodCommand(.attach)
             default: return false
             }
         }
@@ -434,6 +459,7 @@ final class KubernetesPageModel: ObservableObject {
     private func show(_ ref: KubeObjectRef) {
         linkProblem = nil
         guard detail?.ref != ref else { return }
+        commandProblem = nil
         detail?.cancel()
         let client = model.client(for: ref.context)
         let session = KubeDetailSession(ref: ref, client: client, secret: ref.isSecret ? secretSession(for: ref, client: client) : nil)
@@ -856,7 +882,13 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ] + [terminalVerb(for: picked)].compactMap { $0 }
+        ] + [terminalVerb(for: picked)].compactMap { $0 } + podVerbs(for: picked)
+    }
+
+    /// A pod's tab verbs, for the one pod picked in the pod list.
+    private func podVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+        guard isPods, picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
+        return podVerbs(for: ref)
     }
 
     // MARK: Copy as kubectl
@@ -967,6 +999,181 @@ final class KubernetesPageModel: ObservableObject {
     func exportCSV() {
         guard canExport else { return }
         actions?.save(csvFileName, csv())
+    }
+
+    // MARK: A pod's commands in a tab
+
+    /// Why the last shell, attach or followed log didn't open (a refused
+    /// `kubectl auth can-i`, the pod unread); nil once one did.
+    @Published var commandProblem: String?
+
+    /// What a pod offers, in this order.
+    static let podCommands: [KubeProcessVerb] = [.shell, .attach, .followLogs]
+
+    /// A pod's tab verbs — its detail's buttons and its right-click menu:
+    /// each greyed with why while `kubectl auth can-i` hasn't said yes, or
+    /// where the process check refuses it.
+    func podVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+        guard ref.isPod, let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else { return [] }
+        return Self.podCommands.map { verb in
+            let (title, label, symbol, key): (String, String, String, KubernetesKey) =
+                switch verb {
+                case .shell: ("Shell in a Tab", "Shell", "apple.terminal", .shell)
+                case .attach: ("Attach in a Tab", "Attach", "link", .attach)
+                default: ("Follow Logs in a Tab", "Follow", "text.line.last.and.arrowtriangle.forward", .followInTab)
+                }
+            return ResourceVerb(
+                title: title, label: label, symbol: symbol, place: .button, key: key.key, unavailable: unavailable(verb, context, namespace), group: 4
+            ) { [weak self] in self?.run(verb, on: ref) }
+        }
+    }
+
+    /// Why `verb` can't be used on the context's namespace now; nil when it
+    /// can. Asks `kubectl auth can-i` when its answer isn't known.
+    func unavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ namespace: String) -> String? {
+        let rule = KubeProcessCheck.rule(verb, for: context)
+        if let refused = rule.refused { return refused }
+        guard let access = rule.access else { return nil }
+        let state = model.access.state(context.name, namespace: namespace, access)
+        if state == .unknown { model.access.check(context, namespace: namespace, access) }
+        return state.unavailable(access, namespace: namespace)
+    }
+
+    /// One pod picked in the pod list: what its verbs need asked before the
+    /// menu or a key wants them.
+    private func askAccess(for ids: Set<String>) {
+        guard isPods, ids.count == 1, let id = ids.first, let ref = ref(for: id), let namespace = ref.namespace,
+            let context = model.contexts.context(named: ref.context)
+        else { return }
+        for verb in Self.podCommands {
+            let rule = KubeProcessCheck.rule(verb, for: context)
+            if rule.allowed, let access = rule.access { model.access.check(context, namespace: namespace, access) }
+        }
+    }
+
+    /// `e`, `A`, `t`: the pod the detail shows, while it shows one — a
+    /// link followed, or back and forward, leaves the list's selection
+    /// where it was — else the list's selected pod. A detail on another
+    /// kind has no pod to run it in.
+    @discardableResult
+    func runPodCommand(_ verb: KubeProcessVerb) -> Bool {
+        if let detail {
+            guard detail.ref.isPod else { return false }
+            run(verb, on: detail.ref)
+            return true
+        }
+        guard isPods, let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.isPod else { return false }
+        run(verb, on: ref)
+        return true
+    }
+
+    /// `verb` on the pod: the process check, `kubectl auth can-i`, its
+    /// containers read (one GET) and one chosen when there are several, on
+    /// production a shell or attach asked first (once per pod and session),
+    /// then the command typed into a tab pinned to the context.
+    func run(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
+        commandProblem = nil
+        guard let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else {
+            commandProblem = "No context called \(ref.context)."
+            return
+        }
+        let rule = KubeProcessCheck.rule(verb, for: context)
+        if let refused = rule.refused {
+            commandProblem = refused
+            return
+        }
+        guard let client = model.client(for: ref.context) else {
+            commandProblem = "Kubernetes is off, or the context is gone."
+            return
+        }
+        Task { [weak self] in
+            if let access = rule.access {
+                let answer = await self?.model.access.answer(context, namespace: namespace, access) ?? .failed("")
+                guard let self else { return }
+                if let why = KubeAccessState.answered(answer).unavailable(access, namespace: namespace) {
+                    self.commandProblem = why
+                    return
+                }
+            }
+            let pick: KubeContainerPick
+            do {
+                let object = try await client.object(ref.kind, namespace: namespace, name: ref.name)
+                pick = KubeContainerPick.of(object.json, for: verb)
+            } catch {
+                self?.commandProblem = "Couldn't read pod \(namespace)/\(ref.name): \(KubernetesModel.said(error))"
+                return
+            }
+            self?.choose(pick, verb, context: context, namespace: namespace, pod: ref.name) { container in
+                self?.confirm(verb, rule, context: context, namespace: namespace, pod: ref.name, container: container)
+            }
+        }
+    }
+
+    private func choose(
+        _ pick: KubeContainerPick, _ verb: KubeProcessVerb, context: KubeContext, namespace: String, pod: String,
+        then: @escaping (String?) -> Void
+    ) {
+        switch pick {
+        case .none: then(nil)
+        case .one(let container): then(container)
+        case .several(let containers, let chosen):
+            actions?.choose(
+                "Which container?", "\(verb.title) — pod \(namespace)/\(pod) in \(context.displayName).",
+                containers.map { $0 == chosen ? "\($0) (default)" : $0 }
+            ) { index in
+                guard containers.indices.contains(index) else { return }
+                then(containers[index])
+            }
+        }
+    }
+
+    private func confirm(
+        _ verb: KubeProcessVerb, _ rule: KubeProcessRule, context: KubeContext, namespace: String, pod: String, container: String?
+    ) {
+        let open = { [weak self] in self?.open(verb, context: context, namespace: namespace, pod: pod, container: container) }
+        // A followed log's tab is a pinned shell once the follow ends: asked
+        // once per context, as Terminal in this context would be.
+        let consent = verb == .followLogs ? (namespace: "", pod: "") : (namespace: namespace, pod: pod)
+        guard rule.confirm, !model.shellConsent.isGranted(verb, context: context.name, namespace: consent.namespace, pod: consent.pod) else {
+            open()
+            return
+        }
+        if verb == .followLogs {
+            actions?.confirm(
+                "Follow a production pod's log in a pinned tab?",
+                "PRODUCTION · \(context.name) · namespace \(namespace)\nThe tab follows pod \(namespace)/\(pod)'s log, and is pinned to "
+                    + "\(context.displayName): once the follow ends, a plain kubectl, helm or k9s in it goes to \(context.name) — with your own "
+                    + "credentials and rights. Overterm's read-only doesn't reach into a terminal. Your current context stays as it is. "
+                    + "Asked once for this context this session.",
+                "Follow in \(context.displayName)"
+            ) { [weak self] in
+                self?.model.shellConsent.grant(verb, context: context.name, namespace: consent.namespace, pod: consent.pod)
+                open()
+            }
+            return
+        }
+        let what = verb == .attach ? "attach to" : "open a shell in"
+        let target = "pod \(namespace)/\(pod)" + (container.map { ", container \($0)" } ?? "")
+        actions?.confirm(
+            "\(verb == .attach ? "Attach to" : "Open a shell in") a production pod?",
+            "PRODUCTION · \(context.name) · namespace \(namespace)\nYou are about to \(what) \(target). Inside the container it can do anything "
+                + "the container can, with your own credentials. The tab is pinned to \(context.displayName); a plain kubectl there goes to production. "
+                + "Asked once per pod this session.",
+            verb == .attach ? "Attach in \(context.displayName)" : "Open Shell in \(context.displayName)"
+        ) { [weak self] in
+            self?.model.shellConsent.grant(verb, context: context.name, namespace: namespace, pod: pod)
+            open()
+        }
+    }
+
+    private func open(_ verb: KubeProcessVerb, context: KubeContext, namespace: String, pod: String, container: String?) {
+        do {
+            let command = try KubeCommands.command(verb, in: context, namespace: namespace, pod: pod, container: container)
+            commandProblem = nil
+            actions?.runInTab(command, context, namespace)
+        } catch {
+            commandProblem = "\(error)"
+        }
     }
 
     // MARK: Terminal in this context
