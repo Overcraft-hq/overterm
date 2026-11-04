@@ -286,11 +286,15 @@ extension E2ERunner {
         await kubernetesSwitcher(model, page, fake)
         await kubernetesTerminal(model, page, kubeconfig: kubeconfig)
         await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log)
+        let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
         app.toggleKubernetesPage(nil)
         check("with Kubernetes off the page says so", !model.enabled && model.rows.count == 0)
+        check(
+            "and every forward is stopped, its kubectl ended",
+            await eventually(5) { KubeForwards.shared.forwards.isEmpty && forwarding.allSatisfy { kill($0, 0) != 0 } }, "\(forwarding)")
         check("drawn", await shownText(15) { $0.contains("Kubernetes is off") } != nil)
         var left = await model.proxies.connected
         for _ in 0..<50 where !left.isEmpty {
@@ -506,29 +510,314 @@ extension E2ERunner {
 
     /// A stand-in kubectl in `folder`: `auth can-i` answered here — yes,
     /// but no for `pods/attach` — each line of what it was given (its
-    /// KUBECONFIG, its arguments) appended to `log`; anything else handed
-    /// to `real` with `exec` (the proxy keeps its pid), or refused when
-    /// there is none.
-    static func writeStandInKubectl(in folder: URL, real: String?) -> (script: URL, log: URL)? {
+    /// KUBECONFIG, its arguments) appended to `log`; `port-forward` played
+    /// here too (`writeStandInForward`, logged to `forwards`); anything
+    /// else handed to `real` with `exec` (the proxy keeps its pid), or
+    /// refused when there is none.
+    static func writeStandInKubectl(in folder: URL, real: String?) -> (script: URL, log: URL, forwards: URL)? {
         let script = folder.appendingPathComponent("stand-in-bin/kubectl")
         let log = folder.appendingPathComponent("stand-in-kubectl.log")
+        let forwards = folder.appendingPathComponent("stand-in-forwards.log")
+        guard let forward = writeStandInForward(in: script.deletingLastPathComponent(), log: forwards) else { return nil }
         let text = """
             #!/bin/sh
             if [ "$1" = auth ] && [ "$2" = can-i ]; then
               printf '%s|%s\\n' "$KUBECONFIG" "$*" >> '\(log.path)'
               case "$4" in pods/attach) echo no; exit 1;; *) echo yes; exit 0;; esac
             fi
+            if [ "$1" = port-forward ]; then exec '\(forward.path)' "$@"; fi
             \(real.map { "exec '\($0)' \"$@\"" } ?? "echo 'no kubectl here' >&2; exit 1")
 
             """
         do {
-            try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
             try text.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
         } catch {
             return nil
         }
-        return (script, log)
+        return (script, log, forwards)
+    }
+
+    /// A stand-in `kubectl port-forward pod/P L:R … --address A` in `folder`
+    /// (the fake API has no port-forward): it appends its KUBECONFIG and
+    /// arguments to `log`, listens on A:L, says `Forwarding from A:L -> R`
+    /// as kubectl does, answers every connection with the pod's name, and
+    /// runs until it is ended — by its pid (it `exec`s perl, so the pid
+    /// Overterm holds is the listener's). A port it can't listen on is
+    /// kubectl's error, and an exit.
+    static func writeStandInForward(in folder: URL, log: URL) -> URL? {
+        let script = folder.appendingPathComponent("port-forward")
+        let listener = folder.appendingPathComponent("port-forward.pl")
+        let perl = #"""
+            use strict;
+            use IO::Socket::INET;
+            $| = 1;
+            my ($address, $local, $pod, $remote) = @ARGV;
+            my $server = IO::Socket::INET->new(LocalAddr => $address, LocalPort => $local, Listen => 8, ReuseAddr => 1, Proto => "tcp");
+            unless ($server) { print STDERR "error: unable to listen on port $local: $!\n"; exit 1; }
+            print "Forwarding from $address:$local -> $remote\n";
+            while (my $client = $server->accept) {
+                print $client "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n$pod\n";
+                close $client;
+            }
+
+            """#
+        let text = """
+            #!/bin/sh
+            printf '%s|%s\\n' "$KUBECONFIG" "$*" >> '\(log.path)'
+            pod="${2#pod/}"
+            ports="$3"
+            address=127.0.0.1
+            previous=""
+            for word in "$@"; do
+              [ "$previous" = --address ] && address="$word"
+              previous="$word"
+            done
+            exec /usr/bin/perl '\(listener.path)' "$address" "${ports%%:*}" "$pod" "${ports#*:}"
+
+            """
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try perl.write(to: listener, atomically: true, encoding: .utf8)
+            try text.write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        } catch {
+            return nil
+        }
+        return script
+    }
+
+    /// Port-forwards (stage 1d; Section 11's bar): `f` on fake-dev's
+    /// Service `web` — read-only, allowed after `kubectl auth can-i create
+    /// pods/portforward` — resolved by Overterm to its ready endpoint's pod
+    /// and run through the stand-in kubectl (`port-forward pod/web-7d9
+    /// L:8080`, `--context`, `--namespace`, `--address 127.0.0.1`, the run's
+    /// kubeconfig alone), which answers on L with its pod's name. The fake
+    /// then replaces the pod (the old one deleted, a new one ready behind
+    /// the Service) and the stand-in is ended by its pid, as kubectl ends
+    /// when its pod goes: Overterm resolves again and starts a second
+    /// stand-in for the new pod, which the pill, the Forwards section and
+    /// Tab Info name. `o` opens it, Edit moves its local port, kubectl
+    /// exiting starts it again on the same pod, and with the Service gone it
+    /// stops and says so. A Quick Forward of a pod is opened once it
+    /// forwards. Nothing of it reaches the API but GETs. Returns the pids
+    /// still forwarding, for the Kubernetes-off check.
+    private func kubernetesForwards(
+        _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, kubeconfig: URL, canI: URL, forwards log: URL
+    ) async -> [pid_t] {
+        let forwards = KubeForwards.shared
+        forwards.podCheckInterval = .milliseconds(400)
+        defer { forwards.podCheckInterval = .seconds(5) }
+        try? FileManager.default.removeItem(at: log)
+        func launched() -> [String] { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init) }
+        func canIs() -> [String] { ((try? String(contentsOf: canI, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init) }
+        var opened: [URL] = []
+        let actions = page.actions
+        page.actions?.openURL = { opened.append($0) }
+        defer { page.actions = actions }
+
+        // The Service, its pods and its endpoints: the fake has no controller, the scenario plays it.
+        fake.updatePod("web-7d9", namespace: "shop") {
+            $0.status = "Running"
+            $0.ready = 1
+            $0.ports = [FakeKubeAPI.ContainerPort(8080, name: "http")]
+        }
+        fake.setFields(
+            "services", "web", namespace: "shop",
+            ["spec": ["selector": ["app": "web"], "ports": [["name": "http", "port": 80, "targetPort": "http", "protocol": "TCP"]]]])
+        func slice(_ ready: String) -> [String: Any] {
+            [
+                "addressType": "IPv4", "ports": [["name": "http", "port": 8080, "protocol": "TCP"]],
+                "endpoints": [
+                    ["addresses": ["10.0.0.10"], "conditions": ["ready": true], "targetRef": ["kind": "Pod", "name": ready, "namespace": "shop"]],
+                    ["addresses": ["10.0.0.11"], "conditions": ["ready": false], "targetRef": ["kind": "Pod", "name": "worker-5c", "namespace": "shop"]],
+                ],
+            ]
+        }
+        fake.add("endpointslices.discovery.k8s.io", "web-x7k2p", namespace: "shop", labels: ["kubernetes.io/service-name": "web"], fields: slice("web-7d9"))
+
+        if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
+        model.select("fake-dev")
+        model.setScope(.namespace("shop"))
+        page.filter = ""
+        page.applySelector()
+        guard let services = model.catalog.kind(fullName: "services") else {
+            check("fake-dev serves services", false)
+            return []
+        }
+        page.showKind(services)
+        check("the Services list", await eventually(10) { page.rows.contains { $0.id == "shop/web" } }, "\(page.rows.map(\.id))")
+        page.selection = ["shop/web"]
+        func verb(_ title: String, _ id: String = "shop/web") -> ResourceVerb? { page.verbs(for: [id]).first { $0.title == title } }
+        check(
+            "Port-forward… on a read-only context's Service, once kubectl auth can-i says yes",
+            await eventually(15) { verb("Port-forward…") != nil && verb("Port-forward…")?.unavailable == nil },
+            verb("Port-forward…")?.unavailable ?? "no verb")
+        check(
+            "can-i asked create pods/portforward with --context and -n",
+            canIs().contains { $0.hasPrefix(kubeconfig.path + "|auth can-i create pods/portforward --context fake-dev -n shop") }, "\(canIs())")
+        let tab = app.store.selected
+
+        // f: the sheet, the Service's port, a free local one.
+        check("f opens the forward sheet", page.press("f") && page.forwardDraft?.target == .service("web"))
+        check(
+            "with the Service's port and a free local one",
+            await eventually(10) { page.forwardDraft?.remote == "80" && Int(page.forwardDraft?.local ?? "") != nil && page.forwardDraft?.unavailable == nil },
+            "\(String(describing: page.forwardDraft))")
+        check("127.0.0.1 unless changed", page.forwardDraft?.address == "127.0.0.1")
+        check("drawn", await shownText(15) { $0.contains("Port-forward svc/web") } != nil)
+        let local = Int(page.forwardDraft?.local ?? "") ?? 0
+        guard let id = page.confirmForward() else {
+            check("Forward starts it", false, page.forwardProblem ?? "")
+            return []
+        }
+        check("the sheet goes", page.forwardDraft == nil)
+        check(
+            "resolved to the ready endpoint's pod, and forwarding",
+            await eventually(15) { forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.pod == "web-7d9" },
+            forwards.forward(id)?.state.text ?? "gone")
+        check("to the pod's port the Service's targetPort names", forwards.forward(id)?.podPort == 8080)
+        let line = "port-forward pod/web-7d9 \(local):8080 --context fake-dev --namespace shop --address 127.0.0.1"
+        check(
+            "kubectl port-forward pod/web-7d9, --context, --namespace, --address, the run's kubeconfig alone",
+            launched().count == 1 && launched().first?.hasPrefix(kubeconfig.path + "|" + line) == true, "\(launched())")
+        check("it answers on the local port", await answer(local) == "web-7d9")
+        let first = forwards.forward(id)?.pid ?? 0
+        check("its pill in the tab it was asked from", await eventually(5) { tab?.forwardPorts.first?.forward?.pod == "web-7d9" }, "\(tab?.forwardPorts ?? [])")
+        check("not a port of the tab's own processes", tab?.ports.contains { $0.port == local } != true)
+
+        // The pod replaced: deleted, a new one ready behind the Service; the
+        // stand-in ended by its pid, as kubectl ends when its pod goes.
+        fake.deletePod("web-7d9", namespace: "shop")
+        fake.addPod("web-8k2", namespace: "shop", FakeKubeAPI.Pod(ports: [FakeKubeAPI.ContainerPort(8080, name: "http")]), labels: ["app": "web"])
+        fake.setFields("endpointslices.discovery.k8s.io", "web-x7k2p", namespace: "shop", slice("web-8k2"))
+        if first > 0 { kill(first, SIGTERM) }
+        check(
+            "it starts again on the new pod",
+            await eventually(20) { forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.pod == "web-8k2" },
+            forwards.forward(id)?.state.text ?? "gone")
+        let second = forwards.forward(id)?.pid ?? 0
+        check("a second kubectl, the first ended", second != first && second > 0 && kill(first, 0) != 0, "\(first) \(second)")
+        check(
+            "port-forward pod/web-8k2 on the same local port",
+            launched().count == 2 && launched().last?.contains("port-forward pod/web-8k2 \(local):8080 --context fake-dev --namespace shop") == true,
+            "\(launched())")
+        check("the new pod answers", await answer(local) == "web-8k2")
+        check("said as started again", forwards.forward(id)?.restarts == 1)
+        check("the pill names the new pod", await eventually(5) { tab?.forwardPorts.first?.forward?.pod == "web-8k2" }, "\(tab?.forwardPorts ?? [])")
+        app.toggleKubernetesPage(nil)
+        check("drawn in the tab's pane header", await shownText(15) { $0.contains(":\(local)") && $0.contains("web-8k2") } != nil)
+        app.showKubernetesPage()
+        if let tab {
+            let info = TabInfoModel(tab: tab, inspector: ProcessInspector(), claudeReader: ClaudeUsageReader())
+            await info.refreshPorts()
+            check("Tab Info lists it", info.ports.contains { $0.port == local && $0.forward?.pod == "web-8k2" }, "\(info.ports)")
+            // Closing the tab asks, even when Settings says only when something runs.
+            check(
+                "closing its tab asks for its forward alone",
+                TerminalWindowController.runningForwards(of: [tab], in: forwards.forwards, quitting: false).map(\.id) == [id]
+                    && TerminalWindowController.needsCloseConfirmation([tab], confirmClose: .whenRunning))
+            check(
+                "and says it keeps running, on the page",
+                TerminalWindowController.closeWarning(for: [tab]).contains("(localhost:\(local) → svc/web) keeps running"),
+                TerminalWindowController.closeWarning(for: [tab]))
+            check(
+                "quitting says it stops it",
+                TerminalWindowController.closeWarning(for: [tab], quitting: true).contains("Quitting stops the port-forward (localhost:\(local) → svc/web)"),
+                TerminalWindowController.closeWarning(for: [tab], quitting: true))
+        }
+
+        // The palette: each forward, with its pod; ↩ opens it.
+        let paletteItems = app.kubernetesPaletteItems()
+        let forwardItem = paletteItems.first { $0.id == "k.f.\(id)" }
+        check(
+            "the palette lists the forward with its pod",
+            forwardItem?.title == "Forward localhost:\(local) → svc/web" && forwardItem?.subtitle?.contains("pod web-8k2") == true,
+            "\(forwardItem?.title ?? "none") \(forwardItem?.subtitle ?? "")")
+        check("and Kubernetes Forwards", paletteItems.contains { $0.id == "a.kubernetes.forwards" })
+        opened = []
+        forwardItem?.perform(true, [:])
+        check("↩ opens its URL", opened.last?.absoluteString == "http://localhost:\(local)", "\(opened)")
+        if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
+
+        // The Forwards section: 9.
+        page.giveListTheKeyboard()
+        check("9 is Forwards", page.press("9") && page.section == .forwards && !page.showsSection)
+        check("it lists the forward with its pod", await shownText(15) { $0.contains("pod web-8k2") } != nil)
+        check("o opens it", page.press("o") && opened.last?.absoluteString == "http://localhost:\(local)", "\(opened)")
+
+        // Edit: another local port, kubectl started again with it.
+        page.editForward(id)
+        let moved = page.freeLocalPort(preferring: nil) ?? 0
+        page.forwardDraft?.local = "\(moved)"
+        check("Edit saves", page.confirmForward() == id)
+        check(
+            "and forwards on the new local port", await eventually(15) { forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.spec.localPort == moved },
+            forwards.forward(id)?.state.text ?? "gone")
+        check("which answers", await answer(moved) == "web-8k2")
+        check("the old one no longer listens", await eventually(5) { !ListeningPorts.isBound(local) })
+
+        // kubectl exits with the pod still there: started again on it.
+        let third = forwards.forward(id)?.pid ?? 0
+        if third > 0 { kill(third, SIGTERM) }
+        check(
+            "kubectl exiting starts it again, on the same pod",
+            await eventually(20) {
+                forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.pid != third && forwards.forward(id)?.pod == "web-8k2"
+            }, forwards.forward(id)?.state.text ?? "gone")
+
+        // The Service gone: resolved again, it stops, and says so.
+        fake.delete("services", "web", namespace: "shop")
+        let fourth = forwards.forward(id)?.pid ?? 0
+        if fourth > 0 { kill(fourth, SIGTERM) }
+        check("with its Service gone it stops", await eventually(20) { forwards.forward(id)?.state == .stopped("svc/web is gone") }, forwards.forward(id)?.state.text ?? "")
+        check("and says so", await shownText(15) { $0.contains("svc/web is gone") } != nil)
+        check("its pill goes", await eventually(5) { tab?.forwardPorts.isEmpty == true })
+        page.stopForward(id)
+        check("Remove takes it off the list", forwards.forward(id) == nil)
+
+        // Quick Forward on a pod: a random port, opened once it forwards.
+        model.setKind(.pods)
+        page.showKind(.pods)
+        check("back on the pods", await eventually(10) { page.rows.contains { $0.id == "shop/web-8k2" } }, "\(page.rows.map(\.id))")
+        // A container port in the pod's Overview: a button that opens the
+        // sheet on the pod, that port picked.
+        if let ref = page.ref(for: "shop/web-8k2") {
+            page.open(ref, from: .list)
+            let ports = { page.detail?.overview?.section("Containers")?.items.first?.ports.map(\.port) }
+            check("the Overview's container port is a forward's", await eventually(10) { ports() == [8080] }, "\(String(describing: ports()))")
+            check("drawn as a button", await shownText(15) { $0.contains("8080 (http)") } != nil)
+            page.portForward(ref, port: 8080)
+            check(
+                "it opens the sheet on the pod, the port picked",
+                page.forwardDraft?.target == .pod("web-8k2") && page.forwardDraft?.remote == "8080", "\(String(describing: page.forwardDraft))")
+            page.closeForwardSheet()
+            page.closeDetail()
+        } else {
+            check("the pod's ref", false)
+        }
+        page.selection = ["shop/web-8k2"]
+        _ = await eventually(10) { verb("Quick Forward", "shop/web-8k2")?.unavailable == nil }
+        opened = []
+        verb("Quick Forward", "shop/web-8k2")?.perform()
+        check("Quick Forward opens it once it forwards", await eventually(20) { !opened.isEmpty }, forwards.forwards.first?.state.text ?? "none")
+        let quick = forwards.forwards.first
+        check(
+            "a pod's own forward, on a random port", quick?.spec.target == .pod("web-8k2") && KubeForwardPortChoice.range.contains(quick?.spec.localPort ?? 0),
+            "\(String(describing: quick?.spec))")
+        if let quick { check("which answers", await answer(quick.spec.localPort) == "web-8k2") }
+        check("nothing of it reached the API but GETs", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
+        app.toggleKubernetesPage(nil)
+        return forwards.forwards.compactMap(\.pid)
+    }
+
+    /// What answers on 127.0.0.1:port — the stand-in says its pod's name.
+    private func answer(_ port: Int) async -> String? {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/") else { return nil }
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A pod's commands in a tab (stage 1d): `e` and `t` on fake-dev's
@@ -575,7 +864,7 @@ extension E2ERunner {
         func verb(_ title: String) -> ResourceVerb? { page.verbs(for: ["shop/web-7d9"]).first { $0.title == title } }
         check(
             "kubectl auth can-i is asked as the pod is picked",
-            await eventually(15) { titles.allSatisfy { verb($0) != nil && !(verb($0)?.unavailable ?? "").hasPrefix("Checking") } },
+            await eventually(15) { (titles + ["Port-forward…"]).allSatisfy { verb($0) != nil && !(verb($0)?.unavailable ?? "").hasPrefix("Checking") } },
             "\(titles.map { verb($0)?.unavailable ?? "none" }) \(canIs())")
         check("a shell is offered", verb("Shell in a Tab") != nil && verb("Shell in a Tab")?.unavailable == nil, verb("Shell in a Tab")?.unavailable ?? "")
         check("so is a log followed in a tab", verb("Follow Logs in a Tab")?.unavailable == nil, verb("Follow Logs in a Tab")?.unavailable ?? "")
@@ -588,8 +877,8 @@ extension E2ERunner {
             !asked.isEmpty && asked.allSatisfy { $0.hasPrefix(kubeconfig.path + "|auth can-i ") && $0.contains("--context fake-dev -n shop") },
             "\(asked)")
         check(
-            "one question each: exec, attach, log",
-            Set(asked.compactMap { $0.split(separator: " ").dropFirst(2).first.map(String.init) }) == ["create", "get"] && asked.count == 3, "\(asked)")
+            "one question each: exec, attach, log, port-forward",
+            Set(asked.compactMap { $0.split(separator: " ").dropFirst(2).first.map(String.init) }) == ["create", "get"] && asked.count == 4, "\(asked)")
 
         // e: a shell, recorded with its tab.
         _ = page.press("e")
@@ -627,7 +916,7 @@ extension E2ERunner {
         check("picked again, the refusal goes", await reopen("shop/web-7d9") && page.commandProblem == nil, page.commandProblem ?? "")
         _ = page.press("e")
         check("e again", await eventually(10) { recorded.count == 3 })
-        check("can-i's answers are kept: nothing asked again", canIs().count == 3, "\(canIs())")
+        check("can-i's answers are kept: nothing asked again", canIs().count == 4, "\(canIs())")
 
         // Two containers: which, kubectl's default first.
         fake.updatePod("web-7d9", namespace: "shop") { $0.containers = 2 }

@@ -53,6 +53,9 @@ struct KubernetesPageView: View {
         .overlay(alignment: .top) {
             if page.command != nil { KubeCommandBarView(page: page, theme: theme).padding(.top, 70) }
         }
+        .overlay(alignment: .top) {
+            if page.forwardDraft != nil { KubeForwardSheetView(page: page, theme: theme).padding(.top, 70) }
+        }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         // A table with no columns refuses the keyboard: given it while the
         // pods are asked for (the page opened, a namespace or a context
@@ -104,7 +107,9 @@ struct KubernetesPageView: View {
                     Image(systemName: section.symbol).frame(width: 18)
                     Text(section.title)
                     Spacer()
-                    if !model.catalog.isEmpty {
+                    if !section.listsKinds {
+                        KubeForwardsCount(forwards: page.forwards, theme: theme)
+                    } else if !model.catalog.isEmpty {
                         Text(verbatim: "\(kinds.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
                     }
                     Text(verbatim: section.key).foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
@@ -117,7 +122,7 @@ struct KubernetesPageView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("kubernetes.section.\(section.rawValue)")
-            if open {
+            if open, section.listsKinds {
                 ForEach(Array(kinds.enumerated()), id: \.element.fullName) { offset, kind in
                     // Custom resources by API group, each named once.
                     if section == .custom, offset == 0 || kinds[offset - 1].group != kind.group {
@@ -389,7 +394,9 @@ struct KubernetesPageView: View {
                     let names = page.selectedNames
                     if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
                 }, accessibilityIdentifier: "kubernetes.list", pressed: { page.pressed($0) })
-            if !page.showsSection {
+            if !page.section.listsKinds {
+                KubeForwardsSection(page: page, forwards: page.forwards, theme: theme)
+            } else if !page.showsSection {
                 Text(verbatim: sectionNote).font(.system(size: 12)).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
                     .accessibilityIdentifier("kubernetes.sectionNote")

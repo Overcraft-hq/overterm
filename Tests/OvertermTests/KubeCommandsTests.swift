@@ -637,7 +637,7 @@ final class KubePodCommandsPageTests: XCTestCase {
         try await until("said") { page.commandProblem != nil }
         XCTAssertEqual(page.commandProblem, verbs["Attach in a Tab"]?.unavailable)
         XCTAssertTrue(box.recorded.commands.isEmpty, "nothing opened")
-        XCTAssertEqual(page.model.access.asked, 3, "each verb asked once")
+        XCTAssertEqual(page.model.access.asked, 4, "each verb asked once: exec, attach, a log, a port-forward")
 
         // Shells off for the context: greyed by the process check, kubectl not asked.
         let (off, offBox) = try await self.page("fake-dev", settings: KubeContextSettings(shells: false))

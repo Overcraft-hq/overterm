@@ -97,7 +97,14 @@ struct TabInfoView: View {
                 ForEach(model.ports) { port in
                     HStack(spacing: 8) {
                         Text(verbatim: ":\(port.port)").font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
-                        if let container = port.container {
+                        if let forward = port.forward {
+                            Label(
+                                "\(forward.target) → \(forward.pod ?? "…") · \(forward.context)/\(forward.namespace)",
+                                systemImage: "arrow.left.arrow.right"
+                            )
+                            .foregroundStyle(forward.production ? KubernetesPageView.production : theme.dimText)
+                            .help("kubectl port-forward · \(forward.state)")
+                        } else if let container = port.container {
                             Label(container, systemImage: "shippingbox").foregroundStyle(theme.dimText)
                         } else {
                             Text(port.process).foregroundStyle(theme.dimText)

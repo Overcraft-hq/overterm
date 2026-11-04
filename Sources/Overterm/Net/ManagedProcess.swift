@@ -65,7 +65,8 @@ final class ManagedProcess: @unchecked Sendable {
     }
 
     /// Starts it, and returns once it is ready — or throws why not, having
-    /// closed it.
+    /// closed it: cancelled while it waits, it is closed at once and
+    /// `CancellationError` thrown.
     static func start(_ launch: Launch) async throws -> ManagedProcess {
         launch.removing.forEach { unlink($0) }
         let process = Process()
@@ -101,6 +102,13 @@ final class ManagedProcess: @unchecked Sendable {
         lock.withLock { live = live.filter(\.isRunning) + [managed] }
         let deadline = Date().addingTimeInterval(launch.timeout)
         while Date() < deadline {
+            // Whoever waits gave up (a forward stopped or edited while it
+            // starts): closed now, or it holds its port and its sign-in
+            // until it is ready or the timeout passes, with nobody to close it.
+            if Task.isCancelled {
+                managed.close()
+                throw CancellationError()
+            }
             if !process.isRunning {
                 managed.close()
                 // What it said, from the handler: never readDataToEndOfFile,

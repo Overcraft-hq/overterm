@@ -184,7 +184,7 @@ final class KubeKindsTests: XCTestCase {
         addWidgets()
         let catalog = KubeKindCatalog(try await discover())
         XCTAssertEqual(catalog.kinds(in: .workloads).map(\.fullName), ["pods", "deployments.apps", "statefulsets.apps", "replicasets.apps", "jobs.batch", "cronjobs.batch"])
-        XCTAssertEqual(catalog.kinds(in: .network).map(\.fullName), ["services", "ingresses.networking.k8s.io"])
+        XCTAssertEqual(catalog.kinds(in: .network).map(\.fullName), ["services", "endpointslices.discovery.k8s.io", "ingresses.networking.k8s.io"])
         XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets"])
         XCTAssertEqual(catalog.kinds(in: .storage), [])
         XCTAssertEqual(catalog.kinds(in: .access).map(\.fullName), ["serviceaccounts", "roles.rbac.authorization.k8s.io"])
@@ -206,7 +206,7 @@ final class KubeKindsTests: XCTestCase {
         for group in ["example.com", "cert-manager.io", "argoproj.io", "karpenter.sh", "k8s.io.example.com"] {
             XCTAssertFalse(KubeKindCatalog.isBuiltIn(group: group), group)
         }
-        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7"])
+        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "9"], "Forwards is 9, leaving 8 to Helm")
     }
 
     func testAKindsTitle() {

@@ -2267,8 +2267,9 @@ kept live, in the page's sections and behind the `:` bar, any
 object's detail beside its list, a Secret's values shown only when
 asked, `label:` and `field:` sent to the server, the palette's page
 commands, Copy as kubectl and a list as CSV — stage 1c, a pod's
-logs, and of stage 1d, Terminal in this context and a pod's shell,
-attach and followed log in a tab. Nothing writes to a cluster.
+logs, and of stage 1d, Terminal in this context, a pod's shell,
+attach and followed log in a tab, and port-forwards. Nothing writes to a
+cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2524,7 +2525,7 @@ digits of fraction), `sinceSeconds` or `sinceTime` (whole seconds),
 `tailLines` — and with `follow` kept open, a line appended written to it;
 `dropLogStreams` closes the follows mid-stream (a network blip),
 `endLogStreams` ends them as the server does, and a pod deleted ends its
-own. A pod can have init and ephemeral containers, its first container
+own. It serves EndpointSlices too (`discovery.k8s.io`, a forward's). A pod can have init and ephemeral containers, declared ports (`ports`), its first container
 ended (`terminatedReason`), env. `failCredentials` makes every answer the proxy's 500 in
 plain text, `throttle` 429s, `failWatches` answers the next watches with a
 429 or a 5xx. What a test sets is behind the fake's lock, as its state
@@ -2669,7 +2670,8 @@ refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
 keyboard): `1`–`7` the sections, ↩ the detail, `[` `]` back and forward,
-Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, and `l` a pod's logs (↩ on a pod is them too). The right-click menu
+Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, `l` a pod's logs (↩ on a pod is them too), `f` and `o` a forward,
+`9` the Forwards section. The right-click menu
 only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
 TSV or CSV — and exports the list: nothing here changes a cluster.
 
@@ -3133,6 +3135,106 @@ namespace as Terminal in this context pins one.
   plugin's failure stopping one, a timed-out run and `stopAll` ending a
   stand-in and the child it forked.
 
+**Port-forwards** (stage 1d; `KubePortForward.swift` (pure),
+`KubeForwards.swift`, `KubernetesPageModel+Forwards.swift`,
+`KubeForwardsView.swift`; analysis 2.7 and 3.8): `f` on a pod, a Service
+or a Deployment — kubectl processes with the user's own credentials,
+never the proxy's socket, which refuses port-forward on every context.
+
+- **Allowed on read-only contexts** (a forward changes no object) once
+  `kubectl auth can-i create pods/portforward` says yes in the namespace
+  (`KubeProcessCheck`, the page's minute-long `KubeAccessChecks`): Port-
+  forward… and Quick Forward are greyed with why until then, and a forward
+  whose answer is no stops saying so.
+- **The target, resolved by Overterm** (`KubeForwardResolve`, pure over
+  the API's JSON; `KubeForwards.resolve`, GETs only through the
+  context's proxy in the background's slots): a pod is itself while it
+  runs; a Service is one of its **ready** endpoints' pods —
+  EndpointSlices by `kubernetes.io/service-name` (an endpoint whose
+  `ready` isn't false and that isn't terminating, a Pod's `targetRef`),
+  else the legacy Endpoints' `addresses` — and the pod's port is the
+  Service port's `targetPort` (a number, a name looked up in the pod's
+  containers, or the port itself), as kubectl does; a Deployment is one of
+  its selector's ready pods (`matchLabels` and `matchExpressions` as the
+  server's `labelSelector`), oldest first. The pod pinned before is kept
+  while it is still one of them: a forward that works isn't moved.
+  kubectl is only ever given `pod/<name>`, so the pill names it.
+- **The process** (`KubePortForwardCommand`, pure; `KubeForwards.start`):
+  `kubectl port-forward pod/P L:R --context C --namespace NS --address A`
+  (guarded, `--cache-dir` the run's), with the kubectl and environment the
+  context's proxy gets (`KubeProxyPlanner.tool`: Overterm's kubeconfig
+  files as `KUBECONFIG`, kuberc off; guarded only `OVERTERM_KUBECONFIG`'s
+  and the run's own HOME), under the proxies' credential rules
+  (`beginShortLived`/`endShortLived`: a stopped context starts nothing,
+  an oidc sign-in waits for any other, a credential failure stops the
+  context) — a `ManagedProcess`, ready on its `Forwarding from` line, its
+  stderr kept, closed by its pid.
+- **Started again** (`KubeForwards.run`): when kubectl exits, or its pod
+  goes — the pod read every `podCheckInterval` (5 s) while it forwards:
+  gone, terminating or no longer running, and for a Service or a
+  Deployment (`KubeForwardTarget.followsEndpoints`) no longer ready, as
+  a pod failing readiness leaves the Service's endpoints — the target is resolved again
+  and a new kubectl started on the same local port, after
+  `KubeForwardBackoff` (1, 2, 4, 8, 15, 30 s; the count starts over after
+  a forward that ran 30 s; stopped after 8 in a row, saying so). It stops,
+  saying why, when the target itself is gone (`svc/web is gone`), on a
+  credential failure or a missing kubectl (no retry runs the exec plugin
+  again), and when its context leaves the kubeconfig or names another
+  cluster (`contextsChanged`) — a stopped forward's too: its context is
+  forgotten, so Start Again can't take it to a cluster it never went to;
+  Start Again and Edit read the context's class (production's red) and
+  the process check again. A Service's resolve takes the first ready
+  endpoint that has the port, not the first ready one. A run that was
+  cancelled (stopped, edited, started again) and whose launch or read
+  ends late changes nothing (`finish` checks `Task.isCancelled`): the
+  task, kubectl and state are the new run's. `ManagedProcess.start`
+  closes its process when the waiting task is cancelled, so a kubectl
+  stopped before it says it listens ends then, not at the 30 s timeout.
+  Stopped, edited, at quit
+  (`KubeForwards.stopAll`, before `ManagedProcess.closeAll`) and with
+  Kubernetes off, every kubectl is closed by its pid — never a pattern.
+- **The local port** (`KubeForwardPortChoice`, pure): the remote port where
+  it is free, else one at random in 30000–39999 (Quick Forward: always at
+  random) — never one another forward has, or one something on this Mac
+  holds (`ListeningPorts.isBound`), nor under 1024. The sheet
+  (`KubeForwardDraft`, pure, and `KubeForwardSheetView`): the target's TCP
+  ports (`KubeForwardPortOption`: a pod's containers', a template's, a
+  Service's own) or one typed, the local port with Random, the address
+  (127.0.0.1 unless changed; anything else is said to be reachable from
+  other machines), https (what Open and Copy URL say); Edit changes the
+  local end and starts kubectl again.
+- **Where it shows**: the page's **Forwards** section (`KubeSection.forwards`,
+  `9`: every forward of the app, its pod, state and restarts; Open, Edit,
+  Stop; Start Again and Remove for one that stopped), the pod's,
+  Service's or Deployment's verbs and detail buttons (Port-forward… `f`,
+  Quick Forward, Open Forward `o`), a pill in the pane header of the tab
+  under the page when it started (`Tab.forwardPorts`, a `ListeningPort`
+  with a `forward` origin — `:L → <pod>`, its popover's Kubernetes and
+  Stop), Tab Info's Listening, the browser column's empty page, and the
+  palette (each forward, ↩ as `o`; Kubernetes Forwards). A pod's Overview
+  gives each container its TCP ports (`KubeOverview.Item.ports`), each a
+  button that opens Port-forward… on the pod with that port picked. Open
+  is the browser column, as Docker's links open (`openDockerLink`). One
+  for the app: a forward outlives its window and tab, not the app — so
+  closing a tab with a running forward asks, whatever Settings ▸ General
+  says (`TerminalWindowController.needsCloseConfirmation`,
+  `runningForwards`), and says it keeps running on the page; quitting
+  (and the last window's close) asks for any running forward and says it
+  stops them.
+- **Checked** (`KubePortForwardTests`, `KubeForwardsTests`,
+  `KubeForwardPageTests`): the targets and their ports, the command line
+  and its quoting, ready endpoints only, a named `targetPort`, a
+  Deployment's selector and oldest ready pod, the backoff, the port
+  choice, the sheet's checks; against the fake, a Service forwarded to
+  its ready pod and started again on the new one after the old is
+  deleted (the old process closed), kubectl exiting keeping the pod,
+  the Service gone stopping it, can-i's no starting nothing, failures
+  backing off then stopping, a credential failure not retried, a context
+  gone or pointing elsewhere stopping its forwards, `stopAll`; the real
+  launch through a stand-in that listens (ready on its line, the test's
+  kubeconfig alone, closed by its pid, a port it can't listen on said);
+  the page's `f`, the sheet, `o` and `9`.
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
@@ -3234,6 +3336,20 @@ their KUBECONFIG the pin's file and the run's), `A` opening nothing and
 saying why (drawn), two containers asking which (the default first),
 and on `fake-prod` a shell asked first naming the context and pod
 (Cancel opens nothing), its tab's band, and not asked again for the pod;
+port-forwards — `f` on `fake-dev`'s Service `web` (read-only, after the
+stand-in's `can-i create pods/portforward`), the sheet with the Service's
+port and a free local one (drawn), resolved to its ready endpoint's pod
+and run through the stand-in kubectl (`port-forward pod/web-7d9 L:8080
+--context fake-dev --namespace shop --address 127.0.0.1`, the run's
+kubeconfig alone), which listens and answers with its pod's name; the
+fake then replaces the pod and the stand-in is ended by its pid, as
+kubectl ends when its pod goes, and a second stand-in starts for the new
+pod on the same port — answering, the pill and Tab Info naming it, `9`
+listing it (drawn), `o` opening it; Edit moving its local port, kubectl
+exiting starting it again on the same pod, the Service gone stopping it
+and saying so (drawn); a Quick Forward of a pod opened once it forwards;
+nothing but GETs reaching the API; and Kubernetes off stopping every
+forward, its kubectl ended;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
 

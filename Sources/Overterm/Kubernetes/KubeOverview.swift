@@ -22,6 +22,8 @@ struct KubeOverview: Equatable {
         var detail: String? = nil
         /// The second line is code-like (a container's image).
         var detailMono = false
+        /// A pod's container's TCP ports: each a button that starts a forward.
+        var ports: [KubeForwardPortOption] = []
 
         var id: String { label + "\u{0}" + value }
     }
@@ -204,7 +206,11 @@ struct KubeOverview: Equatable {
     /// One container: its image, its state now, its restarts, how it last ended.
     static func container(name: String, spec: [String: Any], status: [String: Any]?) -> Item {
         let image = spec["image"] as? String ?? status?["image"] as? String ?? ""
-        guard let status else { return Item(label: name, value: "no status yet", tone: .waiting, detail: image, detailMono: true) }
+        let ports = (spec["ports"] as? [[String: Any]] ?? []).compactMap { port -> KubeForwardPortOption? in
+            guard (port["protocol"] as? String ?? "TCP") == "TCP", let number = int(port["containerPort"]) else { return nil }
+            return KubeForwardPortOption(port: number, name: port["name"] as? String, container: name)
+        }
+        guard let status else { return Item(label: name, value: "no status yet", tone: .waiting, detail: image, detailMono: true, ports: ports) }
         var parts: [String] = []
         var tone: Tone = .waiting
         let state = status["state"] as? [String: Any] ?? [:]
@@ -230,7 +236,7 @@ struct KubeOverview: Equatable {
             parts.append("last: \(last["reason"] as? String ?? "exited")\(code)")
             if tone == .good, restarts > 0 { tone = .waiting }
         }
-        return Item(label: name, value: parts.joined(separator: " · "), tone: tone, detail: image, detailMono: true)
+        return Item(label: name, value: parts.joined(separator: " · "), tone: tone, detail: image, detailMono: true, ports: ports)
     }
 
     // MARK: Workloads

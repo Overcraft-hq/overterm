@@ -30,14 +30,19 @@ struct KubernetesActions {
     var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void = { _, _, _, _ in }
     /// One of these chosen, or Cancel: the index of the one chosen (a container).
     var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
+    /// A forward's URL: the browser column (the page steps aside), or the
+    /// default browser, as links open.
+    var openURL: (URL) -> Void = { _ in }
+    /// The tab under the page: a forward started now is its pill's.
+    var currentTab: () -> UUID? = { nil }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
 /// keyboard. More join with their stages (docs/design/kubernetes/analysis.md,
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
-    case workloads, network, config, storage, access, cluster, custom
-    case open, back, forward, close, logs, followInTab, shell, attach
+    case workloads, network, config, storage, access, cluster, custom, forwards
+    case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -53,6 +58,8 @@ enum KubernetesKey: String, ResourceKey {
         case .followInTab: return "t"
         case .shell: return "e"
         case .attach: return "A"
+        case .portForward: return "f"
+        case .openForward: return "o"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -72,6 +79,8 @@ enum KubernetesKey: String, ResourceKey {
         case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
         case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
         case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
+        case .portForward: return "Port-forward a pod, a Service or a Deployment — kubectl port-forward, started again on its next pod"
+        case .openForward: return "Open a forward in the browser column — the selected object's, or the one picked in Forwards"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -165,6 +174,8 @@ final class KubernetesPageModel: ObservableObject {
     var actions: KubernetesActions?
 
     let model: KubernetesModel
+    /// The app's port-forwards: the Forwards section, `f`, `o`.
+    let forwards: KubeForwards
     /// How long the typing must stop before `label:` or `field:` asks the server again.
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
@@ -176,6 +187,16 @@ final class KubernetesPageModel: ObservableObject {
     private var contextWatch: AnyCancellable?
     private var scopeWatch: AnyCancellable?
 
+    /// `f`: the forward sheet over the page — a target's ports, the local
+    /// port, the address, https — or one being edited.
+    @Published var forwardDraft: KubeForwardDraft?
+    /// Why the sheet's forward can't start as it stands.
+    @Published var forwardProblem: String?
+    /// The forward picked in the Forwards section (`o` opens it).
+    @Published var forwardSelection: UUID?
+    /// Whether something on this Mac listens on a port: a test's stands in.
+    var isPortBound: (Int) -> Bool = { ListeningPorts.isBound($0) }
+
     /// The detail beside the list: one object, read once as it opens.
     @Published private(set) var detail: KubeDetailSession?
     @Published var detailTab: KubeDetailTab = .overview
@@ -185,8 +206,9 @@ final class KubernetesPageModel: ObservableObject {
     /// Why a link couldn't be followed (its kind isn't served).
     @Published private(set) var linkProblem: String?
 
-    init(model: KubernetesModel = .shared) {
+    init(model: KubernetesModel = .shared, forwards: KubeForwards = .shared) {
         self.model = model
+        self.forwards = forwards
         // A picker that shows follows what comes in: the namespaces listed
         // after it opened, the kubeconfig read again. The emitted values:
         // the model's properties aren't set yet.
@@ -230,6 +252,11 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     private func follow(_ kind: KubeResourceKind, _ catalog: KubeKindCatalog) {
+        // Forwards shows the app's forwards, whatever kind the list is on.
+        if section == .forwards {
+            if let shown = catalog.section(of: kind) { lastKind[shown] = kind.fullName }
+            return
+        }
         if waitingForSection {
             // A section picked with no kind to show: its first, once it has one.
             guard let first = catalog.kinds(in: section).first else { return }
@@ -254,6 +281,11 @@ final class KubernetesPageModel: ObservableObject {
     /// A section's digit: its kind last shown, else its first — or, while
     /// it has none, the section alone until it has.
     func showSection(_ section: KubeSection) {
+        guard section.listsKinds else {
+            waitingForSection = false
+            self.section = section
+            return
+        }
         let kinds = model.catalog.kinds(in: section)
         if let kind = lastKind[section].flatMap({ name in kinds.first { $0.fullName == name } }) ?? kinds.first {
             showKind(kind)
@@ -274,6 +306,9 @@ final class KubernetesPageModel: ObservableObject {
         if let shown = model.catalog.section(of: kind) {
             section = shown
             lastKind[shown] = kind.fullName
+        } else if !section.listsKinds {
+            // Before discovery (Pods): off Forwards, onto the list.
+            section = .workloads
         }
         if kind.fullName != model.kind.fullName {
             selection = []
@@ -284,7 +319,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Whether the list shows the section's kind: false while a section is
     /// picked that has none to show.
-    var showsSection: Bool { !waitingForSection }
+    var showsSection: Bool { !waitingForSection && section.listsKinds }
 
     /// The list's title: the kind's, as the page calls it.
     var title: String { showsSection ? KubeKindCatalog.title(of: model.kind) : section.title }
@@ -293,6 +328,12 @@ final class KubernetesPageModel: ObservableObject {
 
     /// A key down while the list has the keyboard: true when it meant something.
     func press(_ characters: String) -> Bool {
+        // The forward sheet's fields have the keys; Esc closes it.
+        if forwardDraft != nil {
+            guard characters == "\u{1B}" else { return false }
+            closeForwardSheet()
+            return true
+        }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
         case .closeSheet: cheatSheet = false
@@ -317,6 +358,8 @@ final class KubernetesPageModel: ObservableObject {
             case .followInTab: return runPodCommand(.followLogs)
             case .shell: return runPodCommand(.shell)
             case .attach: return runPodCommand(.attach)
+            case .portForward: return portForward()
+            case .openForward: return openForward()
             default: return false
             }
         }
@@ -882,7 +925,7 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ] + [terminalVerb(for: picked)].compactMap { $0 } + podVerbs(for: picked)
+        ] + [terminalVerb(for: picked)].compactMap { $0 } + podVerbs(for: picked) + forwardVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

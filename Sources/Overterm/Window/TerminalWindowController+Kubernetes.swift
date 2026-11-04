@@ -31,7 +31,36 @@ extension TerminalWindowController {
             openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) },
             runInTab: { [weak self] command, context, namespace in self?.runKubernetesCommand(command, in: context, namespace: namespace) },
             confirm: { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, then) },
-            choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) })
+            choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) },
+            openURL: { [weak self] url in self?.openDockerLink(url) },
+            currentTab: { [weak self] in self?.store.selected?.id })
+    }
+
+    // MARK: Port-forwards (docs/design/kubernetes/analysis.md, 3.8)
+
+    /// Each tab's forwards as pills in its panes' headers (and in Tab Info,
+    /// the browser column's empty page): the app's forwards that tab asked
+    /// for, kept as they change — the emitted list, since `forwards` isn't
+    /// set yet.
+    func followKubernetesForwards() {
+        KubeForwards.shared.$forwards
+            .sink { [weak self] forwards in
+                DispatchQueue.main.async { self?.updateForwardPorts(forwards) }
+            }
+            .store(in: &cancellables)
+    }
+
+    func updateForwardPorts(_ forwards: [KubeForward] = KubeForwards.shared.forwards) {
+        for tab in store.tabs {
+            let ports = forwards.filter { $0.spec.tab == tab.id }.compactMap(\.listeningPort)
+            if tab.forwardPorts != ports { tab.forwardPorts = ports }
+        }
+    }
+
+    /// A forward's pill's Kubernetes: the page's Forwards section.
+    func showKubernetesForwards() {
+        kubernetesPage.showForwards()
+        showKubernetesPage()
     }
 
     // MARK: Terminal in this context (docs/design/kubernetes/analysis.md, 3.11)
@@ -232,6 +261,7 @@ extension TerminalWindowController {
     /// The page declared, and its list given the keyboard when it asks.
     func wireKubernetesPage() {
         declarePage(kubernetesWorkspacePage())
+        followKubernetesForwards()
         kubernetesPage.$focusList
             .dropFirst()
             .sink { [weak self] _ in self?.focusPageList(.kubernetes) }
@@ -346,8 +376,25 @@ extension TerminalWindowController {
         var items = [
             PaletteItem(
                 id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, every kind  ⌥⌘J", symbol: "steeringwheel"
-            ) { [weak self] _, _ in self?.toggleKubernetesPage(nil) }
+            ) { [weak self] _, _ in self?.toggleKubernetesPage(nil) },
+            PaletteItem(
+                id: "a.kubernetes.forwards", group: .action, title: "Kubernetes Forwards",
+                subtitle: "The port-forwards: open, edit, stop  \(KubeSection.forwards.key)", symbol: "arrow.left.arrow.right"
+            ) { [weak self] _, _ in self?.showKubernetesForwards() },
         ]
+        // Each forward: ↩ opens it (the browser column), else shows it on the page.
+        items += KubeForwards.shared.forwards.map { forward in
+            let spec = forward.spec
+            return PaletteItem(
+                id: "k.f.\(forward.id)", group: .kubernetes, title: "Forward localhost:\(spec.localPort) → \(spec.target)",
+                subtitle: ([forward.pod.map { "pod \($0)" }, spec.context, spec.namespace, forward.state.text].compactMap { $0 }).joined(separator: " · "),
+                symbol: "arrow.left.arrow.right"
+            ) { [weak self] _, _ in
+                guard let self else { return }
+                // As `o` opens it: the page's actions, the browser column.
+                if forward.isForwarding { self.kubernetesPage.openForward(forward.id) } else { self.showKubernetesForwards() }
+            }
+        }
         guard model.contextsRead else { return items }
         items += model.contexts.contexts.map { context in
             let detail = [

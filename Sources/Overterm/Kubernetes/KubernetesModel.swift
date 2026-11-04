@@ -452,16 +452,16 @@ final class KubernetesModel: ObservableObject {
         generation += 1
     }
 
-    private func connection(for context: KubeContext) -> any KubeConnection {
-        connectOverride?(context) ?? KubeProxyConnection(proxies: proxies, context: context)
+    private func connection(for context: KubeContext, role: KubeProxies.Role = .page) -> any KubeConnection {
+        connectOverride?(context) ?? KubeProxyConnection(proxies: proxies, context: context, role: role)
     }
 
     /// What a page's detail reads through: the context's proxy (the page's
-    /// slot), or a test's connection. Nil with Kubernetes off, or for a
-    /// context the kubeconfig no longer has.
-    func client(for name: String) -> KubeClient? {
+    /// slot; a forward's reads `.background`), or a test's connection. Nil
+    /// with Kubernetes off, or for a context the kubeconfig no longer has.
+    func client(for name: String, role: KubeProxies.Role = .page) -> KubeClient? {
         guard enabled, let context = contexts.context(named: name) else { return nil }
-        return KubeClient(connection(for: context))
+        return KubeClient(connection(for: context, role: role))
     }
 
     private func restartReading(side readSide: Bool = true) {

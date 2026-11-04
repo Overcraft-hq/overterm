@@ -874,6 +874,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     actions: PaneHeaderActions(
                         copyOutput: { [weak self] in self?.copyOutput(of: $0) },
                         killPort: { [weak self] port in
+                            // A Kubernetes forward's: stopped, its kubectl closed by its pid.
+                            if let forward = port.forward {
+                                KubeForwards.shared.stop(forward.id)
+                                return
+                            }
                             // A container's: stopped through the engine.
                             if let container = port.container {
                                 self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
@@ -895,7 +900,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         openPort: { [weak self, weak tab] port in
                             guard let url = port.url else { return }
                             self?.openLink(url, for: tab)
-                        })))
+                        },
+                        showForwards: { [weak self] in self?.showKubernetesForwards() })))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(host)
@@ -3314,9 +3320,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Whether closing these tabs asks first: always, unless Settings says
-    /// only when something runs in them.
-    static func needsCloseConfirmation(_ tabs: [Tab]) -> Bool {
-        Settings.shared.confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
+    /// only when something runs in them — a pane's process, or a
+    /// port-forward the tab asked for that hasn't stopped (its pill).
+    /// `quitting`: every forward that runs counts, whatever tab asked for
+    /// it, since quitting stops them all.
+    static func needsCloseConfirmation(
+        _ tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false,
+        confirmClose: Settings.CloseConfirmation = Settings.shared.confirmClose
+    ) -> Bool {
+        confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
+            || !runningForwards(of: tabs, in: forwards, quitting: quitting).isEmpty
+    }
+
+    /// The forwards closing these tabs (or quitting) is about: those not
+    /// stopped that one of them asked for — every one, quitting.
+    static func runningForwards(of tabs: [Tab], in forwards: [KubeForward], quitting: Bool) -> [KubeForward] {
+        let ids = Set(tabs.map(\.id))
+        return forwards.filter { forward in !forward.state.isStopped && (quitting || forward.spec.tab.map { ids.contains($0) } == true) }
     }
 
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
@@ -3524,14 +3544,31 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What closing these tabs would end — running processes by name, agents
     /// first, since an agent's conversation is what you'd lose.
-    static func closeWarning(for tabs: [Tab]) -> String {
+    /// What closing them stops, said: the busy panes, then the forwards —
+    /// which a tab's close leaves running, on the page's Forwards only (a
+    /// forward is the app's, not the tab's), and quitting stops.
+    static func closeWarning(for tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false) -> String {
         let busy = tabs.filter { $0.terminals.contains { $0.needsConfirmClose } }
-        guard !busy.isEmpty else {
-            return tabs.count == 1 ? "Its shell is idle." : "Their shells are idle."
+        let running = runningForwards(of: tabs, in: forwards, quitting: quitting)
+        var said: String
+        if busy.isEmpty {
+            said = tabs.count == 1 ? "Its shell is idle." : "Their shells are idle."
+        } else {
+            let names = busy.prefix(3).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
+            let more = busy.count > 3 ? " and \(busy.count - 3) more" : ""
+            said = "Still running: \(names.joined(separator: ", "))\(more). Closing kills \(busy.count == 1 ? "it" : "them")."
         }
-        let names = busy.prefix(3).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
-        let more = busy.count > 3 ? " and \(busy.count - 3) more" : ""
-        return "Still running: \(names.joined(separator: ", "))\(more). Closing kills \(busy.count == 1 ? "it" : "them")."
+        guard !running.isEmpty else { return said }
+        let named = running.prefix(2).map { "localhost:\($0.spec.localPort) → \($0.spec.target)" }.joined(separator: ", ")
+        let more = running.count > 2 ? " and \(running.count - 2) more" : ""
+        let one = running.count == 1
+        if quitting {
+            said += " Quitting stops \(one ? "the port-forward" : "\(running.count) port-forwards") (\(named)\(more))."
+        } else {
+            said +=
+                " \(one ? "Its port-forward" : "Their port-forwards") (\(named)\(more)) \(one ? "keeps" : "keep") running: Kubernetes ▸ Forwards shows and stops \(one ? "it" : "them")."
+        }
+        return said
     }
 
     private func removeTab(_ tab: Tab) {
@@ -3913,13 +3950,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             return false
         }
         guard !store.tabs.isEmpty else { return true }
-        if !Self.needsCloseConfirmation(store.tabs) {
+        // The last window's close quits, which stops every forward.
+        let last = !NSApp.windows.contains { $0 !== sender && $0.isVisible && $0.windowController is TerminalWindowController }
+        if !Self.needsCloseConfirmation(store.tabs, quitting: last) {
             closeConfirmed = true
             return true
         }
         let alert = NSAlert()
         alert.messageText = store.tabs.count == 1 ? "Close the window?" : "Close the window and its \(store.tabs.count) tabs?"
-        alert.informativeText = Self.closeWarning(for: store.tabs)
+        alert.informativeText = Self.closeWarning(for: store.tabs, quitting: last)
         alert.addButton(withTitle: "Close Window")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning

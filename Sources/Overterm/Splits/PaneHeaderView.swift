@@ -14,6 +14,8 @@ struct PaneHeaderActions {
     var zoom: (TerminalView) -> Void
     var close: (TerminalView) -> Void
     var openPort: (ListeningPort) -> Void
+    /// A Kubernetes forward's: the page's Forwards section.
+    var showForwards: () -> Void = {}
 }
 
 /// The bar across the top of every terminal pane: what is running here,
@@ -77,8 +79,9 @@ struct PaneHeaderView: View {
             // This pane's own servers. A checkout's compose stack isn't any
             // pane's: on every header of every tab in the checkout, it said
             // a pane listened where nothing in it did (Tab Info, the Docker
-            // page and the browser still list them).
-            ForEach(tab.ports(of: pane)) { port in
+            // page and the browser still list them). A Kubernetes forward
+            // is the tab's, asked from it: its pill stays.
+            ForEach(tab.ports(of: pane) + tab.forwardPorts) { port in
                 PortPill(port: port, theme: theme, actions: actions)
             }
             HStack(spacing: 0) {
@@ -213,28 +216,44 @@ private struct PortPill: View {
             showing.toggle()
         } label: {
             HStack(spacing: 5) {
-                Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
-                Text(verbatim: ":\(port.port)")
-                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                if let forward = port.forward {
+                    Image(systemName: "arrow.left.arrow.right").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
+                    // The pod it is pinned to: a Service's forward moves with its pods.
+                    Text(verbatim: ":\(port.port) → \(forward.pod ?? forward.target)")
+                        .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
+                    Text(verbatim: ":\(port.port)")
+                        .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                }
             }
-            .foregroundStyle(theme.greenText)
+            .foregroundStyle(tint)
             .padding(.horizontal, 9)
             .frame(height: ChromeMetrics.row(24))
-            .background(Capsule().fill(TabStatusStyle.done.opacity(hovering ? 0.26 : 0.16)))
+            .frame(maxWidth: port.forward == nil ? nil : 240)
+            .background(Capsule().fill(fill.opacity(hovering ? 0.26 : 0.16)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(port.process) is listening on \(port.port)")
+        .help(help)
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     Text(verbatim: "localhost:\(port.port)")
                         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .foregroundStyle(theme.text)
-                    Text(verbatim: "· \(port.process) · pid \(port.pid)")
+                    Text(verbatim: origin)
                         .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text3)
+                }
+                if let forward = port.forward {
+                    Text(verbatim: "\(forward.target) in \(forward.context) · \(forward.namespace) — \(forward.state)")
+                        .font(.system(size: ChromeMetrics.text(11.5)))
+                        .foregroundStyle(forward.production ? KubernetesPageView.production : theme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
                     action("Open", filled: true) {
@@ -247,9 +266,20 @@ private struct PortPill: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     }
-                    action("Kill") {
-                        showing = false
-                        actions.killPort(port)
+                    if port.forward != nil {
+                        action("Kubernetes") {
+                            showing = false
+                            actions.showForwards()
+                        }
+                        action("Stop") {
+                            showing = false
+                            actions.killPort(port)
+                        }
+                    } else {
+                        action("Kill") {
+                            showing = false
+                            actions.killPort(port)
+                        }
                     }
                 }
             }
@@ -257,6 +287,28 @@ private struct PortPill: View {
             .frame(width: 280)
             .environment(\.colorScheme, theme.isDark ? .dark : .light)
         }
+    }
+
+    private var tint: Color {
+        guard let forward = port.forward else { return theme.greenText }
+        return forward.forwarding ? theme.accentText : theme.orangeText
+    }
+
+    private var fill: Color {
+        guard let forward = port.forward else { return TabStatusStyle.done }
+        return forward.forwarding ? TabStatusStyle.working : TabStatusStyle.waiting
+    }
+
+    private var origin: String {
+        if let forward = port.forward { return forward.forwarding ? "· kubectl · pid \(port.pid)" : "· kubectl, restarting" }
+        return "· \(port.process) · pid \(port.pid)"
+    }
+
+    private var help: String {
+        if let forward = port.forward {
+            return "kubectl port-forward \(forward.target) → pod \(forward.pod ?? "…") in \(forward.context)/\(forward.namespace): \(forward.state)"
+        }
+        return "\(port.process) is listening on \(port.port)"
     }
 
     private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {
