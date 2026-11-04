@@ -94,6 +94,9 @@ final class Tab: ObservableObject, Identifiable {
     /// What the compose projects of its checkout publish (DockerModel).
     /// Apart from `ports`: they don't make the tab a server.
     @Published var containerPorts: [ListeningPort] = []
+    /// The Kubernetes port-forwards started from this tab (`KubeForwards`):
+    /// pills naming the pod each is pinned to. Apart from `ports` too.
+    @Published var forwardPorts: [ListeningPort] = []
 
     /// What this tab is, for the glyph in its icon tile.
     var kind: TabKind { TabKind.of(agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil) }

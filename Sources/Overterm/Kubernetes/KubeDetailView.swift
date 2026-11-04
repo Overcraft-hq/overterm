@@ -71,8 +71,8 @@ struct KubeDetailView: View {
                 .truncationMode(.middle).textSelection(.enabled)
                 .accessibilityIdentifier("kubernetes.detail.name")
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
-            if session.ref.isPod {
-                KubePodActions(page: page, access: page.model.access, ref: session.ref, theme: theme).padding(.top, 4)
+            if session.ref.isPod || KubeForwardTarget.of(kind: session.ref.kind, name: session.ref.name) != nil {
+                KubePodActions(page: page, access: page.model.access, forwards: page.forwards, ref: session.ref, theme: theme).padding(.top, 4)
             }
         }
         .padding(.horizontal, 14)
@@ -85,12 +85,14 @@ struct KubeDetailView: View {
     private struct KubePodActions: View {
         @ObservedObject var page: KubernetesPageModel
         @ObservedObject var access: KubeAccessChecks
+        /// Open Forward comes and goes with its forward.
+        @ObservedObject var forwards: KubeForwards
         let ref: KubeObjectRef
         @ObservedObject var theme: ChromeTheme
 
         var body: some View {
             VStack(alignment: .leading, spacing: 4) {
-                ResourceActionBar(verbs: page.podVerbs(for: ref), theme: theme, identifier: "kubernetes.detail.actions")
+                ResourceActionBar(verbs: page.detailVerbs(for: ref), theme: theme, identifier: "kubernetes.detail.actions")
                 if let problem = page.commandProblem {
                     Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -232,9 +234,34 @@ struct KubeDetailView: View {
                             Text(verbatim: detail).font(.system(size: 11, design: item.detailMono ? .monospaced : .default)).foregroundStyle(theme.text3)
                                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         }
+                        if !item.ports.isEmpty { containerPorts(item.ports) }
                     }
                     Spacer(minLength: 0)
                 }
+            }
+        }
+    }
+
+    /// A container's ports: each opens Port-forward… on the pod, that port picked.
+    private func containerPorts(_ ports: [KubeForwardPortOption]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(ports, id: \.self) { port in
+                Button {
+                    page.portForward(session.ref, port: port.port)
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.left.arrow.right").font(.system(size: 8, weight: .semibold))
+                        Text(verbatim: port.name.map { "\(port.port) (\($0))" } ?? "\(port.port)").font(.system(size: 11, design: .monospaced))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .foregroundStyle(theme.accentText)
+                    .background(RoundedRectangle(cornerRadius: 4).stroke(theme.accentText.opacity(0.4)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Port-forward… to \(port.port)  \(KubernetesKey.portForward.key)")
+                .accessibilityIdentifier("kubernetes.detail.port.\(port.port)")
             }
         }
     }

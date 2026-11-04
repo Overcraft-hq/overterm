@@ -14,11 +14,21 @@ struct ListeningPort: Identifiable, Hashable {
     /// The port the compose file asks for, when Up on Free Ports moved it
     /// here for this checkout (`ComposePorts`).
     var movedFrom: Int? = nil
+    /// A Kubernetes port-forward's (`KubeForwards`): kubectl is Overterm's
+    /// child, not the tab's, so lsof never finds it under the tab. Its pid
+    /// is kubectl's while it forwards, 0 while it restarts.
+    var forward: KubeForwardPill? = nil
 
-    var id: String { container.map { "\($0):\(port)" } ?? "\(pid):\(port)" }
+    var id: String {
+        if let forward { return "forward:\(forward.id)" }
+        return container.map { "\($0):\(port)" } ?? "\(pid):\(port)"
+    }
 
-    /// Loopback or wildcard: reachable as localhost.
-    var url: URL? { URL(string: "http://localhost:\(port)") }
+    /// Loopback or wildcard: reachable as localhost (a forward's, https when it says so).
+    var url: URL? {
+        if let forward { return URL(string: "\(forward.https ? "https" : "http")://\(KubeForwardAddress.host(for: address)):\(port)") }
+        return URL(string: "http://localhost:\(port)")
+    }
 }
 
 enum ListeningPorts {

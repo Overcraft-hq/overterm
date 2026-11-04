@@ -76,13 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
         }
         guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
-            TerminalWindowController.needsCloseConfirmation(controller.store.tabs)
+            TerminalWindowController.needsCloseConfirmation(controller.store.tabs, quitting: true)
         else { return .terminateNow }
         let tabs = controller.store.tabs
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Quit Overterm?" : "Quit Overterm and close \(tabs.count) tabs?"
         alert.informativeText =
-            TerminalWindowController.closeWarning(for: tabs) + " Tabs come back on the next launch; agents resume their conversation."
+            TerminalWindowController.closeWarning(for: tabs, quitting: true) + " Tabs come back on the next launch; agents resume their conversation."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
@@ -102,8 +102,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         SSHTunnel.closeAll()
         // A volume's helpers, while a remote engine's forward is still open.
         DockerHelpers.removeAll(waiting: 2)
+        // Every Kubernetes port-forward, before its kubectl is closed below:
+        // none is started again.
+        KubeForwards.shared.stopAll()
         // Every long-lived child Overterm started (a remote engine's ssh
-        // forward, each context's kubectl proxy), by its own pid.
+        // forward, each context's kubectl proxy and port-forwards), by its own pid.
         ManagedProcess.closeAll()
         // A kubectl auth can-i still asking, with its exec plugin: its group.
         KubeProcessRun.stopAll()

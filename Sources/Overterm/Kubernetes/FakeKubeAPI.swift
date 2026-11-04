@@ -56,9 +56,25 @@ final class FakeKubeAPI: @unchecked Sendable {
         var exitCode = 0
         /// The first container's env, as plain values.
         var env: [String: String] = [:]
+        /// The first container's declared ports (TCP).
+        var ports: [ContainerPort] = []
+        /// Its `Ready` condition, when one is reported (nil: none, readiness
+        /// read off its containers): a readiness probe failing turns it False.
+        var readyCondition: Bool?
 
         /// Its containers' names: `app`, then `sidecar-1`…
         var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
+    }
+
+    /// A port a container declares: `containerPort`, and its name.
+    struct ContainerPort: Equatable, Sendable {
+        var name: String?
+        var port: Int
+
+        init(_ port: Int, name: String? = nil) {
+            self.port = port
+            self.name = name
+        }
     }
 
     /// One line of a container's log, as the kubelet keeps it.
@@ -201,6 +217,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             group: "apiextensions.k8s.io", version: "v1", resource: "customresourcedefinitions", kind: "CustomResourceDefinition", namespaced: false,
             shortNames: ["crd", "crds"], categories: ["api-extensions"], subresources: ["status"]),
         Kind(group: "rbac.authorization.k8s.io", version: "v1", resource: "roles", kind: "Role", namespaced: true),
+        Kind(group: "discovery.k8s.io", version: "v1", resource: "endpointslices", kind: "EndpointSlice", namespaced: true),
         Kind(group: "networking.k8s.io", version: "v1", resource: "ingresses", kind: "Ingress", namespaced: true, shortNames: ["ing"], subresources: ["status"]),
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "pods", kind: "PodMetrics", namespaced: true, verbs: ["get", "list"]),
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "nodes", kind: "NodeMetrics", namespaced: false, verbs: ["get", "list"]),
@@ -1199,7 +1216,16 @@ final class FakeKubeAPI: @unchecked Sendable {
             let env = pod.env.keys.sorted().map { ["name": $0, "value": pod.env[$0]!] }
             var spec: [String: Any] = [
                 "containers": names.enumerated().map { index, name -> [String: Any] in
-                    index == 0 && !env.isEmpty ? ["name": name, "image": pod.image, "env": env] : ["name": name, "image": pod.image]
+                    var container: [String: Any] = ["name": name, "image": pod.image]
+                    if index == 0, !env.isEmpty { container["env"] = env }
+                    if index == 0, !pod.ports.isEmpty {
+                        container["ports"] = pod.ports.map { port -> [String: Any] in
+                            var declared: [String: Any] = ["containerPort": port.port, "protocol": "TCP"]
+                            if let name = port.name { declared["name"] = name }
+                            return declared
+                        }
+                    }
+                    return container
                 },
                 "nodeName": pod.node, "restartPolicy": "Always",
             ]
@@ -1221,6 +1247,7 @@ final class FakeKubeAPI: @unchecked Sendable {
                     return item
                 },
             ]
+            if let ready = pod.readyCondition { status["conditions"] = [["type": "Ready", "status": ready ? "True" : "False"]] }
             if !pod.initContainers.isEmpty {
                 status["initContainerStatuses"] = pod.initContainers.map {
                     ["name": $0, "image": "busybox:1.36", "ready": true, "restartCount": 0, "state": ["terminated": ["reason": "Completed", "exitCode": 0]]] as [String: Any]

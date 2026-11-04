@@ -218,7 +218,7 @@ final class KubernetesPageTests: XCTestCase {
             verbs.map(\.title),
             [
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
-                "Terminal in This Context", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab",
+                "Terminal in This Context", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward",
             ])
         var pinned: [String] = []
         page.actions = KubernetesActions(
