@@ -1731,6 +1731,13 @@ final class E2ERunner {
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
                 clickCount: 2, pressure: 1)
         {
+            // On a laptop's own screen the run's window can already fill
+            // it, and zooming a zoomed window whose standard frame is the
+            // same changes nothing: start from a frame smaller than the
+            // screen, so the double-click has something to zoom to.
+            if window.isZoomed, let visible = window.screen?.visibleFrame {
+                window.setFrame(visible.insetBy(dx: visible.width * 0.1, dy: visible.height * 0.1), display: true)
+            }
             let zoomed = window.isZoomed
             dragged.mouseDown(with: doubleClick)
             check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
@@ -3309,9 +3316,10 @@ final class E2ERunner {
         guard let terminal = app.store.selected?.terminal else { return check("a tab", false) }
         // Every row starts with the path, so a click a few cells in hits it
         // whatever the padding and the row. A script keeps the typed command
-        // short.
+        // short, and prints more rows than any screen's window holds (60
+        // left a tall one's last rows empty).
         let script = scratch.appendingPathComponent("paths.sh")
-        try? "clear\nfor i in $(seq 60); do echo src/main.swift:3; done\necho ok > \(out("printed").path)\n"
+        try? "clear\nfor i in $(seq 200); do echo src/main.swift:3; done\necho ok > \(out("printed").path)\n"
             .write(to: script, atomically: true, encoding: .utf8)
         await runAndExpect("sh \(script.path)", file: out("printed"), content: "ok", "the shell prints a path:line")
         guard let surface = terminal.surface else { return check("a surface", false) }
