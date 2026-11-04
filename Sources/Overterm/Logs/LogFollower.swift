@@ -33,6 +33,14 @@ final class LogFollower {
     private(set) var following = false
     /// The newest line's time, so a log followed again starts after it.
     private var lastStamp: String?
+    /// The lines in at `lastStamp`: followed again from that time, a line
+    /// of that same time is one already shown only if it says the same —
+    /// two lines can share a time, and the second may have come after the
+    /// stream dropped.
+    private var atLastStamp: [LogLine] = []
+    /// Followed again from a time: until a line past it comes, what comes
+    /// may be lines already shown (the source asks from that second).
+    private var resuming: (stamp: String, shown: [LogLine])?
     var onChange: () -> Void = {}
 
     init(source: any LogSource, feed: LogFeed, merging: Bool) {
@@ -44,6 +52,7 @@ final class LogFollower {
     func start(tail: Int) {
         task?.cancel()
         let after = lastStamp
+        resuming = lastStamp.map { (LogFeed.sortable($0), atLastStamp) }
         task = Task { [weak self, source] in
             guard let stream = await source.follow(tail: tail, after: after) else { return }
             // Stopped while it was opened: the loop below ends at once,
@@ -54,11 +63,9 @@ final class LogFollower {
                     // Stopped: a cancelled stream still hands out what it
                     // had buffered — none of it goes in.
                     guard let self, !Task.isCancelled else { return }
-                    var added = lines
-                    // Followed again from a time: the lines already shown then come again.
-                    if let last = self.lastStamp.map(LogFeed.sortable) { added.removeAll { LogFeed.sortable($0.timestamp ?? "") <= last } }
+                    let added = self.unseen(lines)
                     guard !added.isEmpty else { continue }
-                    self.lastStamp = added.last?.timestamp ?? self.lastStamp
+                    self.noteNewest(added)
                     if self.merging { self.feed.merge(added) } else { self.feed.append(added) }
                 }
             } catch {}
@@ -67,6 +74,40 @@ final class LogFollower {
             guard await source.followsAgain(), !Task.isCancelled else { return }
             self?.start(tail: tail)
         }
+    }
+
+    /// What of `lines` isn't in the feed already: followed again from a
+    /// time, the lines before it, and those of that time it showed (the
+    /// same time and text, once each). Past that time, all of them.
+    private func unseen(_ lines: [LogLine]) -> [LogLine] {
+        guard var resume = resuming else { return lines }
+        var added: [LogLine] = []
+        for line in lines {
+            let stamp = LogFeed.sortable(line.timestamp ?? "")
+            if resuming != nil {
+                if stamp < resume.stamp { continue }
+                if stamp == resume.stamp {
+                    if let shown = resume.shown.firstIndex(of: line) {
+                        resume.shown.remove(at: shown)
+                        continue
+                    }
+                } else {
+                    resuming = nil
+                }
+            }
+            added.append(line)
+        }
+        if resuming != nil { resuming = resume }
+        return added
+    }
+
+    /// The newest time in, and the lines in at it.
+    private func noteNewest(_ added: [LogLine]) {
+        guard let newest = added.last?.timestamp else { return }
+        let stamp = LogFeed.sortable(newest)
+        let same = added.filter { LogFeed.sortable($0.timestamp ?? "") == stamp }
+        atLastStamp = lastStamp.map(LogFeed.sortable) == stamp ? atLastStamp + same : same
+        lastStamp = newest
     }
 
     func stop() {

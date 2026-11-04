@@ -16,6 +16,9 @@ struct KubernetesActions {
     /// A file the user asked for (the list as CSV): a save panel, its name
     /// suggested — in a scenario, the run's own folder.
     var save: (_ name: String, _ text: String) -> Void = { _, _ in }
+    /// Lines of a log, scrubbed, to an agent (⌘L): the Ask Agent sheet,
+    /// with what they come from.
+    var askAgent: (_ text: String, _ about: AskAgentModel.Part) -> Void = { _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -23,7 +26,7 @@ struct KubernetesActions {
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom
-    case open, back, forward, close
+    case open, back, forward, close, logs
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -35,6 +38,7 @@ enum KubernetesKey: String, ResourceKey {
         case .back: return "["
         case .forward: return "]"
         case .close: return "Esc"
+        case .logs: return "l"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -49,7 +53,8 @@ enum KubernetesKey: String, ResourceKey {
     var title: String {
         if let section { return section.title }
         switch self {
-        case .open: return "The detail: overview, YAML, events (a click opens it too)"
+        case .open: return "The detail: overview, YAML, events — a pod's logs (a click opens it too)"
+        case .logs: return "Logs: the pod's, followed — its containers, previous, since"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -105,6 +110,8 @@ final class KubernetesPageModel: ObservableObject {
     /// Bumped when the list may take the keyboard if nobody has it.
     @Published private(set) var offerList = 0
     @Published private(set) var focusFilter = 0
+    /// Bumped to give a pod's Logs tab's filter the keyboard (⌘F there).
+    @Published private(set) var focusLogFilter = 0
     /// Whether the page shows in its window. Shown, its filter's selector
     /// is the list's again — another window's page may have had its own;
     /// hidden, it gives the list back, so nothing is narrowed by a filter
@@ -121,11 +128,22 @@ final class KubernetesPageModel: ObservableObject {
                 // A Secret's values never outlive the page on screen.
                 detail?.secret?.drop(.pageHidden)
             }
+            updateLogsReading()
         }
     }
     /// Whether its window is on screen at all.
     @Published var windowVisible = true {
-        didSet { if !windowVisible { detail?.secret?.drop(.pageHidden) } }
+        didSet {
+            if !windowVisible { detail?.secret?.drop(.pageHidden) }
+            updateLogsReading()
+        }
+    }
+    /// How a pod's log shows — wrap, timestamps, newest first, the search
+    /// as a regular expression or marking matches — kept for the window.
+    @Published var logOptions = LogViewOptions()
+    /// How far back a pod's log goes, kept for the window.
+    @Published var logSince: KubeLogSince = .all {
+        didSet { if logSince != oldValue { updateLogsReading() } }
     }
     var actions: KubernetesActions?
 
@@ -269,6 +287,7 @@ final class KubernetesPageModel: ObservableObject {
             case .wide: wide.toggle()
             case .allNamespaces: model.setScope(.all)
             case .copyKubectl: copyKubectl()
+            case .logs: return openLogs()
             default: return false
             }
         }
@@ -288,8 +307,51 @@ final class KubernetesPageModel: ObservableObject {
     @discardableResult
     func openSelected() -> Bool {
         guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id) else { return false }
+        // A pod's ↩ is its logs (docs/design/kubernetes/analysis.md, Section 7).
+        if ref.isPod { detailTab = .logs }
         open(ref, from: .list)
+        updateLogsReading()
         return true
+    }
+
+    /// `l`: the selected pod's logs; nothing for another kind.
+    @discardableResult
+    func openLogs() -> Bool {
+        guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.isPod else { return false }
+        detailTab = .logs
+        open(ref, from: .list)
+        updateLogsReading()
+        return true
+    }
+
+    /// The Logs tab reads while it shows — the page on screen, in a window
+    /// on screen — and closes its stream otherwise.
+    func updateLogsReading() {
+        guard let logs = detail?.logs else { return }
+        if visible && windowVisible && detailTab == .logs { logs.show(since: logSince) } else { logs.hide() }
+    }
+
+    /// Lines picked out of a pod's log (⌘L, its right-click menu): scrubbed
+    /// of what looks secret — the pod's own env values, tokens, keys — then
+    /// to the Ask Agent sheet with the pod they come from.
+    func askAboutLogLines(_ picked: String) {
+        guard let detail, let logs = detail.logs else { return }
+        let ref = detail.ref
+        let command = KubectlLine.logs(
+            context: ref.context, namespace: logs.namespace, pod: logs.pod, container: logs.container, previous: logs.previous, since: .all,
+            timestamps: true)
+        let about =
+            "They come from the log of pod \(logs.namespace)/\(logs.pod)"
+            + (logs.container.map { ", container \($0)" } ?? "") + (logs.previous ? " (its previous, terminated instance)" : "")
+            + ", in Kubernetes context \(ref.context)"
+            + ((model.contexts.context(named: ref.context)?.isProduction ?? true) ? " (production: read-only)" : "") + ".\nRead it with: \(command)"
+        actions?.askAgent(logs.scrubbed(picked), AskAgentModel.Part(title: "pod/\(logs.pod)", text: logs.scrubbed(about)))
+    }
+
+    /// Save As… for a pod's log: the lines shown, under a timestamped name.
+    func saveLogs(_ text: String) {
+        guard let logs = detail?.logs else { return }
+        actions?.save(logs.fileName, text)
     }
 
     /// A plain click on a row: its detail.
@@ -337,9 +399,13 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// ⌘[ and ⌘] while the page shows: the detail's, when it has somewhere
-    /// to go — else the menus' (the panes).
+    /// to go — else the menus' (the panes). ⌘F with a pod's Logs tab
+    /// showing: its filter (`/` is the list's).
     func commandPress(_ characters: String) -> Bool {
         switch characters {
+        case "f" where detailTab == .logs && detail?.logs != nil:
+            focusLogFilter += 1
+            return true
         case "[" where history.canGoBack:
             goBack()
             return true
@@ -368,9 +434,12 @@ final class KubernetesPageModel: ObservableObject {
         let client = model.client(for: ref.context)
         let session = KubeDetailSession(ref: ref, client: client, secret: ref.isSecret ? secretSession(for: ref, client: client) : nil)
         detail = session
+        // Logs are a pod's: another kind's detail opens on its Overview.
+        if detailTab == .logs && !ref.isPod { detailTab = .overview }
         session.load()
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
+        updateLogsReading()
     }
 
     /// A Secret's Show, with what its row says (Type, how many keys) and
@@ -407,6 +476,7 @@ final class KubernetesPageModel: ObservableObject {
     func showTab(_ tab: KubeDetailTab) {
         detailTab = tab
         if tab == .events { detail?.loadEvents() }
+        updateLogsReading()
     }
 
     // MARK: The command bar
@@ -808,6 +878,11 @@ final class KubernetesPageModel: ObservableObject {
     var detailKubectl: String? {
         guard let ref = detail?.ref else { return nil }
         let discovery = model.knownDiscovery(of: ref.context)
+        if detailTab == .logs, let logs = detail?.logs {
+            return KubectlLine.logs(
+                context: ref.context, namespace: logs.namespace, pod: logs.pod, container: logs.container, previous: logs.previous, since: logSince,
+                timestamps: logOptions.timestamps)
+        }
         return detailTab == .events ? KubectlLine.events(for: ref, discovery: discovery) : KubectlLine.object(ref, discovery: discovery)
     }
 

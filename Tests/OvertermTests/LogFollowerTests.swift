@@ -101,6 +101,23 @@ final class LogFollowerTests: XCTestCase {
         XCTAssertTrue(stopped, "ended, and not followed again: stopped")
     }
 
+    /// Followed again from a time: a line of that time already shown is
+    /// dropped, one of the same time saying something else is kept, and
+    /// past that time nothing is dropped — not even a line said again.
+    func testFollowedAgainKeepsALineOfTheSameTimeNotShown() async {
+        let source = FakeSource(
+            [
+                [[line("01", "one"), line("02", "two")]],
+                [[line("01", "one"), line("02", "two"), line("02", "two, again"), line("03", "three"), line("03", "three")]],
+            ], again: 1)
+        let feed = LogFeed()
+        let follower = LogFollower(source: source, feed: feed, merging: false)
+        follower.start(tail: 50)
+        let done = await eventually { feed.lines.count == 5 && source.asked.count == 2 }
+        XCTAssertTrue(done, "\(feed.lines.map(\.message))")
+        XCTAssertEqual(feed.lines.map(\.message), ["one", "two", "two, again", "three", "three"])
+    }
+
     /// Two followers into one feed, merged by time with each other.
     func testMergingFollowersInterleaveByTime() async {
         let feed = LogFeed()

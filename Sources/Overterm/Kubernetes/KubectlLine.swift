@@ -62,6 +62,19 @@ enum KubectlLine {
         return words.joined(separator: " ")
     }
 
+    /// A pod's log, as its Logs tab shows it:
+    /// `kubectl --context C -n NS logs POD -c CONTAINER --previous --since=1h --timestamps`.
+    static func logs(context: String, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, timestamps: Bool)
+        -> String
+    {
+        var words = ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "logs", quoted(pod)]
+        if let container { words += ["-c", quoted(container)] }
+        if previous { words.append("--previous") }
+        if since != .all { words.append("--since=\(since.rawValue)") }
+        if timestamps { words.append("--timestamps") }
+        return words.joined(separator: " ")
+    }
+
     /// What kubectl is told the kind is: the core group's short name (it
     /// wins in kubectl's lookup: `po`, `svc`, `cm`); a built-in group's
     /// short name or plural where no other kind served claims it

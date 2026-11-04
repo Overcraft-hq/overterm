@@ -47,6 +47,8 @@ final class KubeDetailSession: ObservableObject, Identifiable {
 
     /// A Secret's Show, masked values and reveal; nil for any other kind.
     let secret: KubeSecretSession?
+    /// A pod's Logs tab; nil for any other kind.
+    let logs: KubePodLogSession?
 
     private let client: KubeClient?
     private var tasks: [Task<Void, Never>] = []
@@ -61,6 +63,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         state = ref.isSecret ? .withheld : .loading
         self.secret =
             ref.isSecret ? (secret ?? KubeSecretSession(ref: ref, client: client, consent: KubernetesModel.shared.secretConsent, isProduction: true)) : nil
+        logs = ref.isPod ? KubePodLogSession(namespace: ref.namespace ?? "", pod: ref.name, client: client) : nil
         self.secret?.onRead = { [weak self] stripped in self?.secretRead(stripped) }
         self.secret?.onDrop = { [weak self] in self?.secretDropped() }
     }
@@ -100,6 +103,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
                 } catch {
                     guard let self, !Task.isCancelled else { return }
                     self.state = .failed(KubernetesModel.said(error))
+                    self.logs?.podFailed(KubernetesModel.said(error))
                     self.askEventsIfWanted()
                 }
             })
@@ -113,9 +117,11 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             return
         }
         self.object = object
-        overview = KubeOverview.of(object.json)
+        let json = object.json
+        overview = KubeOverview.of(json)
         yaml = makeYAML()
         state = .loaded
+        logs?.podRead(json)
         askEventsIfWanted()
     }
 
@@ -187,6 +193,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     func cancel() {
         for task in tasks { task.cancel() }
         tasks = []
+        logs?.cancel()
         secret?.drop(.navigation)
     }
 }

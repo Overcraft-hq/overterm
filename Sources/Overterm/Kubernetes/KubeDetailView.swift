@@ -27,6 +27,8 @@ struct KubeDetailView: View {
             case .loaded, .withheld:
                 switch page.detailTab {
                 case .overview: overview
+                case .logs:
+                    if let logs = session.logs { KubePodLogsView(page: page, logs: logs, theme: theme) } else { overview }
                 case .yaml: yaml
                 case .events: events
                 }
@@ -91,7 +93,7 @@ struct KubeDetailView: View {
 
     private var tabs: some View {
         HStack(spacing: 4) {
-            ForEach(KubeDetailTab.allCases) { item in
+            ForEach(KubeDetailTab.tabs(for: session.ref)) { item in
                 Button {
                     page.showTab(item)
                 } label: {
@@ -380,5 +382,83 @@ struct KubeDetailView: View {
             }
         }
         .accessibilityIdentifier("kubernetes.detail.event")
+    }
+}
+
+/// A pod's Logs tab: which container (init and ephemeral ones marked),
+/// Previous once it restarted, how far back, how it reads now — then the
+/// shared log pane, its options kept for the window, Save As, ⌘L.
+struct KubePodLogsView: View {
+    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject var logs: KubePodLogSession
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            controls
+            Rectangle().fill(theme.border).frame(height: 1)
+            LogsPane(
+                feed: logs.feed, theme: theme, identifier: "kubernetes.logs", runInTerminal: { page.actions?.run($0) },
+                ask: { [weak page] in page?.askAboutLogLines($0) }, options: $page.logOptions, save: { [weak page] in page?.saveLogs($0) },
+                older: logs.reachedStart ? nil : { [weak logs] in logs?.loadOlder() },
+                stoppedHelp: "Not followed now: shown again, it is read from its last line", focusFilter: page.focusLogFilter)
+        }
+        .accessibilityIdentifier("kubernetes.logs")
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            if logs.containers.count > 1 {
+                Picker("", selection: Binding(get: { logs.container ?? "" }, set: { logs.pick(container: $0) })) {
+                    ForEach(logs.containers) { container in
+                        Text(verbatim: container.role == .container ? container.name : "\(container.name) (\(container.role.title))").tag(container.name)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .help("The container whose log shows: the pod's default one first")
+                .accessibilityIdentifier("kubernetes.logs.container")
+            } else if let name = logs.container {
+                Text(verbatim: name).font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text2)
+            }
+            if logs.shown?.hasPrevious == true {
+                Toggle("Previous", isOn: Binding(get: { logs.previous }, set: { logs.pick(previous: $0) }))
+                    .toggleStyle(.checkbox).font(.system(size: 11.5))
+                    .help("The last terminated instance's log" + (logs.shown?.lastTerminated.map { ": \($0)" } ?? ""))
+                    .accessibilityIdentifier("kubernetes.logs.previous")
+            }
+            Picker("", selection: $page.logSince) {
+                ForEach(KubeLogSince.allCases) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+            .help("How far back the log goes")
+            .accessibilityIdentifier("kubernetes.logs.since")
+            Spacer(minLength: 4)
+            if logs.loadingOlder { ProgressView().controlSize(.mini) }
+            if let note { Text(verbatim: note).font(.system(size: 11)).foregroundStyle(noteColor).lineLimit(1).truncationMode(.tail) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+    }
+
+    private var note: String? {
+        if let problem = logs.olderProblem { return "Older lines: \(problem)" }
+        switch logs.reading {
+        case .idle, .following: return logs.reachedStart ? "From the start of its log" : nil
+        case .resuming: return "Reconnecting…"
+        case .waiting(let reason): return reason
+        case .ended(let reason): return reason ?? (logs.previous ? "The previous instance's whole log" : "Ended")
+        }
+    }
+
+    private var noteColor: Color {
+        switch logs.reading {
+        case .ended(let reason?) where reason != KubeLogResume.podGone: TabStatusStyle.failed
+        case .waiting, .resuming: TabStatusStyle.waiting
+        default: theme.text3
+        }
     }
 }

@@ -360,6 +360,45 @@ struct KubeClient: Sendable {
         return try KubeEvent.list(try await get(KubePath.query(base, [("fieldSelector", selector)])).body)
     }
 
+    // MARK: Logs
+
+    /// A pod's log, once (`follow` off): its lines, parsed here, off the
+    /// main actor.
+    func logLines(namespace: String, pod: String, query: KubeLogQuery) async throws -> [LogLine] {
+        var query = query
+        query.follow = false
+        let response = try await get(query.path(namespace: namespace, pod: pod), accept: "text/plain, */*")
+        return KubeLogText.lines(response.body)
+    }
+
+    /// A pod's log as it comes (`pods/{p}/log`, a GET like any other):
+    /// its lines in batches, parsed on the cooperative pool. Ends when the
+    /// server ends it — a follow ends at the kubelet's or the apiserver's
+    /// timeout, a dropped connection, the container gone — or throws what
+    /// the server said (`KubeAPIError`, a `KubeProxyProblem`). Its consumer
+    /// leaving closes the request.
+    func logs(namespace: String, pod: String, query: KubeLogQuery) -> AsyncThrowingStream<[LogLine], Error> {
+        let source = connection.stream(query.path(namespace: namespace, pod: pod), headers: [("Accept", "text/plain, */*")])
+        let signIn = connection.signIn
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                var splitter = KubeLogText.Splitter()
+                do {
+                    for try await piece in source {
+                        let lines = splitter.feed(piece)
+                        if !lines.isEmpty { continuation.yield(lines) }
+                    }
+                    let rest = splitter.finish()
+                    if !rest.isEmpty { continuation.yield(rest) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: Self.mapped(error, signIn: signIn))
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     // MARK: Watches
 
     private func watchPath(_ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, from version: String?) -> String {

@@ -21,6 +21,9 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     /// it — Show does, on purpose (docs/design/kubernetes/analysis.md, rule 9).
     var isSecret: Bool { kind.group.isEmpty && kind.resource == "secrets" }
 
+    /// A pod: its detail has a Logs tab.
+    var isPod: Bool { kind.group.isEmpty && kind.resource == "pods" && namespace != nil }
+
     static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
         lhs.context == rhs.context && lhs.kind.fullName == rhs.kind.fullName && lhs.namespace == rhs.namespace && lhs.name == rhs.name
     }
@@ -146,15 +149,21 @@ struct KubeHistory: Equatable, Sendable {
 
 /// The detail's tabs.
 enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
-    case overview, yaml, events
+    case overview, logs, yaml, events
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .overview: "Overview"
+        case .logs: "Logs"
         case .yaml: "YAML"
         case .events: "Events"
         }
+    }
+
+    /// The tabs an object's detail has: Logs only a pod's.
+    static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
+        ref.isPod ? allCases : allCases.filter { $0 != .logs }
     }
 }
 

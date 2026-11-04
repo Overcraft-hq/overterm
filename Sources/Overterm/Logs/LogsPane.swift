@@ -21,21 +21,64 @@ struct LogFilter: Equatable {
     var level = Level.all
     /// One source's lines (a service's); nil, every one's.
     var source: String?
+    /// The text is a regular expression (case aside).
+    var regex = false
+    /// The text marks the lines it matches rather than picking them out.
+    var highlight = false
 
-    var isEmpty: Bool { text.isEmpty && level == .all && source == nil }
+    /// Whether the text picks lines: it marks them instead, highlighting.
+    var picksByText: Bool { !text.isEmpty && !highlight }
+    var isEmpty: Bool { !picksByText && level == .all && source == nil }
 
-    func matches(_ line: LogLine) -> Bool {
-        if let source, line.source != source { return false }
-        switch level {
-        case .all: break
-        // A line nobody levelled isn't taken for a warning, but stderr's
-        // unlevelled lines are kept: that is where most errors go.
-        case .warnings: guard (line.level ?? (line.stream == .stderr ? .warning : .info)) >= .warning else { return false }
-        case .errors: guard (line.level ?? .info) >= .error else { return false }
-        }
-        guard !text.isEmpty else { return true }
-        return line.message.localizedCaseInsensitiveContains(text) || line.fields.contains { $0.1.localizedCaseInsensitiveContains(text) }
+    /// The text as a regular expression: itself, or escaped. Nil when
+    /// there's none, or it isn't one (`problem` says).
+    var expression: NSRegularExpression? {
+        guard !text.isEmpty else { return nil }
+        return try? NSRegularExpression(pattern: regex ? text : NSRegularExpression.escapedPattern(for: text), options: [.caseInsensitive])
     }
+
+    /// What is wrong with the text: a regular expression that isn't one.
+    var problem: String? { regex && !text.isEmpty && expression == nil ? "Not a regular expression" : nil }
+
+    func matches(_ line: LogLine) -> Bool { matcher().matches(line) }
+
+    /// The filter, its expression made once: a log's thousands of lines go through it.
+    func matcher() -> Matcher { Matcher(filter: self, expression: regex && picksByText ? expression : nil) }
+
+    struct Matcher {
+        let filter: LogFilter
+        let expression: NSRegularExpression?
+
+        func matches(_ line: LogLine) -> Bool {
+            if let source = filter.source, line.source != source { return false }
+            switch filter.level {
+            case .all: break
+            // A line nobody levelled isn't taken for a warning, but stderr's
+            // unlevelled lines are kept: that is where most errors go.
+            case .warnings: guard (line.level ?? (line.stream == .stderr ? .warning : .info)) >= .warning else { return false }
+            case .errors: guard (line.level ?? .info) >= .error else { return false }
+            }
+            guard filter.picksByText else { return true }
+            if filter.regex {
+                // Not a regular expression: nothing is picked out by it (the pane says why).
+                guard let expression else { return true }
+                func found(_ text: String) -> Bool { expression.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil }
+                return found(line.message) || line.fields.contains { found($0.1) }
+            }
+            let text = filter.text
+            return line.message.localizedCaseInsensitiveContains(text) || line.fields.contains { $0.1.localizedCaseInsensitiveContains(text) }
+        }
+    }
+}
+
+/// How a log is shown, besides its filter: kept per window by a page that
+/// keeps them (Kubernetes'), else the pane's own.
+struct LogViewOptions: Equatable {
+    var wrap = true
+    var timestamps = true
+    var newestFirst = false
+    var regex = false
+    var highlight = false
 }
 
 /// A Logs tab: followed, filtered, coloured by level — one source's (a
@@ -57,14 +100,29 @@ struct LogsPane: View {
     var noun = "service"
     /// Lines picked out of it, to an agent (`LogLinesTextView`).
     var ask: ((String) -> Void)? = nil
+    /// The options a page keeps for its window; nil, the pane's own.
+    var options: Binding<LogViewOptions>? = nil
+    /// Save As…: the lines shown, as text. Nil: not offered.
+    var save: ((String) -> Void)? = nil
+    /// Scrolled to the oldest line: older ones asked for. Nil: none to ask for.
+    var older: (() -> Void)? = nil
+    /// What Stopped means, said on it.
+    var stoppedHelp = "Nothing runs: its log is followed again when it starts"
+    /// Bumped by the page to give the filter field the keyboard (⌘F).
+    var focusFilter = 0
     @State private var filter = LogFilter()
-    @State private var wrap = true
-    @State private var timestamps = true
+    @FocusState private var filterFocused: Bool
+    @State private var ownOptions = LogViewOptions()
 
-    /// The field's and the level's filter, narrowed to the source picked.
+    private var view: Binding<LogViewOptions> { options ?? $ownOptions }
+
+    /// The field's and the level's filter, narrowed to the source picked,
+    /// as a regular expression or marking matches as the options say.
     private var effective: LogFilter {
         var filter = filter
         filter.source = source?.wrappedValue
+        filter.regex = view.wrappedValue.regex
+        filter.highlight = view.wrappedValue.highlight
         return filter
     }
 
@@ -73,23 +131,27 @@ struct LogsPane: View {
             toolbar
             Rectangle().fill(theme.border).frame(height: 1)
             let filter = effective
-            let shown = filter.isEmpty ? feed.lines : feed.lines.filter(filter.matches)
+            let options = view.wrappedValue
+            let matcher = filter.matcher()
+            let shown = filter.isEmpty ? feed.lines : feed.lines.filter(matcher.matches)
             if let note = Self.note(lines: feed.lines.count, shown: shown.count, filter: filter, following: feed.following) {
                 Text(verbatim: note).font(.system(size: 12)).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let text = theme.textNS
-                let stamps = timestamps
+                let stamps = options.timestamps
+                let marked = filter.highlight ? filter.expression : nil
                 LogTextView(
                     count: shown.count,
                     // Filtered, it is another text: drawn again, not added to.
                     revision: feed.revision
-                        &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ (filter.source?.hashValue ?? 0) &+ 1)
-                        &+ (timestamps ? 0 : 7),
+                        &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ (filter.source?.hashValue ?? 0) &+ (filter.regex ? 3 : 1))
+                        &+ (options.timestamps ? 0 : 7) &+ (marked == nil ? 0 : filter.text.hashValue &+ (filter.regex ? 11 : 13)),
                     render: { range in
-                        shown[range].map { LogStyle.line($0, text: text, dim: text.withAlphaComponent(0.45), timestamps: stamps) }
+                        shown[range].map { LogStyle.line($0, text: text, dim: text.withAlphaComponent(0.45), timestamps: stamps, highlight: marked) }
                     },
-                    wrap: wrap, follow: true, ask: ask, identifier: identifier + ".text")
+                    wrap: options.wrap, follow: true, ask: ask, identifier: identifier + ".text", newestFirst: options.newestFirst,
+                    prepended: feed.prepended, onOldest: older)
             }
         }
     }
@@ -108,8 +170,31 @@ struct LogsPane: View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
-                TextField("Filter the log", text: $filter.text).textFieldStyle(.plain).font(.system(size: 12))
+                TextField(view.wrappedValue.highlight ? "Find in the log" : "Filter the log", text: $filter.text).textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .focused($filterFocused)
                     .accessibilityIdentifier(identifier + ".logs.filter")
+                if let problem = effective.problem {
+                    Text(verbatim: problem).font(.system(size: 10.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).fixedSize()
+                }
+                Button {
+                    view.wrappedValue.regex.toggle()
+                } label: {
+                    Text(verbatim: ".*").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(view.wrappedValue.regex ? theme.accentText : theme.text3)
+                }
+                .buttonStyle(.plain)
+                .help(view.wrappedValue.regex ? "A regular expression (case aside) — click for plain text" : "Plain text — click for a regular expression")
+                .accessibilityIdentifier(identifier + ".logs.regex")
+                Button {
+                    view.wrappedValue.highlight.toggle()
+                } label: {
+                    Image(systemName: view.wrappedValue.highlight ? "highlighter" : "line.3.horizontal.decrease")
+                        .font(.system(size: 10)).foregroundStyle(view.wrappedValue.highlight ? theme.accentText : theme.text3)
+                }
+                .buttonStyle(.plain)
+                .help(view.wrappedValue.highlight ? "Matches are marked, every line shown — click to show only them" : "Only matching lines — click to mark them instead")
+                .accessibilityIdentifier(identifier + ".logs.highlight")
             }
             .padding(.horizontal, 7)
             .frame(minWidth: 100, maxWidth: .infinity)
@@ -137,11 +222,19 @@ struct LogsPane: View {
                 Circle().fill(feed.following ? TabStatusStyle.done : theme.text3).frame(width: 7, height: 7)
                 Text(feed.following ? "Following" : "Stopped").font(.system(size: 11)).foregroundStyle(theme.text3)
             }
-            .help(feed.following ? "New lines appear as they are written" : "Nothing runs: its log is followed again when it starts")
+            .help(feed.following ? "New lines appear as they are written" : stoppedHelp)
             Menu {
-                Toggle("Wrap Lines", isOn: $wrap)
-                Toggle("Timestamps", isOn: $timestamps)
+                Toggle("Wrap Lines", isOn: view.wrap)
+                Toggle("Timestamps", isOn: view.timestamps)
+                Toggle("Newest First", isOn: view.newestFirst)
                 Divider()
+                if let save {
+                    Button("Save As…") {
+                        let filter = effective
+                        let matcher = filter.matcher()
+                        save((filter.isEmpty ? feed.lines : feed.lines.filter(matcher.matches)).map(\.plain).joined(separator: "\n") + "\n")
+                    }
+                }
                 Button("Clear") { feed.clear() }
                 if let command = feed.terminalCommand { Button("Follow in a Terminal Tab") { runInTerminal(command) } }
             } label: {
@@ -153,5 +246,6 @@ struct LogsPane: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .onChange(of: focusFilter) { _ in filterFocused = true }
     }
 }

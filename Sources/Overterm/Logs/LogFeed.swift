@@ -9,6 +9,9 @@ import Foundation
 final class LogFeed: ObservableObject {
     @Published private(set) var lines: [LogLine] = []
     @Published private(set) var revision = 0
+    /// Bumped when older lines went in before the rest (`prepend`): the
+    /// text view keeps the line read where it was.
+    @Published private(set) var prepended = 0
     /// Something is followed now (a stream is open).
     @Published var following = false
     /// What follows the same log in a terminal tab, if anything does.
@@ -64,6 +67,17 @@ final class LogFeed: ObservableObject {
         let merged = Self.merged(lines, added)
         lines = Self.trimmed(merged) ?? merged
         revision += 1
+    }
+
+    /// Older lines, before the ones there — asked for again with a larger
+    /// tail (a pod's log has no offset). Only as many as `keep` has room
+    /// for, the newest of them.
+    func prepend(_ older: [LogLine]) {
+        let room = Self.keep - lines.count
+        guard !older.isEmpty, room > 0 else { return }
+        lines = Array(older.suffix(room)) + lines
+        revision += 1
+        prepended += 1
     }
 
     func clear() {

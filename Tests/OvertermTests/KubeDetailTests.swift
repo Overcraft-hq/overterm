@@ -466,7 +466,7 @@ final class KubeDetailTests: XCTestCase {
     override func tearDown() {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
-            XCTAssertEqual(api.subresourceRequests, [], "no subresource")
+            XCTAssertEqual(api.subresourceRequests.filter { !$0.isLog }, [], "no subresource but a pod's log")
             XCTAssertFalse(api.requests.contains { $0.path.contains("/secrets/") }, "no Secret read")
             api.stop()
         }
@@ -681,5 +681,107 @@ final class KubeDetailTests: XCTestCase {
         page.showTab(.events)
         try await until(5, "events") { detail.events.value != nil }
         XCTAssertEqual(detail.events.value, [])
+    }
+
+    /// A pod's logs: `l` (and ↩ on a pod) open its Logs tab, read only
+    /// while the tab shows on a page on screen — the stream closed with
+    /// another tab, the page hidden, the detail closed — and resumed from
+    /// its last line when shown again; another kind has no Logs. ⌘L's lines
+    /// go to the agent scrubbed, with the pod they come from.
+    func testAPodsLogsAreReadOnlyWhileTheyShow() async throws {
+        let (model, page) = try pageOverFake()
+        api.updatePod("web-7d9", namespace: "shop") { $0.env = ["API_TOKEN": "tok-fake-123"] }
+        api.setLog("web-7d9", namespace: "shop", ["ready", "using tok-fake-123 Authorization: Bearer abc.def"])
+        var asked: (String, AskAgentModel.Part)?
+        var saved: (String, String)?
+        page.actions = KubernetesActions(
+            run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in }, save: { saved = ($0, $1) }, askAgent: { asked = ($0, $1) })
+        model.show()
+        defer { model.hide() }
+        try await until(5, "pods listed") { model.rows.count == 2 }
+        func logs() -> [FakeKubeAPI.Request] { api.requests.filter(\.isLog) }
+
+        page.selection = ["shop/web-7d9"]
+        XCTAssertTrue(page.press("l"), "l: the pod's logs")
+        let pod = try XCTUnwrap(page.detail)
+        XCTAssertEqual(page.detailTab, .logs)
+        XCTAssertEqual(KubeDetailTab.tabs(for: pod.ref), [.overview, .logs, .yaml, .events])
+        let session = try XCTUnwrap(pod.logs)
+        try await until(5, "the pod read") { pod.state == .loaded && session.container == "app" }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(logs(), [], "the page isn't on screen: nothing read")
+
+        page.visible = true
+        try await until(5, "its lines") { session.feed.lines.count == 2 && self.api.openLogStreams == 1 }
+        XCTAssertEqual(logs().count, 1)
+        XCTAssertEqual(page.detailKubectl, "kubectl --context fake-dev -n shop logs web-7d9 -c app --timestamps")
+        page.showTab(.overview)
+        try await until(5, "closed with another tab") { self.api.openLogStreams == 0 }
+        api.appendLog("web-7d9", namespace: "shop", "while away")
+        page.showTab(.logs)
+        try await until(5, "resumed") { session.feed.lines.map(\.message).last == "while away" && self.api.openLogStreams == 1 }
+        XCTAssertNotNil(logs().last?.query["sinceTime"], "from its last line, not its tail again")
+        XCTAssertEqual(session.feed.lines.count, 3, "nothing twice")
+        page.visible = false
+        try await until(5, "closed with the page hidden") { self.api.openLogStreams == 0 }
+        page.visible = true
+        try await until(5, "open again") { self.api.openLogStreams == 1 }
+        // The window off screen (occluded, minimised): closed too, nothing asked meanwhile.
+        page.windowVisible = false
+        try await until(5, "closed with the window hidden") { self.api.openLogStreams == 0 }
+        let whileHidden = logs().count
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(logs().count, whileHidden, "nothing read while the window is hidden")
+        page.windowVisible = true
+        try await until(5, "open with the window shown") { self.api.openLogStreams == 1 }
+
+        // ⌘F with the Logs tab showing: its filter; on another tab, not the page's.
+        let focus = page.focusLogFilter
+        XCTAssertTrue(page.commandPress("f"))
+        XCTAssertEqual(page.focusLogFilter, focus + 1)
+        page.showTab(.yaml)
+        XCTAssertFalse(page.commandPress("f"), "no log filter on another tab")
+        page.showTab(.logs)
+        try await until(5, "open on its tab again") { self.api.openLogStreams == 1 }
+
+        // ⌘L: scrubbed — the pod's own env value, the bearer token — with the pod it comes from.
+        page.askAboutLogLines("using tok-fake-123 Authorization: Bearer abc.def")
+        let (text, about) = try XCTUnwrap(asked)
+        XCTAssertFalse(text.contains("tok-fake-123") || text.contains("abc.def"), text)
+        XCTAssertEqual(about.title, "pod/web-7d9")
+        XCTAssertTrue(about.text.contains("kubectl --context fake-dev -n shop logs web-7d9 -c app"), about.text)
+        page.saveLogs("ready\n")
+        XCTAssertEqual(saved?.0.hasPrefix("web-7d9-app-"), true)
+        XCTAssertEqual(saved?.0.hasSuffix(".log"), true)
+
+        // ↩ on a pod: its logs; another kind's detail has none.
+        page.closeDetail()
+        try await until(5, "closed with the detail") { self.api.openLogStreams == 0 }
+        page.showTab(.overview)
+        page.selection = ["shop/other"]
+        XCTAssertTrue(page.press("\r"))
+        XCTAssertEqual(page.detailTab, .logs, "↩ on a pod opens its logs")
+        let other = try XCTUnwrap(page.detail?.logs)
+        try await until(5, "the other pod's log follows") { other.feed.following && self.api.openLogStreams == 1 }
+        // Another context: the detail goes, and its stream with it.
+        let beforeSwitch = logs().count
+        model.select("fake-prod")
+        try await until(5, "closed with the context") { page.detail == nil && self.api.openLogStreams == 0 }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(logs().count, beforeSwitch, "nothing read after the context changed")
+        XCTAssertFalse(other.feed.following)
+        model.select("fake-dev")
+        try await until(5, "fake-dev again") { model.selectedName == "fake-dev" && model.rows.count == 2 && model.discovery != nil }
+        let deployments = try XCTUnwrap(model.discovery?.kind("deployments"))
+        page.showKind(deployments)
+        try await until(5, "deployments") { model.kind.fullName == "deployments.apps" && model.rows.count == 1 }
+        page.selection = ["shop/web"]
+        XCTAssertFalse(page.press("l"), "no logs for a deployment yet")
+        XCTAssertTrue(page.press("\r"))
+        XCTAssertEqual(page.detailTab, .overview, "a deployment's detail opens on its Overview")
+        XCTAssertNil(page.detail?.logs)
+        XCTAssertEqual(KubeDetailTab.tabs(for: try XCTUnwrap(page.detail?.ref)), [.overview, .yaml, .events])
+        try await until(5, "nothing open") { self.api.openLogStreams == 0 }
+        page.visible = false
     }
 }
