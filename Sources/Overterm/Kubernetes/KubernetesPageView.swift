@@ -1,13 +1,14 @@
 import SwiftUI
 
 /// The Kubernetes page (⌥⌘J): over the body like Docker's, in its turn.
-/// The contexts, the namespace and the sections down the left, the Pods
-/// list in the middle as the server formats it, how the context's proxy
-/// stands along the bottom. On a production context a red band runs across
-/// the top of everything on the page. Single letters act while the list has
-/// the keyboard (`KubernetesKey`; `?` lists them); `n` and `c` pick a
-/// namespace or a context over the page (`KubePicker`). It reads only: no
-/// verb here changes a cluster.
+/// The contexts, the namespace and the sections down the left — the one
+/// showing open on its kinds — the kind's list in the middle as the server
+/// formats it, how the context's proxy stands along the bottom. On a
+/// production context a red band runs across the top of everything on the
+/// page. Single letters act while the list has the keyboard
+/// (`KubernetesKey`; `?` lists them); `n` and `c` pick a namespace or a
+/// context over the page (`KubePicker`), `:` names a kind (`KubeCommandBar`).
+/// It reads only: no verb here changes a cluster.
 struct KubernetesPageView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var model: KubernetesModel
@@ -49,13 +50,16 @@ struct KubernetesPageView: View {
         .overlay(alignment: .top) {
             if page.picker != nil { KubePickerView(page: page, theme: theme).padding(.top, 70) }
         }
+        .overlay(alignment: .top) {
+            if page.command != nil { KubeCommandBarView(page: page, theme: theme).padding(.top, 70) }
+        }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         // A table with no columns refuses the keyboard: given it while the
         // pods are asked for (the page opened, a namespace or a context
         // picked), the window keeps it. Once the server's columns come the
         // list takes it — if nothing else has it.
-        .onChange(of: model.pods.columns.isEmpty) { empty in
-            guard !empty, focus != .filter, page.picker == nil else { return }
+        .onChange(of: model.rows.columns.isEmpty) { empty in
+            guard !empty, focus != .filter, page.picker == nil, page.command == nil else { return }
             DispatchQueue.main.async { page.offerListTheKeyboard() }
         }
     }
@@ -75,32 +79,84 @@ struct KubernetesPageView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 caption("Namespace").padding(.top, 10)
                 namespacePicker
-                caption("Workloads").padding(.top, 10)
-                ForEach(KubernetesPageModel.Section.allCases) { section in
-                    Button {
-                        page.section = section
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: section.symbol).frame(width: 18)
-                            Text(section.title)
-                            Spacer()
-                            if model.podState == .live {
-                                Text(verbatim: "\(model.pods.count)").foregroundStyle(theme.text3).font(.system(size: 11, design: .monospaced))
-                            }
-                        }
-                        .foregroundStyle(page.section == section ? theme.text : theme.text2)
-                        .padding(.horizontal, 10)
-                        .frame(height: 30)
-                        .background(RoundedRectangle(cornerRadius: 7).fill(page.section == section ? theme.selected : .clear))
-                        .contentShape(Rectangle())
+                caption("Resources").padding(.top, 10)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(KubeSection.allCases) { section in sectionRow(section) }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             Spacer(minLength: 8)
             if model.enabled, let context = model.selected { contextCard(context) }
         }
         .padding(12)
+    }
+
+    private func sectionRow(_ section: KubeSection) -> some View {
+        let open = page.section == section
+        let kinds = model.catalog.kinds(in: section)
+        return VStack(alignment: .leading, spacing: 1) {
+            Button {
+                page.showSection(section)
+                page.giveListTheKeyboard()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: section.symbol).frame(width: 18)
+                    Text(section.title)
+                    Spacer()
+                    if !model.catalog.isEmpty {
+                        Text(verbatim: "\(kinds.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+                    }
+                    Text(verbatim: section.key).foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+                }
+                .font(.system(size: 12.5))
+                .foregroundStyle(open ? theme.text : theme.text2)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("kubernetes.section.\(section.rawValue)")
+            if open {
+                ForEach(Array(kinds.enumerated()), id: \.element.fullName) { offset, kind in
+                    // Custom resources by API group, each named once.
+                    if section == .custom, offset == 0 || kinds[offset - 1].group != kind.group {
+                        Text(verbatim: kind.group).font(.system(size: 10)).foregroundStyle(theme.text3).padding(.leading, 36).padding(.top, 4)
+                    }
+                    kindRow(kind)
+                }
+                if kinds.isEmpty {
+                    Text(verbatim: model.catalog.isEmpty ? (model.discoveryProblem ?? "Reading what the cluster serves…") : "None here.")
+                        .font(.system(size: 11)).foregroundStyle(theme.text3).padding(.leading, 36).padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private func kindRow(_ kind: KubeResourceKind) -> some View {
+        let shown = model.kind.fullName == kind.fullName && page.showsSection
+        return Button {
+            page.showKind(kind)
+            page.giveListTheKeyboard()
+        } label: {
+            HStack(spacing: 6) {
+                Text(verbatim: KubeKindCatalog.title(of: kind)).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 4)
+                if shown, model.listState == .live {
+                    Text(verbatim: "\(model.rows.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(shown ? theme.text : theme.text2)
+            .padding(.leading, 36)
+            .padding(.trailing, 10)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 7).fill(shown ? theme.selected : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(kind.fullName) · \(kind.groupVersion)\(kind.shortNames.isEmpty ? "" : " · :" + kind.shortNames.joined(separator: ", :"))")
+        .accessibilityIdentifier("kubernetes.kind.\(kind.fullName)")
     }
 
     private func caption(_ text: String) -> some View {
@@ -217,10 +273,11 @@ struct KubernetesPageView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(page.section.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text)
-            if model.podState == .live || model.pods.count > 0 {
+            Text(verbatim: page.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text)
+                .accessibilityIdentifier("kubernetes.title")
+            if page.showsSection, model.listState == .live || model.rows.count > 0 {
                 let failing = page.failing.count
-                Text(verbatim: "\(model.pods.count) · \(page.scopeLabel)" + (failing > 0 ? " · \(failing) failing" : ""))
+                Text(verbatim: "\(model.rows.count) · \(model.kind.namespaced ? page.scopeLabel : "cluster-wide")" + (failing > 0 ? " · \(failing) failing" : ""))
                     .font(.system(size: 12)).foregroundStyle(failing > 0 ? TabStatusStyle.failed : theme.text3)
                     .accessibilityIdentifier("kubernetes.counts")
             }
@@ -265,11 +322,11 @@ struct KubernetesPageView: View {
     private var content: some View {
         let rows = page.rows
         let failedOutright: (String, KubeProxyProblem?)? =
-            if case .failed(let reason, let problem) = model.podState, model.pods.count == 0 { (reason, problem) } else { nil }
+            if case .failed(let reason, let problem) = model.listState, model.rows.count == 0 { (reason, problem) } else { nil }
         return VStack(spacing: 0) {
             if failedOutright == nil {
-                if case .failed(let reason, _) = model.podState { banner(reason) }
-                if case .retrying(let reason) = model.podState { banner("Trying again: \(reason)") }
+                if case .failed(let reason, _) = model.listState { banner(reason) }
+                if case .retrying(let reason) = model.listState { banner("Trying again: \(reason)") }
             }
             selectorLine
             ZStack(alignment: .topLeading) {
@@ -280,9 +337,13 @@ struct KubernetesPageView: View {
                         let names = page.selectedNames
                         if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
                     }, accessibilityIdentifier: "kubernetes.list")
-                if let (reason, problem) = failedOutright {
+                if !page.showsSection {
+                    Text(verbatim: sectionNote).font(.system(size: 12)).foregroundStyle(theme.text3)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
+                        .accessibilityIdentifier("kubernetes.sectionNote")
+                } else if let (reason, problem) = failedOutright {
                     failed(reason, problem).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
-                } else if model.pods.columns.isEmpty {
+                } else if model.rows.columns.isEmpty {
                     VStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         if let reason = model.proxyStatus.reason {
@@ -292,13 +353,24 @@ struct KubernetesPageView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .allowsHitTesting(false)
                 } else if rows.isEmpty {
-                    Text(verbatim: page.filter.isEmpty ? "No pods in \(page.scopeLabel)." : "Nothing matches “\(page.filter)”.")
+                    Text(verbatim: page.filter.isEmpty ? emptyNote : "Nothing matches “\(page.filter)”.")
                         .font(.system(size: 12)).foregroundStyle(theme.text3)
                         .padding(.horizontal, 20).padding(.top, 34)
                         .allowsHitTesting(false)
                 }
             }
         }
+    }
+
+    private var emptyNote: String {
+        let title = KubeKindCatalog.title(of: model.kind).lowercased()
+        return model.kind.namespaced ? "No \(title) in \(page.scopeLabel)." : "No \(title)."
+    }
+
+    /// Why a section shows no list.
+    private var sectionNote: String {
+        if model.catalog.isEmpty { return model.discoveryProblem.map { "What the cluster serves couldn't be read: \($0)" } ?? "Reading what the cluster serves…" }
+        return page.section == .custom ? "No custom resources: this cluster serves no CRD that can be listed." : "This cluster serves none of \(page.section.title)' kinds."
     }
 
     /// What `label:` asks the server for, or why a word of it can't be —
@@ -330,14 +402,14 @@ struct KubernetesPageView: View {
 
     /// A cell as the server wrote it — a failing pod's Status in red with
     /// its reason, an age kept moving.
-    private func cell(_ row: KubePodListRow, _ column: ResourceColumn?) -> AnyView {
+    private func cell(_ row: KubeListRow, _ column: ResourceColumn?) -> AnyView {
         let view: AnyView
         if column?.id == KubernetesPageModel.namespaceColumn {
             view = AnyView(Text(verbatim: row.row.id.namespace ?? "").foregroundStyle(theme.text2))
         } else if let column, let (index, server) = page.column(column.id) {
             let text = index < row.row.cells.count ? row.row.cells[index].text : ""
             switch server.name.lowercased() {
-            case "age":
+            case "age", "created at":
                 let anchor = model.anchors[row.row.id]
                 view = AnyView(
                     TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -351,7 +423,7 @@ struct KubernetesPageView: View {
                     }
                     .foregroundStyle(TabStatusStyle.failed)
                     .help("\(row.row.id.name): \(row.summary?.exitReason ?? text)"))
-            case "status":
+            case "status" where row.summary != nil:
                 let done = row.summary?.isReady == true || row.summary?.isCompleted == true
                 view = AnyView(Text(verbatim: text).foregroundStyle(done ? theme.text : TabStatusStyle.waiting))
             case "name":
@@ -388,7 +460,7 @@ struct KubernetesPageView: View {
     private func failed(_ reason: String, _ problem: KubeProxyProblem?) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle").font(.system(size: 30, weight: .light)).foregroundStyle(theme.text3)
-            Text("The pods couldn't be read").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: "\(KubeKindCatalog.title(of: model.kind)) couldn't be read").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
             Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 440)
                 .textSelection(.enabled)
             HStack(spacing: 10) {
@@ -419,7 +491,7 @@ struct KubernetesPageView: View {
         case .open:
             return ["Connected through kubectl proxy", model.version.map { "Kubernetes \($0.gitVersion)" }].compactMap { $0 }.joined(separator: " · ")
         case .closed:
-            return model.podState == .loading ? "Connecting…" : "Not connected"
+            return model.listState == .loading ? "Connecting…" : "Not connected"
         default:
             return model.proxyStatus.reason ?? ""
         }

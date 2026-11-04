@@ -2301,8 +2301,10 @@ The design is `docs/design/kubernetes/analysis.md`; this is what exists of
 it (`Sources/Overterm/Kubernetes/`). So far: the kubeconfigs, the contexts
 and their classes, the settings, the proxies a request goes through, the
 client that reads through them (and the fake API server it is tested
-against), and the page (⌥⌘J) with the Pods list, its pickers and the ⌃⌘J
-switcher — stage 1a of the design. Nothing writes to a cluster.
+against), and the page (⌥⌘J) with its pickers and the ⌃⌘J switcher —
+stage 1a of the design — and, of stage 1b, every kind and CRD as a list
+kept live, in the page's sections and behind the `:` bar. Nothing writes
+to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2515,11 +2517,21 @@ confirmation.
   `Content-Type`, the Status, the `Retry-After`), so a watch's JSON 500 is
   the server's `KubeAPIError`, not the proxy's plain text.
 
-**The fake** (`FakeKubeAPI`, `Sources/`, for the tests and the scenario to
-come): an API server on a unix socket of its own and on 127.0.0.1
-(`listenTCP`, for a real `kubectl proxy` in front of it), holding
-namespaces and pods as values versioned as the server versions them — and
-serving empty lists of the other kinds it discovers. It answers
+**The fake** (`FakeKubeAPI`, `Sources/`, for the tests and the scenario):
+an API server on a unix socket of its own and on 127.0.0.1
+(`listenTCP`, for a real `kubectl proxy` in front of it), holding objects
+of any kind it serves as values versioned as the server versions them —
+pods (`addPod`), and with `add`/`update`/`delete` deployments, services,
+configmaps, secrets (a Table row of Type and how many keys; only a plain
+GET carries `data`), nodes, events — each in the columns `kubectl get`
+shows (`columns(for:)`, priority 1 for `-o wide`'s; an event's Name is a
+wide column, `format: name`). `addCRD` serves a new kind from then on, in
+both discoveries and in paths, with its `additionalPrinterColumns`, and
+adds the CRD itself (ADDED to CRD watches); `removeCRD` takes the kind away
+(a 404 after), ends its watches and DELETEs the CRD. One version a group:
+a group's kinds are served at its first kind's. It also serves kinds that
+can't be listed and watched (`componentstatuses`, `bindings`,
+metrics.k8s.io's), for the page to leave out. It answers
 `/version`, both discoveries (`aggregatedDiscovery`; `failingGroups`
 `Stale` in the aggregated list, 503 in the walk),
 lists as Tables (`includeObject` None, Metadata or Object) or plain JSON,
@@ -2535,7 +2547,8 @@ plain text, `throttle` 429s, `failWatches` answers the next watches with a
 429 or a 5xx. What a test sets is behind the fake's lock, as its state
 is. It records every request
 (method, path, query, Accept), so a test shows that no write method and
-no subresource reached it (`writes`, `subresourceRequests` — a
+no subresource reached it, and which kinds are watched (`watched`)
+(`writes`, `subresourceRequests` — a
 Namespace's own `finalize` and `status` included); it has no
 exec, attach or port-forward. `KubeClientTests` checks all of the client
 against it — every test ends by asserting only GETs arrived — and runs
@@ -2562,16 +2575,40 @@ one last picked (remembered in `AppEnvironment.defaults`), else the first
 pinned, else kubectl's current, else the first (`choose`); its namespace
 is the one last picked for it, else `defaultNamespace`, else the
 context's own, else `default`, as kubectl has it (`defaultScope`); `0`
-is all of them. The pods are `KubeClient.follow(.pods)` over the
-context's `KubeProxyConnection` (a test's or the scenario's stand-in
-connection through `connectOverride`): the first list is applied at
+is all of them. The list is `KubeClient.follow(kind)` of the kind shown
+(`kind`, Pods until another is picked — `setKind`; the app's, as the
+scope is) over the context's `KubeProxyConnection` (a test's or the
+scenario's stand-in connection through `connectOverride`): the first list is applied at
 once, the watch's changes in batches every `flushInterval` (120 ms), one
 published change each; a `.retrying` says so while the rows stand, and
 a failure (a `KubeProxyProblem`, a 403) is the list's state with its
-reason and, for a sign-in, the command to run. The server's version and
-the namespaces (the context's `accessibleNamespaces`, else the server's
-list; a 403 means one is typed, `namespacesRefused`) are read once a
-context is picked. `labelSelector` is what the pods are asked for with
+reason and, for a sign-in, the command to run. The server's version,
+what it serves and the namespaces (the context's `accessibleNamespaces`,
+else the server's list; a 403 means one is typed, `namespacesRefused`)
+are read once a context is picked.
+
+- **What a context serves** (`discovery`, and `catalog`, below) is kept
+  per context (`discoveries`) for `rediscoveryInterval` (5 minutes): back
+  on a context within it, nothing is read again, and the kind shown is
+  taken as that context serves it — at its version there — else Pods.
+  Discovery read again moves the kind with it: another version (or scope)
+  is followed there; one no longer served stops the list, saying so. What
+  was read for a context is kept only while its name reaches the same
+  cluster (`sameCluster`: server, cluster, user, sign-in): the kubeconfig
+  read again with a name pointing elsewhere drops it.
+- **CRDs without a reconnect** (decision 28). While a page shows, the
+  context's CustomResourceDefinitions are followed (rows only, cluster
+  scope) where discovery says they can be listed and watched: their first
+  list naming one discovery hadn't, a later change, or a list again after
+  a 410 that differs, reads discovery again — once a burst
+  (`rediscoveryDelay`), and the kind shown listed again when its own CRD
+  changed (its printer columns). Where the watch is refused (RBAC) or the
+  CRD kind isn't served, discovery is read again every
+  `rediscoveryInterval` instead. And a 404 for the kind followed reads it
+  again once (`lookedUpAfter404`, cleared by the next list): gone, the
+  list says so (Pods too, when discovery has none); at another version, it
+  is followed there. Hidden, the CRD
+  watch ends with the rest. `labelSelector` is what the pods are asked for with
 (a page's `label:` words): set to something else, the list is asked
 for again with it. It belongs to the page that asked last
 (`selectorOwner`): the list is the app's, and two windows can show the
@@ -2599,23 +2636,26 @@ scrolled away isn't drawn, so only the visible ones are recomputed.
 **The page** (⌥⌘J, `kubernetes.page`; `WorkspaceOverlay.kubernetes`,
 declared as a `WorkspacePage` in `TerminalWindowController+Kubernetes`):
 `KubernetesPageModel` (a window's: section, filter, selection, sort,
-`wide`, the pickers, the keys) and `KubernetesPageView`. Left: the contexts, each
+`wide`, the pickers, the `:` bar, the keys) and `KubernetesPageView`. Left: the contexts, each
 with its class's colour and kubectl's current marked, the namespace
 menu (all, the favourites, the server's list, Other… for the `n` picker), the sections
-(Pods only, for now) and the context's card (class, writable or
-read-only, how it signs in, its server). Middle: the Pods list as a
-`ResourceTable` of the server's columns — those `kubectl get pods`
-shows, `-o wide`'s too with `w`, Namespace first across all of them as
-`kubectl get -A` adds it — sorted by any column (numbers as numbers, ages
-by age) or by namespace and name, filtered by text, `status:`, `ns:`,
-`label:` and `-` (`KubePodFilterKey`, through `ResourceFilter`). A row is
+(each with its digit and how many kinds it has; the one showing open on
+its kinds, custom resources under their API group) and the context's card (class, writable or
+read-only, how it signs in, its server). Middle: the kind's list as a
+`ResourceTable` of the server's columns — those `kubectl get` shows for
+it (a CRD's printer columns), `-o wide`'s too with `w`, a namespaced
+kind's Namespace first across all of them as `kubectl get -A` adds it
+(a cluster-scoped kind has none, its count "cluster-wide") — sorted by any column (numbers as numbers, ages
+— `Age`, or a CRD's `Created At` — by age) or by namespace and name, filtered by text (the name, the
+namespace, the Status — or Type — cell), `status:`, `ns:`,
+`label:` and `-` (`KubeFilterKey`, through `ResourceFilter`). A row is
 only cells — no labels — so `label:` words are the server's:
 `KubeLabelSelector` reads them as typed (labels are case-sensitive) into
 the list's `labelSelector` — `label:app=web`, `app!=web`, `-label:app`
 (`!app`), `label:a=1,b=2` — refusing what the server wouldn't take (a
 negated pair, a bad key) and saying so; the list is asked for again once
 the typing stops (`selectorDelay`, 350 ms) or on ↩, and the page says what
-went to the server. The rest of the filter matches the rows that came. A failing pod's
+went to the server. The rest of the filter matches the rows that came. On the Pods list a failing pod's
 Status is its reason in red (`KubePodSummary.exitReason`:
 `CrashLoopBackOff`, `OOMKilled`, `… (init container)`), and the header
 counts the failing ones. Bottom: the context bar — the proxy's state,
@@ -2631,8 +2671,50 @@ over it — so a keyboard given to it finds it; a table with no columns
 refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
-keyboard): `1` Pods, `n`, `c`, `w`, `0`, `/`, `?`. The right-click menu
+keyboard): `1`–`7` the sections, `:`, `n`, `c`, `w`, `0`, `/`, `?`. The right-click menu
 only copies names: nothing here changes a cluster.
+
+**The sections** (`KubeSection`, `KubeKindCatalog`, pure): Workloads,
+Network, Config, Storage, Access Control, Cluster, Custom Resources — the
+digits `1`–`7` (Overview, Helm and Forwards join with their stages). Each
+names the built-in kinds it shows, in order (`named`, by full name); of
+two that are one Kind the first served shows (`events.events.k8s.io`
+rather than the core `events`). Cluster also takes Kubernetes' own kinds
+no section names, by title; every kind of a group that isn't Kubernetes'
+own (`isBuiltIn`: the core, `*.k8s.io`, `apps`, `batch`, `autoscaling`,
+`policy`, `extensions`) is a custom resource, by group. Only a kind that
+can be listed **and** watched is offered (`isOffered`): a list here is
+kept live, so metrics.k8s.io's, `componentstatuses` and `bindings` aren't.
+A kind's title is its plural Kind (`NetworkPolicies`, `Ingresses`;
+`HPAs`, `PVCs`, `CRDs`). A digit shows the section's kind last shown,
+else its first; a section with none to show (discovery not read yet, no
+CRDs) says so over the list (`waitingForSection`) and takes its first
+kind once it has one — a CRD added while it shows. The section follows
+the kind, whoever picked it (another window, the switcher).
+
+**The `:` bar** (k9s's; `KubeCommand`, `KubeKinds`, `KubeCommandBar`, pure,
+and `KubeCommandBarView`): `:<kind>[ <namespace>|all|-A][ /<filter>][ <label=value,…>][ @<context>]`
+— `:deploy`, `:po shop`, `:svc @fake-dev`, `:widgets /blue`,
+`:po globex /api app=web @globex-eu-west-1-dev`; `:ctx` and `:ns` open
+their pickers, or switch with a name. The filter runs from its `/` word to
+the next `label=value` or `@context` word (its own words, `status:…`,
+`label:…`, have a colon). A kind is any of kubectl's names
+(`KubeDiscovery.kind`: plural, singular, short names, Kind,
+`plural.group`; the core group first) or k9s's aliases discovery lacks
+(`dp`, `sec`, `jo`, `np`, `cr`, `crb`, `rb`, `ro`) — and, of two built-in
+kinds that are one Kind, the one the catalog offers (`ev` is
+events.k8s.io's, as Cluster shows it). The completions follow the word
+being typed: a kind (exact names first, then prefixes, then the rest that
+contain it; `ctx` and `ns`; a plural two kinds share completes to each
+one's `plural.group`), a namespace after it, a context after `@` (after
+the filter too). ↑↓ move, Tab completes (`PaletteField.onTab`), ↩
+completes a word that isn't whole and runs. All of the command is checked
+first — the context named, the kind (as that context is known to serve
+it, else as the one shown does), the namespace — and only then is it
+done: the context, the kind, the namespace, the filter (`label=value`
+words become `label:`). A typo switches no context, so nothing is asked of
+one named with it. What can't be done is said in the bar, which stays;
+Esc closes it and the list has the keyboard again.
 
 **The pickers** (`n`, `c`; `KubePicker`, pure, and `KubePickerView`): a
 field over the page and the namespaces or contexts it lets through,
@@ -2651,15 +2733,17 @@ list has the keyboard again.
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
-context, the context's namespaces and the pods showing, each a palette
+context, the context's namespaces, the kinds it serves (each with its
+section and `:` names) and the rows of the kind showing, each a palette
 item the page's `paletteItems` gives (so ⌘K finds them too; pods only
 while something looks at them, never a list left from before). It looks
 as the page does: it holds the model while the palette shows it
 (`kubernetesSwitcherHeld`), so the kubeconfig is read and the pods
 followed with the page hidden, and lets go after the palette closes — once
 what was picked has opened the page, so the watch runs on. ↩ on a context
-or a namespace switches to it on the page; on a pod, the page on the Pods
-list with the pod selected and in view (`revealOnKubernetesPage`).
+or a namespace switches to it on the page; on a kind, the page on its
+list; on a row, the page on its kind's list with it selected and in view
+(`revealOnKubernetesPage`).
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
@@ -2673,7 +2757,15 @@ a stand-in connection goes to the fake's socket. It checks the pods
 listed as rows only in the server's columns, a crashing pod's reason
 (and drawn, read off the window), the watch's changes, the keys, all
 namespaces (two same-named pods apart, metadata asked for there),
-`label:` sent to the server through the proxy (and said); `n` by the key
+`label:` sent to the server through the proxy (and said); every kind —
+what fake-dev serves read and drawn in its sections, `:` by the key as the
+window takes it (the field given the keyboard, its completions drawn),
+`:deploy`'s deployments in their own columns as rows only, Tab completing
+and Esc closing by the field's own commands, `:widgets`' custom resources
+in the CRD's printer columns (the wide one behind `w`), a kind nobody
+serves said, `2` and `6` (Network's services, the cluster-wide nodes), a
+secret's row with no value, a CRD applied while the page shows appearing
+by the CRD watch and listed, `:po` back; `n` by the key
 as the window takes it, a namespace picked by typing, one typed that
 nobody listed, Esc; `c` to `fake-prod` and back;
 `fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a

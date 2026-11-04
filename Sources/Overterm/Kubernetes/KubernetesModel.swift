@@ -2,21 +2,32 @@ import Combine
 import Foundation
 
 /// Kubernetes for the app, as `DockerModel` is Docker: the kubeconfig's
-/// contexts, the one the page shows and its namespace, that context's
-/// pods kept live by a watch, and how its proxy stands. One for every
-/// window; each window's page holds it while it shows (`show`/`hide`).
+/// contexts, the one the page shows and its namespace, what that context
+/// serves (discovery, kept per context), the kind shown — Pods first —
+/// kept live by a watch, and how its proxy stands. One for every window;
+/// each window's page holds it while it shows (`show`/`hide`).
 ///
 /// **Nothing is read while nobody looks.** The kubeconfig is read when a
 /// page first shows (and again when its settings change while one does),
-/// the pods are followed only while a page shows them — the last `hide`
+/// the kind is followed only while a page shows it — the last `hide`
 /// ends the watch — and no cluster is asked anything until then: this
 /// Mac's current context is production. A proxy is left to its idle close
 /// (`KubeProxies`), so coming back within minutes needs no new sign-in.
 ///
-/// **Rows only.** The pods are the server's Table rows (`KubeClient.follow`),
-/// the columns `kubectl get pods` shows; watch events are applied in
-/// batches every `flushInterval` (Docker's burst coalescing), and an age is
-/// counted on from when its row came (`KubeAge`).
+/// **Rows only.** The rows are the server's Table rows (`KubeClient.follow`),
+/// the columns `kubectl get` shows for the kind — a CRD's printer columns
+/// too; watch events are applied in batches every `flushInterval`
+/// (Docker's burst coalescing), and an age is counted on from when its row
+/// came (`KubeAge`).
+///
+/// **What the cluster serves** is read once a context is picked and kept
+/// for it (`discoveries`) for `rediscoveryInterval`. A new or removed CRD
+/// shows without a reconnect (decision 28): while a page shows, the
+/// context's CustomResourceDefinitions are watched where they may be
+/// listed, and a change reads discovery again; where they may not,
+/// discovery is read again every `rediscoveryInterval`. A kind the server
+/// answers 404 for is looked up again once too: gone, the list says so; at
+/// another version, it is followed there.
 ///
 /// **Reads only.** Every request is a GET through the context's proxy,
 /// whose flags refuse every write on a read-only context (remote and
@@ -60,9 +71,18 @@ final class KubernetesModel: ObservableObject {
     @Published private(set) var namespaces: [String] = []
     /// Why the namespaces couldn't be listed (RBAC often refuses it): one is typed.
     @Published private(set) var namespacesRefused: String?
-    @Published private(set) var pods = KubeRows()
-    /// What the pods are asked for with: a page's `label:` words, sent to
-    /// the server (`KubeLabelSelector`). Nil: every pod in the scope. It is
+    /// What the selected context serves, once read; nil before.
+    @Published private(set) var discovery: KubeDiscovery?
+    /// Discovery's kinds that can be listed and watched, by section.
+    @Published private(set) var catalog = KubeKindCatalog()
+    /// Why discovery couldn't be read, when it couldn't.
+    @Published private(set) var discoveryProblem: String?
+    /// The kind the list shows.
+    @Published private(set) var kind: KubeResourceKind = .pods
+    /// The kind's rows in the scope.
+    @Published private(set) var rows = KubeRows()
+    /// What the rows are asked for with: a page's `label:` words, sent to
+    /// the server (`KubeLabelSelector`). Nil: every row in the scope. It is
     /// the page's that asked last (`selectorOwner`), and goes when that page
     /// hides: a window's page, or the switcher, never gets a list narrowed
     /// by a filter that isn't on screen.
@@ -71,7 +91,7 @@ final class KubernetesModel: ObservableObject {
     private(set) var selectorOwner: ObjectIdentifier?
     /// Where each row's age is counted from.
     @Published private(set) var anchors: [KubeRowID: KubeAge.Anchor] = [:]
-    @Published private(set) var podState: ListState = .idle
+    @Published private(set) var listState: ListState = .idle
     @Published private(set) var proxyStatus: KubeProxies.Status = .closed
     @Published private(set) var version: KubeServerVersion?
 
@@ -96,6 +116,12 @@ final class KubernetesModel: ObservableObject {
     var remembersSelection = !AppEnvironment.isUnitTest
     var flushInterval: Duration = .milliseconds(120)
     var statusInterval: Duration = .seconds(1)
+    /// How long a context's discovery is kept, and how often it is read
+    /// again while a page shows where CRDs can't be watched (decision 28).
+    var rediscoveryInterval: Duration = .seconds(300)
+    /// A burst of CRD changes (one applied, its versions established) is
+    /// one read of discovery, this long after the first.
+    var rediscoveryDelay: Duration = .milliseconds(300)
 
     private var viewers = 0
     private var configuration = Configuration()
@@ -110,6 +136,18 @@ final class KubernetesModel: ObservableObject {
     private var reading: Task<Void, Never>?
     private var side: Task<Void, Never>?
     private var settingsWatch: AnyCancellable?
+    /// Each context's discovery, and when it was read.
+    private var discoveries: [String: (discovery: KubeDiscovery, read: ContinuousClock.Instant)] = [:]
+    /// The CRD watch, or the timer that stands in for it.
+    private var crdWatch: Task<Void, Never>?
+    private var rediscovering: Task<Void, Never>?
+    /// CRDs changed since discovery was last read: the kind shown is
+    /// listed again when it is one of them (its printer columns).
+    private var changedCRDs: Set<String> = []
+    /// The kind followed has been looked up again after a 404.
+    private var lookedUpAfter404 = false
+    /// How many times discovery has been read, for the tests.
+    private(set) var discoveryReads = 0
 
     private static let rememberedKey = "kubernetes.selectedContext"
 
@@ -145,9 +183,10 @@ final class KubernetesModel: ObservableObject {
         polling = nil
         side?.cancel()
         side = nil
+        endDiscoveryWatch()
         reading?.cancel()
         reading = nil
-        podState = .idle
+        listState = .idle
         let proxies = self.proxies
         Task { await proxies.setPage(nil) }
     }
@@ -177,7 +216,7 @@ final class KubernetesModel: ObservableObject {
         apply(new)
         guard new.enabled else {
             stopReading()
-            pods = KubeRows()
+            rows = KubeRows()
             anchors = [:]
             let proxies = self.proxies
             Task {
@@ -212,13 +251,27 @@ final class KubernetesModel: ObservableObject {
 
     private func loaded(_ list: KubeContextList) {
         let before = selected
+        // What was read for a context is kept only while it is the same
+        // cluster: a name now pointing at another server, cluster or user
+        // is read afresh — never another cluster's kinds offered as its.
+        discoveries = discoveries.filter { name, _ in
+            guard let old = contexts.context(named: name), let new = list.context(named: name) else { return false }
+            return Self.sameCluster(old, new)
+        }
+        if let before, let now = list.context(named: before.name), !Self.sameCluster(before, now) {
+            discovery = nil
+            catalog = KubeKindCatalog()
+        }
         contexts = list
         contextsRead = true
         guard let name = Self.choose(in: list, kept: selectedName, remembered: remembered, pinned: configuration.pinned) else {
             selectedName = nil
             endFollow()
-            pods = KubeRows()
-            podState = .idle
+            endDiscoveryWatch()
+            rows = KubeRows()
+            listState = .idle
+            discovery = nil
+            catalog = KubeKindCatalog()
             return
         }
         if name != selectedName {
@@ -229,6 +282,17 @@ final class KubernetesModel: ObservableObject {
             // other flags on its next request.
             restartReading()
         }
+    }
+
+    /// Whether two readings of a context reach the same cluster as the same user. Pure.
+    static func sameCluster(_ old: KubeContext, _ new: KubeContext) -> Bool {
+        old.server == new.server && old.cluster == new.cluster && old.user == new.user && old.auth == new.auth
+    }
+
+    /// What `name` is known to serve: the selected context's discovery, or
+    /// what was read for another lately; nil when nothing was.
+    func knownDiscovery(of name: String) -> KubeDiscovery? {
+        name == selectedName ? discovery : discoveries[name]?.discovery
     }
 
     /// Which context the page shows: the one it showed, else the one last
@@ -246,7 +310,8 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// The page shows `name`: its namespace as last picked (else its own),
-    /// its pods followed.
+    /// the kind shown followed there — what it serves read, or taken from
+    /// what was read for it lately.
     func select(_ name: String) {
         guard let context = contexts.context(named: name) else { return }
         let changed = name != selectedName
@@ -258,6 +323,13 @@ final class KubernetesModel: ObservableObject {
             namespacesRefused = nil
             version = nil
             proxyStatus = .closed
+            endDiscoveryWatch()
+            let cached = discoveries[name]
+            discovery = cached?.discovery
+            catalog = cached.map { KubeKindCatalog($0.discovery) } ?? KubeKindCatalog()
+            discoveryProblem = nil
+            // The kind shown, as this context serves it — else Pods.
+            if let cached { kind = Self.resolved(kind, in: cached.discovery) ?? .pods }
         }
         restartReading()
     }
@@ -266,6 +338,20 @@ final class KubernetesModel: ObservableObject {
     /// context's own, else `default` — as kubectl has it.
     static func defaultScope(_ context: KubeContext) -> KubeScope {
         .namespace(context.settings.defaultNamespace ?? context.namespace ?? "default")
+    }
+
+    /// The list shows `kind` (one of the catalog's), in the scope.
+    func setKind(_ kind: KubeResourceKind) {
+        guard kind != self.kind else { return }
+        self.kind = kind
+        guard selectedName != nil else { return }
+        restartReading(side: false)
+    }
+
+    /// The kind as a context's discovery has it — another version, maybe —
+    /// or nil when it doesn't serve it, or not as a list kept live. Pure.
+    static func resolved(_ kind: KubeResourceKind, in discovery: KubeDiscovery) -> KubeResourceKind? {
+        discovery.kinds.first { $0.fullName == kind.fullName && KubeKindCatalog.isOffered($0) }
     }
 
     /// One namespace, or all of them (`0`).
@@ -333,20 +419,35 @@ final class KubernetesModel: ObservableObject {
 
     private func restartReading(side readSide: Bool = true) {
         endFollow()
-        pods = KubeRows()
+        rows = KubeRows()
         anchors = [:]
+        lookedUpAfter404 = false
         guard isShown, enabled, let context = selected else {
-            podState = .idle
+            listState = .idle
             return
         }
-        podState = .loading
         let client = KubeClient(connection(for: context))
+        if readSide { self.readSide(context, client) }
+        follow(kind, client)
+    }
+
+    /// The list again, the kind as it stands now.
+    private func refollow() {
+        guard isShown, enabled, let context = selected else { return }
+        endFollow()
+        rows = KubeRows()
+        anchors = [:]
+        follow(kind, KubeClient(connection(for: context)))
+    }
+
+    private func follow(_ kind: KubeResourceKind, _ client: KubeClient) {
+        listState = .loading
         let scope = self.scope
         let options = KubeListOptions(labelSelector: labelSelector)
         let generation = self.generation
         following = Task { [weak self] in
             do {
-                for try await update in client.follow(.pods, in: scope, options: options) {
+                for try await update in client.follow(kind, in: scope, options: options) {
                     guard let self, self.generation == generation else { return }
                     self.received(update)
                 }
@@ -354,21 +455,35 @@ final class KubernetesModel: ObservableObject {
             } catch {
                 guard let self, self.generation == generation else { return }
                 self.flush()
-                self.podState = .failed(Self.said(error), error as? KubeProxyProblem)
+                if let api = error as? KubeAPIError, api.isNotFound, !self.lookedUpAfter404 {
+                    // Gone, or served at another version now: discovery says which.
+                    self.lookedUpAfter404 = true
+                    self.listState = .loading
+                    self.rediscover(now: true)
+                    return
+                }
+                self.listState = .failed(Self.said(error), error as? KubeProxyProblem)
             }
         }
-        if readSide { self.readSide(context, client) }
     }
 
-    /// The server's version and the namespaces, once a context is picked.
+    /// The server's version, what it serves and the namespaces, once a
+    /// context is picked; its CRDs watched.
     private func readSide(_ context: KubeContext, _ client: KubeClient) {
         side?.cancel()
+        endDiscoveryWatch()
         let accessible = context.settings.accessibleNamespaces
         let name = context.name
+        let fresh = discoveries[name].map { ContinuousClock.now - $0.read < rediscoveryInterval } ?? false
         side = Task { [weak self] in
             if let version = try? await client.version() {
                 guard let self, self.selectedName == name else { return }
                 self.version = version
+            }
+            if fresh {
+                self?.watchDiscovery(client)
+            } else {
+                await self?.readDiscovery(client, context: name)
             }
             if !accessible.isEmpty {
                 self?.namespaces = accessible
@@ -389,8 +504,10 @@ final class KubernetesModel: ObservableObject {
     }
 
     private func received(_ update: KubeFollowUpdate) {
+        // Listed: a later 404 is looked up again.
+        if case .listed = update { lookedUpAfter404 = false }
         if case .retrying(let error) = update {
-            podState = .retrying(error.message)
+            listState = .retrying(error.message)
             return
         }
         pending.append(update)
@@ -412,7 +529,7 @@ final class KubernetesModel: ObservableObject {
     /// What came since the last flush, applied in one change.
     private func flush() {
         guard !pending.isEmpty else { return }
-        var rows = pods
+        var rows = self.rows
         var anchors = self.anchors
         let now = Date()
         for update in pending {
@@ -431,9 +548,156 @@ final class KubernetesModel: ObservableObject {
             }
         }
         pending = []
-        pods = rows
+        self.rows = rows
         self.anchors = anchors
-        if podState != .live { podState = .live }
+        if listState != .live { listState = .live }
+    }
+
+    // MARK: What the cluster serves
+
+    /// Discovery read for `context` and applied, then its CRDs watched.
+    private func readDiscovery(_ client: KubeClient, context name: String) async {
+        discoveryReads += 1
+        do {
+            let discovery = try await client.discover()
+            guard selectedName == name, !Task.isCancelled else { return }
+            applyDiscovery(discovery, context: name)
+            watchDiscovery(client)
+        } catch is CancellationError {
+        } catch {
+            guard selectedName == name, !Task.isCancelled else { return }
+            discoveryProblem = Self.said(error)
+            // Read again in `rediscoveryInterval`.
+            watchDiscovery(client, crds: false)
+        }
+    }
+
+    private func applyDiscovery(_ new: KubeDiscovery, context name: String) {
+        discoveries[name] = (new, ContinuousClock.now)
+        discoveryProblem = nil
+        let changed = changedCRDs
+        changedCRDs = []
+        if new != discovery {
+            discovery = new
+            let newCatalog = KubeKindCatalog(new)
+            if newCatalog != catalog { catalog = newCatalog }
+        }
+        // The kind shown, as the cluster serves it now.
+        guard let current = Self.resolved(kind, in: new) else {
+            // Pods are always asked for: their list says what's wrong —
+            // unless it said 404, and discovery read again has no pods.
+            guard kind.fullName != KubeResourceKind.pods.fullName else {
+                if lookedUpAfter404 {
+                    listState = .failed("\(name) answers 404 for pods, and doesn't serve them as a list.", nil)
+                }
+                return
+            }
+            endFollow()
+            rows = KubeRows()
+            anchors = [:]
+            listState = .failed("\(name) doesn't serve \(KubeKindCatalog.title(of: kind)) (\(kind.fullName)) as a list.", nil)
+            return
+        }
+        if current.groupVersion != kind.groupVersion || current.namespaced != kind.namespaced || lookedUpAfter404 || changed.contains(kind.fullName) {
+            kind = current
+            refollow()
+        } else if current != kind {
+            // Its verbs or short names: nothing to read again.
+            kind = current
+        }
+    }
+
+    private func endDiscoveryWatch() {
+        crdWatch?.cancel()
+        crdWatch = nil
+        rediscovering?.cancel()
+        rediscovering = nil
+        changedCRDs = []
+    }
+
+    /// While a page shows: the context's CRDs watched where they may be
+    /// listed and watched, a change reading discovery again; else (or once
+    /// the watch is refused) discovery read again every `rediscoveryInterval`.
+    private func watchDiscovery(_ client: KubeClient, crds: Bool = true) {
+        crdWatch?.cancel()
+        guard isShown, let name = selectedName else { return }
+        let crdKind = crds ? discovery?.kinds.first { $0.fullName == Self.crdName && KubeKindCatalog.isOffered($0) } : nil
+        let interval = rediscoveryInterval
+        crdWatch = Task { [weak self] in
+            if let crdKind {
+                var known: Set<String>?
+                do {
+                    for try await update in client.follow(crdKind) {
+                        guard let self, self.selectedName == name, !Task.isCancelled else { return }
+                        switch update {
+                        case .listed(let table):
+                            let names = Set(table.rows.map(\.id.name))
+                            if let known {
+                                // Listed again (a 410): whatever differs.
+                                if known != names { self.crdsChanged(names.symmetricDifference(known)) }
+                            } else {
+                                // The first list: a CRD discovery didn't have.
+                                let served = Set(self.discovery?.kinds.map(\.fullName) ?? [])
+                                if !names.isSubset(of: served) { self.crdsChanged(names.subtracting(served)) }
+                            }
+                            known = names
+                        case .changed(let changes, _):
+                            self.crdsChanged(Set(changes.map(\.id.name)))
+                            for change in changes {
+                                if case .deleted(let id) = change { known?.remove(id.name) } else { known?.insert(change.id.name) }
+                            }
+                        case .bookmark, .retrying: break
+                        }
+                    }
+                    return
+                } catch {
+                    // Refused (RBAC), or failing: discovery on a timer instead.
+                    guard !Task.isCancelled else { return }
+                }
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard let self, !Task.isCancelled, self.selectedName == name else { return }
+                self.rediscover(now: true)
+            }
+        }
+    }
+
+    static let crdName = "customresourcedefinitions.apiextensions.k8s.io"
+
+    /// CRDs added, changed or removed: discovery read again, once a burst.
+    private func crdsChanged(_ names: Set<String>) {
+        changedCRDs.formUnion(names)
+        rediscover(now: false)
+    }
+
+    /// Discovery read again for the context shown: at once, or after
+    /// `rediscoveryDelay` (a burst of CRD changes is one read).
+    func rediscover(now: Bool = true) {
+        guard isShown, let context = selected else { return }
+        if !now, rediscovering != nil { return }
+        rediscovering?.cancel()
+        let delay = now ? Duration.zero : rediscoveryDelay
+        let client = KubeClient(connection(for: context))
+        let name = context.name
+        rediscovering = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self, self.selectedName == name else { return }
+            self.discoveryReads += 1
+            do {
+                let discovery = try await client.discover()
+                guard !Task.isCancelled, self.selectedName == name else { return }
+                self.rediscovering = nil
+                self.applyDiscovery(discovery, context: name)
+            } catch {
+                guard !Task.isCancelled, self.selectedName == name else { return }
+                self.rediscovering = nil
+                self.discoveryProblem = Self.said(error)
+                if self.lookedUpAfter404 {
+                    self.listState = .failed("\(self.kind.fullName) isn't found (404), and discovery couldn't be read: \(Self.said(error))", nil)
+                }
+            }
+        }
     }
 
     // MARK: The proxy

@@ -3,10 +3,10 @@ import Foundation
 /// What the Pods filter knows besides text: `ns:` and `status:`, matched
 /// on the rows, and `label:`, which goes to the server (`KubeLabelSelector`)
 /// — a row is only cells, it has no labels to match.
-enum KubePodFilterKey: ResourceFilterKey {
+enum KubeFilterKey: ResourceFilterKey {
     case text, namespace, status, label
 
-    static let names: [String: KubePodFilterKey] = [
+    static let names: [String: KubeFilterKey] = [
         "ns": .namespace, "namespace": .namespace, "status": .status, "s": .status, "label": .label, "l": .label,
     ]
 }
@@ -35,7 +35,7 @@ enum KubeLabelSelector {
         var refused: [String] = []
     }
 
-    static func read(_ filter: ResourceFilter<KubePodFilterKey>) -> Reading {
+    static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
         var read: [String] = []
         var refused: [String] = []
         for term in filter.terms where term.key == .label {
@@ -48,7 +48,7 @@ enum KubeLabelSelector {
         return Reading(selector: read.isEmpty ? nil : read.joined(separator: ","), refused: refused)
     }
 
-    static func read(_ text: String) -> Reading { read(ResourceFilter<KubePodFilterKey>(text)) }
+    static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
 
     /// One word's requirements; nil when one of them isn't one.
     static func requirements(_ raw: String, negated: Bool) -> [String]? {

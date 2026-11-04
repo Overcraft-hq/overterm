@@ -234,7 +234,8 @@ struct PaletteField: NSViewRepresentable {
     let onMove: (Int) -> Void
     let onSubmit: (_ run: Bool) -> Void
     let onCancel: () -> Void
-    /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through.
+    /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through — or
+    /// completes (the Kubernetes `:` bar); nil, ⇥ moves the keyboard on.
     var onTab: ((Int) -> Void)? = nil
     var placeholder = "Search tabs, worktrees, snippets, actions…"
     /// The chrome is dark whatever the system appearance; the field's default

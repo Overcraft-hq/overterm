@@ -29,9 +29,12 @@ enum KubeAge {
         }
     }
 
-    /// A row's anchor: its creation time when it has one, else its Age cell.
+    /// A row's anchor: its creation time when it has one — the metadata's,
+    /// or a `Created At` cell (a CRD's Table, a List read without Table
+    /// support) — else its Age cell.
     static func anchor(_ row: KubeRow, columns: [KubeColumn], received: Date) -> Anchor {
-        Anchor(created: row.created, said: row.cell("Age", in: columns).flatMap { seconds($0.text) }, received: received)
+        let createdAt = row.cell("Created At", in: columns).flatMap { try? Date($0.text, strategy: .iso8601) }
+        return Anchor(created: row.created ?? createdAt, said: row.cell("Age", in: columns).flatMap { seconds($0.text) }, received: received)
     }
 
     /// kubectl's duration (`45s`, `5m30s`, `3h12m`, `2d3h`, `3y12d`) in

@@ -284,7 +284,7 @@ final class KubeTableTests: XCTestCase {
     }
 
     func testAKindByAnyOfKubectlsNames() {
-        let discovery = KubeDiscovery(kinds: FakeKubeAPI.kinds.map(Self.kind))
+        let discovery = KubeDiscovery(kinds: FakeKubeAPI.builtinKinds.map(Self.kind))
         XCTAssertEqual(discovery.kind("po")?.fullName, "pods")
         XCTAssertEqual(discovery.kind("pods")?.group, "", "the core pods, not metrics.k8s.io's")
         XCTAssertEqual(discovery.kind("Pod")?.fullName, "pods")

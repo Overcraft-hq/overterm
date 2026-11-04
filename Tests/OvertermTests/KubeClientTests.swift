@@ -98,7 +98,12 @@ final class KubeClientTests: XCTestCase {
         api.failingGroups = ["metrics.k8s.io/v1beta1"]
         let discovery = try await client().discover()
         XCTAssertFalse(discovery.aggregated)
-        XCTAssertEqual(Set(api.requests.map(\.path)), ["/api", "/apis", "/api/v1", "/apis/apps/v1", "/apis/batch/v1", "/apis/events.k8s.io/v1", "/apis/metrics.k8s.io/v1beta1"])
+        XCTAssertEqual(
+            Set(api.requests.map(\.path)),
+            [
+                "/api", "/apis", "/api/v1", "/apis/apps/v1", "/apis/batch/v1", "/apis/events.k8s.io/v1", "/apis/apiextensions.k8s.io/v1",
+                "/apis/rbac.authorization.k8s.io/v1", "/apis/networking.k8s.io/v1", "/apis/metrics.k8s.io/v1beta1",
+            ])
         XCTAssertEqual(Array(discovery.failedGroups.keys), ["metrics.k8s.io/v1beta1"])
         XCTAssertNil(discovery.kind("pods.metrics.k8s.io"))
         XCTAssertEqual(discovery.kind("pods")?.subresources.contains("exec"), true)
