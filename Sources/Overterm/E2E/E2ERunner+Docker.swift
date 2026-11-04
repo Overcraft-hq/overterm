@@ -1884,19 +1884,19 @@ extension E2ERunner {
     /// bottom left, as an event's location) — for what SwiftUI draws itself,
     /// which no AppKit view holds and, without an assistive app, no
     /// accessibility element either.
-    func readWindow() async -> [(text: String, frame: CGRect)] {
+    func readWindow(tiled: Bool = false) async -> [(text: String, frame: CGRect)] {
         guard let image = app.windowImage(window) else { return [] }
         let pixels = WindowPixels(image: image)
         let size = window.frame.size
-        return await Task.detached { Self.recognize(pixels, size: size) }.value
+        return await Task.detached { Self.recognize(pixels, size: size, tiled: tiled) }.value
     }
 
     struct WindowPixels: @unchecked Sendable {
         let image: CGImage
     }
 
-    nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize) -> [(text: String, frame: CGRect)] {
-        recognized(pixels.image).map { candidate, place in
+    nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize, tiled: Bool = false) -> [(text: String, frame: CGRect)] {
+        recognized(pixels.image, tiled: tiled).map { candidate, place in
             let box = place(candidate.boundingBox)
             return (candidate.text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
         }
@@ -1918,8 +1918,10 @@ extension E2ERunner {
     /// of it come back as erratically empty), so a read that comes back
     /// empty is read again in overlapping tiles of 1400 pixels (700 points
     /// on Retina), each of which Vision reads; a line two tiles both read
-    /// is kept once.
-    nonisolated static func recognized(_ image: CGImage) -> [(RecognizedLine, (CGRect) -> CGRect)] {
+    /// is kept once. `tiled` reads in tiles whatever the whole read gave:
+    /// on a laptop's own screen the whole read leaves out small text — a
+    /// severity chip, a list row's chip — that a tile reads.
+    nonisolated static func recognized(_ image: CGImage, tiled: Bool = false) -> [(RecognizedLine, (CGRect) -> CGRect)] {
         func read(_ image: CGImage) -> [RecognizedLine] {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
@@ -1929,7 +1931,7 @@ extension E2ERunner {
                 observation.topCandidates(1).first.map { RecognizedLine(candidate: $0, boundingBox: observation.boundingBox) }
             }
         }
-        let whole = read(image)
+        let whole = tiled ? [] : read(image)
         let (width, height) = (image.width, image.height)
         let tile = 1400
         let step = tile - 200
@@ -1981,10 +1983,12 @@ extension E2ERunner {
     }
 
     nonisolated private static func locate(_ word: String, in pixels: WindowPixels, size: CGSize) -> CGRect? {
-        for (line, place) in recognized(pixels.image) {
-            guard let range = line.text.range(of: word), let found = (try? line.candidate.boundingBox(for: range))?.boundingBox else { continue }
-            let box = place(found)
-            return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
+        for tiled in [false, true] {
+            for (line, place) in recognized(pixels.image, tiled: tiled) {
+                guard let range = line.text.range(of: word), let found = (try? line.candidate.boundingBox(for: range))?.boundingBox else { continue }
+                let box = place(found)
+                return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
+            }
         }
         return nil
     }
@@ -1997,6 +2001,7 @@ extension E2ERunner {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if let line = await readWindow().first(where: { match($0.text) }) { return line }
+            if let line = await readWindow(tiled: true).first(where: { match($0.text) }) { return line }
             await pause(0.3)
         } while Date() < deadline
         return nil
@@ -2655,7 +2660,7 @@ extension E2ERunner {
         check(
             "and so does the panel's menu", app.dockerPanel.verbs(apiSummary).contains { $0.title == rebuildTitle },
             "\(app.dockerPanel.verbs(apiSummary).map(\.title))")
-        await drawn("its detail says it runs emulated", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        await drawn("its detail says it runs emulated", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
         // The row's value may wrap in the detail's column ("linux/amd64 —"
         // then "emulated here"): the platform read as a line, "emulated"
         // anywhere after it.
@@ -2705,7 +2710,7 @@ extension E2ERunner {
             "\(docker.platforms)")
         await drawn("and says it under its name", await shownText { $0.contains("linux/amd64") })
         page.imageSelection = [legacy]
-        await drawn("an emulated image's detail says so", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        await drawn("an emulated image's detail says so", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
         // Vision reads the row's parts as lines of their own — the label,
         // "linux/amd64 -", "emulated" — so they are looked for side by side.
         let platformLabel = await shownText { $0 == "Platform" }
@@ -2732,7 +2737,7 @@ extension E2ERunner {
             "\(inspects(legacy)) reads, \(docker.platforms[legacy]?.description ?? "none")")
         await pause(0.3)
         let gone = await readWindow()
-        check("and its box is gone", !gone.contains { $0.text.hasPrefix("Emulated:") }, gone.map(\.text).joined(separator: " | "))
+        check("and its box is gone", !gone.contains { $0.text.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }, gone.map(\.text).joined(separator: " | "))
         page.imageSelection = []
 
         // The containers made from it before still run amd64, and say so.
