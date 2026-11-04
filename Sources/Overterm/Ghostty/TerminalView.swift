@@ -168,6 +168,8 @@ final class TerminalView: NSView {
         } else {
             SurfaceProcesses.shared.register(self)
             applyColorScheme()
+            // Given a theme before its surface existed: now it can take it.
+            if themeName != nil { applyConfig() }
             NotificationCenter.default.addObserver(
                 self, selector: #selector(applyColorScheme), name: GhosttyRuntime.colorSchemeChanged, object: nil)
             NotificationCenter.default.addObserver(
@@ -185,8 +187,18 @@ final class TerminalView: NSView {
     /// the config it was made with until it is given another.
     @objc private func applyConfig() {
         guard let surface else { return }
-        GhosttyRuntime.shared.updateConfig(of: surface)
+        GhosttyRuntime.shared.updateConfig(of: surface, theme: themeName)
         appliedConfigs += 1
+    }
+
+    /// A theme of this pane's own, over the app's: its tab's group's, or a
+    /// folder rule's (TerminalWindowController.applyTabThemes). Nil: the
+    /// app's, as every pane had.
+    var themeName: String? {
+        didSet {
+            guard themeName != oldValue else { return }
+            applyConfig()
+        }
     }
 
     /// Which half of a `light:…,dark:…` theme this surface shows. A

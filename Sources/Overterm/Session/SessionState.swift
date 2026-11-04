@@ -51,6 +51,8 @@ struct SessionState: Codable, Equatable {
         /// Whether tabs opened from the group join it — absent while the
         /// question has never come up (NewTabGroup).
         var takesNewTabs: Bool?
+        /// The group's terminal theme, if it has one.
+        var theme: String?
     }
 
     /// A split tab's layout: each pane's directory, each split's shape.

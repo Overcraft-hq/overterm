@@ -78,6 +78,8 @@ enum SettingKind: Sendable {
     case color
     /// A file's path (an image), picked in an open panel.
     case file(types: [String])
+    /// Lines of text, one item each (a list in the file).
+    case lines(placeholder: String)
     /// The options in an order of the user's: a list of their values.
     /// Names it doesn't know are passed over, and options it leaves out
     /// come last — so a file from another version still reads.
@@ -124,6 +126,8 @@ struct SettingSpec: Identifiable, Sendable {
             return nil
         case .order:
             return value.list == nil ? "must be a list of names, like [\"files\", \"git\"]" : nil
+        case .lines:
+            return value.list == nil ? "must be a list of strings, like [\"~/Projects/prod-* = Red Alert\"]" : nil
         case .integer(let range, _, _):
             guard case .int(let number) = value, range.contains(number) else {
                 return "must be a whole number from \(range.lowerBound) to \(range.upperBound)"
@@ -265,6 +269,10 @@ enum SettingsSchema {
         SettingSpec(
             key: "appearance.selectionForeground", section: .appearance, group: "Colours", title: "Selected text",
             kind: .color, defaultValue: nil, ghostty: "selection-foreground"),
+        SettingSpec(
+            key: "appearance.folderThemes", section: .themes, group: "Colours", title: "Themes by folder",
+            help: "A theme for the tabs working in a folder, one rule a line: `~/Projects/prod-* = Red Alert`. A group's own theme (its menu ▸ Terminal Theme) comes first.",
+            kind: .lines(placeholder: "~/Projects/prod-* = Red Alert"), defaultValue: nil),
         SettingSpec(
             key: "appearance.theme", section: .themes, group: "Colours", title: "Theme",
             help: "The terminal and everything around it change at once.",

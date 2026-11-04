@@ -368,6 +368,8 @@ private struct SettingRow: View {
         case .text(let placeholder, let monospaced):
             SettingTextField(text: settings.string(spec.key), placeholder: placeholder, monospaced: monospaced) { settings.set(spec.key, .string($0)) }
                 .frame(width: 260)
+        case .lines(let placeholder):
+            SettingLines(spec: spec, settings: settings, theme: theme, placeholder: placeholder)
         case .color:
             SettingColorWell(spec: spec, settings: settings, theme: theme, unset: "From the theme")
         case .file(let types):
@@ -485,6 +487,39 @@ private struct SettingColorWell: View {
                 .font(.system(size: ChromeMetrics.text(12), design: settings.isSet(spec.key) ? .monospaced : .default))
                 .foregroundStyle(theme.dimText)
         }
+    }
+}
+
+/// A list setting, a line an item: written when the field is left.
+private struct SettingLines: View {
+    let spec: SettingSpec
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+    let placeholder: String
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    private var current: String { (settings.value(spec.key)?.list ?? []).joined(separator: "\n") }
+
+    var body: some View {
+        TextEditor(text: $draft)
+            .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+            .focused($focused)
+            .frame(width: 320, height: 72)
+            .overlay(alignment: .topLeading) {
+                if draft.isEmpty {
+                    Text(verbatim: placeholder).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                        .foregroundStyle(theme.text3).padding(.leading, 5).allowsHitTesting(false)
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(theme.border))
+            .onAppear { draft = current }
+            .onChange(of: current) { if !focused { draft = $0 } }
+            .onChange(of: focused) { focused in
+                guard !focused, draft != current else { return }
+                let lines = draft.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                settings.set(spec.key, lines.isEmpty ? nil : .list(lines))
+            }
     }
 }
 

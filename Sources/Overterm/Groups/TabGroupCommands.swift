@@ -158,6 +158,27 @@ extension TerminalWindowController {
 
     /// An island's menu. AppKit, not SwiftUI's `.contextMenu`: the strip
     /// lives in the title bar, which takes right-clicks first.
+    /// The group's menu ▸ Terminal Theme: the window's own, the popular
+    /// ten and yours — a checkout told apart at a glance.
+    private func themeItem(for group: TabGroup) -> NSMenuItem {
+        let item = NSMenuItem(title: "Terminal Theme", action: nil, keyEquivalent: "")
+        let themes = NSMenu()
+        let same = ClosureMenuItem("Same as the Window") { [weak self] in self?.setTheme(nil, of: group) }
+        same.state = group.theme == nil ? .on : .off
+        themes.addItem(same)
+        themes.addItem(.separator())
+        let yours = ThemeCatalog.shared.entries.filter { $0.source == .user }.map(\.theme.name)
+        var names = ThemeCatalog.popular + yours
+        if let current = group.theme, !names.contains(current) { names.append(current) }
+        for name in names where ThemeCatalog.read(name) != nil {
+            let entry = ClosureMenuItem(name) { [weak self] in self?.setTheme(name, of: group) }
+            entry.state = group.theme == name ? .on : .off
+            themes.addItem(entry)
+        }
+        item.submenu = themes
+        return item
+    }
+
     func menu(for group: TabGroup) -> NSMenu {
         let tabs = store.tabs(in: group)
         let menu = NSMenu()
@@ -172,6 +193,7 @@ extension TerminalWindowController {
         }
         colorItem.submenu = colors
         menu.addItem(colorItem)
+        menu.addItem(themeItem(for: group))
         let restore = ClosureMenuItem("Restore on Launch") { group.restoresOnLaunch.toggle() }
         restore.state = group.restoresOnLaunch ? .on : .off
         menu.addItem(restore)

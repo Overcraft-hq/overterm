@@ -102,10 +102,31 @@ final class GhosttyRuntime {
     /// Posted after the config is re-read, for the surfaces already open.
     static let configReloaded = Notification.Name("ConfigReloaded")
 
-    /// Hands the config in force to one surface (`TerminalView`).
-    func updateConfig(of surface: ghostty_surface_t) {
-        guard let config else { return }
+    /// Hands the config in force to one surface (`TerminalView`) — or, for
+    /// a surface with a theme of its own (a group's, a folder's), the same
+    /// config with that theme over it.
+    func updateConfig(of surface: ghostty_surface_t, theme: String? = nil) {
+        guard let config = theme.flatMap(themedConfig) ?? config else { return }
         ghostty_surface_update_config(surface, config)
+    }
+
+    /// The configs with a theme over the app's, by theme name — built once
+    /// each, until the app's config is read again.
+    private var themed: [String: ghostty_config_t] = [:]
+
+    /// The app's config, then `theme = "<name>"` last, so it wins over the
+    /// user's and Settings' themes and nothing else.
+    private func themedConfig(_ name: String) -> ghostty_config_t? {
+        if let cached = themed[name] { return cached }
+        let directory = AppEnvironment.supportDirectory.appendingPathComponent("theme-overlays", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // The name is the user's: a file name of its hash, the name inside.
+        let file = directory.appendingPathComponent("\(UInt32(truncatingIfNeeded: name.hashValue)).conf")
+        guard (try? "theme = \"\(name)\"\n".write(to: file, atomically: true, encoding: .utf8)) != nil,
+            let config = Self.makeConfig(overlay: file.path)
+        else { return nil }
+        themed[name] = config
+        return config
     }
 
     /// Tells libghostty which way macOS is dressed. It assumes light until
@@ -179,7 +200,7 @@ final class GhosttyRuntime {
     /// The user's regular Ghostty config (~/.config/ghostty/config) applies
     /// as-is — font, theme, keybinds all carry over — and then what
     /// Overterm ▸ Settings overrides (Settings.ghosttyOverridesFile).
-    private static func makeConfig(overrides: Bool = true) -> ghostty_config_t? {
+    private static func makeConfig(overrides: Bool = true, overlay: String? = nil) -> ghostty_config_t? {
         guard let config = ghostty_config_new() else {
             logger.critical("ghostty_config_new failed")
             return nil
@@ -188,6 +209,7 @@ final class GhosttyRuntime {
         ghostty_config_load_recursive_files(config)
         let file = Settings.ghosttyOverridesFile.path
         if overrides, FileManager.default.fileExists(atPath: file) { ghostty_config_load_file(config, file) }
+        if let overlay { ghostty_config_load_file(config, overlay) }
         ghostty_config_finalize(config)
         for i in 0..<ghostty_config_diagnostics_count(config) {
             let diag = ghostty_config_get_diagnostic(config, i)
@@ -205,6 +227,10 @@ final class GhosttyRuntime {
         ghostty_app_update_config(app, fresh)
         if let old = config { ghostty_config_free(old) }
         config = fresh
+        // Themed ones are built again from it, as the surfaces ask. A surface
+        // keeps a copy of the config it is given, so these can go.
+        for old in themed.values { ghostty_config_free(old) }
+        themed = [:]
         // The app's config is what a *new* surface is built from; the ones
         // already open each hold their own and have to be handed it, or a
         // theme picked in Settings showed up only in the next tab.

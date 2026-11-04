@@ -12,6 +12,7 @@ version is tagged `v<version>`.
 - appearance: the interface too — an accent colour, compact or comfortable density, a larger or smaller interface text, the space between the cards and their corners, pane headers only on a split tab, narrow or wide tabs, every tab's close button, tabs without icons
 - themes: make your own — duplicate any theme and change its colours, or import one from iTerm2 (.itermcolors) or VS Code (Import…, or drop it on the themes)
 - editor: the code can take the terminal theme's colours (Settings ▸ Editor ▸ Colours)
+- themes: a theme of a group's own (its menu ▸ Terminal Theme), or by folder (`~/Projects/prod-* = Red Alert`) — a checkout told apart at a glance
 - window: Presentation Mode (⌃⌘P) — the terminal alone and larger for a screen share, and back as it was
 
 ## 1.5.2 — 2026-11-02

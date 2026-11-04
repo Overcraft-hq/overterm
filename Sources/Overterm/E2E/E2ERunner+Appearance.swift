@@ -212,6 +212,36 @@ extension E2ERunner {
         } else {
             check("View ▸ Presentation Mode", false)
         }
+        // A group's own theme, and a folder's.
+        if let selected = app.store.selected, let group = app.store.addToNewGroup([selected], name: "prod") {
+            let pane = selected.terminal
+            let applied = pane.appliedConfigs
+            app.setTheme("Dracula", of: group)
+            let dracula = ThemeCatalog.read("Dracula")?.background.nsColor.usingColorSpace(.sRGB)
+            check(
+                "a group's theme reaches its panes", await eventually(3) { pane.themeName == "Dracula" && pane.appliedConfigs > applied },
+                "\(pane.themeName ?? "none")")
+            check(
+                "and dresses the window while it is in front",
+                await eventually(3) { self.app.theme?.termNS.usingColorSpace(.sRGB) == dracula },
+                String(describing: app.theme?.termNS))
+            GhosttyRuntime.shared.reloadConfig()
+            check("a reload keeps it", await eventually(3) { pane.themeName == "Dracula" })
+            await photo("group-theme")
+            app.setTheme(nil, of: group)
+            check("the window's own again", await eventually(3) { pane.themeName == nil && self.app.theme?.termNS.usingColorSpace(.sRGB) != dracula })
+            app.store.ungroup(group)
+        }
+        let staging = scratch.appendingPathComponent("staging-api")
+        try? FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        settings.set("appearance.folderThemes", .list(["\(scratch.path)/staging-* = Nord"]))
+        app.newTab(in: staging)
+        await waitForPrompt()
+        if let tab = app.store.selected {
+            check("a tab in a folder a rule names takes its theme", await eventually(5) { tab.terminal.themeName == "Nord" }, tab.terminal.themeName ?? "none")
+        }
+        settings.set("appearance.folderThemes", nil)
+        check("a rule gone, so is the theme", await eventually(5) { self.app.store.selected?.terminal.themeName == nil })
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }
 }

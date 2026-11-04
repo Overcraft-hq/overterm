@@ -32,6 +32,9 @@ final class TabGroup: ObservableObject, Identifiable {
     /// means nobody has said: the island was never the whole strip, so the
     /// question never had to be asked (`NewTabGroup`).
     @Published var takesNewTabs: Bool?
+    /// A terminal theme for this group's tabs, over the app's — a checkout
+    /// you must not mistake for another (the group's menu ▸ Terminal Theme).
+    @Published var theme: String?
 
     init(
         id: UUID = UUID(), name: String, color: TabColor = .blue, isCollapsed: Bool = false,

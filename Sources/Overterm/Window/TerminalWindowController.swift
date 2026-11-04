@@ -62,6 +62,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var bodyInsets: [NSLayoutConstraint] = []
     /// While presenting (⌃⌘P): what it shut (TerminalWindowController+Presentation).
     var presentation: Presentation?
+    /// The theme the window was last dressed in for the selected tab.
+    var lastWindowTheme: String?
     /// A press on a tab that may become a drag: the tab and where it began.
     private var pressedTab: (tab: Tab, x: CGFloat)?
     /// A chip pressed in the strip: dragging it moves the whole island.
@@ -639,6 +641,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         split.addSplitViewItem(browserItem)
         wireBrowser()
         wireOvergit()
+        wireTabThemes()
         wireAPI()
         wireNotes()
         wireDatabase()
@@ -1343,7 +1346,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     .init(
                         name: $0.name, color: $0.color.rawValue, isCollapsed: $0.isCollapsed, isStashed: $0.isStashed,
                         boundFolder: $0.folder, restoresOnLaunch: $0.restoresOnLaunch,
-                        takesNewTabs: $0.takesNewTabs)
+                        takesNewTabs: $0.takesNewTabs, theme: $0.theme)
                 })
     }
 
@@ -1374,10 +1377,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
         // The islands first, so each tab can point at one as it is made.
         let groups: [TabGroup] = (state.groups ?? []).map {
-            TabGroup(
+            let group = TabGroup(
                 name: $0.name, color: TabColor(rawValue: $0.color) ?? .blue, isCollapsed: $0.isCollapsed,
                 isStashed: $0.isStashed, stashedAt: $0.isStashed ? Date() : nil, folder: $0.boundFolder,
                 restoresOnLaunch: $0.restoresOnLaunch, takesNewTabs: $0.takesNewTabs)
+            group.theme = $0.theme
+            return group
         }
         store.groups = groups
         store.restoring = true
@@ -1613,6 +1618,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
                 let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
                 if tab.agentDirectory != following { tab.agentDirectory = following }
+                // A folder rule follows where the tab works, and a split's
+                // new pane takes its tab's theme.
+                self.applyTabThemes()
                 guard readPorts else { return }
                 let ports = await ListeningPorts.of(pids)
                 if tab.ports != ports { tab.ports = ports }
@@ -3315,6 +3323,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
                 // The chrome's own settings: no Ghostty reload says so.
                 if !keys.isDisjoint(with: Self.chromeKeys) { self.applyTerminalColors() }
+                if keys.contains("appearance.folderThemes") { self.applyTabThemes() }
                 if !keys.isDisjoint(with: ChromeMetrics.keys) {
                     ChromeMetrics.apply()
                     self.applyMetrics()
@@ -3342,13 +3351,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// terminal too (`ChromeTheme`). The views hold the theme object and
     /// redraw themselves; the layers are nobody's binding, so the window,
     /// the cards and the dividers are repainted here.
+    /// The chrome's colours again (a tab's own theme came or went).
+    func refreshChrome() { applyTerminalColors() }
+
     private func applyTerminalColors() {
         let runtime = GhosttyRuntime.shared
         guard let theme else { return }
         let accent = ChromeAccent(rawValue: Settings.shared.string("appearance.accent")) ?? .overterm
+        // The selected tab's own theme (its group's, a folder's) dresses the
+        // window while it is the one in front.
+        let own = store.selected.flatMap { themeName(for: $0) }.flatMap(ThemeCatalog.read)
+        let background = own?.background.nsColor ?? runtime.backgroundColor
+        let foreground = own?.foreground.nsColor ?? runtime.foregroundColor
         theme.apply(
-            background: runtime.backgroundColor, foreground: runtime.foregroundColor, opacity: windowOpacity,
-            accent: accent.color(isDark: runtime.backgroundColor.brightnessComponent < 0.5))
+            background: background, foreground: foreground, opacity: windowOpacity,
+            accent: accent.color(isDark: background.brightnessComponent < 0.5))
         window?.isOpaque = !theme.isTranslucent
         window?.backgroundColor = theme.isTranslucent ? .clear : theme.winNS
         installGround()
