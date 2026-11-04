@@ -101,7 +101,7 @@ struct SidebarRail: View {
         .padding(.vertical, 8)
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
-        .background(theme.win)
+        .background(theme.panelGround)
         .overlay(alignment: .trailing) { Rectangle().fill(theme.border).frame(width: 1) }
     }
 }

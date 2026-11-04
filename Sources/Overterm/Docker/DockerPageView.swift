@@ -21,7 +21,7 @@ struct DockerPageView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 210).background(theme.strip)
+            sidebar.frame(width: 210).background(theme.panelGround)
             Rectangle().fill(theme.border).frame(width: 1)
             main
         }

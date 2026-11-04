@@ -102,7 +102,7 @@ struct StorageObjectView: View {
                 note("Pick a file in the Database panel (⌥⌘B).")
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
     }
 
     private var header: some View {

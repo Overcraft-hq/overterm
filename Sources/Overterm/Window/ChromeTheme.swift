@@ -98,17 +98,26 @@ final class ChromeTheme: ObservableObject {
     /// editor's header and status bar).
     var strip: Color { win }
     var stripNS: NSColor { winNS }
+    /// Translucent, the window's ground (WindowGroundView); clear, opaque.
+    private(set) var groundNS: NSColor = .clear
+    /// A panel's own background inside a card (the changes, the usage,
+    /// Settings' list): `strip`, or nothing over a translucent ground.
+    private(set) var panelGround: Color = .clear
+    private(set) var panelGroundNS: NSColor = .clear
     var selected: Color { tabSel }
     var hover: Color { rowHover }
     var dimText: Color { text2 }
 
-    init(background: NSColor, foreground: NSColor) {
-        apply(background: background, foreground: foreground)
+    init(background: NSColor, foreground: NSColor, opacity: CGFloat = 1) {
+        apply(background: background, foreground: foreground, opacity: opacity)
     }
 
-    /// The two colours everything here is derived from, kept so the same
-    /// pair can be recognised and ignored.
-    private var source: (background: NSColor, foreground: NSColor)?
+    /// The two colours everything here is derived from (and the window's
+    /// opacity), kept so the same can be recognised and ignored.
+    private var source: (background: NSColor, foreground: NSColor, opacity: CGFloat)?
+    /// Below 1, the window is translucent (Settings ▸ Appearance ▸ Opacity).
+    private(set) var opacity: CGFloat = 1
+    var isTranslucent: Bool { opacity < 1 }
 
     /// Recomputes every colour from a terminal theme's two. One signal for
     /// the lot: they only ever change together.
@@ -117,10 +126,11 @@ final class ChromeTheme: ObservableObject {
     /// reloaded for reasons that have nothing to do with colour (a
     /// keybinding, the font), and a view redrawn for no reason can take
     /// the keyboard away from the terminal.
-    func apply(background: NSColor, foreground: NSColor) {
-        if let source, source.background == background, source.foreground == foreground { return }
-        source = (background, foreground)
+    func apply(background: NSColor, foreground: NSColor, opacity: CGFloat = 1) {
+        if let source, source.background == background, source.foreground == foreground, source.opacity == opacity { return }
+        source = (background, foreground, opacity)
         objectWillChange.send()
+        self.opacity = opacity
         let bg = background.usingColorSpace(.sRGB) ?? background
         let fg = foreground.usingColorSpace(.sRGB) ?? foreground
         let isDark = bg.brightnessComponent < 0.5
@@ -151,6 +161,30 @@ final class ChromeTheme: ObservableObject {
         borderNS = borderColor
         border = Color(nsColor: borderColor)
         cardShadow = isDark ? .clear : Color(nsColor: NSColor.black.withAlphaComponent(0.10))
+        groundNS = .clear
+        if opacity < 1 {
+            // Translucent: one ground, painted once, behind everything but the
+            // terminals (WindowGroundView). Anything painting a ground of its
+            // own over it stacks a second layer — so the terminal's cards
+            // paint nothing, a panel only a veil (its hairline tells it
+            // apart), and `panelGround` is clear. `win` stays opaque: what
+            // floats over a terminal (the palette, the switcher) must read.
+            //
+            // The ground's colour is the terminal's divided by the opacity:
+            // a surface draws its background unpremultiplied (see
+            // WindowGroundView), so at the same opacity it comes out that
+            // much lighter than the plain colour would.
+            func lift(_ value: CGFloat) -> CGFloat { min(1, value / opacity) }
+            groundNS = NSColor(srgbRed: lift(bg.redComponent), green: lift(bg.greenComponent), blue: lift(bg.blueComponent), alpha: opacity)
+            let veilNS = (isDark ? NSColor.white : .black).withAlphaComponent(0.035)
+            cardNS = veilNS
+            card = Color(nsColor: veilNS)
+            termNS = .clear
+            term = .clear
+            cardShadow = .clear
+        }
+        panelGround = opacity < 1 ? .clear : win
+        panelGroundNS = opacity < 1 ? .clear : winNS
 
         // Text. One hue, three weights of presence.
         textNS = fg
@@ -179,4 +213,12 @@ final class ChromeTheme: ObservableObject {
         greenText = isDark ? Color(red: 0.36, green: 0.84, blue: 0.48) : Color(red: 0.10, green: 0.50, blue: 0.22)
         accentText = isDark ? Color(red: 0.39, green: 0.82, blue: 1.00) : Color(red: 0.04, green: 0.38, blue: 0.79)
     }
+}
+
+/// The strip's background: the window's colour, or nothing over a
+/// translucent window's ground. A view, so it follows the theme.
+struct StripGround: View {
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View { theme.isTranslucent ? Color.clear : theme.strip }
 }

@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.5.3 — 2026-11-04
+
+- appearance: the terminal's look tuned in Settings — translucency, ligatures, line height, contrast, cursor and selection colours, a background image
+
 ## 1.5.2 — 2026-11-02
 
 - build: one weekly check for every pinned dependency — the Swift packages too, which Dependabot can't resolve here

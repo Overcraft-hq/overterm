@@ -29,7 +29,7 @@ struct UsageView: View {
                 }
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
     }
 

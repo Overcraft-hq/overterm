@@ -29,7 +29,7 @@ struct CommitDetailView: View {
                 body(of: model.detail)
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
     }
 
     @ViewBuilder private func body(of detail: CommitDetail?) -> some View {

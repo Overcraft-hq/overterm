@@ -132,6 +132,7 @@ final class E2ETests: XCTestCase {
     func testOvergit() throws { try run("overgit") }
     func testOvergitWork() throws { try run("overgitWork") }
     func testOvergitGit() throws { try run("overgitGit") }
+    func testAppearance() throws { try run("appearance") }
     func testSimulator() throws { try run("simulator") }
     func testThroughput() throws { try run("throughput") }
 

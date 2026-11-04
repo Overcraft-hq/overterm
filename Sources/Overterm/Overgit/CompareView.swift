@@ -29,7 +29,7 @@ struct CompareView: View {
                 content
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
     }
 
     private var header: some View {

@@ -24,7 +24,7 @@ struct SQLConsoleView: View {
                 if let run = console.current { body(of: run) }
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
     }
 

@@ -52,7 +52,7 @@ struct RightPaneView: View {
         if diff.panelVisible {
             content
         } else {
-            theme.strip
+            theme.panelGround
         }
     }
 
@@ -130,7 +130,7 @@ struct RightPaneView: View {
             case .container: container
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
         // Text fields and buttons follow the terminal theme, not the system
         // appearance: light ones sat white on the dark chrome.
         .environment(\.colorScheme, theme.isDark ? .dark : .light)

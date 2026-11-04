@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Settings' sections, as in the list on the page's left.
 enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
@@ -115,7 +116,7 @@ struct SettingsPageView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.background(theme.strip)
+            sidebar.background(theme.panelGround)
             Rectangle().fill(theme.dimText.opacity(0.15)).frame(width: 1)
             content
         }
@@ -255,7 +256,7 @@ private struct SettingRow: View {
     @ObservedObject var settings: Settings
     @ObservedObject var theme: ChromeTheme
 
-    private var enabled: Bool { spec.requires.map { settings.bool($0) } ?? true }
+    private var enabled: Bool { spec.requires.map { settings.isInEffect($0) } ?? true }
 
     var body: some View {
         if case .order(let options) = spec.kind {
@@ -367,6 +368,10 @@ private struct SettingRow: View {
         case .text(let placeholder, let monospaced):
             SettingTextField(text: settings.string(spec.key), placeholder: placeholder, monospaced: monospaced) { settings.set(spec.key, .string($0)) }
                 .frame(width: 260)
+        case .color:
+            SettingColorWell(spec: spec, settings: settings, theme: theme, unset: "From the theme")
+        case .file(let types):
+            SettingFilePicker(spec: spec, settings: settings, theme: theme, types: types)
         case .order:
             EmptyView()  // `body` lays the list out under the row
         }
@@ -453,6 +458,61 @@ private struct SettingOrderList: View {
 
 /// A text setting, saved when editing ends (Return, or leaving the field)
 /// — not at each keystroke, which would rewrite the file each time.
+/// A colour setting: a well, and what it is when unset.
+private struct SettingColorWell: View {
+    let spec: SettingSpec
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+    let unset: String
+
+    private var color: Binding<Color> {
+        Binding(
+            get: {
+                let parsed = SettingsColor.parse(settings.string(spec.key)) ?? SettingsColor.parse(spec.defaultValue?.string ?? "")
+                return parsed.map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? theme.text
+            },
+            set: { new in
+                guard let rgb = NSColor(new).usingColorSpace(.sRGB) else { return }
+                settings.set(
+                    spec.key, .string(SettingsColor.format(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent)))
+            })
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ColorPicker("", selection: color, supportsOpacity: false).labelsHidden()
+            Text(verbatim: settings.isSet(spec.key) ? settings.string(spec.key) : unset)
+                .font(.system(size: 12, design: settings.isSet(spec.key) ? .monospaced : .default))
+                .foregroundStyle(theme.dimText)
+        }
+    }
+}
+
+/// A file setting: its name, and Choose… for another.
+private struct SettingFilePicker: View {
+    let spec: SettingSpec
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+    let types: [String]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(verbatim: settings.isSet(spec.key) ? (settings.string(spec.key) as NSString).lastPathComponent : "None")
+                .font(.system(size: 12)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: 180, alignment: .trailing)
+                .help(settings.string(spec.key))
+            Button("Choose…") {
+                let panel = NSOpenPanel()
+                panel.allowedContentTypes = types.compactMap { UTType(filenameExtension: $0) }
+                panel.canChooseDirectories = false
+                panel.allowsMultipleSelection = false
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                settings.set(spec.key, .string(url.path))
+            }
+        }
+    }
+}
+
 private struct SettingTextField: View {
     let text: String
     let placeholder: String

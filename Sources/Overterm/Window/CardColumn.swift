@@ -135,9 +135,13 @@ final class CardColumn: NSView {
         needsLayout = true
     }
 
+    /// The card itself, without the half-gaps either side.
+    var cardRect: NSRect { bounds.insetBy(dx: Self.margin, dy: 0) }
+
     override func layout() {
         super.layout()
-        ground.frame = bounds.insetBy(dx: Self.margin, dy: 0)
+        ground.frame = cardRect
+        window?.groundChanged()
         guard let layer = content.layer else { return }
         layer.cornerRadius = Self.cornerRadius
         layer.masksToBounds = true

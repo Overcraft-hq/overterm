@@ -305,7 +305,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     press: { [weak self] subject, event, phase in self?.stripPress(subject, event, phase) }
                 )
             )
-            .background(theme.strip)
+            .background(StripGround(theme: theme))
             // The strip sits in the title bar on purpose; without this SwiftUI
             // pads it down by the title bar's safe-area inset.
             .ignoresSafeArea()
@@ -3220,6 +3220,27 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
+    /// The translucent window's ground, behind everything in the content view.
+    private var ground: WindowGroundView? {
+        window?.contentView?.subviews.first { $0 is WindowGroundView } as? WindowGroundView
+    }
+
+    private func installGround() {
+        guard ground == nil, let content = window?.contentView else { return }
+        let view = WindowGroundView(frame: content.bounds)
+        view.autoresizingMask = [.width, .height]
+        view.isHidden = true
+        content.addSubview(view, positioned: .below, relativeTo: content.subviews.first)
+    }
+
+    /// Settings ▸ Appearance ▸ Opacity; 1 is opaque. Not in native full
+    /// screen, where there is no desktop to show — Ghostty's own rule. (The
+    /// surfaces still paint no background then: the terminal's card does.)
+    var windowOpacity: CGFloat {
+        if window?.styleMask.contains(.fullScreen) == true { return 1 }
+        return CGFloat(min(max(Settings.shared.number("appearance.backgroundOpacity") ?? 1, 0.3), 1))
+    }
+
     static var paneDim: NSColor { GhosttyRuntime.shared.backgroundColor.withAlphaComponent(Settings.shared.unfocusedPaneDim) }
     /// Between a tab's panes: the terminal's own text, nearly all the way
     /// out of the way.
@@ -3283,8 +3304,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private func applyTerminalColors() {
         let runtime = GhosttyRuntime.shared
         guard let theme else { return }
-        theme.apply(background: runtime.backgroundColor, foreground: runtime.foregroundColor)
-        window?.backgroundColor = theme.winNS
+        theme.apply(background: runtime.backgroundColor, foreground: runtime.foregroundColor, opacity: windowOpacity)
+        window?.isOpaque = !theme.isTranslucent
+        window?.backgroundColor = theme.isTranslucent ? .clear : theme.winNS
+        installGround()
+        ground?.color = theme.groundNS
+        ground?.isHidden = !theme.isTranslucent
+        // The title bar's own material, under the strip: opaque whatever
+        // the window says. Hidden while the window is translucent.
+        if let titlebar = window?.contentView?.superview?.subviews.first(where: { String(describing: Swift.type(of: $0)) == "NSTitlebarContainerView" }) {
+            func effects(_ view: NSView) -> [NSVisualEffectView] {
+                view.subviews.flatMap { ($0 as? NSVisualEffectView).map { [$0] } ?? effects($0) }
+            }
+            for effect in effects(titlebar) { effect.isHidden = theme.isTranslucent }
+        }
+        window?.groundChanged()
+        // The blur is the config's (`background-blur`, written with the
+        // opacity); libghostty puts it on the window, or takes it off.
+        if let app = runtime.app, let window { ghostty_set_window_background_blur(app, Unmanaged.passUnretained(window).toOpaque()) }
         window?.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
         for item in split.splitViewItems {
             (item.viewController.view as? CardColumn)?.repaint()
@@ -3666,10 +3703,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     func windowDidEnterFullScreen(_ notification: Notification) {
         sizeStrip()
+        applyTerminalColors()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
         sizeStrip()
+        applyTerminalColors()
     }
 
     // MARK: The strip, in the title bar

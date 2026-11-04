@@ -231,6 +231,51 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(text.contains("confirm"), "not a Ghostty setting")
     }
 
+    /// The look tuned in Settings ▸ Appearance, as Ghostty reads it.
+    func testTheTerminalsLookInGhosttysWords() {
+        let text = Settings.ghosttyOverrides(values: [
+            "appearance.ligatures": .bool(false), "appearance.lineHeight": .int(20), "appearance.letterSpacing": .int(-5),
+            "appearance.minimumContrast": .double(4.5), "appearance.boldIsBright": .bool(true),
+            "appearance.cursorColor": .string("#ff8800"), "appearance.selectionBackground": .string("#334455"),
+        ])
+        for line in [
+            "font-feature = -calt", "font-feature = -liga", "font-feature = -dlig", "adjust-cell-height = 20%", "adjust-cell-width = -5%",
+            "minimum-contrast = 4.5", "bold-color = bright", "cursor-color = #ff8800", "selection-background = #334455",
+        ] {
+            XCTAssertTrue(text.contains(line + "\n"), "\(line) in:\n\(text)")
+        }
+        // On is the font's own; off for bold is Ghostty's default.
+        let on = Settings.ghosttyOverrides(values: ["appearance.ligatures": .bool(true), "appearance.boldIsBright": .bool(false)])
+        XCTAssertFalse(on.contains("font-feature") || on.contains("bold-color"), on)
+    }
+
+    /// Translucent, the surfaces draw at the opacity and blur what shows through.
+    func testTranslucencyAndTheBackgroundImage() {
+        XCTAssertEqual(Settings.windowLines(values: [:]), [])
+        XCTAssertEqual(Settings.windowLines(values: ["appearance.backgroundOpacity": .double(1)]), [], "opaque writes nothing")
+        XCTAssertEqual(
+            Settings.windowLines(values: ["appearance.backgroundOpacity": .double(0.8)]), ["background-opacity = 0.8", "background-blur = true"])
+        XCTAssertEqual(
+            Settings.windowLines(values: ["appearance.backgroundOpacity": .double(0.8), "appearance.backgroundBlur": .bool(false)]),
+            ["background-opacity = 0.8", "background-blur = false"])
+        XCTAssertEqual(
+            Settings.windowLines(values: ["appearance.backgroundImage": .string("/Users/a/My Pictures/sky.png"), "appearance.backgroundImageFit": .string("contain")]),
+            ["background-image = \"/Users/a/My Pictures/sky.png\"", "background-image-opacity = 0.25", "background-image-fit = contain"])
+        // Each written once, by windowLines, not again one setting at a time.
+        let text = Settings.ghosttyOverrides(values: ["appearance.backgroundOpacity": .double(0.7), "appearance.backgroundBlur": .bool(true)])
+        XCTAssertEqual(text.components(separatedBy: "background-opacity").count, 2, text)
+        XCTAssertEqual(text.components(separatedBy: "background-blur").count, 2, text)
+    }
+
+    func testColoursAreHex() {
+        let spec = SettingsSchema.byKey["appearance.cursorColor"]!
+        XCTAssertNil(spec.problem(with: .string("#1e90ff")))
+        XCTAssertNotNil(spec.problem(with: .string("blue")))
+        XCTAssertNotNil(spec.problem(with: .string("#1e90f")))
+        XCTAssertEqual(SettingsColor.format(red: 1, green: 0.5, blue: 0), "#ff8000")
+        XCTAssertEqual(SettingsColor.parse("#ff8000")?.green ?? 0, 128.0 / 255, accuracy: 0.001)
+    }
+
     func testEverySettingHasAValidDefault() {
         for spec in SettingsSchema.all {
             if let value = spec.defaultValue { XCTAssertNil(spec.problem(with: value), spec.key) }

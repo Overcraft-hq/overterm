@@ -84,6 +84,7 @@ final class E2ERunner {
         "dropSplit": { await $0.dropSplitScenario() },
         "overgit": { await $0.overgitScenario() },
         "overgitGit": { await $0.overgitGitScenario() },
+        "appearance": { await $0.appearanceScenario() },
         "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
         "docker": { await $0.dockerScenario() },
@@ -163,7 +164,7 @@ final class E2ERunner {
     /// Waits for the selected tab's shell to be at a prompt (shell
     /// integration reported it), so typed input isn't swallowed by startup.
     @discardableResult
-    private func waitForPrompt() async -> Bool {
+    func waitForPrompt() async -> Bool {
         await eventually(15) {
             self.terminal?.surface != nil && self.terminal?.shellReported == true && self.terminal?.needsConfirmClose == false
         }

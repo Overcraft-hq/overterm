@@ -83,6 +83,19 @@ final class Settings: ObservableObject {
     func string(_ key: String) -> String { value(key)?.string ?? "" }
     func number(_ key: String) -> Double? { value(key)?.number }
 
+    /// Whether a setting another one `requires` is in effect: a toggle on,
+    /// a file or a text chosen, a number moved off its default (an opacity
+    /// below 1).
+    func isInEffect(_ key: String) -> Bool {
+        switch value(key) {
+        case .bool(let flag): flag
+        case .string(let text): !text.isEmpty
+        case .int, .double: value(key)?.number != SettingsSchema.byKey[key]?.defaultValue?.number
+        case .list(let items): !items.isEmpty
+        case nil: false
+        }
+    }
+
     /// The file's text, for the JSON view; a fresh one when there is none.
     var fileText: String { (try? String(contentsOf: url, encoding: .utf8)) ?? "{\n}\n" }
 
@@ -333,8 +346,9 @@ final class Settings: ObservableObject {
     nonisolated static func ghosttyOverrides(values: [String: SettingValue], keybindings: [String] = []) -> String {
         var lines = ["# Written by Overterm ▸ Settings (settings.json). Loaded after your Ghostty config; edits here are overwritten."]
         lines += themeLines(values: values)
+        lines += windowLines(values: values)
         for spec in SettingsSchema.all {
-            guard let option = spec.ghostty, option != "theme", let value = values[spec.key] else { continue }
+            guard let option = spec.ghostty, !windowOptions.contains(option), let value = values[spec.key] else { continue }
             lines += ghosttyLines(option: option, value: value)
         }
         lines += keybindings
@@ -355,8 +369,37 @@ final class Settings: ObservableObject {
         return ["theme = \"\(dark)\""]
     }
 
+    /// Written together, by `windowLines`, not one setting at a time.
+    nonisolated static let windowOptions: Set<String> = [
+        "theme", "background-opacity", "background-blur", "background-image", "background-image-opacity", "background-image-fit",
+    ]
+
+    /// Translucency and the background image, which depend on each other.
+    /// The surfaces draw at the opacity; the window's ground is cut away
+    /// under them (WindowGroundView), so nothing stacks.
+    nonisolated static func windowLines(values: [String: SettingValue]) -> [String] {
+        var lines: [String] = []
+        if let opacity = values["appearance.backgroundOpacity"]?.number, opacity < 1 {
+            lines.append("background-opacity = \(String(format: "%g", opacity))")
+            lines.append("background-blur = \(values["appearance.backgroundBlur"]?.bool ?? true)")
+        }
+        if let image = values["appearance.backgroundImage"]?.string, !image.isEmpty {
+            let opacity = values["appearance.backgroundImageOpacity"]?.number ?? 0.25
+            let fit = values["appearance.backgroundImageFit"]?.string ?? "cover"
+            lines += [
+                "background-image = \"\(image)\"", "background-image-opacity = \(String(format: "%g", opacity))", "background-image-fit = \(fit)",
+            ]
+        }
+        return lines
+    }
+
     nonisolated static func ghosttyLines(option: String, value: SettingValue) -> [String] {
         switch (option, value) {
+        // Off is three features; on is the font's own.
+        case ("font-feature", .bool(let on)): on ? [] : ["font-feature = -calt", "font-feature = -liga", "font-feature = -dlig"]
+        case ("adjust-cell-height", _), ("adjust-cell-width", _): value.number.map { ["\(option) = \(Int($0))%"] } ?? []
+        // Ghostty 1.2 replaced bold-is-bright with this.
+        case ("bold-color", .bool(let on)): on ? ["bold-color = bright"] : []
         // A family, not a list: one line resets Ghostty's fallback list to it.
         case ("font-family", .string(let family)) where !family.isEmpty: ["font-family = \"\(family)\""]
         case ("window-padding", _): value.number.map { ["window-padding-x = \(Int($0))", "window-padding-y = \(Int($0))"] } ?? []

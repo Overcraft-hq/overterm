@@ -152,6 +152,8 @@ final class SplitHostView: NSView {
 
     override func layout() {
         super.layout()
+        // The panes moved: the translucent window's ground follows them.
+        defer { window?.groundChanged() }
         guard let tree else { return }
         if let zoomed {
             place(zoomed, in: bounds)

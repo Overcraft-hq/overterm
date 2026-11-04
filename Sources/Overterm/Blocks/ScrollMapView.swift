@@ -26,7 +26,9 @@ struct ScrollMapView: View {
         GeometryReader { proxy in
             let height = proxy.size.height
             ZStack(alignment: .top) {
-                Rectangle().fill(theme.win.opacity(0.5))
+                // Translucent, the opaque window colour was a dark band down
+                // the terminal's edge: a veil there instead.
+                Rectangle().fill(theme.isTranslucent ? theme.rowHover : theme.win.opacity(0.5))
                 if let viewport = ledger.viewport {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(theme.text.opacity(0.14))

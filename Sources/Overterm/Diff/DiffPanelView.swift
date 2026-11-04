@@ -55,7 +55,7 @@ struct DiffPanelView: View {
                 }
             }
         }
-        .background(theme.strip)
+        .background(theme.panelGround)
         .alert(
             "Discard changes to \((discarding?.path as NSString?)?.lastPathComponent ?? "")?",
             isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }),

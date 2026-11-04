@@ -74,6 +74,10 @@ enum SettingKind: Sendable {
     case integer(ClosedRange<Int>, step: Int, unit: String)
     case number(ClosedRange<Double>, step: Double)
     case text(placeholder: String, monospaced: Bool)
+    /// A colour, written `#rrggbb`; unset, the theme's.
+    case color
+    /// A file's path (an image), picked in an open panel.
+    case file(types: [String])
     /// The options in an order of the user's: a list of their values.
     /// Names it doesn't know are passed over, and options it leaves out
     /// come last — so a file from another version still reads.
@@ -113,8 +117,11 @@ struct SettingSpec: Identifiable, Sendable {
                 return "must be one of " + options.map { "\"\($0.value)\"" }.joined(separator: ", ")
             }
             return nil
-        case .dynamicChoice, .text:
+        case .dynamicChoice, .text, .file:
             return value.string == nil ? "must be a string" : nil
+        case .color:
+            guard let text = value.string, SettingsColor.parse(text) != nil else { return "must be a colour like \"#1e90ff\"" }
+            return nil
         case .order:
             return value.list == nil ? "must be a list of names, like [\"files\", \"git\"]" : nil
         case .integer(let range, _, _):
@@ -232,6 +239,33 @@ enum SettingsSchema {
             help: "Draws text a little bolder, as some prefer on light backgrounds.", kind: .toggle, defaultValue: nil,
             ghostty: "font-thicken"),
         SettingSpec(
+            key: "appearance.ligatures", section: .appearance, group: "Text", title: "Ligatures",
+            help: "Joins characters a font draws as one (=>, !=, ->). Off, every character stands alone.",
+            kind: .toggle, defaultValue: nil, ghostty: "font-feature"),
+        SettingSpec(
+            key: "appearance.lineHeight", section: .appearance, group: "Text", title: "Line height",
+            help: "More or less room between lines, from the font's own.",
+            kind: .integer(-20...100, step: 5, unit: "%"), defaultValue: nil, ghostty: "adjust-cell-height"),
+        SettingSpec(
+            key: "appearance.letterSpacing", section: .appearance, group: "Text", title: "Letter spacing",
+            kind: .integer(-20...50, step: 5, unit: "%"), defaultValue: nil, ghostty: "adjust-cell-width"),
+        SettingSpec(
+            key: "appearance.minimumContrast", section: .appearance, group: "Colours", title: "Minimum contrast",
+            help: "Text drawn too faint for its background is lifted to this contrast (1 leaves it; 4.5 is WCAG's for text).",
+            kind: .number(1...7, step: 0.5), defaultValue: nil, ghostty: "minimum-contrast"),
+        SettingSpec(
+            key: "appearance.boldIsBright", section: .appearance, group: "Colours", title: "Bold text in bright colours",
+            kind: .toggle, defaultValue: nil, ghostty: "bold-color"),
+        SettingSpec(
+            key: "appearance.cursorColor", section: .appearance, group: "Colours", title: "Cursor colour",
+            kind: .color, defaultValue: nil, ghostty: "cursor-color"),
+        SettingSpec(
+            key: "appearance.selectionBackground", section: .appearance, group: "Colours", title: "Selection",
+            kind: .color, defaultValue: nil, ghostty: "selection-background"),
+        SettingSpec(
+            key: "appearance.selectionForeground", section: .appearance, group: "Colours", title: "Selected text",
+            kind: .color, defaultValue: nil, ghostty: "selection-foreground"),
+        SettingSpec(
             key: "appearance.theme", section: .themes, group: "Colours", title: "Theme",
             help: "The terminal and everything around it change at once.",
             kind: .dynamicChoice(.themes), defaultValue: nil, ghostty: "theme"),
@@ -250,6 +284,27 @@ enum SettingsSchema {
         SettingSpec(
             key: "appearance.windowPadding", section: .appearance, group: "Window", title: "Padding around the text",
             kind: .integer(0...40, step: 2, unit: "pt"), defaultValue: nil, ghostty: "window-padding"),
+        SettingSpec(
+            key: "appearance.backgroundOpacity", section: .appearance, group: "Window", title: "Opacity",
+            help: "Below 1, the desktop shows through the whole window — the terminal, the cards and the strip alike.",
+            kind: .number(0.3...1, step: 0.05), defaultValue: .double(1), ghostty: "background-opacity"),
+        SettingSpec(
+            key: "appearance.backgroundBlur", section: .appearance, group: "Window", title: "Blur what shows through",
+            kind: .toggle, defaultValue: .bool(true), ghostty: "background-blur", requires: "appearance.backgroundOpacity"),
+        SettingSpec(
+            key: "appearance.backgroundImage", section: .appearance, group: "Window", title: "Background image",
+            help: "Drawn behind the text of every terminal.",
+            kind: .file(types: ["png", "jpg", "jpeg"]), defaultValue: nil, ghostty: "background-image"),
+        SettingSpec(
+            key: "appearance.backgroundImageOpacity", section: .appearance, group: "Window", title: "Image opacity",
+            kind: .number(0.05...1, step: 0.05), defaultValue: .double(0.25), ghostty: "background-image-opacity",
+            requires: "appearance.backgroundImage"),
+        SettingSpec(
+            key: "appearance.backgroundImageFit", section: .appearance, group: "Window", title: "Image fit",
+            kind: .choice([
+                .init(value: "cover", label: "Fill"), .init(value: "contain", label: "Fit"), .init(value: "stretch", label: "Stretch"),
+                .init(value: "none", label: "Actual size"),
+            ]), defaultValue: .string("cover"), ghostty: "background-image-fit", requires: "appearance.backgroundImage"),
         SettingSpec(
             key: "appearance.cursorStyle", section: .appearance, group: "Window", title: "Cursor",
             kind: .choice([.init(value: "block", label: "Block"), .init(value: "bar", label: "Bar"), .init(value: "underline", label: "Underline")]),
@@ -554,4 +609,19 @@ enum SettingsSchema {
         "windowPadding": "appearance.windowPadding", "cursorStyle": "appearance.cursorStyle",
         "unfocusedPaneDim": "appearance.unfocusedPaneDim",
     ]
+}
+
+/// `#rrggbb`, as settings.json and Ghostty write a colour.
+enum SettingsColor {
+    static func parse(_ text: String) -> (red: Double, green: Double, blue: Double)? {
+        var hex = text.trimmingCharacters(in: .whitespaces)
+        if hex.hasPrefix("#") { hex.removeFirst() }
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+        return (Double((value >> 16) & 0xFF) / 255, Double((value >> 8) & 0xFF) / 255, Double(value & 0xFF) / 255)
+    }
+
+    static func format(red: Double, green: Double, blue: Double) -> String {
+        func byte(_ value: Double) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
+        return String(format: "#%02x%02x%02x", byte(red), byte(green), byte(blue))
+    }
 }
