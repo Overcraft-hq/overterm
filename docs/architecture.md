@@ -2296,7 +2296,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   a stub `docker` prints with its progress, for the store's tests and the
   scenario; a stub signed out, a slow one and a timeout are tested too.
 
-## Logs (shared: Docker's, Kubernetes' next)
+## Logs (shared: Docker's and a pod's)
 
 A log tab's pieces, whoever writes the log (`Sources/Overterm/Logs/`):
 
@@ -2305,21 +2305,37 @@ A log tab's pieces, whoever writes the log (`Sources/Overterm/Logs/`):
   JSON line's `msg` pulled out, its other fields kept as `key=value`),
   colour codes out, and whose it is in merged logs (`source`).
 - `LogFeed`: the lines, and a revision when they must be drawn again;
-  added at the end, or merged by time with other sources'; the last 5,000
-  kept, and each source's last 1,000 before them (`trimmed`).
+  added at the end, or merged by time with other sources'; older ones put
+  in front (`prepend`, as many as there is room for, `prepended` bumped
+  so the view keeps its place); the last 5,000 kept, and each source's
+  last 1,000 before them (`trimmed`).
 - `LogFollower` over a `LogSource`: the source opens the stream (its last
   lines, or from the newest line's time) and parses its lines off the main
-  actor, and says whether one that ended is followed again; the follower
-  drops what the feed already has, so nothing shows twice. Docker's source
-  is `DockerLogSource` (the engine's frames, `since` in whole seconds, a
-  restart followed again); what a source may do is read.
+  actor, and says whether one that ended is followed again. Followed again
+  from a time, what comes before that time is dropped, and of that time
+  only the lines already shown — the same time and text, once each: two
+  lines can share a time, and the second may have been written while the
+  stream was down. Past that time nothing is dropped. Docker's source is
+  `DockerLogSource` (the engine's frames, `since` in whole seconds, a
+  restart followed again), a pod's `KubePodLogSource` (Kubernetes,
+  below); what a source may do is read.
 - `LogsPane` (filter, level, the source picker, Following/Stopped, wrap,
-  timestamps, Follow in a Terminal Tab), `LogFilter` (pure), `LogStyle`
-  (the time dim, a level's colour, a source's colour), and `LogTextView`:
-  an NSTextView that draws only the lines added; its `LogLinesTextView`
+  timestamps, newest first, Save As when the page gives it a place,
+  Follow in a Terminal Tab), `LogFilter` (pure: the text plain or a
+  regular expression — case aside; one that isn't is said and picks
+  nothing out — and picking the lines it matches or marking them,
+  `highlight`; `matcher()` makes the expression once for the thousands of
+  lines), `LogViewOptions` (what a page keeps for its window — Kubernetes'
+  does — else the pane's own), `LogStyle` (the time dim, a level's
+  colour, a source's colour, a search's matches marked), and
+  `LogTextView`: an NSTextView that draws only the lines added — on top,
+  newest first, where it keeps to the top as it keeps to the bottom
+  otherwise; older lines put in front are drawn again with the line read
+  kept where it was; scrolled to the oldest line it says so (`onOldest`,
+  only where something older can be asked for). Its `LogLinesTextView`
   answers ⌘L with the whole lines picked, to a closure the page gives —
-  which scrubs them (Docker's: `DockerSecrets.scrub`) before an agent sees
-  them.
+  which scrubs them (Docker's: `DockerSecrets.scrub`; a pod's:
+  `KubeLogScrub`) before an agent sees them.
 
 ## Kubernetes
 
@@ -2332,7 +2348,8 @@ stage 1a of the design — and, of stage 1b, every kind and CRD as a list
 kept live, in the page's sections and behind the `:` bar, any
 object's detail beside its list, a Secret's values shown only when
 asked, `label:` and `field:` sent to the server, the palette's page
-commands, Copy as kubectl and a list as CSV. Nothing writes to a cluster.
+commands, Copy as kubectl and a list as CSV — and stage 1c, a pod's
+logs. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2580,14 +2597,24 @@ as the answer with `goneAsAnswer`), `expireWatches` (an in-stream 410),
 `endWatches` (the server's timeout), `sendInitialEvents` (refused with a
 422 without `streamingLists`; `interimBookmarks` puts a plain bookmark
 among the initial events). `unversionedLists` answers lists without a
-resourceVersion. `failCredentials` makes every answer the proxy's 500 in
+resourceVersion. A pod's log (`appendLog`, `setLog`; `previous` for the
+last terminated instance's) is served at `pods/{p}/log` as the API serves
+it — `container` (a 400 without one when the pod has several, or for one
+it hasn't), `previous` (a 400 when it never restarted), `timestamps` (nine
+digits of fraction), `sinceSeconds` or `sinceTime` (whole seconds),
+`tailLines` — and with `follow` kept open, a line appended written to it;
+`dropLogStreams` closes the follows mid-stream (a network blip),
+`endLogStreams` ends them as the server does, and a pod deleted ends its
+own. A pod can have init and ephemeral containers, its first container
+ended (`terminatedReason`), env. `failCredentials` makes every answer the proxy's 500 in
 plain text, `throttle` 429s, `failWatches` answers the next watches with a
 429 or a 5xx. What a test sets is behind the fake's lock, as its state
 is. It records every request
 (method, path, query, Accept), so a test shows that no write method and
 no subresource reached it, and which kinds are watched (`watched`)
 (`writes`, `subresourceRequests` — a
-Namespace's own `finalize` and `status` included); it has no
+Namespace's own `finalize` and `status` included; a pod's `log`, the one
+Overterm reads, is `isLog`); it has no
 exec, attach or port-forward. `KubeClientTests` checks all of the client
 against it — every test ends by asserting only GETs arrived — and runs
 the real kubectl (when installed) as a read-only context's proxy in
@@ -2723,7 +2750,7 @@ refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
 keyboard): `1`–`7` the sections, ↩ the detail, `[` `]` back and forward,
-Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`. The right-click menu
+Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, and `l` a pod's logs (↩ on a pod is them too). The right-click menu
 only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
 TSV or CSV — and exports the list: nothing here changes a cluster.
 
@@ -2830,7 +2857,7 @@ it opens — nothing is watched — and drops the session, and all it read,
 when it moves on. A Secret is never asked for by the detail (`isSecret`,
 and an answer that is one is dropped): its object is every value at
 once, so only its Show reads it (**Secrets**, below); its events are read
-as any object's. Its tabs:
+as any object's. Its tabs (and a pod's Logs, below):
 - **Overview** (`KubeOverview.of`, pure, from the object's JSON alone):
   facts at the top and sections, tailored for Pods (phase, the reason,
   the node as a link, IPs, QoS, each container — init and ephemeral too —
@@ -2871,6 +2898,64 @@ as any object's. Its tabs:
   Docker's text view, keys brighter than values; Copy.
 - **Events**, asked for once the tab shows (Refresh again), newest first,
   a warning marked with how often it came.
+
+**A pod's logs** (stage 1c; `KubePodLogSession`, `KubePodLogSource`,
+`KubePodLog`, `KubePodLogsView`): a pod's detail has a Logs tab, opened
+by `l` on a selected pod or ↩ on one (the design's Section 7: a pod's ↩ is
+its logs; a click keeps the tab shown; another kind's detail has no Logs
+and opens on its Overview). Through the shared pieces (Logs, above): a
+`LogFollower` over the pod's `KubePodLogSource` into the session's
+`LogFeed`, in the shared `LogsPane`.
+
+- **Which container** (`KubePodContainers`, pure): the one the
+  `kubectl.kubernetes.io/default-container` annotation names if the pod
+  has it, else its first container, as kubectl picks; the picker lists
+  the containers, then the init and the ephemeral ones, marked. Previous
+  (the last terminated instance, `previous=true`) is offered once the
+  container restarted — read whole, not followed. Since (5m, 1h, 6h, 24h,
+  all) is `sinceSeconds`.
+- **The request** (`KubeLogQuery`, pure) is a GET of `pods/{p}/log` like
+  any other, through the context's proxy: `container`, `follow=true`,
+  `tailLines` (500) and always `timestamps=true` — the resume and the
+  ordering need them; shown or not is the view's. Its bytes are lines
+  (`KubeLogText.Splitter`) parsed on the cooperative pool
+  (`KubeClient.logs`; once, `logLines`).
+- **Resume**: a follow ends — the server's timeout, a dropped connection,
+  the proxy restarting. The source then decides (`followsAgain`): the
+  server refused the log (a 400 but "waiting to start", a 403) or a
+  credential failure stops it, said; else the pod is read again (300 ms,
+  backing off to 5 s, a blip asked again): running, it is followed again
+  with `sinceTime` = the last line's second (`metav1.Time` is whole
+  seconds there), and the follower drops what it showed (same time and
+  text); waiting (a back-off, a restart) it waits, saying so; gone (404),
+  or the container ended for good (`KubeLogResume`, pure: the pod
+  Succeeded or Failed, `Never`, `OnFailure` after a success, an init or
+  ephemeral container), it stops and says why.
+- **Older lines on scroll-up**: the API has no offset, so scrolled to
+  the top the log is asked for again with twice the tail (up to 5,000,
+  the feed's cap) and what that answer has before the first line shown
+  (`KubeLogText.older`: where the shown lines start in it, their first
+  lines matched) is put in front; fewer lines than asked is the log's
+  start, and nothing more is asked.
+- **Options kept per window** (`KubernetesPageModel.logOptions`,
+  `logSince`): wrap, timestamps, newest first, the search as a regular
+  expression or marking matches, how far back. Save As writes the lines
+  shown under `<pod>-<container>[-previous]-<yyyyMMdd-HHmmss>.log`
+  (`KubeLogText.fileName`) — a save panel; an isolated run writes into
+  its own `Exports` folder. Copy as kubectl on the tab is `kubectl
+  --context C -n NS logs POD -c CONTAINER [--previous] [--since=1h]
+  [--timestamps]` (`KubectlLine.logs`).
+- **⌘L** on picked lines (`askAboutLogLines`): whole lines, scrubbed
+  (`KubeLogScrub`, pure) of the pod's own env values whose names look
+  secret, a URL's password (`DockerSecrets.scrub`), bearer tokens, JWTs,
+  PEM blocks' bodies, AWS keys, a kubeconfig's `token:` and
+  `client-key-data:`, `password=`-style pairs — then the Ask Agent sheet
+  with the pod they come from and the command that reads them.
+- **Reading only while it shows** (`updateLogsReading`): the tab shown,
+  the page on screen, its window on screen. Another tab, the page
+  hidden, the window off screen close the stream; shown again it is
+  resumed from its last line. The detail closing or moving on (the
+  arrows), and another context, end it (`KubeDetailSession.cancel`).
 
 **Secrets** (rule 9; `KubeSecretSession`, `KubeSecretView`, `KubeSecret`,
 `KubeCertificate`). The list is the server's Table — Name, Type, Data (how
@@ -2980,7 +3065,17 @@ window takes it, read with one GET, its phase, node, image and owner
 deployment's replicas, strategy, rollout and selected pod; ⌘[ ⌘] by the
 key as the window takes them (⌘[ the menus' with nothing behind), `[`
 `]`; a stuck deployment opened by a click, its progress deadline said
-(drawn), the detail following the list; a Secret's detail that reads
+(drawn), the detail following the list; a pod's logs — `l` by the key
+as the window takes it, its default container's last 500 lines followed
+with timestamps (in the text view, its end in view, drawn), older lines
+by a larger tail when scrolled to the top, a line written coming by the
+follow, the fake dropping the stream and the view resuming by
+`sinceTime` with what was written meanwhile (one of the very time of the
+last line shown) and nothing twice, newest first, Save As into the run's
+folder, ⌘L on picked lines scrubbed with the pod as context, the detail
+following to the crashing pod and Previous showing its crashed
+container's lines (drawn), the stream closed with the detail, only GETs
+of `log`; a Secret's detail that reads
 nothing (drawn) until Show is pressed where a person presses it, then
 one GET, its keys with the values masked (drawn, the length shown), one
 revealed and another masking it (drawn, then not), its YAML masked, the
@@ -2992,7 +3087,7 @@ as the window takes it, a namespace picked by typing, one typed that
 nobody listed, Esc; `c` to `fake-prod` and back;
 `fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a
 DELETE, an exec and a port-forward; that the fake recorded no write and
-no subresource; that hidden the page's watch ends and nothing is asked;
+no subresource but a pod's log; that hidden the page's watch ends and nothing is asked;
 ⌃⌘J from the terminal — the model held, a pod (with its reason), a
 context and a namespace found, ↩ showing the pod selected on the page,
 the hold let go;

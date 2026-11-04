@@ -38,7 +38,10 @@ enum LogStyle {
         return formatter
     }()
 
-    static func line(_ line: LogLine, text: NSColor, dim: NSColor, timestamps: Bool) -> NSAttributedString {
+    /// A search's match, marked rather than picked out.
+    static let highlight = NSColor.systemYellow.withAlphaComponent(0.38)
+
+    static func line(_ line: LogLine, text: NSColor, dim: NSColor, timestamps: Bool, highlight: NSRegularExpression? = nil) -> NSAttributedString {
         let out = NSMutableAttributedString()
         func add(_ string: String, _ color: NSColor) {
             out.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
@@ -49,6 +52,11 @@ enum LogStyle {
         let body = line.stream == .stderr && levelColor == nil ? text.withAlphaComponent(0.85) : text
         add(line.message, levelColor ?? (line.level == .debug || line.level == .trace ? dim : body))
         if !line.fields.isEmpty { add("  " + line.fields.map { "\($0.0)=\($0.1)" }.joined(separator: " "), dim) }
+        if let highlight {
+            for match in highlight.matches(in: out.string, range: NSRange(location: 0, length: out.length)) where match.range.length > 0 {
+                out.addAttribute(.backgroundColor, value: Self.highlight, range: match.range)
+            }
+        }
         return out
     }
 }

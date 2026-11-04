@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: The Kubernetes page (⌥⌘J), as the window wires it (WorkspacePage)
 
@@ -25,7 +26,8 @@ extension TerminalWindowController {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([item])
             },
-            save: { [weak self] name, text in self?.saveKubernetesFile(name, text) })
+            save: { [weak self] name, text in self?.saveKubernetesFile(name, text) },
+            askAgent: { [weak self] text, about in self?.askAgent(aboutKubernetes: text, about) })
     }
 
     /// A file the page made (the list as CSV), where the user says. An
@@ -45,7 +47,7 @@ extension TerminalWindowController {
         guard let window else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = name
-        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.allowedContentTypes = [UTType(filenameExtension: (name as NSString).pathExtension) ?? .plainText]
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             self?.writeKubernetesFile(text, to: url, alert: true)
@@ -61,6 +63,15 @@ extension TerminalWindowController {
             kubernetesPage.exportProblem = error.localizedDescription
             if alert, let window { NSAlert(error: error).beginSheetModal(for: window) }
         }
+    }
+
+    /// Lines of a pod's log, already scrubbed (`KubernetesPageModel.askAboutLogLines`):
+    /// the Ask Agent sheet, the window's agents offered, a new one in the
+    /// selected tab's folder.
+    func askAgent(aboutKubernetes text: String, _ about: AskAgentModel.Part) {
+        guard window?.attachedSheet == nil else { return NSSound.beep() }
+        let agents = store.tabs.filter { $0.agent != nil }
+        presentAskAgent(text: text, command: nil, folder: store.selected?.workingDirectory, targets: agents, parts: [about])
     }
 
     /// Where an isolated run's exports go: its own support folder.

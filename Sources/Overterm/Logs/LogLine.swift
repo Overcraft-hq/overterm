@@ -44,7 +44,9 @@ struct LogLine: Equatable, Sendable {
     static func parse(_ raw: String, stream: Stream, timestamps: Bool, source: String? = nil) -> LogLine {
         var text = raw
         var timestamp: String?
-        if timestamps, let space = text.firstIndex(of: " "), text[..<space].contains("T") {
+        // RFC 3339's shape only (a digit first, a T in it): a line's first
+        // word that merely has a T ("Timeout reached") is no time.
+        if timestamps, let space = text.firstIndex(of: " "), text.first?.isASCII == true, text.first?.isNumber == true, text[..<space].contains("T") {
             timestamp = String(text[..<space])
             text = String(text[text.index(after: space)...])
         }

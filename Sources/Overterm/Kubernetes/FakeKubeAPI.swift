@@ -46,6 +46,28 @@ final class FakeKubeAPI: @unchecked Sendable {
         var ip = "10.0.0.10"
         var node = "fake-node-1"
         var image = "nginx:1.27"
+        /// Its init containers' names (each terminated, Completed) and
+        /// ephemeral ones' (running).
+        var initContainers: [String] = []
+        var ephemeralContainers: [String] = []
+        /// The first container ended (`Completed`, `Error`): its state
+        /// `terminated` with `exitCode`.
+        var terminatedReason: String?
+        var exitCode = 0
+        /// The first container's env, as plain values.
+        var env: [String: String] = [:]
+
+        /// Its containers' names: `app`, then `sidecar-1`…
+        var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
+    }
+
+    /// One line of a container's log, as the kubelet keeps it.
+    struct LogEntry: Sendable {
+        var time: Date
+        var text: String
+
+        /// RFC 3339 with nine digits of fraction, as the kubelet writes it.
+        var stamp: String { FakeKubeAPI.nanoStamp(time) }
     }
 
     struct Object: Sendable {
@@ -131,6 +153,8 @@ final class FakeKubeAPI: @unchecked Sendable {
         var description: String { "\(method) \(path)" }
         /// A subresource: `pods/p/exec`, `services/s:80/proxy`, `pods/p/log`.
         var isSubresource: Bool { FakeKubeAPI.route(path)?.subresource != nil }
+        /// A pod's log: the one subresource Overterm reads (a GET).
+        var isLog: Bool { FakeKubeAPI.route(path).map { $0.resource == "pods" && $0.subresource == "log" } ?? false }
         /// A watch's request.
         var isWatch: Bool { query["watch"] == "1" || query["watch"] == "true" }
     }
@@ -202,6 +226,10 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// The next watches' answer: a status, its `Retry-After`.
     private var failedWatches: (count: Int, status: Int, retryAfter: Int?) = (0, 0, nil)
     private var settings = Settings()
+    /// Containers' logs, by `namespace|pod|container|previous`.
+    private var logs: [String: [LogEntry]] = [:]
+    /// Follows open now: their pod and container, and whether they asked for timestamps.
+    private var logFollowers: [ObjectIdentifier: (channel: Channel, key: String, timestamps: Bool)] = [:]
 
     /// What a test sets, read on the event loops' threads: behind the lock.
     private struct Settings {
@@ -213,6 +241,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var interimBookmarks = false
         var unversionedLists = false
         var forbidden: Set<String> = []
+        var endFollowsAtOnce = false
     }
 
     /// What `/version` says: a minor of 34 serves streaming lists.
@@ -261,6 +290,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     var forbidden: Set<String> {
         get { locked { settings.forbidden } }
         set { locked { settings.forbidden = newValue } }
+    }
+
+    /// A followed log is answered with what it has and ended at once, as a
+    /// proxy or server that closes every follow as it opens.
+    var endFollowsAtOnce: Bool {
+        get { locked { settings.endFollowsAtOnce } }
+        set { locked { settings.endFollowsAtOnce = newValue } }
     }
 
     /// One open watch.
@@ -358,11 +394,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
-    func addPod(_ name: String, namespace: String, _ pod: Pod = Pod(), labels: [String: String] = [:], created: Date = Date()) {
+    func addPod(
+        _ name: String, namespace: String, _ pod: Pod = Pod(), labels: [String: String] = [:], annotations: [String: String] = [:], created: Date = Date()
+    ) {
         change("ADDED") {
             Object(
                 resource: "pods", namespace: namespace, name: name, uid: UUID().uuidString.lowercased(), resourceVersion: 0, created: created, labels: labels,
-                pod: pod)
+                pod: pod, annotations: annotations)
         }
     }
 
@@ -380,6 +418,66 @@ final class FakeKubeAPI: @unchecked Sendable {
     func deletePod(_ name: String, namespace: String) {
         let key = Self.key("pods", namespace, name)
         change("DELETED") { objects[key] }
+        // Its logs' follows end, as the kubelet ends them.
+        endLogStreams(of: name, namespace: namespace)
+    }
+
+    // MARK: Logs, as a test writes them
+
+    private static func logKey(_ namespace: String, _ pod: String, _ container: String, previous: Bool) -> String {
+        "\(namespace)|\(pod)|\(container)|\(previous ? "previous" : "current")"
+    }
+
+    /// A line in a container's log (the pod's first, unless named) — in
+    /// its last terminated instance's, `previous` — written at `at`, and
+    /// to every follow of it open now.
+    func appendLog(_ pod: String, namespace: String, container: String? = nil, _ text: String, at time: Date = Date(), previous: Bool = false) {
+        let followers = locked { () -> [(Channel, Bool)] in
+            let name = container ?? objects[Self.key("pods", namespace, pod)]?.pod?.containerNames.first ?? "app"
+            let key = Self.logKey(namespace, pod, name, previous: previous)
+            logs[key, default: []].append(LogEntry(time: time, text: text))
+            return previous ? [] : logFollowers.values.filter { $0.key == key }.map { ($0.channel, $0.timestamps) }
+        }
+        let entry = LogEntry(time: time, text: text)
+        for (channel, timestamps) in followers { Self.write(Data(((timestamps ? entry.stamp + " " : "") + text + "\n").utf8), to: channel) }
+    }
+
+    /// Several lines, a second apart and ending now (or `until`).
+    func setLog(_ pod: String, namespace: String, container: String? = nil, _ lines: [String], previous: Bool = false, until end: Date = Date()) {
+        for (index, line) in lines.enumerated() {
+            appendLog(pod, namespace: namespace, container: container, line, at: end.addingTimeInterval(Double(index - lines.count + 1)), previous: previous)
+        }
+    }
+
+    /// Follows of a log open now.
+    var openLogStreams: Int { locked { logFollowers.count } }
+
+    /// Whose they are: `namespace/pod/container`, sorted.
+    var openLogFollows: [String] {
+        locked { logFollowers.values.map { $0.key.split(separator: "|").prefix(3).joined(separator: "/") }.sorted() }
+    }
+
+    /// Every follow dropped mid-stream — its connection closed, no end
+    /// chunk: a network blip, the proxy restarting. How many there were.
+    @discardableResult
+    func dropLogStreams() -> Int {
+        let open = locked {
+            defer { logFollowers = [:] }
+            return logFollowers.values.map(\.channel)
+        }
+        open.forEach { $0.close(promise: nil) }
+        return open.count
+    }
+
+    /// A pod's follows ended as the server ends them (its timeout, the pod gone).
+    func endLogStreams(of pod: String? = nil, namespace: String? = nil) {
+        let ending = locked { () -> [Channel] in
+            let prefix = pod.map { "\(namespace ?? "")|\($0)|" }
+            let picked = logFollowers.filter { prefix == nil || $0.value.key.hasPrefix(prefix!) }
+            for id in picked.keys { logFollowers[id] = nil }
+            return picked.values.map(\.channel)
+        }
+        ending.forEach(Self.end)
     }
 
     func pod(_ name: String, namespace: String) -> Pod? { locked { objects[Self.key("pods", namespace, name)]?.pod } }
@@ -704,6 +802,8 @@ final class FakeKubeAPI: @unchecked Sendable {
         case raw(Int, Data, [(String, String)])
         /// A watch's head now, then its lines; ended after `timeout` seconds.
         case watch(lines: [Data], end: Bool, timeout: Int?)
+        /// A followed log's head and its lines now, plain text; more as they come.
+        case log(lines: [Data])
     }
 
     func answer(_ method: HTTPMethod, _ uri: String, accept: String, on channel: Channel) -> Answer {
@@ -752,6 +852,13 @@ final class FakeKubeAPI: @unchecked Sendable {
             if settings.failingGroups.contains(route.groupVersion) { return .json(503, Self.status(503, "ServiceUnavailable", "the server is currently unable to handle the request")) }
             return .json(200, resourceList(route.groupVersion))
         }
+        if route.groupVersion == "v1", resource == "pods", route.subresource == "log", let namespace = route.namespace, let name = route.name {
+            if settings.forbidden.contains("pods") {
+                return .json(
+                    403, Self.status(403, "Forbidden", "pods \"\(name)\" is forbidden: User \"system:anonymous\" cannot get resource \"pods/log\" in API group \"\""))
+            }
+            return log(namespace: namespace, pod: name, query: query, channel: channel)
+        }
         guard let kind = route.kind, route.subresource == nil else {
             return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource"))
         }
@@ -777,6 +884,67 @@ final class FakeKubeAPI: @unchecked Sendable {
             return watch(kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels, channel: channel)
         }
         return list(kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels)
+    }
+
+    /// `pods/{p}/log`: a container's log (`container` needed with several),
+    /// its last terminated instance's (`previous`, a 400 when it never
+    /// restarted), with `timestamps`, from `sinceSeconds` or `sinceTime`
+    /// (whole seconds, as the API takes it), its last `tailLines`; with
+    /// `follow`, kept open and written to as lines are appended.
+    private func log(namespace: String, pod name: String, query: [String: String], channel: Channel) -> Answer {
+        locked {
+            guard let object = objects[Self.key("pods", namespace, name)], let pod = object.pod else {
+                return .json(404, Self.status(404, "NotFound", "pods \"\(name)\" not found"))
+            }
+            let names = pod.containerNames
+            let all = names + pod.initContainers + pod.ephemeralContainers
+            let container: String
+            if let asked = query["container"], !asked.isEmpty {
+                guard all.contains(asked) else {
+                    return .json(400, Self.status(400, "BadRequest", "container \(asked) is not valid for pod \(name)"))
+                }
+                container = asked
+            } else if names.count == 1 {
+                container = names[0]
+            } else {
+                let initial = pod.initContainers.isEmpty ? "" : " or one of the init containers: [\(pod.initContainers.joined(separator: " "))]"
+                return .json(
+                    400,
+                    Self.status(
+                        400, "BadRequest", "a container name must be specified for pod \(name), choose one of: [\(names.joined(separator: " "))]\(initial)"))
+            }
+            let previous = query["previous"] == "true"
+            let restarts = container == names.first ? pod.restarts : 0
+            if previous && restarts == 0 && logs[Self.logKey(namespace, name, container, previous: true)] == nil {
+                return .json(400, Self.status(400, "BadRequest", "previous terminated container \"\(container)\" in pod \"\(name)\" not found"))
+            }
+            let key = Self.logKey(namespace, name, container, previous: previous)
+            var entries = logs[key] ?? []
+            if let seconds = Int(query["sinceSeconds"] ?? "") {
+                let from = Date().addingTimeInterval(-Double(seconds))
+                entries = entries.filter { $0.time >= from }
+            } else if let text = query["sinceTime"], let from = try? Date(text, strategy: .iso8601) {
+                // Whole seconds: that second's lines come again.
+                let second = from.timeIntervalSince1970.rounded(.down)
+                entries = entries.filter { $0.time.timeIntervalSince1970.rounded(.down) >= second }
+            }
+            if let tail = Int(query["tailLines"] ?? ""), tail >= 0 { entries = Array(entries.suffix(tail)) }
+            let timestamps = query["timestamps"] == "true"
+            let lines = entries.map { Data(((timestamps ? $0.stamp + " " : "") + $0.text + "\n").utf8) }
+            guard query["follow"] == "true", !previous, !settings.endFollowsAtOnce else {
+                return .raw(200, lines.reduce(Data(), +), [("Content-Type", "text/plain")])
+            }
+            logFollowers[ObjectIdentifier(channel)] = (channel, key, timestamps)
+            return .log(lines: lines)
+        }
+    }
+
+    /// `2026-11-04T10:00:00.123456789Z`.
+    static func nanoStamp(_ date: Date) -> String {
+        let seconds = date.timeIntervalSince1970.rounded(.down)
+        let nanos = min(999_999_999, max(0, Int(((date.timeIntervalSince1970 - seconds) * 1e9).rounded())))
+        let whole = Date(timeIntervalSince1970: seconds).formatted(.iso8601.year().month().day().dateSeparator(.dash).time(includingFractionalSeconds: false).timeSeparator(.colon))
+        return whole + "." + String(format: "%09d", nanos) + "Z"
     }
 
     private func list(_ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: LabelSelector) -> Answer {
@@ -866,7 +1034,12 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// Called when a watch's connection goes.
-    fileprivate func forget(_ channel: Channel) { locked { watchers[ObjectIdentifier(channel)] = nil } }
+    fileprivate func forget(_ channel: Channel) {
+        locked {
+            watchers[ObjectIdentifier(channel)] = nil
+            logFollowers[ObjectIdentifier(channel)] = nil
+        }
+    }
 
     // MARK: Objects as the server writes them
 
@@ -1022,17 +1195,43 @@ final class FakeKubeAPI: @unchecked Sendable {
     static func full(_ object: Object, _ kind: Kind) -> [String: Any] {
         var full: [String: Any] = ["kind": kind.kind, "apiVersion": kind.groupVersion, "metadata": metadata(object, managedFields: true)]
         if let pod = object.pod {
-            let names = (0..<pod.containers).map { $0 == 0 ? "app" : "sidecar-\($0)" }
-            full["spec"] = ["containers": names.map { ["name": $0, "image": pod.image] }, "nodeName": pod.node, "restartPolicy": "Always"]
-            full["status"] = [
+            let names = pod.containerNames
+            let env = pod.env.keys.sorted().map { ["name": $0, "value": pod.env[$0]!] }
+            var spec: [String: Any] = [
+                "containers": names.enumerated().map { index, name -> [String: Any] in
+                    index == 0 && !env.isEmpty ? ["name": name, "image": pod.image, "env": env] : ["name": name, "image": pod.image]
+                },
+                "nodeName": pod.node, "restartPolicy": "Always",
+            ]
+            if !pod.initContainers.isEmpty { spec["initContainers"] = pod.initContainers.map { ["name": $0, "image": "busybox:1.36"] } }
+            if !pod.ephemeralContainers.isEmpty { spec["ephemeralContainers"] = pod.ephemeralContainers.map { ["name": $0, "image": "busybox:1.36"] } }
+            full["spec"] = spec
+            var status: [String: Any] = [
                 "phase": pod.phase, "podIP": pod.ip,
                 "containerStatuses": names.enumerated().map { index, name in
-                    [
+                    var item: [String: Any] = [
                         "name": name, "image": pod.image, "ready": index < pod.ready, "restartCount": index == 0 ? pod.restarts : 0,
                         "state": index < pod.ready ? ["running": ["startedAt": time(object.created)]] : ["waiting": ["reason": pod.status]],
-                    ] as [String: Any]
+                    ]
+                    if index == 0, let reason = pod.terminatedReason {
+                        item["state"] = ["terminated": ["reason": reason, "exitCode": pod.exitCode]]
+                        item["ready"] = false
+                    }
+                    if index == 0, pod.restarts > 0 { item["lastState"] = ["terminated": ["reason": "Error", "exitCode": 1]] }
+                    return item
                 },
             ]
+            if !pod.initContainers.isEmpty {
+                status["initContainerStatuses"] = pod.initContainers.map {
+                    ["name": $0, "image": "busybox:1.36", "ready": true, "restartCount": 0, "state": ["terminated": ["reason": "Completed", "exitCode": 0]]] as [String: Any]
+                }
+            }
+            if !pod.ephemeralContainers.isEmpty {
+                status["ephemeralContainerStatuses"] = pod.ephemeralContainers.map {
+                    ["name": $0, "image": "busybox:1.36", "ready": false, "restartCount": 0, "state": ["running": ["startedAt": time(object.created)]]] as [String: Any]
+                }
+            }
+            full["status"] = status
         } else if object.resource == "namespaces" {
             full["spec"] = ["finalizers": ["kubernetes"]]
             full["status"] = ["phase": "Active"]
@@ -1184,6 +1383,12 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
         case .json(let status, let data): whole(status, data, [("Content-Type", "application/json")])
         case .text(let status, let text): whole(status, Data(text.utf8), [("Content-Type", "text/plain; charset=utf-8")])
         case .raw(let status, let data, let headers): whole(status, data, headers)
+        case .log(let lines):
+            var head = HTTPResponseHead(version: request.version, status: .ok, headers: HTTPHeaders([("Content-Type", "text/plain")]))
+            head.headers.add(name: "Transfer-Encoding", value: "chunked")
+            context.write(wrapOutboundOut(.head(head)), promise: nil)
+            for line in lines { context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(bytes: line)))), promise: nil) }
+            context.flush()
         case .watch(let lines, let end, let seconds):
             var head = HTTPResponseHead(version: request.version, status: .ok, headers: HTTPHeaders([("Content-Type", "application/json")]))
             head.headers.add(name: "Transfer-Encoding", value: "chunked")

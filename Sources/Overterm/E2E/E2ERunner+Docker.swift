@@ -1482,9 +1482,11 @@ extension E2ERunner {
             page.cleaned ?? page.error ?? "")
         check("the container it was saved through is gone", !docker.containers.contains { $0.name.contains("-saving-") }, "\(docker.containers.map(\.name))")
         // Run from it: Compose's labels are there, emptied — no project's.
-        if let run = try? await docker.engine?.create(fromImage: "ot/web-snapshot:1", name: "ot-from-snapshot"),
-            await eventually(5, { docker.container(run) != nil }), let made = docker.container(run)
-        {
+        // Listed once the engine's event is read: a busy machine (scenarios
+        // side by side) takes longer than 5 s.
+        var created: Result<String?, Error> = .success(nil)
+        do { created = .success(try await docker.engine?.create(fromImage: "ot/web-snapshot:1", name: "ot-from-snapshot")) } catch { created = .failure(error) }
+        if case .success(let run?) = created, await eventually(10, { docker.container(run) != nil }), let made = docker.container(run) {
             let joined = docker.projects.contains { $0.containers.contains { $0.Id == run } }
             check(
                 "and a container run from it joins no project",
@@ -1492,7 +1494,12 @@ extension E2ERunner {
                     && !DockerMCP.describe([made]).contains("compose"), "\(made.Labels ?? [:]) \(DockerMCP.describe([made]))")
             try? await docker.remove(run, force: true)
         } else {
-            check("a container run from the image", false, page.error ?? "")
+            let why: String
+            switch created {
+            case .failure(let error): why = "\(error)"
+            case .success(let id): why = id.map { "\($0) never listed" } ?? "no engine"
+            }
+            check("a container run from the image", false, why)
         }
 
         // A password in its command: no commit can take it out, so it is said.
@@ -1555,7 +1562,9 @@ extension E2ERunner {
         }
 
         check(
-            "Testcontainers' containers are a run of their own, after the rest", await eventually(5) { page.groups.last?.id == tag },
+            "Testcontainers' containers are a run of their own, after the rest",
+            // All three listed: the run is there as soon as the first is.
+            await eventually(10) { page.groups.last?.id == tag && page.groups.last?.session.map { $0.members.count == 2 && $0.reaper != nil } == true },
             "\(page.groups.map(\.id))")
         let loose = page.groups.first { $0.id == DockerPageModel.looseTag }?.containers.map(\.Id) ?? []
         check("not among the other containers", !loose.contains(pg) && !loose.contains(kafka) && !loose.contains(ryuk), "\(loose)")
@@ -3834,6 +3843,14 @@ extension E2ERunner {
     /// read and picked in while it tracks; one that isn't it is closed
     /// untouched. The press is the window's (`sendEvent`), never the
     /// system's.
+    ///
+    /// Only a pop-up's ring is pressed: the glyph buttons in a field (a
+    /// log's `.*` and highlight) have rings too, and pressing one would
+    /// change what is shown. And it returns once the menu it opened has
+    /// stopped tracking — a menu closes about 0.3 s after it is cancelled,
+    /// and a press made while it still tracked opened nothing: the next
+    /// pick returned nil.
+    static let menuPickerMinHeight: CGFloat = 16
     static func menuPicker(in view: NSView?, rightOf anchor: NSView?, containing title: String, choose: String? = nil) async -> MenuPicked? {
         if let popup = find(NSPopUpButton.self, in: view, where: { $0.itemTitles.contains(title) }) {
             let seen = MenuPicked(titles: popup.itemTitles, selected: popup.titleOfSelectedItem)
@@ -3849,7 +3866,9 @@ extension E2ERunner {
         func collect(_ candidate: NSView) {
             if String(describing: type(of: candidate)).hasSuffix("FocusRingView"), !candidate.isHiddenOrHasHiddenAncestor {
                 let frame = candidate.convert(candidate.bounds, to: nil)
-                if abs(frame.midY - row.midY) < 8, frame.minX >= row.maxX - 1 { rings.append((candidate, frame)) }
+                if abs(frame.midY - row.midY) < 8, frame.minX >= row.maxX - 1, frame.height >= menuPickerMinHeight {
+                    rings.append((candidate, frame))
+                }
             }
             candidate.subviews.forEach(collect)
         }
@@ -3861,7 +3880,8 @@ extension E2ERunner {
             let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in
                 nonisolated(unsafe) let tracked = note.object as? NSMenu
                 MainActor.assumeIsolated {
-                    guard let menu = tracked else { return }
+                    guard let menu = tracked, seen.menu == nil else { return }
+                    seen.menu = menu
                     let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
                     let ours = titles.contains(title)
                     if ours { seen.picked = MenuPicked(titles: titles, selected: menu.items.first { $0.state == .on }?.title) }
@@ -3878,10 +3898,22 @@ extension E2ERunner {
                     with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
             }
+            let ended = NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { note in
+                nonisolated(unsafe) let tracked = note.object as? NSMenu
+                MainActor.assumeIsolated {
+                    if let menu = tracked, menu === seen.menu { seen.ended = true }
+                }
+            }
             NSApp.postEvent(mouse(.leftMouseUp), atStart: false)
             window.sendEvent(mouse(.leftMouseDown))
-            try? await Task.sleep(for: .milliseconds(300))
+            // Its menu open (or none, within a second), then closed.
+            let start = ProcessInfo.processInfo.systemUptime
+            while ProcessInfo.processInfo.systemUptime - start < 3 {
+                if seen.menu == nil ? ProcessInfo.processInfo.systemUptime - start > 1 : seen.ended { break }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
             NotificationCenter.default.removeObserver(observer)
+            NotificationCenter.default.removeObserver(ended)
             if let picked = seen.picked { return picked }
         }
         return nil
@@ -3891,4 +3923,7 @@ extension E2ERunner {
 /// What the menu said, from its tracking notification.
 private final class MenuSeen: @unchecked Sendable {
     var picked: MenuPicked?
+    /// The menu the press opened, and whether it has stopped tracking.
+    var menu: NSMenu?
+    var ended = false
 }

@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import OSLog
+import SwiftUI
 
 /// The Kubernetes page against the fake API server (FakeKubeAPI), never one
 /// of the user's clusters: this Mac's current context is production. The
@@ -256,7 +257,9 @@ extension E2ERunner {
             await proxyRefuses(fake, dev, kubectl: kubectl)
         }
         check("the fake was sent no write", fake.writes.isEmpty, "\(fake.writes)")
-        check("nor reached by any subresource", fake.subresourceRequests.isEmpty, "\(fake.subresourceRequests)")
+        check(
+            "nor reached by any subresource but a pod's log", fake.subresourceRequests.allSatisfy { $0.isLog && $0.method == "GET" },
+            "\(fake.subresourceRequests.filter { !$0.isLog })")
 
         // Hidden, it reads nothing — and its label: goes with it.
         _ = page.press("n")
@@ -594,10 +597,13 @@ extension E2ERunner {
         check("↩ is the list's", app.handlePageKey(enter))
         guard let pod = page.detail else { return check("↩ opens the pod's detail", false) }
         check("↩ opens the pod's detail", pod.ref.name == "web-7d9" && pod.ref.kind.fullName == "pods" && pod.ref.namespace == "shop")
+        check("on its logs, a pod's ↩", page.detailTab == .logs)
         check("read whole", await eventually(10) { pod.state == .loaded }, "\(pod.state)")
         check(
-            "with one GET", fake.requests.filter { $0.path.hasPrefix("/api/v1/namespaces/shop/pods/") }.map(\.path) == ["/api/v1/namespaces/shop/pods/web-7d9"],
+            "with one GET",
+            fake.requests.filter { $0.path.hasPrefix("/api/v1/namespaces/shop/pods/") && !$0.isLog }.map(\.path) == ["/api/v1/namespaces/shop/pods/web-7d9"],
             "\(fake.requests)")
+        page.showTab(.overview)
         let overview = pod.overview
         check("its phase", overview?.item("Phase")?.value == "Running", overview?.item("Phase")?.value ?? "none")
         check("its node, a link", overview?.item("Node")?.value == "fake-node-1" && overview?.item("Node")?.link?.kind == "Node")
@@ -684,6 +690,238 @@ extension E2ERunner {
         page.selection = []
         check("the pods once more", await eventually(10) { model.kind.fullName == "pods" && model.rows.count == 2 && model.listState == .live })
         check("the detail read by GETs only", fake.writes.isEmpty, "\(fake.writes)")
+        await kubernetesLogs(model, page, fake, key: key)
+    }
+
+    /// A pod's logs (stage 1c): `l` by the key as the window takes it, the
+    /// last lines shown and drawn, older ones when scrolled to the top, the
+    /// follow, the stream dropped by the fake and resumed with nothing
+    /// twice, newest first, Previous showing the crashed container's lines,
+    /// Save As into the run's folder, ⌘L on picked lines scrubbed, the
+    /// stream closed with the detail — and only GETs of `log`.
+    private func kubernetesLogs(
+        _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, key: (String, UInt16, NSEvent.ModifierFlags) -> NSEvent?
+    ) async {
+        // web-7d9's log: 600 older lines, then the last ones that matter.
+        let start = Date().addingTimeInterval(-900).timeIntervalSince1970.rounded(.down)
+        for index in 1...600 {
+            fake.appendLog("web-7d9", namespace: "shop", "GET /health \(index) 200", at: Date(timeIntervalSince1970: start + Double(index)))
+        }
+        let recent = Date().addingTimeInterval(-60).timeIntervalSince1970.rounded(.down)
+        fake.appendLog("web-7d9", namespace: "shop", "listening on :8080", at: Date(timeIntervalSince1970: recent + 0.1))
+        fake.appendLog("web-7d9", namespace: "shop", "auth with Bearer eyJfake.tokenpart.sig ok", at: Date(timeIntervalSince1970: recent + 1.2))
+        fake.appendLog("web-7d9", namespace: "shop", #"{"level":"error","msg":"upstream timed out","path":"/cart"}"#, at: Date(timeIntervalSince1970: recent + 2.3))
+        // Running again (the watch's checks left it OOMKilled): a dropped follow is resumed.
+        fake.updatePod("web-7d9", namespace: "shop") {
+            $0.status = "Running"
+            $0.ready = 1
+        }
+        fake.setLog("worker-5c", namespace: "shop", ["worker booting", "panic: out of cheese"], previous: true, until: Date().addingTimeInterval(-120))
+        fake.setLog("worker-5c", namespace: "shop", ["worker booting again"])
+        fake.forgetRequests()
+
+        func text() -> LogLinesTextView? {
+            Self.find(LogLinesTextView.self, in: app.kubernetesView) { $0.accessibilityIdentifier() == "kubernetes.logs.text" }
+        }
+        func shown() -> String { text()?.string ?? "" }
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        page.selection = ["shop/web-7d9"]
+        guard let l = key("l", 37, []) else { return check("an l key", false) }
+        check("l is the list's", app.handlePageKey(l))
+        guard let detail = page.detail, let logs = detail.logs else { return check("l opens the pod's logs", false, "\(String(describing: page.detail))") }
+        check("l opens the pod's logs", page.detailTab == .logs && detail.ref.name == "web-7d9")
+        check("its default container's", await eventually(10) { logs.container == "app" }, logs.container ?? "none")
+        check(
+            "its last lines, followed", await eventually(10) { logs.feed.lines.count == 500 && logs.feed.following },
+            "\(logs.feed.lines.count) \(logs.reading)")
+        check("in the text view", await eventually(10) { shown().contains("upstream timed out") && shown().contains("listening on :8080") }, String(shown().suffix(300)))
+        check(
+            "its end in view",
+            await eventually(5) {
+                guard let scroll = text()?.enclosingScrollView, let document = scroll.documentView else { return false }
+                return scroll.contentView.bounds.maxY >= document.frame.height - 24
+            })
+        let lastDrawn = await drawn(["timed out", "on :8080"])
+        let read = lastDrawn ? [] : await readWindow().map(\.text).filter { $0.contains("timed") || $0.contains("8080") || $0.contains("health") }
+        check("its last lines drawn", lastDrawn, "\(read.suffix(6))")
+        let first = fake.requests.filter(\.isLog).first
+        check(
+            "asked as pods/{p}/log: its container, followed, its tail, with timestamps",
+            first?.path == "/api/v1/namespaces/shop/pods/web-7d9/log" && first?.query["container"] == "app" && first?.query["follow"] == "true"
+                && first?.query["tailLines"] == "500" && first?.query["timestamps"] == "true" && first?.method == "GET", "\(String(describing: first))")
+        check("Logs is one of a pod's tabs", KubeDetailTab.tabs(for: detail.ref).contains(.logs))
+
+        // Moved to the top by code, not a person: back to the end, and no
+        // older lines asked for.
+        if let view = text(), let scroll = view.enclosingScrollView {
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        check(
+            "moved by code, it keeps to its end",
+            await eventually(5) {
+                guard let scroll = text()?.enclosingScrollView, let document = scroll.documentView else { return false }
+                return scroll.contentView.bounds.maxY >= document.frame.height - 24
+            })
+        check("and asks for nothing older", !fake.requests.contains { $0.isLog && $0.query["tailLines"] == "1000" })
+        // Older lines: a person's scroll (a trackpad's live scroll) to the
+        // top, asked again with a larger tail.
+        if let view = text(), let scroll = view.enclosingScrollView {
+            NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: 200))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+            NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+            NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+        }
+        check(
+            "scrolled to the top, its older lines come",
+            await eventually(10) { logs.feed.lines.count == 603 && logs.reachedStart }, "\(logs.feed.lines.count) \(logs.reachedStart)")
+        check(
+            "the line read kept, not the end",
+            await eventually(5) {
+                guard let scroll = text()?.enclosingScrollView, let document = scroll.documentView else { return false }
+                return scroll.contentView.bounds.maxY < document.frame.height - 24 && scroll.contentView.bounds.minY > 24
+            })
+        check("from the very first, once each", logs.feed.lines.first?.message == "GET /health 1 200" && Set(logs.feed.lines.map(\.message)).count == 603)
+        check("by a larger tail", fake.requests.contains { $0.isLog && $0.query["tailLines"] == "1000" && $0.query["follow"] == nil })
+        func firstLine() -> String { shown().components(separatedBy: "\n").first ?? "" }
+        func lastLine() -> String { shown().components(separatedBy: "\n").last ?? "" }
+        check("in the text view too", await eventually(5) { firstLine().hasSuffix("GET /health 1 200") }, firstLine())
+
+        // The follow, a drop, and the resume.
+        let placed = Date()
+        fake.appendLog("web-7d9", namespace: "shop", "order 1 placed", at: placed)
+        check("a line written comes by the follow", await eventually(10) { shown().contains("order 1 placed") }, String(shown().suffix(200)))
+        check("the fake drops the stream", fake.dropLogStreams() == 1)
+        // Written while it was down: one at the very time of the last line shown.
+        fake.appendLog("web-7d9", namespace: "shop", "order 1 paid", at: placed)
+        fake.appendLog("web-7d9", namespace: "shop", "order 2 placed", at: placed.addingTimeInterval(0.01))
+        check(
+            "resumed: what was written meanwhile comes", await eventually(15) { shown().contains("order 2 placed") && shown().contains("order 1 paid") },
+            "\(logs.reading) \(String(shown().suffix(200)))")
+        check(
+            "by a follow from its last line's second, capped at what the feed keeps",
+            fake.requests.contains { $0.isLog && $0.query["sinceTime"] != nil && $0.query["tailLines"] == "\(LogFeed.keep)" })
+        let messages = logs.feed.lines.map(\.message)
+        check("nothing twice", messages.count == Set(messages).count && messages.filter { $0 == "order 1 placed" }.count == 1, "\(messages.suffix(5))")
+        check("nothing twice on screen", shown().components(separatedBy: "order 1 placed").count == 2)
+        check("following again", await eventually(10) { logs.feed.following && fake.openLogStreams == 1 }, "\(logs.reading)")
+
+        // Newest first.
+        page.logOptions.newestFirst = true
+        check("newest first, the last line on top", await eventually(5) { firstLine().hasSuffix("order 2 placed") && lastLine().hasSuffix("GET /health 1 200") }, firstLine())
+        fake.appendLog("web-7d9", namespace: "shop", "order 3 placed")
+        check("a new line on top", await eventually(10) { firstLine().hasSuffix("order 3 placed") }, firstLine())
+        page.logOptions.newestFirst = false
+        check("and back", await eventually(5) { lastLine().hasSuffix("order 3 placed") }, lastLine())
+
+        // Save As, with a timestamped name: in a scenario, the run's folder.
+        let folder = TerminalWindowController.kubernetesExportFolder
+        page.saveLogs(logs.feed.lines.map(\.plain).joined(separator: "\n") + "\n")
+        let name = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.first { $0.hasPrefix("web-7d9-app-") && $0.hasSuffix(".log") }
+        let saved = name.flatMap { try? String(contentsOf: folder.appendingPathComponent($0), encoding: .utf8) } ?? ""
+        check("Save As writes the log, its name timestamped", name != nil && saved.contains("order 3 placed") && page.exportProblem == nil, name ?? "none")
+
+        // ⌘L on picked lines: scrubbed, with the pod they come from.
+        if let view = text() {
+            let string = view.string as NSString
+            let from = string.range(of: "auth with Bearer").location
+            let to = string.range(of: "upstream timed out").location
+            if from != NSNotFound, to != NSNotFound {
+                view.setSelectedRange(NSRange(location: from, length: to - from + 4))
+                window.makeFirstResponder(view)
+                let asked = menuItem("Edit", "Ask an Agent About the Selection").map { perform($0) } == true
+                let opened = await eventually(5) { self.window.attachedSheet != nil }
+                let agent = app.askAgent
+                check(
+                    "⌘L on picked log lines asks about them, scrubbed",
+                    asked && opened && agent.selection.contains("upstream timed out") && agent.selection.contains("auth with Bearer")
+                        && !agent.selection.contains("eyJfake"), "\(asked) \(opened) \(agent.selection.debugDescription)")
+                check(
+                    "with the pod they come from", agent.parts.first?.title == "pod/web-7d9" && agent.parts.first?.text.contains("logs web-7d9 -c app") == true,
+                    "\(agent.parts.map(\.title))")
+                (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView.cancel()
+                _ = await eventually(3) { self.window.attachedSheet == nil }
+                if let sheet = window.attachedSheet { window.endSheet(sheet) }
+            } else {
+                check("the lines to pick are shown", false, String(view.string.suffix(300)))
+            }
+        }
+
+        // ⌘F, as the window takes it: the Logs tab's filter, not the list's.
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        let logFocus = page.focusLogFilter
+        if let find = key("f", 3, .command) {
+            check("⌘F on the Logs tab is the page's", app.handlePageKey(find) && page.focusLogFilter == logFocus + 1)
+            check(
+                "and gives the log's filter the keyboard",
+                await eventually(5) {
+                    guard let editor = self.window.firstResponder as? NSTextView, let field = editor.delegate as? NSTextField,
+                        let page = self.app.kubernetesView
+                    else { return false }
+                    return field.isDescendant(of: page) && ["Filter the log", "Find in the log"].contains(field.placeholderString ?? "")
+                }, "\(String(describing: window.firstResponder))")
+        } else {
+            check("a ⌘F key", false)
+        }
+
+        // Previous: the crashed container's lines. The detail follows the list.
+        page.giveListTheKeyboard()
+        page.selection = ["shop/worker-5c"]
+        guard let worker = page.detail?.logs, page.detail?.ref.name == "worker-5c" else { return check("the detail follows to the crashing pod", false) }
+        check("on its logs", page.detailTab == .logs)
+        check(
+            "web-7d9's stream closed with it, worker-5c's the one open",
+            await eventually(5) { worker.container != nil && fake.openLogFollows == ["shop/worker-5c/\(worker.container ?? "")"] },
+            "\(fake.openLogFollows)")
+        check("its current log", await eventually(10) { worker.feed.lines.map(\.message) == ["worker booting again"] }, "\(worker.feed.lines.map(\.message))")
+        check("Previous offered: it restarted", worker.shown?.hasPrevious == true)
+        worker.pick(previous: true)
+        check(
+            "Previous shows the crashed container's lines",
+            await eventually(10) { worker.feed.lines.map(\.message) == ["worker booting", "panic: out of cheese"] }, "\(worker.feed.lines.map(\.message))")
+        check("the crashed one's lines drawn", await drawn(["panic: out of cheese"]))
+        check("asked with previous, not followed", fake.requests.contains { $0.isLog && $0.path.contains("/worker-5c/") && $0.query["previous"] == "true" && $0.query["follow"] == nil })
+
+        // Hidden with a follow open: its stream closes, and nothing is asked.
+        worker.pick(previous: false)
+        check("worker-5c followed again", await eventually(10) { fake.openLogStreams == 1 && worker.feed.following }, "\(worker.reading)")
+        app.toggleKubernetesPage(nil)
+        check("the page hidden, the log's stream closes", await eventually(5) { fake.openLogStreams == 0 }, "\(fake.openLogFollows)")
+        fake.forgetRequests()
+        await pause(1)
+        check("and no log is asked for while hidden", !fake.requests.contains(where: \.isLog), "\(fake.requests.filter(\.isLog))")
+        app.toggleKubernetesPage(nil)
+        check("shown again, followed again", await eventually(10) { fake.openLogStreams == 1 && page.detail?.logs === worker }, "\(worker.reading)")
+
+        // Another context with a follow open: the detail goes, its stream with it.
+        model.select("fake-prod")
+        check("on fake-prod, the detail is gone", await eventually(5) { page.detail == nil })
+        check("and so is its log's stream", await eventually(5) { fake.openLogStreams == 0 }, "\(fake.openLogFollows)")
+        fake.forgetRequests()
+        await pause(1)
+        check("no log is asked for after the context changed", !fake.requests.contains(where: \.isLog), "\(fake.requests.filter(\.isLog))")
+        model.select("fake-dev")
+        check(
+            "back on fake-dev, its pods",
+            await eventually(15) {
+                model.selectedName == "fake-dev" && model.rows.sorted.map(\.id.description) == ["shop/web-7d9", "shop/worker-5c"] && model.listState == .live
+            },
+            "\(model.rows.sorted.map(\.id.description)) \(model.listState)")
+
+        // Closed: nothing is read.
+        page.selection = ["shop/web-7d9"]
+        check("l on web-7d9 again", page.openLogs())
+        check("followed", await eventually(10) { fake.openLogStreams == 1 }, "\(fake.openLogFollows)")
+        page.closeDetail()
+        check("the detail closed, no log is followed", await eventually(5) { fake.openLogStreams == 0 }, "\(fake.openLogStreams)")
+        check("every log read by a GET", fake.requests.filter(\.isLog).allSatisfy { $0.method == "GET" } && fake.writes.isEmpty, "\(fake.writes)")
+        page.showTab(.overview)
+        page.selection = []
     }
 
     /// The value of the scenario's Secret: it must never reach the app's
