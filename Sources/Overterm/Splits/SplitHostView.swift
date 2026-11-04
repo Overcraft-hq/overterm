@@ -8,7 +8,8 @@ import AppKit
 final class SplitHostView: NSView {
     static let dividerThickness: CGFloat = 1
     /// The bar across the top of every pane (`PaneHeaderView`).
-    static let headerHeight: CGFloat = 38
+    /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics); 38 by default.
+    static var headerHeight: CGFloat { ChromeMetrics.paneHeaderHeight }
     /// How far from the 1 pt line a divider can still be grabbed.
     private static let grab: CGFloat = 4
 

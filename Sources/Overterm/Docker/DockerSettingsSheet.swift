@@ -25,18 +25,18 @@ struct DockerSettingsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: "Settings of “\(settings.name)”").font(.system(size: 17, weight: .semibold))
+            Text(verbatim: "Settings of “\(settings.name)”").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
             if let project = settings.project {
                 Text(
                     verbatim: "\(project)'s compose file says how \(settings.service ?? "it") is made: the next up that makes it again puts back "
                         + "what the file says. For settings that last, write them there — mem_limit, cpus, restart."
                 )
-                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("docker.settings.compose")
             }
             Form {
                 TextField("Memory", text: $settings.memory, prompt: Text(verbatim: settings.current.memory == 0 ? "no limit" : ""))
-                Text(verbatim: memoryCaption).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(verbatim: memoryCaption).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
                 TextField("CPUs", text: $settings.cpus, prompt: Text(verbatim: settings.engineCPUs.map { "all \($0)" } ?? "all"))
                 Picker("Restart", selection: $settings.restart) {
                     Text("No").tag("no")
@@ -53,14 +53,14 @@ struct DockerSettingsSheet: View {
                 }
             }
             if let problem = failed ?? settings.problem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("docker.settings.problem")
             } else if let caution = settings.caution {
-                Text(verbatim: caution).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.waiting).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: caution).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.waiting).fixedSize(horizontal: false, vertical: true)
             }
             // `docker update` with no flag is refused: nothing to copy yet.
             Text(verbatim: settings.changed ? line : "The docker update it makes shows here as you change it.")
-                .font(.system(size: 11, design: settings.changed ? .monospaced : .default)).textSelection(.enabled).foregroundStyle(.secondary)
+                .font(.system(size: ChromeMetrics.text(11), design: settings.changed ? .monospaced : .default)).textSelection(.enabled).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("docker.settings.command")
             HStack {

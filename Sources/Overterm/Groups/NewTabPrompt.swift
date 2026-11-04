@@ -16,15 +16,15 @@ struct NewTabPrompt: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where does this tab belong?")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(13), weight: .semibold))
                 .foregroundStyle(theme.text)
             HStack(spacing: 6) {
                 Circle().fill(group.color.color).frame(width: 9, height: 9)
                 Text(verbatim: group.name)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                     .foregroundStyle(theme.text)
                 Text("holds every tab you have open.")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text2)
             }
             HStack(spacing: 8) {
@@ -34,7 +34,7 @@ struct NewTabPrompt: View {
                     .keyboardShortcut(.defaultAction)
             }
             Text("Asked once per group — Group Settings can change it later.")
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3)
         }
         .padding(14)

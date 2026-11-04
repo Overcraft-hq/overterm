@@ -25,12 +25,12 @@ struct SelectionBar: View {
         HStack(spacing: 2) {
             Button(action: actions.ask) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles").font(.system(size: 11))
-                    Text("Ask Agent").font(.system(size: 12, weight: .semibold))
-                    Text(verbatim: "⌘L").font(.system(size: 12)).opacity(0.8)
+                    Image(systemName: "sparkles").font(.system(size: ChromeMetrics.text(11)))
+                    Text("Ask Agent").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
+                    Text(verbatim: "⌘L").font(.system(size: ChromeMetrics.text(12))).opacity(0.8)
                 }
                 .padding(.horizontal, 10)
-                .frame(height: 28)
+                .frame(height: ChromeMetrics.row(28))
                 .background(RoundedRectangle(cornerRadius: 7).fill(TabColor.purple.color.opacity(0.28)))
                 .contentShape(Rectangle())
             }
@@ -54,9 +54,9 @@ struct SelectionBar: View {
     private func plain(_ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .padding(.horizontal, 10)
-                .frame(height: 28)
+                .frame(height: ChromeMetrics.row(28))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -83,14 +83,14 @@ struct AskAgentView: View {
                             if let color = target.color {
                                 RoundedRectangle(cornerRadius: 2).fill(color.color).frame(width: 8, height: 8)
                             } else {
-                                Image(systemName: "plus").font(.system(size: 10)).foregroundStyle(theme.text3)
+                                Image(systemName: "plus").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                             }
-                            Text(target.title).font(.system(size: 13))
+                            Text(target.title).font(.system(size: ChromeMetrics.text(13)))
                             Spacer(minLength: 8)
-                            Text(target.detail).font(.system(size: 11)).opacity(0.85)
+                            Text(target.detail).font(.system(size: ChromeMetrics.text(11))).opacity(0.85)
                         }
                         .padding(.horizontal, 10)
-                        .frame(height: 34)
+                        .frame(height: ChromeMetrics.row(34))
                         .background(
                             RoundedRectangle(cornerRadius: 7)
                                 .fill(model.chosen == target.id ? TabStatusStyle.working : .clear)
@@ -119,9 +119,9 @@ struct AskAgentView: View {
             }
             TextField("What should it do with this?", text: $model.message)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: ChromeMetrics.text(13)))
                 .padding(.horizontal, 10)
-                .frame(height: 30)
+                .frame(height: ChromeMetrics.row(30))
                 .background(RoundedRectangle(cornerRadius: 7).fill(theme.term))
                 .onSubmit(send)
             HStack {
@@ -136,7 +136,7 @@ struct AskAgentView: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+        Text(text).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
     }
 
     private func chip(_ title: String, _ on: Binding<Bool>, fixed: Bool = false) -> some View {
@@ -145,13 +145,13 @@ struct AskAgentView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: on.wrappedValue ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 10))
+                    .font(.system(size: ChromeMetrics.text(10)))
                     .foregroundStyle(on.wrappedValue ? TabStatusStyle.working : theme.text3)
                 // A container's name can be long; the sheet is 380 pt.
-                Text(title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Text(title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
             }
             .padding(.horizontal, 8)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(Capsule().fill(theme.iconBg))
             .contentShape(Capsule())
         }

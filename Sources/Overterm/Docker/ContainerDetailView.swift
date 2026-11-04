@@ -64,10 +64,10 @@ struct ContainerDetailView: View {
                     tab = item
                 } label: {
                     Text(item.title)
-                        .font(.system(size: 12, weight: tab == item ? .semibold : .regular))
+                        .font(.system(size: ChromeMetrics.text(12), weight: tab == item ? .semibold : .regular))
                         .foregroundStyle(tab == item ? theme.text : theme.text2)
                         .padding(.horizontal, 9)
-                        .frame(height: 24)
+                        .frame(height: ChromeMetrics.row(24))
                         .background(RoundedRectangle(cornerRadius: 6).fill(tab == item ? theme.selected : .clear))
                         .contentShape(Rectangle())
                 }
@@ -84,12 +84,12 @@ struct ContainerDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 DockerStatusDot(color: DockerStatusStyle.color(container, idle: theme.text3))
-                Text(verbatim: container.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: container.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                     .textSelection(.enabled)
                 DockerEmulationBadge(subject: .container(container), docker: docker)
                 Spacer(minLength: 0)
             }
-            Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
             DockerActionBar(verbs: verbs(), theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 16)
@@ -107,7 +107,7 @@ struct ContainerDetailView: View {
     private func problem(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.failed)
-            Text(verbatim: message).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled)
+            Text(verbatim: message).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
@@ -121,8 +121,8 @@ struct ContainerDetailView: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.failed)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: "Port \(conflict.port) is taken").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
-                    Text(verbatim: PortConflicts.holderText(conflict.holder)).font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text(verbatim: "Port \(conflict.port) is taken").font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: PortConflicts.holderText(conflict.holder)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
             }
@@ -181,7 +181,7 @@ struct ContainerDetailView: View {
                 ForEach(ports, id: \.self) { port in
                     HStack(spacing: 8) {
                         DockerPortPill(port: port, theme: theme, open: actions.open)
-                        if let url = port.url { Text(verbatim: url.absoluteString).font(.system(size: 11.5)).foregroundStyle(theme.text3) }
+                        if let url = port.url { Text(verbatim: url.absoluteString).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3) }
                     }
                 }
             }
@@ -237,16 +237,16 @@ struct ContainerDetailView: View {
 
     private func block<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text(title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             content()
         }
     }
 
     private func row(_ key: String, _ value: String, copy: String? = nil) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(verbatim: key).font(.system(size: 11.5)).foregroundStyle(theme.text2).frame(width: 120, alignment: .leading).lineLimit(1)
+            Text(verbatim: key).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).frame(width: 120, alignment: .leading).lineLimit(1)
                 .truncationMode(.middle)
-            Text(verbatim: value).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text).textSelection(.enabled)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text).textSelection(.enabled)
                 .lineLimit(4).frame(maxWidth: .infinity, alignment: .leading)
         }
         .contextMenu {

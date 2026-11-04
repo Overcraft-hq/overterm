@@ -41,13 +41,15 @@ final class GapSplitView: NSSplitView {
 /// everything each pass, so nothing a subview does to its own layer can
 /// undo it.
 final class CardColumn: NSView {
-    static let cornerRadius: CGFloat = 10
+    /// Settings ▸ Appearance ▸ Card corners (ChromeMetrics); 10 by default.
+    static var cornerRadius: CGFloat { ChromeMetrics.cardRadius }
     /// The window showing through between two cards. Each card keeps half
     /// of it on each side, so the gap is the same whoever its neighbour is
     /// — and a card that isn't on screen costs nothing (`GapSplitView`).
-    static let gap: CGFloat = 10
+    /// Settings ▸ Appearance ▸ Space between cards; 10 by default.
+    static var gap: CGFloat { ChromeMetrics.cardGap }
     /// Half the gap, which is what one card keeps on each side.
-    static let margin: CGFloat = gap / 2
+    static var margin: CGFloat { gap / 2 }
 
     /// Which of the theme's grounds a card is painted in. Held rather than
     /// the colour itself, so a card can be repainted when the terminal

@@ -17,7 +17,7 @@ struct DockerBuildsView: View {
         HStack(spacing: 0) {
             if let error = page.buildsError {
                 VStack(spacing: 10) {
-                    Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
+                    Text(verbatim: error).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
                     Button("Read Again") { page.loadBuilds() }.controlSize(.small).accessibilityIdentifier("docker.builds.again")
                 }
                 .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -29,7 +29,7 @@ struct DockerBuildsView: View {
                             .listRowSeparator(.hidden)
                             .contextMenu { DockerVerbMenu(verbs: page.verbs(for: build)) }
                     }
-                    if page.builds.isEmpty { Text("No builds yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+                    if page.builds.isEmpty { Text("No builds yet.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
@@ -98,7 +98,7 @@ struct DockerBuildDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     glyph
-                    Text(verbatim: build.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                    Text(verbatim: build.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
@@ -141,7 +141,7 @@ struct DockerBuildDetailView: View {
     }
 
     private func summaryText(_ now: Date) -> some View {
-        Text(verbatim: session.summaryLine(now: now)).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1)
+        Text(verbatim: session.summaryLine(now: now)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1)
     }
 
     private func builtFrom(_ detail: DockerBuildDetail) -> some View {
@@ -152,7 +152,7 @@ struct DockerBuildDetailView: View {
             // A detail's top stays short: the steps are what it is for.
             ForEach(Array(detail.buildArgs.prefix(5).enumerated()), id: \.offset) { _, arg in DockerDetailRow(key: arg.key, value: arg.value, theme: theme) }
             if detail.buildArgs.count > 5 {
-                Text(verbatim: "and \(detail.buildArgs.count - 5) more build args").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(verbatim: "and \(detail.buildArgs.count - 5) more build args").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
         }
     }
@@ -160,11 +160,11 @@ struct DockerBuildDetailView: View {
     /// BuildKit's error, and where in the Dockerfile (its `>>>` excerpt).
     @ViewBuilder private var failure: some View {
         if let detail = session.detail, let error = detail.error {
-            Text(verbatim: error).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled).lineLimit(4)
+            Text(verbatim: error).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
             if let source = detail.errorSource?.trimmingCharacters(in: .newlines), !source.isEmpty {
                 Text(verbatim: source.split(separator: "\n", omittingEmptySubsequences: false).suffix(8).joined(separator: "\n"))
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover))
@@ -186,7 +186,7 @@ struct DockerBuildDetailView: View {
                 .padding(.top, 4)
             } label: {
                 Label {
-                    Text(verbatim: warnings.count == 1 ? "1 warning" : "\(warnings.count) warnings").font(.system(size: 11.5, weight: .medium))
+                    Text(verbatim: warnings.count == 1 ? "1 warning" : "\(warnings.count) warnings").font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.waiting)
                 }
@@ -199,18 +199,18 @@ struct DockerBuildDetailView: View {
     private func row(_ warning: DockerBuildProgress.Warning) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(verbatim: session.shown(warning.short)).font(.system(size: 11.5)).foregroundStyle(theme.text).textSelection(.enabled)
+                Text(verbatim: session.shown(warning.short)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 if let link = warning.url, let url = URL(string: link) {
-                    Button("Rule") { actions.open(url) }.buttonStyle(.link).font(.system(size: 11)).help(link)
+                    Button("Rule") { actions.open(url) }.buttonStyle(.link).font(.system(size: ChromeMetrics.text(11))).help(link)
                 }
             }
             if let file = warning.file {
-                Text(verbatim: warning.line.map { "\(file):\($0)" } ?? file).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                Text(verbatim: warning.line.map { "\(file):\($0)" } ?? file).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
             }
             if let source = warning.source {
-                Text(verbatim: session.shown(source)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1)
+                Text(verbatim: session.shown(source)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1)
                     .textSelection(.enabled)
             }
         }
@@ -261,7 +261,7 @@ struct DockerBuildStepsView: View {
                 Text("Reading the build…").foregroundStyle(theme.text3)
             }
         }
-        .font(.system(size: 12))
+        .font(.system(size: ChromeMetrics.text(12)))
         .padding(20)
         .accessibilityIdentifier("docker.build.empty")
     }
@@ -275,11 +275,11 @@ struct DockerBuildStepsView: View {
     /// those still open then no longer drawn as running.
     private func lost(_ why: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(TabStatusStyle.waiting)
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.waiting)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: "Stopped following: " + session.shown(why)).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(3)
+                Text(verbatim: "Stopped following: " + session.shown(why)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(3)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                Text("Log in a Tab (t) shows what buildx says.").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text("Log in a Tab (t) shows what buildx says.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
             Spacer(minLength: 6)
             readAgain
@@ -334,19 +334,19 @@ private struct DockerBuildStepRow: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 6) {
                 glyph.frame(width: 14, height: 14)
-                Text(verbatim: "#\(step.number)").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: "#\(step.number)").font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                     .frame(minWidth: 26, alignment: .leading)
-                Text(verbatim: shown(step.name)).font(.system(size: 12)).foregroundStyle(step.isInternal ? theme.text3 : theme.text)
+                Text(verbatim: shown(step.name)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(step.isInternal ? theme.text3 : theme.text)
                     .lineLimit(1).truncationMode(.middle)
                 if !step.warnings.isEmpty {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(TabStatusStyle.waiting)
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(TabStatusStyle.waiting)
                         .help(step.warnings.map { shown($0.short) }.joined(separator: "\n"))
                 }
                 Spacer(minLength: 6)
                 trailing
             }
             if state == .failed, let error = step.error {
-                Text(verbatim: shown(error)).font(.system(size: 10.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
+                Text(verbatim: shown(error)).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
                     .padding(.leading, 46)
             }
         }
@@ -356,15 +356,15 @@ private struct DockerBuildStepRow: View {
     @ViewBuilder private var glyph: some View {
         switch state {
         case .running: ProgressView().controlSize(.mini)
-        case .done, .cached: Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.text3)
-        case .failed: Image(systemName: "xmark.octagon.fill").font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
-        case .canceled: Image(systemName: "minus.circle").font(.system(size: 11)).foregroundStyle(theme.text3)
-        case .unknown: Image(systemName: "questionmark.circle").font(.system(size: 11)).foregroundStyle(theme.text3)
+        case .done, .cached: Image(systemName: "checkmark").font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(theme.text3)
+        case .failed: Image(systemName: "xmark.octagon.fill").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
+        case .canceled: Image(systemName: "minus.circle").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+        case .unknown: Image(systemName: "questionmark.circle").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
         }
     }
 
     @ViewBuilder private var trailing: some View {
-        let font = Font.system(size: 10.5, design: .monospaced)
+        let font = Font.system(size: ChromeMetrics.text(10.5), design: .monospaced)
         switch state {
         case .cached: Text(verbatim: "CACHED").font(font).foregroundStyle(theme.text3)
         case .failed: Text(verbatim: "ERROR").font(font).foregroundStyle(TabStatusStyle.failed)
@@ -392,7 +392,7 @@ private struct DockerBuildStepPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: "#\(step.number) " + session.shown(step.name)).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
+                Text(verbatim: "#\(step.number) " + session.shown(step.name)).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text)
                     .lineLimit(2).textSelection(.enabled)
                 if state == .running {
                     TimelineView(.animation(minimumInterval: 0.5, paused: !shown)) { context in stateLine(context.date) }
@@ -400,14 +400,14 @@ private struct DockerBuildStepPane: View {
                     stateLine(Date())
                 }
                 ForEach(step.statuses.prefix(6), id: \.id) { status in
-                    Text(verbatim: session.shown(status.plain)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
+                    Text(verbatim: session.shown(status.plain)).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
                         .truncationMode(.middle)
                 }
                 if step.statuses.count > 6 {
-                    Text(verbatim: "and \(step.statuses.count - 6) more").font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                    Text(verbatim: "and \(step.statuses.count - 6) more").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                 }
                 if state == .failed, let error = step.error {
-                    Text(verbatim: session.shown(error)).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                    Text(verbatim: session.shown(error)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
                         .lineLimit(4).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -415,12 +415,12 @@ private struct DockerBuildStepPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Rectangle().fill(theme.border).frame(height: 1)
             if step.log.isEmpty {
-                Text("No output.").font(.system(size: 12)).foregroundStyle(theme.text3).frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text("No output.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 output
             }
             if step.clipped {
-                Text("Output clipped at 2 MB: Log in a Tab (t) has all of it.").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text("Output clipped at 2 MB: Log in a Tab (t) has all of it.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     .padding(.horizontal, 12).padding(.vertical, 4)
             }
         }
@@ -437,7 +437,7 @@ private struct DockerBuildStepPane: View {
             case .canceled: "Canceled: another step failed, or the build was stopped"
             case .unknown: "Still running when the follow stopped: Read Again to see how it went"
             }
-        return Text(verbatim: text).font(.system(size: 11)).foregroundStyle(state == .running ? TabStatusStyle.working : theme.text3)
+        return Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(state == .running ? TabStatusStyle.working : theme.text3)
     }
 
     /// Its offsets dim, as plain progress has them; a line's level in its

@@ -46,18 +46,18 @@ struct NotesGraphView: View {
             .fixedSize()
             if local {
                 Stepper(value: $depth, in: 1...3) {
-                    Text(verbatim: "\(depth) link\(depth == 1 ? "" : "s") away").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    Text(verbatim: "\(depth) link\(depth == 1 ? "" : "s") away").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 }
                 .fixedSize()
             }
             Spacer(minLength: 0)
-            Text(verbatim: "\(graph.nodes.count)").font(.system(size: 11)).foregroundStyle(theme.dimText)
+            Text(verbatim: "\(graph.nodes.count)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 .help("Notes in the graph")
             Button {
                 scale = 1
                 offset = .zero
             } label: {
-                Image(systemName: "scope").font(.system(size: 11))
+                Image(systemName: "scope").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -110,7 +110,7 @@ struct NotesGraphView: View {
                 if isCurrent || hovered == i || neighbours.contains(i) || scale > 1.6 || graph.nodes.count <= 30 {
                     let name = ((node.path as NSString).lastPathComponent as NSString).deletingPathExtension
                     context.draw(
-                        Text(verbatim: name).font(.system(size: 10.5, weight: isCurrent ? .semibold : .regular))
+                        Text(verbatim: name).font(.system(size: ChromeMetrics.text(10.5), weight: isCurrent ? .semibold : .regular))
                             .foregroundColor(faded ? dim.opacity(0.4) : text),
                         at: CGPoint(x: point.x, y: point.y + r + 8))
                 }
@@ -138,7 +138,7 @@ struct NotesGraphView: View {
         .overlay(alignment: .center) {
             if graph.nodes.isEmpty {
                 Text(local ? "Open a note to see what it links to" : "No notes yet")
-                    .font(.system(size: 12)).foregroundStyle(theme.dimText)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
             }
         }
     }

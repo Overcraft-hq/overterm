@@ -44,7 +44,7 @@ struct NewTaskView: View {
             }
 
             Text(branch.isEmpty ? " " : TaskCreator.worktreePath(repo: repo, branch: branch, location: location).path)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.head)

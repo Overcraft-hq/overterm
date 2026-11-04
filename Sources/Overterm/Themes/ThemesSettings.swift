@@ -71,7 +71,7 @@ struct ThemesSettings: View {
             }
             Toggle(isOn: follows) {
                 Text("Follow macOS between a light and a dark theme")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text)
             }
             .toggleStyle(.checkbox)
@@ -80,7 +80,7 @@ struct ThemesSettings: View {
                     ? "Ghostty switches as the system does. Pick a slot above, then a theme below."
                     : "The terminal changes as you pick, and the window around it with it."
             )
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.text3)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -103,7 +103,7 @@ struct ThemesSettings: View {
                         .frame(width: 200, height: 112)
                         .overlay(
                             Text(catalog.isLoaded ? "Your Ghostty config" : "…")
-                                .font(.system(size: 11))
+                                .font(.system(size: ChromeMetrics.text(11)))
                                 .foregroundStyle(theme.text3)
                         )
                 }
@@ -111,23 +111,23 @@ struct ThemesSettings: View {
             .animation(.easeInOut(duration: 0.35), value: name)
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor, lineWidth: isEditing && followsSystem ? 2 : 0)
+                    .strokeBorder(theme.accent, lineWidth: isEditing && followsSystem ? 2 : 0)
                     .padding(-3)
             )
             .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isEditing)
             HStack(spacing: 6) {
                 if followsSystem {
-                    Text(slot.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                    Text(slot.title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
                 }
                 Text(verbatim: name.isEmpty ? "Default" : name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .medium))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 if !name.isEmpty {
                     Button {
                         settings.set(slot.key, nil)
                     } label: {
-                        Image(systemName: "arrow.uturn.backward").font(.system(size: 9, weight: .bold))
+                        Image(systemName: "arrow.uturn.backward").font(.system(size: ChromeMetrics.text(9), weight: .bold))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.text3)
@@ -154,7 +154,7 @@ struct ThemesSettings: View {
     private var controls: some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 // A String, not a key: an interpolated count in a
                 // LocalizedStringKey comes out as "473" in Turkish.
                 TextField(searchPlaceholder, text: $model.themeSearch)
@@ -171,7 +171,7 @@ struct ThemesSettings: View {
             .fixedSize()
             Spacer()
             Text(verbatim: catalog.isLoaded ? "\(shown.count)" : "")
-                .font(.system(size: 11)).monospacedDigit()
+                .font(.system(size: ChromeMetrics.text(11))).monospacedDigit()
                 .foregroundStyle(theme.text3)
                 .contentTransition(.numericText())
                 .animation(.easeOut(duration: 0.2), value: shown.count)
@@ -201,7 +201,7 @@ struct ThemesSettings: View {
                 let elsewhere = ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: .all).count
                 VStack(spacing: 8) {
                     Text(verbatim: model.themeSearch.isEmpty ? "Nothing here" : "No match among the ten")
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text2)
                     if elsewhere > 0 {
                         Button("Search all \(catalog.entries.count) themes (\(elsewhere))") {
@@ -233,14 +233,14 @@ private struct ThemeCard: View {
                 .frame(height: 104)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.accentColor, lineWidth: isSelected ? 2 : 0)
+                        .strokeBorder(theme.accent, lineWidth: isSelected ? 2 : 0)
                         .padding(-2.5)
                 )
                 .overlay(alignment: .topTrailing) {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.white, Color.accentColor)
+                            .font(.system(size: ChromeMetrics.text(15)))
+                            .foregroundStyle(.white, theme.accent)
                             .padding(5)
                             .transition(.scale(scale: 0.4).combined(with: .opacity))
                     }
@@ -248,13 +248,13 @@ private struct ThemeCard: View {
                 .shadow(color: .black.opacity(hovering ? 0.28 : 0), radius: hovering ? 10 : 0, y: hovering ? 4 : 0)
             HStack(spacing: 5) {
                 Text(verbatim: entry.theme.name)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: ChromeMetrics.text(11), weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if entry.source == .user {
                     Text("Yours")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: ChromeMetrics.text(9), weight: .semibold))
                         .foregroundStyle(theme.accentText)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)

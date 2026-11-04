@@ -38,7 +38,7 @@ struct DiffPanelView: View {
                 scopeBar
                 if let note = model.scopeNote {
                     Text(verbatim: note)
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(theme.dimText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
@@ -106,7 +106,7 @@ struct DiffPanelView: View {
                 }
                 if model.shownFiles.count > DiffModel.maxDiffedFiles {
                     Text("Diffs shown for the first \(DiffModel.maxDiffedFiles) files.")
-                        .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 }
             }
             .padding(12)
@@ -116,13 +116,13 @@ struct DiffPanelView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(headerTitle)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
                 .truncationMode(.head)
                 .help(model.root?.path ?? "")
             if !model.shownFiles.isEmpty {
-                Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(theme.dimText)
+                Image(systemName: "doc").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
                 Text(verbatim: "\(model.shownFiles.count)").foregroundStyle(theme.text)
                 Text("·").foregroundStyle(theme.dimText)
                 Text(verbatim: "+\(model.shownTotals.added)").foregroundStyle(DiffColors.added)
@@ -141,9 +141,9 @@ struct DiffPanelView: View {
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
             iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
         }
-        .font(.system(size: 12))
+        .font(.system(size: ChromeMetrics.text(12)))
         .padding(.horizontal, 12)
-        .frame(height: 36)
+        .frame(height: ChromeMetrics.row(36))
     }
 
     /// Why this checkout: following the tab's agent into its worktree, or
@@ -152,12 +152,12 @@ struct DiffPanelView: View {
         switch model.showing {
         case .agent(let agent):
             Label("following \(agent.name)", systemImage: agent.symbol)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(TabStatusStyle.signal)
                 .help("\(agent.name) is working in this worktree")
         case .attached:
             Button(action: onDetach) {
-                Label("attached · Detach", systemImage: "pin.fill").font(.system(size: 11))
+                Label("attached · Detach", systemImage: "pin.fill").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -219,10 +219,10 @@ struct DiffPanelView: View {
                 Text(title)
                 if let count { Text(verbatim: "\(count)").foregroundStyle(theme.dimText) }
             }
-            .font(.system(size: 12, weight: on ? .semibold : .regular))
+            .font(.system(size: ChromeMetrics.text(12), weight: on ? .semibold : .regular))
             .foregroundStyle(on ? theme.text : theme.dimText)
             .padding(.horizontal, 8)
-            .frame(height: 22)
+            .frame(height: ChromeMetrics.row(22))
             .background(RoundedRectangle(cornerRadius: 5).fill(on ? theme.selected : .clear))
             .contentShape(Rectangle())
         }
@@ -244,7 +244,7 @@ struct DiffPanelView: View {
 
     private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 22, height: 22).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).frame(width: 22, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.dimText)
@@ -270,18 +270,18 @@ struct WhyStrip: View {
             }
             ForEach(why.commits.prefix(Self.maxCommits)) { commit in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "smallcircle.filled.circle").font(.system(size: 9)).foregroundStyle(theme.dimText).frame(width: 12)
+                    Image(systemName: "smallcircle.filled.circle").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(theme.dimText).frame(width: 12)
                     Text(verbatim: commit.subject)
-                        .font(.system(size: 12)).foregroundStyle(theme.text.opacity(0.85))
+                        .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text.opacity(0.85))
                         .lineLimit(1).truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(verbatim: commit.shortSHA).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText)
+                    Text(verbatim: commit.shortSHA).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.dimText)
                 }
                 .help(Self.help(commit))
             }
             if why.commits.count > Self.maxCommits {
                 Text(verbatim: "and \(why.commits.count - Self.maxCommits) more commits")
-                    .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(.leading, 18)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.leading, 18)
             }
         }
         .padding(.horizontal, 10)
@@ -306,9 +306,9 @@ private struct ReasonRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(theme.dimText).frame(width: 12)
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText).frame(width: 12)
             Text(verbatim: edit.reason?.text ?? "")
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(theme.text.opacity(0.85))
                 .lineLimit(open ? nil : 2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -317,7 +317,7 @@ private struct ReasonRow: View {
                 if more > 0 { Text(verbatim: "+\(more)") }
                 if let time = edit.time { Text(verbatim: ClaudeEdits.ago(time)) }
             }
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.dimText)
             .fixedSize()
         }
@@ -354,13 +354,13 @@ private struct CommitList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "smallcircle.filled.circle").font(.system(size: 11)).foregroundStyle(theme.dimText)
-                Text("Commits").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                Image(systemName: "smallcircle.filled.circle").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
+                Text("Commits").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                 Text(verbatim: more ? "\(commits.count)+" : "\(commits.count)").foregroundStyle(theme.dimText)
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .padding(.horizontal, 10)
-            .frame(height: 30)
+            .frame(height: ChromeMetrics.row(30))
             Divider().opacity(0.3)
             ForEach(commits) { commit in
                 CommitRow(commit: commit, open: open.contains(commit.id), theme: theme, onToggle: { onToggle(commit.id) })
@@ -385,10 +385,10 @@ private struct CommitRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(theme.dimText).frame(width: 12)
-                Text(verbatim: commit.subject).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.tail)
+                    .font(.system(size: ChromeMetrics.text(9), weight: .semibold)).foregroundStyle(theme.dimText).frame(width: 12)
+                Text(verbatim: commit.subject).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 4)
-                Text(verbatim: commit.shortSHA).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText)
+                Text(verbatim: commit.shortSHA).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.dimText)
             }
             .frame(minHeight: 22)
             .contentShape(Rectangle())
@@ -396,10 +396,10 @@ private struct CommitRow: View {
             .help(commit.subject)
             if open {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(verbatim: commit.date).font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    Text(verbatim: commit.date).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                     if !commit.body.isEmpty {
                         Text(verbatim: commit.body)
-                            .font(.system(size: 12)).foregroundStyle(theme.text)
+                            .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
@@ -411,7 +411,7 @@ private struct CommitRow: View {
                             Text(verbatim: "and \(commit.files.count - Self.maxFiles) more")
                         }
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     .foregroundStyle(theme.dimText)
                 }
                 .padding(.leading, 18)
@@ -437,16 +437,16 @@ private struct CommitComposer: View {
         VStack(alignment: .leading, spacing: 6) {
             TextField("Commit message", text: $message, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1...5)
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 6).fill(theme.selected))
             if let error = model.actionError {
-                Text(error).font(.system(size: 11)).foregroundStyle(DiffColors.removed).lineLimit(3)
+                Text(error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed).lineLimit(3)
             }
             HStack {
                 Text(model.stagedCount == 0 ? "Nothing staged — commits all changes." : "\(model.stagedCount) staged.")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.dimText)
                 Spacer()
                 Button("Cancel", action: onDone)

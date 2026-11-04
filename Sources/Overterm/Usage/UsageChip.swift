@@ -23,14 +23,14 @@ struct UsageChip: View {
             Button(action: action) {
                 HStack(spacing: 5) {
                     Image(systemName: "gauge.with.needle")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                         .foregroundStyle(shown.map { colour($0.meter) } ?? theme.dimText)
                     Text(verbatim: shown?.meter.reading() ?? "—")
                         .foregroundStyle(shown == nil ? theme.dimText : theme.text)
                 }
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced))
                 .padding(.horizontal, 8)
-                .frame(height: 24)
+                .frame(height: ChromeMetrics.row(24))
                 .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.selected : theme.hover))
                 .contentShape(Rectangle())
             }

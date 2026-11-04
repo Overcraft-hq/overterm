@@ -14,8 +14,8 @@ struct DockerDetailRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(verbatim: key).font(.system(size: 11.5)).foregroundStyle(theme.text2).frame(width: 110, alignment: .leading).lineLimit(1)
-            Text(verbatim: value).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text).textSelection(.enabled)
+            Text(verbatim: key).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).frame(width: 110, alignment: .leading).lineLimit(1)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text).textSelection(.enabled)
                 .lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -28,7 +28,7 @@ struct DockerDetailBlock<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text(title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             content
         }
     }
@@ -51,26 +51,26 @@ struct DockerResourceRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(theme.text3).frame(width: 16)
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(dim ? theme.text2 : theme.text).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: title).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(dim ? theme.text2 : theme.text).lineLimit(1).truncationMode(.middle)
                     if let imageID, let docker { DockerEmulationBadge(subject: .image(imageID), docker: docker) }
                 }
-                Text(verbatim: subtitle).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             }
             .layoutPriority(1)
             Spacer(minLength: 6)
             if let badge {
-                Text(verbatim: badge).font(.system(size: 10)).foregroundStyle(theme.accentText)
+                Text(verbatim: badge).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.accentText)
                     .padding(.horizontal, 5).background(Capsule().stroke(theme.accentText.opacity(0.5)))
                     .help(badgeHelp ?? "")
             }
             ForEach(Array(figures.enumerated()), id: \.offset) { _, figure in
-                Text(verbatim: figure).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: figure).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
             }
         }
-        .frame(height: 30)
+        .frame(height: ChromeMetrics.row(30))
         .contentShape(Rectangle())
     }
 }
@@ -110,7 +110,7 @@ struct DockerImagesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle").foregroundStyle(theme.text3)
                 TextField("Pull an image — postgres:16, ghcr.io/owner/app:tag", text: $pullName)
-                    .textFieldStyle(.plain).font(.system(size: 12))
+                    .textFieldStyle(.plain).font(.system(size: ChromeMetrics.text(12)))
                     .onSubmit {
                         page.pull(pullName)
                         pullName = ""
@@ -129,7 +129,7 @@ struct DockerImagesView: View {
                             if pullName == term { found = answer }
                         }
                     } label: {
-                        Label("Search Docker Hub", systemImage: "magnifyingglass").font(.system(size: 11))
+                        Label("Search Docker Hub", systemImage: "magnifyingglass").font(.system(size: ChromeMetrics.text(11)))
                     }
                     .buttonStyle(.plain).foregroundStyle(theme.accentText)
                     .help("Ask Docker Hub, through the engine, for images named like this")
@@ -137,7 +137,7 @@ struct DockerImagesView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 28)
+            .frame(height: ChromeMetrics.row(28))
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.6)))
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
@@ -190,16 +190,16 @@ struct DockerImagesView: View {
                     found = []
                 } label: {
                     HStack(spacing: 8) {
-                        Text(verbatim: result.name).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
+                        Text(verbatim: result.name).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text)
                         if result.is_official == true {
-                            Text("Official").font(.system(size: 10)).foregroundStyle(theme.accentText)
+                            Text("Official").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.accentText)
                                 .padding(.horizontal, 5).background(Capsule().stroke(theme.accentText.opacity(0.5)))
                         }
-                        Text(verbatim: result.description ?? "").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                        Text(verbatim: result.description ?? "").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                         Spacer(minLength: 6)
-                        Text(verbatim: "★ \(result.star_count ?? 0)").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                        Text(verbatim: "★ \(result.star_count ?? 0)").font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                     }
-                    .frame(height: 22)
+                    .frame(height: ChromeMetrics.row(22))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -218,10 +218,10 @@ struct DockerImagesView: View {
             } else {
                 ProgressView().controlSize(.small)
             }
-            Text(verbatim: pull.image).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
-            Text(verbatim: pull.summary).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
+            Text(verbatim: pull.image).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text)
+            Text(verbatim: pull.summary).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
             Spacer()
-            if pull.done { Button("Dismiss") { page.dismissPull(pull.image) }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11.5)) }
+            if pull.done { Button("Dismiss") { page.dismissPull(pull.image) }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(11.5))) }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 4)
@@ -259,7 +259,7 @@ private struct DockerImageDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Text(verbatim: image.tags.first ?? "<none>").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: image.tags.first ?? "<none>").font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
                         .textSelection(.enabled)
                     DockerEmulationBadge(subject: .image(image.Id), docker: docker)
                 }
@@ -292,13 +292,13 @@ private struct DockerImageDetail: View {
                 } label: {
                     HStack(spacing: 5) {
                         Text(item.title)
-                            .font(.system(size: 12, weight: page.imageTab == item ? .semibold : .regular))
+                            .font(.system(size: ChromeMetrics.text(12), weight: page.imageTab == item ? .semibold : .regular))
                             .foregroundStyle(page.imageTab == item ? theme.text : theme.text2)
                         // The worst of it, once scanned.
                         if item == .vulnerabilities, let report = scans.scan(for: image.Id)?.state.report {
                             let worst = report.count(.critical) + report.count(.high)
                             if worst > 0 {
-                                Text(verbatim: "\(worst)").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                Text(verbatim: "\(worst)").font(.system(size: ChromeMetrics.text(10), weight: .semibold, design: .monospaced))
                                     .foregroundStyle(TabStatusStyle.failed)
                                     .padding(.horizontal, 5).frame(height: 15)
                                     .background(Capsule().fill(TabStatusStyle.failed.opacity(0.14)))
@@ -307,7 +307,7 @@ private struct DockerImageDetail: View {
                         }
                     }
                     .padding(.horizontal, 9)
-                    .frame(height: 24)
+                    .frame(height: ChromeMetrics.row(24))
                     .background(RoundedRectangle(cornerRadius: 6).fill(page.imageTab == item ? theme.selected : .clear))
                     .contentShape(Rectangle())
                 }
@@ -359,9 +359,9 @@ private struct DockerImageDetail: View {
                 if let layers {
                     ForEach(Array(layers.enumerated()), id: \.offset) { _, layer in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(verbatim: bytes(layer.Size)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                            Text(verbatim: bytes(layer.Size)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                                 .frame(width: 70, alignment: .trailing)
-                            Text(verbatim: Self.step(layer.CreatedBy)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text)
+                            Text(verbatim: Self.step(layer.CreatedBy)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text)
                                 .lineLimit(2).textSelection(.enabled)
                         }
                     }
@@ -476,7 +476,7 @@ private struct DockerVolumeDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: volume.shortName).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                Text(verbatim: volume.shortName).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                 DockerActionBar(verbs: page.verbs(for: volume), theme: theme)
             }
             .padding(.horizontal, 16)
@@ -507,10 +507,10 @@ private struct DockerVolumeDetail: View {
                     page.volumeTab = item
                 } label: {
                     Text(item.title)
-                        .font(.system(size: 12, weight: page.volumeTab == item ? .semibold : .regular))
+                        .font(.system(size: ChromeMetrics.text(12), weight: page.volumeTab == item ? .semibold : .regular))
                         .foregroundStyle(page.volumeTab == item ? theme.text : theme.text2)
                         .padding(.horizontal, 9)
-                        .frame(height: 24)
+                        .frame(height: ChromeMetrics.row(24))
                         .background(RoundedRectangle(cornerRadius: 6).fill(page.volumeTab == item ? theme.selected : .clear))
                         .contentShape(Rectangle())
                 }
@@ -534,7 +534,7 @@ private struct DockerVolumeDetail: View {
             }
             let users = docker.containers(mounting: volume)
             DockerDetailBlock(title: "Mounted by", theme: theme) {
-                if users.isEmpty { Text("Nothing").font(.system(size: 11.5)).foregroundStyle(theme.text3) }
+                if users.isEmpty { Text("Nothing").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3) }
                 ForEach(users) { container in
                     let at = (container.Mounts ?? []).first { $0.Name == volume.Name }?.Destination ?? ""
                     DockerDetailRow(key: container.name, value: at, theme: theme)
@@ -584,7 +584,7 @@ struct DockerNetworksView: View {
                 Rectangle().fill(theme.border).frame(width: 1)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text(verbatim: network.Name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                        Text(verbatim: network.Name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                         DockerActionBar(verbs: page.verbs(for: network), theme: theme)
                         DockerDetailBlock(title: "Network", theme: theme) {
                             DockerDetailRow(key: "Driver", value: network.Driver ?? "", theme: theme)
@@ -594,7 +594,7 @@ struct DockerNetworksView: View {
                         }
                         DockerDetailBlock(title: "On it", theme: theme) {
                             let members = docker.containers(on: network)
-                            if members.isEmpty { Text("Nothing").font(.system(size: 11.5)).foregroundStyle(theme.text3) }
+                            if members.isEmpty { Text("Nothing").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3) }
                             ForEach(members) { container in
                                 let address =
                                     network.Containers?[container.Id]?.IPv4Address ?? container.NetworkSettings?.Networks?[network.Name]?.IPAddress ?? ""
@@ -602,7 +602,7 @@ struct DockerNetworksView: View {
                                     DockerDetailRow(key: container.name, value: address, theme: theme)
                                     if network.Name != "host", network.Name != "none" {
                                         Button("Disconnect") { page.disconnect(container, from: network) }
-                                            .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(theme.accentText)
+                                            .buttonStyle(.plain).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.accentText)
                                             .help("Take \(container.name) off \(network.Name)")
                                     }
                                 }
@@ -655,11 +655,11 @@ struct TestcontainersSessionView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         DockerStatusDot(color: DockerStatusStyle.color(session, idle: theme.text3))
-                        Text("Testcontainers").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
+                        Text("Testcontainers").font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
                     }
                     // Its age once a minute, only while it shows.
                     TimelineView(.everyMinute) { _ in
-                        Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(2)
+                        Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(2)
                     }
                 }
                 DockerActionBar(verbs: page.verbs(for: session), theme: theme)
@@ -707,24 +707,24 @@ struct DockerCleanUpSheet: View {
     var body: some View {
         let plan = page.cleanPlan
         VStack(alignment: .leading, spacing: 14) {
-            Text("Clean Up").font(.system(size: 17, weight: .semibold))
-            Text("What nothing uses. Listed here first; nothing goes until you say so.").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text("Clean Up").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
+            Text("What nothing uses. Listed here first; nothing goes until you say so.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 10) {
                 choice($page.cleanChoice.containers, "Stopped containers", plan.containers.map(\.name), size: nil)
                 choice($page.cleanChoice.images, "Unused images", plan.images.map { $0.tags.first ?? "<none> \($0.shortID)" }, size: plan.images.reduce(0) { $0 + $1.Size }) {
-                    Toggle("Tagged ones too, not only <none>", isOn: $page.cleanChoice.allImages).font(.system(size: 11.5))
+                    Toggle("Tagged ones too, not only <none>", isOn: $page.cleanChoice.allImages).font(.system(size: ChromeMetrics.text(11.5)))
                 }
                 choice(
                     $page.cleanChoice.volumes, "Unused volumes", plan.volumes.map(\.shortName), size: plan.volumes.reduce(0) { $0 + ($1.UsageData?.Size ?? 0) }
                 ) {
-                    Toggle("Named ones too — their data is deleted", isOn: $page.cleanChoice.namedVolumes).font(.system(size: 11.5))
+                    Toggle("Named ones too — their data is deleted", isOn: $page.cleanChoice.namedVolumes).font(.system(size: ChromeMetrics.text(11.5)))
                 }
                 choice($page.cleanChoice.networks, "Unused networks", plan.networks.map(\.Name), size: nil)
                 choice($page.cleanChoice.buildCache, "Build cache not in use", [], size: plan.buildCache)
             }
             Divider()
             HStack {
-                Text(verbatim: "Up to \(bytes(plan.reclaimable)) freed").font(.system(size: 12, weight: .medium))
+                Text(verbatim: "Up to \(bytes(plan.reclaimable)) freed").font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 Spacer()
                 Button("Cancel") { page.cleaning = false }.keyboardShortcut(.cancelAction)
                 Button("Clean Up") { page.cleanUp() }.keyboardShortcut(.defaultAction).disabled(plan.isEmpty)
@@ -743,16 +743,16 @@ struct DockerCleanUpSheet: View {
     private func choice<Extra: View>(_ on: Binding<Bool>, _ title: String, _ names: [String], size: Int?, @ViewBuilder extra: () -> Extra) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Toggle(isOn: on) { Text(title).font(.system(size: 12.5, weight: .medium)) }
+                Toggle(isOn: on) { Text(title).font(.system(size: ChromeMetrics.text(12.5), weight: .medium)) }
                 Spacer()
                 Text(verbatim: on.wrappedValue ? (names.isEmpty && size != nil ? "" : "\(names.count)") + (size.map { $0 > 0 ? "  \(bytes($0))" : "" } ?? "") : "")
-                    .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary)
+                    .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(.secondary)
             }
             if on.wrappedValue {
                 extra().padding(.leading, 20)
                 if !names.isEmpty {
                     Text(verbatim: names.prefix(8).joined(separator: ", ") + (names.count > 8 ? " and \(names.count - 8) more" : ""))
-                        .font(.system(size: 11)).foregroundStyle(.secondary).padding(.leading, 20).lineLimit(3)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary).padding(.leading, 20).lineLimit(3)
                 }
             }
         }
@@ -767,7 +767,7 @@ struct DockerDiskSummary: View {
     var body: some View {
         if let usage = docker.diskUsage {
             VStack(alignment: .leading, spacing: 3) {
-                Text("On disk").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                Text("On disk").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                 line("Images", usage.LayersSize ?? 0)
                 line("Volumes", (usage.Volumes ?? []).reduce(0) { $0 + ($1.UsageData?.Size ?? 0) })
                 line("Build cache", (usage.BuildCache ?? []).reduce(0) { $0 + $1.Size })
@@ -779,9 +779,9 @@ struct DockerDiskSummary: View {
 
     private func line(_ title: String, _ size: Int) -> some View {
         HStack {
-            Text(title).font(.system(size: 11)).foregroundStyle(theme.text2)
+            Text(title).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
             Spacer()
-            Text(verbatim: bytes(size)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2)
+            Text(verbatim: bytes(size)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2)
         }
     }
 }
@@ -809,7 +809,7 @@ struct DockerRunSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Run").font(.system(size: 17, weight: .semibold))
+            Text("Run").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
             Form {
                 TextField("Image", text: $spec.image, prompt: Text("postgres:16"))
                 TextField("Name", text: $spec.name, prompt: Text("optional"))
@@ -827,7 +827,7 @@ struct DockerRunSheet: View {
                 Toggle("Remove it when it stops", isOn: $spec.removeWhenStopped)
             }
             Text(verbatim: built.line(prefix: DockerCommands.prefix(for: docker.endpoint)))
-                .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary)
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("docker.run.command")
             HStack {
@@ -848,10 +848,10 @@ struct DockerRunSheet: View {
 
     private func field(_ title: String, _ text: Binding<String>, _ hint: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 12))
-            TextEditor(text: text).font(.system(size: 12, design: .monospaced)).frame(height: 44)
+            Text(title).font(.system(size: ChromeMetrics.text(12)))
+            TextEditor(text: text).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).frame(height: ChromeMetrics.row(44))
                 .overlay(alignment: .topLeading) {
-                    if text.wrappedValue.isEmpty { Text(hint).font(.system(size: 11)).foregroundStyle(.tertiary).padding(4).allowsHitTesting(false) }
+                    if text.wrappedValue.isEmpty { Text(hint).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.tertiary).padding(4).allowsHitTesting(false) }
                 }
         }
     }
@@ -901,7 +901,7 @@ struct DockerModelsView: View {
                 .listRowSeparator(.hidden)
                 .contextMenu { DockerVerbMenu(verbs: page.verbs(for: model)) }
             }
-            if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+            if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
@@ -910,7 +910,7 @@ struct DockerModelsView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(verbatim: status).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1)
+            Text(verbatim: status).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1)
             Spacer()
             if let endpoints = page.modelsPlace.flatMap(ModelRunner.endpoints), page.models != nil {
                 Menu("Endpoint") {
@@ -959,7 +959,7 @@ struct DockerModelsView: View {
                 Text("Model Runner isn't answering.").foregroundStyle(theme.text2)
             }
         }
-        .font(.system(size: 12))
+        .font(.system(size: ChromeMetrics.text(12)))
         .padding(20)
     }
 }
@@ -975,7 +975,7 @@ private struct DockerModelDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(verbatim: model.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                Text(verbatim: model.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                 DockerActionBar(verbs: page.verbs(for: model), theme: theme)
                 DockerDetailBlock(title: "Model", theme: theme) {
                     DockerDetailRow(key: "Name", value: model.reference, theme: theme)
@@ -993,7 +993,7 @@ private struct DockerModelDetail: View {
                         DockerDetailRow(key: "Backend", value: loaded.backend_name, theme: theme)
                         if let mode = loaded.mode { DockerDetailRow(key: "Mode", value: mode, theme: theme) }
                     } else {
-                        Text("Not in memory: the first request loads it.").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                        Text("Not in memory: the first request loads it.").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                     }
                 }
                 if let tags = model.tags, tags.count > 1 {

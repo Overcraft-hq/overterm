@@ -30,25 +30,25 @@ struct GroupBarsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(TabStatusStyle.signal)
                 PaletteField(
                     text: $broadcast.text, onMove: { _ in }, onSubmit: { _ in onSend() },
                     onCancel: onStopBroadcast, placeholder: "Type a line for every tab in the group",
                     textColor: theme.textNS
                 )
-                .frame(height: 22)
+                .frame(height: ChromeMetrics.row(22))
                 Button("Stop") { onStopBroadcast() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                     .foregroundStyle(theme.dimText)
-                Text(verbatim: "esc").font(.system(size: 10)).foregroundStyle(theme.dimText.opacity(0.7))
+                Text(verbatim: "esc").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText.opacity(0.7))
             }
             HStack(spacing: 6) {
-                Text(verbatim: broadcast.summary).font(.system(size: 11)).foregroundStyle(theme.dimText)
+                Text(verbatim: broadcast.summary).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 if broadcast.hasAgent {
                     Text(verbatim: "· Agent tabs receive text only after you press ↩")
-                        .font(.system(size: 11)).foregroundStyle(theme.dimText.opacity(0.8))
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText.opacity(0.8))
                 }
             }
         }
@@ -63,30 +63,30 @@ struct GroupBarsView: View {
 
     private var focusBar: some View {
         HStack(spacing: 8) {
-            Image(systemName: "scope").font(.system(size: 11)).foregroundStyle(theme.text)
+            Image(systemName: "scope").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text)
             Text(verbatim: "Focusing on \(store.focusedGroup?.name ?? "")")
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text)
+                .font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text)
             if !focus.held.isEmpty {
                 Text(verbatim: "\(focus.held.count) held")
-                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .font(.system(size: ChromeMetrics.text(10), weight: .medium).monospacedDigit())
                     .padding(.horizontal, 5)
                     .background(Capsule().fill(theme.dimText.opacity(0.2)))
                     .foregroundStyle(theme.dimText)
                     .help(focus.held.map { "\($0.title) — \($0.note)" }.joined(separator: "\n"))
                 Text(verbatim: "Held until you leave focus")
-                    .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
             }
             Spacer(minLength: 0)
             Text(verbatim: "Blocked agents always break through")
-                .font(.system(size: 10)).foregroundStyle(theme.dimText.opacity(0.7))
+                .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText.opacity(0.7))
             Button("Leave") { onLeaveFocus() }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                 .foregroundStyle(theme.dimText)
-            Text(verbatim: "⌃⌘F").font(.system(size: 10)).foregroundStyle(theme.dimText.opacity(0.7))
+            Text(verbatim: "⌃⌘F").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText.opacity(0.7))
         }
         .padding(.horizontal, 12)
-        .frame(height: 26)
+        .frame(height: ChromeMetrics.row(26))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.strip)
         .overlay(alignment: .top) { Rectangle().fill(theme.dimText.opacity(0.2)).frame(height: 1) }
@@ -108,12 +108,12 @@ struct StashedGroupsChip: View {
                 showing.toggle()
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "archivebox").font(.system(size: 11))
+                    Image(systemName: "archivebox").font(.system(size: ChromeMetrics.text(11)))
                     Text(verbatim: "\(stashed.count)")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .font(.system(size: ChromeMetrics.text(10), weight: .medium).monospacedDigit())
                 }
                 .padding(.horizontal, 7)
-                .frame(height: 22)
+                .frame(height: ChromeMetrics.row(22))
                 .background(Capsule().fill(theme.dimText.opacity(0.14)))
                 .contentShape(Rectangle())
             }
@@ -135,13 +135,13 @@ private struct StashedGroupsList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Text("Stashed groups").font(.system(size: 13, weight: .semibold))
-                Text("Processes keep running").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Stashed groups").font(.system(size: ChromeMetrics.text(13), weight: .semibold))
+                Text("Processes keep running").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
             }
             ForEach(store.stashedGroups) { group in
                 StashedRow(group: group, tabs: store.tabs(in: group), restore: restore)
             }
-            Text("⌃⌘S stashes the current group").font(.system(size: 10)).foregroundStyle(.tertiary)
+            Text("⌃⌘S stashes the current group").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(.tertiary)
         }
         .padding(14)
         .frame(width: 340)
@@ -159,16 +159,16 @@ private struct StashedRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 7) {
                 Circle().fill(group.color.color).frame(width: 7, height: 7)
-                Text(verbatim: group.name).font(.system(size: 12, weight: .medium))
+                Text(verbatim: group.name).font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 Spacer(minLength: 6)
-                Button("Restore") { restore(group) }.font(.system(size: 11))
+                Button("Restore") { restore(group) }.font(.system(size: ChromeMetrics.text(11)))
             }
-            Text(verbatim: subtitle).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
             if let busy = working.first {
                 HStack(spacing: 5) {
                     WorkingGlyph(symbol: busy.agent?.symbol ?? "terminal", size: 9)
                     Text(verbatim: "\(busy.title) is still working in the background")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
                 }
             }
         }

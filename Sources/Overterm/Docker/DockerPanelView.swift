@@ -131,7 +131,7 @@ struct DockerPanelView: View {
                 PanelHeaderButton(symbol: "macwindow", help: "The Docker page (⌥⌘P)", action: openPage, theme: theme)
             }
             if let error = panel.error {
-                Text(verbatim: error).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                     .padding(.horizontal, 12).padding(.bottom, 6)
                     .onTapGesture { panel.error = nil }
             }
@@ -206,7 +206,7 @@ struct DockerPanelView: View {
                 Button {
                     up.perform()
                 } label: {
-                    Label("Up — not created yet", systemImage: "play.fill").font(.system(size: 11.5))
+                    Label("Up — not created yet", systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11.5)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.accentText)
@@ -215,7 +215,7 @@ struct DockerPanelView: View {
             }
             if let other = panel.planElsewhere {
                 Text(verbatim: "“\(other.name)” runs from \(other.workingDir.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? "another folder")")
-                    .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.head)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.head)
             }
             if let error = checkoutCompose.error { composeError(error) }
         }
@@ -232,15 +232,15 @@ struct DockerPanelView: View {
             panel.showRun(newest.id)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "testtube.2").font(.system(size: 10.5)).foregroundStyle(theme.text3).frame(width: 10)
+                Image(systemName: "testtube.2").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).frame(width: 10)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: "Testcontainers").font(.system(size: 12.5)).foregroundStyle(theme.text).lineLimit(1)
+                    Text(verbatim: "Testcontainers").font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text).lineLimit(1)
                     Text(verbatim: "\(running) running in \(runs.count) run\(runs.count == 1 ? "" : "s")")
-                        .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1)
+                        .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
-            .frame(height: 30)
+            .frame(height: ChromeMetrics.row(30))
             .padding(.horizontal, 12)
             .contentShape(Rectangle())
         }
@@ -255,17 +255,17 @@ struct DockerPanelView: View {
             if checkoutCompose.reading, let file = panel.composeFile {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text(verbatim: "Reading \(file.lastPathComponent)…").font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text(verbatim: "Reading \(file.lastPathComponent)…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 }
             } else {
-                Text("No compose project runs here.").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Text("No compose project runs here.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             }
             if let error = checkoutCompose.error { composeError(error) }
             if let file = panel.composeFile {
                 Button {
                     if let checkout = panel.checkout { actions.composeUp(.checkout(checkout), .ask) }
                 } label: {
-                    Label("Up — \(file.lastPathComponent)", systemImage: "play.fill").font(.system(size: 11.5))
+                    Label("Up — \(file.lastPathComponent)", systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11.5)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.accentText)
@@ -277,13 +277,13 @@ struct DockerPanelView: View {
     }
 
     private func composeError(_ error: String) -> some View {
-        Text(verbatim: error).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+        Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
             .help("What docker compose config said; the services are from the last time it could read the file")
     }
 
     private func section(_ title: String) -> some View {
-        Text(title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+        Text(title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
     }
 
@@ -305,14 +305,14 @@ struct DockerPanelView: View {
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 12)).foregroundStyle(theme.text2).padding(.horizontal, 12).padding(.top, 8)
+        Text(text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).padding(.horizontal, 12).padding(.top, 8)
     }
 
     private func down(_ reason: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(docker.runtimeStatus == .starting ? "\(docker.runtime.name) is starting…" : "\(docker.runtime.name) isn't running")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
-            Text(verbatim: reason).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text)
+            Text(verbatim: reason).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 if let start = docker.runtime.command(.start, context: docker.endpoint?.context) {
                     Button("Start") {
@@ -345,7 +345,7 @@ struct DockerSlotView: View {
             .id(id)
             .environment(\.dockerShown, panel.slotVisible)
         } else {
-            Text("Pick a container in the Docker panel.").font(.system(size: 12)).foregroundStyle(theme.text3)
+            Text("Pick a container in the Docker panel.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }

@@ -32,14 +32,14 @@ struct APIResponseView: View {
         VStack(spacing: 6) {
             if model.isSending {
                 ProgressView().controlSize(.small)
-                Text("Sending…").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text("Sending…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             } else {
-                Text("⌘↩ sends the request").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text("⌘↩ sends the request").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                 // The environment ⌘↩ will use: this request's collection's pick.
                 if let workspace = model.workspace, let collection = workspace.collection(containing: model.url),
                     let name = workspace.pickedEnvironment(for: collection)
                 {
-                    Text(verbatim: "Environment: \(name)").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: "Environment: \(name)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
             }
         }
@@ -52,23 +52,23 @@ struct APIResponseView: View {
         HStack(spacing: 10) {
             if let response = result.response {
                 Text(verbatim: "\(response.status) \(response.statusText)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                     .fixedSize()
                     .foregroundStyle(Self.statusColor(response.status))
                     .accessibilityIdentifier("apiStatus")
-                Text(verbatim: APIResponse.formatDuration(response.duration)).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                Text(verbatim: APIResponse.formatDuration(response.duration)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .fixedSize()
-                Text(verbatim: APIResponse.formatSize(response.size)).font(.system(size: 11.5)).foregroundStyle(theme.text2).fixedSize()
+                Text(verbatim: APIResponse.formatSize(response.size)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).fixedSize()
             } else if let error = result.error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(Color(red: 0.96, green: 0.45, blue: 0.40))
                     .lineLimit(2)
                     .accessibilityIdentifier("apiError")
             }
             if !result.tests.isEmpty {
                 Text(verbatim: "\(result.passed)/\(result.tests.count) passed")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
                     .fixedSize()
                     .foregroundStyle(result.failed == 0 ? Self.statusColor(200) : Self.statusColor(500))
                     .onTapGesture { model.responseTab = .tests }
@@ -80,7 +80,7 @@ struct APIResponseView: View {
                 Button {
                     model.askAgent()
                 } label: {
-                    Image(systemName: "sparkle").font(.system(size: 11))
+                    Image(systemName: "sparkle").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.text2)
@@ -92,7 +92,7 @@ struct APIResponseView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(model.rawBody ? response.text : response.prettyText, forType: .string)
                 } label: {
-                    Image(systemName: "doc.on.doc").font(.system(size: 11))
+                    Image(systemName: "doc.on.doc").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.text2)
@@ -102,7 +102,7 @@ struct APIResponseView: View {
         .lineLimit(1)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 12)
-        .frame(height: 32)
+        .frame(height: ChromeMetrics.row(32))
         // Leading, and cut on the right in a narrow pane: the status first.
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
@@ -128,24 +128,24 @@ struct APIResponseView: View {
                         text: .constant(model.rawBody ? response.rawDisplay : response.display), language: response.isJSON ? "json" : language(response),
                         editable: false, wraps: model.rawBody, accessibilityIdentifier: "apiResponseBody")
                     HStack {
-                        Toggle("Raw", isOn: $model.rawBody).toggleStyle(.checkbox).font(.system(size: 11))
+                        Toggle("Raw", isOn: $model.rawBody).toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(11)))
                         Spacer()
-                        Text(verbatim: response.contentType).font(.system(size: 11)).foregroundStyle(theme.text3)
+                        Text(verbatim: response.contentType).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     }
                     .padding(.horizontal, 12)
-                    .frame(height: 24)
+                    .frame(height: ChromeMetrics.row(24))
                 }
             } else {
-                Text(result.error ?? "").font(.system(size: 12)).foregroundStyle(theme.text2).padding(12)
+                Text(result.error ?? "").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).padding(12)
             }
         case .headers:
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(result.response?.headers ?? [], id: \.self) { header in
                         HStack(alignment: .top, spacing: 10) {
-                            Text(verbatim: header.name).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
+                            Text(verbatim: header.name).font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
                                 .frame(width: 200, alignment: .leading)
-                            Text(verbatim: header.value).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
+                            Text(verbatim: header.value).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text2)
                                 .textSelection(.enabled)
                         }
                     }
@@ -172,26 +172,26 @@ struct APIResponseView: View {
             VStack(alignment: .leading, spacing: 10) {
                 if let plan = result.plan {
                     Text(verbatim: "\(plan.method) \(plan.url.absoluteString)")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                         .foregroundStyle(theme.text)
                         .textSelection(.enabled)
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(Array(plan.headers.enumerated()), id: \.offset) { _, header in
                             Text(verbatim: "\(header.name): \(header.value)")
-                                .font(.system(size: 11.5, design: .monospaced))
+                                .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
                                 .foregroundStyle(theme.text2)
                                 .textSelection(.enabled)
                         }
                     }
                     if let body = plan.body, !body.isEmpty {
                         Text(verbatim: String(data: body.prefix(4096), encoding: .utf8) ?? "<\(body.count) bytes>")
-                            .font(.system(size: 11.5, design: .monospaced))
+                            .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
                             .foregroundStyle(theme.text2)
                             .textSelection(.enabled)
                     }
                     if !plan.unresolved.isEmpty {
                         Label("Not defined: " + plan.unresolved.map { "{{\($0)}}" }.joined(separator: ", "), systemImage: "questionmark.circle")
-                            .font(.system(size: 11.5))
+                            .font(.system(size: ChromeMetrics.text(11.5)))
                             .foregroundStyle(Self.statusColor(400))
                     }
                 }
@@ -210,7 +210,7 @@ struct APIResponseView: View {
                     Divider()
                     ForEach(Array(result.logs.enumerated()), id: \.offset) { _, line in
                         Text(verbatim: line.text)
-                            .font(.system(size: 11.5, design: .monospaced))
+                            .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
                             .foregroundStyle(line.level == .error ? Self.statusColor(500) : line.level == .warn ? Self.statusColor(400) : theme.text2)
                             .textSelection(.enabled)
                     }
@@ -227,8 +227,8 @@ struct APIResponseView: View {
 
     private func row(_ name: String, _ value: String) -> some View {
         HStack {
-            Text(name).font(.system(size: 11.5)).foregroundStyle(theme.text2).frame(width: 120, alignment: .leading)
-            Text(verbatim: value).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text)
+            Text(name).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).frame(width: 120, alignment: .leading)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text)
         }
     }
 
@@ -237,7 +237,7 @@ struct APIResponseView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if result.tests.isEmpty {
                     Text("No tests or assertions ran. Add some in the Tests and Assert tabs.")
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text3)
                 }
                 // By position: two scripts' tests may share a name.
@@ -245,12 +245,12 @@ struct APIResponseView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: test.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(test.passed ? Self.statusColor(200) : Self.statusColor(500))
-                            .font(.system(size: 12))
+                            .font(.system(size: ChromeMetrics.text(12)))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: test.name).font(.system(size: 12, design: test.isAssertion ? .monospaced : .default))
+                            Text(verbatim: test.name).font(.system(size: ChromeMetrics.text(12), design: test.isAssertion ? .monospaced : .default))
                                 .foregroundStyle(theme.text)
                             if let error = test.error {
-                                Text(verbatim: error).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2)
+                                Text(verbatim: error).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2)
                                     .textSelection(.enabled)
                             }
                         }

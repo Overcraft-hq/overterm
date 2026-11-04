@@ -136,7 +136,7 @@ struct SettingsPageView: View {
                     .accessibilityIdentifier("settings.search")
             }
             .padding(.horizontal, 10)
-            .frame(height: 30)
+            .frame(height: ChromeMetrics.row(30))
             .background(RoundedRectangle(cornerRadius: 7).fill(theme.selected.opacity(0.6)))
             .padding(.bottom, 8)
             ForEach(model.sections) { section in
@@ -147,7 +147,7 @@ struct SettingsPageView: View {
                         .foregroundStyle(model.section == section ? theme.text : theme.dimText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
-                        .frame(height: 30)
+                        .frame(height: ChromeMetrics.row(30))
                         .background(RoundedRectangle(cornerRadius: 7).fill(model.section == section ? theme.selected : .clear))
                         .contentShape(Rectangle())
                 }
@@ -162,7 +162,7 @@ struct SettingsPageView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(model.section.title).font(.system(size: 22, weight: .semibold)).foregroundStyle(theme.text)
+                Text(model.section.title).font(.system(size: ChromeMetrics.text(22), weight: .semibold)).foregroundStyle(theme.text)
                 Spacer()
                 if model.section != .about {
                     Picker("", selection: $model.mode) {
@@ -238,7 +238,7 @@ private struct SpecRows: View {
         let groups = specs.reduce(into: [String]()) { if !$0.contains($1.group) { $0.append($1.group) } }
         ForEach(groups, id: \.self) { group in
             VStack(alignment: .leading, spacing: 0) {
-                Text(group).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
+                Text(group).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
                 ForEach(specs.filter { $0.group == group }) { spec in
                     SettingRow(spec: spec, model: model, settings: settings, theme: theme)
                     Rectangle().fill(theme.dimText.opacity(0.12)).frame(height: 1)
@@ -281,7 +281,7 @@ private struct SettingRow: View {
             if let help = spec.help {
                 Text(help).font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
             }
-            Text(verbatim: spec.key).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
+            Text(verbatim: spec.key).font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
         }
     }
 
@@ -300,7 +300,7 @@ private struct SettingRow: View {
         Button {
             settings.set(spec.key, nil)
         } label: {
-            Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
+            Image(systemName: "arrow.uturn.backward").font(.system(size: ChromeMetrics.text(11)))
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.dimText)
@@ -427,7 +427,7 @@ private struct SettingOrderList: View {
         List {
             ForEach(rows, id: \.value) { option in
                 HStack(spacing: 10) {
-                    Image(systemName: "line.3.horizontal").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    Image(systemName: "line.3.horizontal").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                     if let toggle = option.toggle {
                         Toggle("", isOn: Binding(get: { settings.bool(toggle) }, set: { settings.set(toggle, .bool($0)) }))
                             .toggleStyle(.checkbox)
@@ -482,7 +482,7 @@ private struct SettingColorWell: View {
         HStack(spacing: 8) {
             ColorPicker("", selection: color, supportsOpacity: false).labelsHidden()
             Text(verbatim: settings.isSet(spec.key) ? settings.string(spec.key) : unset)
-                .font(.system(size: 12, design: settings.isSet(spec.key) ? .monospaced : .default))
+                .font(.system(size: ChromeMetrics.text(12), design: settings.isSet(spec.key) ? .monospaced : .default))
                 .foregroundStyle(theme.dimText)
         }
     }
@@ -498,7 +498,7 @@ private struct SettingFilePicker: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(verbatim: settings.isSet(spec.key) ? (settings.string(spec.key) as NSString).lastPathComponent : "None")
-                .font(.system(size: 12)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.middle)
+                .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: 180, alignment: .trailing)
                 .help(settings.string(spec.key))
             Button("Choose…") {
@@ -587,7 +587,7 @@ private struct SettingsJSONView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Text(verbatim: url.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText).lineLimit(1)
+                Text(verbatim: url.path).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.dimText).lineLimit(1)
                     .truncationMode(.head)
                 Spacer()
                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
@@ -692,7 +692,7 @@ private struct ShortcutsSettings: View {
             let commands = KeyCommands.all.filter { $0.group == group && ($0.matches(filter) || "keyboard shortcuts".contains(filter.lowercased())) }
             if !commands.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(group).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
+                    Text(group).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
                     ForEach(commands) { command in
                         ShortcutRow(command: command, keybindings: keybindings, theme: theme, recording: $recording)
                         Rectangle().fill(theme.dimText.opacity(0.12)).frame(height: 1)
@@ -701,7 +701,7 @@ private struct ShortcutsSettings: View {
             }
         }
         VStack(alignment: .leading, spacing: 0) {
-            Text("Mouse and dropping").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
+            Text("Mouse and dropping").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
             ForEach(Shortcuts.mouse.filter { $0.matches(filter) || filter.isEmpty }) { shortcut in
                 HStack {
                     Text(verbatim: shortcut.title).foregroundStyle(theme.text)
@@ -727,7 +727,7 @@ private struct ShortcutRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(command.title).foregroundStyle(theme.text)
-                Text(verbatim: command.id).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
+                Text(verbatim: command.id).font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
             }
             Spacer()
             if !clashes.isEmpty {
@@ -759,7 +759,7 @@ private struct ShortcutRow: View {
                         .background(RoundedRectangle(cornerRadius: 6).fill(theme.selected))
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(keybindings.isChanged(command) ? Color.accentColor.opacity(0.7) : theme.dimText.opacity(0.3)))
+                                .strokeBorder(keybindings.isChanged(command) ? theme.accent.opacity(0.7) : theme.dimText.opacity(0.3)))
                 }
                 .buttonStyle(.plain)
                 .help("Click, then press the new keys")
@@ -767,7 +767,7 @@ private struct ShortcutRow: View {
             Button {
                 keybindings.reset(command)
             } label: {
-                Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
+                Image(systemName: "arrow.uturn.backward").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)

@@ -17,7 +17,7 @@ struct PaletteView: View {
                 .onTapGesture(perform: onDismiss)
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(theme.text3)
+                    Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(14))).foregroundStyle(theme.text3)
                     PaletteField(
                         text: $model.query,
                         onMove: { model.move($0) },
@@ -76,9 +76,9 @@ struct PaletteView: View {
             model.scope = group
         } label: {
             Text(title)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .padding(.horizontal, 8)
-                .frame(height: 20)
+                .frame(height: ChromeMetrics.row(20))
                 .background(Capsule().fill(on ? TabStatusStyle.working : theme.iconBg))
                 .contentShape(Capsule())
         }
@@ -91,16 +91,16 @@ struct PaletteView: View {
             hint("↩", "run")
             hint("⌥↩", "paste without running")
             Spacer()
-            Text(verbatim: "⌘K").font(.system(size: 12)).foregroundStyle(theme.text3)
+            Text(verbatim: "⌘K").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
         }
         .padding(.horizontal, 16)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
     }
 
     private func hint(_ key: String, _ what: String) -> some View {
         HStack(spacing: 5) {
-            Text(verbatim: key).font(.system(size: 12)).foregroundStyle(theme.text)
-            Text(what).font(.system(size: 12)).foregroundStyle(theme.text3)
+            Text(verbatim: key).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
+            Text(what).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
         }
     }
 
@@ -138,22 +138,22 @@ struct PaletteView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
-                    .font(.system(size: 13, design: item.group == .history ? .monospaced : .default))
+                    .font(.system(size: ChromeMetrics.text(13), design: item.group == .history ? .monospaced : .default))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let subtitle = item.subtitle {
                     Text(subtitle)
-                        .font(.system(size: 11, design: item.group == .snippet ? .monospaced : .default))
+                        .font(.system(size: ChromeMetrics.text(11), design: item.group == .snippet ? .monospaced : .default))
                         .foregroundStyle(theme.dimText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
             Spacer()
-            Text(item.group.rawValue).font(.system(size: 10)).foregroundStyle(theme.dimText)
+            Text(item.group.rawValue).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
         }
-        .font(.system(size: 13))
+        .font(.system(size: ChromeMetrics.text(13)))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 7).fill(selected ? theme.selected : .clear))
@@ -237,12 +237,12 @@ private struct PaletteDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(item.title)
-                .font(.system(size: 13, weight: .bold, design: item.group == .history ? .monospaced : .default))
+                .font(.system(size: ChromeMetrics.text(13), weight: .bold, design: item.group == .history ? .monospaced : .default))
                 .foregroundStyle(theme.text)
                 .lineLimit(2)
             if let subtitle = item.subtitle, item.group == .snippet {
                 Text(subtitle)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                     .foregroundStyle(theme.text)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -250,20 +250,20 @@ private struct PaletteDetail: View {
             }
             ForEach(item.placeholders, id: \.self) { name in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(name).font(.system(size: 11)).foregroundStyle(theme.text2)
+                    Text(name).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
                     TextField(
                         name, text: Binding(get: { model.values[name] ?? "" }, set: { model.values[name] = $0 })
                     )
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(13), design: .monospaced))
                     .padding(.horizontal, 8)
-                    .frame(height: 28)
+                    .frame(height: ChromeMetrics.row(28))
                     .background(RoundedRectangle(cornerRadius: 6).fill(theme.term))
                 }
             }
             Spacer(minLength: 0)
             if let detail = item.detail {
-                Text(detail).font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
         }
         .padding(16)

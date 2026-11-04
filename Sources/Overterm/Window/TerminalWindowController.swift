@@ -58,6 +58,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var infoPopover: NSPopover?
     private(set) var infoModel: TabInfoModel?
     private(set) var theme: ChromeTheme?
+    /// The body's four insets from the window (the card gap).
+    private var bodyInsets: [NSLayoutConstraint] = []
     /// A press on a tab that may become a drag: the tab and where it began.
     private var pressedTab: (tab: Tab, x: CGFloat)?
     /// A chip pressed in the strip: dragging it moves the whole island.
@@ -191,6 +193,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private static let diffVisibleKey = "diffVisible"
 
     init() {
+        // The sizes everything below is built at.
+        ChromeMetrics.apply()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -681,17 +685,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             titleBand.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             titleBand.bottomAnchor.constraint(equalTo: titleBottom),
         ])
-        NSLayoutConstraint.activate([
-            // The cards keep the same 10 pt from the window on all four
-            // sides as they keep from each other — under the strip too,
-            // which is a panel of its own now and would otherwise run
-            // straight into the terminal. Sideways each card already keeps
-            // half of it, so the window only owes the other half.
-            body.topAnchor.constraint(equalTo: titleBottom, constant: CardColumn.gap),
-            body.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: CardColumn.gap / 2),
-            body.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -CardColumn.gap / 2),
-            body.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -CardColumn.gap),
-        ])
+        // The cards keep the same 10 pt from the window on all four
+        // sides as they keep from each other — under the strip too,
+        // which is a panel of its own now and would otherwise run
+        // straight into the terminal. Sideways each card already keeps
+        // half of it, so the window only owes the other half. Kept, so a
+        // gap changed in Settings moves them (`applyMetrics`).
+        bodyInsets = [
+            body.topAnchor.constraint(equalTo: titleBottom),
+            body.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+        ]
+        setBodyInsets()
+        NSLayoutConstraint.activate(bodyInsets)
 
         // The pages (Settings's tab) cover the body, under the title bar
         // where the tab strip is.
@@ -3220,6 +3227,32 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
+    /// Settings that change the chrome alone, applied without Ghostty.
+    static let chromeKeys: Set<String> = ["appearance.accent"]
+
+    private func setBodyInsets() {
+        guard bodyInsets.count == 4 else { return }
+        let gap = CardColumn.gap
+        bodyInsets[0].constant = gap
+        bodyInsets[1].constant = gap / 2
+        bodyInsets[2].constant = -gap / 2
+        bodyInsets[3].constant = -gap
+    }
+
+    /// Settings ▸ Appearance ▸ Interface changed the sizes: everything lays
+    /// itself out again, and the SwiftUI views (which all observe the
+    /// theme) draw at the new ones.
+    func applyMetrics() {
+        setBodyInsets()
+        for item in split.splitViewItems { item.viewController.view.needsLayout = true }
+        hosts.values.forEach { $0.needsLayout = true }
+        theme?.objectWillChange.send()
+        sizeStrip()
+        split.view.needsLayout = true
+        window?.contentView?.needsLayout = true
+        window?.groundChanged()
+    }
+
     /// The translucent window's ground, behind everything in the content view.
     private var ground: WindowGroundView? {
         window?.contentView?.subviews.first { $0 is WindowGroundView } as? WindowGroundView
@@ -3278,6 +3311,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             .sink { [weak self] keys in
                 guard let self else { return }
                 if keys.contains("appearance.unfocusedPaneDim") { self.hosts.values.forEach { $0.dimColor = Self.paneDim } }
+                // The chrome's own settings: no Ghostty reload says so.
+                if !keys.isDisjoint(with: Self.chromeKeys) { self.applyTerminalColors() }
+                if !keys.isDisjoint(with: ChromeMetrics.keys) {
+                    ChromeMetrics.apply()
+                    self.applyMetrics()
+                }
                 if keys.contains("notifications.dockBadge") { self.updateAttentionBadge() }
                 if keys.contains(where: { $0.hasPrefix("browser.") }) { self.browserSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("api.") }) { self.apiSettingsChanged() }
@@ -3304,7 +3343,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private func applyTerminalColors() {
         let runtime = GhosttyRuntime.shared
         guard let theme else { return }
-        theme.apply(background: runtime.backgroundColor, foreground: runtime.foregroundColor, opacity: windowOpacity)
+        let accent = ChromeAccent(rawValue: Settings.shared.string("appearance.accent")) ?? .overterm
+        theme.apply(
+            background: runtime.backgroundColor, foreground: runtime.foregroundColor, opacity: windowOpacity,
+            accent: accent.color(isDark: runtime.backgroundColor.brightnessComponent < 0.5))
         window?.isOpaque = !theme.isTranslucent
         window?.backgroundColor = theme.isTranslucent ? .clear : theme.winNS
         installGround()

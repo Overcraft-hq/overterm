@@ -53,14 +53,14 @@ struct OvergitChanges: View {
     private func group(_ title: String, files: [ChangedFile], staged: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text(verbatim: title.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.text3)
-                Text(verbatim: "\(files.count)").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Text(verbatim: title.uppercased()).font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(theme.text3)
+                Text(verbatim: "\(files.count)").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 Spacer(minLength: 0)
                 Button(staged ? "Unstage All" : "Stage All") {
                     Task { staged ? await diff.unstageAll() : await diff.stageAll() }
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10.5, weight: .medium))
+                .font(.system(size: ChromeMetrics.text(10.5), weight: .medium))
                 .foregroundStyle(theme.accentText)
             }
             .padding(.horizontal, 14)
@@ -83,7 +83,7 @@ struct OvergitChanges: View {
             if !diff.files.isEmpty || amend {
                 TextField(amend ? "Amended message" : "Message (⌘↩ to commit)", text: $message, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .lineLimit(1...6)
                     .padding(7)
                     .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
@@ -91,7 +91,7 @@ struct OvergitChanges: View {
                 HStack(spacing: 8) {
                     Toggle("Amend", isOn: $amend)
                         .toggleStyle(.checkbox)
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .help("Change the last commit instead of making a new one")
                         .onChange(of: amend) { on in
                             // Amending starts from the last message, as git's editor would.
@@ -106,7 +106,7 @@ struct OvergitChanges: View {
                 }
             }
             if let error = diff.actionError {
-                Text(verbatim: error).font(.system(size: 11)).foregroundStyle(DiffColors.removed).lineLimit(4)
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed).lineLimit(4)
                     .textSelection(.enabled)
             }
             if ahead > 0 || (!hasUpstream && diff.branch != nil && diff.files.isEmpty) {
@@ -117,7 +117,7 @@ struct OvergitChanges: View {
                         busy == "push" ? "Pushing…" : (hasUpstream ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Publish Branch"),
                         systemImage: "arrow.up.circle"
                     )
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.accentText)
@@ -185,24 +185,24 @@ private struct ChangeRow: View {
         HStack(spacing: 6) {
             Button(action: onToggle) {
                 Image(systemName: staged ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(staged ? theme.accentText : theme.text3)
             }
             .buttonStyle(.plain)
             .help(staged ? "Unstage" : "Stage")
             .accessibilityIdentifier("stage-\(file.path)")
-            Text(verbatim: letter.0).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(letter.1).frame(width: 10)
-            Text(verbatim: (file.path as NSString).lastPathComponent).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+            Text(verbatim: letter.0).font(.system(size: ChromeMetrics.text(10), weight: .bold, design: .monospaced)).foregroundStyle(letter.1).frame(width: 10)
+            Text(verbatim: (file.path as NSString).lastPathComponent).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
             Text(verbatim: (file.path as NSString).deletingLastPathComponent)
-                .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.head)
+                .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.head)
             Spacer(minLength: 2)
             if let added = file.added, let removed = file.removed {
-                Text(verbatim: "+\(added)").font(.system(size: 10, design: .monospaced)).foregroundStyle(DiffColors.added)
-                Text(verbatim: "−\(removed)").font(.system(size: 10, design: .monospaced)).foregroundStyle(DiffColors.removed)
+                Text(verbatim: "+\(added)").font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(DiffColors.added)
+                Text(verbatim: "−\(removed)").font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(DiffColors.removed)
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
         .background(RoundedRectangle(cornerRadius: 5).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -224,17 +224,17 @@ struct CommitSearchField: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
+            Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             TextField("Search commits", text: $model.commitQuery)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .accessibilityIdentifier("overgitCommitSearch")
             if model.isSearching { ProgressView().controlSize(.mini) }
             if !model.commitQuery.isEmpty {
                 Button {
                     model.commitQuery = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                    Image(systemName: "xmark.circle.fill").font(.system(size: ChromeMetrics.text(10)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.text3)
@@ -246,7 +246,7 @@ struct CommitSearchField: View {
                 Button("Since…") { model.commitQuery += (model.commitQuery.isEmpty ? "" : " ") + "since:2.weeks" }
                 Button("On Branch…") { model.commitQuery += (model.commitQuery.isEmpty ? "" : " ") + "branch:" }
             } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: 11))
+                Image(systemName: "line.3.horizontal.decrease.circle").font(.system(size: ChromeMetrics.text(11)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -254,7 +254,7 @@ struct CommitSearchField: View {
             .help("Filters: author:, path:, code:, since:, branch: — words search the message, a hash finds its commit")
         }
         .padding(.horizontal, 8)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
         .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

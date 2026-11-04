@@ -58,7 +58,7 @@ struct ReviewView: View {
 
     private func note(_ text: String) -> some View {
         Text(verbatim: text)
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(theme.dimText)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -72,14 +72,14 @@ private struct ReviewHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: model.source.symbol).font(.system(size: 14)).foregroundStyle(theme.dimText)
+            Image(systemName: model.source.symbol).font(.system(size: ChromeMetrics.text(14))).foregroundStyle(theme.dimText)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: model.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(14), weight: .semibold))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Text(verbatim: subtitle)
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.dimText)
                     .lineLimit(1)
             }
@@ -87,7 +87,7 @@ private struct ReviewHeader: View {
                 Button {
                     actions.openOnGitHub(url)
                 } label: {
-                    Image(systemName: "arrow.up.forward.square").font(.system(size: 12))
+                    Image(systemName: "arrow.up.forward.square").font(.system(size: ChromeMetrics.text(12)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.dimText)
@@ -96,13 +96,13 @@ private struct ReviewHeader: View {
             Spacer(minLength: 8)
             if model.phase == .loaded, !model.files.isEmpty {
                 Text(verbatim: "\(model.viewed.count)/\(model.files.count) viewed")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.dimText)
                 HStack(spacing: 3) {
                     Text(verbatim: "+\(model.added)").foregroundStyle(DiffColors.added)
                     Text(verbatim: "−\(model.removed)").foregroundStyle(DiffColors.removed)
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
             }
             Picker("", selection: $model.layout) {
                 Text("Split").tag(ReviewModel.Layout.split)
@@ -115,7 +115,7 @@ private struct ReviewHeader: View {
             Button {
                 Task { await model.load() }
             } label: {
-                Image(systemName: "arrow.clockwise").font(.system(size: 12))
+                Image(systemName: "arrow.clockwise").font(.system(size: ChromeMetrics.text(12)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -159,7 +159,7 @@ private struct ReviewFilePane: View {
     private func header(_ file: ChangedFile) -> some View {
         HStack(spacing: 8) {
             Text(verbatim: file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
                 .truncationMode(.head)
@@ -169,7 +169,7 @@ private struct ReviewFilePane: View {
                 model.toggleViewed(file.path)
             } label: {
                 Label("Viewed", systemImage: model.viewed.contains(file.path) ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(model.viewed.contains(file.path) ? theme.text : theme.dimText)
@@ -177,7 +177,7 @@ private struct ReviewFilePane: View {
             Button {
                 actions.openFile(model, file)
             } label: {
-                Image(systemName: "arrow.up.forward.square").font(.system(size: 12))
+                Image(systemName: "arrow.up.forward.square").font(.system(size: ChromeMetrics.text(12)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -185,7 +185,7 @@ private struct ReviewFilePane: View {
             .disabled(file.kind == .deleted)
         }
         .padding(.horizontal, 14)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
     }
 
     @ViewBuilder private func content(_ file: ChangedFile) -> some View {
@@ -208,7 +208,7 @@ private struct ReviewFilePane: View {
 
     private func note(_ text: String) -> some View {
         Text(verbatim: text)
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(theme.dimText)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -290,11 +290,11 @@ private struct ReviewDiffView: View {
                         }
                     }
                     if diff.truncated {
-                        Text("Diff truncated.").font(.system(size: 11)).foregroundStyle(theme.dimText).padding(8)
+                        Text("Diff truncated.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(8)
                     }
                 }
                 .padding(.vertical, 4)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 // No .textSelection: it cost 40% of every scroll step (a
                 // 3,000-line file side by side, 17 ms a step → 10.5 ms).
                 // Open in Editor is where a line is copied from.
@@ -393,6 +393,9 @@ final class ReviewHostingView: NSHostingView<ReviewPageView> {
     var review: () -> ReviewModel? = { nil }
 
     override var acceptsFirstResponder: Bool { true }
+    /// A press in a window not in front acts at once — the divider between
+    /// the sides drags on the first one, as the terminal's dividers do.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])

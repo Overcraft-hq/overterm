@@ -263,6 +263,18 @@ final class GhosttyRuntime {
         return ThemeCatalog.read(name)
     }
 
+    /// An ANSI colour of the theme in force (0–15: the 16 a theme names).
+    func paletteColor(_ index: Int) -> NSColor? {
+        if let theme = themeInForce { return theme.ansi(index).nsColor }
+        guard let config, (0..<256).contains(index) else { return nil }
+        var palette = ghostty_config_palette_s()
+        guard ghostty_config_get(config, &palette, "palette", UInt("palette".utf8.count)) else { return nil }
+        return withUnsafeBytes(of: &palette.colors) { raw in
+            let colour = raw.bindMemory(to: ghostty_config_color_s.self)[index]
+            return NSColor(srgbRed: CGFloat(colour.r) / 255, green: CGFloat(colour.g) / 255, blue: CGFloat(colour.b) / 255, alpha: 1)
+        }
+    }
+
     private func color(_ key: String) -> NSColor? {
         guard let config else { return nil }
         var c = ghostty_config_color_s()

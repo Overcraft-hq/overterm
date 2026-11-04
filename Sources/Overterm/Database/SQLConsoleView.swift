@@ -41,8 +41,8 @@ struct SQLConsoleView: View {
                 if console.connection != nil { Button("No Connection") { console.use(nil) } }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "cylinder").font(.system(size: 10))
-                    Text(verbatim: console.connection?.name ?? "Choose a connection").font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                    Image(systemName: "cylinder").font(.system(size: ChromeMetrics.text(10)))
+                    Text(verbatim: console.connection?.name ?? "Choose a connection").font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).lineLimit(1)
                     if let state = console.session?.state { stateDot(state) }
                 }
             }
@@ -55,7 +55,7 @@ struct SQLConsoleView: View {
                         Button(schema) { session.schema = schema }
                     }
                 } label: {
-                    Text(verbatim: session.schema ?? "schema").font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                    Text(verbatim: session.schema ?? "schema").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -70,7 +70,7 @@ struct SQLConsoleView: View {
                         Button((item.error == nil ? "" : "⚠︎ ") + item.sql.replacingOccurrences(of: "\n", with: " ").prefix(80)) { insert(item.sql) }
                     }
                 } label: {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -82,7 +82,7 @@ struct SQLConsoleView: View {
                 Button("Stop", action: console.stop).controlSize(.small)
             }
             Button(action: runStatement) {
-                Label("Run", systemImage: "play.fill").font(.system(size: 11.5))
+                Label("Run", systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11.5)))
             }
             .controlSize(.small)
             .disabled(console.connection == nil || console.isRunning)
@@ -94,7 +94,7 @@ struct SQLConsoleView: View {
                 .help("Run every statement of the file, in order")
         }
         .padding(.horizontal, 10)
-        .frame(height: 32)
+        .frame(height: ChromeMetrics.row(32))
     }
 
     private func stateDot(_ state: DatabaseSession.State) -> some View {
@@ -119,20 +119,20 @@ struct SQLConsoleView: View {
                         if run.running {
                             ProgressView().controlSize(.mini).scaleEffect(0.7)
                         } else if run.error != nil {
-                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9)).foregroundStyle(DiffColors.removed)
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(DiffColors.removed)
                         }
-                        Text(verbatim: Self.title(run, index: index)).font(.system(size: 11)).lineLimit(1)
+                        Text(verbatim: Self.title(run, index: index)).font(.system(size: ChromeMetrics.text(11))).lineLimit(1)
                         Button {
                             console.close(run)
                         } label: {
-                            Image(systemName: "xmark").font(.system(size: 7, weight: .bold))
+                            Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(7), weight: .bold))
                         }
                         .buttonStyle(.plain)
                         .opacity(picked ? 1 : 0.5)
                     }
                     .foregroundStyle(picked ? theme.text : theme.text2)
                     .padding(.horizontal, 8)
-                    .frame(height: 22)
+                    .frame(height: ChromeMetrics.row(22))
                     .background(RoundedRectangle(cornerRadius: 5).fill(picked ? theme.selected : .clear))
                     .contentShape(Rectangle())
                     .onTapGesture { console.selected = run.id }
@@ -154,7 +154,7 @@ struct SQLConsoleView: View {
     @ViewBuilder private func body(of run: SQLConsole.Run) -> some View {
         if let error = run.error {
             ScrollView {
-                Text(verbatim: error).font(.system(size: 12, design: .monospaced)).foregroundStyle(DiffColors.removed)
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(DiffColors.removed)
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }
         } else if let result = run.result {
@@ -163,14 +163,14 @@ struct SQLConsoleView: View {
                 status(result, sql: run.sql)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: Self.summary(result)).font(.system(size: 12)).foregroundStyle(theme.text)
-                    Text(verbatim: run.sql).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3).lineLimit(3)
+                    Text(verbatim: Self.summary(result)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
+                    Text(verbatim: run.sql).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3).lineLimit(3)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(12)
             }
         } else {
-            Text("Running…").font(.system(size: 12)).foregroundStyle(theme.text3)
+            Text("Running…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -195,7 +195,7 @@ struct SQLConsoleView: View {
 
     private func status(_ result: QueryResult, sql: String) -> some View {
         HStack(spacing: 8) {
-            Text(verbatim: Self.summary(result)).font(.system(size: 11)).foregroundStyle(result.truncated ? theme.orangeText : theme.text3)
+            Text(verbatim: Self.summary(result)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(result.truncated ? theme.orangeText : theme.text3)
                 .help(result.truncated ? "More rows than Settings ▸ Database ▸ Rows fetched" : "")
             Spacer(minLength: 0)
             Menu {
@@ -203,7 +203,7 @@ struct SQLConsoleView: View {
                     Button("Save as \(format.title)…") { save(result, sql: sql, format: format) }
                 }
             } label: {
-                Image(systemName: "square.and.arrow.down").font(.system(size: 11))
+                Image(systemName: "square.and.arrow.down").font(.system(size: ChromeMetrics.text(11)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -211,7 +211,7 @@ struct SQLConsoleView: View {
             .help("Save the rows")
         }
         .padding(.horizontal, 10)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
     }
 
     private func save(_ result: QueryResult, sql: String, format: ResultExport.Format) {

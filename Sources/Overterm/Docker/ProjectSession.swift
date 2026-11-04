@@ -103,15 +103,15 @@ struct ProjectDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     DockerStatusDot(color: DockerStatusStyle.color(project, idle: theme.text3))
-                    Text(verbatim: project.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
+                    Text(verbatim: project.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
                     Spacer(minLength: 0)
                 }
-                Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
+                Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.head)
                 updatesLine
                 if let kept = ports.override(of: project) { ownPorts(kept) }
                 DockerActionBar(verbs: page.verbs(for: project), theme: theme).padding(.top, 4)
                 if project.planned, let planError {
-                    Text(verbatim: planError).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+                    Text(verbatim: planError).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .help("What docker compose config said; the services are from the last time it could read the file")
                 }
@@ -133,8 +133,8 @@ struct ProjectDetailView: View {
         let summary = kept.summary
         let text = kept.moves.isEmpty ? summary.prefix(1).uppercased() + summary.dropFirst() : "Own ports: " + summary
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "arrow.left.arrow.right").font(.system(size: 10)).foregroundStyle(theme.accentText).accessibilityHidden(true)
-            Text(verbatim: text).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
+            Image(systemName: "arrow.left.arrow.right").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.accentText).accessibilityHidden(true)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         // One element that reads as the line does.
@@ -153,8 +153,8 @@ struct ProjectDetailView: View {
             TimelineView(.everyMinute) { _ in
                 if let line = summary.line(ago: { UsageFormat.age($0) }) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: "arrow.down.circle").font(.system(size: 10)).foregroundStyle(theme.accentText).accessibilityHidden(true)
-                        Text(verbatim: line).font(.system(size: 11.5))
+                        Image(systemName: "arrow.down.circle").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.accentText).accessibilityHidden(true)
+                        Text(verbatim: line).font(.system(size: ChromeMetrics.text(11.5)))
                             .foregroundStyle(summary.available.isEmpty && summary.recreate.isEmpty ? theme.text2 : theme.accentText)
                             .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
@@ -194,9 +194,9 @@ struct ProjectDetailView: View {
                         page.projectTab = tab
                     } label: {
                         Text(tab.rawValue.capitalized)
-                            .font(.system(size: 12, weight: page.projectTab == tab ? .semibold : .regular))
+                            .font(.system(size: ChromeMetrics.text(12), weight: page.projectTab == tab ? .semibold : .regular))
                             .foregroundStyle(page.projectTab == tab ? theme.text : theme.text2)
-                            .padding(.horizontal, 9).frame(height: 24)
+                            .padding(.horizontal, 9).frame(height: ChromeMetrics.row(24))
                             .background(RoundedRectangle(cornerRadius: 6).fill(page.projectTab == tab ? theme.selected : .clear))
                             .contentShape(Rectangle())
                     }
@@ -227,13 +227,13 @@ struct ProjectDetailView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         let verbs = page.verbs(for: service, in: project)
                         HStack(spacing: 6) {
-                            Text(verbatim: service.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
+                            Text(verbatim: service.name).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text)
                             if facts?.watched.contains(service.name) == true {
-                                Image(systemName: "eye").font(.system(size: 10)).foregroundStyle(theme.text3)
+                                Image(systemName: "eye").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                                     .help("develop.watch: Watch syncs or rebuilds it as its files change")
                             }
                             if !service.dependsOn.isEmpty {
-                                Text(verbatim: "after " + service.dependsOn.joined(separator: ", ")).font(.system(size: 11)).foregroundStyle(theme.text3)
+                                Text(verbatim: "after " + service.dependsOn.joined(separator: ", ")).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 8)
@@ -255,7 +255,7 @@ struct ProjectDetailView: View {
                     }
                 }
                 if let problem = facts?.problem {
-                    Text(verbatim: "Compose couldn't read its files: " + problem).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(3)
+                    Text(verbatim: "Compose couldn't read its files: " + problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .help("What docker compose config said: Watch and Up With Profiles… need it")
                 }
@@ -266,7 +266,7 @@ struct ProjectDetailView: View {
 
     private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 24, height: 22).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).frame(width: 24, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.text2)
@@ -284,18 +284,18 @@ struct ComposeProfilesSheet: View {
     var body: some View {
         if let choice = page.profileChoice {
             VStack(alignment: .leading, spacing: 12) {
-                Text(verbatim: "Up “\(choice.project.name)” With Profiles").font(.system(size: 14, weight: .semibold))
+                Text(verbatim: "Up “\(choice.project.name)” With Profiles").font(.system(size: ChromeMetrics.text(14), weight: .semibold))
                 Text("Services in a profile ticked start with the rest; the ones in none always do.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(choice.profiles, id: \.self) { profile in
                         Toggle(isOn: ticked(profile)) {
-                            Text(verbatim: profile).font(.system(size: 12.5, design: .monospaced))
+                            Text(verbatim: profile).font(.system(size: ChromeMetrics.text(12.5), design: .monospaced))
                         }
                         .toggleStyle(.checkbox)
                     }
                 }
-                Text(verbatim: choice.command(page.ports, endpoint: endpoint)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                Text(verbatim: choice.command(page.ports, endpoint: endpoint)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(.secondary)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()

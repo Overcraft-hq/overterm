@@ -67,7 +67,7 @@ struct RightPaneView: View {
                     Text("Pull Request")
                     if let pr {
                         Text(verbatim: "#\(pr.number)").foregroundStyle(StatePill.color(pr.state))
-                        CIGlyph(overall: pr.checks.overall).font(.system(size: 9))
+                        CIGlyph(overall: pr.checks.overall).font(.system(size: ChromeMetrics.text(9)))
                     }
                 }
                 tab(.usage) {
@@ -80,15 +80,15 @@ struct RightPaneView: View {
                     // The sha alone: a fourth word here and the first three
                     // tabs truncate to "Chang…" and "Pull Req…".
                     tab(.commit, help: "The commit picked in Overgit") {
-                        Image(systemName: "point.3.filled.connected.trianglepath.dotted").font(.system(size: 10))
-                        Text(verbatim: sha).font(.system(size: 11, design: .monospaced))
+                        Image(systemName: "point.3.filled.connected.trianglepath.dotted").font(.system(size: ChromeMetrics.text(10)))
+                        Text(verbatim: sha).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     }
                 }
                 if apiRunner.hasRun {
                     // An icon, as the commit's sha alone: a fifth word here
                     // truncates the others.
                     tab(.runner, help: "Runner: the API collection run last") {
-                        Image(systemName: apiRunner.isRunning ? "play.circle" : "checklist").font(.system(size: 11))
+                        Image(systemName: apiRunner.isRunning ? "play.circle" : "checklist").font(.system(size: ChromeMetrics.text(11)))
                         if apiRunner.failedCount > 0 {
                             Text(verbatim: "\(apiRunner.failedCount)").foregroundStyle(APIResponseView.statusColor(500))
                         }
@@ -96,22 +96,22 @@ struct RightPaneView: View {
                 }
                 if pane.objectOpened {
                     tab(.object, help: "The file opened in the Database panel") {
-                        Image(systemName: "doc").font(.system(size: 11))
+                        Image(systemName: "doc").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
                 if pane.containerOpened {
                     tab(.container, help: "The container picked in the Docker panel") {
-                        Image(systemName: "shippingbox").font(.system(size: 11))
+                        Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
                 if pane.compareOpened {
                     tab(.compare, help: "The comparison picked in Overgit") {
-                        Image(systemName: "arrow.left.arrow.right.square").font(.system(size: 11))
+                        Image(systemName: "arrow.left.arrow.right.square").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
                 if pane.graphOpened {
                     tab(.graph, help: "The notes' graph") {
-                        Image(systemName: "point.3.connected.trianglepath.dotted").font(.system(size: 11))
+                        Image(systemName: "point.3.connected.trianglepath.dotted").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
                 Spacer(minLength: 0)
@@ -141,10 +141,10 @@ struct RightPaneView: View {
             pane.mode = mode
         } label: {
             HStack(spacing: 4) { label() }
-                .font(.system(size: 12, weight: pane.mode == mode ? .semibold : .regular))
+                .font(.system(size: ChromeMetrics.text(12), weight: pane.mode == mode ? .semibold : .regular))
                 .foregroundStyle(pane.mode == mode ? theme.text : theme.dimText)
                 .padding(.horizontal, 8)
-                .frame(height: 24)
+                .frame(height: ChromeMetrics.row(24))
                 .background(RoundedRectangle(cornerRadius: 6).fill(pane.mode == mode ? theme.selected : .clear))
                 .contentShape(Rectangle())
         }

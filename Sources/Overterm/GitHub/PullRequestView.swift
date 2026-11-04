@@ -41,13 +41,13 @@ struct PullRequestView: View {
     /// Picked in Overgit: not this checkout's branch's — said, with the way back.
     private var pickedBar: some View {
         HStack(spacing: 6) {
-            Image(systemName: "pin").font(.system(size: 10))
+            Image(systemName: "pin").font(.system(size: ChromeMetrics.text(10)))
             Text(verbatim: model.detail.map { "\($0.summary.branch)" } ?? "Picked in Overgit")
-                .font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
+                .font(.system(size: ChromeMetrics.text(11))).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 4)
             Button(model.branch.map { "Show \($0)’s" } ?? "Show this branch’s") { model.unpick() }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                 .foregroundStyle(theme.accentText)
         }
         .foregroundStyle(theme.dimText)
@@ -60,13 +60,13 @@ struct PullRequestView: View {
             if let pr = model.detail?.summary {
                 StatePill(state: pr.state)
                 Text(verbatim: "#\(pr.number) \(pr.title)")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .help(pr.title)
             } else {
-                Text("Pull Request").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+                Text("Pull Request").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
             }
             Spacer(minLength: 0)
             if model.phase == .loading { ProgressView().controlSize(.small) }
@@ -80,7 +80,7 @@ struct PullRequestView: View {
             iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
         }
         .padding(.horizontal, 12)
-        .frame(height: 36)
+        .frame(height: ChromeMetrics.row(36))
     }
 
     // MARK: Content
@@ -101,7 +101,7 @@ struct PullRequestView: View {
                     }
                     if !model.threads.isEmpty {
                         Text(model.threads.count == 1 ? "1 review thread" : "\(model.threads.count) review threads")
-                            .font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                            .font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
                             .padding(.top, 4)
                         ForEach(model.threads) { thread($0) }
                     }
@@ -121,7 +121,7 @@ struct PullRequestView: View {
             Text(verbatim: "−\(detail.deletions)").foregroundStyle(DiffColors.removed)
             Text(verbatim: detail.changedFiles == 1 ? "1 file" : "\(detail.changedFiles) files").foregroundStyle(theme.dimText)
         }
-        .font(.system(size: 11))
+        .font(.system(size: ChromeMetrics.text(11)))
     }
 
     private func checks(_ detail: PullRequestDetail) -> some View {
@@ -131,7 +131,7 @@ struct PullRequestView: View {
                 checksOpen.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: checksOpen ? "chevron.down" : "chevron.right").font(.system(size: 9)).frame(width: 10)
+                    Image(systemName: checksOpen ? "chevron.down" : "chevron.right").font(.system(size: ChromeMetrics.text(9))).frame(width: 10)
                     CIGlyph(overall: summary.overall)
                     Text(checksLine(summary)).foregroundStyle(theme.text)
                     Spacer(minLength: 0)
@@ -157,7 +157,7 @@ struct PullRequestView: View {
                 }
             }
         }
-        .font(.system(size: 12))
+        .font(.system(size: ChromeMetrics.text(12)))
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.5)))
     }
@@ -177,11 +177,11 @@ struct PullRequestView: View {
                 onOpenFile(thread.path, thread.line)
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "doc.text").font(.system(size: 10))
+                    Image(systemName: "doc.text").font(.system(size: ChromeMetrics.text(10)))
                     Text(verbatim: thread.line.map { "\(thread.path):\($0)" } ?? "\(thread.path) (outdated)")
                         .lineLimit(1).truncationMode(.head)
                 }
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.dimText)
                 .contentShape(Rectangle())
             }
@@ -191,7 +191,7 @@ struct PullRequestView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(thread.context.enumerated()), id: \.offset) { _, line in
                         Text(verbatim: line.isEmpty ? " " : line)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                             .foregroundStyle(line.hasPrefix("+") ? DiffColors.added : line.hasPrefix("-") ? DiffColors.removed : theme.dimText)
                             .lineLimit(1)
                     }
@@ -211,7 +211,7 @@ struct PullRequestView: View {
                     "Reply…", text: Binding(get: { replies[thread.id] ?? "" }, set: { replies[thread.id] = $0 }), axis: .vertical
                 )
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1...5)
                 Button("Reply") {
                     let text = replies[thread.id] ?? ""
@@ -230,12 +230,12 @@ struct PullRequestView: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let error = model.postError {
-                Text(verbatim: error).font(.system(size: 11)).foregroundStyle(DiffColors.removed)
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed)
             }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Comment on this pull request…", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .lineLimit(2...8)
                 Button("Comment") { send() }
                     .keyboardShortcut(.return, modifiers: .command)
@@ -270,12 +270,12 @@ struct PullRequestView: View {
 
     private func byline(_ author: String, _ date: Date?, badge: (String, Color)?) -> some View {
         HStack(spacing: 6) {
-            Text(verbatim: author).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: author).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text)
             if let badge {
-                Text(badge.0).font(.system(size: 10, weight: .medium)).foregroundStyle(badge.1)
+                Text(badge.0).font(.system(size: ChromeMetrics.text(10), weight: .medium)).foregroundStyle(badge.1)
             }
             if let date {
-                Text(date, format: .relative(presentation: .named)).font(.system(size: 10)).foregroundStyle(theme.dimText)
+                Text(date, format: .relative(presentation: .named)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
             }
         }
     }
@@ -295,20 +295,20 @@ struct PullRequestView: View {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         let attributed = (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
         return Text(attributed)
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(theme.text)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func placeholder(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.dimText).multilineTextAlignment(.center).padding(20)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText).multilineTextAlignment(.center).padding(20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 22, height: 22).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).frame(width: 22, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.dimText)
@@ -321,7 +321,7 @@ struct StatePill: View {
     let state: PullRequestSummary.State
 
     var body: some View {
-        Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+        Text(label).font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(.white)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(color))
     }
@@ -355,7 +355,7 @@ struct CIGlyph: View {
         switch overall {
         case .passing: Image(systemName: "checkmark").foregroundStyle(DiffColors.added)
         case .failing: Image(systemName: "xmark").foregroundStyle(DiffColors.removed)
-        case .pending: Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(TabStatusStyle.signal)
+        case .pending: Image(systemName: "circle.fill").font(.system(size: ChromeMetrics.text(6))).foregroundStyle(TabStatusStyle.signal)
         case .none: EmptyView()
         }
     }
@@ -368,7 +368,7 @@ private struct CheckGlyph: View {
         switch state {
         case .success: Image(systemName: "checkmark").foregroundStyle(DiffColors.added)
         case .failure: Image(systemName: "xmark").foregroundStyle(DiffColors.removed)
-        case .pending: Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(TabStatusStyle.signal)
+        case .pending: Image(systemName: "circle.fill").font(.system(size: ChromeMetrics.text(6))).foregroundStyle(TabStatusStyle.signal)
         case .skipped: Image(systemName: "minus").foregroundStyle(.gray)
         }
     }

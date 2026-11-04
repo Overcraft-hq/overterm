@@ -58,7 +58,7 @@ struct GroupIslandView: View {
                     groupActions.newTab(group)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
                         .frame(width: 20, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -129,7 +129,7 @@ private struct GroupChip: View {
         HStack(spacing: -5) {
             ForEach(tabs.prefix(3)) { tab in
                 Image(systemName: tab.agent?.symbol ?? tab.kind.symbol)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                     .foregroundStyle(theme.text2)
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(theme.stackBg).overlay(Circle().strokeBorder(theme.win, lineWidth: 1.5)))
@@ -143,7 +143,7 @@ private struct GroupChip: View {
                 GroupNameField(group: group, store: store, onEnd: actions.renameEnded)
             } else {
                 Text(verbatim: group.name)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .bold))
                     .foregroundStyle(chipForeground)
                     .lineLimit(1)
             }
@@ -204,7 +204,7 @@ private struct GroupNameField: View {
     var body: some View {
         TextField("", text: $draft)
             .textFieldStyle(.plain)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
             .frame(width: max(60, CGFloat(draft.count) * 7 + 12))
             .focused($focused)
             .onAppear {

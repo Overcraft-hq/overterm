@@ -57,14 +57,14 @@ struct DockerScoutPane: View {
     private func intro(_ name: String) -> some View {
         padded {
             HStack(spacing: 10) {
-                Image(systemName: "shield.lefthalf.filled").font(.system(size: 20)).foregroundStyle(theme.text3)
-                Text("Docker Scout").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                Image(systemName: "shield.lefthalf.filled").font(.system(size: ChromeMetrics.text(20))).foregroundStyle(theme.text3)
+                Text("Docker Scout").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
             }
             note(
                 "Scout matches the packages in \(name) against known vulnerabilities: each CVE, the package it is in, the version here and the one that fixes it."
             )
             Text("A scan sends the image's list of packages to Docker's service, signed in as you. That is why it runs only when you press Scan.")
-                .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
             // Scan is no default button: Return is the page's ↩, pressed out
             // of habit, and a scan sends the packages away — it takes a click.
             HStack(spacing: 8) {
@@ -85,13 +85,13 @@ struct DockerScoutPane: View {
                 if shown {
                     TimelineView(.periodic(from: since, by: 1)) { context in
                         Text(verbatim: "Scanning \(name) — \(Self.elapsed(context.date.timeIntervalSince(since)))")
-                            .font(.system(size: 12.5, weight: .medium)).foregroundStyle(theme.text)
+                            .font(.system(size: ChromeMetrics.text(12.5), weight: .medium)).foregroundStyle(theme.text)
                     }
                 } else {
-                    Text(verbatim: "Scanning \(name)…").font(.system(size: 12.5, weight: .medium)).foregroundStyle(theme.text)
+                    Text(verbatim: "Scanning \(name)…").font(.system(size: ChromeMetrics.text(12.5), weight: .medium)).foregroundStyle(theme.text)
                 }
             }
-            Text(verbatim: progress ?? "Starting Docker Scout…").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2)
+            Text(verbatim: progress ?? "Starting Docker Scout…").font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2)
                 .lineLimit(3).textSelection(.enabled)
                 .accessibilityIdentifier("docker.scout.progress")
             Button("Cancel") { page.cancelScan(image) }
@@ -126,9 +126,9 @@ struct DockerScoutPane: View {
             if report.findings.isEmpty {
                 padded {
                     HStack(spacing: 8) {
-                        Image(systemName: "checkmark.shield").font(.system(size: 18)).foregroundStyle(TabStatusStyle.done)
+                        Image(systemName: "checkmark.shield").font(.system(size: ChromeMetrics.text(18))).foregroundStyle(TabStatusStyle.done)
                         Text(verbatim: "No known vulnerabilities" + (report.packagesIndexed.map { " in its \($0) packages" } ?? ""))
-                            .font(.system(size: 12.5)).foregroundStyle(theme.text)
+                            .font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text)
                     }
                 }
             } else if groups.isEmpty {
@@ -150,23 +150,23 @@ struct DockerScoutPane: View {
             }
             HStack(spacing: 8) {
                 Toggle("Fixable only", isOn: $page.scoutFilter.fixableOnly)
-                    .toggleStyle(.checkbox).font(.system(size: 11.5))
+                    .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(11.5)))
                     .accessibilityIdentifier("docker.scout.fixable")
                 TextField("CVE or package", text: $page.scoutFilter.text)
-                    .textFieldStyle(.roundedBorder).controlSize(.small).font(.system(size: 11.5))
+                    .textFieldStyle(.roundedBorder).controlSize(.small).font(.system(size: ChromeMetrics.text(11.5)))
                     .accessibilityIdentifier("docker.scout.filter")
             }
             HStack(spacing: 8) {
                 TimelineView(.everyMinute) { _ in
                     Text(verbatim: "scanned " + UsageFormat.age(at) + " · " + report.sentence)
-                        .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
                 }
                 .help(report.scoutVersion.map { "Docker Scout \($0)" } ?? "Docker Scout")
                 Spacer(minLength: 6)
                 Button {
                     page.scanVulnerabilities(image)
                 } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11))
+                    Image(systemName: "arrow.clockwise").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.borderless)
                 .help("Scan Again")
@@ -201,11 +201,11 @@ struct DockerScoutPane: View {
                     HStack(spacing: 4) {
                         Circle().fill(DockerScoutStyle.color(severity, theme: theme)).frame(width: 7, height: 7)
                         if titled { Text(severity.title).foregroundStyle(theme.text2) }
-                        Text(verbatim: "\(count)").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(theme.text)
+                        Text(verbatim: "\(count)").font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced)).foregroundStyle(theme.text)
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .padding(.horizontal, 7)
-                    .frame(height: 22)
+                    .frame(height: ChromeMetrics.row(22))
                     .background(RoundedRectangle(cornerRadius: 6).fill(on && count > 0 ? theme.rowHover : .clear))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.border))
                     .opacity(on && count > 0 ? 1 : 0.45)
@@ -236,17 +236,17 @@ struct DockerScoutPane: View {
                         HStack(spacing: 6) {
                             Circle().fill(DockerScoutStyle.color(group.severity, theme: theme)).frame(width: 7, height: 7)
                             Text(verbatim: "\(group.severity.title.uppercased()) · \(group.findings.count)")
-                                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.text3)
+                                .font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).foregroundStyle(theme.text3)
                         }
                         .padding(.horizontal, 14)
-                        .frame(height: 24)
+                        .frame(height: ChromeMetrics.row(24))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(theme.term)
                     }
                 }
                 if dropped > 0 {
                     Text(verbatim: "… and \(dropped) more Scout listed, left out")
-                        .font(.system(size: 11)).foregroundStyle(theme.text3).padding(14)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(14)
                 }
             }
         }
@@ -262,13 +262,13 @@ struct DockerScoutPane: View {
     }
 
     private func note(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
     }
 
     private func problem(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.failed)
-            Text(verbatim: message).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled)
+            Text(verbatim: message).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
@@ -301,7 +301,7 @@ private struct DockerScoutRow: View {
                 Button {
                     if let advisory = finding.advisory { actions.open(advisory) }
                 } label: {
-                    Text(verbatim: finding.vulnerability).font(.system(size: 12, weight: .medium, design: .monospaced))
+                    Text(verbatim: finding.vulnerability).font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced))
                         .foregroundStyle(finding.advisory == nil ? theme.text : theme.accentText)
                 }
                 .buttonStyle(.plain)
@@ -309,34 +309,34 @@ private struct DockerScoutRow: View {
                 .help(finding.advisory?.absoluteString ?? "")
                 Spacer(minLength: 6)
                 if let score = finding.score, finding.severity != .unspecified {
-                    Text(verbatim: DockerScoutReport.score(score)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2)
+                    Text(verbatim: DockerScoutReport.score(score)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2)
                         .help("Scout's score (security-severity): the advisory's CVSS where it has one")
                 }
             }
             HStack(spacing: 5) {
-                Text(verbatim: finding.package.displayName).font(.system(size: 11.5)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: finding.package.displayName).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                 if let version = finding.package.version {
-                    Text(verbatim: version).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: version).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
                 }
                 if let fixed = finding.fixedIn {
-                    Text(verbatim: "→ fixed in \(fixed)").font(.system(size: 11)).foregroundStyle(theme.greenText).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: "→ fixed in \(fixed)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.greenText).lineLimit(1).truncationMode(.middle)
                 } else {
-                    Text("no fix yet").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                    Text("no fix yet").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                if let type = finding.package.type { Text(verbatim: type).font(.system(size: 10.5)).foregroundStyle(theme.text3) }
+                if let type = finding.package.type { Text(verbatim: type).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3) }
             }
             .padding(.leading, 13)
             if expanded {
                 VStack(alignment: .leading, spacing: 4) {
                     if let summary = finding.summary {
-                        Text(verbatim: summary).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                        Text(verbatim: summary).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
                     let facts = [finding.affected.map { "affected \($0)" }, finding.epss.map { "EPSS " + String(format: "%.2f%%", $0 * 100) }]
                         .compactMap { $0 }.joined(separator: " · ")
                     if !facts.isEmpty {
-                        Text(verbatim: facts).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3).textSelection(.enabled)
+                        Text(verbatim: facts).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3).textSelection(.enabled)
                     }
                 }
                 .padding(.leading, 13)

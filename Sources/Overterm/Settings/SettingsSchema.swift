@@ -285,6 +285,24 @@ enum SettingsSchema {
             key: "appearance.windowPadding", section: .appearance, group: "Window", title: "Padding around the text",
             kind: .integer(0...40, step: 2, unit: "pt"), defaultValue: nil, ghostty: "window-padding"),
         SettingSpec(
+            key: "appearance.accent", section: .appearance, group: "Interface", title: "Accent colour",
+            help: "Selections, the tab you are on, links and buttons. The terminal's own blue, macOS's accent, or one of these.",
+            kind: .choice(ChromeAccent.allCases.map { .init(value: $0.rawValue, label: $0.label) }), defaultValue: .string("overterm")),
+        SettingSpec(
+            key: "appearance.density", section: .appearance, group: "Interface", title: "Density",
+            help: "How much room the strip, the pane headers and the lists take.",
+            kind: .choice(ChromeMetrics.Density.allCases.map { .init(value: $0.rawValue, label: $0.label) }), defaultValue: .string("regular")),
+        SettingSpec(
+            key: "appearance.interfaceScale", section: .appearance, group: "Interface", title: "Interface text size",
+            help: "The text around the terminal — tabs, panels, lists — apart from the terminal's own font.",
+            kind: .integer(80...140, step: 5, unit: "%"), defaultValue: .int(100)),
+        SettingSpec(
+            key: "appearance.cardGap", section: .appearance, group: "Interface", title: "Space between cards",
+            help: "0 puts the panels edge to edge.", kind: .integer(0...24, step: 2, unit: "pt"), defaultValue: .int(10)),
+        SettingSpec(
+            key: "appearance.cardRadius", section: .appearance, group: "Interface", title: "Card corners",
+            kind: .integer(0...20, step: 2, unit: "pt"), defaultValue: .int(10)),
+        SettingSpec(
             key: "appearance.backgroundOpacity", section: .appearance, group: "Window", title: "Opacity",
             help: "Below 1, the desktop shows through the whole window — the terminal, the cards and the strip alike.",
             kind: .number(0.3...1, step: 0.05), defaultValue: .double(1), ghostty: "background-opacity"),

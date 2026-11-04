@@ -126,27 +126,27 @@ struct DockerTransfersStrip: View {
     private func row(_ transfer: DockerFileTransfers.Transfer) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Image(systemName: Self.symbol(transfer)).font(.system(size: 11)).foregroundStyle(color(transfer))
-                Text(verbatim: "\(transfer.name) → \(transfer.place)").font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                Image(systemName: Self.symbol(transfer)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(color(transfer))
+                Text(verbatim: "\(transfer.name) → \(transfer.place)").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
                 if transfer.running {
                     if transfer.total == nil {
-                        Text(verbatim: DockerBytes.string(transfer.done)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                        Text(verbatim: DockerBytes.string(transfer.done)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                     }
                     Button {
                         transfers.cancel(transfer.id)
                     } label: {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .semibold))
                     }
                     .buttonStyle(.borderless)
                     .help("Stop this copy: what went already stays")
                 } else if transfer.error != nil || !transfer.skipped.isEmpty {
-                    Button("OK") { transfers.dismiss(transfer.id) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(theme.accentText)
+                    Button("OK") { transfers.dismiss(transfer.id) }.buttonStyle(.plain).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.accentText)
                 }
             }
             if let error = transfer.error {
-                Text(verbatim: error).font(.system(size: 11)).foregroundStyle(DiffColors.removed).lineLimit(3).textSelection(.enabled)
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed).lineLimit(3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             } else if transfer.running {
                 if let total = transfer.total, total > 0 {
@@ -155,7 +155,7 @@ struct DockerTransfersStrip: View {
                     ProgressView().progressViewStyle(.linear).controlSize(.small)
                 }
             } else if !transfer.skipped.isEmpty {
-                Text(verbatim: Self.leftOut(transfer)).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(3)
+                Text(verbatim: Self.leftOut(transfer)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

@@ -46,7 +46,7 @@ struct TabPeekView: View {
 
             if deep > 0.01 {
                 Text(verbatim: model.group)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(13), weight: .semibold))
                     .foregroundStyle(theme.text)
                     .opacity(deep)
                     .padding(.leading, TabPeek.margin)
@@ -117,17 +117,17 @@ private struct TabPeekCard: View {
             status.frame(width: 13)
             if let color = entry?.color { Circle().fill(color.color).frame(width: 6, height: 6) }
             Text(verbatim: entry?.title ?? "")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 2)
             if let panes = entry?.panes, panes > 1 {
-                Image(systemName: "rectangle.split.2x1").font(.system(size: 9)).foregroundStyle(theme.dimText)
+                Image(systemName: "rectangle.split.2x1").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(theme.dimText)
             }
             if hovering {
                 Button(action: onClose) {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(theme.dimText)
+                    Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .semibold)).foregroundStyle(theme.dimText)
                 }
                 .buttonStyle(.plain)
                 .help("Close this tab")
@@ -146,7 +146,7 @@ private struct TabPeekCard: View {
             } else if activity.mark == .failed || activity.mark == .done {
                 ResultMark(failed: activity.mark == .failed, size: 10)
             } else {
-                Image(systemName: entry?.agent?.symbol ?? "terminal").font(.system(size: 9)).foregroundStyle(theme.dimText)
+                Image(systemName: entry?.agent?.symbol ?? "terminal").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(theme.dimText)
             }
         }
     }

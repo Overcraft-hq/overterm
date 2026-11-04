@@ -107,7 +107,7 @@ private struct AcknowledgementsView: View {
                         }
                         ScrollView {
                             Text(verbatim: item.text())
-                                .font(.system(size: 11.5, design: .monospaced))
+                                .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }

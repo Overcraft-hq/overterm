@@ -107,20 +107,20 @@ struct StorageObjectView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(theme.dimText)
-            Text(verbatim: model.object?.name ?? "File").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+            Image(systemName: "doc").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
+            Text(verbatim: model.object?.name ?? "File").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
                 .lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
-            Button(action: actions.close) { Image(systemName: "xmark").font(.system(size: 11)) }
+            Button(action: actions.close) { Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11))) }
                 .buttonStyle(.plain).foregroundStyle(theme.dimText).help("Close")
         }
         .padding(.horizontal, 12)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
     }
 
     private func details(_ object: StorageObject) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(verbatim: model.path).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2)
+            Text(verbatim: model.path).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2)
                 .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
             HStack(spacing: 10) {
                 Text(verbatim: FilePreview.size(model.metadata?.size ?? object.size))
@@ -129,7 +129,7 @@ struct StorageObjectView: View {
                     Text(modified, format: .dateTime.year().month().day().hour().minute())
                 }
             }
-            .font(.system(size: 11)).foregroundStyle(theme.dimText)
+            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
             // Icons, each saying what it does: words didn't fit a pane this wide.
             HStack(spacing: 4) {
                 iconButton("arrow.down.circle", "Download…", action: actions.download)
@@ -154,15 +154,15 @@ struct StorageObjectView: View {
             case .table(let result):
                 ResultGrid(result: result, theme: theme, table: (object.name as NSString).deletingPathExtension)
                 Text(verbatim: "\(result.rows.count) rows\(result.truncated ? " — the file's first part" : "")")
-                    .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(.horizontal, 12).padding(.vertical, 4)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.horizontal, 12).padding(.vertical, 4)
             case .text(let text, let truncated):
                 ScrollView([.vertical, .horizontal]) {
-                    Text(verbatim: text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text)
+                    Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text)
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
                 }
                 if truncated {
                     Text("The file's first \(FilePreview.size(FilePreview.textLimit)) — Download for all of it.")
-                        .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(.horizontal, 12).padding(.vertical, 4)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.horizontal, 12).padding(.vertical, 4)
                 }
             case .image:
                 if let image = NSImage(data: model.data) {
@@ -185,7 +185,7 @@ struct StorageObjectView: View {
 
     private func iconButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 12)).frame(width: 26, height: 22)
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(12))).frame(width: 26, height: 22)
                 .background(RoundedRectangle(cornerRadius: 5).fill(theme.selected.opacity(0.6)))
                 .contentShape(Rectangle())
         }
@@ -196,7 +196,7 @@ struct StorageObjectView: View {
 
     private func note(_ text: String) -> some View {
         VStack {
-            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.dimText).multilineTextAlignment(.center)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText).multilineTextAlignment(.center)
             Spacer()
         }
         .frame(maxWidth: .infinity)

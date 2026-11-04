@@ -35,34 +35,34 @@ struct UsageView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("Usage").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+            Text("Usage").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
             if model.isRefreshing { ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 12, height: 12) }
             Spacer(minLength: 0)
             Button(action: { model.refresh(force: true) }) {
-                Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .medium))
+                Image(systemName: "arrow.clockwise").font(.system(size: ChromeMetrics.text(10), weight: .medium))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .help("Ask the agents again")
             Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(10), weight: .medium))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .help("Close")
         }
         .padding(.horizontal, 12)
-        .frame(height: 30)
+        .frame(height: ChromeMetrics.row(30))
     }
 
     private var placeholder: some View {
         VStack(spacing: 6) {
-            Image(systemName: "gauge.with.needle").font(.system(size: 20)).foregroundStyle(theme.text3)
+            Image(systemName: "gauge.with.needle").font(.system(size: ChromeMetrics.text(20))).foregroundStyle(theme.text3)
             Text("Nothing to track yet")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 .foregroundStyle(theme.text2)
             Text("Claude Code and Codex are read from their own logs on this Mac. Run one and its limits show up here.")
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -85,13 +85,13 @@ struct UsageView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: snapshot.provider.symbol)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .medium))
                     .foregroundStyle(snapshot.provider.tint)
                     .frame(width: 16)
-                Text(verbatim: snapshot.provider.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+                Text(verbatim: snapshot.provider.name).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
                 if let plan = snapshot.plan {
                     Text(verbatim: plan.capitalized)
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: ChromeMetrics.text(9), weight: .semibold))
                         .foregroundStyle(theme.text2)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -100,7 +100,7 @@ struct UsageView: View {
                 Spacer(minLength: 0)
                 if let asOf = snapshot.metersAsOf {
                     Text(verbatim: UsageFormat.age(asOf))
-                        .font(.system(size: 10))
+                        .font(.system(size: ChromeMetrics.text(10)))
                         .foregroundStyle(theme.text3)
                         .help("What the provider last wrote down. It only refreshes while the agent runs.")
                 }
@@ -114,12 +114,12 @@ struct UsageView: View {
                         ? "Every window above ended after Claude wrote these down \(UsageFormat.age(asOf)). It only writes them when it asks — /usage in Claude Code refreshes them."
                         : "Written \(UsageFormat.age(asOf)); every window above has started again since."
                 )
-                .font(.system(size: 10))
+                .font(.system(size: ChromeMetrics.text(10)))
                 .foregroundStyle(theme.text3)
                 .fixedSize(horizontal: false, vertical: true)
             }
             if let note = snapshot.note {
-                Text(verbatim: note).font(.system(size: 10)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             }
             if showsCost { spend(snapshot.spend) }
         }
@@ -132,15 +132,15 @@ struct UsageView: View {
     private func bar(_ meter: UsageMeter) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text(verbatim: meter.name).font(.system(size: 11)).foregroundStyle(theme.text2)
+                Text(verbatim: meter.name).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
                 Spacer(minLength: 0)
                 if let used = meter.usedDollars, let limit = meter.limitDollars {
                     Text(verbatim: "\(UsageFormat.money(used)) of \(UsageFormat.money(limit))")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(10), design: .monospaced))
                         .foregroundStyle(theme.text3)
                 }
                 Text(verbatim: meter.reading())
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
                     .foregroundStyle(colour(meter))
             }
             GeometryReader { geometry in
@@ -150,7 +150,7 @@ struct UsageView: View {
                 }
             }
             .frame(height: 5)
-            Text(verbatim: meter.resets()).font(.system(size: 10)).foregroundStyle(theme.text3)
+            Text(verbatim: meter.resets()).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
         }
     }
 
@@ -167,26 +167,26 @@ struct UsageView: View {
             HStack(spacing: 6) {
                 if let dollars = spend.dollars {
                     Text(verbatim: UsageFormat.money(dollars))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                         .foregroundStyle(theme.text)
                 }
                 Text(verbatim: "\(TabInfoView.tokens(spend.tokens.total)) tokens")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     .foregroundStyle(theme.text2)
                 Text(verbatim: "· everything on this Mac")
-                    .font(.system(size: 10))
+                    .font(.system(size: ChromeMetrics.text(10)))
                     .foregroundStyle(theme.text3)
                 Spacer(minLength: 0)
                 if !spend.models.isEmpty {
                     Text(verbatim: spend.models.map(ModelPricing.shortName).joined(separator: ", "))
-                        .font(.system(size: 10))
+                        .font(.system(size: ChromeMetrics.text(10)))
                         .foregroundStyle(theme.text3)
                         .lineLimit(1)
                 }
             }
             if spend.unpriced > 0 {
                 Text(verbatim: "\(TabInfoView.tokens(spend.unpriced)) tokens of a model with no price here")
-                    .font(.system(size: 10))
+                    .font(.system(size: ChromeMetrics.text(10)))
                     .foregroundStyle(theme.text3)
             }
         }
@@ -196,10 +196,10 @@ struct UsageView: View {
         let spend = model.providers.map(\.spend).reduce(UsageSpend(), +)
         if let dollars = spend.dollars {
             HStack {
-                Text(verbatim: "\(model.scope.title), both").font(.system(size: 11)).foregroundStyle(theme.text2)
+                Text(verbatim: "\(model.scope.title), both").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
                 Spacer(minLength: 0)
                 Text(verbatim: UsageFormat.money(dollars))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                     .foregroundStyle(theme.text)
             }
             .padding(.horizontal, 10)
@@ -212,7 +212,7 @@ struct UsageView: View {
                 ? "The percentages are the providers' own. The money is this Mac's logs at list API prices — an estimate, not your bill."
                 : "The percentages are the providers' own, read from their logs on this Mac."
         )
-        .font(.system(size: 10))
+        .font(.system(size: ChromeMetrics.text(10)))
         .foregroundStyle(theme.text3)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, 2)

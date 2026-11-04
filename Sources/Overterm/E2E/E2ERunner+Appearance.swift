@@ -73,6 +73,37 @@ extension E2ERunner {
         ] {
             settings.set(key, nil)
         }
+        // The interface: an accent, density, text size, cards.
+        settings.set("appearance.accent", .string("pink"))
+        check("an accent colour", await eventually(2) { (self.app.theme?.accentNS.usingColorSpace(.sRGB)?.redComponent ?? 0) > 0.9 })
+        guard let tab = app.store.selected, let host = app.host(of: tab), let pane = tab.terminals.first else {
+            return check("a pane", false)
+        }
+        settings.set("appearance.density", .string("compact"))
+        check(
+            "compact: the pane header is shorter", await eventually(3) { abs((host.header(of: pane)?.frame.height ?? 0) - SplitHostView.headerHeight) < 0.5 && SplitHostView.headerHeight < 38 },
+            "\(host.header(of: pane)?.frame.height ?? 0)")
+        // Larger text makes the rows as tall as it needs, compact or not.
+        settings.set("appearance.interfaceScale", .int(120))
+        check("larger text: taller rows again", await eventually(3) { SplitHostView.headerHeight > 32.5 })
+        check("the interface's text at 120%", ChromeMetrics.text(10) == 12)
+        settings.set("appearance.cardGap", .int(0))
+        settings.set("appearance.cardRadius", .int(0))
+        check(
+            "cards edge to edge, square",
+            await eventually(3) {
+                guard let body = self.app.split.view.superview, let content = self.window.contentView else { return false }
+                return abs(content.frame.maxX - body.convert(body.bounds, to: content).maxX) < 0.5 && CardColumn.cornerRadius == 0
+            })
+        await photo("compact")
+        settings.set("appearance.density", .string("comfortable"))
+        settings.set("appearance.interfaceScale", nil)
+        settings.set("appearance.cardGap", .int(16))
+        settings.set("appearance.cardRadius", .int(16))
+        check("comfortable: taller", await eventually(3) { abs((host.header(of: pane)?.frame.height ?? 0) - SplitHostView.headerHeight) < 0.5 && SplitHostView.headerHeight > 38 })
+        await photo("comfortable")
+        for key in ["appearance.accent", "appearance.density", "appearance.cardGap", "appearance.cardRadius"] { settings.set(key, nil) }
+        check("back to the default sizes", await eventually(3) { SplitHostView.headerHeight == 38 && CardColumn.gap == 10 && ChromeMetrics.text(11) == 11 })
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }
 }

@@ -38,7 +38,7 @@ struct APIRequestView: View {
                 }
             } label: {
                 Text(verbatim: model.file.method)
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .bold, design: .monospaced))
                     .foregroundStyle(APIMethodStyle.color(model.file.method))
             }
             .menuStyle(.borderlessButton)
@@ -46,7 +46,7 @@ struct APIRequestView: View {
             .accessibilityIdentifier("apiMethod")
             TextField("{{baseUrl}}/path", text: Binding(get: { model.file.url }, set: { model.setURL($0) }))
                 .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 .foregroundStyle(theme.text)
                 .onSubmit { model.send() }
                 .accessibilityIdentifier("apiURL")
@@ -56,10 +56,10 @@ struct APIRequestView: View {
                 HStack(spacing: 4) {
                     if model.isSending { ProgressView().controlSize(.small).scaleEffect(0.7) }
                     Text(model.isSending ? "Cancel" : "Send")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 }
                 .padding(.horizontal, 10)
-                .frame(height: 24)
+                .frame(height: ChromeMetrics.row(24))
                 .background(RoundedRectangle(cornerRadius: 6).fill(model.isSending ? theme.rowHover : theme.accentText.opacity(0.22)))
             }
             .buttonStyle(.plain)
@@ -74,14 +74,14 @@ struct APIRequestView: View {
                     Button("Clear Runtime Variables") { workspace.clearRuntimeVariables() }
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 12))
+                Image(systemName: "ellipsis").font(.system(size: ChromeMetrics.text(12)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
         .padding(.horizontal, 10)
-        .frame(height: 40)
+        .frame(height: ChromeMetrics.row(40))
     }
 
     // MARK: The request's tabs
@@ -176,10 +176,10 @@ struct APIRequestView: View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle("Encode the URL", isOn: Binding(get: { model.file.encodesURL }, set: { value in model.update { $0.encodesURL = value } }))
                 .toggleStyle(.checkbox)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(theme.text)
             Text("Spaces and characters a URL can't hold are percent-encoded before it is sent.")
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3)
         }
         .padding(12)
@@ -232,17 +232,17 @@ struct APITabBar: View {
                         selection = tab.id
                     } label: {
                         HStack(spacing: 4) {
-                            Text(tab.title).font(.system(size: 11.5, weight: selection == tab.id ? .semibold : .regular))
+                            Text(tab.title).font(.system(size: ChromeMetrics.text(11.5), weight: selection == tab.id ? .semibold : .regular))
                             if tab.count > 0 {
                                 Text(verbatim: "\(tab.count)")
-                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .font(.system(size: ChromeMetrics.text(9.5), weight: .semibold))
                                     .padding(.horizontal, 4)
                                     .background(Capsule().fill(theme.iconBg))
                             }
                         }
                         .foregroundStyle(selection == tab.id ? theme.text : theme.text2)
                         .padding(.horizontal, 8)
-                        .frame(height: 30)
+                        .frame(height: ChromeMetrics.row(30))
                         .overlay(alignment: .bottom) {
                             Rectangle().fill(selection == tab.id ? theme.accentText : .clear).frame(height: 2)
                         }
@@ -254,7 +254,7 @@ struct APITabBar: View {
             }
             .padding(.horizontal, 6)
         }
-        .frame(height: 30)
+        .frame(height: ChromeMetrics.row(30))
         .overlay(alignment: .bottom) { Rectangle().fill(theme.border).frame(height: 1) }
     }
 }
@@ -265,7 +265,7 @@ struct APISectionTitle: View {
 
     var body: some View {
         Text(title.uppercased())
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
             .foregroundStyle(theme.text3)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -333,7 +333,7 @@ struct APIPairsEditor: View {
                     pairs.append(BruPair(key: "", value: ""))
                 } label: {
                     Label(addTitle, systemImage: "plus")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: ChromeMetrics.text(11.5)))
                         .foregroundStyle(theme.accentText)
                 }
                 .buttonStyle(.plain)
@@ -376,7 +376,7 @@ struct APIPairsEditor: View {
                     ids = kept
                     pairs.remove(at: index)
                 } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(theme.text3)
+                    Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .semibold)).foregroundStyle(theme.text3)
                 }
                 .buttonStyle(.plain)
                 .help("Remove")
@@ -384,16 +384,16 @@ struct APIPairsEditor: View {
         }
         .opacity(pairs.indices.contains(index) && pairs[index].enabled ? 1 : 0.55)
         .padding(.horizontal, 12)
-        .frame(height: 28)
+        .frame(height: ChromeMetrics.row(28))
     }
 
     private func field(_ placeholder: String, _ text: Binding<String>, monospaced: Bool) -> some View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
-            .font(.system(size: 12, design: monospaced ? .monospaced : .default))
+            .font(.system(size: ChromeMetrics.text(12), design: monospaced ? .monospaced : .default))
             .foregroundStyle(theme.text)
             .padding(.horizontal, 6)
-            .frame(height: 22)
+            .frame(height: ChromeMetrics.row(22))
             .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowHover.opacity(0.6)))
     }
 }
@@ -416,7 +416,7 @@ struct APIBodyEditor: View {
                 if model.file.bodyMode == .json {
                     Button("Prettify") { prettify() }
                         .buttonStyle(.plain)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: ChromeMetrics.text(11.5)))
                         .foregroundStyle(theme.accentText)
                 }
             }
@@ -430,7 +430,7 @@ struct APIBodyEditor: View {
         switch model.file.bodyMode {
         case .none:
             Text("This request sends no body.")
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(theme.text3)
                 .padding(12)
         case .json, .text, .xml, .sparql:
@@ -503,7 +503,7 @@ struct APIBodyEditor: View {
                 file.multipartFields = fields
             }
         } label: {
-            Image(systemName: "paperclip").font(.system(size: 11))
+            Image(systemName: "paperclip").font(.system(size: ChromeMetrics.text(11)))
         }
         .buttonStyle(.plain)
         .help("Choose a file")
@@ -568,7 +568,7 @@ struct APIAuthEditor: View {
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 12)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
     }
 
     private func field(_ title: String, _ key: String, mode: BruFile.AuthMode, secure: Bool = false) -> some View {
@@ -576,14 +576,14 @@ struct APIAuthEditor: View {
             get: { model.file.value(key, in: "auth:\(mode.rawValue)") ?? "" },
             set: { value in model.update { $0.setValue(value, for: key, in: "auth:\(mode.rawValue)") } })
         return HStack(spacing: 8) {
-            Text(title).font(.system(size: 12)).foregroundStyle(theme.text2).frame(width: 80, alignment: .leading)
+            Text(title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).frame(width: 80, alignment: .leading)
             Group {
                 if secure { SecureField("", text: binding) } else { TextField("", text: binding) }
             }
             .textFieldStyle(.plain)
-            .font(.system(size: 12, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
             .padding(.horizontal, 6)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowHover.opacity(0.6)))
         }
     }

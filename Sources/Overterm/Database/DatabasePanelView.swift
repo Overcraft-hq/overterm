@@ -65,7 +65,7 @@ struct DatabasePanelView: View {
                     Button(kind.title) { actions.edit(nil, kind) }
                 }
             } label: {
-                Image(systemName: "plus").font(.system(size: 11)).frame(width: 22, height: 22)
+                Image(systemName: "plus").font(.system(size: ChromeMetrics.text(11))).frame(width: 22, height: 22)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -83,11 +83,11 @@ struct DatabasePanelView: View {
 
     private var filterField: some View {
         HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
-            TextField("Filter", text: $model.filter).textFieldStyle(.plain).font(.system(size: 12))
+            Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+            TextField("Filter", text: $model.filter).textFieldStyle(.plain).font(.system(size: ChromeMetrics.text(12)))
         }
         .padding(.horizontal, 8)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
         .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
@@ -95,14 +95,14 @@ struct DatabasePanelView: View {
 
     private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("No connections yet").font(.system(size: 12)).foregroundStyle(theme.text2)
+            Text("No connections yet").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             Text("PostgreSQL, MySQL, SQLite, Redshift, ClickHouse or BigQuery — and S3 or Google Cloud Storage buckets. Passwords and keys stay in your keychain.")
-                .font(.system(size: 11.5)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             ForEach(DatabaseKind.allCases) { kind in
                 Button {
                     actions.edit(nil, kind)
                 } label: {
-                    Label(kind.title, systemImage: "plus").font(.system(size: 11.5))
+                    Label(kind.title, systemImage: "plus").font(.system(size: ChromeMetrics.text(11.5)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.accentText)
@@ -258,7 +258,7 @@ private struct ConnectionTree: View {
     }
 
     private func note(_ text: String, depth: Int, error: Bool = false) -> some View {
-        Text(verbatim: text).font(.system(size: 11)).foregroundStyle(error ? DiffColors.removed : theme.text3)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(error ? DiffColors.removed : theme.text3)
             .lineLimit(4).textSelection(.enabled)
             .padding(.leading, 28 + CGFloat(depth) * 14).padding(.trailing, 8).padding(.vertical, 3)
     }
@@ -286,15 +286,15 @@ private struct TreeRow: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: open == true ? "chevron.down" : "chevron.right")
-                .font(.system(size: 8, weight: .semibold)).frame(width: 10).opacity(open == nil ? 0 : 1)
-            Image(systemName: symbol).font(.system(size: 10.5)).frame(width: 14)
-            Text(verbatim: title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                .font(.system(size: ChromeMetrics.text(8), weight: .semibold)).frame(width: 10).opacity(open == nil ? 0 : 1)
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(10.5))).frame(width: 14)
+            Text(verbatim: title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                 .layoutPriority(1)
             if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
             if let detail {
                 // A short one whole — "3…es" said nothing about 34 bytes; a long
                 // one (a column's type) gives way to the name.
-                Text(verbatim: detail).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: detail).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
                     .fixedSize(horizontal: detail.count <= 12, vertical: false)
             }
             Spacer(minLength: 0)
@@ -302,7 +302,7 @@ private struct TreeRow: View {
         .foregroundStyle(theme.text2)
         .padding(.leading, 8 + CGFloat(depth) * 14)
         .padding(.trailing, 8)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(targeted ? theme.accentText.opacity(0.22) : (hovering ? theme.rowHover : .clear))
@@ -361,7 +361,7 @@ private struct StorageTree: View {
                 if let error = session.lastError {
                     HStack {
                         note(error, depth: 1, error: true)
-                        Button("OK") { session.lastError = nil }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(theme.accentText)
+                        Button("OK") { session.lastError = nil }.buttonStyle(.plain).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.accentText)
                     }
                 }
                 if session.buckets.isEmpty { note("No buckets", depth: 1) }
@@ -438,7 +438,7 @@ private struct StorageFolder: View {
                 }
                 if listing.next != nil {
                     Button("Load more…") { Task { await session.load(bucket, prefix, more: true) } }
-                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(theme.accentText)
+                        .buttonStyle(.plain).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.accentText)
                         .padding(.leading, 36 + CGFloat(depth) * 14).padding(.vertical, 3)
                 }
             } else {
@@ -526,7 +526,7 @@ private struct StorageNote: View {
     @ObservedObject var theme: ChromeTheme
 
     var body: some View {
-        Text(verbatim: text).font(.system(size: 11)).foregroundStyle(error ? DiffColors.removed : theme.text3)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(error ? DiffColors.removed : theme.text3)
             .lineLimit(4).textSelection(.enabled)
             .padding(.leading, 28 + CGFloat(depth) * 14).padding(.trailing, 8).padding(.vertical, 3)
     }
@@ -560,16 +560,16 @@ private struct SessionTransfers: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Image(systemName: transfer.error != nil ? "exclamationmark.triangle.fill" : (transfer.done ? "checkmark.circle.fill" : "arrow.up.circle"))
-                        .font(.system(size: 10))
+                        .font(.system(size: ChromeMetrics.text(10)))
                         .foregroundStyle(transfer.error != nil ? DiffColors.removed : (transfer.done ? TabStatusStyle.done : theme.text3))
-                    Text(verbatim: transfer.name).font(.system(size: 11)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: transfer.name).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if transfer.error != nil {
-                        Button("OK") { session.dismissTransfers() }.buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(theme.accentText)
+                        Button("OK") { session.dismissTransfers() }.buttonStyle(.plain).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.accentText)
                     }
                 }
                 if let error = transfer.error {
-                    Text(verbatim: error).font(.system(size: 10.5)).foregroundStyle(DiffColors.removed).lineLimit(2)
+                    Text(verbatim: error).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(DiffColors.removed).lineLimit(2)
                 } else if !transfer.done {
                     ProgressView(value: transfer.progress).controlSize(.mini)
                 }

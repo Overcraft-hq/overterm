@@ -121,8 +121,8 @@ struct DockerActionBar: View {
     private func face(_ text: String, _ symbol: String, labelled: Bool, destructive: Bool = false) -> some View {
         let color = destructive ? TabStatusStyle.failed : theme.text
         return HStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 10.5))
-            if labelled { Text(text).font(.system(size: 11.5)).lineLimit(1).fixedSize() }
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(10.5)))
+            if labelled { Text(text).font(.system(size: ChromeMetrics.text(11.5))).lineLimit(1).fixedSize() }
         }
         .foregroundStyle(color)
         .padding(.horizontal, labelled ? 8 : 0)

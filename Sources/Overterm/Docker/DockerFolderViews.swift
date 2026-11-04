@@ -57,7 +57,7 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
                 if let leading { leading.padding(.trailing, 8) }
                 ForEach(DockerFiles.crumbs(shown), id: \.path) { crumb in
                     Button(crumb.name == "/" ? "/" : crumb.name + " ›") { browser.open(crumb.path) }
-                        .buttonStyle(.plain).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
+                        .buttonStyle(.plain).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text2)
                 }
                 Spacer(minLength: 6)
                 if browser.listing { ProgressView().controlSize(.mini) }
@@ -67,7 +67,7 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
                         browser.copyIn(urls, into: folder, of: source, actions: actions)
                     }
                 } label: {
-                    Image(systemName: "square.and.arrow.down.on.square").font(.system(size: 11))
+                    Image(systemName: "square.and.arrow.down.on.square").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.borderless)
                 .help("Copy files or folders from the Mac into \(shown) — or drop them on the list")
@@ -75,22 +75,22 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
                 Button {
                     browser.open(shown)
                 } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11))
+                    Image(systemName: "arrow.clockwise").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.borderless)
                 .help("List it again")
                 .accessibilityIdentifier("docker.files.reload")
             }
             .padding(.horizontal, 12)
-            .frame(height: 28)
+            .frame(height: ChromeMetrics.row(28))
             HStack(spacing: 6) {
-                Image(systemName: "doc.text.magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
-                TextField(placeholder, text: $path).textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                Image(systemName: "doc.text.magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+                TextField(placeholder, text: $path).textFieldStyle(.plain).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                     .onSubmit { go(path) }
                     .accessibilityIdentifier("docker.files.path")
             }
             .padding(.horizontal, 8)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
@@ -108,7 +108,7 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
     @ViewBuilder private var content: some View {
         if let error = browser.filesError {
             VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                 if let remedy { remedy }
                 Spacer(minLength: 0)
             }
@@ -141,7 +141,7 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
             ZStack(alignment: .bottom) {
                 if targetedFolder == nil { RoundedRectangle(cornerRadius: 6).strokeBorder(theme.accentText, lineWidth: 2).padding(2) }
                 Text(verbatim: "Drop to copy into \(targetedFolder ?? shown)")
-                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text)
+                    .font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text)
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Capsule().fill(theme.card))
                     .overlay(Capsule().strokeBorder(theme.accentText, lineWidth: 1))
@@ -217,13 +217,13 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
     private func row(symbol: String, name: String, detail: String, highlighted: Bool = false, open: @escaping () -> Void) -> some View {
         Button(action: open) {
             HStack(spacing: 8) {
-                Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(theme.text3).frame(width: 16)
-                Text(verbatim: name).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).frame(width: 16)
+                Text(verbatim: name).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                 Spacer()
-                Text(verbatim: detail).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
             }
             .padding(.horizontal, 6)
-            .frame(height: 22)
+            .frame(height: ChromeMetrics.row(22))
             .background(
                 RoundedRectangle(cornerRadius: 5).fill(highlighted ? theme.accentText.opacity(0.22) : .clear)
                     .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(highlighted ? theme.accentText : .clear, lineWidth: 1))
@@ -249,8 +249,8 @@ struct VolumeFilesPane: View {
             let running = docker.containers(mounting: volume).filter { $0.state == .running }.map(\.name)
             if !running.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "info.circle").font(.system(size: 11)).foregroundStyle(theme.text3)
-                    Text(verbatim: Self.mountedNote(running)).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                    Image(systemName: "info.circle").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                    Text(verbatim: Self.mountedNote(running)).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -277,7 +277,7 @@ struct VolumeFilesPane: View {
                 .help("docker pull \(DockerVolumeFiles.fallbackImage): a few MB, and only now")
                 .accessibilityIdentifier("docker.volume.files.pull")
             if session.pulling { ProgressView().controlSize(.small) }
-            Text("A file can still be opened by its path.").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+            Text("A file can still be opened by its path.").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
         }
     }
 }

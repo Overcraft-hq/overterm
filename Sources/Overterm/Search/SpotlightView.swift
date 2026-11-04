@@ -21,7 +21,7 @@ struct SpotlightView: View {
                         placeholder: placeholder,
                         textColor: NSColor(theme.text))
                 }
-                .frame(height: 44)
+                .frame(height: ChromeMetrics.row(44))
                 .padding(.horizontal, 14)
                 if !model.rows.isEmpty {
                     Divider().opacity(0.4)
@@ -78,7 +78,7 @@ struct SpotlightView: View {
                 icon("text.magnifyingglass")
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: "\(match.path):\(match.line)").foregroundStyle(theme.text).lineLimit(1).truncationMode(.head)
-                    Text(verbatim: match.text).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.dimText).lineLimit(1)
+                    Text(verbatim: match.text).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.dimText).lineLimit(1)
                 }
                 Spacer()
                 tag("In file")
@@ -91,7 +91,7 @@ struct SpotlightView: View {
                 tag("Note")
             }
         }
-        .font(.system(size: 13))
+        .font(.system(size: ChromeMetrics.text(13)))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 7).fill(selected ? theme.selected : .clear))
@@ -106,12 +106,12 @@ struct SpotlightView: View {
         VStack(alignment: .leading, spacing: 1) {
             Text(verbatim: text).foregroundStyle(theme.text).lineLimit(1)
             if !subtitle.isEmpty {
-                Text(verbatim: subtitle).font(.system(size: 11)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.head)
+                Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.head)
             }
         }
     }
 
     private func tag(_ text: String) -> some View {
-        Text(text).font(.system(size: 10)).foregroundStyle(theme.dimText)
+        Text(text).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
     }
 }

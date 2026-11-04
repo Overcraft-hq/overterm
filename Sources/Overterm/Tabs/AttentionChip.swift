@@ -60,13 +60,13 @@ struct AttentionChip: View {
                 showing.toggle()
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 11))
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: ChromeMetrics.text(11)))
                     Text(verbatim: "\(waiting.count) need you")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 }
                 .foregroundStyle(theme.orangeText)
                 .padding(.horizontal, 10)
-                .frame(height: 28)
+                .frame(height: ChromeMetrics.row(28))
                 .background(Capsule().fill(theme.attnBg))
                 .contentShape(Capsule())
             }
@@ -93,7 +93,7 @@ private struct AttentionList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Needs you")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                 .foregroundStyle(theme.text2)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -102,9 +102,9 @@ private struct AttentionList: View {
             }
             Divider().padding(.horizontal, 10).padding(.vertical, 5)
             HStack {
-                Text("Jump to next").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Text("Jump to next").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 Spacer()
-                Text(verbatim: "⌥⌘↓").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: "⌥⌘↓").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 6)
@@ -133,9 +133,9 @@ private struct AttentionRow: View {
                     .fill(TabStatusStyle.color(for: tab.activity, idle: theme.segIdle))
                     .frame(width: 8, height: 8)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(tab.title).font(.system(size: 13)).foregroundStyle(theme.text).lineLimit(1)
+                    Text(tab.title).font(.system(size: ChromeMetrics.text(13))).foregroundStyle(theme.text).lineLimit(1)
                     Text(detail)
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(tab.activity.mark == .waiting ? theme.orangeText : theme.text3)
                         .lineLimit(1)
                 }
@@ -143,12 +143,12 @@ private struct AttentionRow: View {
                 if let group {
                     HStack(spacing: 5) {
                         RoundedRectangle(cornerRadius: 2).fill(group.color.color).frame(width: 8, height: 8)
-                        Text(verbatim: group.name).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                        Text(verbatim: group.name).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                     }
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 40)
+            .frame(height: ChromeMetrics.row(40))
             .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowSel : .clear))
             .contentShape(Rectangle())
         }

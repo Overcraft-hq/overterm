@@ -46,7 +46,7 @@ struct PaneHeaderView: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 .foregroundStyle(isFocused ? theme.text : theme.text2)
                 .lineLimit(1)
             if let group = store.group(of: tab) {
@@ -58,9 +58,9 @@ struct PaneHeaderView: View {
                 // to anchor a popover to — and one placed at the pointer
                 // would fight selecting the text it is over.
                 HStack(spacing: 6) {
-                    Image(systemName: "link").font(.system(size: 10))
-                    Text(link).font(.system(size: 11, design: .monospaced)).lineLimit(1).truncationMode(.head)
-                    Text("⌘-click to open").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Image(systemName: "link").font(.system(size: ChromeMetrics.text(10)))
+                    Text(link).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).lineLimit(1).truncationMode(.head)
+                    Text("⌘-click to open").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
                 .foregroundStyle(theme.accentText)
                 .layoutPriority(1)
@@ -100,13 +100,13 @@ struct PaneHeaderView: View {
     /// pinned, rather than hanging off the output, which scrolls away.
     private func failed(_ block: CommandBlock) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+            Image(systemName: "xmark.circle.fill").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
             Text(block.command)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(theme.text2)
-            Text(block.detail).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+            Text(block.detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
             smallButton("Copy output") { actions.copyOutput(pane) }
             smallButton("Rerun ⌘R") { actions.rerun(pane) }
         }
@@ -116,9 +116,9 @@ struct PaneHeaderView: View {
     private func smallButton(_ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .padding(.horizontal, 8)
-                .frame(height: 24)
+                .frame(height: ChromeMetrics.row(24))
                 .background(RoundedRectangle(cornerRadius: 5).fill(theme.rowSel))
                 .contentShape(Rectangle())
         }
@@ -133,30 +133,30 @@ struct PaneHeaderView: View {
         case .waiting:
             pill(tab.activity.note ?? "Waiting for you", theme.orangeText, theme.attnBg)
         case .failed:
-            Text(tab.activity.note ?? "Failed").font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+            Text(tab.activity.note ?? "Failed").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
         case .done:
-            Text(tab.activity.note ?? "Finished").font(.system(size: 11)).foregroundStyle(theme.greenText)
+            Text(tab.activity.note ?? "Finished").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.greenText)
         case .none:
             if tab.activity.isWorking {
-                Text("Working").font(.system(size: 11)).foregroundStyle(theme.text2)
+                Text("Working").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
             }
         }
     }
 
     private func pill(_ text: String, _ foreground: Color, _ background: Color) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
             .foregroundStyle(foreground)
             .lineLimit(1)
             .padding(.horizontal, 8)
-            .frame(height: 22)
+            .frame(height: ChromeMetrics.row(22))
             .background(Capsule().fill(background))
     }
 
     private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .frame(width: 28, height: 26)
                 .contentShape(Rectangle())
         }
@@ -173,7 +173,7 @@ private struct GroupLabel: View {
 
     var body: some View {
         Text(verbatim: group.name)
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(theme.text3)
             .lineLimit(1)
     }
@@ -200,11 +200,11 @@ private struct PortPill: View {
             HStack(spacing: 5) {
                 Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
                 Text(verbatim: ":\(port.port)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
             }
             .foregroundStyle(theme.greenText)
             .padding(.horizontal, 9)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(Capsule().fill(TabStatusStyle.done.opacity(hovering ? 0.26 : 0.16)))
             .contentShape(Capsule())
         }
@@ -215,10 +215,10 @@ private struct PortPill: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     Text(verbatim: "localhost:\(port.port)")
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .foregroundStyle(theme.text)
                     Text(verbatim: "· \(port.process) · pid \(port.pid)")
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text3)
                 }
                 HStack(spacing: 6) {
@@ -247,9 +247,9 @@ private struct PortPill: View {
     private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             Text(title)
-                .font(.system(size: 12, weight: filled ? .semibold : .regular))
+                .font(.system(size: ChromeMetrics.text(12), weight: filled ? .semibold : .regular))
                 .frame(maxWidth: .infinity)
-                .frame(height: 26)
+                .frame(height: ChromeMetrics.row(26))
                 .background(RoundedRectangle(cornerRadius: 6).fill(filled ? TabStatusStyle.working : theme.iconBg))
                 .contentShape(Rectangle())
         }

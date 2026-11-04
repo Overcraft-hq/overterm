@@ -299,14 +299,14 @@ private struct FileRowView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                 .frame(width: 10)
                 .opacity(row.entry.isDirectory ? 1 : 0)
             Image(systemName: row.entry.isDirectory ? "folder" : "doc")
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .frame(width: 14)
             Text(row.entry.name)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
@@ -315,7 +315,7 @@ private struct FileRowView: View {
         .opacity(row.isIgnored && !isSelected ? 0.45 : 1)
         .padding(.leading, 8 + CGFloat(row.depth) * 14)
         .padding(.trailing, 8)
-        .frame(height: 26)
+        .frame(height: ChromeMetrics.row(26))
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isSelected ? theme.rowSel : (hovering ? theme.rowHover : .clear))
@@ -447,39 +447,39 @@ struct WorktreeRowView: View {
     private var top: some View {
         HStack(spacing: 6) {
             Image(systemName: worktree.isMain ? "house" : "arrow.triangle.branch")
-                .font(.system(size: 10))
+                .font(.system(size: ChromeMetrics.text(10)))
                 .frame(width: 14)
             Text(worktree.displayName)
-                .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
+                .font(.system(size: ChromeMetrics.text(12), weight: isCurrent ? .semibold : .regular))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 4)
             switch reason {
             case .attached:
-                Image(systemName: "pin.fill").font(.system(size: 9)).help("Attached to this tab")
+                Image(systemName: "pin.fill").font(.system(size: ChromeMetrics.text(9))).help("Attached to this tab")
             case .agent(let agent):
-                Image(systemName: agent.symbol).font(.system(size: 9)).foregroundStyle(TabStatusStyle.signal)
+                Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(9))).foregroundStyle(TabStatusStyle.signal)
                     .help("\(agent.name) is working here")
             default:
                 EmptyView()
             }
             if let pullRequest, !worktree.isMain {
                 HStack(spacing: 2) {
-                    CIGlyph(overall: pullRequest.checks.overall).font(.system(size: 8, weight: .bold))
-                    Text(verbatim: "#\(pullRequest.number)").font(.system(size: 10, design: .monospaced))
+                    CIGlyph(overall: pullRequest.checks.overall).font(.system(size: ChromeMetrics.text(8), weight: .bold))
+                    Text(verbatim: "#\(pullRequest.number)").font(.system(size: ChromeMetrics.text(10), design: .monospaced))
                         .foregroundStyle(StatePill.color(pullRequest.state))
                 }
                 .fixedSize()
                 .help("#\(pullRequest.number) \(pullRequest.title)")
             }
             if merged != nil {
-                Image(systemName: "arrow.triangle.merge").font(.system(size: 9)).foregroundStyle(TabStatusStyle.merged)
+                Image(systemName: "arrow.triangle.merge").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(TabStatusStyle.merged)
                     .help(mergedHelp)
             } else if worktree.isPrunable {
-                Image(systemName: "questionmark.folder").font(.system(size: 9)).help("Its folder is gone")
+                Image(systemName: "questionmark.folder").font(.system(size: ChromeMetrics.text(9))).help("Its folder is gone")
             }
             if worktree.isLocked {
-                Image(systemName: "lock.fill").font(.system(size: 9)).help("Locked")
+                Image(systemName: "lock.fill").font(.system(size: ChromeMetrics.text(9))).help("Locked")
             }
         }
         .foregroundStyle(isCurrent ? theme.text : theme.text2)
@@ -490,7 +490,7 @@ struct WorktreeRowView: View {
             top
             if let subtitle {
                 Text(subtitle.text)
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(subtitle.color)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -558,7 +558,7 @@ private struct SessionListView: View {
             }
             if model.sessions.isEmpty {
                 Text(model.loading ? "" : "No agent sessions in \(group?.name ?? "this folder") yet")
-                    .font(.system(size: 12)).foregroundStyle(theme.text3).padding(12)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(12)
                 Spacer()
             } else {
                 ScrollView {
@@ -598,14 +598,14 @@ private struct SessionRowView: View {
                 if running {
                     Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6).help("Running in a tab")
                 }
-                Text(verbatim: title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
             }
             HStack(spacing: 4) {
                 Text(verbatim: worktree?.displayName ?? (session.directory as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
                 Text("·")
                 Text(session.updated, format: .relative(presentation: .named)).lineLimit(1)
             }
-            .font(.system(size: 10))
+            .font(.system(size: ChromeMetrics.text(10)))
             .foregroundStyle(theme.dimText)
         }
         .padding(.horizontal, 12)
@@ -645,9 +645,9 @@ private struct SnippetListView: View {
                 // The list is empty on a first run: say what a snippet is,
                 // rather than leave the panel blank.
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("No snippets yet").font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text("No snippets yet").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                     Text("A command you keep running, saved by name. \u{007B}\u{007B}value\u{007D}\u{007D} in one is asked for when you use it.")
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(theme.text3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -677,16 +677,16 @@ private struct SnippetRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(snippet.name).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+            Text(snippet.name).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
             Text(snippet.command)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(10), design: .monospaced))
                 .foregroundStyle(theme.dimText)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
         .background(
             RoundedRectangle(cornerRadius: 5).fill(hovering ? theme.hover : .clear).padding(.horizontal, 4)
         )

@@ -108,13 +108,13 @@ final class ChromeTheme: ObservableObject {
     var hover: Color { rowHover }
     var dimText: Color { text2 }
 
-    init(background: NSColor, foreground: NSColor, opacity: CGFloat = 1) {
-        apply(background: background, foreground: foreground, opacity: opacity)
+    init(background: NSColor, foreground: NSColor, opacity: CGFloat = 1, accent: NSColor? = nil) {
+        apply(background: background, foreground: foreground, opacity: opacity, accent: accent)
     }
 
     /// The two colours everything here is derived from (and the window's
     /// opacity), kept so the same can be recognised and ignored.
-    private var source: (background: NSColor, foreground: NSColor, opacity: CGFloat)?
+    private var source: (background: NSColor, foreground: NSColor, opacity: CGFloat, accent: NSColor?)?
     /// Below 1, the window is translucent (Settings ▸ Appearance ▸ Opacity).
     private(set) var opacity: CGFloat = 1
     var isTranslucent: Bool { opacity < 1 }
@@ -126,9 +126,13 @@ final class ChromeTheme: ObservableObject {
     /// reloaded for reasons that have nothing to do with colour (a
     /// keybinding, the font), and a view redrawn for no reason can take
     /// the keyboard away from the terminal.
-    func apply(background: NSColor, foreground: NSColor, opacity: CGFloat = 1) {
-        if let source, source.background == background, source.foreground == foreground, source.opacity == opacity { return }
-        source = (background, foreground, opacity)
+    func apply(background: NSColor, foreground: NSColor, opacity: CGFloat = 1, accent chosen: NSColor? = nil) {
+        if let source, source.background == background, source.foreground == foreground, source.opacity == opacity,
+            source.accent == chosen
+        {
+            return
+        }
+        source = (background, foreground, opacity, chosen)
         objectWillChange.send()
         self.opacity = opacity
         let bg = background.usingColorSpace(.sRGB) ?? background
@@ -211,7 +215,36 @@ final class ChromeTheme: ObservableObject {
         attnBg = Color(nsColor: TabStatusStyle.waitingNS.withAlphaComponent(isDark ? 0.16 : 0.18))
         orangeText = isDark ? Color(red: 1.00, green: 0.70, blue: 0.25) : Color(red: 0.60, green: 0.29, blue: 0.00)
         greenText = isDark ? Color(red: 0.36, green: 0.84, blue: 0.48) : Color(red: 0.10, green: 0.50, blue: 0.22)
-        accentText = isDark ? Color(red: 0.39, green: 0.82, blue: 1.00) : Color(red: 0.04, green: 0.38, blue: 0.79)
+        // The accent (Settings ▸ Appearance ▸ Accent colour): as chosen for
+        // fills; for text, lifted on a dark ground or deepened on a light
+        // one until it reads. Unset, Overterm's own blue.
+        if let chosen = chosen?.usingColorSpace(.sRGB) {
+            accentNS = chosen
+            accent = Color(nsColor: chosen)
+            accentText = Color(nsColor: Self.legible(chosen, onDark: isDark))
+        } else {
+            accentNS = NSColor(srgbRed: 0.04, green: 0.52, blue: 1.00, alpha: 1)
+            accent = Color(nsColor: accentNS)
+            accentText = isDark ? Color(red: 0.39, green: 0.82, blue: 1.00) : Color(red: 0.04, green: 0.38, blue: 0.79)
+        }
+    }
+
+    /// The accent, as a fill: a selected thing, a primary button.
+    private(set) var accentNS: NSColor = .systemBlue
+    private(set) var accent: Color = .blue
+
+    /// `colour` moved in brightness until text in it reads on the ground:
+    /// at least 0.72 on a dark one, at most 0.55 on a light one.
+    nonisolated static func legible(_ colour: NSColor, onDark: Bool) -> NSColor {
+        let rgb = colour.usingColorSpace(.sRGB) ?? colour
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        rgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let target = onDark ? max(brightness, 0.92) : min(brightness, 0.62)
+        let lessSaturated = onDark && brightness < 0.72 ? saturation * 0.8 : saturation
+        return NSColor(hue: hue, saturation: lessSaturated, brightness: target, alpha: 1)
     }
 }
 
@@ -221,4 +254,37 @@ struct StripGround: View {
     @ObservedObject var theme: ChromeTheme
 
     var body: some View { theme.isTranslucent ? Color.clear : theme.strip }
+}
+
+/// Settings ▸ Appearance ▸ Accent colour.
+enum ChromeAccent: String, CaseIterable, Sendable {
+    case overterm, system, terminal, blue, purple, pink, red, orange, yellow, green, teal, graphite
+
+    var label: String {
+        switch self {
+        case .overterm: "Overterm blue"
+        case .system: "macOS accent"
+        case .terminal: "The terminal theme's blue"
+        default: rawValue.capitalized
+        }
+    }
+
+    /// nil: Overterm's own, as before there was a choice.
+    @MainActor func color(isDark: Bool) -> NSColor? {
+        switch self {
+        case .overterm: nil
+        case .system: NSColor.controlAccentColor
+        // The theme's bright blue on a dark ground, its blue on a light one.
+        case .terminal: GhosttyRuntime.shared.paletteColor(isDark ? 12 : 4)
+        case .blue: NSColor(srgbRed: 0.04, green: 0.52, blue: 1.00, alpha: 1)
+        case .purple: NSColor(srgbRed: 0.58, green: 0.36, blue: 0.96, alpha: 1)
+        case .pink: NSColor(srgbRed: 0.96, green: 0.33, blue: 0.62, alpha: 1)
+        case .red: NSColor(srgbRed: 0.94, green: 0.27, blue: 0.27, alpha: 1)
+        case .orange: NSColor(srgbRed: 0.98, green: 0.55, blue: 0.13, alpha: 1)
+        case .yellow: NSColor(srgbRed: 0.96, green: 0.77, blue: 0.10, alpha: 1)
+        case .green: NSColor(srgbRed: 0.20, green: 0.74, blue: 0.40, alpha: 1)
+        case .teal: NSColor(srgbRed: 0.10, green: 0.72, blue: 0.74, alpha: 1)
+        case .graphite: NSColor(srgbRed: 0.55, green: 0.57, blue: 0.62, alpha: 1)
+        }
+    }
 }

@@ -42,7 +42,7 @@ struct APIPanelView: View {
                         Divider()
                         importItems
                     } label: {
-                        Image(systemName: "plus").font(.system(size: 11)).frame(width: 22, height: 22)
+                        Image(systemName: "plus").font(.system(size: ChromeMetrics.text(11))).frame(width: 22, height: 22)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
@@ -96,14 +96,14 @@ struct APIPanelView: View {
                 Button("New Personal Collection…") { newPersonalCollection() }
             } label: {
                 Label(collection.name, systemImage: collection.isPersonal ? "person.crop.circle" : "shippingbox")
-                    .font(.system(size: 11.5)).lineLimit(1)
+                    .font(.system(size: ChromeMetrics.text(11.5))).lineLimit(1)
             }
             .menuStyle(.borderlessButton)
             // Never fixed to its title: a long one made the row, and so
             // the whole panel, wider than the sidebar — the rail was
             // pushed out of the window.
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .accessibilityIdentifier("apiCollection")
             Menu {
                 Button("No Environment") { workspace.environmentName = nil }
@@ -123,13 +123,13 @@ struct APIPanelView: View {
                 Button("New Environment…") { newEnvironment(collection) }
             } label: {
                 Label(workspace.environmentName ?? "No Environment", systemImage: "globe")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: ChromeMetrics.text(11.5)))
                     .lineLimit(1)
                     .foregroundStyle(workspace.environmentName == nil ? theme.text3 : theme.text)
             }
             .menuStyle(.borderlessButton)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .accessibilityIdentifier("apiEnvironment")
         }
         .padding(.horizontal, 10)
@@ -148,13 +148,13 @@ struct APIPanelView: View {
 
     private var searchField: some View {
         HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
+            Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             TextField("Filter requests", text: $workspace.search)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
         }
         .padding(.horizontal, 8)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
         .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
@@ -205,7 +205,7 @@ struct APIPanelView: View {
                         personalIntro(collection)
                     } else {
                         Text(workspace.search.isEmpty ? "No requests yet — + makes one." : "Nothing matches.")
-                            .font(.system(size: 12))
+                            .font(.system(size: ChromeMetrics.text(12)))
                             .foregroundStyle(theme.text3)
                             .padding(12)
                     }
@@ -256,16 +256,16 @@ struct APIPanelView: View {
     private func personalIntro(_ collection: BrunoCollection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Your own requests, kept in Overterm — not in the checkout, nothing to commit. Type a URL and send it.")
-                .font(.system(size: 11.5))
+                .font(.system(size: ChromeMetrics.text(11.5)))
                 .foregroundStyle(theme.text3)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 newRequest(in: collection.root)
             } label: {
                 Label("New Request", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .medium))
                     .padding(.horizontal, 10)
-                    .frame(height: 26)
+                    .frame(height: ChromeMetrics.row(26))
                     .background(RoundedRectangle(cornerRadius: 6).fill(theme.accentText.opacity(0.2)))
             }
             .buttonStyle(.plain)
@@ -286,15 +286,15 @@ struct APIPanelView: View {
     private var checkoutStart: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("THIS CHECKOUT")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
                 .foregroundStyle(theme.text3)
             Text("Has no Bruno collection. One is a folder with bruno.json: its requests are .bru files you commit with the code, and Bruno and bru run open them too.")
-                .font(.system(size: 11.5))
+                .font(.system(size: ChromeMetrics.text(11.5)))
                 .foregroundStyle(theme.text3)
                 .fixedSize(horizontal: false, vertical: true)
             if !workspace.discovered.isEmpty {
                 Text("Found here, to import:")
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
                     .foregroundStyle(theme.text2)
                     .padding(.top, 2)
                 ForEach(workspace.discovered) { source in
@@ -313,7 +313,7 @@ struct APIPanelView: View {
 
     private func startButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.leading)
+            Label(title, systemImage: symbol).font(.system(size: ChromeMetrics.text(12))).lineLimit(2).multilineTextAlignment(.leading)
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.accentText)
@@ -484,17 +484,17 @@ private struct APIRowView: View {
         HStack(spacing: 5) {
             if item.isFolder {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                     .frame(width: 10)
-                Image(systemName: "folder").font(.system(size: 11)).frame(width: 14)
+                Image(systemName: "folder").font(.system(size: ChromeMetrics.text(11))).frame(width: 14)
             } else {
                 Text(verbatim: APIMethodStyle.short(item.method ?? "GET"))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(9), weight: .bold, design: .monospaced))
                     .foregroundStyle(APIMethodStyle.color(item.method ?? "GET"))
                     .frame(width: 34, alignment: .trailing)
             }
             Text(verbatim: item.name)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
@@ -510,7 +510,7 @@ private struct APIRowView: View {
         .foregroundStyle(isSelected ? theme.text : theme.text2)
         .padding(.leading, 8 + CGFloat(depth) * 14)
         .padding(.trailing, 8)
-        .frame(height: 26)
+        .frame(height: ChromeMetrics.row(26))
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isSelected ? theme.rowSel : (hovering ? theme.rowHover : .clear))

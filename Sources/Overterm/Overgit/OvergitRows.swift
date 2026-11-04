@@ -25,9 +25,9 @@ struct OvergitOverview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 11)).foregroundStyle(theme.text2)
+                Image(systemName: "arrow.triangle.branch").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
                 Text(verbatim: branch ?? "detached")
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                    .font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                     .lineLimit(1).truncationMode(.middle)
                 if tracking.ahead > 0 { track("arrow.up", tracking.ahead) }
                 if tracking.behind > 0 { track("arrow.down", tracking.behind) }
@@ -45,7 +45,7 @@ struct OvergitOverview: View {
                             Text("No local changes").foregroundStyle(theme.text3)
                         }
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -54,9 +54,9 @@ struct OvergitOverview: View {
                     Button(action: onPullRequest) {
                         HStack(spacing: 4) {
                             Text(verbatim: "#\(pullRequest.number)")
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                                 .foregroundStyle(StatePill.color(pullRequest.state))
-                            CIGlyph(overall: pullRequest.checks.overall).font(.system(size: 9))
+                            CIGlyph(overall: pullRequest.checks.overall).font(.system(size: ChromeMetrics.text(9)))
                         }
                         .contentShape(Rectangle())
                     }
@@ -65,10 +65,10 @@ struct OvergitOverview: View {
                 }
                 Spacer(minLength: 0)
                 if let upstream = ref?.upstream {
-                    Text(verbatim: upstream).font(.system(size: 10)).foregroundStyle(theme.text3)
+                    Text(verbatim: upstream).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                         .lineLimit(1).truncationMode(.head)
                 } else if ref?.isGone == true {
-                    Text("upstream gone").font(.system(size: 10)).foregroundStyle(theme.orangeText)
+                    Text("upstream gone").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.orangeText)
                 }
             }
         }
@@ -101,7 +101,7 @@ struct OvergitOverview: View {
                 Button("New Branch…") { onCommand(.newBranch(from: nil)) }
                 Button("Stash Changes…") { onCommand(.stash) }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 11))
+                Image(systemName: "ellipsis").font(.system(size: ChromeMetrics.text(11)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -109,7 +109,7 @@ struct OvergitOverview: View {
             .help("More: commit, fetch, a new branch, stash")
             if let running {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 14, height: 14)
-                Text(verbatim: running).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: running).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -119,13 +119,13 @@ struct OvergitOverview: View {
     private func syncButton(_ title: String, symbol: String, count: Int, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 3) {
-                Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
-                Text(title).font(.system(size: 11, weight: .medium))
-                if count > 0 { Text(verbatim: "\(count)").font(.system(size: 10, design: .monospaced)) }
+                Image(systemName: symbol).font(.system(size: ChromeMetrics.text(9), weight: .semibold))
+                Text(title).font(.system(size: ChromeMetrics.text(11), weight: .medium))
+                if count > 0 { Text(verbatim: "\(count)").font(.system(size: ChromeMetrics.text(10), design: .monospaced)) }
             }
             .foregroundStyle(count > 0 ? theme.text : theme.text2)
             .padding(.horizontal, 7)
-            .frame(height: 22)
+            .frame(height: ChromeMetrics.row(22))
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
             .contentShape(Rectangle())
             .fixedSize()
@@ -138,12 +138,12 @@ struct OvergitOverview: View {
     private func banner(_ state: GitInProgress) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
-                Text(verbatim: "\(state.title) stopped").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: "\(state.title) stopped").font(.system(size: ChromeMetrics.text(11), weight: .semibold))
             }
             .foregroundStyle(theme.orangeText)
             Text("Resolve the conflicts in Changes and stage them, then continue.")
-                .font(.system(size: 10.5)).foregroundStyle(theme.text2)
+                .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text2)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 syncButton("Continue", symbol: "play.fill", count: 0, help: "git \(state.command) --continue") {
@@ -168,8 +168,8 @@ struct OvergitOverview: View {
 
     private func track(_ symbol: String, _ count: Int) -> some View {
         HStack(spacing: 1) {
-            Image(systemName: symbol).font(.system(size: 8, weight: .semibold))
-            Text(verbatim: "\(count)").font(.system(size: 10, design: .monospaced))
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(8), weight: .semibold))
+            Text(verbatim: "\(count)").font(.system(size: ChromeMetrics.text(10), design: .monospaced))
         }
         .foregroundStyle(theme.text2)
     }
@@ -202,19 +202,19 @@ struct CommitRowView<Extra: View>: View {
                         RefPill(ref: ref, theme: theme)
                         if commit.refs.count > 1 {
                             Text(verbatim: "+\(commit.refs.count - 1)")
-                                .font(.system(size: 9)).foregroundStyle(theme.text3).fixedSize()
+                                .font(.system(size: ChromeMetrics.text(9))).foregroundStyle(theme.text3).fixedSize()
                         }
                     }
                     Text(verbatim: commit.subject)
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text)
                         .lineLimit(1).truncationMode(.tail)
                 }
                 HStack(spacing: 5) {
                     Text(verbatim: commit.shortSHA)
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text3).fixedSize()
-                    Text(verbatim: commit.relative).font(.system(size: 10)).foregroundStyle(theme.text3).fixedSize()
-                    Text(verbatim: commit.author).font(.system(size: 10)).foregroundStyle(theme.text3)
+                        .font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.text3).fixedSize()
+                    Text(verbatim: commit.relative).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).fixedSize()
+                    Text(verbatim: commit.author).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
@@ -271,7 +271,7 @@ struct RefPill: View {
 
     var body: some View {
         Text(verbatim: ref.name)
-            .font(.system(size: 9, weight: ref.isHead ? .semibold : .regular))
+            .font(.system(size: ChromeMetrics.text(9), weight: ref.isHead ? .semibold : .regular))
             .foregroundStyle(color)
             .lineLimit(1)
             .padding(.horizontal, 4)
@@ -306,29 +306,29 @@ struct BranchRowView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: isOpen ? "chevron.down" : "chevron.right")
-                .font(.system(size: 8, weight: .semibold)).frame(width: 10)
+                .font(.system(size: ChromeMetrics.text(8), weight: .semibold)).frame(width: 10)
                 .opacity(node.isFolder ? 1 : 0)
                 .foregroundStyle(theme.text3)
-            Image(systemName: glyph).font(.system(size: 10)).frame(width: 14).foregroundStyle(theme.text3)
+            Image(systemName: glyph).font(.system(size: ChromeMetrics.text(10))).frame(width: 14).foregroundStyle(theme.text3)
             Text(verbatim: node.name)
-                .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
+                .font(.system(size: ChromeMetrics.text(12), weight: isCurrent ? .semibold : .regular))
                 .foregroundStyle(isCurrent ? theme.text : theme.text2)
                 .lineLimit(1).truncationMode(.middle)
             if let branch = node.branch {
                 if branch.ahead > 0 { count("arrow.up", branch.ahead) }
                 if branch.behind > 0 { count("arrow.down", branch.behind) }
                 if branch.isGone {
-                    Image(systemName: "questionmark.circle").font(.system(size: 9)).foregroundStyle(theme.orangeText)
+                    Image(systemName: "questionmark.circle").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(theme.orangeText)
                         .help("Its upstream is gone")
                 }
             } else {
-                Text(verbatim: "\(node.count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: "\(node.count)").font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.text3)
             }
             Spacer(minLength: 0)
         }
         .padding(.leading, 20 + CGFloat(node.depth) * 12)
         .padding(.trailing, 10)
-        .frame(height: 26)
+        .frame(height: ChromeMetrics.row(26))
         .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -371,8 +371,8 @@ struct BranchRowView: View {
 
     private func count(_ symbol: String, _ number: Int) -> some View {
         HStack(spacing: 1) {
-            Image(systemName: symbol).font(.system(size: 7, weight: .semibold))
-            Text(verbatim: "\(number)").font(.system(size: 9, design: .monospaced))
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(7), weight: .semibold))
+            Text(verbatim: "\(number)").font(.system(size: ChromeMetrics.text(9), design: .monospaced))
         }
         .foregroundStyle(theme.text3)
     }
@@ -391,24 +391,24 @@ struct PullRequestRowView: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(verbatim: "#\(pullRequest.number)")
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(10), design: .monospaced))
                 .foregroundStyle(StatePill.color(pullRequest.state))
                 .frame(width: 38, alignment: .trailing)
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: pullRequest.title)
-                    .font(.system(size: 12, weight: isCurrent ? .semibold : .regular))
+                    .font(.system(size: ChromeMetrics.text(12), weight: isCurrent ? .semibold : .regular))
                     .foregroundStyle(isCurrent ? theme.text : theme.text2)
                     .lineLimit(1).truncationMode(.tail)
                 Text(verbatim: pullRequest.branch)
-                    .font(.system(size: 10)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                     .lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 0)
-            CIGlyph(overall: pullRequest.checks.overall).font(.system(size: 9))
+            CIGlyph(overall: pullRequest.checks.overall).font(.system(size: ChromeMetrics.text(9)))
         }
         .padding(.leading, 20)
         .padding(.trailing, 10)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
         .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -429,18 +429,18 @@ struct StashRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "tray.full").font(.system(size: 10)).frame(width: 14).foregroundStyle(theme.text3)
+            Image(systemName: "tray.full").font(.system(size: ChromeMetrics.text(10))).frame(width: 14).foregroundStyle(theme.text3)
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: stash.subject)
-                    .font(.system(size: 12)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.tail)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.tail)
                 Text(verbatim: "\(stash.ref) · \(stash.relative)")
-                    .font(.system(size: 10)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             }
             Spacer(minLength: 0)
         }
         .padding(.leading, 20)
         .padding(.trailing, 10)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
         .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

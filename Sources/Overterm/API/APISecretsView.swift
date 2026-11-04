@@ -26,12 +26,12 @@ struct APISecretsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(verbatim: "Secrets of “\(environment)”").font(.headline)
             Text("Kept in your keychain on this Mac, never in the environment's file — the file only names them, so it can be committed.")
-                .font(.system(size: 11.5))
+                .font(.system(size: ChromeMetrics.text(11.5)))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(names, id: \.self) { name in
                 HStack {
-                    Text(verbatim: name).font(.system(size: 12, design: .monospaced)).frame(width: 130, alignment: .leading)
+                    Text(verbatim: name).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).frame(width: 130, alignment: .leading)
                     SecureField("Value", text: Binding(get: { values[name] ?? "" }, set: { values[name] = $0 }))
                         .textFieldStyle(.roundedBorder)
                     Button {
@@ -47,7 +47,7 @@ struct APISecretsView: View {
             HStack {
                 TextField("New secret's name", text: $newName)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                     .onSubmit(add)
                 Button("Add", action: add).disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
             }

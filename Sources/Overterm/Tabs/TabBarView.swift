@@ -173,7 +173,7 @@ struct TabBarView: View {
                 Button("New Task…") { actions.newTask() }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .medium))
             } primaryAction: {
                 actions.newTab()
             }
@@ -186,9 +186,9 @@ struct TabBarView: View {
             if let release = updates.available {
                 Button(action: actions.showUpdate) {
                     Label("Update \(release.version)", systemImage: "arrow.down.circle.fill")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                         .padding(.horizontal, 8)
-                        .frame(height: 22)
+                        .frame(height: ChromeMetrics.row(22))
                         .background(Capsule().fill(TabStatusStyle.signal.opacity(0.22)))
                         .contentShape(Rectangle())
                 }
@@ -251,7 +251,8 @@ struct GroupChipFramesKey: PreferenceKey {
 /// They were 36, 30 and 28 picked separately, which is why a group sat
 /// taller than the tab beside it.
 enum TabCard {
-    static let height: CGFloat = 36
+    /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics).
+    static var height: CGFloat { ChromeMetrics.tabHeight }
     static let inset: CGFloat = 3
     static var nested: CGFloat { height - inset * 2 }
     static let radius: CGFloat = 11
@@ -314,7 +315,7 @@ struct TabItemView: View {
                 WorkingGlyph(symbol: symbol, size: 12)
             } else {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: ChromeMetrics.text(12), weight: .medium))
                     .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.dimText))
             }
         }
@@ -342,7 +343,7 @@ struct TabItemView: View {
     private var icon: some View {
         let kind = tab.kind
         return Image(systemName: tab.agent?.symbol ?? kind.symbol)
-            .font(.system(size: 11, weight: kind == .shell ? .bold : .regular))
+            .font(.system(size: ChromeMetrics.text(11), weight: kind == .shell ? .bold : .regular))
             .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.text2))
             .frame(width: 20, height: 20)
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
@@ -366,7 +367,7 @@ struct TabItemView: View {
                 TabRenameField(tab: tab, store: store, theme: theme, onEnd: actions.renameEnded)
             } else {
                 Text(tab.title)
-                    .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+                    .font(.system(size: ChromeMetrics.text(12), weight: isSelected ? .medium : .regular))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(tab.isSuspended ? theme.text3 : isSelected ? theme.text : theme.text2)
@@ -376,7 +377,7 @@ struct TabItemView: View {
             // you are in it, and on the others it would crowd out the title.
             if isSelected, let branch {
                 Text(branch)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.head)
                     .foregroundStyle(theme.text3)
@@ -492,15 +493,15 @@ private struct ReviewTabItem: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: review.source.symbol).font(.system(size: 11)).foregroundStyle(selected ? theme.text : theme.dimText)
+            Image(systemName: review.source.symbol).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(selected ? theme.text : theme.dimText)
             Text(verbatim: review.title)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(selected ? theme.text : theme.dimText)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: close) {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -531,14 +532,14 @@ private struct OverlayTabItem: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: overlay.symbol).font(.system(size: 11)).foregroundStyle(selected ? theme.text : theme.dimText)
+            Image(systemName: overlay.symbol).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(selected ? theme.text : theme.dimText)
             Text(overlay.title)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .foregroundStyle(selected ? theme.text : theme.dimText)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: close) {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -572,7 +573,7 @@ private struct TabRenameField: View {
     var body: some View {
         TextField("", text: $draft)
             .textFieldStyle(.plain)
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(theme.text)
             .focused($focused)
             .onAppear {
@@ -636,15 +637,15 @@ private struct DiffBadge: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "plusminus").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text)
+                Image(systemName: "plusminus").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text)
                 if let totals {
                     Text(verbatim: "+\(totals.added)").foregroundStyle(DiffColors.added)
                     Text(verbatim: "−\(totals.removed)").foregroundStyle(DiffColors.removed)
                 }
             }
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced))
             .padding(.horizontal, 8)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.selected : theme.hover))
             .contentShape(Rectangle())
         }
@@ -666,10 +667,10 @@ struct BrowserButton: View {
         Button(action: action) {
             // The icon alone, as the phone beside it: the word took room
             // the tabs wanted, and said nothing the globe doesn't.
-            Image(systemName: "globe").font(.system(size: 12, weight: .medium))
+            Image(systemName: "globe").font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 .foregroundStyle(isOpen ? theme.text : theme.text2)
                 .padding(.horizontal, 7)
-                .frame(height: 24)
+                .frame(height: ChromeMetrics.row(24))
                 .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
                 .contentShape(Rectangle())
         }
@@ -690,10 +691,10 @@ struct SimulatorButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "iphone").font(.system(size: 12, weight: .medium))
+            Image(systemName: "iphone").font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 .foregroundStyle(isOpen ? theme.text : theme.text2)
                 .padding(.horizontal, 7)
-                .frame(height: 24)
+                .frame(height: ChromeMetrics.row(24))
                 .background(RoundedRectangle(cornerRadius: 6).fill(isOpen || hovering ? theme.selected : theme.hover))
                 .contentShape(Rectangle())
         }
@@ -715,13 +716,13 @@ private struct PullRequestChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .medium)).foregroundStyle(StatePill.color(pr.state))
+                Image(systemName: "arrow.triangle.pull").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(StatePill.color(pr.state))
                 Text(verbatim: "#\(pr.number)").foregroundStyle(theme.text)
-                CIGlyph(overall: pr.checks.overall).font(.system(size: 10, weight: .bold))
+                CIGlyph(overall: pr.checks.overall).font(.system(size: ChromeMetrics.text(10), weight: .bold))
             }
-            .font(.system(size: 12, weight: .medium, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced))
             .padding(.horizontal, 8)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.selected : theme.hover))
             .contentShape(Rectangle())
         }

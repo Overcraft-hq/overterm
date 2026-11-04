@@ -25,7 +25,7 @@ struct GroupPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Color")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                 .foregroundStyle(theme.text2)
             HStack(spacing: 8) {
                 ForEach(TabColor.allCases) { color in
@@ -49,10 +49,10 @@ struct GroupPopover: View {
                 Toggle(isOn: binding(for: folder)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Opening this folder opens a tab in the group")
-                            .font(.system(size: 12))
+                            .font(.system(size: ChromeMetrics.text(12)))
                             .foregroundStyle(theme.text)
                         Text(verbatim: folderName)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                             .foregroundStyle(theme.text3)
                             .lineLimit(1)
                             .truncationMode(.head)
@@ -61,18 +61,18 @@ struct GroupPopover: View {
             }
             Toggle(isOn: takesNewTabs) {
                 Text("New tabs opened from this group join it")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text)
             }
             Toggle(isOn: $group.restoresOnLaunch) {
                 Text("Restore the group's tabs and splits on launch")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text)
             }
             Divider()
             HStack {
                 Text("↩ to confirm the name")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.text3)
                 Spacer()
                 Button("Done", action: done).keyboardShortcut(.defaultAction)

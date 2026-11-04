@@ -64,11 +64,11 @@ struct NotesPanelView: View {
 
     private func tagChip(_ tag: String) -> some View {
         HStack(spacing: 4) {
-            Text(verbatim: "#" + tag).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.accentText).lineLimit(1)
+            Text(verbatim: "#" + tag).font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.accentText).lineLimit(1)
             Button {
                 model.tagFilter = nil
             } label: {
-                Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(8), weight: .bold))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.text3)
@@ -100,11 +100,11 @@ struct NotesPanelView: View {
             } label: {
                 HStack(spacing: 3) {
                     Text(verbatim: model.vault.name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                         .textCase(.uppercase)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                 }
                 .foregroundStyle(theme.text2)
             }
@@ -122,7 +122,7 @@ struct NotesPanelView: View {
                 Button("New Note") { actions.newNote(nil) }
                 Button("New Drawing") { actions.newDrawing(nil) }
             } label: {
-                Image(systemName: "square.and.pencil").font(.system(size: 11)).frame(width: 22, height: 22)
+                Image(systemName: "square.and.pencil").font(.system(size: ChromeMetrics.text(11))).frame(width: 22, height: 22)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -137,7 +137,7 @@ struct NotesPanelView: View {
                 Divider()
                 Button("Reload") { model.reload() }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 11)).frame(width: 22, height: 22)
+                Image(systemName: "ellipsis").font(.system(size: ChromeMetrics.text(11))).frame(width: 22, height: 22)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -147,27 +147,27 @@ struct NotesPanelView: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 8)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
     }
 
     private var searchField: some View {
         HStack(spacing: 4) {
-            Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
+            Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             TextField("Filter notes", text: $model.query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
             if !model.query.isEmpty {
                 Button {
                     model.query = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                    Image(systemName: "xmark.circle.fill").font(.system(size: ChromeMetrics.text(10)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.text3)
             }
         }
         .padding(.horizontal, 8)
-        .frame(height: 24)
+        .frame(height: ChromeMetrics.row(24))
         .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
@@ -234,11 +234,11 @@ struct NotesPanelView: View {
     private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(model.query.isEmpty ? "No notes yet" : "Nothing matches")
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(theme.text2)
             if model.query.isEmpty {
                 Text("A note is a Markdown file in this folder. An Obsidian vault opens as it is — Obsidian, your phone and Overterm share it.")
-                    .font(.system(size: 11.5))
+                    .font(.system(size: ChromeMetrics.text(11.5)))
                     .foregroundStyle(theme.text3)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("New Note") { actions.newNote(nil) }
@@ -277,14 +277,14 @@ private struct NoteRowView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                 .frame(width: 10)
                 .opacity(item.isFolder ? 1 : 0)
             Image(systemName: symbol)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .frame(width: 14)
             Text(verbatim: item.name)
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
@@ -293,7 +293,7 @@ private struct NoteRowView: View {
         .opacity(item.kind == .note || item.kind == .drawing || item.isFolder ? 1 : 0.7)
         .padding(.leading, 8 + CGFloat(row.depth) * 14)
         .padding(.trailing, 8)
-        .frame(height: 26)
+        .frame(height: ChromeMetrics.row(26))
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isCurrent ? theme.rowSel : (hovering ? theme.rowHover : .clear))

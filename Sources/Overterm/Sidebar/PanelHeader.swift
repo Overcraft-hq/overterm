@@ -20,7 +20,7 @@ struct PanelHeader<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                 .textCase(.uppercase)
                 .foregroundStyle(theme.text2)
                 .lineLimit(1)
@@ -32,7 +32,7 @@ struct PanelHeader<Trailing: View>: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 8)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
     }
 }
 
@@ -46,7 +46,7 @@ private struct GroupTag: View {
         HStack(spacing: 4) {
             RoundedRectangle(cornerRadius: 2).fill(group.color.color).frame(width: 7, height: 7)
             Text(verbatim: group.name)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -64,7 +64,7 @@ struct PanelHeaderButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }

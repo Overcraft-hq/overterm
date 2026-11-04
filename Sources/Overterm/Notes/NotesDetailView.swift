@@ -36,7 +36,7 @@ struct NotesDetailView: View {
                     model.detail = model.detail == detail ? nil : detail
                 } label: {
                     Image(systemName: detail.symbol)
-                        .font(.system(size: 11, weight: model.detail == detail ? .semibold : .regular))
+                        .font(.system(size: ChromeMetrics.text(11), weight: model.detail == detail ? .semibold : .regular))
                         .frame(width: 26, height: 22)
                         .background(RoundedRectangle(cornerRadius: 5).fill(model.detail == detail ? theme.rowSel : .clear))
                         .contentShape(Rectangle())
@@ -50,7 +50,7 @@ struct NotesDetailView: View {
             Button {
                 model.detail = model.detail == nil ? .backlinks : nil
             } label: {
-                Image(systemName: model.detail == nil ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold))
+                Image(systemName: model.detail == nil ? "chevron.up" : "chevron.down").font(.system(size: ChromeMetrics.text(9), weight: .semibold))
                     .frame(width: 20, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -58,13 +58,13 @@ struct NotesDetailView: View {
             .help(model.detail == nil ? "Show" : "Hide")
         }
         .padding(.horizontal, 8)
-        .frame(height: 30)
+        .frame(height: ChromeMetrics.row(30))
     }
 
     private var currentPath: String? { model.current.map(model.path(of:)) }
 
     private func placeholder(_ text: String) -> some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(theme.text3).padding(.horizontal, 12).padding(.vertical, 6)
+        Text(text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).padding(.horizontal, 12).padding(.vertical, 6)
     }
 
     // MARK: Panes
@@ -79,8 +79,8 @@ struct NotesDetailView: View {
                     DetailRow(theme: theme, help: entry.source) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(verbatim: (LinkResolver.name(of: entry.source) as NSString).deletingPathExtension)
-                                .font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text)
-                            Text(verbatim: entry.text).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(2)
+                                .font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text)
+                            Text(verbatim: entry.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(2)
                         }
                     } action: {
                         actions.openAt(model.url(of: entry.source), entry.line)
@@ -100,7 +100,7 @@ struct NotesDetailView: View {
                 let top = doc.headings.map(\.level).min() ?? 1
                 ForEach(Array(doc.headings.enumerated()), id: \.offset) { _, heading in
                     DetailRow(theme: theme, help: heading.text) {
-                        Text(verbatim: heading.text).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1)
+                        Text(verbatim: heading.text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1)
                             .padding(.leading, CGFloat(heading.level - top) * 12)
                     } action: {
                         actions.openAt(model.url(of: path), heading.line)
@@ -122,10 +122,10 @@ struct NotesDetailView: View {
                 DetailRow(theme: theme, selected: picked, help: "Notes tagged #\(tag)") {
                     HStack(spacing: 4) {
                         Text(verbatim: "#" + (tag.split(separator: "/").last.map(String.init) ?? tag))
-                            .font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1)
+                            .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1)
                             .padding(.leading, CGFloat(tag.split(separator: "/").count - 1) * 12)
                         Spacer(minLength: 4)
-                        Text(verbatim: "\(counts[tag] ?? 0)").font(.system(size: 10)).foregroundStyle(theme.text3)
+                        Text(verbatim: "\(counts[tag] ?? 0)").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                     }
                 } action: {
                     model.tagFilter = picked ? nil : tag
@@ -173,7 +173,7 @@ struct NotesDetailView: View {
                     Button {
                         if open { model.foldedTaskNotes.insert(group.path) } else { model.foldedTaskNotes.remove(group.path) }
                     } label: {
-                        Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold))
+                        Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                             .frame(width: 12, height: 16).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -181,10 +181,10 @@ struct NotesDetailView: View {
                         actions.open(model.url(of: group.path))
                     } label: {
                         HStack(spacing: 4) {
-                            Text(verbatim: group.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                            Text(verbatim: group.title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
                                 .lineLimit(1).truncationMode(.middle)
                             if !group.folder.isEmpty {
-                                Text(verbatim: group.folder).font(.system(size: 10)).foregroundStyle(theme.text3)
+                                Text(verbatim: group.folder).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                                     .lineLimit(1).truncationMode(.head)
                             }
                         }
@@ -192,7 +192,7 @@ struct NotesDetailView: View {
                     .buttonStyle(.plain)
                     .help(group.path)
                     Spacer(minLength: 4)
-                    Text(verbatim: "\(group.tasks.count)").font(.system(size: 10)).foregroundStyle(theme.text3)
+                    Text(verbatim: "\(group.tasks.count)").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 }
                 .foregroundStyle(theme.text3)
                 .padding(.horizontal, 10)
@@ -211,13 +211,13 @@ struct NotesDetailView: View {
                 Button {
                     actions.toggleTask(model.url(of: path), task.line, task.text)
                 } label: {
-                    Image(systemName: task.isDone ? "checkmark.square.fill" : "square").font(.system(size: 11))
+                    Image(systemName: task.isDone ? "checkmark.square.fill" : "square").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(task.isDone ? theme.accentText : theme.text3)
                 .help(task.isDone ? "Not done" : "Done")
                 Text(NotesTaskGroups.inline(task.text))
-                    .font(.system(size: 11.5))
+                    .font(.system(size: ChromeMetrics.text(11.5)))
                     .foregroundStyle(task.isDone ? theme.text3 : theme.text2)
                     .strikethrough(task.isDone)
                     .lineLimit(2)

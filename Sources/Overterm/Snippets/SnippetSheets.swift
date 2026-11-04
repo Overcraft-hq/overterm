@@ -51,7 +51,7 @@ struct SnippetFillView: View {
                 }
             }
             Text(filled)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(3)

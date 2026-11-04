@@ -35,10 +35,10 @@ struct AgentOverviewView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text("Agents").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
-            Text(verbatim: summary).font(.system(size: 12)).foregroundStyle(theme.dimText)
+            Text("Agents").font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: summary).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
             Spacer()
-            Text("Esc to close").font(.system(size: 11)).foregroundStyle(theme.dimText)
+            Text("Esc to close").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
         }
     }
 
@@ -69,56 +69,56 @@ private struct AgentCard: View {
             HStack(spacing: 7) {
                 status.frame(width: 18)
                 if let color = card.color { Circle().fill(color.color).frame(width: 7, height: 7) }
-                Text(verbatim: card.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: card.title).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 Spacer(minLength: 4)
                 if card.panes > 1 {
-                    Label("\(card.panes)", systemImage: "rectangle.split.2x1").labelStyle(.titleAndIcon).font(.system(size: 10))
+                    Label("\(card.panes)", systemImage: "rectangle.split.2x1").labelStyle(.titleAndIcon).font(.system(size: ChromeMetrics.text(10)))
                         .foregroundStyle(theme.dimText)
                 }
                 if let agent = card.agent {
-                    Image(systemName: agent.symbol).font(.system(size: 11))
+                    Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(card.agentRunning ? theme.text : theme.dimText)
                         .help(card.agentRunning ? "\(agent.name) is running" : "\(agent.name) tab — not running")
                 }
             }
             HStack(spacing: 5) {
-                Image(systemName: "folder").font(.system(size: 10))
+                Image(systemName: "folder").font(.system(size: ChromeMetrics.text(10)))
                 Text(verbatim: card.directory.map { ($0 as NSString).lastPathComponent } ?? "—").lineLimit(1)
                 if let branch = card.branch {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 10))
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: ChromeMetrics.text(10)))
                     Text(verbatim: branch).lineLimit(1).truncationMode(.middle)
                 }
                 if let pullRequest {
                     Text(verbatim: "#\(pullRequest.number)").foregroundStyle(StatePill.color(pullRequest.state))
-                    CIGlyph(overall: pullRequest.checks.overall).font(.system(size: 9, weight: .bold))
+                    CIGlyph(overall: pullRequest.checks.overall).font(.system(size: ChromeMetrics.text(9), weight: .bold))
                 }
             }
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.dimText)
             .help(card.directory ?? "")
 
             if let note = card.activity.note, card.activity.mark == .waiting || card.activity.mark == .failed {
-                Text(verbatim: note).font(.system(size: 12, weight: .medium))
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(12), weight: .medium))
                     .foregroundStyle(card.activity.mark == .failed ? TabStatusStyle.failed : TabStatusStyle.signal).lineLimit(2)
             }
             if let claude = card.claude {
                 if let title = claude.title {
-                    Text(verbatim: title).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
+                    Text(verbatim: title).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
                 }
                 if let prompt = claude.lastPrompt {
-                    Text(verbatim: "You: \(Self.oneLine(prompt))").font(.system(size: 11)).foregroundStyle(theme.dimText).lineLimit(2)
+                    Text(verbatim: "You: \(Self.oneLine(prompt))").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).lineLimit(2)
                 }
                 if let tool = claude.currentTool {
-                    Label(Self.oneLine(tool), systemImage: "play.fill").font(.system(size: 11, design: .monospaced))
+                    Label(Self.oneLine(tool), systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                         .foregroundStyle(card.activity.isWorking ? TabStatusStyle.signal : theme.dimText).lineLimit(1)
                 } else if let reply = claude.lastReply {
-                    Text(verbatim: Self.oneLine(reply)).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(3)
+                    Text(verbatim: Self.oneLine(reply)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(3)
                 }
                 if let updated = claude.updated {
-                    Text(updated, format: .relative(presentation: .named)).font(.system(size: 10)).foregroundStyle(theme.dimText)
+                    Text(updated, format: .relative(presentation: .named)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
                 }
             } else if card.agent == nil {
-                Text(card.activity.isWorking ? "A command is running" : "Shell").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                Text(card.activity.isWorking ? "A command is running" : "Shell").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
             }
         }
         .padding(12)

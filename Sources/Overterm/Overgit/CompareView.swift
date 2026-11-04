@@ -35,12 +35,12 @@ struct CompareView: View {
     private var header: some View {
         HStack(spacing: 6) {
             side(model.base ?? "—")
-            Image(systemName: "arrow.left").font(.system(size: 9, weight: .semibold)).foregroundStyle(theme.dimText)
+            Image(systemName: "arrow.left").font(.system(size: ChromeMetrics.text(9), weight: .semibold)).foregroundStyle(theme.dimText)
             side(model.head ?? "—")
             Button {
                 model.swap()
             } label: {
-                Image(systemName: "arrow.left.arrow.right").font(.system(size: 10))
+                Image(systemName: "arrow.left.arrow.right").font(.system(size: ChromeMetrics.text(10)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -50,26 +50,26 @@ struct CompareView: View {
                 Button {
                     onReview(base, head)
                 } label: {
-                    Image(systemName: "rectangle.split.2x1").font(.system(size: 11))
+                    Image(systemName: "rectangle.split.2x1").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.dimText)
                 .help("Review in a tab of its own")
             }
             Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 11))
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .help("Close")
         }
         .padding(.horizontal, 12)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
     }
 
     private func side(_ name: String) -> some View {
         Text(verbatim: name)
-            .font(.system(size: 11.5, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
             .foregroundStyle(theme.text)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -92,17 +92,17 @@ struct CompareView: View {
                         behindOpen.toggle()
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: behindOpen ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .semibold))
+                            Image(systemName: behindOpen ? "chevron.down" : "chevron.right").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                             Text(verbatim: "\(model.behindCount) in \(model.base ?? "") not in \(model.head ?? "")")
                         }
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(theme.dimText)
                     }
                     .buttonStyle(.plain)
                     if behindOpen { commitList(nil, model.behind) }
                 }
                 if model.files.isEmpty {
-                    Text("No file differs.").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    Text("No file differs.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 }
                 ForEach(model.files.prefix(CompareModel.maxFiles)) { file in
                     FileCard(
@@ -110,7 +110,7 @@ struct CompareView: View {
                         onToggle: { model.toggleFold(file.path) }, onOpen: { onOpen(file.path) })
                 }
                 if model.files.count > CompareModel.maxFiles {
-                    Text("Diffs shown for the first \(CompareModel.maxFiles) files.").font(.system(size: 11)).foregroundStyle(theme.dimText)
+                    Text("Diffs shown for the first \(CompareModel.maxFiles) files.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 }
             }
             .padding(12)
@@ -136,14 +136,14 @@ struct CompareView: View {
             Text(verbatim: "−\(model.removed)").foregroundStyle(DiffColors.removed)
             Spacer(minLength: 0)
         }
-        .font(.system(size: 11, design: .monospaced))
+        .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
         .foregroundStyle(theme.text2)
     }
 
     private func commitList(_ title: String?, _ commits: [Commit]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let title {
-                Text(verbatim: title).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2).padding(.bottom, 2)
+                Text(verbatim: title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2).padding(.bottom, 2)
             }
             ForEach(commits) { commit in
                 CommitRowView(commit: commit, row: nil, lanes: 0, isSelected: false, theme: theme, onOpen: { onCommit(commit) })
@@ -155,7 +155,7 @@ struct CompareView: View {
 
     private func note(_ text: String) -> some View {
         VStack {
-            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.dimText).multilineTextAlignment(.center)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText).multilineTextAlignment(.center)
             Spacer()
         }
         .frame(maxWidth: .infinity)

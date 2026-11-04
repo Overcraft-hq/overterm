@@ -134,12 +134,12 @@ struct SuspendedChip: View {
                 showing.toggle()
             } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "pause.circle.fill").font(.system(size: 11))
-                    Text(verbatim: "\(tabs.count) suspended").font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "pause.circle.fill").font(.system(size: ChromeMetrics.text(11)))
+                    Text(verbatim: "\(tabs.count) suspended").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 }
                 .foregroundStyle(theme.text2)
                 .padding(.horizontal, 10)
-                .frame(height: 28)
+                .frame(height: ChromeMetrics.row(28))
                 .background(Capsule().fill(theme.selected))
                 .contentShape(Capsule())
             }
@@ -147,7 +147,7 @@ struct SuspendedChip: View {
             .help("Suspended tabs — their processes stopped until resumed")
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Suspended").font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                    Text("Suspended").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
                         .padding(.horizontal, 10).padding(.vertical, 4)
                     ForEach(tabs) { tab in
                         HStack(spacing: 8) {
@@ -155,14 +155,14 @@ struct SuspendedChip: View {
                                 showing = false
                                 select(tab)
                             } label: {
-                                Text(tab.title).font(.system(size: 13)).foregroundStyle(theme.text).lineLimit(1)
+                                Text(tab.title).font(.system(size: ChromeMetrics.text(13))).foregroundStyle(theme.text).lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             Button("Resume") { resume(tab) }.controlSize(.small)
                         }
                         .padding(.horizontal, 10)
-                        .frame(height: 32)
+                        .frame(height: ChromeMetrics.row(32))
                     }
                     Divider().padding(.horizontal, 10).padding(.vertical, 5)
                     HStack {

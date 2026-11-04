@@ -40,7 +40,7 @@ struct GroupSwitcherView: View {
 
     private var groupList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Groups").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.dimText)
+            Text("Groups").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.dimText)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(groups) { group in
@@ -54,7 +54,7 @@ struct GroupSwitcherView: View {
                     }
                     if groups.isEmpty {
                         Text("No groups yet — ⌃⌘N makes one from the selected tabs")
-                            .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(.vertical, 8)
+                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.vertical, 8)
                     }
                 }
             }
@@ -67,18 +67,18 @@ struct GroupSwitcherView: View {
 
     private var tabList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Tabs").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.dimText)
+            Text("Tabs").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.dimText)
             ScrollView {
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(highlighted.map { store.tabs(in: $0) } ?? []) { tab in
                         HStack(spacing: 7) {
                             TabStateGlyph(tab: tab, theme: theme)
-                            Text(verbatim: tab.title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+                            Text(verbatim: tab.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
                             Spacer(minLength: 6)
-                            Text(verbatim: state(of: tab)).font(.system(size: 11)).foregroundStyle(theme.dimText)
+                            Text(verbatim: state(of: tab)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                         }
                         .padding(.horizontal, 8)
-                        .frame(height: 26)
+                        .frame(height: ChromeMetrics.row(26))
                         .background(RoundedRectangle(cornerRadius: 6).fill(tab.id == store.selectedID ? theme.selected : .clear))
                         .contentShape(Rectangle())
                         .onTapGesture { onChooseTab(tab) }
@@ -97,7 +97,7 @@ struct GroupSwitcherView: View {
             Text(verbatim: "⌥↩ Move current tab here")
             Text(verbatim: "esc Close")
         }
-        .font(.system(size: 10))
+        .font(.system(size: ChromeMetrics.text(10)))
         .foregroundStyle(theme.dimText)
     }
 
@@ -121,20 +121,20 @@ private struct GroupRow: View {
             Circle().fill(group.color.color).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(verbatim: group.name).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
+                    Text(verbatim: group.name).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text)
                     if group.isStashed {
-                        Text(verbatim: "stashed").font(.system(size: 9))
+                        Text(verbatim: "stashed").font(.system(size: ChromeMetrics.text(9)))
                             .padding(.horizontal, 4)
                             .background(Capsule().fill(theme.dimText.opacity(0.2)))
                             .foregroundStyle(theme.dimText)
                     }
                 }
-                Text(verbatim: GroupSummary.line(tabs)).font(.system(size: 11)).foregroundStyle(theme.dimText)
+                Text(verbatim: GroupSummary.line(tabs)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
             }
             Spacer(minLength: 4)
         }
         .padding(.horizontal, 8)
-        .frame(height: 40)
+        .frame(height: ChromeMetrics.row(40))
         .background(RoundedRectangle(cornerRadius: 7).fill(isHighlighted ? theme.selected : .clear))
     }
 }
@@ -152,7 +152,7 @@ private struct TabStateGlyph: View {
             if tab.activity.isWorking {
                 WorkingGlyph(symbol: tab.agent?.symbol ?? "terminal", size: 10)
             } else {
-                Image(systemName: tab.agent?.symbol ?? "terminal").font(.system(size: 10)).foregroundStyle(theme.dimText)
+                Image(systemName: tab.agent?.symbol ?? "terminal").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
             }
         }
     }

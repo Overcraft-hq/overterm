@@ -41,11 +41,11 @@ struct DropZonesView: View {
             }
             // The tab, under the pointer.
             HStack(spacing: 7) {
-                Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(theme.text2)
-                Text(title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+                Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
+                Text(title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
             }
             .padding(.horizontal, 10)
-            .frame(height: 32)
+            .frame(height: ChromeMetrics.row(32))
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(theme.menu)
@@ -62,7 +62,7 @@ struct DropZonesView: View {
                     hint("esc", "cancel")
                 }
                 .padding(.horizontal, 14)
-                .frame(height: 32)
+                .frame(height: ChromeMetrics.row(32))
                 .background(
                     RoundedRectangle(cornerRadius: 10)
                         .fill(theme.menu)
@@ -78,8 +78,8 @@ struct DropZonesView: View {
 
     private func hint(_ key: String, _ what: String) -> some View {
         HStack(spacing: 5) {
-            Text(verbatim: key).font(.system(size: 11)).foregroundStyle(theme.text)
-            Text(what).font(.system(size: 11)).foregroundStyle(theme.text3)
+            Text(verbatim: key).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text)
+            Text(what).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
         }
     }
 }

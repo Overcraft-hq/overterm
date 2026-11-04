@@ -18,10 +18,10 @@ struct InboxView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Agent Inbox").font(.system(size: 13, weight: .bold)).foregroundStyle(theme.text)
+                Text("Agent Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
                 Spacer()
                 Text("J / K to move · ⌘I to close")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.text3)
             }
             .padding(.horizontal, 4)
@@ -30,7 +30,7 @@ struct InboxView: View {
             if model.isEmpty {
                 Spacer()
                 Text("Nothing is waiting for you")
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity)
                 Spacer()
@@ -46,7 +46,7 @@ struct InboxView: View {
                 }
             }
             Text("Also the Dock badge, and the menu bar while something waits.")
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 2)
@@ -79,13 +79,13 @@ private struct InboxCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: glyph.0).font(.system(size: 12)).foregroundStyle(glyph.1)
-                Text(entry.headline).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Image(systemName: glyph.0).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(glyph.1)
+                Text(entry.headline).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 Spacer(minLength: 6)
                 if let group = entry.group {
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(group.color.color).frame(width: 7, height: 7)
-                        Text(verbatim: group.name).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                        Text(verbatim: group.name).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                     }
                 }
             }
@@ -94,7 +94,7 @@ private struct InboxCard: View {
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(Array(prompt.preview.enumerated()), id: \.offset) { _, line in
                             Text(line)
-                                .font(.system(size: 11.5, design: .monospaced))
+                                .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
                                 .foregroundStyle(colour(of: line))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -147,10 +147,10 @@ private struct InboxCard: View {
     private func button(_ title: some StringProtocol, filled: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(String(title))
-                .font(.system(size: 12, weight: filled ? .semibold : .regular))
+                .font(.system(size: ChromeMetrics.text(12), weight: filled ? .semibold : .regular))
                 .lineLimit(1)
                 .padding(.horizontal, 12)
-                .frame(height: 28)
+                .frame(height: ChromeMetrics.row(28))
                 .background(RoundedRectangle(cornerRadius: 6).fill(filled ? TabStatusStyle.working : theme.iconBg))
                 .contentShape(Rectangle())
         }

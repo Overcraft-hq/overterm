@@ -55,7 +55,7 @@ struct DockerPortPill: View {
             if let url = port.url { open(url) }
         } label: {
             Text(verbatim: port.label)
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                 .foregroundStyle(theme.text2)
                 .padding(.horizontal, 5)
                 .frame(height: 17)
@@ -121,7 +121,7 @@ struct DockerEmulationBadge: View {
         Group {
             if let emulation {
                 Text(verbatim: emulation.image.short)
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(9.5), weight: .semibold, design: .monospaced))
                     .foregroundStyle(TabStatusStyle.waiting)
                     .padding(.horizontal, 4)
                     .frame(height: 14)
@@ -155,7 +155,7 @@ struct DockerEmulationTag: View {
         Group {
             if let emulation {
                 Text(verbatim: emulation.image.short)
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(9.5), weight: .semibold, design: .monospaced))
                     .foregroundStyle(TabStatusStyle.waiting)
                     .padding(.horizontal, 4)
                     .frame(height: 14)
@@ -187,8 +187,8 @@ struct DockerEmulationNote: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "cpu").foregroundStyle(TabStatusStyle.waiting)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: emulation.title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
-                    Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text(verbatim: emulation.title).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }
             }
@@ -243,7 +243,7 @@ struct DockerContainerRow: View {
             DockerStatusDot(color: DockerStatusStyle.color(container, idle: theme.text3))
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(verbatim: title).font(.system(size: 12.5)).foregroundStyle(container.state.isUp ? theme.text : theme.text2).lineLimit(1)
+                    Text(verbatim: title).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(container.state.isUp ? theme.text : theme.text2).lineLimit(1)
                     // Its values read here, once: a badge observing the
                     // whole model was 160 more subscribers, each drawn
                     // again on every change to the engine's state.
@@ -251,7 +251,7 @@ struct DockerContainerRow: View {
                         docker.wantPlatform(of: container)
                     }
                 }
-                Text(verbatim: container.Image).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: container.Image).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             }
             .layoutPriority(1)
             Spacer(minLength: 6)
@@ -260,7 +260,7 @@ struct DockerContainerRow: View {
                     DockerPortPill(port: port, theme: theme, open: open)
                 }
                 Text(verbatim: DockerStatusStyle.status(container))
-                    .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                     .frame(minWidth: 70, alignment: .trailing)
             }
             if busy { ProgressView().controlSize(.mini) }
@@ -269,7 +269,7 @@ struct DockerContainerRow: View {
             if columns { DockerUsageCells(usage: usage, reads: container.state.hasStats, theme: theme) }
         }
         .padding(.leading, (indented ?? inProject) ? 18 : 0)
-        .frame(height: 30)
+        .frame(height: ChromeMetrics.row(30))
         .contentShape(Rectangle())
         .accessibilityIdentifier("docker.container.\(container.name)")
     }
@@ -299,16 +299,16 @@ struct DockerProjectRow: View {
         HStack(spacing: 6) {
             Button(action: fold) {
                 Image(systemName: folded ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(theme.text3).frame(width: 12, height: 20)
+                    .font(.system(size: ChromeMetrics.text(9), weight: .semibold)).foregroundStyle(theme.text3).frame(width: 12, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if let project = group.project {
                 DockerStatusDot(color: DockerStatusStyle.color(project, idle: theme.text3))
-                Text(verbatim: project.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: project.name).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 if !compact, let folder = project.workingDir {
                     Text(verbatim: (folder as NSString).abbreviatingWithTildeInPath)
-                        .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.head)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.head)
                 }
                 Spacer(minLength: 6)
                 if busy { ProgressView().controlSize(.mini) }
@@ -321,31 +321,31 @@ struct DockerProjectRow: View {
                 }
                 if updates > 0 { updateMark(project) }
                 Text(verbatim: "\(project.running)/\(project.expected)")
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                     .help(project.planned ? "Not created yet" : "\(project.running) running")
             } else if let session = group.session {
                 DockerStatusDot(color: DockerStatusStyle.color(session, idle: theme.text3))
-                Image(systemName: "testtube.2").font(.system(size: 10.5)).foregroundStyle(theme.text3)
-                Text("Testcontainers").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
-                Text(verbatim: session.subtitle).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Image(systemName: "testtube.2").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                Text("Testcontainers").font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: session.subtitle).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 6)
                 if busy { ProgressView().controlSize(.mini) }
                 // Only while it is on screen, once a minute; the rest of the
                 // row follows the list.
                 TimelineView(.everyMinute) { _ in
-                    Text(verbatim: UsageFormat.age(session.startedDate)).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                    Text(verbatim: UsageFormat.age(session.startedDate)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 }
                 Text(verbatim: "\(session.running)/\(session.members.count)")
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                     .help("\(session.running) running" + (session.reaper == nil ? "" : "; Ryuk removes them when the run ends"))
             } else {
-                Text("Other containers").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text2)
+                Text("Other containers").font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text2)
                 Spacer(minLength: 6)
-                Text(verbatim: "\(group.containers.count)").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: "\(group.containers.count)").font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
             }
             if columns { DockerUsageCells(usage: usage, reads: group.containers.contains { $0.state.hasStats }, theme: theme) }
         }
-        .frame(height: 28)
+        .frame(height: ChromeMetrics.row(28))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityIdentifier(accessibilityID)
@@ -358,9 +358,9 @@ struct DockerProjectRow: View {
         let help = "Newer in the registry for \(updates == 1 ? "a service" : String(updates) + " services") — Pull Updates pulls them"
         Group {
             if compact {
-                Image(systemName: "arrow.down.circle.fill").font(.system(size: 10.5)).foregroundStyle(theme.accentText)
+                Image(systemName: "arrow.down.circle.fill").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.accentText)
             } else {
-                Text(verbatim: words).font(.system(size: 10)).foregroundStyle(theme.accentText)
+                Text(verbatim: words).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.accentText)
                     .padding(.horizontal, 5).background(Capsule().stroke(theme.accentText.opacity(0.5)))
             }
         }
@@ -375,7 +375,7 @@ struct DockerProjectRow: View {
 
     private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 10)).foregroundStyle(theme.text2).frame(width: 20, height: 20).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text2).frame(width: 20, height: 20).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
@@ -404,36 +404,36 @@ struct DockerPlannedServiceRow: View {
             Circle().strokeBorder(theme.text3, lineWidth: 1.2).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Text(verbatim: service.name).font(.system(size: 12.5)).foregroundStyle(theme.text2).lineLimit(1)
+                    Text(verbatim: service.name).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text2).lineLimit(1)
                     if replicas > 1 {
-                        Text(verbatim: "×\(replicas)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+                        Text(verbatim: "×\(replicas)").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
                     }
                     if service.spec?.watched == true {
-                        Image(systemName: "eye").font(.system(size: 9.5)).foregroundStyle(theme.text3)
+                        Image(systemName: "eye").font(.system(size: ChromeMetrics.text(9.5))).foregroundStyle(theme.text3)
                             .help("develop.watch: Watch syncs or rebuilds it as its files change")
                     }
                 }
                 Text(verbatim: service.spec?.summary(in: folder) ?? "")
-                    .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                    .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             }
             .layoutPriority(1)
             Spacer(minLength: 6)
             if !compact {
                 ForEach((service.spec?.ports ?? []).filter { $0.published != nil }.prefix(3), id: \.self) { port in
                     Text(verbatim: port.label)
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                         .foregroundStyle(theme.text3)
                         .padding(.horizontal, 5)
                         .frame(height: 17)
                         .background(RoundedRectangle(cornerRadius: 4).stroke(theme.border))
                         .help("Published on this port once it runs")
                 }
-                Text("Not created").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).frame(minWidth: 70, alignment: .trailing)
+                Text("Not created").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).frame(minWidth: 70, alignment: .trailing)
             }
             if columns { DockerUsageCells(usage: nil, reads: false, theme: theme) }
         }
         .padding(.leading, indented ? 18 : 0)
-        .frame(height: 30)
+        .frame(height: ChromeMetrics.row(30))
         .contentShape(Rectangle())
         .accessibilityIdentifier("docker.planned.\(service.name)")
     }
@@ -463,7 +463,7 @@ struct DockerUsageCells: View {
 
     private func cell(_ label: String?, width: CGFloat, color: Color) -> some View {
         Text(verbatim: reads ? label ?? "—" : "")
-            .font(.system(size: 11, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
             .foregroundStyle(label == nil ? theme.text3 : color)
             .lineLimit(1)
             .frame(width: width, alignment: .trailing)
@@ -491,7 +491,7 @@ struct DockerListColumns: View {
             column("Memory", .memory, help: "Sort by memory, the biggest first (again: by name)")
                 .frame(width: DockerUsageCells.memoryWidth, alignment: .trailing)
         }
-        .frame(height: 22)
+        .frame(height: ChromeMetrics.row(22))
     }
 
     private func column(_ title: String, _ order: DockerListSort, help: String) -> some View {
@@ -501,9 +501,9 @@ struct DockerListColumns: View {
         } label: {
             HStack(spacing: 3) {
                 Text(title)
-                if active && order != .name { Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)) }
+                if active && order != .name { Image(systemName: "chevron.down").font(.system(size: ChromeMetrics.text(8), weight: .semibold)) }
             }
-            .font(.system(size: 10.5, weight: .semibold))
+            .font(.system(size: ChromeMetrics.text(10.5), weight: .semibold))
             .foregroundStyle(active ? theme.text : theme.text3)
             .contentShape(Rectangle())
         }

@@ -54,7 +54,7 @@ struct OvergitView: View {
     let worktreeActions: WorktreeActions
 
     /// Fixed, because the graph's lines have to meet across rows.
-    static let commitRowHeight: CGFloat = 36
+    static var commitRowHeight: CGFloat { ChromeMetrics.row(36) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -67,7 +67,7 @@ struct OvergitView: View {
                     symbol: "arrow.clockwise", help: "Fetch and reload", action: reload, theme: theme)
             }
             if !model.isRepository {
-                Text("Not in a git repository").font(.system(size: 12)).foregroundStyle(theme.text3).padding(12)
+                Text("Not in a git repository").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(12)
                 Spacer()
             } else {
                 list
@@ -88,7 +88,7 @@ struct OvergitView: View {
                 overview
                 if let error = model.error {
                     Text(verbatim: error)
-                        .font(.system(size: 11)).foregroundStyle(theme.orangeText)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.orangeText)
                         .padding(.horizontal, 12).padding(.bottom, 6)
                 }
                 ForEach(OvergitModel.Section.allCases) { section in
@@ -254,12 +254,12 @@ struct OvergitView: View {
             if !worktrees.cleanable.isEmpty {
                 Button(action: worktreeActions.cleanUp) {
                     HStack(spacing: 4) {
-                        Image(systemName: "arrow.triangle.merge").font(.system(size: 9))
+                        Image(systemName: "arrow.triangle.merge").font(.system(size: ChromeMetrics.text(9)))
                         Text(verbatim: "Clean up \(worktrees.cleanable.count) merged")
                     }
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .padding(.horizontal, 12)
-                    .frame(height: 24)
+                    .frame(height: ChromeMetrics.row(24))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -336,14 +336,14 @@ struct OvergitSectionHeader: View {
         Button(action: onToggle) {
             HStack(spacing: 5) {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold)).frame(width: 10)
-                Image(systemName: section.symbol).font(.system(size: 10)).frame(width: 14)
+                    .font(.system(size: ChromeMetrics.text(8), weight: .semibold)).frame(width: 10)
+                Image(systemName: section.symbol).font(.system(size: ChromeMetrics.text(10))).frame(width: 14)
                 Text(section.title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                     .textCase(.uppercase)
                 if count > 0 {
                     Text(verbatim: "\(count)")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(10), design: .monospaced))
                         .foregroundStyle(theme.text3)
                 }
                 Spacer(minLength: 0)
@@ -351,7 +351,7 @@ struct OvergitSectionHeader: View {
             .foregroundStyle(theme.text2)
             .padding(.leading, 8)
             .padding(.trailing, 8)
-            .frame(height: 28)
+            .frame(height: ChromeMetrics.row(28))
             .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
             .contentShape(Rectangle())
         }
@@ -367,7 +367,7 @@ struct OvergitEmpty: View {
 
     var body: some View {
         Text(verbatim: text)
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.text3)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
@@ -390,21 +390,21 @@ struct OvergitPlainRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 10)).frame(width: 14).foregroundStyle(theme.text3)
-            Text(verbatim: title).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(10))).frame(width: 14).foregroundStyle(theme.text3)
+            Text(verbatim: title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
             if !detail.isEmpty {
-                Text(verbatim: detail).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
+                Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
             }
             Spacer(minLength: 0)
             if let trailing {
                 Text(verbatim: trailing)
-                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.text3)
                     .lineLimit(1).fixedSize()
             }
         }
         .padding(.leading, 32)
         .padding(.trailing, 10)
-        .frame(height: 26)
+        .frame(height: ChromeMetrics.row(26))
         .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

@@ -59,12 +59,12 @@ struct DockerPageView: View {
                         Text(section.title)
                         Spacer()
                         if let count = count(section) {
-                            Text(verbatim: "\(count)").foregroundStyle(theme.text3).font(.system(size: 11, design: .monospaced))
+                            Text(verbatim: "\(count)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                         }
                     }
                     .foregroundStyle(page.section == section ? theme.text : theme.text2)
                     .padding(.horizontal, 10)
-                    .frame(height: 30)
+                    .frame(height: ChromeMetrics.row(30))
                     .background(RoundedRectangle(cornerRadius: 7).fill(page.section == section ? theme.selected : .clear))
                     .contentShape(Rectangle())
                 }
@@ -76,8 +76,8 @@ struct DockerPageView: View {
             Button {
                 page.cleaning = true
             } label: {
-                Label("Clean Up…", systemImage: "sparkles").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
+                Label("Clean Up…", systemImage: "sparkles").font(.system(size: ChromeMetrics.text(12))).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).frame(height: ChromeMetrics.row(28)).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.text2)
@@ -113,14 +113,14 @@ struct DockerPageView: View {
     /// Overterm's agents and Docker's MCP Toolkit: which reach its servers.
     private func mcpToolkit(_ clients: [MCPToolkitClient]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("MCP Toolkit").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text("MCP Toolkit").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             ForEach(clients) { client in
                 HStack(spacing: 6) {
                     DockerStatusDot(color: client.connected ? TabStatusStyle.done : theme.text3)
-                    Text(verbatim: client.name).font(.system(size: 11.5)).foregroundStyle(client.installed ? theme.text2 : theme.text3).lineLimit(1)
+                    Text(verbatim: client.name).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(client.installed ? theme.text2 : theme.text3).lineLimit(1)
                     Spacer(minLength: 4)
                     Button(client.connected ? "Disconnect" : "Connect") { page.toggleMCP(client) }
-                        .buttonStyle(.borderless).font(.system(size: 11))
+                        .buttonStyle(.borderless).font(.system(size: ChromeMetrics.text(11)))
                         .help(DockerMCPToolkit.command(client, connect: !client.connected) + " — in a terminal tab; it changes \(client.name)'s config")
                 }
             }
@@ -134,7 +134,7 @@ struct DockerPageView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 DockerStatusDot(color: engineColor)
-                Text(verbatim: docker.runtime.name).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: docker.runtime.name).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
                 Spacer(minLength: 0)
                 Menu {
                     ForEach([DockerRuntime.Action.start, .stop, .restart], id: \.self) { action in
@@ -160,14 +160,14 @@ struct DockerPageView: View {
                     Button("Connect Again") { docker.reconnect() }
                     Button("Docker Settings…") { actions.settings() }
                 } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 11)).frame(width: 20, height: 18)
+                    Image(systemName: "ellipsis").font(.system(size: ChromeMetrics.text(11))).frame(width: 20, height: 18)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .accessibilityIdentifier("docker.engineMenu")
             }
-            Text(verbatim: engineDetail).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(2)
+            Text(verbatim: engineDetail).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(2)
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.rowHover.opacity(0.6)))
@@ -214,7 +214,7 @@ struct DockerPageView: View {
             if let transferring = page.transferring {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(verbatim: transferring + "…").font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text(verbatim: transferring + "…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                     Spacer()
                 }
                 .padding(.horizontal, 20).padding(.vertical, 6)
@@ -278,12 +278,12 @@ struct DockerPageView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(page.section.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text)
+            Text(page.section.title).font(.system(size: ChromeMetrics.text(20), weight: .semibold)).foregroundStyle(theme.text)
             if docker.connection.isRunning, page.section == .containers {
-                Text(verbatim: "\(running) running · \(docker.containers.count)").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: "\(running) running · \(docker.containers.count)").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
             if page.section == .builds, case let building = page.builds.filter(\.running).count, building > 0 {
-                Text(verbatim: "\(building) running · \(page.builds.count)").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: "\(building) running · \(page.builds.count)").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                     .accessibilityIdentifier("docker.builds.running")
             }
             if docker.connection.isRunning, page.section == .images, let lastRun = updates.lastRun {
@@ -291,7 +291,7 @@ struct DockerPageView: View {
                 // Its age moves on while it shows, once a minute.
                 TimelineView(.everyMinute) { _ in
                     Text(verbatim: DockerImageUpdates.headline(counts) + " · checked " + UsageFormat.age(lastRun))
-                        .font(.system(size: 12)).foregroundStyle(counts.available > 0 ? theme.accentText : theme.text3).lineLimit(1)
+                        .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(counts.available > 0 ? theme.accentText : theme.text3).lineLimit(1)
                         .help(
                             "What each image's registry said at the last check. Not checked: asked of no registry yet. Differs: its registry has another image, and this one may have been built here."
                         )
@@ -300,14 +300,14 @@ struct DockerPageView: View {
             }
             Spacer(minLength: 12)
             if page.section == .containers {
-                Toggle("Running only", isOn: $page.runningOnly).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
+                Toggle("Running only", isOn: $page.runningOnly).toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             }
             if docker.connection.isRunning, page.section == .images { updateButtons }
             HStack(spacing: 4) {
-                Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Image(systemName: "line.3.horizontal.decrease").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 TextField("Filter  /", text: $page.filter)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .focused($focus, equals: .filter)
                     .onSubmit { focus = .list }
                     .onExitCommand {
@@ -322,7 +322,7 @@ struct DockerPageView: View {
             Button {
                 page.cheatSheet.toggle()
             } label: {
-                Image(systemName: "keyboard").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Image(systemName: "keyboard").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             }
             .buttonStyle(.plain)
             .help("Keys (?)")
@@ -337,15 +337,15 @@ struct DockerPageView: View {
         if updates.running {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text(verbatim: "Checking \(updates.done) of \(updates.total)…").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Text(verbatim: "Checking \(updates.done) of \(updates.total)…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 Button("Stop") { updates.cancel() }
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .help("Stops asking: what was asked stays")
                     .accessibilityIdentifier("docker.checkUpdates.stop")
             }
         } else {
             Button("Check for Updates") { page.checkUpdates(images: docker.images) }
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .disabled(docker.images.isEmpty)
                 .help(
                     "Asks each image's registry through docker buildx imagetools — over the network; each counts as a pull on Docker Hub (\(DockerKey.checkUpdates.key))"
@@ -354,7 +354,7 @@ struct DockerPageView: View {
         }
         if !updates.running, !updates.images(withUpdates: docker.images).isEmpty {
             Button("Pull Updates") { page.pullUpdates(images: docker.images) }
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .help("Pulls each image whose registry has a newer one: Docker Hub's through the engine, another registry's in a terminal tab, where docker signs in")
                 .accessibilityIdentifier("docker.pullUpdates")
         }
@@ -364,9 +364,9 @@ struct DockerPageView: View {
     private func note(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(TabStatusStyle.done)
-            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
             Spacer()
-            Button("Dismiss") { page.cleaned = nil }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 12))
+            Button("Dismiss") { page.cleaned = nil }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(12)))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
@@ -377,9 +377,9 @@ struct DockerPageView: View {
     private func banner(_ error: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.failed)
-            Text(verbatim: error).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(3).textSelection(.enabled)
+            Text(verbatim: error).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(3).textSelection(.enabled)
             Spacer()
-            Button("Dismiss") { page.error = nil }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 12))
+            Button("Dismiss") { page.error = nil }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(12)))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
@@ -393,7 +393,7 @@ struct DockerPageView: View {
             DockerListColumns(sort: $page.sort, theme: theme)
                 .padding(.horizontal, 20)
             if groups.isEmpty {
-                Text("Nothing matches “\(page.filter)”.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text("Nothing matches “\(page.filter)”.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                     .padding(.horizontal, 20).padding(.vertical, 8)
                 Spacer(minLength: 0)
             } else {
@@ -455,19 +455,19 @@ struct DockerPageView: View {
 
     private func empty(_ title: String, _ detail: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: "shippingbox").font(.system(size: 34, weight: .light)).foregroundStyle(theme.text3)
-            Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
-            Text(.init(detail)).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 380)
+            Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(34), weight: .light)).foregroundStyle(theme.text3)
+            Text(title).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
+            Text(.init(detail)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 380)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func down(_ reason: String) -> some View {
         VStack(spacing: 12) {
-            Image(systemName: "shippingbox").font(.system(size: 34, weight: .light)).foregroundStyle(theme.text3)
+            Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(34), weight: .light)).foregroundStyle(theme.text3)
             Text(docker.runtimeStatus == .starting ? "\(docker.runtime.name) is starting…" : "\(docker.runtime.name) isn't running")
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
-            Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 420)
+                .font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 420)
             HStack(spacing: 10) {
                 if let start = docker.runtime.command(.start, context: docker.endpoint?.context) {
                     Button("Start \(docker.runtime.name)") {
@@ -486,15 +486,15 @@ struct DockerPageView: View {
 
     private var cheatSheet: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Keys in the list").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
+            Text("Keys in the list").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
             ForEach(DockerKey.allCases, id: \.self) { key in
                 HStack(spacing: 12) {
-                    Text(verbatim: key.key).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text)
+                    Text(verbatim: key.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
                         .frame(width: 48, alignment: .leading)
-                    Text(key.title).font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text(key.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 }
             }
-            Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: 11)).foregroundStyle(theme.text3)
+            Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 .padding(.top, 6)
         }
         .padding(18)

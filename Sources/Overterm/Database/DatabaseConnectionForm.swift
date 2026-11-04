@@ -26,7 +26,7 @@ struct DatabaseConnectionForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(isNew ? "New Connection" : "Edit Connection").font(.system(size: 15, weight: .semibold))
+            Text(isNew ? "New Connection" : "Edit Connection").font(.system(size: ChromeMetrics.text(15), weight: .semibold))
                 .onAppear { if password.isEmpty { password = suggestedPassword } }
             Form {
                 TextField("Name", text: $connection.name)
@@ -194,18 +194,18 @@ struct DatabaseConnectionForm: View {
                 }
             }
         } else {
-            Text("Whoever `gcloud auth login` signed in on this Mac.").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text("Whoever `gcloud auth login` signed in on this Mac.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder private var status: some View {
         if let problem {
-            Text(verbatim: problem).font(.system(size: 12)).foregroundStyle(.red)
+            Text(verbatim: problem).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(.red)
         } else if let tested {
             switch tested {
-            case .success(let text): Label(text, systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.system(size: 12))
+            case .success(let text): Label(text, systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.system(size: ChromeMetrics.text(12)))
             case .failure(let error):
-                Label(error.localizedDescription, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.system(size: 12))
+                Label(error.localizedDescription, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.system(size: ChromeMetrics.text(12)))
                     .lineLimit(4).textSelection(.enabled)
             }
         }

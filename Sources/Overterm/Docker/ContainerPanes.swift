@@ -76,7 +76,7 @@ struct DockerLogsPane: View {
             let filter = effective
             let shown = filter.isEmpty ? feed.lines : feed.lines.filter(filter.matches)
             if let note = Self.note(lines: feed.lines.count, shown: shown.count, filter: filter, following: feed.following) {
-                Text(verbatim: note).font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let text = theme.textNS
@@ -108,13 +108,13 @@ struct DockerLogsPane: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
-                TextField("Filter the log", text: $filter.text).textFieldStyle(.plain).font(.system(size: 12))
+                Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+                TextField("Filter the log", text: $filter.text).textFieldStyle(.plain).font(.system(size: ChromeMetrics.text(12)))
                     .accessibilityIdentifier("docker.logs.filter")
             }
             .padding(.horizontal, 7)
             .frame(minWidth: 100, maxWidth: .infinity)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
             Picker("", selection: $filter.level) {
                 ForEach(DockerLogFilter.Level.allCases) { Text($0.title).tag($0) }
@@ -136,7 +136,7 @@ struct DockerLogsPane: View {
             }
             HStack(spacing: 4) {
                 DockerStatusDot(color: feed.following ? TabStatusStyle.done : theme.text3)
-                Text(feed.following ? "Following" : "Stopped").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(feed.following ? "Following" : "Stopped").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
             .help(feed.following ? "New lines appear as they are written" : "Nothing runs: its log is followed again when it starts")
             Menu {
@@ -146,7 +146,7 @@ struct DockerLogsPane: View {
                 Button("Clear") { feed.clear() }
                 if let command = feed.terminalCommand { Button("Follow in a Terminal Tab") { actions.run(command, nil) } }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.system(size: 12))
+                Image(systemName: "ellipsis.circle").font(.system(size: ChromeMetrics.text(12)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -176,7 +176,7 @@ struct DockerFilesPane: View {
                         Spacer(minLength: 6)
                     }
                     .padding(.horizontal, 12)
-                    .frame(height: 28)
+                    .frame(height: ChromeMetrics.row(28))
                     Rectangle().fill(theme.border).frame(height: 1)
                     changes
                 }
@@ -201,7 +201,7 @@ struct DockerFilesPane: View {
     private var changes: some View {
         List {
             if let changes = session.changes {
-                if changes.isEmpty { Text("Nothing changed since it started.").font(.system(size: 12)).foregroundStyle(theme.text3) }
+                if changes.isEmpty { Text("Nothing changed since it started.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
                 ForEach(changes, id: \.Path) { change in
                     let (mark, color): (String, Color) =
                         switch change.Kind {
@@ -213,12 +213,12 @@ struct DockerFilesPane: View {
                         if change.Kind != .deleted { actions.openFile(.of(container), change.Path) }
                     } label: {
                         HStack(spacing: 8) {
-                            Text(verbatim: mark).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(color).frame(width: 14)
-                            Text(verbatim: change.Path).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
+                            Text(verbatim: mark).font(.system(size: ChromeMetrics.text(11), weight: .bold, design: .monospaced)).foregroundStyle(color).frame(width: 14)
+                            Text(verbatim: change.Path).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
                                 .truncationMode(.head)
                             Spacer()
                         }
-                        .frame(height: 20)
+                        .frame(height: ChromeMetrics.row(20))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -242,9 +242,9 @@ struct DockerInspectPane: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("As the engine says it, secrets hidden").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text("As the engine says it, secrets hidden").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 Spacer()
-                Button("Copy") { if let json = session.json { actions.copy(json) } }.font(.system(size: 11.5)).disabled(session.json == nil)
+                Button("Copy") { if let json = session.json { actions.copy(json) } }.font(.system(size: ChromeMetrics.text(11.5))).disabled(session.json == nil)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -280,7 +280,7 @@ struct DockerStatsPane: View {
     var body: some View {
         ScrollView {
             if container.state != .running {
-                Text("Stats are read while it runs.").font(.system(size: 12)).foregroundStyle(theme.text3).padding(20)
+                Text("Stats are read while it runs.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(20)
             } else if let usage = session.usage {
                 VStack(spacing: 12) {
                     tile(
@@ -311,17 +311,17 @@ struct DockerStatsPane: View {
     /// `top`'s table: its own columns, its command last and widest.
     private func processes(_ top: (titles: [String], rows: [[String]])) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Processes").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text("Processes").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
                 GridRow {
                     ForEach(Array(top.titles.enumerated()), id: \.offset) { _, title in
-                        Text(verbatim: title).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(theme.text3)
+                        Text(verbatim: title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).foregroundStyle(theme.text3)
                     }
                 }
                 ForEach(Array(top.rows.prefix(100).enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
-                            Text(verbatim: cell).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text)
+                            Text(verbatim: cell).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text)
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                                 .frame(maxWidth: index == row.count - 1 ? .infinity : nil, alignment: .leading)
                         }
@@ -337,10 +337,10 @@ struct DockerStatsPane: View {
 
     private func tile(_ title: String, _ value: String, detail: String, values: [Double]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
-            Text(verbatim: value).font(.system(size: 18, weight: .medium, design: .rounded)).foregroundStyle(theme.text).monospacedDigit()
-            if !detail.isEmpty { Text(verbatim: detail).font(.system(size: 11)).foregroundStyle(theme.text2) }
-            if values.count > 1 { DockerSparkline(values: values, color: TabStatusStyle.working).frame(height: 34).padding(.top, 4) }
+            Text(title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(18), weight: .medium, design: .rounded)).foregroundStyle(theme.text).monospacedDigit()
+            if !detail.isEmpty { Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2) }
+            if values.count > 1 { DockerSparkline(values: values, color: TabStatusStyle.working).frame(height: ChromeMetrics.row(34)).padding(.top, 4) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

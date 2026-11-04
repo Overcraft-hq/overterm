@@ -36,11 +36,11 @@ struct APIRunnerView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(verbatim: runner.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(13), weight: .semibold))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Label(runner.environment ?? "No Environment", systemImage: "globe")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.text3)
                     .lineLimit(1)
                     .help("The environment this run uses")
@@ -48,18 +48,18 @@ struct APIRunnerView: View {
                 if runner.isRunning {
                     Button("Stop") { runner.cancel() }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.accentText)
                 } else {
                     Button("Run Again") { runner.runAgain(workspace: workspace) }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.accentText)
                 }
                 if APIRunner.bruExecutable() != nil {
                     Button("Run with bru") { runWithBru() }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text2)
                         .help("The same requests under Bruno's CLI, in a terminal tab — for scripts that need npm packages")
                 }
@@ -84,7 +84,7 @@ struct APIRunnerView: View {
                 Spacer()
                 Text(verbatim: APIResponse.formatDuration(runner.duration * 1000)).foregroundStyle(theme.text3)
             }
-            .font(.system(size: 11.5))
+            .font(.system(size: ChromeMetrics.text(11.5)))
             .lineLimit(1)
             .accessibilityIdentifier("apiRunnerSummary")
         }
@@ -103,35 +103,35 @@ private struct APIRunnerRow: View {
             HStack(spacing: 6) {
                 stateIcon.frame(width: 14)
                 Text(verbatim: APIMethodStyle.short(entry.method))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(9), weight: .bold, design: .monospaced))
                     .foregroundStyle(APIMethodStyle.color(entry.method))
                     .frame(width: 34, alignment: .leading)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(verbatim: entry.name).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1)
+                    Text(verbatim: entry.name).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
                     if !entry.folder.isEmpty {
-                        Text(verbatim: entry.folder).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1)
+                        Text(verbatim: entry.folder).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 4)
                 if let response = entry.result?.response {
                     Text(verbatim: "\(response.status)")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
                         .foregroundStyle(APIResponseView.statusColor(response.status))
-                    Text(verbatim: APIResponse.formatDuration(response.duration)).font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: APIResponse.formatDuration(response.duration)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
                 if let result = entry.result, !result.tests.isEmpty {
                     Text(verbatim: "\(result.passed)/\(result.tests.count)")
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(result.failed == 0 ? APIResponseView.statusColor(200) : APIResponseView.statusColor(500))
                 }
             }
             if let result = entry.result {
                 if let error = result.error {
-                    Text(verbatim: error).font(.system(size: 11)).foregroundStyle(APIResponseView.statusColor(500)).padding(.leading, 54)
+                    Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(APIResponseView.statusColor(500)).padding(.leading, 54)
                 }
                 ForEach(Array(result.tests.filter { !$0.passed }.enumerated()), id: \.offset) { _, test in
                     Text(verbatim: "✕ \(test.name)\(test.error.map { " — \($0)" } ?? "")")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                         .foregroundStyle(theme.text2)
                         .lineLimit(3)
                         .padding(.leading, 54)
@@ -149,12 +149,12 @@ private struct APIRunnerRow: View {
 
     @ViewBuilder private var stateIcon: some View {
         switch entry.state {
-        case .waiting: Image(systemName: "circle").font(.system(size: 10)).foregroundStyle(theme.text3)
+        case .waiting: Image(systemName: "circle").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
         case .running: ProgressView().controlSize(.mini)
-        case .skipped: Image(systemName: "forward.circle").font(.system(size: 11)).foregroundStyle(theme.text3)
+        case .skipped: Image(systemName: "forward.circle").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
         case .done:
             Image(systemName: entry.passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(entry.passed ? APIResponseView.statusColor(200) : APIResponseView.statusColor(500))
         }
     }

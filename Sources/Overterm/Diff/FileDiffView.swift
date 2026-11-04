@@ -112,15 +112,15 @@ struct FileCard: View {
                             DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable()
                         }
                         if diff.truncated {
-                            Text("Diff truncated.").font(.system(size: 11)).foregroundStyle(theme.dimText).padding(8)
+                            Text("Diff truncated.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(8)
                         }
                     }
                     .padding(.vertical, 4)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                     .textSelection(.enabled)
                 } else {
                     Text(verbatim: diff == nil ? "Loading…" : emptyDiff)
-                        .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
                 }
@@ -135,31 +135,31 @@ struct FileCard: View {
         HStack(spacing: 8) {
             Button(action: onToggle) {
                 Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold)).frame(width: 14, height: 20).contentShape(Rectangle())
+                    .font(.system(size: ChromeMetrics.text(10), weight: .semibold)).frame(width: 14, height: 20).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             if editable {
                 Button(action: onStage) {
-                    Image(systemName: stageSymbol).font(.system(size: 12))
+                    Image(systemName: stageSymbol).font(.system(size: ChromeMetrics.text(12)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(file.stageState == .none ? theme.dimText : theme.text)
                 .help(file.stageState == .full ? "Unstage" : "Stage")
             }
             Text((file.path as NSString).lastPathComponent)
-                .font(.system(size: 13))
+                .font(.system(size: ChromeMetrics.text(13)))
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
             let dir = (file.path as NSString).deletingLastPathComponent
             if !dir.isEmpty {
-                Text(dir).font(.system(size: 11)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.head)
+                Text(dir).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.head)
             }
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(file.path, forType: .string)
             } label: {
-                Image(systemName: "doc.on.doc").font(.system(size: 10))
+                Image(systemName: "doc.on.doc").font(.system(size: ChromeMetrics.text(10)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -168,14 +168,14 @@ struct FileCard: View {
             Spacer(minLength: 4)
             if editable {
                 Button(action: onDiscard) {
-                    Image(systemName: "arrow.uturn.backward").font(.system(size: 11))
+                    Image(systemName: "arrow.uturn.backward").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.dimText)
                 .help("Discard Changes…")
             }
             Button(action: onOpen) {
-                Image(systemName: "arrow.up.forward.square").font(.system(size: 11))
+                Image(systemName: "arrow.up.forward.square").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -183,7 +183,7 @@ struct FileCard: View {
             .disabled(file.kind == .deleted)
         }
         .padding(.horizontal, 10)
-        .frame(height: 34)
+        .frame(height: ChromeMetrics.row(34))
         .contentShape(Rectangle())
         .onTapGesture(perform: onToggle)
         .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
@@ -196,7 +196,7 @@ struct FileCard: View {
                 Text("·").foregroundStyle(theme.dimText)
                 Text(verbatim: "−\(removed)").foregroundStyle(DiffColors.removed)
             }
-            .font(.system(size: 11, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.dimText.opacity(0.3)))

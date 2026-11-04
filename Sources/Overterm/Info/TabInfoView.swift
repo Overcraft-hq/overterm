@@ -25,8 +25,8 @@ struct TabInfoView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: model.tab.agent?.symbol ?? "terminal").font(.system(size: 13))
-            Text(model.tab.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            Image(systemName: model.tab.agent?.symbol ?? "terminal").font(.system(size: ChromeMetrics.text(13)))
+            Text(model.tab.title).font(.system(size: ChromeMetrics.text(14), weight: .semibold)).lineLimit(1)
             Spacer()
         }
     }
@@ -36,7 +36,7 @@ struct TabInfoView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Label {
                     Text((location.directory as NSString).abbreviatingWithTildeInPath)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
@@ -56,19 +56,19 @@ struct TabInfoView: View {
                     }
                 }
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
         }
     }
 
     private var processSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Running").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                Text("Running").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
                 Spacer()
                 Text("CPU").frame(width: 60, alignment: .trailing)
                 Text("Memory").frame(width: 80, alignment: .trailing)
             }
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.dimText)
             ScrollView {
                 VStack(spacing: 0) {
@@ -81,29 +81,29 @@ struct TabInfoView: View {
             .frame(height: CGFloat(min(max(rows.count, 1), 12)) * 20)
             Divider().opacity(0.4)
             HStack {
-                Text("Total").font(.system(size: 12, weight: .semibold))
+                Text("Total").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 Spacer()
                 Text(Self.cpu(model.totalCPU)).frame(width: 60, alignment: .trailing)
                 Text(Self.memory(model.totalMemory)).frame(width: 80, alignment: .trailing)
             }
-            .font(.system(size: 12, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
         }
     }
 
     @ViewBuilder private var portSection: some View {
         if !model.ports.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Listening").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                Text("Listening").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
                 ForEach(model.ports) { port in
                     HStack(spacing: 8) {
-                        Text(verbatim: ":\(port.port)").font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        Text(verbatim: ":\(port.port)").font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                         if let container = port.container {
                             Label(container, systemImage: "shippingbox").foregroundStyle(theme.dimText)
                         } else {
                             Text(port.process).foregroundStyle(theme.dimText)
                         }
                         if port.address != "*" && port.address != "127.0.0.1" && port.address != "[::1]" {
-                            Text(port.address).font(.system(size: 10)).foregroundStyle(theme.dimText)
+                            Text(port.address).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
                         }
                         Spacer()
                         if let url = port.url {
@@ -116,7 +116,7 @@ struct TabInfoView: View {
                             .help(url.absoluteString)
                         }
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                 }
             }
         }
@@ -128,11 +128,11 @@ struct TabInfoView: View {
                 ProgressView().controlSize(.small)
                 Text("Reading the Claude session…").foregroundStyle(theme.dimText)
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
         } else if let usage = model.claude {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Text("Claude session").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                    Text("Claude session").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
                     Spacer()
                     if let modelName = usage.model {
                         Text(verbatim: modelName.replacingOccurrences(of: "claude-", with: "")).foregroundStyle(theme.dimText)
@@ -141,7 +141,7 @@ struct TabInfoView: View {
                         Text(verbatim: "· " + Self.duration(last.timeIntervalSince(started))).foregroundStyle(theme.dimText)
                     }
                 }
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 HStack(spacing: 14) {
                     tokenStat("input", usage.input)
                     tokenStat("output", usage.output)
@@ -149,7 +149,7 @@ struct TabInfoView: View {
                     tokenStat("cache write", usage.cacheWrite)
                 }
                 Text(verbatim: "\(usage.replies) replies · \(Self.tokens(usage.total)) tokens in all")
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.dimText)
             }
         }
@@ -161,14 +161,14 @@ struct TabInfoView: View {
                 ProgressView().controlSize(.small)
                 Text("Measuring the checkout on disk…").foregroundStyle(theme.dimText)
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
         } else if let disk = model.disk {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Disk").font(.system(size: 11, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                    Text("Disk").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
                     Spacer()
                     Text(verbatim: (disk.partial ? "≥ " : "") + Self.memory(disk.total) + " · \(disk.files.formatted()) files")
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(theme.dimText)
                 }
                 ForEach(disk.largest, id: \.name) { entry in
@@ -182,7 +182,7 @@ struct TabInfoView: View {
                         .frame(height: 5)
                         Text(verbatim: Self.memory(entry.bytes)).frame(width: 70, alignment: .trailing)
                     }
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 }
             }
         }
@@ -190,8 +190,8 @@ struct TabInfoView: View {
 
     private func tokenStat(_ label: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(verbatim: Self.tokens(value)).font(.system(size: 13, weight: .semibold, design: .monospaced))
-            Text(label).font(.system(size: 10)).foregroundStyle(theme.dimText)
+            Text(verbatim: Self.tokens(value)).font(.system(size: ChromeMetrics.text(13), weight: .semibold, design: .monospaced))
+            Text(label).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
         }
     }
 
@@ -242,15 +242,15 @@ private struct ProcessRow: View {
                 Text("└").foregroundStyle(theme.dimText).padding(.leading, CGFloat(depth - 1) * 14)
             }
             Text(node.name).lineLimit(1)
-            Text(String(node.pid)).font(.system(size: 10)).foregroundStyle(theme.dimText)
+            Text(String(node.pid)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
             Spacer(minLength: 8)
             Text(TabInfoView.cpu(node.cpuPercent))
                 .foregroundStyle(node.cpuPercent >= 50 ? TabStatusStyle.signal : theme.text)
                 .frame(width: 60, alignment: .trailing)
             Text(TabInfoView.memory(node.memory)).frame(width: 80, alignment: .trailing)
         }
-        .font(.system(size: 12, design: .monospaced))
-        .frame(height: 20)
+        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+        .frame(height: ChromeMetrics.row(20))
         .help(node.command.isEmpty ? node.name : node.command)
     }
 }

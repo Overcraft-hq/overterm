@@ -23,7 +23,7 @@ struct TerminalSearchBar: View {
             )
             .frame(width: 190, height: 22)
             Text(verbatim: counter)
-                .font(.system(size: 11).monospacedDigit())
+                .font(.system(size: ChromeMetrics.text(11)).monospacedDigit())
                 .foregroundStyle(theme.dimText)
                 .frame(minWidth: 44, alignment: .trailing)
             button("chevron.up", help: "Previous (⇧↩)", action: search.previous)
@@ -50,7 +50,7 @@ struct TerminalSearchBar: View {
 
     private func button(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11), weight: .medium)).frame(width: 20, height: 20).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(theme.text)
