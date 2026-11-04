@@ -10,6 +10,8 @@ final class SplitHostView: NSView {
     /// The bar across the top of every pane (`PaneHeaderView`).
     /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics); 38 by default.
     static var headerHeight: CGFloat { ChromeMetrics.paneHeaderHeight }
+    /// Presentation mode (⌃⌘P) hides every pane's header.
+    nonisolated(unsafe) static var presenting = false
     /// Settings ▸ Appearance ▸ Pane headers: "Only when a tab is split".
     static var headersOnlyWhenSplit: Bool { Settings.shared.string("appearance.paneHeaders") == "whenSplit" }
     /// How far from the 1 pt line a divider can still be grabbed.
@@ -170,7 +172,7 @@ final class SplitHostView: NSView {
             self.dividers = dividers
             let dimming = panes.count > 1
             // Settings ▸ Appearance ▸ Pane headers: a lone pane can go without.
-            let headed = panes.count > 1 || !Self.headersOnlyWhenSplit
+            let headed = !Self.presenting && (panes.count > 1 || !Self.headersOnlyWhenSplit)
             for (pane, rect) in panes {
                 place(pane, in: rect, header: headed)
                 let dim = dimView(for: pane)

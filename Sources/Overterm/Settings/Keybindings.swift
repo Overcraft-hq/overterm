@@ -258,6 +258,7 @@ enum KeyCommands {
         .init("tabs.nextAttention", "Next Failure or Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),
+        .init("view.presentation", "Presentation Mode", group: "Window", key: "ctrl+cmd+p"),
         // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty v1.3.1 binds
         // both (navigate_search, inspector) and eats them before the menu,
         // so these live on ⌃⌘, which is free apart from ⌃⌘[ and ⌃⌘].

@@ -60,6 +60,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var theme: ChromeTheme?
     /// The body's four insets from the window (the card gap).
     private var bodyInsets: [NSLayoutConstraint] = []
+    /// While presenting (⌃⌘P): what it shut (TerminalWindowController+Presentation).
+    var presentation: Presentation?
     /// A press on a tab that may become a drag: the tab and where it began.
     private var pressedTab: (tab: Tab, x: CGFloat)?
     /// A chip pressed in the strip: dragging it moves the whole island.
@@ -3912,6 +3914,9 @@ extension TerminalWindowController: NSMenuItemValidation {
         }
         if menuItem.action == #selector(toggleDiff(_:)) {
             menuItem.state = diffItem?.isCollapsed == false ? .on : .off
+        }
+        if menuItem.action == #selector(togglePresentation(_:)) {
+            menuItem.state = isPresenting ? .on : .off
         }
         if menuItem.action == #selector(showOvergit(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .git ? .on : .off

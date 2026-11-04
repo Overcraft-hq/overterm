@@ -89,6 +89,7 @@ enum MainMenu {
         // ⇧⌘E is free in Ghostty v1.3.1 (only ⌘E and ⌃⇧E are bound); ⇧⌘↓
         // would never arrive — jump_to_prompt eats it in performKeyEquivalent.
         command(viewMenu, "Tab Peek", #selector(TerminalWindowController.toggleTabPeek(_:)), "tabs.peek")
+        command(viewMenu, "Presentation Mode", #selector(TerminalWindowController.togglePresentation(_:)), "view.presentation")
         viewMenu.addItem(.separator())
         command(viewMenu, "Group Selected Tabs", #selector(TerminalWindowController.groupSelectedTabs(_:)), "groups.new")
         command(viewMenu, "Group Switcher", #selector(TerminalWindowController.showGroupSwitcher(_:)), "groups.switcher")

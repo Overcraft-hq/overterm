@@ -186,6 +186,32 @@ extension E2ERunner {
         } else {
             check("an editor", false)
         }
+        // Presentation mode: the terminal alone and larger, and back.
+        if let present = menuItem("View", "Presentation Mode"), let selected = app.store.selected, let host = app.host(of: selected) {
+            let pane = selected.terminal
+            let before = pane.inheritedSettings().fontSize ?? 0
+            let sidebarOpen = app.sidebarItem?.isCollapsed == false
+            let editorOpen = app.editorItem?.isCollapsed == false
+            check("presenting starts with something beside the terminal", sidebarOpen || editorOpen)
+            _ = perform(present)
+            check(
+                "presenting: the columns shut, no header, a larger font",
+                await eventually(4) {
+                    self.app.sidebarItem?.isCollapsed == true && self.app.editorItem?.isCollapsed == true
+                        && host.header(of: pane)?.isHidden == true && (pane.inheritedSettings().fontSize ?? 0) >= before + 5
+                }, "font \(pane.inheritedSettings().fontSize ?? 0) from \(before)")
+            NSApp.mainMenu?.update()
+            check("the menu says so", app.isPresenting && app.validateMenuItem(present) && present.state == .on)
+            _ = perform(present)
+            check(
+                "and back as it was",
+                await eventually(4) {
+                    (self.app.sidebarItem?.isCollapsed == false) == sidebarOpen && (self.app.editorItem?.isCollapsed == false) == editorOpen
+                        && host.header(of: pane)?.isHidden == false && abs((pane.inheritedSettings().fontSize ?? 0) - before) < 0.5
+                }, "font \(pane.inheritedSettings().fontSize ?? 0) from \(before)")
+        } else {
+            check("View ▸ Presentation Mode", false)
+        }
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }
 }
