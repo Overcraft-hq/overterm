@@ -12,6 +12,17 @@ import GhosttyKit
 final class TerminalView: NSView {
     private(set) var surface: ghostty_surface_t?
 
+    /// What the shell was started with besides the app's own environment
+    /// (and the tag below): a Terminal in this context's `KUBECONFIG`.
+    let environment: [String: String]
+    /// The Kubernetes context this pane's `KUBECONFIG` pins, if any — what
+    /// a plain kubectl there reaches now: followed when the pin's file
+    /// changes (a `use-context` typed in the pane; `KubeTerminalFollow`).
+    var kubePin: KubeTerminalPin?
+    /// A pin that couldn't be restored: the pane's `KUBECONFIG` reaches no
+    /// cluster, and its header says so (`KubeTerminalLost`).
+    let kubePinLost: KubeTerminalLost?
+
     /// Find-in-terminal (⌘F) for this terminal.
     private(set) lazy var search = TerminalSearch(terminal: self)
 
@@ -99,7 +110,20 @@ final class TerminalView: NSView {
     ///     default when nil.
     ///   - restoring: a pane's saved text (Scrollback) to print before the
     ///     shell starts; ignored for a shell the launcher can't front.
-    init(workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil, restoring: URL? = nil) {
+    ///   - environment: put in the shell's environment over the app's own
+    ///     (a Terminal in this context's `KUBECONFIG`); a split of this
+    ///     pane gets the same.
+    ///   - kubePin: the context the pane is pinned to, for its tab and its
+    ///     header to say (`KubeTerminalPin`).
+    ///   - kubePinLost: a saved pin that couldn't be restored (then
+    ///     `environment` is `KubeTerminalLost.environment`).
+    init(
+        workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil, restoring: URL? = nil,
+        environment: [String: String] = [:], kubePin: KubeTerminalPin? = nil, kubePinLost: KubeTerminalLost? = nil
+    ) {
+        self.environment = environment
+        self.kubePin = kubePin
+        self.kubePinLost = kubePinLost
         // A non-zero initial frame so the renderer's layer has real bounds
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -144,6 +168,15 @@ final class TerminalView: NSView {
             mcpValue.map { free($0) }
         }
         if let mcpValue { env.append(ghostty_env_var_s(key: mcpKey, value: mcpValue)) }
+        // The caller's, sorted so the order is the same each time.
+        let extra = environment.sorted { $0.key < $1.key }.map { (strdup($0.key), strdup($0.value)) }
+        defer {
+            for (key, value) in extra {
+                free(key)
+                free(value)
+            }
+        }
+        for (key, value) in extra { env.append(ghostty_env_var_s(key: key, value: value)) }
         // A restored pane runs the launcher (named after the shell) instead.
         let launcher = restoring.flatMap { _ in Scrollback.launcher() }
         let commandC = launcher.map { strdup($0) }

@@ -2,16 +2,17 @@ import Foundation
 
 /// What a tab *is*, at a glance: the glyph in its icon tile.
 ///
-/// Five kinds, because in a window full of worktrees those are the five
-/// things a terminal turns out to be — an agent you are talking to, a
-/// server you left running, a shell you type in, a machine you are on, a
-/// container you are in (`docker exec`, what the Docker page opens).
+/// Six kinds, because in a window full of worktrees those are the things a
+/// terminal turns out to be — an agent you are talking to, a server you
+/// left running, a shell you type in, a machine you are on, a container
+/// you are in (`docker exec`, what the Docker page opens), a cluster a
+/// plain `kubectl` reaches (Terminal in this context, `KubeTerminalPin`).
 /// Shape carries it faster than the title does, and the title is often
 /// truncated anyway.
 ///
 /// Pure, so the rule can be read and tested without a process tree.
 enum TabKind: String, Equatable {
-    case agent, server, shell, ssh, container
+    case agent, server, shell, ssh, container, kubernetes
 
     /// The SF Symbol for the tile. An agent tab uses its own agent's symbol
     /// instead (`Agent.symbol`); this is the fallback.
@@ -22,6 +23,7 @@ enum TabKind: String, Equatable {
         case .shell: "chevron.right"
         case .ssh: "globe"
         case .container: "shippingbox"
+        case .kubernetes: "helm"
         }
     }
 
@@ -32,17 +34,21 @@ enum TabKind: String, Equatable {
         case .shell: "Shell"
         case .ssh: "Remote"
         case .container: "Container"
+        case .kubernetes: "Kubernetes context"
         }
     }
 
     /// `title` is what the shell last set — with shell integration that is
     /// the running command, which is the only cheap evidence there is.
     /// `hasPort` is whether anything in the tab's process tree listens
-    /// (`ListeningPorts`), which is what makes a shell a server.
-    static func of(agent: Agent?, title: String, hasPort: Bool) -> TabKind {
+    /// (`ListeningPorts`), which is what makes a shell a server. `pinned`:
+    /// its shell's `KUBECONFIG` pins a context — what that tab is, unless
+    /// it is in a container or on another machine now.
+    static func of(agent: Agent?, title: String, hasPort: Bool, pinned: Bool = false) -> TabKind {
         if agent != nil { return .agent }
         if isContainer(title) { return .container }
         if isRemote(title) { return .ssh }
+        if pinned { return .kubernetes }
         if hasPort { return .server }
         return .shell
     }

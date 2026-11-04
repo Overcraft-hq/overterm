@@ -27,7 +27,108 @@ extension TerminalWindowController {
                 NSPasteboard.general.writeObjects([item])
             },
             save: { [weak self] name, text in self?.saveKubernetesFile(name, text) },
-            askAgent: { [weak self] text, about in self?.askAgent(aboutKubernetes: text, about) })
+            askAgent: { [weak self] text, about in self?.askAgent(aboutKubernetes: text, about) },
+            openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) })
+    }
+
+    // MARK: Terminal in this context (docs/design/kubernetes/analysis.md, 3.11)
+
+    /// A tab pinned to `context`: its shell's `KUBECONFIG` starts with a
+    /// file of Overterm's naming the context (and `namespace`, else the
+    /// context's own), then exactly Overterm's kubeconfig files — so a
+    /// plain `kubectl` there goes to it, and the user's current context is
+    /// never changed. It opens in the context's `terminalDirectory`, else
+    /// the home folder. It is the user's own kubectl: on production it is
+    /// asked first, naming the context, and its pane carries the red band.
+    func openKubernetesTerminal(_ context: KubeContext, namespace: String? = nil) {
+        let pin = KubeTerminalPin(context, namespace: namespace)
+        guard context.isProduction else { return startKubernetesTerminal(context, pin) }
+        let scope = pin.namespace.map { ", namespace \($0)" } ?? ""
+        confirmDocker(
+            "Open a terminal pinned to production?",
+            "A plain kubectl, helm or k9s in the new tab goes to \(context.name)\(scope) — with your own credentials and rights. "
+                + "Overterm's read-only doesn't reach into a terminal. Your current context stays as it is.",
+            "Open Terminal in \(context.displayName)"
+        ) { [weak self] in self?.startKubernetesTerminal(context, pin) }
+    }
+
+    private func startKubernetesTerminal(_ context: KubeContext, _ pin: KubeTerminalPin) {
+        let extra = Settings.shared.kubernetesKubeconfigs
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let directory = KubeTerminalDirectory.choose(setting: context.settings.terminalDirectory, checkout: nil, home: home)
+        Task { @MainActor [weak self] in
+            // The files are the proxies' list; blocking the first time (the shell is asked).
+            let files = await KubeBlocking.run { AppEnvironment.kubeconfigs(extra: extra) }
+            guard let self else { return }
+            do {
+                let ready = try KubeTerminalLaunch.prepare(pin, kubeconfigs: files)
+                self.kubernetesPage.terminalProblem = nil
+                if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                self.newTab(in: directory, environment: ready.environment, kubePin: ready.pin)
+            } catch {
+                self.kubernetesPage.terminalProblem = "\(error)"
+                guard !AppEnvironment.isIsolated, let window = self.window else { return }
+                let alert = NSAlert()
+                alert.messageText = "Overterm couldn't open a terminal in \(context.displayName)"
+                alert.informativeText = "\(error)"
+                alert.beginSheetModal(for: window) { _ in }
+            }
+        }
+    }
+
+    /// Overterm's kubeconfigs as they are now, for a saved session's pinned
+    /// panes (`KubeTerminalRestore`): the proxies' list — guarded, only
+    /// OVERTERM_KUBECONFIG's — and its contexts with the current settings.
+    /// Blocking the first time (the shell is asked), at launch, and only
+    /// when a saved pane was pinned: its shell can't start before its
+    /// `KUBECONFIG` is known.
+    static func kubernetesRestoreList() -> (files: [URL], list: KubeContextList) {
+        let files = AppEnvironment.kubeconfigs(extra: Settings.shared.kubernetesKubeconfigs)
+        return (files, KubeContextList.load(files: files, settings: Settings.shared.kubernetesContexts, guarded: AppEnvironment.guardsKubeconfig))
+    }
+
+    /// The pin a pane is saved with: the one it has, else the one it lost
+    /// (tried again on the next launch). Never neither for a pinned pane.
+    static func savedKubePin(_ pane: TerminalView) -> KubeTerminalPin? {
+        pane.kubePin ?? pane.kubePinLost?.pin
+    }
+
+    /// Each pinned pane's label and band follow what its plain kubectl
+    /// reaches now (`KubeTerminalFollow`): read again when a pin's file
+    /// changes (a `use-context` or `set-context` typed in the pane rewrites
+    /// it) and when the contexts change (a class set in Settings). Started
+    /// by the first pinned pane; called again, it reads every pin once.
+    func followKubernetesPins() {
+        if kubePinWatcher == nil {
+            let folder = KubeTerminalFiles.defaultFolder
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            kubePinWatcher = DirectoryWatcher(root: folder, latency: 0.2) { [weak self] _ in self?.readKubernetesPins() }
+            kubePinContexts = KubernetesModel.shared.$contexts.dropFirst().receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.readKubernetesPins() }
+        }
+        readKubernetesPins()
+    }
+
+    /// Every pinned pane's files read as kubectl merges them, off the main
+    /// thread; a pane whose answer changed shows it, and its tab is saved.
+    func readKubernetesPins() {
+        let panes = store.tabs.flatMap { tab in tab.terminals.filter { $0.kubePin != nil }.map { (tab, $0) } }
+        guard !panes.isEmpty else { return }
+        let work = panes.map { (_, pane) in (KubeTerminalFollow.files(of: pane.environment["KUBECONFIG"]), pane.kubePin!) }
+        let settings = Settings.shared.kubernetesContexts
+        let guarded = AppEnvironment.guardsKubeconfig
+        Task { @MainActor [weak self] in
+            let followed = await KubeBlocking.run {
+                work.map { files, was in
+                    KubeTerminalFollow.pin(from: KubeContextList.load(files: files, settings: settings, guarded: guarded), was: was, settings: settings)
+                }
+            }
+            guard self != nil else { return }
+            for ((tab, pane), pin) in zip(panes, followed) where pane.kubePin != nil && pane.kubePin != pin {
+                pane.kubePin = pin
+                tab.objectWillChange.send()
+            }
+        }
     }
 
     /// A file the page made (the list as CSV), where the user says. An
@@ -246,6 +347,18 @@ extension TerminalWindowController {
                 self?.showKubernetesPage()
             }
         }
+        // Terminal in this context, for each: the user's own kubectl, pinned.
+        items += model.contexts.contexts.map { context in
+            PaletteItem(
+                id: "k.t.\(context.name)", group: .kubernetes, title: "Terminal in \(context.displayName)",
+                subtitle: "A tab whose plain kubectl goes to this context"
+                    + (context.isProduction ? " · PRODUCTION, asked first" : "") + " · your current context unchanged",
+                symbol: "helm"
+            ) { [weak self] _, _ in
+                let namespace = context.name == model.selectedName ? self?.kubernetesPage.shownNamespace : nil
+                self?.openKubernetesTerminal(context, namespace: namespace)
+            }
+        }
         guard let context = model.selected else { return items }
         let favourites = context.settings.favouriteNamespaces
         let own = context.settings.defaultNamespace ?? context.namespace
@@ -314,6 +427,9 @@ extension TerminalWindowController {
             command("command", "Kubernetes: Go to Kind…", "The command bar  :  — :deploy, :po shop, :svc @fake-dev", "chevron.right") { $0.openCommand() },
             command("allNamespaces", "Kubernetes: All Namespaces", "0", "square.grid.2x2") { $0.model.setScope(.all) },
             command("wide", page.wide ? "Kubernetes: Default Columns" : "Kubernetes: Wide Columns", "w", "rectangle.split.3x1") { $0.wide.toggle() },
+            command("terminal", "Kubernetes: Terminal in This Context", "A tab whose plain kubectl goes to the context shown", "helm") {
+                $0.openTerminal()
+            },
         ]
         if let line = page.copyTarget {
             items.append(command("copyKubectl", "Kubernetes: Copy as kubectl", "k  —  \(line)", "terminal") { $0.copyKubectl() })
@@ -325,6 +441,14 @@ extension TerminalWindowController {
             items.append(command("exportCSV", "Kubernetes: Export List as CSV…", page.csvFileName, "square.and.arrow.up") { $0.exportCSV() })
         }
         return items
+    }
+
+    /// View ▸ Terminal in Kubernetes Context…: the switcher on its
+    /// Terminal in items — the kubeconfig read, if it wasn't.
+    @objc func openKubernetesTerminalPicker(_ sender: Any?) {
+        guard Settings.shared.kubernetesEnabled else { return openSettings(.kubernetes) }
+        if paletteView?.isHidden != false || palette.scope != .kubernetes { showKubernetesSwitcher(sender) }
+        palette.query = "Terminal in "
     }
 
     /// The page, its list given the keyboard.

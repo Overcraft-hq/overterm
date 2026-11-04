@@ -2348,8 +2348,9 @@ stage 1a of the design — and, of stage 1b, every kind and CRD as a list
 kept live, in the page's sections and behind the `:` bar, any
 object's detail beside its list, a Secret's values shown only when
 asked, `label:` and `field:` sent to the server, the palette's page
-commands, Copy as kubectl and a list as CSV — and stage 1c, a pod's
-logs. Nothing writes to a cluster.
+commands, Copy as kubectl and a list as CSV — stage 1c, a pod's
+logs, and of stage 1d, Terminal in this context. Nothing writes to a
+cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2402,7 +2403,7 @@ until the page or the panel opens), `kubernetes.kubeconfigs` and
 `kubernetes.contexts` — one entry per context name, the only place a
 context's own settings live (`KubeContextSettings`: `class`, `writable`,
 `displayName`, `defaultNamespace`, `accessibleNamespaces`,
-`favouriteNamespaces`; more fields join with the stages that read them).
+`favouriteNamespaces`, `terminalDirectory`; more fields join with the stages that read them).
 It is the first `entries` setting: `SettingValue.entries`, written on one
 line and edited in place there, its fields checked one by one
 (`SettingSpec.fitted`) — a field that doesn't fit is reported and left
@@ -3008,6 +3009,111 @@ text is being typed (`WorkspacePage.commandPress`, before the menus,
 whose ⌘[ is Previous Pane — theirs again with nothing behind), and the
 detail's chevrons.
 
+**Terminal in this context** (stage 1d; `KubeTerminal.swift`,
+docs/design/kubernetes/analysis.md 3.11): a terminal tab whose plain
+`kubectl` (`helm`, `k9s`) goes to a context, the user's current context —
+every other tab's — never changed. It is the user's own kubectl with the
+user's rights, so read-only doesn't reach into it; the pin and the
+production band are its guard.
+
+- **The pin** (`KubeTerminalPin`: the context, its cluster and user by
+  name, the namespace — the one asked for, else `defaultNamespace`, else
+  the context's own —, production or not, the files after it) is the
+  pane's (`TerminalView.kubePin`, with the `environment` its shell was
+  given over the app's own, through libghostty's `env_vars`); a split of
+  the pane gets both. A pane moved into another tab keeps its own, so a
+  tab's panes may differ: `Tab.kubePin` is the focused pane's, and the
+  strip says `KubeTabBadge` (pure) — one context, `⎈ mixed` (red when any
+  pane is production or unpinned: that one reaches the current context),
+  or `⎈ pin lost`. Each pane is saved with its own (`TabState.kubeContext`
+  for a one-pane tab, `paneKubeContexts` in reading order for a split;
+  names and paths only; an older file's one pin goes to every pane).
+- **Restored** (`KubeTerminalRestore`, pure but for the file it writes):
+  each saved pin is looked up again by name in Overterm's kubeconfigs as
+  they are at launch (`kubernetesRestoreList`: `AppEnvironment.kubeconfigs`
+  with `kubernetes.kubeconfigs` and the current `kubernetes.contexts` —
+  guarded, only `OVERTERM_KUBECONFIG`'s; read only when a pane was pinned,
+  blocking, since the shell can't start before its `KUBECONFIG` is known)
+  and pinned again from that: today's files, cluster, user and class (a
+  context made production since comes back with the band), the saved
+  namespace. A context gone, no kubeconfig, a file that can't be written:
+  the pane comes back **lost** (`KubeTerminalLost`) — `KUBECONFIG=/dev/null`,
+  which reaches no cluster, its header `⎈ <context> — pin lost` in red
+  (`KubePinLostLabel`), the page's `terminalProblem` saying why — never a
+  plain shell to the current context; saved again as it was, tried again
+  on the next launch. A production pin restored isn't asked again: it was
+  confirmed when opened, and it comes back with its band.
+- **Followed** (`KubeTerminalFollow`, pure over the list;
+  `followKubernetesPins`, the window's): a `use-context` or `set-context
+  --current --namespace` typed in the tab rewrites the pin's file, so the
+  pins' folder is watched (`DirectoryWatcher`, from the first pinned pane)
+  and each pinned pane's `KUBECONFIG` is read again as kubectl merges it
+  (`KubeContextList.load`: the first `current-context`, the first entry
+  naming it) when a file changes and when the contexts do (a class set in
+  Settings): its label, band and the strip follow, and the session saves
+  what it reaches now. An unset `current-context` falls to the user's own
+  — production here — and says so.
+- **The file** (`KubeTerminalConfig`, pure; `KubeTerminalFiles`): in
+  `AppEnvironment.supportDirectory`/Kubernetes/Contexts (0700), one a tab
+  — `<the context's SHA-256, 12 hex digits>-<the tab's id>-<Overterm's pid>.yaml`,
+  opened 0600 with `O_NOFOLLOW` — holding `current-context` and the
+  context's own entry naming the user's cluster and user (empty when the
+  user's entry names none — the entry is always written: without it the
+  namespace is lost and a `set-context` writes the user's file) with the
+  namespace: kubectl
+  takes the first `current-context`, and a context entry whole from the
+  first file naming it, so the entry repeats the user's names; the server
+  and the credentials stay in the user's files. A `use-context` or a
+  `set-context --namespace` typed in the tab writes this file, never the
+  user's. Names are YAML double-quoted (an ARN's `:` and `/`). None is
+  removed while its Overterm runs (a moved pane keeps its `KUBECONFIG`; a
+  missing first file would send kubectl to the current context): before a
+  run writes its first, only the files whose pid no longer runs go —
+  another Overterm on the same folder (a dev build beside the installed
+  one) keeps its own. In a unit test's process the default folder is a
+  temporary one (`KubeTerminalFiles.defaultFolder`): `supportDirectory`
+  is the user's real one there.
+- **The environment** (`KubeTerminalEnvironment`, pure; `KubeTerminalLaunch.prepare`):
+  only `KUBECONFIG` — the pin's file, then exactly
+  `AppEnvironment.kubeconfigs`' files (the proxies' list), in order, a
+  repeat dropped. Guarded (an isolated run, a unit test) a file under
+  `~/.kube`, or none at all, is refused before anything is written.
+- **Where** (`KubeTerminalDirectory`, pure): the context's
+  `terminalDirectory` (`kubernetes.contexts`' field, `~` allowed) when it
+  is a folder, else the checkout bound to the context (stage 3a), else
+  home.
+- **Opened from** (`openKubernetesTerminal`, the window's; the page's
+  `KubernetesActions.openTerminal`): the context card's "Terminal in This
+  Context" and a context's right-click (the namespace shown), a row's verb
+  menu (`terminalVerb`: the row's namespace; a Namespace row, that one),
+  the palette (`Terminal in <context>` for every context, and the page's
+  command), View ▸ Terminal in Kubernetes Context… (`kubernetes.terminal`,
+  no key: the switcher with its query). On production it is asked first,
+  naming the context and namespace. The page steps aside for the tab.
+- **What it shows**: the tab is a Kubernetes one (`TabKind.kubernetes`,
+  the helm glyph, unless an agent, a container or ssh), with `⎈ <context>`
+  after its title on every tab; the pane header's label is `⎈ <context> ·
+  <namespace>` (`KubePinLabel`), and on production "PRODUCTION …" white on
+  the page's red with a red band under the header; the tooltip says what a
+  plain kubectl there reaches.
+- **Checked** (`KubeTerminalTests`): the file's content (no credential, no
+  server), quoting, its name, 0600 and 0700, never through a link, the
+  sweep, `KUBECONFIG`'s order, the guard, the namespace's precedence,
+  the folder, the tab's kind, the session; a restore whose kubeconfig or
+  context is gone (lost, `/dev/null`, never a plain shell), one whose
+  class or files changed since (today's), the pin following a rewritten
+  file, a moved pane (`mixed`) and each pane saved with its own. The
+  `kubernetes` scenario checks the band and the strip's label by their
+  accessibility identifiers (and no band off production), the label and
+  band following a rewritten pin file, View ▸ Terminal in Kubernetes
+  Context… (the switcher on `k.t.*` items only), the card's menu, and a
+  restored session's lost and reclassified pins. `KubeTerminalMergeTests` runs
+  the real kubectl and helm when installed — temporary kubeconfigs, every
+  server a closed port on 127.0.0.1, a HOME of its own, kuberc off —
+  against a user's file whose current context is production: the pin's
+  context, namespace, server and user win, a change typed in the tab
+  writes the pin's file, helm reads its namespace and dials its server.
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
@@ -3090,7 +3196,15 @@ DELETE, an exec and a port-forward; that the fake recorded no write and
 no subresource but a pod's log; that hidden the page's watch ends and nothing is asked;
 ⌃⌘J from the terminal — the model held, a pod (with its reason), a
 context and a namespace found, ↩ showing the pod selected on the page,
-the hold let go;
+the hold let go; Terminal in this context — opened from the context
+card on `fake-dev`, its tab pinned to `fake-dev` in `shop` and a
+Kubernetes tab, its `KUBECONFIG` the pin's file (in the run's support
+folder, 0600, the context and namespace, no credential) then the run's
+kubeconfig alone and nothing else given the shell, the shell having it
+(a `printf`, never kubectl), its header's label drawn, a split pinned
+too, a row's verb recorded with the row's namespace, `fake-prod` from
+the palette asked first naming it (Cancel opens nothing), confirmed,
+its band drawn, and the kubeconfig never written;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
 

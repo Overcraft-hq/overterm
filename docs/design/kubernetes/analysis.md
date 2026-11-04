@@ -234,7 +234,7 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 
 | Feature | Lens | Freelens | Ours | How | Stage |
 |---|---|---|---|---|---|
-| A terminal set to the cluster's context | Yes | Yes | **Terminal in this context**: an Overterm tab whose `KUBECONFIG` starts with a one-line file naming the context (3.11), so a plain `kubectl` there goes to it. It opens in the context's `terminalDirectory`, else the bound checkout. The user's current context is never changed, and Overterm's own commands still carry `--context` and `-n`. It is the user's own kubectl, so read-only does not reach into it (Section 5) | Tab | 1d |
+| A terminal set to the cluster's context | Yes | Yes | **Terminal in this context**: an Overterm tab whose `KUBECONFIG` starts with a small file naming the context and the tab's namespace (3.11), so a plain `kubectl` there goes to it. It opens in the context's `terminalDirectory`, else the bound checkout. The user's current context is never changed, and Overterm's own commands still carry `--context` and `-n`. It is the user's own kubectl, so read-only does not reach into it (Section 5) | Tab | 1d |
 | Standalone terminal | — | Yes (v2) | Overterm is a terminal | — | — |
 | A kubectl matching the server version, downloaded | Yes | Yes (signed checksums, mirror) | The installed kubectl closest to the server's minor version (two copies on this Mac), or the context's `kubectl`. Never downloaded; if no copy is within the ±1 version skew, the page says so | Local | 1a |
 | Helm bundled | Yes (3.x) | Yes (4.3.1) | The installed `helm` | Local | 2c |
@@ -609,13 +609,22 @@ Overterm already has the pieces to do both:
 
 - **How it works.**
   - **Terminal in this context** (stage 1d). A tab opened from the context card, the palette or a resource's verb menu is pinned to that context.
-    - Overterm writes a one-line kubeconfig, `current-context: <name>`, in `AppEnvironment.supportDirectory` (`Kubernetes/Contexts/<hash>.yaml`).
-    - It starts the shell with `KUBECONFIG=<that file>:<the user's list>`, in the context's `terminalDirectory`, else the bound checkout's root, else the home folder.
+    - Overterm writes a small kubeconfig in `AppEnvironment.supportDirectory` (`Kubernetes/Contexts/<hash>-<tab>-<pid>.yaml`, the folder 0700, the file 0600): `current-context: <name>`, and the context's own entry naming the user's cluster and user (names only) with the tab's namespace.
+    - It starts the shell with `KUBECONFIG=<that file>:<Overterm's list>` (exactly the proxies' files), in the context's `terminalDirectory`, else the bound checkout's root (stage 3a), else the home folder.
     - kubectl's merge takes the first `current-context` it finds, so a plain `kubectl` in that tab goes to the pinned context. The user's current context is untouched.
-    - The file holds no secret. A `kubectl config use-context` typed in that tab writes only to it, because kubectl changes the file that sets the key.
-    - The file sets no namespace. A context entry of the same name in it would hide the user's own entry, cluster and user included. So the tab's namespace is the context's own, and Overterm's own commands still carry `-n`.
+    - The file holds no secret: the server and the credentials stay in the user's entries, which the pin's entry names. A `kubectl config use-context` typed in that tab writes only to it, because kubectl changes the file that sets the key.
+    - **The namespace (changed from the first plan, which set none).** A context entry is taken whole from the first file that names it, so the pin's entry hides the user's — which is why it repeats the user's cluster and user by name. With it the tab has its own namespace, and a `kubectl config set-context --current --namespace=…` typed in the tab writes the pin's file. Without it that command wrote the user's own file (checked). Overterm's own commands still carry `-n`.
+    - Each tab has its own file, so a `use-context` typed in one tab changes no other. A split of the tab shares it. Files stay while the app runs (a pane moved to another tab keeps its `KUBECONFIG`; a missing first file would send kubectl to the current context). The file's name carries the pid of the Overterm that wrote it, and only the files of an Overterm that no longer runs are swept — a second Overterm on the same folder keeps its tabs' files. The entry is always written, even for a context naming no cluster or no user (copied empty, as the user's entry has it).
+    - The tab's label and band follow its file: a `use-context` or `set-context` typed there rewrites it, Overterm reads the pane's `KUBECONFIG` again as kubectl merges it, and the label, band and saved pin say what a plain kubectl reaches now.
+    - A restored session writes a new file, the context looked up again by name in Overterm's kubeconfigs as they are then (their files, the context's class now). A context gone, or a file that can't be written, brings the pane back marked "pin lost" with `KUBECONFIG=/dev/null`, which reaches no cluster — never a plain shell to the current context. Each pane of a split is saved with its own pin.
     - It is the user's own kubectl, with the user's rights: a read-only context is not read-only in this tab. On production the tab's header carries the red band from the start, and opening one is confirmed with the context's name.
-    - The merge order, and `helm` and `k9s` reading `KUBECONFIG` the same way, are checked at the start of stage 1d, before the verb ships.
+    - A `KUBECONFIG` exported by the shell's own startup files replaces the tab's. Overterm cannot see that from outside the shell.
+    - **The merge order, checked (2026-11-04)** with temporary kubeconfigs only (servers on closed ports on 127.0.0.1, a HOME of the check's own, kuberc off), the user's `current-context` set to a production context:
+      - kubectl v1.36.1: `config current-context` and `config view --minify` give the pin's context, its namespace, and the user's cluster's server and user. A `set-context --current --namespace` and a `use-context` write the pin's file; the user's file is unchanged.
+      - helm v4.3.1: `helm env` gives the pin's namespace (`HELM_NAMESPACE`), and `helm list` dials the pin's cluster's server.
+      - k9s v0.51.0 (headless, read-only, its own config folder): its log names the pin's context and dials its server.
+      - `KubeTerminalMergeTests` repeats the kubectl and helm checks whenever they are installed. k9s is a TUI, so it was checked by hand only.
+    - **Opened from**: the context card's "Terminal in This Context", a context's right-click on the page, a row's verb menu (in the row's namespace; on a Namespace, that namespace), the palette (`Terminal in <context>`, and the page's command), and View ▸ Terminal in Kubernetes Context… (`kubernetes.terminal`, no key by default).
     - A New Task (worktree plus agent, stage 3b) can open the agent's tab this way, pinned to the bound context, a dev one, so the agent's own kubectl doesn't reach production by default.
   - **The warning** (stage 3b) is limited to what Overterm can know.
     - `CommandLedger` knows which command runs in a pane. Only `kubectl`, `helm`, `k9s` and `stern` are looked at.
@@ -984,7 +993,7 @@ A shell or attach changes no object, but inside the container it can do anything
 4. **Destructive actions on production ask for the object's name to be typed**, GitHub's pattern for deleting a repository. These are: delete, scale to 0, force delete, removing finalizers, drain, `rollout undo`, deleting a namespace, node shell, Helm rollback, Helm uninstall, and apply where `applyOnProduction` allows it. Deleting a namespace and uninstalling a Helm release ask for the name on every class.
 5. **A shell or attach on production is confirmed** with the context, namespace and pod, once per pod and session. It runs in a tab whose header carries the red band. The verb is enabled only after `kubectl auth can-i` says yes.
 6. **The context is visible all the time.** On production the page carries a red band with the context's name. A "Terminal in this context" tab on production carries it in its header. From stage 3b, the pane header shows "⎈ <context>" when a kubectl-family command runs against production in any tab (3.11).
-7. **Overterm never writes a kubeconfig and never changes the current context.** Every command carries `--context` (`--kube-context` for helm) and `-n`, built by `KubeCommands`. A tab's pinned context is a separate one-line file that holds no secret (3.11).
+7. **Overterm never writes a kubeconfig and never changes the current context.** Every command carries `--context` (`--kube-context` for helm) and `-n`, built by `KubeCommands`. A tab's pinned context is a separate small file of Overterm's that holds no secret (3.11).
 8. **Overterm installs nothing into a cluster.** That means no metrics stack, no operator and no agent. Node shells and debug containers are the user's explicit commands, run in a tab, on writable contexts only.
 9. **Secrets:**
    - Lists never carry Secret values. The Table gives Name, Type, Data (a count of keys) and Age. The embedded metadata has no keys, and the `last-applied-configuration` annotation, which can hold every value, is dropped as rows are decoded.
@@ -1396,7 +1405,7 @@ The scenario starts a forward to a Service, deletes the pod in the fake, and end
 - **Scope:** Kubernetes is wider than Docker. Small stages (1a–1e) keep each release safe and reviewable, and stage 0's refactors touch Docker code that has just shipped.
 - **Extracting Docker's pieces** risks regressions in the Docker page. Each extraction is its own commit, with Docker's tests and scenario passing.
 - **kubectl skew:** only two copies on this Mac; a cluster outside ±1 gets a warning, not a download.
-- **The pinned tab context** depends on kubectl's merge order and on tools other than kubectl (`helm`, `k9s`) reading `KUBECONFIG` the same way. This is checked at the start of stage 1d, before the verb ships.
+- **The pinned tab context** depends on kubectl's merge order and on tools other than kubectl (`helm`, `k9s`) reading `KUBECONFIG` the same way. Checked at the start of stage 1d: all three do (3.11). A `KUBECONFIG` exported by the shell's own startup files still replaces the tab's.
 
 ## 13. Decisions to take
 

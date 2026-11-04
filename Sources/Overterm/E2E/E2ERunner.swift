@@ -220,7 +220,7 @@ final class E2ERunner {
     /// Types `command`, waits for `file` to say `content` — or, with no
     /// content asked for, for the file to be there at all (what a command
     /// that writes its own measurement into it leaves).
-    private func runAndExpect(_ command: String, file: URL, content: String?, _ name: String) async {
+    func runAndExpect(_ command: String, file: URL, content: String?, _ name: String) async {
         let ok = await run(command) {
             guard let written = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
             else { return false }
@@ -258,7 +258,7 @@ final class E2ERunner {
         return true
     }
 
-    private func sheetTexts() -> [String] {
+    func sheetTexts() -> [String] {
         guard let root = window.attachedSheet?.contentView else { return [] }
         var texts: [String] = []
         func walk(_ v: NSView) {
