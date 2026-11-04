@@ -10,6 +10,8 @@ final class SplitHostView: NSView {
     /// The bar across the top of every pane (`PaneHeaderView`).
     /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics); 38 by default.
     static var headerHeight: CGFloat { ChromeMetrics.paneHeaderHeight }
+    /// Settings ▸ Appearance ▸ Pane headers: "Only when a tab is split".
+    static var headersOnlyWhenSplit: Bool { Settings.shared.string("appearance.paneHeaders") == "whenSplit" }
     /// How far from the 1 pt line a divider can still be grabbed.
     private static let grab: CGFloat = 4
 
@@ -157,7 +159,7 @@ final class SplitHostView: NSView {
         defer { window?.groundChanged() }
         guard let tree else { return }
         if let zoomed {
-            place(zoomed, in: bounds)
+            place(zoomed, in: bounds, header: true)
             dividers = []
             dims.values.forEach { $0.isHidden = true }
             for (id, header) in headers { header.isHidden = previewing || id != ObjectIdentifier(zoomed) }
@@ -167,8 +169,10 @@ final class SplitHostView: NSView {
             let (panes, dividers) = tree.layout(in: bounds, divider: Self.dividerThickness)
             self.dividers = dividers
             let dimming = panes.count > 1
+            // Settings ▸ Appearance ▸ Pane headers: a lone pane can go without.
+            let headed = panes.count > 1 || !Self.headersOnlyWhenSplit
             for (pane, rect) in panes {
-                place(pane, in: rect)
+                place(pane, in: rect, header: headed)
                 let dim = dimView(for: pane)
                 dim.frame = rect
                 dim.isHidden = !dimming || pane === focused
@@ -188,16 +192,17 @@ final class SplitHostView: NSView {
     /// The pane's header across the top of its rect, the terminal under it.
     /// The terminal is the one that shrinks — the header is chrome, and a
     /// pane's share of the tab should not depend on whether it has one.
-    private func place(_ pane: TerminalView, in rect: CGRect) {
+    private func place(_ pane: TerminalView, in rect: CGRect, header headed: Bool) {
         guard let header = headerView(for: pane) else {
             pane.frame = rect
             return
         }
-        header.isHidden = previewing
-        header.frame = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: Self.headerHeight)
+        let height = headed ? Self.headerHeight : 0
+        header.isHidden = previewing || !headed
+        header.frame = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: height)
         let body = CGRect(
-            x: rect.minX, y: rect.minY + Self.headerHeight,
-            width: rect.width, height: max(rect.height - Self.headerHeight, 0))
+            x: rect.minX, y: rect.minY + height,
+            width: rect.width, height: max(rect.height - height, 0))
         pane.frame = body
         // Over the terminal's right edge, not beside it — the map is for
         // while you scroll, and insetting the grid for it would cost every

@@ -31,18 +31,45 @@ enum ChromeMetrics {
     nonisolated(unsafe) private(set) static var cardGap: CGFloat = 10
     nonisolated(unsafe) private(set) static var cardRadius: CGFloat = 10
 
+    enum TabWidth: String, CaseIterable, Sendable {
+        case narrow, regular, wide
+
+        var label: String { rawValue.capitalized }
+        /// A tab's least, preferred and most width in the strip.
+        var range: (min: CGFloat, ideal: CGFloat, max: CGFloat) {
+            switch self {
+            case .narrow: (56, 140, 150)
+            case .regular: (72, 200, 220)
+            case .wide: (90, 260, 300)
+            }
+        }
+    }
+
+    nonisolated(unsafe) private(set) static var tabWidth: TabWidth = .regular
+    /// The × on every tab, not only the selected one and the one under the pointer.
+    nonisolated(unsafe) private(set) static var tabCloseAlways = false
+    /// What a tab is, as an icon before its name; off, only a badge when it has news.
+    nonisolated(unsafe) private(set) static var tabIcons = true
+
     /// The settings that are these.
-    static let keys: Set<String> = ["appearance.density", "appearance.interfaceScale", "appearance.cardGap", "appearance.cardRadius"]
+    static let keys: Set<String> = [
+        "appearance.density", "appearance.interfaceScale", "appearance.cardGap", "appearance.cardRadius", "appearance.paneHeaders",
+        "appearance.tabWidth", "appearance.tabClose", "appearance.tabIcons",
+    ]
 
     /// From the settings; whether anything changed.
     @MainActor @discardableResult
     static func apply(_ settings: Settings = .shared) -> Bool {
-        let before = (density, textScale, cardGap, cardRadius)
+        let sizes = (density, textScale, cardGap, cardRadius)
+        let tabs = (tabWidth, tabCloseAlways, tabIcons)
+        tabWidth = TabWidth(rawValue: settings.string("appearance.tabWidth")) ?? .regular
+        tabCloseAlways = settings.string("appearance.tabClose") == "always"
+        tabIcons = settings.value("appearance.tabIcons")?.bool ?? true
         density = Density(rawValue: settings.string("appearance.density")) ?? .regular
         textScale = CGFloat(min(max(settings.number("appearance.interfaceScale") ?? 100, 80), 140)) / 100
         cardGap = CGFloat(min(max(settings.number("appearance.cardGap") ?? 10, 0), 24))
         cardRadius = CGFloat(min(max(settings.number("appearance.cardRadius") ?? 10, 0), 20))
-        return before != (density, textScale, cardGap, cardRadius)
+        return sizes != (density, textScale, cardGap, cardRadius) || tabs != (tabWidth, tabCloseAlways, tabIcons)
     }
 
     /// A text size at the interface's scale, rounded to a half point.

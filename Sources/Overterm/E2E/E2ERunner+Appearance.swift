@@ -103,6 +103,41 @@ extension E2ERunner {
         check("comfortable: taller", await eventually(3) { abs((host.header(of: pane)?.frame.height ?? 0) - SplitHostView.headerHeight) < 0.5 && SplitHostView.headerHeight > 38 })
         await photo("comfortable")
         for key in ["appearance.accent", "appearance.density", "appearance.cardGap", "appearance.cardRadius"] { settings.set(key, nil) }
+
+        // A lone pane without its header; split, every pane has one again.
+        settings.set("appearance.paneHeaders", .string("whenSplit"))
+        check(
+            "one pane: no header, the terminal takes its room",
+            await eventually(3) { host.header(of: pane)?.isHidden == true && abs(pane.frame.minY) < 0.5 }, "\(pane.frame)")
+        app.splitRight(nil)
+        check(
+            "split: both panes have their header",
+            await eventually(3) { tab.terminals.count == 2 && tab.terminals.allSatisfy { host.header(of: $0)?.isHidden == false } })
+        // A shell's own exit closes its pane without asking.
+        if let second = tab.terminals.last, second !== pane {
+            _ = await eventually(5) { second.surface != nil }
+            await pause(0.5)
+            second.insertText("exit", replacementRange: NSRange(location: NSNotFound, length: 0))
+            second.pressReturn()
+        }
+        check("one again: gone again", await eventually(8) { tab.terminals.count == 1 && host.header(of: pane)?.isHidden == true })
+        settings.set("appearance.paneHeaders", nil)
+        check("always: back", await eventually(3) { host.header(of: pane)?.isHidden == false })
+
+        // The strip: narrow tabs, a close button on each, no icons.
+        app.newTab(nil)
+        await waitForPrompt()
+        settings.set("appearance.tabWidth", .string("narrow"))
+        settings.set("appearance.tabClose", .string("always"))
+        settings.set("appearance.tabIcons", .bool(false))
+        check(
+            "narrow tabs", await eventually(3) { self.app.store.tabs.allSatisfy { (self.app.store.tabFrames[$0.id]?.width ?? 999) <= 154 } },
+            app.store.tabs.map { "\(self.app.store.tabFrames[$0.id]?.width ?? -1)" }.joined(separator: ", "))
+        check("every tab's ×, no icons", ChromeMetrics.tabCloseAlways && !ChromeMetrics.tabIcons)
+        await pause(1.0)
+        await photo("tabs")
+        for key in ["appearance.tabWidth", "appearance.tabClose", "appearance.tabIcons"] { settings.set(key, nil) }
+        check("regular tabs again", await eventually(3) { ChromeMetrics.tabWidth == .regular && ChromeMetrics.tabIcons })
         check("back to the default sizes", await eventually(3) { SplitHostView.headerHeight == 38 && CardColumn.gap == 10 && ChromeMetrics.text(11) == 11 })
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }

@@ -303,6 +303,21 @@ enum SettingsSchema {
             key: "appearance.cardRadius", section: .appearance, group: "Interface", title: "Card corners",
             kind: .integer(0...20, step: 2, unit: "pt"), defaultValue: .int(10)),
         SettingSpec(
+            key: "appearance.paneHeaders", section: .appearance, group: "Interface", title: "Pane headers",
+            help: "The bar over each terminal: what runs there, its ports, split and close. A tab of one pane can go without.",
+            kind: .choice([.init(value: "always", label: "Always"), .init(value: "whenSplit", label: "Only when a tab is split")]),
+            defaultValue: .string("always")),
+        SettingSpec(
+            key: "appearance.tabWidth", section: .appearance, group: "Tabs", title: "Tab width",
+            kind: .choice(ChromeMetrics.TabWidth.allCases.map { .init(value: $0.rawValue, label: $0.label) }), defaultValue: .string("regular")),
+        SettingSpec(
+            key: "appearance.tabClose", section: .appearance, group: "Tabs", title: "Close button",
+            kind: .choice([.init(value: "hover", label: "On the selected tab and under the pointer"), .init(value: "always", label: "On every tab")]),
+            defaultValue: .string("hover")),
+        SettingSpec(
+            key: "appearance.tabIcons", section: .appearance, group: "Tabs", title: "Tab icons",
+            help: "Off, a tab shows its badge only when it has news — waiting, finished, failed.", kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
             key: "appearance.backgroundOpacity", section: .appearance, group: "Window", title: "Opacity",
             help: "Below 1, the desktop shows through the whole window — the terminal, the cards and the strip alike.",
             kind: .number(0.3...1, step: 0.05), defaultValue: .double(1), ghostty: "background-opacity"),

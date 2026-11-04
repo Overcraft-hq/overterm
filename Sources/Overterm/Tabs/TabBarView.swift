@@ -360,9 +360,19 @@ struct TabItemView: View {
             .help(tab.isSuspended ? "Suspended — right-click to resume" : tab.agent?.name ?? kind.name)
     }
 
+    /// Icons off (Settings ▸ Appearance ▸ Tab icons): the badge alone, and
+    /// only when it has something to say.
+    @ViewBuilder private var badgeOnly: some View {
+        if tab.isSuspended {
+            SuspendedBadge(ring: isSelected ? theme.tabSel : theme.win, color: theme.text2)
+        } else if tab.activity.needsAttention || tab.activity.isWorking {
+            StatusBadge(activity: tab.activity, ring: isSelected ? theme.tabSel : theme.win)
+        }
+    }
+
     private var fullContent: some View {
         HStack(spacing: 7) {
-            icon
+            if ChromeMetrics.tabIcons { icon } else { badgeOnly }
             if isRenaming {
                 TabRenameField(tab: tab, store: store, theme: theme, onEnd: actions.renameEnded)
             } else {
@@ -395,7 +405,7 @@ struct TabItemView: View {
     /// under it never got its click.
     @ViewBuilder private var closeButton: some View {
         if !tab.isPinned && !ghost {
-            CloseTabButton(color: theme.text3, visible: isSelected || hovering) { actions.close(tab) }
+            CloseTabButton(color: theme.text3, visible: isSelected || hovering || ChromeMetrics.tabCloseAlways) { actions.close(tab) }
                 .frame(width: 16, height: 16)
                 .padding(.trailing, 6)
         }
@@ -411,8 +421,8 @@ struct TabItemView: View {
         // Pinned: a fixed icon-sized square, as in Chrome. The rest share the
         // remaining width.
         .frame(
-            minWidth: tab.isPinned ? 38 : 72, idealWidth: tab.isPinned ? 38 : 200, maxWidth: tab.isPinned ? 38 : 220,
-            minHeight: height, maxHeight: height
+            minWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.min, idealWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.ideal,
+            maxWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.max, minHeight: height, maxHeight: height
         )
         .fixedSize(horizontal: tab.isPinned, vertical: false)
         .background(

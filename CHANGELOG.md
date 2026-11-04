@@ -9,7 +9,7 @@ version is tagged `v<version>`.
 ## 1.5.3 — 2026-11-04
 
 - appearance: the terminal's look tuned in Settings — translucency, ligatures, line height, contrast, cursor and selection colours, a background image
-- appearance: the interface too — an accent colour, compact or comfortable density, a larger or smaller interface text, the space between the cards and their corners
+- appearance: the interface too — an accent colour, compact or comfortable density, a larger or smaller interface text, the space between the cards and their corners, pane headers only on a split tab, narrow or wide tabs, every tab's close button, tabs without icons
 
 ## 1.5.2 — 2026-11-02
 
