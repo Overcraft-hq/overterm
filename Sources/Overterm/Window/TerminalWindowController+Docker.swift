@@ -514,7 +514,7 @@ extension TerminalWindowController {
         page.hasList = true
         page.press = { [weak self] characters in self?.dockerPage.press(characters) ?? false }
         // ⌘L over the page means the selected container that failed (lines
-        // picked in a log view answer it themselves: `DockerLogTextView`).
+        // picked in a log view answer it themselves: `LogLinesTextView`).
         page.askAboutSelection = { [weak self] in self?.dockerPage.askWhySelected() ?? false }
         page.paletteItems = { [weak self] in self?.dockerPaletteItems() ?? [] }
         page.occlusionChanged = { [weak self] in

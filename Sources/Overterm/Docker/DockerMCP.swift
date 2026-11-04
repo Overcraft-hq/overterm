@@ -60,11 +60,11 @@ enum DockerMCP {
             let target = try container()
             let detail = try await engine.container(target.Id)
             let tail = min(max(arguments["tail"] as? Int ?? 200, 1), 2000)
-            var lines: [DockerLogLine] = []
+            var lines: [LogLine] = []
             for try await chunks in engine.logs(target.Id, tty: detail.Config.Tty ?? false, tail: tail, follow: false) {
-                lines += chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true) }
+                lines += chunks.flatMap { LogLine.lines(of: $0, timestamps: true) }
             }
-            var filter = DockerLogFilter()
+            var filter = LogFilter()
             if let level = string("level") { filter.level = level.hasPrefix("err") ? .errors : level.hasPrefix("warn") ? .warnings : .all }
             // It lands in the agent's transcript: the env's secrets and every
             // URL's password out, as the Ask Agent brief has it — before

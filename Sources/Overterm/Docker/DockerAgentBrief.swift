@@ -248,7 +248,7 @@ enum DockerAgentText {
     /// trace in one JSON line) is cut, not dropped: it is the crash. Nil
     /// for none.
     static func logs(
-        _ lines: [DockerLogLine], env: [(key: String, value: String)], keeping names: Set<String> = []
+        _ lines: [LogLine], env: [(key: String, value: String)], keeping names: Set<String> = []
     ) -> (count: Int, text: String)? {
         guard !lines.isEmpty else { return nil }
         let secrets = DockerSecrets.values(in: env, besides: names)
@@ -336,13 +336,6 @@ enum DockerAgentText {
         }
         return String(text[..<end])
     }
-
-    /// A selection widened to the whole lines it touches.
-    static func wholeLines(of text: String, _ range: NSRange) -> String {
-        let string = text as NSString
-        let clamped = NSIntersectionRange(range, NSRange(location: 0, length: string.length))
-        return string.substring(with: string.lineRange(for: clamped)).trimmingCharacters(in: .newlines)
-    }
 }
 
 /// Reading what a brief says: the container's inspect data, its last log
@@ -364,11 +357,11 @@ enum DockerAgentBriefing {
             let detail = try await engine.container(container.Id)
             let env = detail.env
             // A log that can't be read drops its chip, not the brief.
-            var lines: [DockerLogLine]?
+            var lines: [LogLine]?
             do {
-                var read: [DockerLogLine] = []
+                var read: [LogLine] = []
                 for try await chunks in engine.logs(container.Id, tty: detail.Config.Tty ?? false, tail: DockerAgentText.logLines, follow: false) {
-                    read += chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true) }
+                    read += chunks.flatMap { LogLine.lines(of: $0, timestamps: true) }
                 }
                 lines = read
             } catch {

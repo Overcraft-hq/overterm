@@ -2697,7 +2697,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// ⌘L. Without a selection there is nothing to ask about. Over the
     /// Docker page it means the selected container that failed, never the
     /// terminal hidden under the page (lines picked in a log view answer
-    /// it themselves: `DockerLogTextView`).
+    /// it themselves: `LogLinesTextView`).
     @objc func askAboutSelection(_ sender: Any?) {
         if let overlay = store.showingOverlay, let ask = pages[overlay]?.askAboutSelection {
             if !ask() { NSSound.beep() }

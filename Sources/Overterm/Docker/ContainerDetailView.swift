@@ -48,7 +48,9 @@ struct ContainerDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .logs:
-                DockerLogsPane(feed: session.feed, theme: theme, actions: actions, ask: { [container, actions] in actions.askAgent(.logLines($0, container)) })
+                LogsPane(
+                    feed: session.feed, theme: theme, identifier: "docker", runInTerminal: { [actions] in actions.run($0, nil) },
+                    ask: { [container, actions] in actions.askAgent(.logLines($0, container)) })
             case .files: DockerFilesPane(container: container, session: session, theme: theme, actions: actions)
             case .inspect: DockerInspectPane(session: session, theme: theme, actions: actions)
             case .stats: DockerStatsPane(container: container, session: session, theme: theme)

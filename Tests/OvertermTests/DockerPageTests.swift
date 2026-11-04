@@ -151,59 +151,59 @@ final class DockerPageTests: XCTestCase {
     // MARK: Logs
 
     func testTheLogFilter() {
-        func line(_ message: String, _ level: DockerLogLine.Level?, _ stream: DockerLogChunk.Stream = .stdout) -> DockerLogLine {
-            DockerLogLine(stream: stream, timestamp: nil, level: level, message: message, fields: [("user", "ayşe")], service: nil)
+        func line(_ message: String, _ level: LogLine.Level?, _ stream: LogLine.Stream = .stdout) -> LogLine {
+            LogLine(stream: stream, timestamp: nil, level: level, message: message, fields: [("user", "ayşe")], source: nil)
         }
         let lines = [
             line("GET / 200", .info), line("slow query", .warning), line("db down", .error), line("plain", nil), line("panic: x", nil, .stderr),
         ]
-        func shown(_ filter: DockerLogFilter) -> [String] { lines.filter(filter.matches).map(\.message) }
-        XCTAssertEqual(shown(DockerLogFilter()).count, 5)
-        XCTAssertEqual(shown(DockerLogFilter(level: .warnings)), ["slow query", "db down", "panic: x"], "stderr's unlevelled lines count")
-        XCTAssertEqual(shown(DockerLogFilter(level: .errors)), ["db down"])
-        XCTAssertEqual(shown(DockerLogFilter(text: "DB")), ["db down"])
-        XCTAssertEqual(shown(DockerLogFilter(text: "AYŞE")).count, 5, "a JSON line's fields are searched too")
+        func shown(_ filter: LogFilter) -> [String] { lines.filter(filter.matches).map(\.message) }
+        XCTAssertEqual(shown(LogFilter()).count, 5)
+        XCTAssertEqual(shown(LogFilter(level: .warnings)), ["slow query", "db down", "panic: x"], "stderr's unlevelled lines count")
+        XCTAssertEqual(shown(LogFilter(level: .errors)), ["db down"])
+        XCTAssertEqual(shown(LogFilter(text: "DB")), ["db down"])
+        XCTAssertEqual(shown(LogFilter(text: "AYŞE")).count, 5, "a JSON line's fields are searched too")
 
-        func said(_ message: String, by service: String) -> DockerLogLine {
-            DockerLogLine(stream: .stdout, timestamp: nil, level: nil, message: message, fields: [], service: service)
+        func said(_ message: String, by service: String) -> LogLine {
+            LogLine(stream: .stdout, timestamp: nil, level: nil, message: message, fields: [], source: service)
         }
         let merged = [said("GET /", by: "web"), said("ready", by: "db"), said("GET /health", by: "web")]
-        let web = DockerLogFilter(service: "web")
+        let web = LogFilter(source: "web")
         XCTAssertFalse(web.isEmpty)
         XCTAssertEqual(merged.filter(web.matches).map(\.message), ["GET /", "GET /health"], "one service's lines")
-        XCTAssertEqual(merged.filter(DockerLogFilter(text: "health", service: "web").matches).map(\.message), ["GET /health"], "with a word too")
-        XCTAssertEqual(merged.filter(DockerLogFilter(text: "ready", service: "web").matches), [])
+        XCTAssertEqual(merged.filter(LogFilter(text: "health", source: "web").matches).map(\.message), ["GET /health"], "with a word too")
+        XCTAssertEqual(merged.filter(LogFilter(text: "ready", source: "web").matches), [])
 
         // A service picked with nothing to show says so; a word that
         // matches nothing in all of them is the empty text, as before.
-        func note(_ lines: Int, _ shown: Int, _ filter: DockerLogFilter = DockerLogFilter(), following: Bool = true) -> String? {
-            DockerLogsPane.note(lines: lines, shown: shown, filter: filter, following: following)
+        func note(_ lines: Int, _ shown: Int, _ filter: LogFilter = LogFilter(), following: Bool = true) -> String? {
+            LogsPane.note(lines: lines, shown: shown, filter: filter, following: following)
         }
         XCTAssertEqual(note(0, 0), "Nothing written yet.")
         XCTAssertEqual(note(0, 0, following: false), "No logs.")
         XCTAssertNil(note(3, 3))
-        XCTAssertNil(note(3, 0, DockerLogFilter(text: "nope")))
-        XCTAssertEqual(note(3, 0, DockerLogFilter(service: "db")), "Nothing from db yet.")
-        XCTAssertEqual(note(3, 0, DockerLogFilter(level: .errors, service: "db")), "Nothing from db matches.")
-        XCTAssertNil(note(3, 1, DockerLogFilter(service: "db")))
+        XCTAssertNil(note(3, 0, LogFilter(text: "nope")))
+        XCTAssertEqual(note(3, 0, LogFilter(source: "db")), "Nothing from db yet.")
+        XCTAssertEqual(note(3, 0, LogFilter(level: .errors, source: "db")), "Nothing from db matches.")
+        XCTAssertNil(note(3, 1, LogFilter(source: "db")))
     }
 
     /// A project's services' lines, interleaved by time.
     func testLinesMergeByTime() {
-        func line(_ at: String, _ service: String) -> DockerLogLine {
-            DockerLogLine(stream: .stdout, timestamp: "2026-10-27T10:00:\(at)Z", level: nil, message: service + at, fields: [], service: service)
+        func line(_ at: String, _ service: String) -> LogLine {
+            LogLine(stream: .stdout, timestamp: "2026-10-27T10:00:\(at)Z", level: nil, message: service + at, fields: [], source: service)
         }
         let web = [line("01.1", "web"), line("03", "web"), line("05.25", "web")]
         let db = [line("00.5", "db"), line("03", "db"), line("04", "db")]
-        XCTAssertEqual(DockerLogFeed.merged(web, db).map(\.message), ["db00.5", "web01.1", "web03", "db03", "db04", "web05.25"], "equal times keep their order")
-        XCTAssertEqual(DockerLogFeed.merged([], db).map(\.message), db.map(\.message))
+        XCTAssertEqual(LogFeed.merged(web, db).map(\.message), ["db00.5", "web01.1", "web03", "db03", "db04", "web05.25"], "equal times keep their order")
+        XCTAssertEqual(LogFeed.merged([], db).map(\.message), db.map(\.message))
     }
 
     @MainActor
     func testANewestLineIsAddedAndAnOlderOneMerged() {
-        let feed = DockerLogFeed()
-        func line(_ at: String) -> DockerLogLine {
-            DockerLogLine(stream: .stdout, timestamp: "2026-10-27T10:00:\(at)Z", level: nil, message: at, fields: [], service: nil)
+        let feed = LogFeed()
+        func line(_ at: String) -> LogLine {
+            LogLine(stream: .stdout, timestamp: "2026-10-27T10:00:\(at)Z", level: nil, message: at, fields: [], source: nil)
         }
         feed.merge([line("01"), line("03")])
         let revision = feed.revision
@@ -218,31 +218,31 @@ final class DockerPageTests: XCTestCase {
     /// project's feed: each keeps its last few, whatever the others write.
     @MainActor
     func testAQuietServiceKeepsItsLines() {
-        func said(_ message: String, by service: String?) -> DockerLogLine {
-            DockerLogLine(stream: .stdout, timestamp: nil, level: nil, message: message, fields: [], service: service)
+        func said(_ message: String, by service: String?) -> LogLine {
+            LogLine(stream: .stdout, timestamp: nil, level: nil, message: message, fields: [], source: service)
         }
         let lines = [said("db1", by: "db"), said("db2", by: "db")] + (0..<10).map { said("web\($0)", by: "web") }
-        XCTAssertEqual(DockerLogFeed.trimmed(lines, keep: 5, keepEach: 1)?.map(\.message), ["db2", "web5", "web6", "web7", "web8", "web9"])
-        XCTAssertNil(DockerLogFeed.trimmed(Array(lines.prefix(5)), keep: 5, keepEach: 1), "under keep, nothing goes")
-        XCTAssertNil(DockerLogFeed.trimmed(Array(lines.prefix(7)), keep: 5, keepEach: 2), "over keep, but each service within its own")
+        XCTAssertEqual(LogFeed.trimmed(lines, keep: 5, keepEach: 1)?.map(\.message), ["db2", "web5", "web6", "web7", "web8", "web9"])
+        XCTAssertNil(LogFeed.trimmed(Array(lines.prefix(5)), keep: 5, keepEach: 1), "under keep, nothing goes")
+        XCTAssertNil(LogFeed.trimmed(Array(lines.prefix(7)), keep: 5, keepEach: 2), "over keep, but each service within its own")
         let one = (0..<8).map { said("\($0)", by: nil) }
-        XCTAssertEqual(DockerLogFeed.trimmed(one, keep: 5, keepEach: 2)?.map(\.message), ["3", "4", "5", "6", "7"], "one container's: the last keep")
+        XCTAssertEqual(LogFeed.trimmed(one, keep: 5, keepEach: 2)?.map(\.message), ["3", "4", "5", "6", "7"], "one container's: the last keep")
 
-        let feed = DockerLogFeed()
+        let feed = LogFeed()
         feed.append([said("ready", by: "db")])
-        feed.append((0..<(DockerLogFeed.keep + 10)).map { said("GET \($0)", by: "web") })
+        feed.append((0..<(LogFeed.keep + 10)).map { said("GET \($0)", by: "web") })
         XCTAssertEqual(feed.lines.first?.message, "ready", "the quiet one's line stays")
-        XCTAssertEqual(feed.lines.count, DockerLogFeed.keep + 1)
-        XCTAssertEqual(feed.lines.last?.message, "GET \(DockerLogFeed.keep + 9)")
+        XCTAssertEqual(feed.lines.count, LogFeed.keep + 1)
+        XCTAssertEqual(feed.lines.last?.message, "GET \(LogFeed.keep + 9)")
     }
 
     /// Docker trims a fraction's trailing zeros; padded, the times sort.
     func testLogTimesSortAsTheyHappened() {
-        XCTAssertLessThan(DockerLogFeed.sortable("2026-10-27T10:00:00.115Z"), DockerLogFeed.sortable("2026-10-27T10:00:00.12Z"))
-        XCTAssertLessThan(DockerLogFeed.sortable("2026-10-27T10:00:00Z"), DockerLogFeed.sortable("2026-10-27T10:00:00.000000001Z"))
-        XCTAssertEqual(DockerLogFeed.sortable("2026-10-27T10:00:00.5Z"), "2026-10-27T10:00:00.500000000Z")
-        XCTAssertEqual(DockerLogFeed.seconds("1970-01-01T00:01:40.999999Z"), 100)
-        XCTAssertNil(DockerLogFeed.seconds("yesterday"))
+        XCTAssertLessThan(LogFeed.sortable("2026-10-27T10:00:00.115Z"), LogFeed.sortable("2026-10-27T10:00:00.12Z"))
+        XCTAssertLessThan(LogFeed.sortable("2026-10-27T10:00:00Z"), LogFeed.sortable("2026-10-27T10:00:00.000000001Z"))
+        XCTAssertEqual(LogFeed.sortable("2026-10-27T10:00:00.5Z"), "2026-10-27T10:00:00.500000000Z")
+        XCTAssertEqual(LogFeed.seconds("1970-01-01T00:01:40.999999Z"), 100)
+        XCTAssertNil(LogFeed.seconds("yesterday"))
     }
 
     // MARK: The list

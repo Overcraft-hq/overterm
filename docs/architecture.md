@@ -1442,7 +1442,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   event (a list read after a quick restart can look as before), from the
   last line's second, dropping what it already has (timestamps compared
   padded to nine digits: Docker trims a fraction's zeros). Lines go into an
-  NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
+  NSTextView (`LogTextView`), only the new ones drawn; 5000 kept.
   Inspect is the engine's JSON with the env's secret values taken out.
 - **CPU and memory in the list** (`DockerUsageMonitor`, one for the app;
   `DockerUsageReadings`, pure): each running or paused container's use,
@@ -1836,12 +1836,13 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **A project's detail** (`ProjectDetailView`, `ProjectSession`): a
   compose project's row selected shows its verbs, its services, and their
   logs merged by time — `docker compose logs -f`, in the app. Logs go
-  through a feed (`DockerLogFeed`: the lines, a revision when they must be
-  drawn again) filled by one follower a container (`DockerLogFollower`:
-  the tail, then the stream, again after a restart from where it stopped,
-  nothing twice); a project's lines are merged in time order, at the end
-  when they are the newest, else merged and drawn again. Each service's
-  name has a colour of its own.
+  through a feed (`LogFeed`: the lines, a revision when they must be
+  drawn again) filled by one follower a container (`LogFollower` over a
+  `DockerLogSource`: the tail, then the stream, again after a restart from
+  where it stopped, nothing twice); a project's lines are merged in time
+  order, at the end when they are the newest, else merged and drawn again.
+  Each service's name has a colour of its own. The feed, the follower, the
+  pane and the text view are shared (Logs, below).
 - **Testcontainers** (`Testcontainers`, pure; `DockerPageModel+Testcontainers`):
   a test run's containers say so in their labels — `org.testcontainers=true`
   and the run's session, which Java and Go write as
@@ -1878,9 +1879,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`run --rm`) and its logs followed go to a terminal tab in the project's
   folder. Restart goes through the engine, on that service's containers, as
   the project's does. Show Its Logs narrows the merged log to that service
-  (`DockerLogFilter.service`); every service is still followed, so All
+  (`LogFilter.source`); every service is still followed, so All
   services comes back at once. The feed keeps its last 5,000 lines and each
-  service's last 1,000 before them (`DockerLogFeed.trimmed`): a service that
+  service's last 1,000 before them (`LogFeed.trimmed`): a service that
   logs every request would otherwise push a quiet one's lines out, and the
   picker would show it blank. A service with nothing to show says so. The
   choice is kept on the `ProjectSession`,
@@ -2099,7 +2100,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   renders the whole model, so the service is picked here. Lines picked
   out of a log go the same way with ⌘L, as whole lines, the container (or
   the project) as context. The log's text view answers ⌘L itself
-  (`DockerLogTextView`), so the menu's action reaches it before the
+  (`LogLinesTextView`), so the menu's action reaches it before the
   terminal hidden under the page; without a selection it passes the
   action on. Every word that can carry a secret goes through
   `DockerSecrets.scrub`: the env's secret values and every URL's
@@ -2212,6 +2213,31 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`Fixtures/scout-cves.sarif.json`) and the fake's `scoutReport`, which
   a stub `docker` prints with its progress, for the store's tests and the
   scenario; a stub signed out, a slow one and a timeout are tested too.
+
+## Logs (shared: Docker's, Kubernetes' next)
+
+A log tab's pieces, whoever writes the log (`Sources/Overterm/Logs/`):
+
+- `LogLine` (pure): a line read — its timestamp, its level (a JSON
+  line's `level`, Pino's numbers, `level=`, `[ERROR]`…), its message (a
+  JSON line's `msg` pulled out, its other fields kept as `key=value`),
+  colour codes out, and whose it is in merged logs (`source`).
+- `LogFeed`: the lines, and a revision when they must be drawn again;
+  added at the end, or merged by time with other sources'; the last 5,000
+  kept, and each source's last 1,000 before them (`trimmed`).
+- `LogFollower` over a `LogSource`: the source opens the stream (its last
+  lines, or from the newest line's time) and parses its lines off the main
+  actor, and says whether one that ended is followed again; the follower
+  drops what the feed already has, so nothing shows twice. Docker's source
+  is `DockerLogSource` (the engine's frames, `since` in whole seconds, a
+  restart followed again); what a source may do is read.
+- `LogsPane` (filter, level, the source picker, Following/Stopped, wrap,
+  timestamps, Follow in a Terminal Tab), `LogFilter` (pure), `LogStyle`
+  (the time dim, a level's colour, a source's colour), and `LogTextView`:
+  an NSTextView that draws only the lines added; its `LogLinesTextView`
+  answers ⌘L with the whole lines picked, to a closure the page gives —
+  which scrubs them (Docker's: `DockerSecrets.scrub`) before an agent sees
+  them.
 
 ## Kubernetes
 

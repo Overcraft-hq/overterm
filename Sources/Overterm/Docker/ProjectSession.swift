@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor
 final class ProjectSession: ObservableObject {
     let name: String
-    let feed = DockerLogFeed()
+    let feed = LogFeed()
     /// The one service the Logs tab shows, or all of them merged; every
     /// service is followed either way, so all come back at once. A session
     /// is the project's while it is selected: another starts with all.
@@ -19,7 +19,7 @@ final class ProjectSession: ObservableObject {
     }
 
     private let docker: DockerModel
-    private var followers: [String: DockerLogFollower] = [:]
+    private var followers: [String: LogFollower] = [:]
     private var watching: AnyCancellable?
     private var wanted = false
 
@@ -49,7 +49,7 @@ final class ProjectSession: ObservableObject {
         }
         for container in project.containers where !container.isOneOff && container.state == .running {
             let follower = followers[container.Id] ?? make(container)
-            if !follower.following { follower.start(tail: 200, tty: nil) }
+            if !follower.following { follower.start(tail: 200) }
         }
         updateFollowing()
     }
@@ -59,8 +59,9 @@ final class ProjectSession: ObservableObject {
         DockerCommands.compose(project, "logs -f --tail 100", services: service.map { [$0] } ?? [], endpoint: docker.endpoint)
     }
 
-    private func make(_ container: ContainerSummary) -> DockerLogFollower {
-        let follower = DockerLogFollower(id: container.Id, service: container.composeService ?? container.name, feed: feed, docker: docker, merging: true)
+    private func make(_ container: ContainerSummary) -> LogFollower {
+        let source = DockerLogSource(id: container.Id, service: container.composeService ?? container.name, docker: docker)
+        let follower = LogFollower(source: source, feed: feed, merging: true)
         follower.onChange = { [weak self] in self?.updateFollowing() }
         followers[container.Id] = follower
         return follower
@@ -209,8 +210,9 @@ struct ProjectDetailView: View {
             Rectangle().fill(theme.border).frame(height: 1)
             switch page.projectTab {
             case .logs:
-                DockerLogsPane(
-                    feed: session.feed, theme: theme, actions: actions, services: project.services.map(\.name), service: $session.service,
+                LogsPane(
+                    feed: session.feed, theme: theme, identifier: "docker", runInTerminal: { [actions] in actions.run($0, nil) },
+                    sources: project.services.map(\.name), source: $session.service,
                     ask: { [project, actions] in actions.askAgent(.projectLogLines($0, project)) })
             case .services: services
             }

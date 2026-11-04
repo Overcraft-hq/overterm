@@ -155,31 +155,31 @@ final class DockerEngineTests: XCTestCase {
     }
 
     func testJSONLogLinesShowTheirMessage() {
-        let line = DockerLogLine.parse(
+        let line = LogLine.parse(
             #"2026-10-27T10:00:00.123456789Z {"level":"error","msg":"db down","attempt":3,"time":"x"}"#, stream: .stdout, timestamps: true)
         XCTAssertEqual(line.timestamp, "2026-10-27T10:00:00.123456789Z")
         XCTAssertEqual(line.level, .error)
         XCTAssertEqual(line.message, "db down")
         XCTAssertEqual(line.fields.map { "\($0.0)=\($0.1)" }, ["attempt=3"])
-        let pino = DockerLogLine.parse(#"{"level":40,"msg":"slow"}"#, stream: .stdout, timestamps: false)
+        let pino = LogLine.parse(#"{"level":40,"msg":"slow"}"#, stream: .stdout, timestamps: false)
         XCTAssertEqual(pino.level, .warning)
     }
 
     func testPlainLinesKeepTheirTextAndSayTheirLevel() {
-        XCTAssertEqual(DockerLogLine.inlineLevel(#"time="x" level=warning msg="disk""#), .warning)
-        XCTAssertEqual(DockerLogLine.inlineLevel("[ERROR] could not connect"), .error)
-        XCTAssertEqual(DockerLogLine.inlineLevel("2026-10-27 10:00:00 UTC [1] FATAL:  role \"x\" does not exist"), .fatal)
-        XCTAssertNil(DockerLogLine.inlineLevel("INFORMATION_SCHEMA is fine"))
-        XCTAssertNil(DockerLogLine.inlineLevel("listening on :8080"))
-        let coloured = DockerLogLine.parse("\u{1B}[31mERROR:\u{1B}[0m nope", stream: .stderr, timestamps: false)
+        XCTAssertEqual(LogLine.inlineLevel(#"time="x" level=warning msg="disk""#), .warning)
+        XCTAssertEqual(LogLine.inlineLevel("[ERROR] could not connect"), .error)
+        XCTAssertEqual(LogLine.inlineLevel("2026-10-27 10:00:00 UTC [1] FATAL:  role \"x\" does not exist"), .fatal)
+        XCTAssertNil(LogLine.inlineLevel("INFORMATION_SCHEMA is fine"))
+        XCTAssertNil(LogLine.inlineLevel("listening on :8080"))
+        let coloured = LogLine.parse("\u{1B}[31mERROR:\u{1B}[0m nope", stream: .stderr, timestamps: false)
         XCTAssertEqual(coloured.message, "ERROR: nope")
         XCTAssertEqual(coloured.level, .error)
     }
 
     func testAChunkHoldsSeveralLines() {
-        let lines = DockerLogLine.lines(of: .init(stream: .stdout, text: "2026-10-27T10:00:00Z one\r\n2026-10-27T10:00:01Z two\n"), timestamps: true, service: "web")
+        let lines = LogLine.lines(of: .init(stream: .stdout, text: "2026-10-27T10:00:00Z one\r\n2026-10-27T10:00:01Z two\n"), timestamps: true, source: "web")
         XCTAssertEqual(lines.map(\.message), ["one", "two"])
-        XCTAssertEqual(lines.map(\.service), ["web", "web"])
+        XCTAssertEqual(lines.map(\.source), ["web", "web"])
     }
 
     // MARK: Tar
