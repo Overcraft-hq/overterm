@@ -72,6 +72,30 @@ final class FakeKubeAPI: @unchecked Sendable {
         var body: Data? = nil
     }
 
+    /// A self-signed certificate for a fake TLS Secret's `tls.crt`: public
+    /// only — its key was thrown away when it was made, and none is in the
+    /// repository. `C=US, O=Acme Fake, CN=web.acme.example`, for
+    /// `web.acme.example`, `*.shop.acme.example`, 10.0.0.12 and
+    /// ops@acme.example, good from 2026-11-04 03:59:47 to 2036-11-01
+    /// 03:59:47 UTC, a CA (P-256).
+    static let testCertificatePEM = """
+        -----BEGIN CERTIFICATE-----
+        MIICGTCCAb+gAwIBAgIUJhdJjT3JRkmt3Ptvm5KGC5ktqgYwCgYIKoZIzj0EAwIw
+        PDELMAkGA1UEBhMCVVMxEjAQBgNVBAoMCUFjbWUgRmFrZTEZMBcGA1UEAwwQd2Vi
+        LmFjbWUuZXhhbXBsZTAeFw0yNjExMDQwMzU5NDdaFw0zNjExMDEwMzU5NDdaMDwx
+        CzAJBgNVBAYTAlVTMRIwEAYDVQQKDAlBY21lIEZha2UxGTAXBgNVBAMMEHdlYi5h
+        Y21lLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS+sg4g9TeelMKQ
+        5TsV7bm+CGcViCc8Zp4iHTnaaExp3A8XFUpRRiYjOTxunT1ROQihet1wPSTn4KaC
+        VmNiJh04o4GeMIGbMB0GA1UdDgQWBBQIO2LTdUNYOLEhEeFhXYcw6j6pFzAfBgNV
+        HSMEGDAWgBQIO2LTdUNYOLEhEeFhXYcw6j6pFzAPBgNVHRMBAf8EBTADAQH/MEgG
+        A1UdEQRBMD+CEHdlYi5hY21lLmV4YW1wbGWCEyouc2hvcC5hY21lLmV4YW1wbGWH
+        BAoAAAyBEG9wc0BhY21lLmV4YW1wbGUwCgYIKoZIzj0EAwIDSAAwRQIgTdkQUGPx
+        IKDVcSsBMMBmV2BZA2VsweDm6YyBBnk14R8CIQCeYx7kKaXmavjhGtUWcP0uaS20
+        rxE1/4N2qamc5VVWgg==
+        -----END CERTIFICATE-----
+
+        """
+
     /// One cell's value as the server types it.
     enum Value: Equatable, Sendable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral {
         case text(String)

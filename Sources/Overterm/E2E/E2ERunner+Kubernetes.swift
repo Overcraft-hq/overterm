@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import OSLog
 
 /// The Kubernetes page against the fake API server (FakeKubeAPI), never one
 /// of the user's clusters: this Mac's current context is production. The
@@ -102,7 +103,13 @@ extension E2ERunner {
         fake.add(
             "services", "web", namespace: "shop", values: ["Type": "ClusterIP", "Cluster-IP": "10.96.0.12", "External-IP": "<none>", "Port(s)": "80/TCP"])
         fake.add("configmaps", "web-config", namespace: "shop", data: ["nginx.conf": "worker_processes 1;"])
-        fake.add("secrets", "web-tls", namespace: "shop", values: ["Type": "kubernetes.io/tls"], data: ["tls.crt": "fake-crt", "tls.key": "fake-key"])
+        fake.add(
+            "secrets", "web-tls", namespace: "shop", values: ["Type": "kubernetes.io/tls"],
+            data: ["tls.crt": FakeKubeAPI.testCertificatePEM, "tls.key": "fake-key"])
+        fake.add(
+            "secrets", "web-db", namespace: "shop", values: ["Type": "Opaque"],
+            annotations: [KubeObjectStrip.lastApplied: "{\"data\":{\"password\":\"\(Self.secretValueBase64)\"}}"],
+            data: ["password": Self.secretValue, "username": "web"])
         fake.add("nodes", "fake-node-1", values: ["Status": "Ready", "Roles": "control-plane", "Version": "v1.34.1"])
         fake.add(
             "events.events.k8s.io", "worker-5c.1", namespace: "shop",
@@ -344,7 +351,7 @@ extension E2ERunner {
             "its kinds are in their sections",
             model.catalog.kinds(in: .workloads).first?.fullName == "pods" && model.catalog.kinds(in: .network).map(\.fullName).contains("services")
                 && model.catalog.kinds(in: .custom).map(\.fullName) == ["widgets.example.com"], "\(model.catalog.all.map(\.fullName))")
-        check("and drawn down the left", await shownText(15) { $0.contains("Custom Resources") && $0.contains("Deployments") } != nil)
+        check("and drawn down the left", await drawn(["Custom Resources", "Deployments"]))
 
         // `:` by the key as the window takes it.
         page.giveListTheKeyboard()
@@ -358,7 +365,7 @@ extension E2ERunner {
         check("and opens the command bar", page.command != nil)
         check("its field has the keyboard", await eventually(3) { self.window.firstResponder is NSTextView && !self.app.kubernetesListHasKeyboard() })
         page.command?.text = "deploy"
-        check("drawn, with what deploy completes to", await shownText(15) { $0.contains("deployments") && $0.contains("Deployments · deploy") } != nil)
+        check("drawn, with what deploy completes to", await drawn(["deployments", "Deployments", "deploy", "apps/v1"]))
         page.runCommand()
         check(":deploy shows the deployments", model.kind.fullName == "deployments.apps" && page.command == nil && page.section == .workloads)
         check(
@@ -391,7 +398,7 @@ extension E2ERunner {
         check("in the CRD's printer columns", page.columns.map(\.title) == ["Name", "Color", "Size", "Age"], "\(page.columns.map(\.title))")
         check("its wide one behind w", page.press("w") && page.columns.map(\.title) == ["Name", "Color", "Size", "Owner", "Age"])
         _ = page.press("w")
-        check("drawn", await shownText(15) { $0.contains("blue-1") && $0.contains("Color") } != nil)
+        check("drawn", await drawn(["blue-1", "Color"]))
         check(
             "asked of its group's path",
             fake.requests.contains { $0.path == "/apis/example.com/v1/namespaces/shop/widgets" && $0.query["includeObject"] == "None" })
@@ -414,9 +421,15 @@ extension E2ERunner {
         page.runCommand()
         check(
             "a secret's row is its type and how many keys",
-            await eventually(10) { model.rows.count == 1 }
+            await eventually(10) { model.rows.count == 2 }
                 && model.rows[KubeRowID(namespace: "shop", name: "web-tls")]?.cell("Data", in: model.rows.columns) == .integer(2))
-        check("never its values", !String(describing: model.rows).contains("fake-key") && !fake.requests.contains { $0.path.contains("/secrets/") })
+        check(
+            "never its values",
+            !String(describing: model.rows).contains("fake-key") && !String(describing: model.rows).contains(Self.secretValue)
+                && !fake.requests.contains { $0.path.contains("/secrets/") })
+        check(
+            "asked for as rows only",
+            fake.requests.filter { $0.path.hasSuffix("/secrets") }.allSatisfy { $0.query["includeObject"] == "None" && $0.accept.contains("as=Table") })
 
         // A CRD applied while the page shows: there without a reconnect.
         fake.addCRD(group: "acme.example.com", version: "v1alpha1", plural: "gadgets", kind: "Gadget", namespaced: false, shortNames: ["gd"])
@@ -443,7 +456,7 @@ extension E2ERunner {
     /// overview, YAML without managedFields (the toggle shows them), its
     /// events by uid — its owner and the owner's owner followed as links,
     /// ⌘[ and ⌘] back and forward, a stuck deployment opened by a click,
-    /// a Secret's detail that reads nothing, Esc.
+    /// a Secret's (kubernetesSecrets), Esc.
     private func kubernetesDetail(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         func key(_ characters: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) -> NSEvent? {
             NSEvent.keyEvent(
@@ -542,29 +555,155 @@ extension E2ERunner {
         page.selection = ["shop/web"]
         check("the detail follows the list", page.detail?.ref.name == "web")
 
-        // A Secret's detail reads nothing.
-        _ = page.press(":")
-        page.command?.text = "secrets"
-        page.runCommand()
-        check("the secrets", await eventually(10) { model.kind.fullName == "secrets" && model.rows.count == 1 })
-        page.selection = ["shop/web-tls"]
-        check("a Secret's detail opens", page.detail?.ref.name == "web-tls" && page.detail?.state == .withheld)
-        check("and says it isn't read", await shownText(15) { $0.contains("Not read") } != nil)
-        check("no Secret was asked for", !fake.requests.contains { $0.path.contains("/secrets/") })
-
-        // Esc: closed, the list has the keyboard.
-        page.giveListTheKeyboard()
-        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
-        guard let escape = key("\u{1B}", 53) else { return check("an Esc key", false) }
-        check("Esc closes the detail", app.handlePageKey(escape) && page.detail == nil)
-        check("[ shows it again", page.press("[") && page.detail?.ref.name == "web-tls")
-        page.closeDetail()
+        await kubernetesSecrets(model, page, fake, key: key)
         _ = page.press(":")
         page.command?.text = "po"
         page.runCommand()
         page.selection = []
         check("the pods once more", await eventually(10) { model.kind.fullName == "pods" && model.rows.count == 2 && model.listState == .live })
         check("the detail read by GETs only", fake.writes.isEmpty, "\(fake.writes)")
+    }
+
+    /// The value of the scenario's Secret: it must never reach the app's
+    /// log, its output (testKubernetes reads both) or anything but the
+    /// detail that revealed it. Fictional, the fake's alone.
+    static let secretValue = "acme-e2e-pw-Zq7Lm"
+    static var secretValueBase64: String { Data(secretValue.utf8).base64EncodedString() }
+
+    /// A Secret: nothing read until Show — pressed where a person would —
+    /// then one GET, its keys listed with the values masked, one revealed
+    /// (another hides it), its YAML masked; a TLS Secret's certificate,
+    /// its key never shown; everything dropped on moving on, on Esc and
+    /// with the page hidden; and no value in the app's log. No check here
+    /// prints a value: what it reads stays in the condition.
+    private func kubernetesSecrets(
+        _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, key: (String, UInt16, NSEvent.ModifierFlags) -> NSEvent?
+    ) async {
+        let value = Self.secretValue
+        // What a read of the screen looks for: the value's middle, `e2e-pw`,
+        // which Vision reads as it is — its `acme` it reads as Cyrillic
+        // (`асте`), and a needle it misreads would let an absence pass
+        // for nothing.
+        let drawnValue = String(value.dropFirst(5).prefix(6))
+        let secretGETs = { fake.requests.filter { $0.path.contains("/secrets/") }.map(\.path) }
+        _ = page.press(":")
+        page.command?.text = "secrets"
+        page.runCommand()
+        check("the secrets", await eventually(10) { model.kind.fullName == "secrets" && model.rows.count == 2 })
+        page.selection = ["shop/web-db"]
+        guard let db = page.detail, let secret = db.secret else { return check("a Secret's detail opens", false) }
+        check("a Secret's detail opens, reading nothing", db.ref.name == "web-db" && db.state == .withheld && secret.state == .hidden)
+        check(
+            "with what its row says: its type and how many keys", secret.listedType == "Opaque" && secret.listedKeys == 2,
+            "\(secret.listedType ?? "none") \(secret.listedKeys.map(String.init) ?? "none")")
+        check("and says it isn't read", await shownText(15) { $0.contains("Not read") } != nil)
+        check("no Secret was asked for", secretGETs().isEmpty)
+
+        // Show, pressed as a person presses it.
+        if let button = await wordFrame("Show Values") {
+            await click(at: CGPoint(x: button.midX, y: button.midY))
+        } else {
+            check("Show Values is drawn", false)
+        }
+        // Not pressed (not found drawn): by its action, so the rest still runs.
+        if secret.state == .hidden { _ = page.showSecret() }
+        check("Show reads it", await eventually(10) { secret.state == .shown }, "\(secret.state)")
+        check("with one GET", secretGETs() == ["/api/v1/namespaces/shop/secrets/web-db"], "\(secretGETs())")
+        check("its keys, every value masked", secret.entries.map(\.key) == ["password", "username"] && secret.revealed == nil)
+        check("drawn masked, its length shown", await shownText(15) { $0.contains("\(value.utf8.count) bytes") } != nil)
+        check("no value drawn", await notDrawn(drawnValue, besides: "\(value.utf8.count) bytes"))
+        secret.reveal("password")
+        check("one revealed", secret.revealed == "password" && secret.revealedText == value)
+        check("and drawn", await shownText(15) { $0.contains(drawnValue) } != nil)
+        secret.reveal("username")
+        check("revealing another masks the first", secret.revealed == "username" && secret.revealedText == "web")
+        check("no longer drawn", await notDrawn(drawnValue, besides: "username"))
+        page.showTab(.yaml)
+        check(
+            "its YAML, every value masked",
+            db.yaml.contains("password: \"***\"") && !db.yaml.contains(value) && !db.yaml.contains(Self.secretValueBase64)
+                && !db.yaml.contains(KubeObjectStrip.lastApplied))
+        check("its YAML drawn masked", await shownText(15) { $0.contains("username") && $0.contains("***") } != nil)
+        page.showTab(.overview)
+
+        // The next row: the first one's values go with its detail.
+        page.selection = ["shop/web-tls"]
+        guard let tls = page.detail?.secret else { return check("the TLS Secret's detail", false) }
+        check(
+            "moving on drops every value", secret.state == .hidden && !secret.holdsValues && secret.entries.isEmpty && secret.revealedText == nil,
+            "\(secret.state)")
+        check("the next Secret isn't read either", tls.ref.name == "web-tls" && tls.state == .hidden && secretGETs().count == 1)
+        tls.show()
+        check("a TLS Secret shown", await eventually(10) { tls.state == .shown }, "\(tls.state)")
+        let leaf = tls.certificates.first
+        check(
+            "its certificate read from tls.crt", leaf?.commonName == "web.acme.example" && leaf?.alternativeNames.contains("DNS:*.shop.acme.example") == true,
+            "\(leaf?.subject ?? "none")")
+        check("and drawn", await shownText(15) { $0.contains("O=Acme Fake") || $0.contains("CN=web.acme.example") } != nil)
+        check(
+            "its key never revealed or copied",
+            tls.entries.first { $0.key == "tls.key" }?.isPrivateKey == true && !tls.reveal("tls.key") && tls.copyValue("tls.key") == nil)
+        check("drawn as never shown", await shownText(15) { $0.contains("never shown") } != nil)
+
+        // Esc: closed, dropped; [ shows it again, unread.
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        guard let escape = key("\u{1B}", 53, []) else { return check("an Esc key", false) }
+        check("Esc closes the detail", app.handlePageKey(escape) && page.detail == nil)
+        check("its values with it", tls.state == .hidden && !tls.holdsValues)
+        check("[ shows it again", page.press("[") && page.detail?.ref.name == "web-tls")
+        check("unread", page.detail?.secret?.state == .hidden && page.detail?.state == .withheld)
+
+        // Shown, then the page hidden: dropped.
+        page.detail?.secret?.show()
+        let again = page.detail?.secret
+        check("shown again", await eventually(10) { again?.state == .shown })
+        app.toggleKubernetesPage(nil)
+        check("hiding the page drops them", again?.holdsValues == false && again?.state == .hidden)
+        app.toggleKubernetesPage(nil)
+        check("shown again, the page reads nothing", page.detail?.secret?.holdsValues != true)
+        page.closeDetail()
+
+        check("Secrets read only by Show", secretGETs().count == 3, "\(secretGETs())")
+        check("no value in the app's log", Self.appLogMentions([value, Self.secretValueBase64]) == false)
+    }
+
+    /// Whether one read of the window draws every one of `texts`, each on
+    /// a line of its own or not: Vision reads a sidebar's rows, or a
+    /// field and the list under it, as separate lines.
+    private func drawn(_ texts: [String], _ timeout: TimeInterval = 15) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let lines = await readWindow().map(\.text)
+            if texts.allSatisfy({ text in lines.contains { $0.contains(text) } }) { return true }
+            await pause(0.3)
+        } while Date() < deadline
+        return false
+    }
+
+    /// Whether one read of the window draws `anchor` and not `text`: a
+    /// read that found nothing (Vision failed, the window not drawn) says
+    /// nothing about `text`, so it never passes — read again until one
+    /// that worked does, or the time is up.
+    private func notDrawn(_ text: String, besides anchor: String, _ timeout: TimeInterval = 10) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let lines = await readWindow().map(\.text)
+            if lines.contains(where: { $0.contains(anchor) }), !lines.contains(where: { $0.contains(text) }) { return true }
+            await pause(0.3)
+        } while Date() < deadline
+        return false
+    }
+
+    /// Whether this process's unified log says any of `needles`: nil when
+    /// the log can't be read.
+    static func appLogMentions(_ needles: [String]) -> Bool? {
+        guard let store = try? OSLogStore(scope: .currentProcessIdentifier), let entries = try? store.getEntries() else { return nil }
+        for entry in entries {
+            let message = entry.composedMessage
+            if needles.contains(where: { message.contains($0) }) { return true }
+        }
+        return false
     }
 
     /// ⌃⌘J from the terminal, the page hidden: it reads as the page would,

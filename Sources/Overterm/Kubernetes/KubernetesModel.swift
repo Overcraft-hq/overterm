@@ -35,6 +35,9 @@ import Foundation
 @MainActor
 final class KubernetesModel: ObservableObject {
     static let shared = KubernetesModel()
+    /// The production contexts whose Secrets Show was confirmed for this
+    /// session (in memory; asked again after a relaunch).
+    let secretConsent = KubeSecretConsent()
 
     /// What the settings say, read once a page shows and on each change.
     struct Configuration: Equatable, Sendable {

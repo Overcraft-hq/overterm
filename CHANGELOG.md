@@ -12,6 +12,7 @@ version is tagged `v<version>`.
 - kubernetes: every kind and custom resource as a live list in the server's own columns — Workloads, Network, Config, Storage, Access Control, Cluster and Custom Resources on `1`–`7`, and k9s's `:` bar (`:deploy`, `:po shop`, `:widgets`) with completion; a CRD applied shows without reconnecting
 - kubernetes: `n` and `c` pick a namespace (or take one typed, where listing them isn't allowed) and a context; ⌃⌘J finds a context, namespace or pod; `label:app=web` in the filter is asked of the server
 - kubernetes: any object's detail beside its list (↩ or a click) — an Overview tailored for pods, workloads with their rollout status as `kubectl rollout status` says it, services, nodes, jobs, ingresses, config maps and volumes; its YAML without managedFields; its events, newest first, warnings marked; owners and selected pods as links, with back and forward (`[` `]`, ⌘[ ⌘]); a Secret's detail reads nothing
+- kubernetes: a Secret's values only when you press Show (asked first on production) — masked with their length, one revealed at a time, Copy for one, all dropped when you move on, hide the page, change context or after two minutes; a TLS Secret's certificate: subject, issuer, names and expiry, its key never shown
 - build: Xcode 27 builds the app — TreeSitterKit's headers in a folder of their own
 - build: an app built with Xcode 27 takes clicks on macOS 27 — the binary names the SDK it was built with
 - tabs: double-clicking the strip's empty space zooms the window again on macOS 27

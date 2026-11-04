@@ -1,17 +1,20 @@
 import Foundation
 
 /// One object's detail, while the page shows it: one GET of the object
-/// when it opens (never a Secret's, rule 9), its Overview and YAML read
-/// from that answer, its events asked for once the Events tab shows, the
-/// pods its selector picks once the Overview shows. Nothing is watched;
-/// navigating away drops the session and all it read.
+/// when it opens (never a Secret's, rule 9 — its `secret` session reads
+/// it on Show), its Overview and YAML read from that answer, its events
+/// asked for once the Events tab shows, the pods its selector picks once
+/// the Overview shows. Nothing is watched; navigating away drops the
+/// session and all it read.
 @MainActor
 final class KubeDetailSession: ObservableObject, Identifiable {
     enum State: Equatable {
         case loading
         case loaded
         case failed(String)
-        /// A Secret: not read here — one GET would be every value at once.
+        /// A Secret not shown: not read here — one GET would be every value
+        /// at once. Show (`secret`) reads it, and its object without the
+        /// values makes it `loaded`, until that is dropped.
         case withheld
     }
 
@@ -42,6 +45,9 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     /// The pods the object's selector picks, as rows of the pod list.
     @Published private(set) var pods: Part<[KubeListRow]> = .idle
 
+    /// A Secret's Show, masked values and reveal; nil for any other kind.
+    let secret: KubeSecretSession?
+
     private let client: KubeClient?
     private var tasks: [Task<Void, Never>] = []
     private var asked = false
@@ -49,10 +55,33 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     /// is, by its uid.
     private var eventsWanted = false
 
-    init(ref: KubeObjectRef, client: KubeClient?) {
+    init(ref: KubeObjectRef, client: KubeClient?, secret: KubeSecretSession? = nil) {
         self.ref = ref
         self.client = client
         state = ref.isSecret ? .withheld : .loading
+        self.secret =
+            ref.isSecret ? (secret ?? KubeSecretSession(ref: ref, client: client, consent: KubernetesModel.shared.secretConsent, isProduction: true)) : nil
+        self.secret?.onRead = { [weak self] stripped in self?.secretRead(stripped) }
+        self.secret?.onDrop = { [weak self] in self?.secretDropped() }
+    }
+
+    /// Show read the Secret: its object without values is what the
+    /// Overview and the YAML show.
+    private func secretRead(_ stripped: Data) {
+        guard let object = try? KubeObject(data: stripped) else { return }
+        self.object = object
+        overview = KubeOverview.of(object.json)
+        yaml = makeYAML()
+        state = .loaded
+    }
+
+    /// The values dropped: so is the object; its events stay — they are no secret.
+    private func secretDropped() {
+        object = nil
+        overview = nil
+        yaml = ""
+        showsHidden = false
+        state = .withheld
     }
 
     /// The one GET, once.
@@ -153,9 +182,11 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             })
     }
 
-    /// Navigated away: whatever is still being read is dropped.
+    /// Navigated away: whatever is still being read is dropped, and a
+    /// Secret's values with it.
     func cancel() {
         for task in tasks { task.cancel() }
         tasks = []
+        secret?.drop(.navigation)
     }
 }

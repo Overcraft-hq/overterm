@@ -10,6 +10,9 @@ struct KubernetesActions {
     /// Settings ▸ Kubernetes.
     var settings: () -> Void
     var copy: (String) -> Void
+    /// One Secret value, Copy pressed for it: marked concealed, so
+    /// clipboard managers that honour the marker keep no history of it.
+    var copySecret: (String) -> Void
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -108,11 +111,15 @@ final class KubernetesPageModel: ObservableObject {
                 selecting?.cancel()
                 selecting = nil
                 model.releaseLabelSelector(for: self)
+                // A Secret's values never outlive the page on screen.
+                detail?.secret?.drop(.pageHidden)
             }
         }
     }
     /// Whether its window is on screen at all.
-    @Published var windowVisible = true
+    @Published var windowVisible = true {
+        didSet { if !windowVisible { detail?.secret?.drop(.pageHidden) } }
+    }
     var actions: KubernetesActions?
 
     let model: KubernetesModel
@@ -162,6 +169,8 @@ final class KubernetesPageModel: ObservableObject {
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
+                // Said as the context's, before cancel() says navigation.
+                self.detail?.secret?.drop(.contextChanged)
                 self.detail?.cancel()
                 self.detail = nil
                 self.linkProblem = nil
@@ -348,11 +357,42 @@ final class KubernetesPageModel: ObservableObject {
         linkProblem = nil
         guard detail?.ref != ref else { return }
         detail?.cancel()
-        let session = KubeDetailSession(ref: ref, client: model.client(for: ref.context))
+        let client = model.client(for: ref.context)
+        let session = KubeDetailSession(ref: ref, client: client, secret: ref.isSecret ? secretSession(for: ref, client: client) : nil)
         detail = session
         session.load()
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
+    }
+
+    /// A Secret's Show, with what its row says (Type, how many keys) and
+    /// whether its context is production — unknown counts as production.
+    private func secretSession(for ref: KubeObjectRef, client: KubeClient?) -> KubeSecretSession {
+        let row = model.kind.fullName == ref.kind.fullName ? model.rows[KubeRowID(namespace: ref.namespace, name: ref.name)] : nil
+        let type = row?.cell("Type", in: model.rows.columns)?.text
+        let keys: Int? =
+            switch row?.cell("Data", in: model.rows.columns) {
+            case .integer(let count)?: count
+            case .text(let text)?: Int(text)
+            default: nil
+            }
+        let production = model.contexts.context(named: ref.context)?.isProduction ?? true
+        return KubeSecretSession(
+            ref: ref, client: client, consent: model.secretConsent, isProduction: production, listedType: type.flatMap { $0.isEmpty ? nil : $0 },
+            listedKeys: keys)
+    }
+
+    /// Show, for the Secret the detail shows (its Overview's button, its YAML's).
+    func showSecret() -> Bool {
+        guard let secret = detail?.secret else { return false }
+        secret.show()
+        return true
+    }
+
+    /// Copy, for one value of the Secret shown: asked for by the user.
+    func copySecretValue(_ key: String) {
+        guard let text = detail?.secret?.copyValue(key) else { return }
+        actions?.copySecret(text)
     }
 
     /// The detail's tab shown: what it reads is asked for then.

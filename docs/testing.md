@@ -121,6 +121,16 @@ events queued for its own window (`click(at:)`) — queued, not sent: a
 mouse-down that tracks the mouse would wait forever for a mouse-up sent
 after it.
 
+Vision's accurate reading can come back empty — no results, no error —
+for a large, mostly dark capture (a sparse Kubernetes page at 4112×2466),
+so `recognized` reads an empty window again in overlapping 1400-pixel
+tiles. A line is what Vision calls one: a table's cells, a sidebar's rows
+and a field are each their own, so a check for two texts asks for both
+anywhere (`drawn([…])`), never on one line. A check that something is
+*not* drawn passes only on a read that found the text it was anchored
+to (`notDrawn(_:besides:)`) — an empty read proves nothing. Look for a
+part of a value Vision reads as written: it read `acme` as Cyrillic.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

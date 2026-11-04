@@ -19,7 +19,12 @@ final class E2ETests: XCTestCase {
         try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: Self.app.path), "build the app first: make app")
     }
 
-    private func run(_ scenario: String, env extra: [String: String] = [:], timeout: TimeInterval = 120, attempt: Int = 0) throws {
+    /// Returns all the app printed (and, with `stderr`, its standard error
+    /// is written to that file).
+    @discardableResult
+    private func run(_ scenario: String, env extra: [String: String] = [:], timeout: TimeInterval = 120, stderr: URL? = nil, attempt: Int = 0) throws
+        -> String
+    {
         let process = Process()
         process.executableURL = Self.app
         var env = ProcessInfo.processInfo.environment
@@ -29,7 +34,12 @@ final class E2ETests: XCTestCase {
         process.environment = env
         let out = Pipe()
         process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
+        if let stderr {
+            FileManager.default.createFile(atPath: stderr.path, contents: nil)
+            process.standardError = try FileHandle(forWritingTo: stderr)
+        } else {
+            process.standardError = FileHandle.nullDevice
+        }
         try process.run()
 
         let deadline = Date().addingTimeInterval(timeout)
@@ -38,15 +48,15 @@ final class E2ETests: XCTestCase {
             process.terminate()
             XCTFail("\(scenario): timed out after \(Int(timeout)) s")
         }
-        let lines = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .split(separator: "\n").map(String.init).filter { $0.hasPrefix("E2E ") }
+        let printed = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let lines = printed.split(separator: "\n").map(String.init).filter { $0.hasPrefix("E2E ") }
         // Dead before a line, by a signal: launched in quick succession,
         // macOS's LaunchServices connection can trap in NSApplication's
         // own +initialize (_xpc_api_misuse) before any of the app runs.
         // Not a result: launched once more.
         if lines.isEmpty, process.terminationReason == .uncaughtSignal, attempt == 0 {
             Thread.sleep(forTimeInterval: 1)
-            return try run(scenario, env: extra, timeout: timeout, attempt: 1)
+            return try run(scenario, env: extra, timeout: timeout, stderr: stderr, attempt: 1)
         }
         let passed = lines.filter { $0.hasPrefix("E2E PASS") }
         let failed = lines.filter { $0.hasPrefix("E2E FAIL") }
@@ -59,6 +69,7 @@ final class E2ETests: XCTestCase {
         }
         XCTAssertFalse(passed.isEmpty, "\(scenario): no checks ran")
         print("\(scenario): \(passed.count) checks passed")
+        return printed
     }
 
     func testTerminal() throws { try run("terminal") }
@@ -88,7 +99,16 @@ final class E2ETests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kube-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        try run("kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300)
+        let stderr = dir.appendingPathComponent("stderr.log")
+        let printed = try run(
+            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300, stderr: stderr)
+        // The scenario's Secret value (E2ERunner.secretValue), shown and
+        // revealed in the app: never in what it printed, nor its errors.
+        let value = "acme-e2e-pw-Zq7Lm"
+        let output = printed + ((try? String(contentsOf: stderr, encoding: .utf8)) ?? "")
+        for needle in [value, Data(value.utf8).base64EncodedString()] {
+            XCTAssertFalse(output.contains(needle), "kubernetes: a Secret's value reached the app's output")
+        }
     }
     func testSuspend() throws { try run("suspend") }
     func testDatabaseAgent() throws { try run("databaseAgent") }
