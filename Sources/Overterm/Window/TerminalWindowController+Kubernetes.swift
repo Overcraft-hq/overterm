@@ -105,7 +105,7 @@ extension TerminalWindowController {
 // MARK: The switcher and the palette
 
 extension TerminalWindowController {
-    /// ⌃⌘J: the palette, on contexts, namespaces and the pods showing. The
+    /// ⌃⌘J: the palette, on contexts, namespaces, kinds and the rows showing. The
     /// switcher looks as the page does: it holds the model while it shows,
     /// so the kubeconfig is read and the context's pods followed, and what
     /// it lists comes in as the cluster answers. With Kubernetes off, its
@@ -140,22 +140,26 @@ extension TerminalWindowController {
     func watchKubernetesPalette() -> AnyCancellable {
         let model = KubernetesModel.shared
         return model.$contexts.dropFirst().map { _ in () }
-            .merge(with: model.$namespaces.dropFirst().map { _ in () }, model.$pods.dropFirst().map { _ in () }, model.$scope.dropFirst().map { _ in () })
+            .merge(
+                with: model.$namespaces.dropFirst().map { _ in () }, model.$rows.dropFirst().map { _ in () }, model.$scope.dropFirst().map { _ in () },
+                model.$catalog.dropFirst().map { _ in () }
+            )
             .sink { [weak self] _ in DispatchQueue.main.async { self?.restockPalette() } }
     }
 
     /// What the palette offers of Kubernetes: the page; every context of the
-    /// kubeconfig once read; the context's namespaces; and its pods while
-    /// something looks at them (the page or the switcher) — never a list
-    /// left from before: a page's `label:` goes when it hides, and one that
-    /// shows in some window is said on each pod. ↩ shows each on the page: a context or a namespace
-    /// switched to, a pod selected.
+    /// kubeconfig once read; the context's namespaces; the kinds it serves,
+    /// once discovery is read; and the rows of the kind shown while something
+    /// looks at them (the page or the switcher) — never a list left from
+    /// before: a page's `label:` goes when it hides, and one that shows in
+    /// some window is said on each row. ↩ shows each on the page: a context
+    /// or a namespace switched to, a kind shown, a row selected.
     func kubernetesPaletteItems() -> [PaletteItem] {
         guard Settings.shared.kubernetesEnabled else { return [] }
         let model = KubernetesModel.shared
         var items = [
             PaletteItem(
-                id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, pods  ⌥⌘J", symbol: "steeringwheel"
+                id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, every kind  ⌥⌘J", symbol: "steeringwheel"
             ) { [weak self] _, _ in self?.toggleKubernetesPage(nil) }
         ]
         guard model.contextsRead else { return items }
@@ -186,18 +190,34 @@ extension TerminalWindowController {
                 self?.showKubernetesPage()
             }
         }
+        let catalog = model.catalog
+        items += KubeSection.allCases.flatMap { section in
+            catalog.kinds(in: section).map { kind in
+                let names = ([kind.resource] + kind.shortNames).map { ":" + $0 }.joined(separator: " ")
+                return PaletteItem(
+                    id: "k.k.\(kind.fullName)", group: .kubernetes, title: KubeKindCatalog.title(of: kind),
+                    subtitle: "Kind · \(section.title) · \(names) · \(kind.groupVersion)", symbol: section.symbol
+                ) { [weak self] _, _ in
+                    self?.kubernetesPage.showKind(kind)
+                    self?.showKubernetesPage()
+                }
+            }
+        }
         guard model.isShown else { return items }
-        let columns = model.pods.columns
-        // A page showing somewhere asked with its filter: the pods are only those.
+        let kind = model.kind
+        let pods = kind.fullName == KubeResourceKind.pods.fullName
+        let columns = model.rows.columns
+        // A page showing somewhere asked with its filter: the rows are only those.
         let selected = model.labelSelector.map { ["label: \($0)"] } ?? []
-        items += model.pods.sorted.map { row in
-            let summary = KubePodSummary(row: row, columns: columns)
+        items += model.rows.sorted.map { row in
+            let summary = pods ? KubePodSummary(row: row, columns: columns) : nil
             let status = summary.map { $0.isFailing ? ($0.exitReason ?? $0.status) : $0.status }
             return PaletteItem(
-                id: "k.p.\(row.id.description)", group: .kubernetes, title: row.id.name,
-                subtitle: (["Pod", status, row.id.namespace].compactMap { $0 } + [context.displayName] + selected).joined(separator: " · "),
-                symbol: summary?.isFailing == true ? "exclamationmark.triangle" : "cube.box"
-            ) { [weak self] _, _ in self?.revealOnKubernetesPage(row.id) }
+                id: pods ? "k.p.\(row.id.description)" : "k.o.\(kind.fullName)/\(row.id.description)", group: .kubernetes, title: row.id.name,
+                subtitle: ([kind.kind.isEmpty ? kind.resource : kind.kind, status, row.id.namespace].compactMap { $0 } + [context.displayName] + selected)
+                    .joined(separator: " · "),
+                symbol: summary?.isFailing == true ? "exclamationmark.triangle" : pods ? "cube.box" : "doc.text"
+            ) { [weak self] _, _ in self?.revealOnKubernetesPage(row.id, kind: kind) }
         }
         return items
     }
@@ -208,12 +228,12 @@ extension TerminalWindowController {
         focusPageList(.kubernetes)
     }
 
-    /// The page, on the Pods list, with this pod selected and in view — the
-    /// filter cleared when it hides it, or has a `label:` that may: the rows
-    /// the switcher saw weren't asked for with it.
-    func revealOnKubernetesPage(_ id: KubeRowID) {
+    /// The page, on the kind's list (Pods unless said), with this row
+    /// selected and in view — the filter cleared when it hides it, or has a
+    /// `label:` that may: the rows the switcher saw weren't asked for with it.
+    func revealOnKubernetesPage(_ id: KubeRowID, kind: KubeResourceKind = .pods) {
         let page = kubernetesPage
-        page.section = .pods
+        if KubernetesModel.shared.kind.fullName != kind.fullName || !page.showsSection { page.showKind(kind) }
         if page.labelReading.selector != nil || !page.rows.contains(where: { $0.row.id == id }) { page.filter = "" }
         page.selection = [id.description]
         showKubernetesPage()

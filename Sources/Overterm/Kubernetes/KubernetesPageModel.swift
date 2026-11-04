@@ -16,37 +16,40 @@ struct KubernetesActions {
 /// keyboard. More join with their stages (docs/design/kubernetes/analysis.md,
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
-    case pods, namespace, context, wide, allNamespaces, filter, help
+    case workloads, network, config, storage, access, cluster, custom
+    case command, namespace, context, wide, allNamespaces, filter, help
 
-    var section: KubernetesPageModel.Section? { self == .pods ? .pods : nil }
+    var section: KubeSection? { KubeSection(rawValue: rawValue) }
 
     var key: String {
+        if let section { return section.key }
         switch self {
-        case .pods: "1"
-        case .namespace: "n"
-        case .context: "c"
-        case .wide: "w"
-        case .allNamespaces: "0"
-        case .filter: "/"
-        case .help: "?"
+        case .command: return ":"
+        case .namespace: return "n"
+        case .context: return "c"
+        case .wide: return "w"
+        case .allNamespaces: return "0"
+        case .filter: return "/"
+        default: return "?"
         }
     }
 
     var title: String {
+        if let section { return section.title }
         switch self {
-        case .pods: "Pods"
-        case .namespace: "Namespace — one listed, or a name typed"
-        case .context: "Context"
-        case .wide: "Wide columns — what kubectl get -o wide adds (IP, Node…)"
-        case .allNamespaces: "All namespaces"
-        case .filter: "Filter — web status:crashloopbackoff ns:shop -status:running label:app=web"
-        case .help: "These keys"
+        case .command: return "A kind by name — :deploy, :po shop, :svc @fake-dev, :widgets /blue; :ctx, :ns"
+        case .namespace: return "Namespace — one listed, or a name typed"
+        case .context: return "Context"
+        case .wide: return "Wide columns — what kubectl get -o wide adds (IP, Node…)"
+        case .allNamespaces: return "All namespaces"
+        case .filter: return "Filter — web status:crashloopbackoff ns:shop -status:running label:app=web"
+        default: return "These keys"
         }
     }
 }
 
-/// One row of the Pods list: the server's row, and what its cells say of the pod.
-struct KubePodListRow: ResourceTableRow {
+/// One row of a list: the server's row, and — for a pod — what its cells say of it.
+struct KubeListRow: ResourceTableRow {
     let row: KubeRow
     let summary: KubePodSummary?
 
@@ -55,19 +58,15 @@ struct KubePodListRow: ResourceTableRow {
 }
 
 /// A window's Kubernetes page: which section, what the filter says, what is
-/// selected, how the list is sorted. The contexts and the pods are the app's
-/// (`KubernetesModel`).
+/// selected, how the list is sorted, the `:` bar. The contexts, the kind
+/// shown and its rows are the app's (`KubernetesModel`).
 @MainActor
 final class KubernetesPageModel: ObservableObject {
-    enum Section: String, CaseIterable, Identifiable {
-        case pods
-
-        var id: String { rawValue }
-        var title: String { "Pods" }
-        var symbol: String { "cube.box" }
-    }
-
-    @Published var section: Section = .pods
+    /// The section shown: the kind's, else one picked whose kinds aren't
+    /// known yet (discovery not read) or that has none.
+    @Published private(set) var section: KubeSection = .workloads
+    /// `:`: the command bar over the page.
+    @Published var command: KubeCommandBar?
     /// What the filter field says. Its `label:` words go to the server
     /// (`KubeLabelSelector`), a moment after the typing stops.
     @Published var filter = "" {
@@ -112,6 +111,9 @@ final class KubernetesPageModel: ObservableObject {
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
     private var pickerWatch: AnyCancellable?
+    private var kindWatch: AnyCancellable?
+    /// The kind last shown in each section.
+    private var lastKind: [KubeSection: String] = [:]
 
     init(model: KubernetesModel = .shared) {
         self.model = model
@@ -121,7 +123,74 @@ final class KubernetesPageModel: ObservableObject {
         pickerWatch = model.$namespaces.map { _ in () }.merge(with: model.$namespacesRefused.map { _ in () }, model.$contexts.map { _ in () })
             .dropFirst()
             .sink { [weak self] in DispatchQueue.main.async { self?.refreshPicker() } }
+        // The section follows the kind shown, whoever picked it (another
+        // window's page, the switcher); a section picked before its kinds
+        // were known shows its first once they are. Emitted values, again.
+        kindWatch = model.$kind.combineLatest(model.$catalog)
+            .dropFirst()
+            .sink { [weak self] kind, catalog in self?.follow(kind, catalog) }
+        section = model.catalog.section(of: model.kind) ?? .workloads
     }
+
+    private func follow(_ kind: KubeResourceKind, _ catalog: KubeKindCatalog) {
+        if waitingForSection {
+            // A section picked with no kind to show: its first, once it has one.
+            guard let first = catalog.kinds(in: section).first else { return }
+            waitingForSection = false
+            if catalog.section(of: kind) == section {
+                lastKind[section] = kind.fullName
+            } else {
+                DispatchQueue.main.async { [weak self] in self?.showKind(first) }
+            }
+            return
+        }
+        if let shown = catalog.section(of: kind) {
+            if section != shown { section = shown }
+            lastKind[shown] = kind.fullName
+        }
+    }
+
+    /// A section picked that has no kind to show: discovery not read yet,
+    /// or none of its kinds served (no CRDs).
+    @Published private(set) var waitingForSection = false
+
+    /// A section's digit: its kind last shown, else its first — or, while
+    /// it has none, the section alone until it has.
+    func showSection(_ section: KubeSection) {
+        let kinds = model.catalog.kinds(in: section)
+        if let kind = lastKind[section].flatMap({ name in kinds.first { $0.fullName == name } }) ?? kinds.first {
+            showKind(kind)
+        } else if section == .workloads, model.catalog.isEmpty {
+            // Before discovery: Pods, which every cluster serves.
+            waitingForSection = false
+            self.section = section
+            showKind(.pods)
+        } else {
+            waitingForSection = true
+            self.section = section
+        }
+    }
+
+    /// The list on `kind`, its section with it.
+    func showKind(_ kind: KubeResourceKind) {
+        waitingForSection = false
+        if let shown = model.catalog.section(of: kind) {
+            section = shown
+            lastKind[shown] = kind.fullName
+        }
+        if kind.fullName != model.kind.fullName {
+            selection = []
+            sort = nil
+        }
+        model.setKind(kind)
+    }
+
+    /// Whether the list shows the section's kind: false while a section is
+    /// picked that has none to show.
+    var showsSection: Bool { !waitingForSection }
+
+    /// The list's title: the kind's, as the page calls it.
+    var title: String { showsSection ? KubeKindCatalog.title(of: model.kind) : section.title }
 
     // MARK: Keys
 
@@ -130,19 +199,129 @@ final class KubernetesPageModel: ObservableObject {
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
         case .closeSheet: cheatSheet = false
-        case .section(let section): self.section = section
+        case .section(let section): showSection(section)
         case .help: cheatSheet = true
         case .filter: focusFilter += 1
         case .key(let key):
             switch key {
+            case .command: openCommand()
             case .namespace: openPicker(.namespace)
             case .context: openPicker(.context)
             case .wide: wide.toggle()
             case .allNamespaces: model.setScope(.all)
-            case .pods, .filter, .help: return false
+            default: return false
             }
         }
         return true
+    }
+
+    // MARK: The command bar
+
+    /// `:`: the bar, over the page, with what it completes from.
+    func openCommand() {
+        cheatSheet = false
+        picker = nil
+        command = KubeCommandBar(kinds: model.catalog.all, namespaces: model.namespaces, contexts: model.contexts.contexts.map(\.name))
+    }
+
+    /// Esc: closed, the list has the keyboard again.
+    func closeCommand() {
+        command = nil
+        giveListTheKeyboard()
+    }
+
+    /// ↩: what the bar says, done — or, when it means nothing, why, the
+    /// bar left open.
+    func runCommand() {
+        guard var bar = command else { return }
+        guard let parsed = bar.command() else {
+            bar.problem = bar.text.trimmingCharacters(in: .whitespaces).isEmpty ? nil : "Not a command: \(bar.text)"
+            command = bar
+            return
+        }
+        if let problem = run(parsed) {
+            bar.problem = problem
+            command = bar
+            return
+        }
+        command = nil
+        giveListTheKeyboard()
+    }
+
+    /// A command done; why not, when it can't be. All of it is checked
+    /// before anything changes: a typo (`:nope @fake-prod`) switches no
+    /// context — its proxy isn't started, nothing is asked of it. The kind
+    /// is read as the context named serves it, when that is known (read
+    /// lately), else as the one shown does.
+    @discardableResult
+    func run(_ command: KubeCommand) -> String? {
+        var target = model.selected
+        if let wanted = command.context {
+            guard let context = Self.context(wanted, in: model.contexts) else { return "No context called \(wanted)." }
+            target = context
+        }
+        let targetName = target?.name ?? model.selectedName
+        var scope: KubeScope?
+        if command.allNamespaces {
+            scope = .all
+        } else if let namespace = command.namespace, command.action == .kind(command.target) {
+            guard let typed = KubePicker.typedNamespace(namespace) else { return "Not a namespace's name: \(namespace)" }
+            scope = .namespace(typed)
+        }
+        var kind: KubeResourceKind?
+        switch command.action {
+        case .context(let name):
+            guard let name else {
+                openPicker(.context)
+                return nil
+            }
+            guard let context = Self.context(name, in: model.contexts) else { return "No context called \(name)." }
+            model.select(context.name)
+            return nil
+        case .namespace(let name):
+            switch name {
+            case nil, "*": break
+            case let name?:
+                guard let typed = KubePicker.typedNamespace(name) else { return "Not a namespace's name: \(name)" }
+                scope = .namespace(typed)
+            }
+        case .kind(let name):
+            let served = targetName.flatMap(model.knownDiscovery(of:)) ?? model.discovery
+            guard let discovery = served else { return "What \(targetName ?? "the context") serves isn't known yet." }
+            guard let resolved = KubeKinds.resolve(name, in: discovery, catalog: KubeKindCatalog(discovery)) else {
+                return "\(targetName ?? "The context") serves no kind called \(name)."
+            }
+            guard KubeKindCatalog.isOffered(resolved) else {
+                return "\(resolved.fullName) can't be listed and watched (\(resolved.verbs.joined(separator: ", ")))."
+            }
+            kind = resolved
+        }
+        // Checked: now done.
+        if let target, target.name != model.selectedName { model.select(target.name) }
+        switch command.action {
+        case .namespace(nil):
+            openPicker(.namespace)
+            return nil
+        case .namespace("*"):
+            model.setScope(.all)
+            return nil
+        case .namespace:
+            if let scope { model.setScope(scope) }
+            return nil
+        default: break
+        }
+        if let kind { showKind(kind) }
+        if let scope { model.setScope(scope) }
+        if command.filter != nil || command.labels != nil {
+            filter = [command.filter, command.labels.map { "label:\($0)" }].compactMap { $0 }.joined(separator: " ")
+            applySelector()
+        }
+        return nil
+    }
+
+    /// A context by its name or the name its settings give it.
+    private static func context(_ name: String, in list: KubeContextList) -> KubeContext? {
+        list.contexts.first { $0.name == name || $0.displayName == name }
     }
 
     func giveListTheKeyboard() { focusList += 1 }
@@ -155,6 +334,7 @@ final class KubernetesPageModel: ObservableObject {
     /// `n` or `c`: the picker, on what shows now.
     func openPicker(_ kind: KubePicker.Kind) {
         cheatSheet = false
+        command = nil
         picker = makePicker(kind)
     }
 
@@ -252,14 +432,16 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The columns the list shows: the server's (priority 0, or all of
     /// them wide), each by its index in the Table; across all namespaces a
-    /// Namespace column first, as `kubectl get -A` adds it.
+    /// namespaced kind's Namespace column first, as `kubectl get -A` adds it.
     var columns: [ResourceColumn] {
-        var columns = model.pods.columns.enumerated().filter { wide || $0.element.priority == 0 }.map { index, column in
+        var columns = model.rows.columns.enumerated().filter { wide || $0.element.priority == 0 }.map { index, column in
             ResourceColumn(
                 id: "c\(index)", title: column.name, width: Self.width(of: column.name), minWidth: 40,
                 help: column.description.isEmpty ? nil : column.description)
         }
-        if model.scope == .all, !columns.isEmpty {
+        if model.scope == .all, model.kind.namespaced, !columns.isEmpty,
+            !model.rows.columns.contains(where: { $0.name.caseInsensitiveCompare("Namespace") == .orderedSame })
+        {
             columns.insert(ResourceColumn(id: Self.namespaceColumn, title: "Namespace", width: 150), at: 0)
         }
         return columns
@@ -282,19 +464,23 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The server's column a list column shows; nil for the Namespace one.
     func column(_ id: String) -> (index: Int, column: KubeColumn)? {
-        guard id.hasPrefix("c"), let index = Int(id.dropFirst()), model.pods.columns.indices.contains(index) else { return nil }
-        return (index, model.pods.columns[index])
+        guard id.hasPrefix("c"), let index = Int(id.dropFirst()), model.rows.columns.indices.contains(index) else { return nil }
+        return (index, model.rows.columns[index])
     }
+
+    /// Whether the list is of pods: their Status read for failures.
+    var isPods: Bool { model.kind.fullName == KubeResourceKind.pods.fullName }
 
     /// The rows the filter lets through, in the list's order. `label:` is
     /// the server's: the rows came filtered by it — or by another page's,
     /// which the page says (`listIsOurs`).
-    var rows: [KubePodListRow] {
-        let columns = model.pods.columns
-        var filter = ResourceFilter<KubePodFilterKey>(self.filter)
+    var rows: [KubeListRow] {
+        let columns = model.rows.columns
+        var filter = ResourceFilter<KubeFilterKey>(self.filter)
         filter.terms.removeAll { $0.key == .label }
-        let rows = model.pods.sorted.map { KubePodListRow(row: $0, summary: KubePodSummary(row: $0, columns: columns)) }
-            .filter { Self.matches($0, filter) }
+        let pods = isPods
+        let rows = model.rows.sorted.map { KubeListRow(row: $0, summary: pods ? KubePodSummary(row: $0, columns: columns) : nil) }
+            .filter { Self.matches($0, filter, columns: columns) }
         guard let sort else { return rows }
         let now = Date()
         return sort.sorted(rows) { sortKey($0, sort.column, now: now) }
@@ -302,14 +488,17 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Every pod that fails, with why — whatever the filter shows.
     var failing: [KubePodSummary] {
-        let columns = model.pods.columns
-        return model.pods.sorted.compactMap { KubePodSummary(row: $0, columns: columns) }.filter(\.isFailing)
+        guard isPods else { return [] }
+        let columns = model.rows.columns
+        return model.rows.sorted.compactMap { KubePodSummary(row: $0, columns: columns) }.filter(\.isFailing)
     }
 
-    static func matches(_ row: KubePodListRow, _ filter: ResourceFilter<KubePodFilterKey>) -> Bool {
+    /// Text matches the name, the namespace or the Status (or, for a kind
+    /// with no Status column, its Type: a Service's, a Secret's, an event's).
+    static func matches(_ row: KubeListRow, _ filter: ResourceFilter<KubeFilterKey>, columns: [KubeColumn]) -> Bool {
         filter.matches { term in
             let namespace = row.row.id.namespace?.lowercased() ?? ""
-            let status = row.summary?.status.lowercased() ?? ""
+            let status = (row.summary?.status ?? (row.row.cell("Status", in: columns) ?? row.row.cell("Type", in: columns))?.text ?? "").lowercased()
             switch term.key {
             case .text: return row.row.id.name.lowercased().contains(term.value) || namespace.contains(term.value) || status.contains(term.value)
             case .namespace: return namespace == term.value
@@ -325,11 +514,11 @@ final class KubernetesPageModel: ObservableObject {
         case text(String)
     }
 
-    func sortKey(_ row: KubePodListRow, _ id: String, now: Date) -> SortKey? {
+    func sortKey(_ row: KubeListRow, _ id: String, now: Date) -> SortKey? {
         if id == Self.namespaceColumn { return row.row.id.namespace.map { .text($0) } }
         guard let (index, column) = column(id), index < row.row.cells.count else { return nil }
         switch column.name.lowercased() {
-        case "age": return age(of: row.row.id, at: now).map { .number($0) }
+        case "age", "created at": return age(of: row.row.id, at: now).map { .number($0) }
         case "restarts": return row.summary?.restarts.map { .number(Double($0)) }
         default: break
         }
@@ -351,7 +540,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The right-click menu: only what reads — this page changes nothing.
     func verbs(for ids: Set<String>) -> [ResourceVerb] {
-        let picked = model.pods.sorted.filter { ids.contains($0.id.description) }
+        let picked = model.rows.sorted.filter { ids.contains($0.id.description) }
         guard !picked.isEmpty else { return [] }
         let names = picked.map(\.id.name).joined(separator: "\n")
         let qualified = picked.map { $0.id.description }.joined(separator: "\n")

@@ -10,7 +10,10 @@ import Darwin
 /// (production by name). The real `kubectl proxy` runs in front of it when
 /// kubectl is installed, with that file as its KUBECONFIG, `--context` and
 /// a HOME of the run's own; else a stand-in connection goes to the fake's
-/// socket directly, and what only the real proxy shows is skipped.
+/// socket directly, and what only the real proxy shows is skipped. Besides
+/// pods the fake serves deployments, services, configmaps, a secret,
+/// nodes, events, CRDs and a custom resource (widgets.example.com, with
+/// printer columns of its own): the `:` bar and the digits reach them.
 extension E2ERunner {
     func kubernetesScenario() async {
         await settledPrompt()
@@ -57,6 +60,21 @@ extension E2ERunner {
             FakeKubeAPI.Pod(status: "CrashLoopBackOff", phase: "Running", ready: 0, containers: 1, restarts: 5, lastRestart: "30s"))
         fake.addPod("web-7d9", namespace: "payments")
         fake.addPod("api-0", namespace: "payments")
+        fake.add("deployments.apps", "web", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1, "Images": "nginx:1.27"])
+        fake.add("deployments.apps", "worker", namespace: "shop", values: ["Ready": "0/1", "Up-to-date": 1, "Available": 0])
+        fake.add(
+            "services", "web", namespace: "shop", values: ["Type": "ClusterIP", "Cluster-IP": "10.96.0.12", "External-IP": "<none>", "Port(s)": "80/TCP"])
+        fake.add("configmaps", "web-config", namespace: "shop", data: ["nginx.conf": "worker_processes 1;"])
+        fake.add("secrets", "web-tls", namespace: "shop", values: ["Type": "kubernetes.io/tls"], data: ["tls.crt": "fake-crt", "tls.key": "fake-key"])
+        fake.add("nodes", "fake-node-1", values: ["Status": "Ready", "Roles": "control-plane", "Version": "v1.34.1"])
+        fake.add(
+            "events.events.k8s.io", "worker-5c.1", namespace: "shop",
+            values: ["Last Seen": "30s", "Type": "Warning", "Reason": "BackOff", "Object": "pod/worker-5c", "Message": "Back-off restarting failed container"])
+        fake.addCRD(
+            group: "example.com", version: "v1", plural: "widgets", kind: "Widget", shortNames: ["wd"],
+            columns: [FakeKubeAPI.Column(name: "Color"), FakeKubeAPI.Column(name: "Size", type: "integer"), FakeKubeAPI.Column(name: "Owner", priority: 1)])
+        fake.add("widgets.example.com", "blue-1", namespace: "shop", values: ["Color": "blue", "Size": 3, "Owner": "team-a"])
+        fake.add("widgets.example.com", "red-1", namespace: "shop", values: ["Color": "red", "Size": 5, "Owner": "team-b"])
         do {
             try Self.fakeKubeconfig(port: port).write(to: kubeconfig, atomically: true, encoding: .utf8)
         } catch {
@@ -87,8 +105,8 @@ extension E2ERunner {
 
         // The Pods list: the server's rows and columns, the namespace's only.
         check(
-            "its pods are listed", await eventually(15) { model.pods.sorted.map(\.id.description) == ["shop/web-7d9", "shop/worker-5c"] },
-            "\(model.pods.sorted.map(\.id.description)) \(model.podState) \(model.proxyStatus)")
+            "its pods are listed", await eventually(15) { model.rows.sorted.map(\.id.description) == ["shop/web-7d9", "shop/worker-5c"] },
+            "\(model.rows.sorted.map(\.id.description)) \(model.listState) \(model.proxyStatus)")
         check("in the server's columns", page.columns.map(\.title) == ["Name", "Ready", "Status", "Restarts", "Age"], "\(page.columns.map(\.title))")
         check("asked for as rows only", fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["includeObject"] == "None" })
         check("the list has the keyboard", await eventually(3) { self.app.kubernetesListHasKeyboard() }, "\(String(describing: window.firstResponder))")
@@ -103,7 +121,7 @@ extension E2ERunner {
 
         // The watch keeps it current.
         fake.addPod("cache-0", namespace: "shop")
-        check("a new pod comes in by the watch", await eventually(5) { model.pods[KubeRowID(namespace: "shop", name: "cache-0")] != nil })
+        check("a new pod comes in by the watch", await eventually(5) { model.rows[KubeRowID(namespace: "shop", name: "cache-0")] != nil })
         fake.updatePod("web-7d9", namespace: "shop") {
             $0.status = "OOMKilled"
             $0.ready = 0
@@ -111,8 +129,11 @@ extension E2ERunner {
         }
         check("one that starts failing says why", await eventually(5) { page.failing.map(\.id.name) == ["web-7d9", "worker-5c"] }, "\(page.failing)")
         fake.deletePod("cache-0", namespace: "shop")
-        check("one deleted goes", await eventually(5) { model.pods[KubeRowID(namespace: "shop", name: "cache-0")] == nil })
-        check("by one watch, not lists again", fake.requests.filter { $0.query["watch"] == "1" }.count == 1, "\(fake.requests.suffix(4))")
+        check("one deleted goes", await eventually(5) { model.rows[KubeRowID(namespace: "shop", name: "cache-0")] == nil })
+        check(
+            "by one watch, not lists again", fake.requests.filter { $0.isWatch && $0.path.hasSuffix("/pods") }.count == 1,
+            "\(fake.requests.suffix(4))")
+        check("what the cluster serves is read once, its CRDs watched", fake.watched.contains(KubernetesModel.crdName), "\(fake.watched)")
 
         // Keys, while the list has the keyboard.
         if let event = NSEvent.keyEvent(
@@ -131,15 +152,15 @@ extension E2ERunner {
         page.filter = "label:app=web"
         page.applySelector()
         check(
-            "label: is asked of the server", await eventually(10) { model.pods.sorted.map(\.id.description) == ["shop/web-7d9"] },
-            "\(model.pods.sorted.map(\.id.description))")
+            "label: is asked of the server", await eventually(10) { model.rows.sorted.map(\.id.description) == ["shop/web-7d9"] },
+            "\(model.rows.sorted.map(\.id.description))")
         check(
             "as the list's selector, through the proxy",
             fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["labelSelector"] == "app=web" })
         check("and the page says so", await shownText(15) { $0.contains("Asked of the server: app=web") } != nil)
         page.filter = ""
         page.applySelector()
-        check("cleared, every pod again", await eventually(10) { model.pods.count == 2 }, "\(model.pods.count)")
+        check("cleared, every pod again", await eventually(10) { model.rows.count == 2 }, "\(model.rows.count)")
         let filterFocus = page.focusFilter
         check("/ goes to the filter", page.press("/") && page.focusFilter == filterFocus + 1)
         page.giveListTheKeyboard()
@@ -148,14 +169,15 @@ extension E2ERunner {
         _ = page.press("x")
         check("any key closes them", !page.cheatSheet)
         await namespaceAndContextPickers(model, page)
+        await kubernetesKinds(model, page, fake)
 
         // All namespaces: same-named pods in two are two rows.
         check("0 is all namespaces", page.press("0") && model.scope == .all)
         check(
             "every namespace's pods, same names apart",
             await eventually(10) {
-                model.pods.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9", "shop/web-7d9", "shop/worker-5c"]
-            }, "\(model.pods.sorted.map(\.id.description))")
+                model.rows.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9", "shop/web-7d9", "shop/worker-5c"]
+            }, "\(model.rows.sorted.map(\.id.description))")
         check("with a Namespace column first", page.columns.first?.title == "Namespace")
         check(
             "asked for with their metadata, where the namespace is",
@@ -172,8 +194,8 @@ extension E2ERunner {
         check("and is drawn across the page", await shownText(15) { $0.contains("PRODUCTION") } != nil)
         check(
             "its pods are read too, in its namespace",
-            await eventually(15) { model.pods.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9"] && model.podState == .live },
-            "\(model.podState) \(model.proxyStatus)")
+            await eventually(15) { model.rows.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9"] && model.listState == .live },
+            "\(model.listState) \(model.proxyStatus)")
         if kubectl != nil {
             check("its proxy is up", await eventually(5) { model.proxyStatus == .open }, "\(model.proxyStatus)")
         }
@@ -196,7 +218,7 @@ extension E2ERunner {
         page.choosePicked()
         page.filter = "label:app=web"
         page.applySelector()
-        check("a label: on the page", await eventually(10) { model.pods.sorted.map(\.id.description) == ["shop/web-7d9"] })
+        check("a label: on the page", await eventually(10) { model.rows.sorted.map(\.id.description) == ["shop/web-7d9"] })
         check("a watch is open while it shows", await eventually(5) { fake.openWatches >= 1 }, "\(fake.openWatches) open")
         app.toggleKubernetesPage(nil)
         check("back to the terminal", app.store.showingOverlay == nil)
@@ -210,7 +232,7 @@ extension E2ERunner {
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
         app.toggleKubernetesPage(nil)
-        check("with Kubernetes off the page says so", !model.enabled && model.pods.count == 0)
+        check("with Kubernetes off the page says so", !model.enabled && model.rows.count == 0)
         check("drawn", await shownText(15) { $0.contains("Kubernetes is off") } != nil)
         var left = await model.proxies.connected
         for _ in 0..<50 where !left.isEmpty {
@@ -254,8 +276,8 @@ extension E2ERunner {
         page.choosePicked()
         check("pay picks payments", model.scope == .namespace("payments") && page.picker == nil)
         check(
-            "whose pods are listed", await eventually(10) { model.pods.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9"] },
-            "\(model.pods.sorted.map(\.id.description))")
+            "whose pods are listed", await eventually(10) { model.rows.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9"] },
+            "\(model.rows.sorted.map(\.id.description))")
         check("and the list has the keyboard again", await eventually(3) { self.app.kubernetesListHasKeyboard() })
         _ = page.press("n")
         page.picker?.query = "Nowhere"
@@ -267,11 +289,116 @@ extension E2ERunner {
         page.picker?.query = "shop"
         page.choosePicked()
         check("back to shop", model.scope == .namespace("shop") && page.picker == nil)
-        check("its pods again", await eventually(10) { model.pods.count == 2 }, "\(model.pods.count)")
+        check("its pods again", await eventually(10) { model.rows.count == 2 }, "\(model.rows.count)")
         _ = page.press("n")
         check("Esc", page.picker != nil)
         page.closePicker()
         check("closes it, the namespace as it was", page.picker == nil && model.scope == .namespace("shop"))
+    }
+
+    /// Every kind: the digits' sections, the `:` bar — by its field, Tab
+    /// completing and Esc closing it — a kind's own columns, a CRD's custom
+    /// resources in their printer columns, a CRD added while the page shows
+    /// appearing without a reconnect; then back to the pods.
+    private func kubernetesKinds(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        check("what fake-dev serves is read", await eventually(10) { model.catalog.kind(fullName: "widgets.example.com") != nil }, model.discoveryProblem ?? "")
+        check(
+            "its kinds are in their sections",
+            model.catalog.kinds(in: .workloads).first?.fullName == "pods" && model.catalog.kinds(in: .network).map(\.fullName).contains("services")
+                && model.catalog.kinds(in: .custom).map(\.fullName) == ["widgets.example.com"], "\(model.catalog.all.map(\.fullName))")
+        check("and drawn down the left", await shownText(15) { $0.contains("Custom Resources") && $0.contains("Deployments") } != nil)
+
+        // `:` by the key as the window takes it.
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        guard
+            let colon = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.shift], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: ":",
+                charactersIgnoringModifiers: ";", isARepeat: false, keyCode: 41)
+        else { return check("a : key", false) }
+        check(": is the list's", app.handlePageKey(colon))
+        check("and opens the command bar", page.command != nil)
+        check("its field has the keyboard", await eventually(3) { self.window.firstResponder is NSTextView && !self.app.kubernetesListHasKeyboard() })
+        page.command?.text = "deploy"
+        check("drawn, with what deploy completes to", await shownText(15) { $0.contains("deployments") && $0.contains("Deployments · deploy") } != nil)
+        page.runCommand()
+        check(":deploy shows the deployments", model.kind.fullName == "deployments.apps" && page.command == nil && page.section == .workloads)
+        check(
+            "the server's deployments", await eventually(10) { model.rows.sorted.map(\.id.description) == ["shop/web", "shop/worker"] && model.listState == .live },
+            "\(model.rows.sorted.map(\.id.description)) \(model.listState)")
+        check("in its own columns", page.columns.map(\.title) == ["Name", "Ready", "Up-to-date", "Available", "Age"], "\(page.columns.map(\.title))")
+        check("as rows only", fake.requests.contains { $0.path == "/apis/apps/v1/namespaces/shop/deployments" && $0.query["includeObject"] == "None" })
+        check("titled so", page.title == "Deployments", page.title)
+        check("and drawn", await shownText(15) { $0.contains("Up-to-date") } != nil)
+        check("the list has the keyboard again", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+
+        // Tab completes; Esc closes, the kind as it was.
+        _ = page.press(":")
+        _ = await eventually(3) { self.window.firstResponder is NSTextView }
+        page.command?.text = "wid"
+        (window.firstResponder as? NSTextView)?.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        check("Tab completes wid to widgets", page.command?.text == "widgets", page.command?.text ?? "closed")
+        (window.firstResponder as? NSTextView)?.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        check("Esc closes the bar", page.command == nil && model.kind.fullName == "deployments.apps")
+        check("and gives the list the keyboard", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+
+        // The CRD's custom resources, in its printer columns.
+        _ = page.press(":")
+        page.command?.text = "widgets"
+        page.runCommand()
+        check(":widgets shows the custom resources", model.kind.fullName == "widgets.example.com" && page.section == .custom)
+        check(
+            "the widgets", await eventually(10) { model.rows.sorted.map(\.id.description) == ["shop/blue-1", "shop/red-1"] },
+            "\(model.rows.sorted.map(\.id.description)) \(model.listState)")
+        check("in the CRD's printer columns", page.columns.map(\.title) == ["Name", "Color", "Size", "Age"], "\(page.columns.map(\.title))")
+        check("its wide one behind w", page.press("w") && page.columns.map(\.title) == ["Name", "Color", "Size", "Owner", "Age"])
+        _ = page.press("w")
+        check("drawn", await shownText(15) { $0.contains("blue-1") && $0.contains("Color") } != nil)
+        check(
+            "asked of its group's path",
+            fake.requests.contains { $0.path == "/apis/example.com/v1/namespaces/shop/widgets" && $0.query["includeObject"] == "None" })
+        _ = page.press(":")
+        page.command?.text = "nope"
+        page.runCommand()
+        check("a kind nobody serves is said, the bar left open", page.command?.problem == "fake-dev serves no kind called nope.", page.command?.problem ?? "")
+        page.closeCommand()
+
+        // The digits: Network's first kind, Cluster's cluster-scoped nodes.
+        check("2 is Network", page.press("2") && model.kind.fullName == "services" && page.section == .network)
+        check("its services", await eventually(10) { model.rows.sorted.map(\.id.name) == ["web"] }, "\(model.rows.sorted.map(\.id.name))")
+        check("6 is Cluster", page.press("6") && model.kind.fullName == "nodes")
+        check(
+            "the nodes, cluster-wide", await eventually(10) { model.rows.sorted.map(\.id.description) == ["fake-node-1"] },
+            "\(model.rows.sorted.map(\.id.description))")
+        check("asked for without a namespace", fake.requests.contains { $0.path == "/api/v1/nodes" })
+        _ = page.press(":")
+        page.command?.text = "secrets"
+        page.runCommand()
+        check(
+            "a secret's row is its type and how many keys",
+            await eventually(10) { model.rows.count == 1 }
+                && model.rows[KubeRowID(namespace: "shop", name: "web-tls")]?.cell("Data", in: model.rows.columns) == .integer(2))
+        check("never its values", !String(describing: model.rows).contains("fake-key") && !fake.requests.contains { $0.path.contains("/secrets/") })
+
+        // A CRD applied while the page shows: there without a reconnect.
+        fake.addCRD(group: "acme.example.com", version: "v1alpha1", plural: "gadgets", kind: "Gadget", namespaced: false, shortNames: ["gd"])
+        fake.add("gadgets.acme.example.com", "gadget-1")
+        check(
+            "a CRD added appears, by the CRD watch",
+            await eventually(10) { model.catalog.kinds(in: .custom).map(\.fullName) == ["gadgets.acme.example.com", "widgets.example.com"] },
+            "\(model.catalog.kinds(in: .custom).map(\.fullName))")
+        _ = page.press(":")
+        page.command?.text = "gd"
+        page.runCommand()
+        check("and lists", await eventually(10) { model.kind.fullName == "gadgets.acme.example.com" && model.rows.sorted.map(\.id.name) == ["gadget-1"] })
+
+        // Back to the pods.
+        _ = page.press(":")
+        page.command?.text = "po"
+        page.runCommand()
+        check(":po is the pods again", model.kind.fullName == "pods" && page.section == .workloads)
+        check("listed", await eventually(10) { model.rows.count == 2 && model.listState == .live }, "\(model.rows.count)")
+        check("by GETs only", fake.writes.isEmpty, "\(fake.writes)")
     }
 
     /// ⌃⌘J from the terminal, the page hidden: it reads as the page would,

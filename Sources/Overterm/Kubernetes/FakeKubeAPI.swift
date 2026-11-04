@@ -8,9 +8,13 @@ import NIOPosix
 /// and the `kubernetes` scenario: never one of the user's clusters — this
 /// Mac's current context is production.
 ///
-/// It holds namespaces and pods (and serves empty lists of the other kinds
-/// it discovers) as values, versioned as the server versions them; a change
-/// sends the watch events the server would. It answers:
+/// It holds objects of any kind it serves as values — namespaces and pods,
+/// and deployments, services, configmaps, secrets, nodes, events, CRDs and
+/// their custom resources, each with the columns `kubectl get` shows —
+/// versioned as the server versions them; a change sends the watch events
+/// the server would. A CRD added (`addCRD`) is a kind it serves from then
+/// on, in discovery and in paths, until it is removed (one version a group:
+/// a group's kinds are served at its first kind's). It answers:
 /// - `/version`; discovery, aggregated (`APIGroupDiscoveryList`) or the
 ///   legacy walk (`/api`, `/apis`, each group version's resource list);
 /// - lists as Tables (`as=Table;v=v1;g=meta.k8s.io`, `includeObject`
@@ -54,6 +58,40 @@ final class FakeKubeAPI: @unchecked Sendable {
         var created: Date
         var labels: [String: String] = [:]
         var pod: Pod?
+        /// Cells by column name, for a kind other than pods: what the
+        /// Table shows besides Name and the ages.
+        var values: [String: Value] = [:]
+        var annotations: [String: String] = [:]
+        /// A Secret's or a ConfigMap's keys and values (a Secret's are
+        /// base64 in the object, as the server sends them). Only a plain GET
+        /// of the object carries them; its Table row says how many.
+        var data: [String: String] = [:]
+    }
+
+    /// One cell's value as the server types it.
+    enum Value: Equatable, Sendable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral {
+        case text(String)
+        case integer(Int)
+
+        init(stringLiteral value: String) { self = .text(value) }
+        init(integerLiteral value: Int) { self = .integer(value) }
+
+        var json: Any {
+            switch self {
+            case .text(let text): text
+            case .integer(let value): value
+            }
+        }
+    }
+
+    /// One of a kind's Table columns: `kubectl get`'s, or a CRD's
+    /// `additionalPrinterColumns`.
+    struct Column: Equatable, Sendable {
+        var name: String
+        var type = "string"
+        var format = ""
+        var priority = 0
+        var description = ""
     }
 
     struct Request: Equatable, Sendable, CustomStringConvertible {
@@ -65,6 +103,8 @@ final class FakeKubeAPI: @unchecked Sendable {
         var description: String { "\(method) \(path)" }
         /// A subresource: `pods/p/exec`, `services/s:80/proxy`, `pods/p/log`.
         var isSubresource: Bool { FakeKubeAPI.route(path)?.subresource != nil }
+        /// A watch's request.
+        var isWatch: Bool { query["watch"] == "1" || query["watch"] == "true" }
     }
 
     /// A kind it serves, as discovery says it.
@@ -78,12 +118,15 @@ final class FakeKubeAPI: @unchecked Sendable {
         var categories: [String] = []
         var subresources: [String] = []
         var verbs = ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
+        /// A CRD's printer columns; nil: the built-in kind's own.
+        var columns: [Column]? = nil
 
         var groupVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
         var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
     }
 
-    static let kinds: [Kind] = [
+    /// The kinds every fake serves; `addCRD` adds more to one.
+    static let builtinKinds: [Kind] = [
         Kind(group: "", version: "v1", resource: "namespaces", kind: "Namespace", namespaced: false, shortNames: ["ns"], subresources: ["finalize", "status"]),
         Kind(
             group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true, shortNames: ["po"], categories: ["all"],
@@ -93,18 +136,28 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "", version: "v1", resource: "secrets", kind: "Secret", namespaced: true),
         Kind(group: "", version: "v1", resource: "events", kind: "Event", namespaced: true, shortNames: ["ev"]),
         Kind(group: "", version: "v1", resource: "nodes", kind: "Node", namespaced: false, shortNames: ["no"], subresources: ["proxy", "status"]),
+        Kind(group: "", version: "v1", resource: "serviceaccounts", kind: "ServiceAccount", namespaced: true, shortNames: ["sa"], subresources: ["token"]),
+        Kind(group: "", version: "v1", resource: "componentstatuses", kind: "ComponentStatus", namespaced: false, shortNames: ["cs"], verbs: ["get", "list"]),
+        Kind(group: "", version: "v1", resource: "bindings", kind: "Binding", namespaced: true, verbs: ["create"]),
         Kind(group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true, shortNames: ["deploy"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "apps", version: "v1", resource: "replicasets", kind: "ReplicaSet", namespaced: true, shortNames: ["rs"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", namespaced: true, shortNames: ["sts"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "batch", version: "v1", resource: "jobs", kind: "Job", namespaced: true, categories: ["all"], subresources: ["status"]),
         Kind(group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", namespaced: true, shortNames: ["cj"], categories: ["all"], subresources: ["status"]),
         Kind(group: "events.k8s.io", version: "v1", resource: "events", kind: "Event", namespaced: true, shortNames: ["ev"]),
+        Kind(
+            group: "apiextensions.k8s.io", version: "v1", resource: "customresourcedefinitions", kind: "CustomResourceDefinition", namespaced: false,
+            shortNames: ["crd", "crds"], categories: ["api-extensions"], subresources: ["status"]),
+        Kind(group: "rbac.authorization.k8s.io", version: "v1", resource: "roles", kind: "Role", namespaced: true),
+        Kind(group: "networking.k8s.io", version: "v1", resource: "ingresses", kind: "Ingress", namespaced: true, shortNames: ["ing"], subresources: ["status"]),
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "pods", kind: "PodMetrics", namespaced: true, verbs: ["get", "list"]),
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "nodes", kind: "NodeMetrics", namespaced: false, verbs: ["get", "list"]),
     ]
 
     let socket: String?
     private let lock = NSLock()
+    /// What it serves now: the built-in kinds and the CRDs added.
+    private var kinds = FakeKubeAPI.builtinKinds
     private var objects: [String: Object] = [:]
     private var history: [(version: Int, type: String, object: Object)] = []
     private var current = 1000
@@ -256,6 +309,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     var subresourceRequests: [Request] { requests.filter(\.isSubresource) }
     /// Watches open now.
     var openWatches: Int { locked { watchers.count } }
+    /// The kinds watched now, by full name, one entry a watch.
+    var watched: [String] { locked { watchers.values.map(\.resource).sorted() } }
     func forgetRequests() { locked { asked = [] } }
 
     // MARK: State, as a test sets it
@@ -293,6 +348,70 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     func pod(_ name: String, namespace: String) -> Pod? { locked { objects[Self.key("pods", namespace, name)]?.pod } }
+
+    /// An object of any kind served (`deployments.apps`, `secrets`,
+    /// `widgets.example.com`), its cells by column name; a namespaced
+    /// kind's in `namespace`.
+    func add(
+        _ resource: String, _ name: String, namespace: String? = nil, values: [String: Value] = [:], labels: [String: String] = [:],
+        annotations: [String: String] = [:], data: [String: String] = [:], created: Date = Date()
+    ) {
+        change("ADDED") {
+            Object(
+                resource: resource, namespace: namespace, name: name, uid: UUID().uuidString.lowercased(), resourceVersion: 0, created: created, labels: labels,
+                values: values, annotations: annotations, data: data)
+        }
+    }
+
+    /// An object's cells change: a MODIFIED event.
+    func update(_ resource: String, _ name: String, namespace: String? = nil, values: [String: Value]) {
+        let key = Self.key(resource, namespace, name)
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            object.values.merge(values) { $1 }
+            return object
+        }
+    }
+
+    func delete(_ resource: String, _ name: String, namespace: String? = nil) {
+        let key = Self.key(resource, namespace, name)
+        change("DELETED") { objects[key] }
+    }
+
+    /// The names of the objects of a kind it holds.
+    func names(_ resource: String) -> [String] { locked { objects.values.filter { $0.resource == resource }.map(\.name).sorted() } }
+
+    /// A CustomResourceDefinition: its kind served from now on — in
+    /// discovery and in paths — and the CRD itself an object, ADDED to the
+    /// watches of CRDs, as the server has it once the CRD is established.
+    /// `columns`: its `additionalPrinterColumns` (Name and Age come with them).
+    func addCRD(
+        group: String, version: String, plural: String, kind: String, namespaced: Bool = true, shortNames: [String] = [], columns: [Column] = []
+    ) {
+        let served = Kind(
+            group: group, version: version, resource: plural, kind: kind, namespaced: namespaced, shortNames: shortNames, categories: [],
+            subresources: ["status"], columns: columns)
+        locked { kinds.append(served) }
+        add("customresourcedefinitions.apiextensions.k8s.io", "\(plural).\(group)", values: [:], labels: [:])
+    }
+
+    /// A CRD deleted: its kind no longer served (a request for it is 404),
+    /// its objects gone with it and its watches ended, the CRD DELETED to
+    /// the watches of CRDs.
+    func removeCRD(_ name: String) {
+        let ended = locked { () -> [Channel] in
+            kinds.removeAll { $0.fullName == name }
+            objects = objects.filter { $0.value.resource != name }
+            let ids = watchers.filter { $0.value.resource == name }.map(\.key)
+            defer { ids.forEach { watchers[$0] = nil } }
+            return ids.compactMap { watchers[$0]?.channel }
+        }
+        ended.forEach(Self.end)
+        delete("customresourcedefinitions.apiextensions.k8s.io", name)
+    }
+
+    /// The kinds it serves now.
+    var servedKinds: [Kind] { locked { kinds } }
 
     /// Applies one change under the lock and sends its event.
     private func change(_ type: String, _ make: () -> Object?) {
@@ -380,8 +499,9 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A resource path read: `/api/v1/namespaces/ns/pods/p/log`. Nil for
-    /// `/version`, discovery's roots and anything else.
-    static func route(_ path: String) -> Route? {
+    /// `/version`, discovery's roots and anything else. `kinds`: those
+    /// served, for the route's kind.
+    static func route(_ path: String, kinds: [Kind] = builtinKinds) -> Route? {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true).map { $0.removingPercentEncoding ?? String($0) }
         let groupVersion: String
         var rest: ArraySlice<String>
@@ -513,12 +633,12 @@ final class FakeKubeAPI: @unchecked Sendable {
             return .json(200, Self.encode(["major": "1", "minor": settings.minor, "gitVersion": "v1.\(settings.minor.prefix { $0.isNumber }).1", "platform": "linux/arm64"]))
         case "/api", "/apis":
             if settings.aggregatedDiscovery && accept.contains("as=APIGroupDiscoveryList") {
-                return .json(200, Self.aggregated(core: path == "/api", stale: settings.failingGroups))
+                return .json(200, Self.aggregated(locked { kinds }, core: path == "/api", stale: settings.failingGroups))
             }
             return .json(200, path == "/api" ? Self.encode(["kind": "APIVersions", "versions": ["v1"]]) : groupList())
         default: break
         }
-        guard let route = Self.route(path) else { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
+        guard let route = Self.route(path, kinds: locked { kinds }) else { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
         guard let resource = route.resource else {
             if settings.failingGroups.contains(route.groupVersion) { return .json(503, Self.status(503, "ServiceUnavailable", "the server is currently unable to handle the request")) }
             return .json(200, resourceList(route.groupVersion))
@@ -640,7 +760,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// One event, its object as the watch asked for it. Under the lock.
     private func eventLine(_ type: String, _ object: Object, for id: ObjectIdentifier) -> Data {
-        guard var watcher = watchers[id], let kind = Self.kinds.first(where: { $0.fullName == object.resource }) else { return Data() }
+        guard var watcher = watchers[id], let kind = kinds.first(where: { $0.fullName == object.resource }) else { return Data() }
         var rendered: [String: Any]
         if watcher.table {
             rendered = Self.tableObject([object], kind, includeObject: watcher.includeObject, columns: !watcher.sentColumns)
@@ -665,43 +785,90 @@ final class FakeKubeAPI: @unchecked Sendable {
         line(["type": "ERROR", "object": statusObject(410, "Expired", "too old resource version: \(version) (\(oldest))")])
     }
 
-    static func columns(for kind: Kind) -> [[String: Any]] {
-        func column(_ name: String, _ type: String = "string", format: String = "", priority: Int = 0, _ description: String = "") -> [String: Any] {
-            ["name": name, "type": type, "format": format, "description": description, "priority": priority]
+    /// A kind's Table columns: a CRD's printer columns (Name first, Age
+    /// last, as the server adds them), else `kubectl get`'s for the kind.
+    static func columns(for kind: Kind) -> [Column] {
+        let name = Column(name: "Name", format: "name", description: "Name must be unique within a namespace.")
+        let age = Column(name: "Age", description: "CreationTimestamp is a timestamp representing the server time when this object was created.")
+        if let columns = kind.columns { return [name] + columns + [age] }
+        func column(_ name: String, _ type: String = "string", priority: Int = 0, _ description: String = "") -> Column {
+            Column(name: name, type: type, priority: priority, description: description)
         }
-        let name = column("Name", format: "name", "Name must be unique within a namespace.")
         switch kind.fullName {
         case "pods":
             return [
                 name, column("Ready", "The aggregate readiness state of this pod for accepting traffic."),
                 column("Status", "The aggregate status of the containers in this pod."),
                 column("Restarts", "The number of times the containers in this pod have been restarted and when the last container in this pod has restarted."),
-                column("Age", "CreationTimestamp is a timestamp representing the server time when this object was created."),
-                column("IP", priority: 1, "IP address allocated to the pod. Routable at least within the cluster. Empty if not yet allocated."),
+                age, column("IP", priority: 1, "IP address allocated to the pod. Routable at least within the cluster. Empty if not yet allocated."),
                 column("Node", priority: 1, "NodeName is a request to schedule this pod onto a specific node."),
                 column("Nominated Node", priority: 1, "nominatedNodeName is set only when this pod preempts other pods on the node."),
                 column("Readiness Gates", priority: 1, "If specified, all readiness gates will be evaluated for pod readiness."),
             ]
         case "namespaces":
-            return [name, column("Status", "The status of the namespace"), column("Age")]
+            return [name, column("Status", "The status of the namespace"), age]
+        case "deployments.apps":
+            return [
+                name, column("Ready", "Number of the pod with ready state"),
+                column("Up-to-date", "integer", "Total number of non-terminated pods targeted by this deployment that have the desired template spec."),
+                column("Available", "integer", "Total number of available pods (ready for at least minReadySeconds) targeted by this deployment."), age,
+                column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
+                column("Selector", priority: 1, "Label selector for pods. Existing ReplicaSets whose pods are selected by this will be the ones affected by this deployment."),
+            ]
+        case "services":
+            return [
+                name, column("Type", "type determines how the Service is exposed."), column("Cluster-IP", "clusterIP is the IP address of the service."),
+                column("External-IP", "externalIPs is a list of IP addresses for which nodes in the cluster will also accept traffic for this service."),
+                column("Port(s)", "The list of ports that are exposed by this service."), age,
+                column("Selector", priority: 1, "Route service traffic to pods with label keys and values matching this selector."),
+            ]
+        case "configmaps":
+            return [name, column("Data", "integer", "Data contains the configuration data."), age]
+        case "secrets":
+            return [name, column("Type", "Used to facilitate programmatic handling of secret data."), column("Data", "integer", "Data contains the secret data."), age]
+        case "nodes":
+            return [
+                name, column("Status", "The status of the node"), column("Roles", "The roles of the node"), age,
+                column("Version", "Kubelet Version reported by the node."), column("Internal-IP", priority: 1, "List of addresses reachable to the node."),
+                column("OS-Image", priority: 1, "OS Image reported by the node from /etc/os-release (e.g. Debian GNU/Linux 7 (wheezy))."),
+                column("Container-Runtime", priority: 1, "Container runtime version reported by the node through runtime remote API (e.g. containerd://1.4.2)."),
+            ]
+        case "events", "events.events.k8s.io":
+            // Name is a wide column, as the server has it: `format: name` says which.
+            return [
+                column("Last Seen"), column("Type"), column("Reason"), column("Object"), column("Message"),
+                Column(name: "Name", format: "name", priority: 1, description: "Name must be unique within a namespace."),
+            ]
+        case "customresourcedefinitions.apiextensions.k8s.io":
+            return [name, Column(name: "Created At", type: "date", description: "CreationTimestamp is a timestamp representing the server time when this object was created.")]
         default:
-            return [name, column("Age")]
+            return [name, age]
         }
     }
 
-    static func cells(_ object: Object) -> [Any] {
+    /// A row's cells, in its kind's columns.
+    static func cells(_ object: Object, _ kind: Kind) -> [Any] {
         let age = age(since: object.created)
         if let pod = object.pod {
             let restarts: Any = pod.restarts > 0 && pod.lastRestart != nil ? "\(pod.restarts) (\(pod.lastRestart!) ago)" : pod.restarts
             return [object.name, "\(pod.ready)/\(pod.containers)", pod.status, restarts, age, pod.ip, pod.node, "<none>", "<none>"]
         }
-        if object.resource == "namespaces" { return [object.name, "Active", age] }
-        return [object.name, age]
+        return columns(for: kind).map { column -> Any in
+            if let value = object.values[column.name] { return value.json }
+            switch column.name {
+            case "Name": return object.name
+            case "Age", "Last Seen": return age
+            case "Created At": return time(object.created)
+            case "Status" where object.resource == "namespaces": return "Active"
+            case "Data": return object.data.count
+            default: return column.type == "integer" ? 0 : "<none>"
+            }
+        }
     }
 
     private static func tableObject(_ objects: [Object], _ kind: Kind, includeObject: String, columns: Bool) -> [String: Any] {
         let rows: [[String: Any]] = objects.map { object in
-            var row: [String: Any] = ["cells": cells(object)]
+            var row: [String: Any] = ["cells": cells(object, kind)]
             switch includeObject {
             case "None": break
             case "Object": row["object"] = full(object, kind)
@@ -711,7 +878,11 @@ final class FakeKubeAPI: @unchecked Sendable {
             return row
         }
         var table: [String: Any] = ["kind": "Table", "apiVersion": "meta.k8s.io/v1", "rows": rows]
-        if columns { table["columnDefinitions"] = Self.columns(for: kind) }
+        if columns {
+            table["columnDefinitions"] = Self.columns(for: kind).map {
+                ["name": $0.name, "type": $0.type, "format": $0.format, "description": $0.description, "priority": $0.priority] as [String: Any]
+            }
+        }
         return table
     }
 
@@ -723,6 +894,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         ]
         if let namespace = object.namespace { metadata["namespace"] = namespace }
         if !object.labels.isEmpty { metadata["labels"] = object.labels }
+        if !object.annotations.isEmpty { metadata["annotations"] = object.annotations }
         if managedFields {
             metadata["managedFields"] = [
                 [
@@ -752,6 +924,11 @@ final class FakeKubeAPI: @unchecked Sendable {
         } else if object.resource == "namespaces" {
             full["spec"] = ["finalizers": ["kubernetes"]]
             full["status"] = ["phase": "Active"]
+        } else if object.resource == "secrets" {
+            full["type"] = object.values["Type"].map { "\($0.json)" } ?? "Opaque"
+            full["data"] = object.data.mapValues { Data($0.utf8).base64EncodedString() }
+        } else if object.resource == "configmaps" {
+            full["data"] = object.data
         }
         return full
     }
@@ -770,7 +947,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     // MARK: Discovery
 
-    private static func aggregated(core: Bool, stale: Set<String>) -> Data {
+    private static func aggregated(_ kinds: [Kind], core: Bool, stale: Set<String>) -> Data {
         let served = kinds.filter { $0.group.isEmpty == core }
         var groups: [String] = []
         for kind in served where !groups.contains(kind.group) { groups.append(kind.group) }
@@ -794,7 +971,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     private func groupList() -> Data {
         var groups: [(String, String)] = []
-        for kind in Self.kinds where !kind.group.isEmpty && !groups.contains(where: { $0.0 == kind.group }) { groups.append((kind.group, kind.version)) }
+        for kind in locked({ kinds }) where !kind.group.isEmpty && !groups.contains(where: { $0.0 == kind.group }) { groups.append((kind.group, kind.version)) }
         let list: [[String: Any]] = groups.map { group, version in
             let preferred = ["groupVersion": "\(group)/\(version)", "version": version]
             return ["name": group, "versions": [preferred], "preferredVersion": preferred]
@@ -804,7 +981,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     private func resourceList(_ groupVersion: String) -> Data {
         var resources: [[String: Any]] = []
-        for kind in Self.kinds where kind.groupVersion == groupVersion {
+        for kind in locked({ kinds }) where kind.groupVersion == groupVersion {
             resources.append([
                 "name": kind.resource, "singularName": kind.kind.lowercased(), "namespaced": kind.namespaced, "kind": kind.kind, "verbs": kind.verbs,
                 "shortNames": kind.shortNames, "categories": kind.categories,

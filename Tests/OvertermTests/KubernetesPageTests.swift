@@ -75,11 +75,11 @@ final class KubernetesPageTests: XCTestCase {
         let model = model([Self.context("fake-dev", namespace: "shop"), Self.context("fake-prod")], current: "fake-dev")
         XCTAssertFalse(model.contextsRead, "nothing read before a page shows")
         model.show()
-        try await until(5, "listed") { model.pods.count == 2 }
+        try await until(5, "listed") { model.rows.count == 2 }
         XCTAssertEqual(model.selectedName, "fake-dev", "kubectl's current")
         XCTAssertEqual(model.scope, .namespace("shop"), "the context's own namespace")
-        XCTAssertEqual(model.pods.sorted.map(\.id.description), ["shop/api-1", "shop/web-1"])
-        XCTAssertEqual(model.podState, .live)
+        XCTAssertEqual(model.rows.sorted.map(\.id.description), ["shop/api-1", "shop/web-1"])
+        XCTAssertEqual(model.listState, .live)
         XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["includeObject"] == "None" }, "rows only")
         try await until(5, "namespaces") { model.namespaces == ["payments", "shop"] }
         XCTAssertEqual(model.version?.minorNumber, 34)
@@ -87,32 +87,32 @@ final class KubernetesPageTests: XCTestCase {
         // The watch: one added, one failing, one gone — in batches.
         api.addPod("cache-0", namespace: "shop")
         api.updatePod("web-1", namespace: "shop") { $0.status = "Error" }
-        try await until(5, "changes") { model.pods.count == 3 && model.pods[KubeRowID(namespace: "shop", name: "web-1")]?.cells[2] == .text("Error") }
+        try await until(5, "changes") { model.rows.count == 3 && model.rows[KubeRowID(namespace: "shop", name: "web-1")]?.cells[2] == .text("Error") }
         api.deletePod("cache-0", namespace: "shop")
-        try await until(5, "deleted") { model.pods.count == 2 }
+        try await until(5, "deleted") { model.rows.count == 2 }
         XCTAssertNil(model.anchors[KubeRowID(namespace: "shop", name: "cache-0")], "its age forgotten with it")
         XCTAssertNotNil(model.anchors[KubeRowID(namespace: "shop", name: "web-1")]?.said, "rows only: the Age cell, counted on")
 
         // All namespaces: two web-1s, each with its creation time.
         model.setScope(.all)
-        try await until(5, "all") { model.pods.count == 3 }
-        XCTAssertEqual(model.pods.sorted.map(\.id.description), ["payments/web-1", "shop/api-1", "shop/web-1"])
+        try await until(5, "all") { model.rows.count == 3 }
+        XCTAssertEqual(model.rows.sorted.map(\.id.description), ["payments/web-1", "shop/api-1", "shop/web-1"])
         XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/pods" && $0.query["includeObject"] == "Metadata" })
         XCTAssertNotNil(model.anchors[KubeRowID(namespace: "payments", name: "web-1")]?.created)
 
         // Another context opens on its own namespace; the first keeps its pick.
         model.select("fake-prod")
         XCTAssertEqual(model.scope, .namespace("default"), "kubectl's default for a context with none")
-        try await until(5, "fake-prod listed") { model.podState == .live }
-        XCTAssertEqual(model.pods.count, 0)
+        try await until(5, "fake-prod listed") { model.listState == .live }
+        XCTAssertEqual(model.rows.count, 0)
         model.select("fake-dev")
         XCTAssertEqual(model.scope, .all)
 
         // Hidden, it reads nothing.
-        try await until(5, "watching") { self.api.openWatches == 1 }
+        try await until(5, "watching the pods and the CRDs") { self.api.watched == ["customresourcedefinitions.apiextensions.k8s.io", "pods"] }
         model.hide()
         try await until(5, "watch closed") { self.api.openWatches == 0 }
-        XCTAssertEqual(model.podState, .idle)
+        XCTAssertEqual(model.listState, .idle)
         api.forgetRequests()
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(api.requests, [], "nothing asked while nobody looks")
@@ -124,10 +124,10 @@ final class KubernetesPageTests: XCTestCase {
         model.show()
         defer { model.hide() }
         try await until(5, "failed") {
-            if case .failed = model.podState { return true }
+            if case .failed = model.listState { return true }
             return false
         }
-        guard case .failed(let reason, let problem) = model.podState else { return }
+        guard case .failed(let reason, let problem) = model.listState else { return }
         XCTAssertEqual(problem, .credentials("getting credentials: exec: executable aws failed with exit code 255"))
         XCTAssertTrue(reason.contains("couldn't get credentials"), reason)
     }
@@ -181,7 +181,7 @@ final class KubernetesPageTests: XCTestCase {
         let page = KubernetesPageModel(model: model)
         model.show()
         defer { model.hide() }
-        try await until(5, "listed") { model.pods.count == 2 }
+        try await until(5, "listed") { model.rows.count == 2 }
 
         XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "Age"], "the server's, priority 0")
         page.wide = true
@@ -220,7 +220,7 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertTrue(page.wide)
         XCTAssertTrue(page.press("0"))
         XCTAssertEqual(model.scope, .all)
-        try await until(5, "all") { model.pods.count == 3 }
+        try await until(5, "all") { model.rows.count == 3 }
         XCTAssertEqual(page.columns.first?.title, "Namespace", "kubectl get -A's")
         XCTAssertTrue(page.press("?"))
         XCTAssertTrue(page.cheatSheet)
@@ -228,7 +228,7 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertFalse(page.cheatSheet)
         XCTAssertFalse(page.press("q"), "not a key of the list's")
         XCTAssertTrue(page.press("1"))
-        XCTAssertEqual(page.section, .pods)
+        XCTAssertEqual(page.section, .workloads)
 
         // Production: the band.
         model.select("fake-prod")
@@ -238,7 +238,7 @@ final class KubernetesPageTests: XCTestCase {
 
     func testTheKeysAreWellFormed() {
         XCTAssertTrue(KubernetesKey.isWellFormed)
-        XCTAssertEqual(KubernetesKey.of("1")?.section, .pods)
+        XCTAssertEqual(KubernetesKey.of("1")?.section, .workloads)
         XCTAssertEqual(KubernetesKey.of("n"), .namespace)
         XCTAssertEqual(KubernetesKey.of("c"), .context)
         XCTAssertNil(KubernetesKey.of("N"), "case matters")
@@ -269,7 +269,7 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertNil(page.picker)
         XCTAssertEqual(model.scope, .namespace("payments"))
         XCTAssertGreaterThan(page.focusList, focus, "the list has the keyboard again")
-        try await until(5, "payments' pods") { model.pods.sorted.map(\.id.description) == ["payments/web-1"] }
+        try await until(5, "payments' pods") { model.rows.sorted.map(\.id.description) == ["payments/web-1"] }
 
         // A name nobody listed, typed.
         page.openPicker(.namespace)
@@ -277,8 +277,8 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertEqual(page.picker?.results.map(\.title), ["staging-2"])
         page.choosePicked()
         XCTAssertEqual(model.scope, .namespace("staging-2"))
-        try await until(5, "listed") { model.podState == .live }
-        XCTAssertEqual(model.pods.count, 0)
+        try await until(5, "listed") { model.listState == .live }
+        XCTAssertEqual(model.rows.count, 0)
         page.openPicker(.namespace)
         XCTAssertEqual(page.picker?.selected?.title, "staging-2", "the one showing is in the list, typed")
         page.picker?.query = "not a name"
@@ -320,7 +320,7 @@ final class KubernetesPageTests: XCTestCase {
         defer { model.hide() }
         try await until(5, "refused") { model.namespacesRefused != nil }
         XCTAssertEqual(model.namespaces, [])
-        XCTAssertEqual(model.pods.count, 2, "its own namespace's pods are read all the same")
+        XCTAssertEqual(model.rows.count, 2, "its own namespace's pods are read all the same")
         XCTAssertTrue(page.press("n"))
         let picker = try XCTUnwrap(page.picker)
         XCTAssertEqual(picker.note, "Listing namespaces isn't allowed here: type one.")
@@ -331,7 +331,7 @@ final class KubernetesPageTests: XCTestCase {
         page.picker?.query = "payments"
         page.choosePicked()
         XCTAssertEqual(model.scope, .namespace("payments"))
-        try await until(5, "payments' pods") { model.pods.sorted.map(\.id.description) == ["payments/web-1"] }
+        try await until(5, "payments' pods") { model.rows.sorted.map(\.id.description) == ["payments/web-1"] }
     }
 
     /// The picker follows the namespaces that come in after it opened.
@@ -366,22 +366,22 @@ final class KubernetesPageTests: XCTestCase {
         model.show()
         page.visible = true
         defer { model.hide() }
-        try await until(5, "listed") { model.pods.count == 4 }
+        try await until(5, "listed") { model.rows.count == 4 }
 
         page.filter = "label:app=web"
-        try await until(5, "selected") { model.pods.sorted.map(\.id.name) == ["web-2"] }
+        try await until(5, "selected") { model.rows.sorted.map(\.id.name) == ["web-2"] }
         XCTAssertEqual(model.labelSelector, "app=web")
         XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["labelSelector"] == "app=web" }, "\(api.requests)")
         XCTAssertEqual(page.rows.map(\.id), ["shop/web-2"], "the rows aren't filtered by it again")
 
         page.filter = "-label:app=web label:app"
-        try await until(5, "not web") { model.pods.sorted.map(\.id.name) == ["db-0"] }
+        try await until(5, "not web") { model.rows.sorted.map(\.id.name) == ["db-0"] }
         XCTAssertEqual(model.labelSelector, "app!=web,app")
 
         // Text and a label: the server's pods, then the text on them.
         api.addPod("web-3", namespace: "shop", labels: ["app": "web"])
         page.filter = "label:app=web 3"
-        try await until(5, "both") { model.pods.count == 2 }
+        try await until(5, "both") { model.rows.count == 2 }
         XCTAssertEqual(page.rows.map(\.id), ["shop/web-3"])
 
         // Typing on: only once it stops is the server asked.
@@ -390,14 +390,14 @@ final class KubernetesPageTests: XCTestCase {
         page.filter = "label:t"
         page.filter = "label:ti"
         page.filter = "label:tier=fe"
-        try await until(5, "fe") { model.pods.sorted.map(\.id.name) == ["web-2"] }
+        try await until(5, "fe") { model.rows.sorted.map(\.id.name) == ["web-2"] }
         XCTAssertEqual(Set(api.requests.compactMap { $0.query["labelSelector"] }), ["tier=fe"], "\(api.requests)")
 
         // What isn't a selector asks nothing, and says so.
         page.selectorDelay = .milliseconds(20)
         page.filter = "label:=x"
         XCTAssertEqual(page.labelReading.refused, ["label:=x"])
-        try await until(5, "every pod") { model.pods.count == 5 }
+        try await until(5, "every pod") { model.rows.count == 5 }
         XCTAssertNil(model.labelSelector)
         page.filter = ""
         page.applySelector()
@@ -418,22 +418,22 @@ final class KubernetesPageTests: XCTestCase {
         defer { model.hide() }
         a.visible = true
         b.visible = true
-        try await until(5, "listed") { model.pods.count == 3 }
+        try await until(5, "listed") { model.rows.count == 3 }
 
         a.filter = "label:app=web"
-        try await until(5, "a's") { model.pods.sorted.map(\.id.name) == ["web-2"] }
+        try await until(5, "a's") { model.rows.sorted.map(\.id.name) == ["web-2"] }
         XCTAssertTrue(a.listIsOurs)
         XCTAssertFalse(b.listIsOurs, "b's empty filter isn't what the list was asked with")
 
         // b typing (or its window becoming key) takes the list; a says so.
         b.filter = "x"
-        try await until(5, "b's") { model.pods.count == 3 }
+        try await until(5, "b's") { model.rows.count == 3 }
         XCTAssertNil(model.labelSelector)
         XCTAssertTrue(b.listIsOurs)
         XCTAssertFalse(a.listIsOurs, "a's field still says label:app=web")
 
         a.applySelector()
-        try await until(5, "a's again") { model.pods.count == 1 }
+        try await until(5, "a's again") { model.rows.count == 1 }
         // b hiding leaves a's alone.
         b.visible = false
         XCTAssertEqual(model.labelSelector, "app=web")
@@ -447,12 +447,12 @@ final class KubernetesPageTests: XCTestCase {
         model.show()
         a.visible = false
         XCTAssertNil(model.labelSelector)
-        try await until(5, "every pod") { model.pods.count == 3 }
+        try await until(5, "every pod") { model.rows.count == 3 }
         model.hide()
 
         // Shown again, a's filter asks again.
         a.visible = true
-        try await until(5, "a's once more") { model.pods.count == 1 }
+        try await until(5, "a's once more") { model.rows.count == 1 }
         XCTAssertTrue(a.listIsOurs)
     }
 
