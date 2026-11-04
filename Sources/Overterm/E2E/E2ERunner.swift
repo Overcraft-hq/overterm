@@ -4156,7 +4156,9 @@ final class E2ERunner {
         check("⌘, opens the Settings tab", app.store.settingsOpen && app.store.settingsShowing && app.settingsView?.isHidden == false)
         check("the terminal tab under it isn't drawn selected, but still is", app.store.selectedID == tab.id)
         app.settingsPage.search = "theme"
-        check("its search finds Themes by a setting in it", app.settingsPage.sections == [.themes], "\(app.settingsPage.sections)")
+        // Themes first; Editor too, for its Colours (`editor.theme`: the
+        // terminal theme's colours for the code).
+        check("its search finds Themes by a setting in it", app.settingsPage.sections == [.themes, .editor], "\(app.settingsPage.sections)")
         app.settingsPage.search = "split"
         check("and Keyboard Shortcuts by a command", app.settingsPage.sections.contains(.shortcuts), "\(app.settingsPage.sections)")
         app.settingsPage.search = ""
