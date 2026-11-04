@@ -99,7 +99,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
 
     init(theme chrome: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener) {
         self.chrome = chrome
-        self.theme = EditorTheme(background: background)
+        self.theme = Self.makeTheme(background: background)
         self.opener = opener
         super.init(nibName: nil, bundle: nil)
     }
@@ -550,8 +550,18 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     }
 
     /// Settings changed: the editor takes whichever were its.
+    /// One Dark / One Light, or the terminal theme's colours (Settings ▸
+    /// Editor ▸ Colours).
+    static func makeTheme(background: NSColor = GhosttyRuntime.shared.backgroundColor) -> EditorTheme {
+        guard Settings.shared.string("editor.theme") == "terminal" else { return EditorTheme(background: background, terminal: nil) }
+        let runtime = GhosttyRuntime.shared
+        let ansi = (0...15).compactMap { runtime.paletteColor($0) }
+        return EditorTheme(background: background, terminal: .init(foreground: runtime.foregroundColor, ansi: ansi))
+    }
+
     func applySettings(_ keys: Set<String>? = nil) {
         guard isViewLoaded else { return }
+        if keys?.contains("editor.theme") == true { applyTerminalColors() }
         let font = Self.font
         let fontChanged = textView.font != font || lineHeight.multiple != Settings.shared.editorLineHeight
         textView.font = font
@@ -595,7 +605,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// the next time it is asked for.
     func applyTerminalColors() {
         guard isViewLoaded else { return }
-        theme = EditorTheme(background: GhosttyRuntime.shared.backgroundColor)
+        theme = Self.makeTheme()
         textView.theme = theme
         textView.backgroundColor = theme.background
         textView.textColor = theme.text

@@ -169,6 +169,23 @@ extension E2ERunner {
             app.captureWindow(to: (png as NSString).deletingPathExtension + "-editor.png", window: editor)
             editor.close()
         }
+        // The editor in the terminal theme's colours.
+        let code = scratch.appendingPathComponent("look.swift")
+        try? "func greet() -> String { \"hi\" }\n".write(to: code, atomically: true, encoding: .utf8)
+        app.openInEditor(code)
+        if let editor = app.editor {
+            _ = await eventually(5) { editor.active?.url?.lastPathComponent == "look.swift" }
+            func keyword() -> NSColor? {
+                (editor.textView.textStorage?.attribute(.foregroundColor, at: 1, effectiveRange: nil) as? NSColor)?.usingColorSpace(.sRGB)
+            }
+            let magenta = GhosttyRuntime.shared.paletteColor(5)?.usingColorSpace(.sRGB)
+            settings.set("editor.theme", .string("terminal"))
+            check("the editor's keywords in the terminal's magenta", await eventually(5) { keyword() == magenta }, "\(String(describing: keyword())) vs \(String(describing: magenta))")
+            settings.set("editor.theme", nil)
+            check("and One Dark's again", await eventually(5) { keyword() != nil && keyword() != magenta })
+        } else {
+            check("an editor", false)
+        }
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }
 }

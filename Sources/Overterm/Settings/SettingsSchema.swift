@@ -406,6 +406,11 @@ enum SettingsSchema {
 
     private static let editor: [SettingSpec] = [
         SettingSpec(
+            key: "editor.theme", section: .editor, group: "Text", title: "Colours",
+            help: "Zed's One Dark (One Light on a light terminal), or the terminal theme's own colours for the code too.",
+            kind: .choice([.init(value: "one", label: "One Dark / One Light"), .init(value: "terminal", label: "The terminal theme's")]),
+            defaultValue: .string("one")),
+        SettingSpec(
             key: "editor.fontFamily", section: .editor, group: "Text", title: "Font", help: "Empty: the system's monospaced font.",
             kind: .dynamicChoice(.monospacedFonts), defaultValue: .string("")),
         SettingSpec(

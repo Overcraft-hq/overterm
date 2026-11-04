@@ -42,10 +42,26 @@ struct EditorTheme {
         self.init(dark: luminance < 0.5, background: background)
     }
 
-    init(dark: Bool, background: NSColor) {
+    /// The terminal theme's own colours, for Settings ▸ Editor ▸ Colours:
+    /// "The terminal theme's" — its foreground and sixteen.
+    struct Terminal: Equatable {
+        var foreground: NSColor
+        /// ANSI 0…15.
+        var ansi: [NSColor]
+    }
+
+    /// One Dark or One Light — or, given the terminal's colours, the
+    /// syntax drawn in those, so the editor reads as the terminal beside it.
+    init(background: NSColor, terminal: Terminal?) {
+        let rgb = background.usingColorSpace(.sRGB) ?? background
+        let luminance = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+        self.init(dark: luminance < 0.5, background: background, palette: terminal.flatMap(Self.palette(from:)))
+    }
+
+    init(dark: Bool, background: NSColor, palette given: Palette? = nil) {
         isDark = dark
         self.background = background
-        let p = dark ? Self.oneDark : Self.oneLight
+        let p = given ?? (dark ? Self.oneDark : Self.oneLight)
         text = p.text
         activeLine = p.text.withAlphaComponent(dark ? 0.045 : 0.05)
         lineNumber = p.text.withAlphaComponent(0.35)
@@ -77,7 +93,21 @@ struct EditorTheme {
 
     // MARK: Palettes
 
-    private struct Palette {
+    /// A terminal theme's colours as a syntax palette, by the ANSI meaning
+    /// editors give them (keywords magenta, strings green, functions blue…).
+    /// Nil without all sixteen.
+    static func palette(from terminal: Terminal) -> Palette? {
+        guard terminal.ansi.count >= 16 else { return nil }
+        let a = terminal.ansi
+        let text = terminal.foreground
+        return Palette(
+            text: text, comment: a[8], docComment: a[8].blended(withFraction: 0.3, of: text) ?? a[8], keyword: a[5], string: a[2],
+            escape: a[6], number: a[9], constant: a[3], function: a[4], type: a[11], operator_: a[6], property: a[1], tag: a[1],
+            attribute: a[3], punctuation: text.withAlphaComponent(0.75), bracket: text.withAlphaComponent(0.85), special: a[6], link: a[4],
+            accent: a[4], error: a[1], warning: a[3])
+    }
+
+    struct Palette {
         let text, comment, docComment, keyword, string, escape, number, constant, function, type, operator_, property, tag,
             attribute, punctuation, bracket, special, link, accent, error, warning: NSColor
     }
