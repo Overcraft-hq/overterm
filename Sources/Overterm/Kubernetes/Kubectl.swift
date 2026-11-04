@@ -84,6 +84,14 @@ enum KubeBlocking {
     }
 }
 
+/// A kubectl to run for a context, and what it is given.
+struct KubectlTool: Sendable, Equatable {
+    var kubectl: URL
+    var environment: [String: String]
+    /// A cache folder of the run's own (an isolated run, a test).
+    var cacheDirectory: String?
+}
+
 /// How a context's proxy is made: which kubectl, its environment, its
 /// socket, and the checks before anything starts — a plugin that isn't
 /// installed, one that needs a terminal.
@@ -103,6 +111,19 @@ struct KubeProxyPlanner: Sendable {
     var kubectls: Kubectls = .shared
 
     func plan(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubeProxySpec {
+        let tool = try await tool(context, configuration: configuration, serverMinor: serverMinor)
+        let socket = try folder.socket(for: context.name)
+        return KubeProxySpec(
+            context: context.name, readOnly: !context.isWritable, kubectl: tool.kubectl, socket: socket, environment: tool.environment,
+            cacheDirectory: tool.cacheDirectory, signIn: KubeSignIn(context.auth))
+    }
+
+    /// Which kubectl a short-lived process for `context` runs (`kubectl auth
+    /// can-i`), with what environment — the proxy's: Overterm's kubeconfig
+    /// files as `KUBECONFIG`, kuberc off, and guarded the run's own HOME and
+    /// cache. The same checks first: a plugin that isn't installed, one
+    /// that needs a terminal.
+    func tool(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubectlTool {
         if case .exec(let exec) = context.auth, exec.interactiveMode == "Always" { throw KubeProxyProblem.needsTerminal(context: context.name) }
         let guarded = self.guarded
         let home = self.home
@@ -129,11 +150,8 @@ struct KubeProxyPlanner: Sendable {
         }
         try folder.prepare()
         if let isolatedHome { try folder.prepareIsolatedHome(isolatedHome) }
-        let socket = try folder.socket(for: context.name)
         let cache = guarded ? (folder.path as NSString).appendingPathComponent("cache") : nil
-        return KubeProxySpec(
-            context: context.name, readOnly: !context.isWritable, kubectl: kubectl, socket: socket, environment: environment,
-            cacheDirectory: cache, signIn: KubeSignIn(context.auth))
+        return KubectlTool(kubectl: kubectl, environment: environment, cacheDirectory: cache)
     }
 
     /// Whether the plugin's command is there: a path that is executable, or

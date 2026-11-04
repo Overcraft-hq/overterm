@@ -105,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // Every long-lived child Overterm started (a remote engine's ssh
         // forward, each context's kubectl proxy), by its own pid.
         ManagedProcess.closeAll()
+        // A kubectl auth can-i still asking, with its exec plugin: its group.
+        KubeProcessRun.stopAll()
         // The proxies' sockets' folder, once kubectl is gone.
         KubeSocketFolder.app.remove()
         // A scan's Scout, or it outlives the app.

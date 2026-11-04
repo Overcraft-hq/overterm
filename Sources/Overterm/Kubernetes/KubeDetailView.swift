@@ -71,9 +71,33 @@ struct KubeDetailView: View {
                 .truncationMode(.middle).textSelection(.enabled)
                 .accessibilityIdentifier("kubernetes.detail.name")
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+            if session.ref.isPod {
+                KubePodActions(page: page, access: page.model.access, ref: session.ref, theme: theme).padding(.top, 4)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    /// A pod's tab verbs as buttons — the same list as its right-click
+    /// menu (`podVerbs`), greyed with why until `kubectl auth can-i` says
+    /// yes — and why the last one didn't open.
+    private struct KubePodActions: View {
+        @ObservedObject var page: KubernetesPageModel
+        @ObservedObject var access: KubeAccessChecks
+        let ref: KubeObjectRef
+        @ObservedObject var theme: ChromeTheme
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                ResourceActionBar(verbs: page.podVerbs(for: ref), theme: theme, identifier: "kubernetes.detail.actions")
+                if let problem = page.commandProblem {
+                    Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("kubernetes.detail.commandProblem")
+                }
+            }
+        }
     }
 
     private var subtitle: String {

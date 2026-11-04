@@ -127,10 +127,17 @@ extension E2ERunner {
         }
 
         // The real kubectl proxy if this Mac has one; else the stand-in.
+        // Either way kubernetes.kubectlPath is a stand-in script of the
+        // run's own: it answers `auth can-i` itself (attach refused) and
+        // records what it was given, and hands the rest — `proxy` — to the
+        // real kubectl.
         let kubectl = ["/usr/local/bin/kubectl", "/opt/homebrew/bin/kubectl"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        guard let standIn = Self.writeStandInKubectl(in: scratch, real: kubectl) else {
+            return check("the stand-in kubectl is written", false)
+        }
+        Settings.shared.set("kubernetes.kubectlPath", .string(standIn.script.path))
         if let kubectl {
-            note("kubectl proxy: \(kubectl), KUBECONFIG \(kubeconfig.path) only")
-            Settings.shared.set("kubernetes.kubectlPath", .string(kubectl))
+            note("kubectl proxy: \(kubectl), through the stand-in, KUBECONFIG \(kubeconfig.path) only")
         } else {
             note("no kubectl installed: a stand-in connection to the fake's socket")
             model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name) }
@@ -278,6 +285,7 @@ extension E2ERunner {
         check("and nothing is asked", fake.requests.isEmpty, "\(fake.requests)")
         await kubernetesSwitcher(model, page, fake)
         await kubernetesTerminal(model, page, kubeconfig: kubeconfig)
+        await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -494,6 +502,193 @@ extension E2ERunner {
         check("its band shows", await eventually(5) { self.productionBands() == [true] }, "\(productionBands())")
         app.closeTabsWithoutAsking(made)
         page.terminalProblem = nil
+    }
+
+    /// A stand-in kubectl in `folder`: `auth can-i` answered here — yes,
+    /// but no for `pods/attach` — each line of what it was given (its
+    /// KUBECONFIG, its arguments) appended to `log`; anything else handed
+    /// to `real` with `exec` (the proxy keeps its pid), or refused when
+    /// there is none.
+    static func writeStandInKubectl(in folder: URL, real: String?) -> (script: URL, log: URL)? {
+        let script = folder.appendingPathComponent("stand-in-bin/kubectl")
+        let log = folder.appendingPathComponent("stand-in-kubectl.log")
+        let text = """
+            #!/bin/sh
+            if [ "$1" = auth ] && [ "$2" = can-i ]; then
+              printf '%s|%s\\n' "$KUBECONFIG" "$*" >> '\(log.path)'
+              case "$4" in pods/attach) echo no; exit 1;; *) echo yes; exit 0;; esac
+            fi
+            \(real.map { "exec '\($0)' \"$@\"" } ?? "echo 'no kubectl here' >&2; exit 1")
+
+            """
+        do {
+            try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: script, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        } catch {
+            return nil
+        }
+        return (script, log)
+    }
+
+    /// A pod's commands in a tab (stage 1d): `e` and `t` on fake-dev's
+    /// web-7d9 are recorded, never typed — the command that would be typed,
+    /// its tab pinned to the context and namespace, the tab's KUBECONFIG —
+    /// after the stand-in answered `kubectl auth can-i` with the run's
+    /// kubeconfig, `--context` and `-n`, once a minute. Attach, which it
+    /// refuses, is greyed with why and opens nothing. A pod with two
+    /// containers asks which, kubectl's default first. On fake-prod a
+    /// shell is asked first, naming the context and the pod, once per pod.
+    private func kubernetesPodCommands(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, kubeconfig: URL, canI log: URL) async {
+        let opened = Set(app.store.tabs.map(\.id))
+        var recorded: [(command: String, tab: Tab)] = []
+        app.kubernetesCommandRecorder = { command, tab in recorded.append((command, tab)) }
+        defer { app.kubernetesCommandRecorder = nil }
+        // What the pods picked before asked is forgotten: from here, every question counted.
+        model.access.forget(context: "fake-dev")
+        model.access.forget(context: "fake-prod")
+        try? FileManager.default.removeItem(at: log)
+        func canIs() -> [String] { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init) }
+        /// The page again, on the pods, this pod selected.
+        func reopen(_ id: String) async -> Bool {
+            if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
+            page.filter = ""
+            page.applySelector()
+            if model.kind.fullName != KubeResourceKind.pods.fullName { page.showKind(.pods) }
+            let listed = await eventually(10) { page.rows.contains { $0.id == id } }
+            page.selection = [id]
+            return listed
+        }
+        func sheetButtons() -> [String] {
+            guard let root = window.attachedSheet?.contentView else { return [] }
+            var titles: [String] = []
+            func walk(_ view: NSView) {
+                if let button = view as? NSButton, !button.title.isEmpty { titles.append(button.title) }
+                view.subviews.forEach(walk)
+            }
+            walk(root)
+            return titles
+        }
+
+        check("the page on fake-dev's shop pods", await reopen("shop/web-7d9") && model.selectedName == "fake-dev" && model.scope == .namespace("shop"))
+        let titles = ["Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab"]
+        func verb(_ title: String) -> ResourceVerb? { page.verbs(for: ["shop/web-7d9"]).first { $0.title == title } }
+        check(
+            "kubectl auth can-i is asked as the pod is picked",
+            await eventually(15) { titles.allSatisfy { verb($0) != nil && !(verb($0)?.unavailable ?? "").hasPrefix("Checking") } },
+            "\(titles.map { verb($0)?.unavailable ?? "none" }) \(canIs())")
+        check("a shell is offered", verb("Shell in a Tab") != nil && verb("Shell in a Tab")?.unavailable == nil, verb("Shell in a Tab")?.unavailable ?? "")
+        check("so is a log followed in a tab", verb("Follow Logs in a Tab")?.unavailable == nil, verb("Follow Logs in a Tab")?.unavailable ?? "")
+        check(
+            "attach, refused by can-i, is greyed with the reason",
+            verb("Attach in a Tab")?.unavailable == "kubectl auth can-i create pods/attach says no in shop.", verb("Attach in a Tab")?.unavailable ?? "")
+        let asked = canIs()
+        check(
+            "can-i got the run's kubeconfig alone, --context and -n",
+            !asked.isEmpty && asked.allSatisfy { $0.hasPrefix(kubeconfig.path + "|auth can-i ") && $0.contains("--context fake-dev -n shop") },
+            "\(asked)")
+        check(
+            "one question each: exec, attach, log",
+            Set(asked.compactMap { $0.split(separator: " ").dropFirst(2).first.map(String.init) }) == ["create", "get"] && asked.count == 3, "\(asked)")
+
+        // e: a shell, recorded with its tab.
+        _ = page.press("e")
+        check("e opens a tab", await eventually(10) { recorded.count == 1 }, page.commandProblem ?? "no problem said")
+        let shell = "kubectl exec -it web-7d9 -c app --context fake-dev -n shop -- sh -c 'command -v bash >/dev/null && exec bash || exec sh'"
+        check("e is kubectl exec, its context and namespace said", recorded.first?.command == shell, recorded.first?.command ?? "")
+        if let tab = recorded.first?.tab {
+            check("in a tab pinned to fake-dev in shop", tab.kubePin?.context == "fake-dev" && tab.kubePin?.namespace == "shop", "\(String(describing: tab.kubePin))")
+            let value = tab.terminal.environment["KUBECONFIG"] ?? ""
+            let parts = value.split(separator: ":").map(String.init)
+            check(
+                "its KUBECONFIG the pin's file, then the run's kubeconfig alone",
+                parts.count == 2 && parts.last == kubeconfig.path
+                    && parts.first?.hasPrefix(AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Contexts").path + "/") == true, value)
+            check("selected, the page stepped aside", app.store.selectedID == tab.id && app.store.showingOverlay == nil)
+            check("a new tab, after the selected one's", !opened.contains(tab.id))
+        }
+
+        // t: the log followed, in its own tab.
+        check("back on the page", await reopen("shop/web-7d9"))
+        _ = page.press("t")
+        check("t opens a tab", await eventually(10) { recorded.count == 2 }, page.commandProblem ?? "")
+        check(
+            "t is kubectl logs -f, the default container", recorded.last?.command == "kubectl logs -f --tail=200 web-7d9 -c app --context fake-dev -n shop",
+            recorded.last?.command ?? "")
+        check("pinned the same", recorded.last?.tab.kubePin?.context == "fake-dev" && recorded.last?.tab.kubePin?.namespace == "shop")
+
+        // A: refused — nothing opens, and the page says why.
+        check("back on the page", await reopen("shop/web-7d9"))
+        _ = page.press("A")
+        check("A, refused, says why", await eventually(5) { page.commandProblem?.contains("says no") == true }, page.commandProblem ?? "nothing said")
+        await pause(0.3)
+        check("and opens nothing", recorded.count == 2)
+        check("drawn on the page", await shownText(15) { $0.contains("pods/attach says no") } != nil)
+        check("picked again, the refusal goes", await reopen("shop/web-7d9") && page.commandProblem == nil, page.commandProblem ?? "")
+        _ = page.press("e")
+        check("e again", await eventually(10) { recorded.count == 3 })
+        check("can-i's answers are kept: nothing asked again", canIs().count == 3, "\(canIs())")
+
+        // Two containers: which, kubectl's default first.
+        fake.updatePod("web-7d9", namespace: "shop") { $0.containers = 2 }
+        check("back on the page", await reopen("shop/web-7d9"))
+        _ = page.press("t")
+        check("two containers: asked which", await eventually(10) { self.window.attachedSheet != nil })
+        let buttons = sheetButtons()
+        check("the default first, then the other", buttons.starts(with: ["app (default)", "sidecar-1"]), "\(buttons)")
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+        check("the one chosen", await eventually(10) { recorded.count == 4 && recorded.last?.command.contains(" -c sidecar-1 ") == true }, recorded.last?.command ?? "")
+        fake.updatePod("web-7d9", namespace: "shop") { $0.containers = 1 }
+
+        // fake-prod: a shell asked first, naming the context and the pod.
+        model.select("fake-prod")
+        check("on fake-prod's pods", await reopen("payments/api-0") && model.scope == .namespace("payments"), "\(model.scope)")
+        _ = page.press("e")
+        check("a shell on production is asked first", await eventually(15) { self.window.attachedSheet != nil }, page.commandProblem ?? "")
+        let said = sheetTexts().joined(separator: "\n")
+        check("naming the context, the namespace and the pod", said.contains("fake-prod") && said.contains("payments/api-0"), said)
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        await pause(0.5)
+        check("Cancel opens nothing", recorded.count == 4)
+        _ = page.press("e")
+        check("asked again", await eventually(10) { self.window.attachedSheet != nil })
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        check("confirmed, its tab", await eventually(10) { recorded.count == 5 }, page.commandProblem ?? "")
+        check(
+            "the shell names fake-prod and payments", recorded.last?.command.contains("exec -it api-0 -c app --context fake-prod -n payments -- ") == true,
+            recorded.last?.command ?? "")
+        check("its tab pinned to production", recorded.last?.tab.kubePin?.isProduction == true && recorded.last?.tab.kubePin?.namespace == "payments")
+        check("and carries the red band", await eventually(5) { self.productionBands() == [true] }, "\(productionBands())")
+        check("back on the page", await reopen("payments/api-0"))
+        _ = page.press("e")
+        check("once per pod: not asked again", await eventually(10) { recorded.count == 6 } && window.attachedSheet == nil)
+        check("can-i asked of fake-prod with its namespace", canIs().contains { $0.contains("create pods/exec --context fake-prod -n payments") }, "\(canIs())")
+
+        // t on fake-prod: its tab is a pinned shell once the follow ends —
+        // asked first, as Terminal in this context is, once for the context.
+        check("back on the page", await reopen("payments/api-0"))
+        _ = page.press("t")
+        check("a log followed on production is asked first", await eventually(15) { self.window.attachedSheet != nil }, page.commandProblem ?? "")
+        let follow = sheetTexts().joined(separator: "\n")
+        check(
+            "saying what the tab becomes", follow.contains("fake-prod") && follow.contains("a plain kubectl, helm or k9s in it goes to fake-prod"), follow)
+        check("nothing before the answer", recorded.count == 6)
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        check("confirmed, the log's tab", await eventually(10) { recorded.count == 7 }, page.commandProblem ?? "")
+        check(
+            "kubectl logs -f on fake-prod, pinned to it",
+            recorded.last?.command == "kubectl logs -f --tail=200 api-0 -c app --context fake-prod -n payments"
+                && recorded.last?.tab.kubePin?.isProduction == true, recorded.last?.command ?? "")
+        check("back on the page", await reopen("payments/api-0"))
+        _ = page.press("t")
+        check("once for the context: not asked again", await eventually(10) { recorded.count == 8 } && window.attachedSheet == nil)
+        check("never with a kubeconfig but the run's", canIs().allSatisfy { $0.hasPrefix(kubeconfig.path + "|") })
+
+        model.select("fake-dev")
+        check("another context: no command's problem left", page.commandProblem == nil, page.commandProblem ?? "")
+        app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
+        if app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
     }
 
     /// The window's pixels, as RGBA, for what SwiftUI draws (no AppKit

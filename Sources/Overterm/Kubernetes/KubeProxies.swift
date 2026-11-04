@@ -255,12 +255,36 @@ actor KubeProxies {
         entries[name]!.lastUsed = now()
     }
 
+    // MARK: A short-lived kubectl, under the same rules
+
+    /// Before a short-lived kubectl with the context's own credentials
+    /// (`kubectl auth can-i`): it runs the same exec plugin a proxy does, so
+    /// the same rules hold — a stopped context isn't asked again (its
+    /// problem is thrown, nothing starts), and an oidc sign-in waits its
+    /// turn behind any other, a proxy's included. True when this run holds
+    /// the sign-in: `endShortLived` releases it.
+    func beginShortLived(_ context: KubeContext) async throws -> Bool {
+        if let problem = stopped[context.name] { throw problem }
+        return try await signIn(context.name, KubeSignIn(context.auth))
+    }
+
+    /// After it: a credential failure stops the context, as a proxy's does;
+    /// the sign-in released — signed in when kubectl got an answer.
+    func endShortLived(_ name: String, holds: Bool, problem: KubeProxyProblem?, answered: Bool) {
+        if let problem, problem.stopsRequests { stopped[name] = problem }
+        if holds { released(name, signedIn: answered && problem == nil) }
+    }
+
     // MARK: Sign-ins, one at a time
 
     /// Waits until the context is signed in or no other sign-in runs;
     /// true when this request is the one signing in.
     private func signIn(_ name: String, _ proxy: KubeProxy) async throws -> Bool {
-        guard proxy.signIn == .oidc else { return false }
+        try await signIn(name, proxy.signIn)
+    }
+
+    private func signIn(_ name: String, _ kind: KubeSignIn) async throws -> Bool {
+        guard kind == .oidc else { return false }
         while !signedIn.contains(name) {
             if let problem = stopped[name] { throw problem }
             if signingIn == nil {

@@ -88,6 +88,9 @@ struct KubeContextSettings: Equatable, Sendable {
     /// Where a Terminal in this context opens (`~` allowed); unset or not a
     /// folder, the home folder.
     var terminalDirectory: String?
+    /// False: no shell or attach from Overterm on this context (rule 5);
+    /// unset, they are offered after `kubectl auth can-i`.
+    var shells: Bool?
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -102,11 +105,14 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(
             name: "terminalDirectory", kind: .text(placeholder: "~/src/shop", monospaced: true),
             help: "Where Terminal in this context opens; else the home folder."),
+        SettingField(
+            name: "shells", kind: .toggle,
+            help: "Off: Overterm opens no shell or attach in this context's pods. On or unset, they are offered once kubectl auth can-i allows them."),
     ]
 
     init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
-        accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil
+        accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -115,6 +121,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.accessibleNamespaces = accessibleNamespaces
         self.favouriteNamespaces = favouriteNamespaces
         self.terminalDirectory = terminalDirectory
+        self.shells = shells
     }
 
     init(fields: [String: SettingValue]) {
@@ -125,6 +132,7 @@ struct KubeContextSettings: Equatable, Sendable {
         accessibleNamespaces = fields["accessibleNamespaces"]?.list ?? []
         favouriteNamespaces = fields["favouriteNamespaces"]?.list ?? []
         terminalDirectory = fields["terminalDirectory"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+        shells = fields["shells"]?.bool
     }
 
     /// Every context's, from the setting's value.
