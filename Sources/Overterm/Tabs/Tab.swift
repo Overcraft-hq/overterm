@@ -96,7 +96,15 @@ final class Tab: ObservableObject, Identifiable {
     @Published var containerPorts: [ListeningPort] = []
 
     /// What this tab is, for the glyph in its icon tile.
-    var kind: TabKind { TabKind.of(agent: agent, title: shellTitle, hasPort: !ports.isEmpty) }
+    var kind: TabKind { TabKind.of(agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil) }
+
+    /// The Kubernetes context the focused pane is pinned to — Terminal in
+    /// this context. A pane moved in from another tab keeps its own, so
+    /// the tab as a whole is `kubeBadge`.
+    var kubePin: KubeTerminalPin? { terminal.kubePin }
+
+    /// What the strip says of the panes' contexts: one, `mixed`, or a lost pin.
+    var kubeBadge: KubeTabBadge? { KubeTabBadge.of(terminals.map { KubeTabBadge.Pane(pin: $0.kubePin, lost: $0.kubePinLost) }) }
 
     var title: String { customTitle ?? Self.shortened(shellTitle) }
 

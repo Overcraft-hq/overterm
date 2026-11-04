@@ -211,9 +211,23 @@ final class KubernetesPageTests: XCTestCase {
         page.sort = nil
         XCTAssertEqual(page.rows.map(\.id), ["shop/api-1", "shop/web-1"], "by namespace, then name")
 
-        // Only reads and copies in the menu.
-        let verbs = page.verbs(for: ["shop/api-1"]).map(\.title)
-        XCTAssertEqual(verbs, ["Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…"])
+        // Only reads and copies in the menu — and a terminal pinned to the
+        // context, in the row's namespace (the user's own kubectl).
+        let verbs = page.verbs(for: ["shop/api-1"])
+        XCTAssertEqual(
+            verbs.map(\.title),
+            [
+                "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
+                "Terminal in This Context",
+            ])
+        var pinned: [String] = []
+        page.actions = KubernetesActions(
+            run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in },
+            openTerminal: { context, namespace in pinned.append("\(context.name)/\(namespace ?? "-")") })
+        verbs.last?.perform()
+        page.openTerminal()
+        XCTAssertEqual(pinned, ["fake-dev/shop", "fake-dev/shop"], "the row's namespace; the card's, the one shown")
+        XCTAssertEqual(page.verbs(for: ["shop/api-1", "shop/web-1"]).filter { $0.title.hasPrefix("Terminal") }.count, 0, "one row's only")
 
         // Keys.
         XCTAssertTrue(page.press("w"))

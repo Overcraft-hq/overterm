@@ -29,6 +29,25 @@ struct SessionState: Codable, Equatable {
         /// browser had tabs: `browserURL` was its one page).
         var browserPages: [String]? = nil
         var browserPage: Int? = nil
+        /// The Kubernetes context a one-pane tab was pinned to — Terminal
+        /// in this context (absent in older session files, and for a tab
+        /// not pinned). Names and file paths only; restored with a new file,
+        /// looked up again in the kubeconfigs as they are then.
+        var kubeContext: KubeTerminalPin? = nil
+        /// A split tab's panes' pins, in reading order (as `focusedPane`):
+        /// a pane moved in from another tab keeps its own, or none. Absent
+        /// when no pane is pinned.
+        var paneKubeContexts: [KubeTerminalPin?]? = nil
+
+        /// The pin pane `index` (reading order) had. A file from before
+        /// panes had their own: the tab's, for every pane.
+        func kubeContext(ofPane index: Int) -> KubeTerminalPin? {
+            guard let pins = paneKubeContexts else { return kubeContext }
+            return pins.indices.contains(index) ? pins[index] : nil
+        }
+
+        /// Whether any pane comes back pinned.
+        var hasKubeContext: Bool { kubeContext != nil || paneKubeContexts?.contains { $0 != nil } == true }
     }
 
     /// An island, enough to put it back (Groups/TabGroup).

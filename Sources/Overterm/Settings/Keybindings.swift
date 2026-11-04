@@ -310,6 +310,8 @@ enum KeyCommands {
         // that (write_screen_file:open), and ⌘J, ⇧⌘J and ⌃⇧⌘J. Its ⌃⌘
         // defaults are only [ and ].
         .init("kubernetes.switch", "Kubernetes Switcher", group: "Panels", key: "ctrl+cmd+j"),
+        // No key by default (the design's Section 7): the user can bind it.
+        .init("kubernetes.terminal", "Terminal in Kubernetes Context…", group: "Panels"),
         // No key by default: ⇧⌘E is Tab Peek's.
         .init("kubernetes.exportCSV", "Export Kubernetes List as CSV…", group: "Panels"),
         .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),

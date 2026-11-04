@@ -277,6 +277,7 @@ extension E2ERunner {
         await pause(1.5)
         check("and nothing is asked", fake.requests.isEmpty, "\(fake.requests)")
         await kubernetesSwitcher(model, page, fake)
+        await kubernetesTerminal(model, page, kubeconfig: kubeconfig)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -302,6 +303,279 @@ extension E2ERunner {
         model.connectOverride = nil
         model.statusOverride = nil
         try? FileManager.default.removeItem(at: kubeconfig)
+    }
+
+    /// Terminal in this context (3.11): opened from the page's context card
+    /// on fake-dev, in the namespace shown — a tab whose shell's KUBECONFIG
+    /// starts with a file of the run's own (0600, the context and its
+    /// namespace, no credential) and then OVERTERM_KUBECONFIG's file alone;
+    /// the shell has it (printf, never kubectl); the tab and its pane say
+    /// so. From the palette on fake-prod it is asked first, naming it, and
+    /// its pane carries the red band. A row's menu offers it with the row's
+    /// namespace (recorded). The scenario's kubeconfig — the user's current
+    /// context, here — is never written.
+    private func kubernetesTerminal(_ model: KubernetesModel, _ page: KubernetesPageModel, kubeconfig: URL) async {
+        let before = try? Data(contentsOf: kubeconfig)
+        let opened = app.store.tabs.map(\.id)
+        app.toggleKubernetesPage(nil)
+        check("the page again, on fake-dev in shop", await eventually(5) { model.selectedName == "fake-dev" && model.scope == .namespace("shop") })
+        page.openTerminal()
+        func newPinned(_ context: String) -> Tab? { app.store.tabs.first { !opened.contains($0.id) && $0.kubePin?.context == context } }
+        _ = await eventually(10) { newPinned("fake-dev") != nil }
+        let tab = newPinned("fake-dev")
+        check("Terminal in This Context opens a tab", tab != nil, page.terminalProblem ?? "no problem said")
+        guard let tab else { return }
+        check("selected, the page stepped aside", app.store.selectedID == tab.id && app.store.showingOverlay == nil)
+        check("pinned to fake-dev in shop", tab.kubePin?.context == "fake-dev" && tab.kubePin?.namespace == "shop", "\(String(describing: tab.kubePin))")
+        check("a Kubernetes tab", tab.kind == .kubernetes)
+        check("in the home folder (no terminalDirectory)", tab.terminal.workingDirectory == FileManager.default.homeDirectoryForCurrentUser.path)
+        let value = tab.terminal.environment["KUBECONFIG"] ?? ""
+        let parts = value.split(separator: ":").map(String.init)
+        let folder = AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Contexts").path
+        check("its KUBECONFIG is the pin's file, then the run's kubeconfig alone", parts.count == 2 && parts.last == kubeconfig.path, value)
+        check("the pin's file is in the run's own support folder", parts.first?.hasPrefix(folder + "/") == true, value)
+        check("and nothing else is given the shell", tab.terminal.environment.keys.sorted() == ["KUBECONFIG"], "\(tab.terminal.environment.keys)")
+        if let first = parts.first {
+            let text = (try? String(contentsOfFile: first, encoding: .utf8)) ?? ""
+            check("which names the context", text.contains("current-context: \"fake-dev\""), text)
+            check("and its namespace", text.contains("namespace: \"shop\""), text)
+            check("and no credential or server", !text.contains("token") && !text.contains("server") && !text.contains("users:"), text)
+            var info = stat()
+            check("0600", lstat(first, &info) == 0 && info.st_mode & 0o777 == 0o600, String(info.st_mode & 0o777, radix: 8))
+            check("its folder 0700", lstat(folder, &info) == 0 && info.st_mode & 0o777 == 0o700, String(info.st_mode & 0o777, radix: 8))
+        }
+        // The shell has it: printed into a file, never a kubectl run.
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("ot-e2e-kubeconfig-\(UUID().uuidString.prefix(6))")
+        await runAndExpect("printf '%s' \"$KUBECONFIG\" > \(out.path)", file: out, content: value, "the tab's shell has that KUBECONFIG")
+        try? FileManager.default.removeItem(at: out)
+        check("the pane's header says the context", await shownText(15) { $0.contains("fake-dev") && $0.contains("shop") } != nil)
+        let devLabel = await stripLabel("fake-dev")
+        check("its tab in the strip says ⎈ fake-dev, not in red", devLabel.found && !devLabel.red, "\(devLabel)")
+        check("and its pane, not production, carries no band", productionBands() == [false], "\(productionBands())")
+
+        // A split of it is pinned the same.
+        app.split(tab.terminal, .right)
+        check(
+            "a split of it is pinned too", tab.terminals.count == 2 && tab.terminals.allSatisfy { $0.environment["KUBECONFIG"] == value && $0.kubePin != nil })
+
+        // A use-context typed in the tab rewrites the pin's file (3.11) — written
+        // here as kubectl writes it, never a kubectl run: the label and the band follow.
+        if let first = parts.first {
+            let before = (try? Data(contentsOf: URL(fileURLWithPath: first))) ?? Data()
+            try? Data("apiVersion: v1\nkind: Config\ncurrent-context: fake-prod\ncontexts:\n- context:\n    cluster: fake-dev\n    namespace: shop\n    user: dev\n  name: fake-dev\n".utf8)
+                .write(to: URL(fileURLWithPath: first))
+            check(
+                "a use-context in the tab: both panes say fake-prod now, production",
+                await eventually(10) { tab.terminals.allSatisfy { $0.kubePin?.context == "fake-prod" && $0.kubePin?.isProduction == true } },
+                "\(tab.terminals.map { String(describing: $0.kubePin) })")
+            check("the band follows, under both panes", await eventually(5) { self.productionBands() == [true, true] }, "\(productionBands())")
+            let followed = await stripLabel("fake-prod")
+            check("and the strip's label, in red", followed.found && followed.red, "\(followed)")
+            try? before.write(to: URL(fileURLWithPath: first))
+            check(
+                "and back to fake-dev in shop, the band gone",
+                await eventually(10) {
+                    tab.terminals.allSatisfy { $0.kubePin?.context == "fake-dev" && $0.kubePin?.namespace == "shop" }
+                        && self.productionBands() == [false, false]
+                })
+        }
+
+        // A row's menu: the row's namespace (recorded, not opened).
+        let actions = page.actions
+        var asked: [(String, String?)] = []
+        page.actions?.openTerminal = { context, namespace in asked.append((context.name, namespace)) }
+        let verb = page.verbs(for: ["shop/web-7d9"]).first { $0.title == "Terminal in This Context" }
+        verb?.perform()
+        check("a row's menu offers it, in the row's namespace", asked.count == 1 && asked.first?.0 == "fake-dev" && asked.first?.1 == "shop", "\(asked)")
+        page.actions = actions
+
+        // fake-prod, from the palette: asked first, naming it.
+        let item = app.kubernetesPaletteItems().first { $0.id == "k.t.fake-prod" }
+        check("the palette offers Terminal in fake-prod", item?.title == "Terminal in fake-prod")
+        let count = app.store.tabs.count
+        item?.perform(true, [:])
+        check("on production it is asked first", await eventually(5) { self.window.attachedSheet != nil })
+        check("naming the context", sheetTexts().contains { $0.contains("fake-prod") }, "\(sheetTexts())")
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        await pause(0.5)
+        check("Cancel opens nothing", app.store.tabs.count == count)
+        item?.perform(true, [:])
+        check("asked again", await eventually(5) { self.window.attachedSheet != nil })
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        _ = await eventually(10) { newPinned("fake-prod") != nil }
+        let prod = newPinned("fake-prod")
+        check("confirmed, a tab pinned to fake-prod", prod?.kubePin?.isProduction == true, page.terminalProblem ?? "")
+        check("its namespace is the context's own (payments)", prod?.kubePin?.namespace == "payments", "\(String(describing: prod?.kubePin))")
+        check("its pane says PRODUCTION", await shownText(15) { $0.contains("PRODUCTION") && $0.contains("fake-prod") } != nil)
+        check("and carries the red band", await eventually(5) { self.productionBands() == [true] }, "\(productionBands())")
+        let prodLabel = await stripLabel("fake-prod")
+        check("its tab the red ⎈ fake-prod", prodLabel.found && prodLabel.red, "\(prodLabel)")
+        check("the strip's label is in the page's red", prod?.kubeBadge?.alert == true)
+
+        // View ▸ Terminal in Kubernetes Context…: the switcher, on its Terminal in items only.
+        if let item = menuItem("View", "Terminal in Kubernetes Context…"), let action = item.action {
+            NSApp.sendAction(action, to: nil, from: item)
+        } else {
+            check("View ▸ Terminal in Kubernetes Context…", false)
+        }
+        check("View ▸ Terminal in Kubernetes Context… opens the switcher", app.paletteView?.isHidden == false && app.palette.scope == .kubernetes)
+        check(
+            "listing only its Terminal in items",
+            await eventually(5) {
+                self.app.palette.query == "Terminal in " && !self.app.palette.results.isEmpty
+                    && self.app.palette.results.allSatisfy { $0.id.hasPrefix("k.t.") }
+            }, "\(app.palette.query) \(app.palette.results.prefix(6).map(\.id))")
+        check("each context's", Set(app.palette.results.map(\.id)).isSuperset(of: ["k.t.fake-dev", "k.t.fake-prod"]))
+        app.hidePalette()
+
+        // A context card's right-click (the menu's own item, recorded).
+        let recorded = page.actions
+        var cards: [(String, String?)] = []
+        page.actions?.openTerminal = { context, namespace in cards.append((context.name, namespace)) }
+        if let dev = model.contexts.context(named: "fake-dev"), let other = model.contexts.context(named: "fake-prod") {
+            page.openTerminal(in: dev)
+            page.openTerminal(in: other)
+        }
+        check(
+            "a context card's menu: the namespace shown for the context shown, another's own",
+            cards.count == 2 && cards[0] == ("fake-dev", "shop") && cards[1].0 == "fake-prod" && cards[1].1 == nil, "\(cards)")
+        page.actions = recorded
+
+        check("the kubeconfig — its current context — is never written", (try? Data(contentsOf: kubeconfig)) == before)
+        let made = app.store.tabs.filter { !opened.contains($0.id) }
+        app.closeTabsWithoutAsking(made)
+        await kubernetesTerminalRestored(page, kubeconfig: kubeconfig)
+    }
+
+    /// A saved session's pinned tabs at launch: looked up again in the
+    /// run's kubeconfig as it is now — a fake-prod saved as not production,
+    /// from a file gone, comes back production on the run's file; one
+    /// whose context is gone comes back marked lost with a KUBECONFIG that
+    /// reaches nothing, never as a plain shell to the current context.
+    private func kubernetesTerminalRestored(_ page: KubernetesPageModel, kubeconfig: URL) async {
+        guard app.store.groups.isEmpty else { return check("a window without islands, to restore into", false) }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let gone = KubeTerminalPin(
+            context: "acme-gone", cluster: "acme", user: "acme", namespace: nil, displayName: "acme-gone", isProduction: false,
+            kubeconfigs: [kubeconfig.path])
+        let stale = KubeTerminalPin(
+            context: "fake-prod", cluster: "old", user: "old", namespace: "payments", displayName: "fake-prod", isProduction: false,
+            kubeconfigs: ["/nowhere/old.yaml"])
+        let opened = Set(app.store.tabs.map(\.id))
+        app.restore(
+            SessionState(
+                tabs: [
+                    .init(workingDirectory: home, customTitle: nil, color: nil, isPinned: false, agent: nil, kubeContext: gone),
+                    .init(workingDirectory: home, customTitle: nil, color: nil, isPinned: false, agent: nil, kubeContext: stale),
+                ], selectedIndex: nil))
+        let made = app.store.tabs.filter { !opened.contains($0.id) }
+        guard made.count == 2 else { return check("two tabs restored", false, "\(made.count)") }
+        let lost = made[0]
+        let prod = made[1]
+        check("a pin whose context is gone comes back lost", lost.terminal.kubePinLost?.pin == gone && lost.terminal.kubePin == nil)
+        check("its shell's KUBECONFIG reaches nothing", lost.terminal.environment == ["KUBECONFIG": "/dev/null"], "\(lost.terminal.environment)")
+        check("its tab says the pin is lost, in red", lost.kubeBadge?.text == "⎈ pin lost" && lost.kubeBadge?.alert == true && lost.kind == .kubernetes)
+        check("and the page says why", page.terminalProblem?.contains("acme-gone") == true, page.terminalProblem ?? "nil")
+        check("saved again as it was", TerminalWindowController.savedKubePin(lost.terminal) == gone)
+        app.store.select(lost)
+        check("its header says so", await shownText(15) { $0.contains("pin lost") && $0.contains("acme-gone") } != nil)
+        check("no band: it reaches nothing", productionBands() == [false], "\(productionBands())")
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("ot-e2e-kubeconfig-\(UUID().uuidString.prefix(6))")
+        await runAndExpect("printf '%s' \"$KUBECONFIG\" > \(out.path)", file: out, content: "/dev/null", "the lost pane's shell has /dev/null")
+        try? FileManager.default.removeItem(at: out)
+
+        check("a pin saved as not production comes back production, as fake-prod is now", prod.kubePin?.isProduction == true && prod.kubePin?.namespace == "payments")
+        let value = prod.terminal.environment["KUBECONFIG"] ?? ""
+        check(
+            "its KUBECONFIG the run's file now, not the saved one", value.hasSuffix(":" + kubeconfig.path) && !value.contains("/nowhere"), value)
+        check("its cluster and user the kubeconfig's now", prod.kubePin?.cluster == "fake-prod" && prod.kubePin?.user != "old")
+        app.store.select(prod)
+        check("its band shows", await eventually(5) { self.productionBands() == [true] }, "\(productionBands())")
+        app.closeTabsWithoutAsking(made)
+        page.terminalProblem = nil
+    }
+
+    /// The window's pixels, as RGBA, for what SwiftUI draws (no AppKit
+    /// view holds it, and without an assistive app no accessibility
+    /// element either): read where a person looks.
+    struct ShownPixels {
+        let bytes: [UInt8]
+        let width: Int
+        let height: Int
+        let scale: CGFloat
+        let windowHeight: CGFloat
+
+        /// The page's production red, near enough (the capture is in the display's colours).
+        func isRed(at point: CGPoint) -> Bool {
+            let x = Int(point.x * scale)
+            let y = Int((windowHeight - point.y) * scale)
+            guard x >= 0, y >= 0, x < width, y < height else { return false }
+            let i = (y * width + x) * 4
+            let (r, g, b) = (Double(bytes[i]) / 255, Double(bytes[i + 1]) / 255, Double(bytes[i + 2]) / 255)
+            // A pane without the keyboard is dimmed: the red darker, still red.
+            return r > 0.4 && r > g * 2.2 && r > b * 2.2
+        }
+    }
+
+    func shownPixels() -> ShownPixels? {
+        guard let image = app.windowImage(window) else { return nil }
+        let width = image.width
+        let height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard
+                let context = CGContext(
+                    data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn, window.frame.width > 0 else { return nil }
+        return ShownPixels(bytes: bytes, width: width, height: height, scale: CGFloat(width) / window.frame.width, windowHeight: window.frame.height)
+    }
+
+    /// For each pane header on screen, left to right: whether its bottom
+    /// row is the production red band (most of its width), off the pixels.
+    func productionBands() -> [Bool] {
+        guard let pixels = shownPixels(), let frame = window.contentView?.superview else { return [] }
+        var headers: [NSView] = []
+        func walk(_ view: NSView) {
+            guard !view.isHidden else { return }
+            if String(describing: type(of: view)).contains("PaneHeaderView"), view.bounds.width > 40 { headers.append(view) }
+            view.subviews.forEach(walk)
+        }
+        walk(frame)
+        return headers.map { header -> (CGFloat, Bool) in
+            let y = header.isFlipped ? header.bounds.maxY - 1.5 : header.bounds.minY + 1.5
+            let row = header.convert(NSRect(x: 0, y: y, width: header.bounds.width, height: 0), to: nil)
+            let xs = stride(from: row.minX + 8, to: row.maxX - 8, by: 6).map { $0 }
+            let red = xs.filter { pixels.isRed(at: CGPoint(x: $0, y: row.minY)) }.count
+            return (row.minX, !xs.isEmpty && Double(red) > Double(xs.count) * 0.8)
+        }
+        .sorted { $0.0 < $1.0 }.map(\.1)
+    }
+
+    /// The strip's text with `word` in the title bar, and whether it is
+    /// drawn in the production red.
+    func stripLabel(_ word: String) async -> (found: Bool, red: Bool) {
+        let top = window.contentLayoutRect.maxY
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            for tiled in [false, true] {
+                for line in await readWindow(tiled: tiled) where line.text.contains(word) && line.frame.midY > top {
+                    guard let pixels = shownPixels() else { return (true, false) }
+                    var red = 0
+                    for x in stride(from: line.frame.minX, to: line.frame.maxX, by: 1) {
+                        for y in stride(from: line.frame.minY, to: line.frame.maxY, by: 1) where pixels.isRed(at: CGPoint(x: x, y: y)) { red += 1 }
+                    }
+                    return (true, red >= 6)
+                }
+            }
+            await pause(0.3)
+        } while Date() < deadline
+        return (false, false)
     }
 
     /// `n`, by the key as the window takes it: the namespaces, one picked by

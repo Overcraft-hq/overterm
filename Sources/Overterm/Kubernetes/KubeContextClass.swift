@@ -85,6 +85,9 @@ struct KubeContextSettings: Equatable, Sendable {
     var accessibleNamespaces: [String] = []
     /// At the top of the namespace picker.
     var favouriteNamespaces: [String] = []
+    /// Where a Terminal in this context opens (`~` allowed); unset or not a
+    /// folder, the home folder.
+    var terminalDirectory: String?
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -96,11 +99,14 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(name: "defaultNamespace", kind: .text(placeholder: "", monospaced: true)),
         SettingField(name: "accessibleNamespaces", kind: .list(placeholder: "")),
         SettingField(name: "favouriteNamespaces", kind: .list(placeholder: "")),
+        SettingField(
+            name: "terminalDirectory", kind: .text(placeholder: "~/src/shop", monospaced: true),
+            help: "Where Terminal in this context opens; else the home folder."),
     ]
 
     init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
-        accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = []
+        accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -108,6 +114,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.defaultNamespace = defaultNamespace
         self.accessibleNamespaces = accessibleNamespaces
         self.favouriteNamespaces = favouriteNamespaces
+        self.terminalDirectory = terminalDirectory
     }
 
     init(fields: [String: SettingValue]) {
@@ -117,6 +124,7 @@ struct KubeContextSettings: Equatable, Sendable {
         defaultNamespace = fields["defaultNamespace"]?.string.flatMap { $0.isEmpty ? nil : $0 }
         accessibleNamespaces = fields["accessibleNamespaces"]?.list ?? []
         favouriteNamespaces = fields["favouriteNamespaces"]?.list ?? []
+        terminalDirectory = fields["terminalDirectory"]?.string.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// Every context's, from the setting's value.

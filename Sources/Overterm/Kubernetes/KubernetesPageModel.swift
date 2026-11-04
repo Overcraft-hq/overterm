@@ -19,6 +19,10 @@ struct KubernetesActions {
     /// Lines of a log, scrubbed, to an agent (⌘L): the Ask Agent sheet,
     /// with what they come from.
     var askAgent: (_ text: String, _ about: AskAgentModel.Part) -> Void = { _, _ in }
+    /// Terminal in this context: a tab whose plain `kubectl` goes to the
+    /// context, in the namespace (nil: the context's own). On production
+    /// asked first, naming it.
+    var openTerminal: (_ context: KubeContext, _ namespace: String?) -> Void = { _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -827,7 +831,8 @@ final class KubernetesPageModel: ObservableObject {
         rows.filter { selection.contains($0.id) }.map(\.row.id.name)
     }
 
-    /// The right-click menu: only what reads or copies — this page changes nothing.
+    /// The right-click menu: only what reads or copies — this page changes
+    /// nothing — and a terminal pinned to the context (the user's own kubectl).
     func verbs(for ids: Set<String>) -> [ResourceVerb] {
         let picked = model.rows.sorted.filter { ids.contains($0.id.description) }
         guard !picked.isEmpty else { return [] }
@@ -851,7 +856,7 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ]
+        ] + [terminalVerb(for: picked)].compactMap { $0 }
     }
 
     // MARK: Copy as kubectl
@@ -962,5 +967,39 @@ final class KubernetesPageModel: ObservableObject {
     func exportCSV() {
         guard canExport else { return }
         actions?.save(csvFileName, csv())
+    }
+
+    // MARK: Terminal in this context
+
+    /// Why the last Terminal in this context didn't open; nil once one did.
+    var terminalProblem: String?
+
+    /// The namespace the page shows for the selected context: the tab's,
+    /// unless it shows all of them (then the context's own).
+    var shownNamespace: String? {
+        if case .namespace(let name) = model.scope { return name }
+        return nil
+    }
+
+    /// A tab pinned to the context shown, in the namespace shown.
+    func openTerminal() {
+        guard let context = model.selected else { return }
+        openTerminal(in: context)
+    }
+
+    /// A context card's right-click: the namespace shown for the context
+    /// shown, another context's own.
+    func openTerminal(in context: KubeContext) {
+        actions?.openTerminal(context, context.name == model.selectedName ? shownNamespace : nil)
+    }
+
+    /// From a row's menu: a namespace's own row pins that namespace; a
+    /// namespaced object's, its namespace; a cluster-wide one's, the one shown.
+    func terminalVerb(for picked: [KubeRow]) -> ResourceVerb? {
+        guard let context = model.selected, picked.count == 1, let row = picked.first else { return nil }
+        let isNamespace = model.kind.fullName == KubeResourceKind.namespaces.fullName
+        let namespace = isNamespace ? row.id.name : row.id.namespace ?? shownNamespace
+        let title = isNamespace ? "Terminal in This Namespace" : "Terminal in This Context"
+        return ResourceVerb(title: title, symbol: "helm", group: 3) { [weak self] in self?.actions?.openTerminal(context, namespace) }
     }
 }

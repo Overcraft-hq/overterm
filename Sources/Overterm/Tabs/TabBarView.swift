@@ -349,9 +349,11 @@ struct TabItemView: View {
     /// overlap it without landing on the title.
     private var icon: some View {
         let kind = tab.kind
+        // Pinned to production: the page's red, whatever the tab's colour.
+        let production = tab.kubeBadge?.alert == true
         return Image(systemName: tab.agent?.symbol ?? kind.symbol)
-            .font(.system(size: ChromeMetrics.text(11), weight: kind == .shell ? .bold : .regular))
-            .foregroundStyle(tab.color?.color ?? (isSelected ? theme.text : theme.text2))
+            .font(.system(size: ChromeMetrics.text(11), weight: kind == .shell || production ? .bold : .regular))
+            .foregroundStyle(production ? KubernetesPageView.production : tab.color?.color ?? (isSelected ? theme.text : theme.text2))
             .frame(width: 20, height: 20)
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
             .overlay(alignment: .bottomTrailing) {
@@ -364,7 +366,7 @@ struct TabItemView: View {
                 }
                 .offset(x: 4, y: 4)
             }
-            .help(tab.isSuspended ? "Suspended — right-click to resume" : tab.agent?.name ?? kind.name)
+            .help(tab.isSuspended ? "Suspended — right-click to resume" : tab.agent?.name ?? tab.kubeBadge?.help ?? kind.name)
     }
 
     /// Icons off (Settings ▸ Appearance ▸ Tab icons): the badge alone, and
@@ -389,6 +391,20 @@ struct TabItemView: View {
                     .truncationMode(.middle)
                     .foregroundStyle(tab.isSuspended ? theme.text3 : isSelected ? theme.text : theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // The context a plain kubectl here reaches (Terminal in this
+            // context), on every tab: it is the guard, so it never hides —
+            // the title gives way first (capped, an ARN truncated in the middle).
+            if let badge = tab.kubeBadge {
+                Text(verbatim: badge.text)
+                    .font(.system(size: 10.5, weight: badge.alert ? .semibold : .regular, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(badge.alert ? KubernetesPageView.production : theme.text3)
+                    .help(badge.help)
+                    .frame(maxWidth: 150)
+                    .layoutPriority(1)
+                    .accessibilityIdentifier("tab.kubeContext")
             }
             // The branch only on the selected tab: it is what you need while
             // you are in it, and on the others it would crowd out the title.

@@ -195,6 +195,9 @@ struct KubernetesPageView: View {
         }
         .buttonStyle(.plain)
         .help("\(context.name) — \(context.contextClass.title)\(context.isWritable ? "" : ", read-only")")
+        .contextMenu {
+            Button("Terminal in This Context") { page.openTerminal(in: context) }
+        }
         .accessibilityIdentifier("kubernetes.context.\(context.name)")
     }
 
@@ -231,6 +234,17 @@ struct KubernetesPageView: View {
                 .truncationMode(.middle).textSelection(.enabled)
             Text(verbatim: [context.auth.map { "\($0)" }, context.server].compactMap { $0 }.joined(separator: " · "))
                 .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
+            // The user's own kubectl, pinned to this context: not read-only.
+            Button {
+                page.openTerminal()
+            } label: {
+                Label("Terminal in This Context", systemImage: "helm").font(.system(size: 11))
+            }
+            .buttonStyle(.link)
+            .foregroundStyle(context.isProduction ? Self.production : theme.accentText)
+            .padding(.top, 4)
+            .help("A tab whose plain kubectl, helm or k9s goes to \(context.name) — with your own rights. Your current context is unchanged.")
+            .accessibilityIdentifier("kubernetes.terminal")
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

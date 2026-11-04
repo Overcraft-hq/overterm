@@ -258,7 +258,12 @@ final class KubeFindTests: XCTestCase {
         XCTAssertEqual(
             copied.last, "kubectl --context fake-dev -n shop get po db-0 -o yaml\nkubectl --context fake-dev -n shop get po web-1 -o yaml", "in the list's order")
         let verbs = page.verbs(for: ["shop/web-1"])
-        XCTAssertEqual(verbs.map(\.title), ["Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…"])
+        XCTAssertEqual(
+            verbs.map(\.title),
+            [
+                "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
+                "Terminal in This Context",
+            ])
         verbs.first { $0.title == "Copy as kubectl" }?.perform()
         XCTAssertEqual(copied.last, "kubectl --context fake-dev -n shop get po web-1 -o yaml")
 

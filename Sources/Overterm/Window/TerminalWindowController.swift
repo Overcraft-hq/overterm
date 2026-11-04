@@ -162,6 +162,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var diffItem: NSSplitViewItem?
     /// Not private: the Overgit extension subscribes too.
     var cancellables: Set<AnyCancellable> = []
+    /// Terminal in this context: the pins' folder watched while a pane of
+    /// this window is pinned, and the contexts' list, so each pane's label
+    /// and band follow what its plain kubectl reaches (`followKubernetesPins`).
+    var kubePinWatcher: DirectoryWatcher?
+    var kubePinContexts: AnyCancellable?
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
@@ -1032,7 +1037,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard let tab = tab(containing: source) ?? store.selected else { return }
         let from = source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal
         let inherited = from.inheritedSettings()
-        let pane = TerminalView(workingDirectory: from.workingDirectory ?? inherited.workingDirectory, fontSize: inherited.fontSize)
+        // A pane of a Terminal in this context is pinned as its sibling is.
+        let pane = TerminalView(
+            workingDirectory: from.workingDirectory ?? inherited.workingDirectory, fontSize: inherited.fontSize, environment: from.environment,
+            kubePin: from.kubePin, kubePinLost: from.kubePinLost)
         wire(pane, in: tab)
         tab.zoomed = nil
         tab.setSplits(tab.splits.inserting(pane, at: from, direction))
@@ -1150,6 +1158,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+    }
+
+    /// A shell tab after the selected one, in `directory`, its shell
+    /// started with `environment` over the app's own — a Terminal in this
+    /// context's `KUBECONFIG` — and pinned to `kubePin`'s context.
+    func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let terminal = TerminalView(workingDirectory: directory.path, fontSize: fontSize, environment: environment, kubePin: kubePin)
+        addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
+        if kubePin != nil { followKubernetesPins() }
     }
 
     /// A shell tab after the selected one, in `directory`, that runs
@@ -1348,7 +1366,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     group: tab.groupID.flatMap { indexOf[$0] },
                     browserURL: browserPages(of: tab).map { $0.urls[$0.active].absoluteString },
                     browserPages: browserPages(of: tab)?.urls.map(\.absoluteString),
-                    browserPage: browserPages(of: tab)?.active)
+                    browserPage: browserPages(of: tab)?.active,
+                    kubeContext: tab.isSplit ? nil : Self.savedKubePin(tab.terminal),
+                    paneKubeContexts: tab.isSplit && tab.terminals.contains { Self.savedKubePin($0) != nil }
+                        ? tab.terminals.map(Self.savedKubePin) : nil)
             },
             selectedIndex: store.selectedIndex,
             groups: ordered.isEmpty
@@ -1398,6 +1419,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         store.groups = groups
         store.restoring = true
         defer { store.restoring = false }
+        // Terminal in this context: Overterm's kubeconfigs as they are now,
+        // read once, only when a saved pane was pinned.
+        let kube = state.tabs.contains { $0.hasKubeContext } ? Self.kubernetesRestoreList() : nil
+        var lost: [KubeTerminalLost] = []
+        // A pinned pane comes back pinned, looked up again with a new file —
+        // else marked lost with a KUBECONFIG that reaches nothing, never a
+        // plain shell to the current context.
+        func pinned(_ saved: KubeTerminalPin?) -> KubeTerminalRestore.Outcome? {
+            guard let saved, let kube else { return nil }
+            let outcome = KubeTerminalRestore.pane(saved, list: kube.list, kubeconfigs: kube.files)
+            if let gone = outcome.lost {
+                lost.append(gone)
+                GhosttyRuntime.logger.error("a pinned terminal couldn't be pinned again: \(gone.reason, privacy: .public)")
+            }
+            return outcome
+        }
         for saved in state.tabs {
             // Settings ▸ the group's own switch: an island marked not to
             // come back brings none of its tabs with it.
@@ -1405,17 +1442,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             // A split tab's panes, the first resuming the agent; else one terminal.
             var made: [TerminalView] = []
             let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
+                let kube = pinned(saved.kubeContext(ofPane: made.count))
                 let pane = TerminalView(
                     workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" } : nil,
-                    restoring: Scrollback.file(named: scrollback))
+                    restoring: Scrollback.file(named: scrollback), environment: kube?.environment ?? [:], kubePin: kube?.pin, kubePinLost: kube?.lost)
                 made.append(pane)
                 return pane
             }
+            let single = made.isEmpty ? pinned(saved.kubeContext) : nil
             let terminal =
                 made.first
                 ?? TerminalView(
                     workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" },
-                    restoring: Scrollback.file(named: saved.scrollback))
+                    restoring: Scrollback.file(named: saved.scrollback), environment: single?.environment ?? [:], kubePin: single?.pin,
+                    kubePinLost: single?.lost)
             // The island is the one the session saved — never a decision
             // taken again at launch (NewTabGroup would ask).
             let island = saved.group.flatMap { groups.indices.contains($0) ? groups[$0].id : nil }
@@ -1447,6 +1487,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         store.restoring = false
         store.normalize()
+        if kube != nil { followKubernetesPins() }
+        if let first = lost.first { kubernetesPage.terminalProblem = first.help }
         if let i = state.selectedIndex, store.tabs.indices.contains(i) { store.select(index: i) }
         // A tab inside a stashed or collapsed island must not stay selected.
         if let selected = store.selected, let group = store.group(of: selected), group.isStashed || group.isCollapsed,

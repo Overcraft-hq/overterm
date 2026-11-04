@@ -52,6 +52,11 @@ struct PaneHeaderView: View {
             if let group = store.group(of: tab) {
                 GroupLabel(group: group, theme: theme)
             }
+            if let pin = pane.kubePin {
+                KubePinLabel(pin: pin, theme: theme)
+            } else if let lost = pane.kubePinLost {
+                KubePinLostLabel(lost: lost)
+            }
             Spacer(minLength: 4)
             if let link = blocks.hoveredLink {
                 // Where the pointer is, since libghostty gives no rectangle
@@ -91,7 +96,17 @@ struct PaneHeaderView: View {
         .padding(.trailing, 6)
         .frame(height: SplitHostView.headerHeight)
         .background(theme.card)
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.border).frame(height: 1) }
+        .overlay(alignment: .bottom) {
+            // A pane pinned to production carries the page's red band from the start.
+            if pane.kubePin?.isProduction == true {
+                Rectangle().fill(KubernetesPageView.production).frame(height: 3)
+                    .accessibilityElement()
+                    .accessibilityLabel("Production")
+                    .accessibilityIdentifier("pane.productionBand")
+            } else {
+                Rectangle().fill(theme.border).frame(height: 1)
+            }
+        }
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
     }
 
@@ -255,5 +270,50 @@ private struct PortPill: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(filled ? Color.white : theme.text)
+    }
+}
+
+/// The context a pinned pane's plain `kubectl` reaches (Terminal in this
+/// context): `⎈ fake-dev · shop`, and on production white on the page's red.
+private struct KubePinLabel: View {
+    let pin: KubeTerminalPin
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if pin.isProduction { Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10)) }
+            Text(verbatim: pin.isProduction ? "PRODUCTION " + pin.label : pin.label)
+                .font(.system(size: 11, weight: pin.isProduction ? .semibold : .medium, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(pin.isProduction ? Color.white : theme.text2)
+        .padding(.horizontal, 7)
+        .frame(height: 20)
+        .background(RoundedRectangle(cornerRadius: 5).fill(pin.isProduction ? KubernetesPageView.production : theme.rowSel))
+        .help(pin.help)
+        .accessibilityIdentifier("pane.kubeContext")
+    }
+}
+
+/// A pane whose saved pin couldn't be restored: its kubectl reaches no
+/// cluster (`KubeTerminalLost`), and it says so, in the page's red.
+private struct KubePinLostLabel: View {
+    let lost: KubeTerminalLost
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+            Text(verbatim: lost.label)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 7)
+        .frame(height: 20)
+        .background(RoundedRectangle(cornerRadius: 5).fill(KubernetesPageView.production))
+        .help(lost.help)
+        .accessibilityIdentifier("pane.kubePinLost")
     }
 }
