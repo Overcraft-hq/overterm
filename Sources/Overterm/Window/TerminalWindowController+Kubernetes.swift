@@ -14,6 +14,16 @@ extension TerminalWindowController {
             copy: { text in
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
+            },
+            copySecret: { text in
+                // nspasteboard.org's markers: clipboard managers that honour
+                // them keep no history of it.
+                let item = NSPasteboardItem()
+                item.setString(text, forType: .string)
+                item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+                item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([item])
             })
     }
 

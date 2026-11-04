@@ -2221,8 +2221,9 @@ and their classes, the settings, the proxies a request goes through, the
 client that reads through them (and the fake API server it is tested
 against), and the page (⌥⌘J) with its pickers and the ⌃⌘J switcher —
 stage 1a of the design — and, of stage 1b, every kind and CRD as a list
-kept live, in the page's sections and behind the `:` bar, and any
-object's detail beside its list. Nothing writes to a cluster.
+kept live, in the page's sections and behind the `:` bar, any
+object's detail beside its list, and a Secret's values shown only when
+asked. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2665,9 +2666,10 @@ or a plain click on one (`ResourceTable.pressed`), and once open it
 follows the list's one selected row. A `KubeObjectRef` (context, kind,
 namespace, name) is what it shows; it reads that object with one GET as
 it opens — nothing is watched — and drops the session, and all it read,
-when it moves on. A Secret is never asked for (`isSecret`, and an answer
-that is one is dropped): its object is every value at once, so its
-detail says it isn't read; its events still are. Its tabs:
+when it moves on. A Secret is never asked for by the detail (`isSecret`,
+and an answer that is one is dropped): its object is every value at
+once, so only its Show reads it (**Secrets**, below); its events are read
+as any object's. Its tabs:
 - **Overview** (`KubeOverview.of`, pure, from the object's JSON alone):
   facts at the top and sections, tailored for Pods (phase, the reason,
   the node as a link, IPs, QoS, each container — init and ephemeral too —
@@ -2702,11 +2704,49 @@ detail says it isn't read; its events still are. Its tabs:
   toggle shows them. A container's env value whose name looks secret
   (`DB_PASSWORD`), or a URL's password, is masked on any kind, as
   Docker's inspect masks them (`DockerSecrets`); a `secretKeyRef` is only
-  a name. Were a Secret ever shown, its `data` and `stringData` are
-  masked and its last-applied never shown. Read-only, in
+  a name. A Secret's — after Show — has its `data` and `stringData`
+  masked and its last-applied never shown, whatever the toggle; before
+  Show its YAML says it comes with the values, with the Show button. Read-only, in
   Docker's text view, keys brighter than values; Copy.
 - **Events**, asked for once the tab shows (Refresh again), newest first,
   a warning marked with how often it came.
+
+**Secrets** (rule 9; `KubeSecretSession`, `KubeSecretView`, `KubeSecret`,
+`KubeCertificate`). The list is the server's Table — Name, Type, Data (how
+many keys), Age — rows only, and across all namespaces the embedded
+metadata, of which a row keeps only the namespace and creation time, so
+the last-applied annotation (which can hold every value) never stays.
+The detail reads nothing until Show: its Overview says what the row said
+(type, how many keys) and offers Show, as its YAML does. On a production
+context — or one the kubeconfig no longer names — the first Show of
+each context asks first, inline, naming it (`KubeSecretConsent`, the
+app's, in memory until quit; Cancel asks again next time). Show is
+the one GET (`KubeClient.secret`), taken apart at once (`KubeSecret.read`):
+the object with every `data`/`stringData` value `***` and the
+last-applied annotation gone is what the Overview and the YAML show; the
+keys come with their decoded lengths; the decoded values stay in the
+session alone; an answer that isn't a Secret is said without what it
+said. A TLS Secret's `tls.key` is counted from its base64, never decoded,
+revealed or copied ("private key · never shown"). Each value is masked
+— `•••••••• · 17 bytes` — and revealed one at a time (another revealed
+masks it; binary as base64), not selectable; Copy copies one, on the
+pasteboard with nspasteboard.org's concealed and transient markers. Its
+values are dropped — released, not zeroed (the response and the strings
+made of it are Foundation's copies), the keys, the certificate and
+the request in flight with them, the detail back to Show with why — when
+the detail moves on or closes (`KubeDetailSession.cancel`), the page hides
+or its window goes off screen, the context changes (the detail goes), on
+Hide, and `timeout` (2 minutes) after Show, a reveal or a copy. A TLS
+Secret's `tls.crt` is read (`KubeCertificate`, pure: PEM's `CERTIFICATE`
+blocks only, a DER reader of its own, bounded by its bytes): subject,
+issuer (self-signed said), SANs (DNS, IP, email, URI), not before and
+after, CA, how many more are in the chain, and valid, expiring within 30
+days, expired or not yet valid. Nothing logs a value, nothing printable
+holds one (`KubeSecretRead`'s description is its keys), and nothing of it
+is written, saved with the session or given to an agent.
+`KubeSecretTests` pins it; the fake's TLS Secret uses
+`FakeKubeAPI.testCertificatePEM`, a public self-signed certificate (no
+key in the repository).
 
 A link (`KubeLink`: `apiVersion`, Kind, namespace, name — as references
 are written) is resolved by the context's discovery (`kind(apiVersion:
@@ -2766,7 +2806,13 @@ deployment's replicas, strategy, rollout and selected pod; ⌘[ ⌘] by the
 key as the window takes them (⌘[ the menus' with nothing behind), `[`
 `]`; a stuck deployment opened by a click, its progress deadline said
 (drawn), the detail following the list; a Secret's detail that reads
-nothing (drawn); Esc; `n` by the key
+nothing (drawn) until Show is pressed where a person presses it, then
+one GET, its keys with the values masked (drawn, the length shown), one
+revealed and another masking it (drawn, then not), its YAML masked, the
+next row dropping every value, a TLS Secret's certificate (drawn) and its
+key never revealable, Esc and the page hidden dropping them, and no value
+in the app's unified log — testKubernetes checks the app's output and
+errors hold none either; Esc; `n` by the key
 as the window takes it, a namespace picked by typing, one typed that
 nobody listed, Esc; `c` to `fake-prod` and back;
 `fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a

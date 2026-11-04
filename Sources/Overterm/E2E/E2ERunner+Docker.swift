@@ -1896,20 +1896,78 @@ extension E2ERunner {
     }
 
     nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize) -> [(text: String, frame: CGRect)] {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        try? VNImageRequestHandler(cgImage: pixels.image).perform([request])
-        return (request.results ?? []).compactMap { observation in
-            guard let text = observation.topCandidates(1).first?.string else { return nil }
-            let box = observation.boundingBox
-            return (text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
+        recognized(pixels.image).map { candidate, place in
+            let box = place(candidate.boundingBox)
+            return (candidate.text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
         }
+    }
+
+    /// One recognized line, with its box: `boundingBox` is the line's, and
+    /// a box Vision gives within it (a word's) is placed in the whole image
+    /// — normalized, origin bottom left — by the closure that comes with it.
+    struct RecognizedLine: @unchecked Sendable {
+        let candidate: VNRecognizedText
+        let boundingBox: CGRect
+        var text: String { candidate.string }
+    }
+
+    /// The lines Vision reads in `image`, each with how to place a box of
+    /// its tile in the whole image. Accurate recognition can read nothing
+    /// at all of a large window that is mostly empty (a 4112×2466 Retina
+    /// capture of a sparse page: no results, no error — full-width bands
+    /// of it come back as erratically empty), so a read that comes back
+    /// empty is read again in overlapping tiles of 1400 pixels (700 points
+    /// on Retina), each of which Vision reads; a line two tiles both read
+    /// is kept once.
+    nonisolated static func recognized(_ image: CGImage) -> [(RecognizedLine, (CGRect) -> CGRect)] {
+        func read(_ image: CGImage) -> [RecognizedLine] {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try? VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { observation in
+                observation.topCandidates(1).first.map { RecognizedLine(candidate: $0, boundingBox: observation.boundingBox) }
+            }
+        }
+        let whole = read(image)
+        let (width, height) = (image.width, image.height)
+        let tile = 1400
+        let step = tile - 200
+        guard whole.isEmpty, width > tile || height > tile else { return whole.map { ($0, { $0 }) } }
+        var lines: [(RecognizedLine, (CGRect) -> CGRect)] = []
+        var seen = Set<String>()
+        var top = 0
+        while true {
+            let rows = min(tile, height - top)
+            var left = 0
+            while true {
+                let columns = min(tile, width - left)
+                // A tile's rows count from the top; its boxes from its bottom left.
+                let x = CGFloat(left) / CGFloat(width)
+                let y = CGFloat(height - top - rows) / CGFloat(height)
+                let (sx, sy) = (CGFloat(columns) / CGFloat(width), CGFloat(rows) / CGFloat(height))
+                let place: (CGRect) -> CGRect = { box in
+                    CGRect(x: x + box.minX * sx, y: y + box.minY * sy, width: box.width * sx, height: box.height * sy)
+                }
+                if let crop = image.cropping(to: CGRect(x: left, y: top, width: columns, height: rows)) {
+                    for line in read(crop) {
+                        let box = place(line.boundingBox)
+                        let key = "\(line.text)@\(Int(box.midX * 100)),\(Int(box.midY * 100))"
+                        if seen.insert(key).inserted { lines.append((line, place)) }
+                    }
+                }
+                if left + columns >= width { break }
+                left += step
+            }
+            if top + rows >= height { break }
+            top += step
+        }
+        return lines
     }
 
     /// Where `word` is drawn, read again until it shows: its own frame
     /// within the line Vision reads it in — a row of chips is one line.
-    private func wordFrame(_ word: String, timeout: TimeInterval = 15) async -> CGRect? {
+    func wordFrame(_ word: String, timeout: TimeInterval = 15) async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if let image = app.windowImage(window) {
@@ -1923,14 +1981,9 @@ extension E2ERunner {
     }
 
     nonisolated private static func locate(_ word: String, in pixels: WindowPixels, size: CGSize) -> CGRect? {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        try? VNImageRequestHandler(cgImage: pixels.image).perform([request])
-        for observation in request.results ?? [] {
-            guard let candidate = observation.topCandidates(1).first, let range = candidate.string.range(of: word),
-                let box = (try? candidate.boundingBox(for: range))?.boundingBox
-            else { continue }
+        for (line, place) in recognized(pixels.image) {
+            guard let range = line.text.range(of: word), let found = (try? line.candidate.boundingBox(for: range))?.boundingBox else { continue }
+            let box = place(found)
             return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
         }
         return nil
@@ -1953,7 +2006,7 @@ extension E2ERunner {
     /// events are queued, not sent: a mouse-down that tracks the mouse
     /// until it is up (a disabled button passes it on) takes its mouse-up
     /// off the queue, where one sent after it would never come.
-    private func click(at point: CGPoint) async {
+    func click(at point: CGPoint) async {
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             NSApp.postEvent(
                 NSEvent.mouseEvent(

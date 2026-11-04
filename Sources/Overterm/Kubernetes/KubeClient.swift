@@ -341,6 +341,15 @@ struct KubeClient: Sendable {
         return try KubeObject(data: response.body)
     }
 
+    /// A Secret, for Show alone (rule 9): its one GET, which carries every
+    /// value, taken apart at once (`KubeSecret.read`) — the answer itself
+    /// is not kept, and an answer that isn't a Secret is said without
+    /// what it said.
+    func secret(_ kind: KubeResourceKind, namespace: String?, name: String) async throws -> KubeSecretRead {
+        let response = try await get(kind.path(namespace: kind.namespaced ? namespace : nil, name: name))
+        return try KubeSecret.read(response.body)
+    }
+
     /// An object's events, newest first: the core Events kubectl describe
     /// lists, picked by the server (`fieldSelector` on `involvedObject`) —
     /// in its namespace, or across them for a cluster-scoped object (a

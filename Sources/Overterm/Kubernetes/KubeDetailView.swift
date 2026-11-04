@@ -5,7 +5,8 @@ import SwiftUI
 /// with one GET as it opens — Overview, YAML, Events — with back and
 /// forward through where it has been (`[` `]`, ⌘[ ⌘]), and links (its
 /// owners, its node, the pods it selects) that open theirs. Docker's
-/// container detail is its pattern. A Secret is never read here.
+/// container detail is its pattern. A Secret is read only by its Show
+/// (`KubeSecretView`), its values masked.
 struct KubeDetailView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var session: KubeDetailSession
@@ -20,10 +21,10 @@ struct KubeDetailView: View {
                 Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).padding(.horizontal, 16).padding(.vertical, 6)
             }
             switch session.state {
-            case .withheld: withheld
+            case .withheld where session.secret == nil: withheld
             case .failed(let reason): failed(reason)
             case .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .loaded:
+            case .loaded, .withheld:
                 switch page.detailTab {
                 case .overview: overview
                 case .yaml: yaml
@@ -135,6 +136,7 @@ struct KubeDetailView: View {
     private var overview: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let secret = session.secret { KubeSecretView(page: page, secret: secret, theme: theme) }
                 if let overview = session.overview {
                     if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
                     if !overview.facts.isEmpty { items(overview.facts) }
@@ -253,12 +255,33 @@ struct KubeDetailView: View {
 
     // MARK: YAML
 
-    private var yaml: some View {
+    @ViewBuilder private var yaml: some View {
+        if let secret = session.secret, session.state == .withheld {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("A Secret's YAML is read with its values: Show reads them, and the YAML shows them masked.")
+                    .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                if secret.state == .hidden || secret.state == .confirming {
+                    Button("Show Values") {
+                        page.showTab(.overview)
+                        _ = page.showSecret()
+                    }
+                    .font(.system(size: 12))
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .accessibilityIdentifier("kubernetes.detail.yaml")
+        } else {
+            objectYAML
+        }
+    }
+
+    private var objectYAML: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text(
                     verbatim: (session.showsHidden ? "As the server sent it" : "Without managedFields and the last-applied annotation")
-                        + " · secret-looking env values hidden"
+                        + (session.secret != nil ? " · every value masked" : " · secret-looking env values hidden")
                 )
                 .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 4)
