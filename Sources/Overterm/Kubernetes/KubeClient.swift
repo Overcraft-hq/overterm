@@ -341,6 +341,16 @@ struct KubeClient: Sendable {
         return try KubeObject(data: response.body)
     }
 
+    /// An object's events, newest first: the core Events kubectl describe
+    /// lists, picked by the server (`fieldSelector` on `involvedObject`) —
+    /// in its namespace, or across them for a cluster-scoped object (a
+    /// node's are recorded in `default`).
+    func events(kind: String, name: String, namespace: String?, uid: String?) async throws -> [KubeEvent] {
+        let base = namespace.map { "/api/v1/namespaces/\(KubePath.segment($0))/events" } ?? "/api/v1/events"
+        let selector = KubeEvent.fieldSelector(kind: kind, name: name, namespace: namespace, uid: uid)
+        return try KubeEvent.list(try await get(KubePath.query(base, [("fieldSelector", selector)])).body)
+    }
+
     // MARK: Watches
 
     private func watchPath(_ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, from version: String?) -> String {

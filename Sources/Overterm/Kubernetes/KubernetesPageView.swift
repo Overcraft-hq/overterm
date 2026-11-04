@@ -329,35 +329,51 @@ struct KubernetesPageView: View {
                 if case .retrying(let reason) = model.listState { banner("Trying again: \(reason)") }
             }
             selectorLine
-            ZStack(alignment: .topLeading) {
-                ResourceTable(
-                    rows: rows, selection: $page.selection, columns: page.columns, sort: $page.sort, cell: { row, column in cell(row, column) },
-                    verbs: { page.verbs(for: $0) },
-                    copy: {
-                        let names = page.selectedNames
-                        if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
-                    }, accessibilityIdentifier: "kubernetes.list")
-                if !page.showsSection {
-                    Text(verbatim: sectionNote).font(.system(size: 12)).foregroundStyle(theme.text3)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
-                        .accessibilityIdentifier("kubernetes.sectionNote")
-                } else if let (reason, problem) = failedOutright {
-                    failed(reason, problem).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
-                } else if model.rows.columns.isEmpty {
-                    VStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        if let reason = model.proxyStatus.reason {
-                            Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2)
-                        }
+            // The list keeps its place whether or not the detail is beside
+            // it (the Docker page's lesson): first in the stack, always.
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    list(rows, failedOutright: failedOutright)
+                    if let detail = page.detail {
+                        Rectangle().fill(theme.border).frame(width: 1)
+                        KubeDetailView(page: page, session: detail, theme: theme)
+                            .id(detail.id)
+                            .frame(width: min(560, max(340, geometry.size.width * 0.45)))
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .allowsHitTesting(false)
-                } else if rows.isEmpty {
-                    Text(verbatim: page.filter.isEmpty ? emptyNote : "Nothing matches “\(page.filter)”.")
-                        .font(.system(size: 12)).foregroundStyle(theme.text3)
-                        .padding(.horizontal, 20).padding(.top, 34)
-                        .allowsHitTesting(false)
                 }
+            }
+        }
+    }
+
+    private func list(_ rows: [KubeListRow], failedOutright: (String, KubeProxyProblem?)?) -> some View {
+        ZStack(alignment: .topLeading) {
+            ResourceTable(
+                rows: rows, selection: $page.selection, columns: page.columns, sort: $page.sort, cell: { row, column in cell(row, column) },
+                verbs: { page.verbs(for: $0) },
+                copy: {
+                    let names = page.selectedNames
+                    if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
+                }, accessibilityIdentifier: "kubernetes.list", pressed: { page.pressed($0) })
+            if !page.showsSection {
+                Text(verbatim: sectionNote).font(.system(size: 12)).foregroundStyle(theme.text3)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
+                    .accessibilityIdentifier("kubernetes.sectionNote")
+            } else if let (reason, problem) = failedOutright {
+                failed(reason, problem).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
+            } else if model.rows.columns.isEmpty {
+                VStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    if let reason = model.proxyStatus.reason {
+                        Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+            } else if rows.isEmpty {
+                Text(verbatim: page.filter.isEmpty ? emptyNote : "Nothing matches “\(page.filter)”.")
+                    .font(.system(size: 12)).foregroundStyle(theme.text3)
+                    .padding(.horizontal, 20).padding(.top, 34)
+                    .allowsHitTesting(false)
             }
         }
     }

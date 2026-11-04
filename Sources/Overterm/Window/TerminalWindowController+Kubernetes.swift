@@ -31,9 +31,13 @@ extension TerminalWindowController {
             self?.kubernetesPage.visible = visible
             self?.updateKubernetesPageHold(pageShowing: visible)
         }
-        page.closed = { [weak self] in self?.kubernetesPage.selection = [] }
+        page.closed = { [weak self] in
+            self?.kubernetesPage.closeDetail()
+            self?.kubernetesPage.selection = []
+        }
         page.hasList = true
         page.press = { [weak self] characters in self?.kubernetesPage.press(characters) ?? false }
+        page.commandPress = { [weak self] characters in self?.kubernetesPage.commandPress(characters) ?? false }
         page.occlusionChanged = { [weak self] in
             self?.updateKubernetesWindowVisible()
             self?.updateKubernetesPageHold()

@@ -2303,8 +2303,8 @@ and their classes, the settings, the proxies a request goes through, the
 client that reads through them (and the fake API server it is tested
 against), and the page (⌥⌘J) with its pickers and the ⌃⌘J switcher —
 stage 1a of the design — and, of stage 1b, every kind and CRD as a list
-kept live, in the page's sections and behind the `:` bar. Nothing writes
-to a cluster.
+kept live, in the page's sections and behind the `:` bar, and any
+object's detail beside its list. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2488,6 +2488,12 @@ confirmation.
   (`7 (2m ago)` since 1.22) into whether it is ready, failing and why
   (`CrashLoopBackOff`, `OOMKilled`, `Init:…` said as the init container's).
 - **One object** (`object`) is one plain GET, whole, when its detail opens.
+  **Its events** (`events`) are the core Events `kubectl describe` lists,
+  picked by the server: `fieldSelector=involvedObject.name=…,namespace=…,
+  kind=…,uid=…` in its namespace, across all of them for a cluster-scoped
+  object (a node's are in `default`), plain JSON (`KubeEvent.list`:
+  newest first — last seen, a series' last, `eventTime` —, warnings
+  marked).
 - **Following a list** (`follow`) is the informer's loop, as
   `KubeFollowUpdate`s a `KubeRows` applies: `.listed` (the whole list),
   then the watch from the list's resourceVersion (`watch=1`,
@@ -2523,7 +2529,10 @@ an API server on a unix socket of its own and on 127.0.0.1
 of any kind it serves as values versioned as the server versions them —
 pods (`addPod`), and with `add`/`update`/`delete` deployments, services,
 configmaps, secrets (a Table row of Type and how many keys; only a plain
-GET carries `data`), nodes, events — each in the columns `kubectl get`
+GET carries `data`), nodes, events — and with `fields` (or `setFields`)
+the rest of an object as a GET answers it (`spec`, `status`,
+`metadata.ownerReferences`, merged over a pod's own), and `addEvent`, a
+core Event about an object by its Kind and uid — each in the columns `kubectl get`
 shows (`columns(for:)`, priority 1 for `-o wide`'s; an event's Name is a
 wide column, `format: name`). `addCRD` serves a new kind from then on, in
 both discoveries and in paths, with its `additionalPrinterColumns`, and
@@ -2535,7 +2544,8 @@ metrics.k8s.io's), for the page to leave out. It answers
 `/version`, both discoveries (`aggregatedDiscovery`; `failingGroups`
 `Stale` in the aggregated list, 503 in the walk),
 lists as Tables (`includeObject` None, Metadata or Object) or plain JSON,
-paged (`expireContinueTokens`), one object, and watches: replayed from a
+paged (`expireContinueTokens`), with a field selector on any dotted path
+of the object (`involvedObject.uid=…`), one object, and watches: replayed from a
 version, sent as `addPod`/`updatePod`/`deletePod` change things,
 `bookmark()`, a 410 for a version before `compact()` (in the stream, or
 as the answer with `goneAsAnswer`), `expireWatches` (an in-stream 410),
@@ -2671,7 +2681,8 @@ over it — so a keyboard given to it finds it; a table with no columns
 refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
-keyboard): `1`–`7` the sections, `:`, `n`, `c`, `w`, `0`, `/`, `?`. The right-click menu
+keyboard): `1`–`7` the sections, ↩ the detail, `[` `]` back and forward,
+Esc closes it, `:`, `n`, `c`, `w`, `0`, `/`, `?`. The right-click menu
 only copies names: nothing here changes a cluster.
 
 **The sections** (`KubeSection`, `KubeKindCatalog`, pure): Workloads,
@@ -2730,6 +2741,69 @@ Contexts: each with its class, read-only or not, kubectl's current,
 production in red; none is typed. ↩ is `setScope` or `select`, and the
 list has the keyboard again.
 
+**The detail** (`KubeDetailSession`, `KubeDetailView`; Docker's container
+detail is its pattern): beside the list, opened by ↩ on the selected row
+or a plain click on one (`ResourceTable.pressed`), and once open it
+follows the list's one selected row. A `KubeObjectRef` (context, kind,
+namespace, name) is what it shows; it reads that object with one GET as
+it opens — nothing is watched — and drops the session, and all it read,
+when it moves on. A Secret is never asked for (`isSecret`, and an answer
+that is one is dropped): its object is every value at once, so its
+detail says it isn't read; its events still are. Its tabs:
+- **Overview** (`KubeOverview.of`, pure, from the object's JSON alone):
+  facts at the top and sections, tailored for Pods (phase, the reason,
+  the node as a link, IPs, QoS, each container — init and ephemeral too —
+  with its image, state, restarts and how it last ended: `OOMKilled (exit
+  137)`), Deployments, StatefulSets, DaemonSets and ReplicaSets
+  (desired/ready/updated/available, strategy, selector, images, and the
+  rollout), Services (type, cluster IP, external addresses, ports,
+  selector), Nodes (ready, roles, version, instance type and node group,
+  system, capacity · allocatable, taints), Jobs and CronJobs (active jobs
+  as links), Ingresses (each rule to its Service, as a link; TLS),
+  ConfigMaps (keys and values — they are not secret), PVCs, PVs and
+  Namespaces; and for every kind the object (namespace, created, deleting,
+  finalizers, uid), its owners as links, its status conditions where it
+  has them (a node's pressure conditions are bad when True), labels and
+  annotations — the last-applied one left out. A selector (a workload's,
+  a Service's, a Job's; `KubeSelector`: `matchLabels`, `matchExpressions`
+  as `in`/`notin`/`!key`) lists the pods it picks once the Overview
+  shows: one list, rows only, each a link.
+- **Rollout status** (`KubeRollout`, pure) is `kubectl rollout status`'s
+  own reading: the spec observed (`generation` ≤ `observedGeneration`),
+  then for a Deployment its Progressing condition —
+  `ProgressDeadlineExceeded` is stuck, said in red — and updated, old
+  and available replicas against those wanted; a paused one says so; a
+  StatefulSet's ready replicas, its partition and revisions; a
+  DaemonSet's scheduled and available pods; `OnDelete` isn't tracked.
+- **YAML** (`KubeYAML`, `KubeObjectStrip`, pure): written as `kubectl get
+  -o yaml` writes it — keys sorted, as kubectl's go through a map,
+  sequences under their key unindented, a string quoted only where YAML
+  1.1 would read it as something else (`"true"`, `"0123"`, `"1.0"`,
+  `": "` inside), several lines as a `|` block. Without
+  `metadata.managedFields` and the last-applied annotation by default; a
+  toggle shows them. A container's env value whose name looks secret
+  (`DB_PASSWORD`), or a URL's password, is masked on any kind, as
+  Docker's inspect masks them (`DockerSecrets`); a `secretKeyRef` is only
+  a name. Were a Secret ever shown, its `data` and `stringData` are
+  masked and its last-applied never shown. Read-only, in
+  Docker's text view, keys brighter than values; Copy.
+- **Events**, asked for once the tab shows (Refresh again), newest first,
+  a warning marked with how often it came.
+
+A link (`KubeLink`: `apiVersion`, Kind, namespace, name — as references
+are written) is resolved by the context's discovery (`kind(apiVersion:
+kind:)`: the reference's version where served, else the group's); a kind
+it doesn't serve is said over the detail. **History** (`KubeHistory`,
+pure, the page's): back and forward across resources and kinds, as a
+browser keeps it — a link followed is a visit of its own, while walking
+the list replaces a visit that came from the list, so the arrows don't
+pile up history; closing the detail keeps the way back (`[` shows it
+again); another context clears it, its objects not being this one's. `[`
+`]` while the list has the keyboard, ⌘[ ⌘] while the page shows and no
+text is being typed (`WorkspacePage.commandPress`, before the menus,
+whose ⌘[ is Previous Pane — theirs again with nothing behind), and the
+detail's chevrons.
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
@@ -2765,7 +2839,16 @@ and Esc closing by the field's own commands, `:widgets`' custom resources
 in the CRD's printer columns (the wide one behind `w`), a kind nobody
 serves said, `2` and `6` (Network's services, the cluster-wide nodes), a
 secret's row with no value, a CRD applied while the page shows appearing
-by the CRD watch and listed, `:po` back; `n` by the key
+by the CRD watch and listed, `:po` back; the detail — a pod by ↩ as the
+window takes it, read with one GET, its phase, node, image and owner
+(drawn), its YAML without managedFields or the last-applied annotation
+(drawn; the toggle shows them), its events by uid, the warning first
+(drawn); the ReplicaSet and the Deployment followed as links, the
+deployment's replicas, strategy, rollout and selected pod; ⌘[ ⌘] by the
+key as the window takes them (⌘[ the menus' with nothing behind), `[`
+`]`; a stuck deployment opened by a click, its progress deadline said
+(drawn), the detail following the list; a Secret's detail that reads
+nothing (drawn); Esc; `n` by the key
 as the window takes it, a namespace picked by typing, one typed that
 nobody listed, Esc; `c` to `fake-prod` and back;
 `fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a

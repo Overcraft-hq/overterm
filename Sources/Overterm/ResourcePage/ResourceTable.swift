@@ -102,6 +102,9 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// ⌘C: the selection, as the page copies it.
     let copy: () -> Void
     var accessibilityIdentifier = "resource.list"
+    /// A plain click on a row (no ⌘ or ⇧), once it is selected: what the
+    /// page opens for it (Kubernetes' detail). Nil: a click only selects.
+    var pressed: ((String) -> Void)? = nil
 
     /// A list of one column, its rows drawing everything (Docker's).
     init(
@@ -120,7 +123,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     init(
         rows: [Row], selection: Binding<Set<String>>, columns: [ResourceColumn], sort: Binding<ResourceSort?>,
         cell: @escaping (Row, ResourceColumn?) -> AnyView, verbs: @escaping (Set<String>) -> [ResourceVerb], copy: @escaping () -> Void,
-        accessibilityIdentifier: String = "resource.list"
+        accessibilityIdentifier: String = "resource.list", pressed: ((String) -> Void)? = nil
     ) {
         self.rows = rows
         self._selection = selection
@@ -130,6 +133,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         self.verbs = verbs
         self.copy = copy
         self.accessibilityIdentifier = accessibilityIdentifier
+        self.pressed = pressed
     }
 
     /// A header only for more than one column.
@@ -193,6 +197,10 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             self.view = view
             guard let table else { return }
             table.copySelection = view.copy
+            table.pressedRow = { [weak self] index in
+                guard let self, self.rows.indices.contains(index) else { return }
+                self.view?.pressed?(self.rows[index].id)
+            }
             if view.columns != columns { setColumns(view, in: table) }
             if view.rows.map(\.id) != rows.map(\.id) {
                 rows = view.rows
@@ -318,14 +326,17 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
 /// hosting view or the table taking it as it happened.
 final class ResourceTableView: NSTableView {
     var copySelection: () -> Void = {}
+    /// A plain click on a row, by its index, once it is selected.
+    var pressedRow: (Int) -> Void = { _ in }
 
-    /// Called by a row's view as a press begins on it.
+    /// Called by a row's view as a press ends on it.
     func pressRow(_ event: NSEvent) {
         window?.makeFirstResponder(self)
         let row = row(at: convert(event.locationInWindow, from: nil))
         guard row >= 0 else { return }
         selectRowIndexes(
             Self.pressed(row, in: selectedRowIndexes, anchor: selectedRow, modifiers: event.modifierFlags), byExtendingSelection: false)
+        if event.modifierFlags.intersection([.command, .shift]).isEmpty { pressedRow(row) }
     }
 
     /// The selection after a press on `row`: ⌘ adds or takes it away, ⇧

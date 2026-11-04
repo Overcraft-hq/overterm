@@ -43,13 +43,14 @@ extension ResourceKey {
         return allCases.first { $0.key == name }
     }
 
-    /// A typed character as a table names it: ↩, Space and ⌫ (delete or
-    /// backspace) by their names, anything else as itself.
+    /// A typed character as a table names it: ↩, Space, ⌫ (delete or
+    /// backspace) and Esc by their names, anything else as itself.
     static func keyName(of characters: String) -> String {
         switch characters {
         case "\r": "↩"
         case " ": "Space"
         case "\u{7F}", "\u{08}": "⌫"
+        case "\u{1B}": "Esc"
         default: characters
         }
     }
@@ -78,6 +79,7 @@ extension ResourceKey {
         case "↩": "\r"
         case "Space": " "
         case "⌫": "\u{7F}"
+        case "Esc": "\u{1B}"
         default: key
         }
     }

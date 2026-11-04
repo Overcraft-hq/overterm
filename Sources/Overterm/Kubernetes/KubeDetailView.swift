@@ -1,0 +1,352 @@
+import AppKit
+import SwiftUI
+
+/// The detail beside a Kubernetes list (↩, or a click): one object, read
+/// with one GET as it opens — Overview, YAML, Events — with back and
+/// forward through where it has been (`[` `]`, ⌘[ ⌘]), and links (its
+/// owners, its node, the pods it selects) that open theirs. Docker's
+/// container detail is its pattern. A Secret is never read here.
+struct KubeDetailView: View {
+    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject var session: KubeDetailSession
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            tabs
+            Rectangle().fill(theme.border).frame(height: 1)
+            if let problem = page.linkProblem {
+                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).padding(.horizontal, 16).padding(.vertical, 6)
+            }
+            switch session.state {
+            case .withheld: withheld
+            case .failed(let reason): failed(reason)
+            case .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .loaded:
+                switch page.detailTab {
+                case .overview: overview
+                case .yaml: yaml
+                case .events: events
+                }
+            }
+        }
+        .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
+        .accessibilityIdentifier("kubernetes.detail")
+    }
+
+    // MARK: The top
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                navButton("chevron.left", "Back  [  ⌘[", enabled: page.history.canGoBack, id: "kubernetes.detail.back") { page.goBack() }
+                navButton("chevron.right", "Forward  ]  ⌘]", enabled: page.history.canGoForward, id: "kubernetes.detail.forward") { page.goForward() }
+                Text(verbatim: session.object?.kind ?? (session.ref.kind.kind.isEmpty ? session.ref.kind.resource : session.ref.kind.kind))
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text3).padding(.leading, 4)
+                Spacer(minLength: 0)
+                Button {
+                    page.closeDetail()
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close (Esc)")
+                .accessibilityIdentifier("kubernetes.detail.close")
+            }
+            Text(verbatim: session.ref.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).lineLimit(2)
+                .truncationMode(.middle).textSelection(.enabled)
+                .accessibilityIdentifier("kubernetes.detail.name")
+            Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var subtitle: String {
+        [session.ref.namespace ?? "cluster-wide", session.ref.kind.groupVersion, session.ref.context].joined(separator: " · ")
+    }
+
+    private func navButton(_ symbol: String, _ help: String, enabled: Bool, id: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(enabled ? theme.text2 : theme.text3.opacity(0.5))
+                .frame(width: 22, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(help)
+        .accessibilityIdentifier(id)
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 4) {
+            ForEach(KubeDetailTab.allCases) { item in
+                Button {
+                    page.showTab(item)
+                } label: {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: page.detailTab == item ? .semibold : .regular))
+                        .foregroundStyle(page.detailTab == item ? theme.text : theme.text2)
+                        .padding(.horizontal, 9)
+                        .frame(height: 24)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(page.detailTab == item ? theme.selected : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("kubernetes.detail.tab.\(item.rawValue)")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: States
+
+    private var withheld: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.fill").foregroundStyle(theme.text3)
+                Text("Not read").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+            }
+            Text(
+                "A Secret's keys and values come only with the object itself, and one GET of it returns every value at once — so the detail doesn't ask for it. The list shows its type and how many keys it has."
+            )
+            .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("kubernetes.detail.withheld")
+    }
+
+    private func failed(_ reason: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle").font(.system(size: 24, weight: .light)).foregroundStyle(theme.text3)
+            Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
+                .frame(maxWidth: 360)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("kubernetes.detail.failed")
+    }
+
+    // MARK: Overview
+
+    private var overview: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if let overview = session.overview {
+                    if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
+                    if !overview.facts.isEmpty { items(overview.facts) }
+                    if overview.pods != nil { podsSection }
+                    ForEach(overview.sections) { section in
+                        if !section.items.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                caption(section.title)
+                                items(section.items)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .onAppear { session.loadPods() }
+        .accessibilityIdentifier("kubernetes.detail.overview")
+    }
+
+    private func rolloutNote(_ rollout: KubeRollout) -> some View {
+        let color = rollout.isProblem ? TabStatusStyle.failed : TabStatusStyle.waiting
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: rollout.isProblem ? "exclamationmark.triangle.fill" : "arrow.triangle.2.circlepath").foregroundStyle(color)
+            Text(verbatim: rollout.message).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
+        .accessibilityIdentifier("kubernetes.detail.rollout")
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(verbatim: text).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+    }
+
+    private func color(_ tone: KubeOverview.Tone) -> Color {
+        switch tone {
+        case .plain: theme.text
+        case .good: TabStatusStyle.done
+        case .waiting: TabStatusStyle.waiting
+        case .bad: TabStatusStyle.failed
+        case .dim: theme.text3
+        }
+    }
+
+    private func items(_ items: [KubeOverview.Item]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(verbatim: item.label).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
+                        .frame(width: 128, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        value(item)
+                        if let detail = item.detail {
+                            Text(verbatim: detail).font(.system(size: 11, design: item.detailMono ? .monospaced : .default)).foregroundStyle(theme.text3)
+                                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func value(_ item: KubeOverview.Item) -> some View {
+        let font = Font.system(size: 12, design: item.mono ? .monospaced : .default)
+        if let link = item.link {
+            Button {
+                page.follow(link)
+            } label: {
+                HStack(spacing: 3) {
+                    Text(verbatim: item.value).font(font).underline()
+                    Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .semibold))
+                }
+                .foregroundStyle(theme.accentText)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("\(link.kind) \(link.namespace.map { "\($0)/" } ?? "")\(link.name)")
+            .accessibilityIdentifier("kubernetes.detail.link.\(link.kind).\(link.name)")
+        } else {
+            Text(verbatim: item.value).font(font).foregroundStyle(color(item.tone)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var podsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            caption("Pods it selects")
+            switch session.pods {
+            case .idle, .loading: ProgressView().controlSize(.small)
+            case .failed(let reason): Text(verbatim: reason).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed)
+            case .loaded(let rows) where rows.isEmpty: Text("None.").font(.system(size: 12)).foregroundStyle(theme.text3)
+            case .loaded(let rows):
+                ForEach(rows, id: \.id) { row in
+                    HStack(spacing: 8) {
+                        Button {
+                            page.openPod(row)
+                        } label: {
+                            Text(verbatim: row.row.id.name).font(.system(size: 12)).underline().foregroundStyle(theme.accentText)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("kubernetes.detail.pod.\(row.row.id.name)")
+                        if let summary = row.summary {
+                            Text(verbatim: summary.isFailing ? (summary.exitReason ?? summary.status) : summary.status)
+                                .font(.system(size: 11.5)).foregroundStyle(summary.isFailing ? TabStatusStyle.failed : theme.text2)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: YAML
+
+    private var yaml: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(
+                    verbatim: (session.showsHidden ? "As the server sent it" : "Without managedFields and the last-applied annotation")
+                        + " · secret-looking env values hidden"
+                )
+                .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Spacer(minLength: 4)
+                if session.hasHidden {
+                    Toggle("Show them", isOn: $session.showsHidden).toggleStyle(.checkbox).font(.system(size: 11.5))
+                        .accessibilityIdentifier("kubernetes.detail.showHidden")
+                }
+                Button("Copy") { page.actions?.copy(session.yaml) }.font(.system(size: 11.5))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            Rectangle().fill(theme.border).frame(height: 1)
+            let text = session.yaml
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            DockerTextView(
+                count: lines.count, revision: text.hashValue, render: { range in lines[range].map { Self.line(String($0), theme: theme) } }, wrap: false,
+                follow: false)
+        }
+        .accessibilityIdentifier("kubernetes.detail.yaml")
+    }
+
+    /// A key in the text colour, its value dimmer, a block's lines and a
+    /// list's dash as they are.
+    static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
+        let out = NSMutableAttributedString(string: text, attributes: [.font: DockerLogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.72)])
+        if let range = text.range(of: #"^\s*(- )?("[^"]*"|[^\s:"'#][^:]*?):(?=\s|$)"#, options: .regularExpression) {
+            out.addAttribute(.foregroundColor, value: theme.textNS, range: NSRange(range, in: text))
+        }
+        return out
+    }
+
+    // MARK: Events
+
+    private var events: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(verbatim: eventsNote).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Spacer(minLength: 4)
+                Button("Refresh") { session.loadEvents(again: true) }.font(.system(size: 11.5)).disabled(session.events == .loading)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            Rectangle().fill(theme.border).frame(height: 1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    switch session.events {
+                    case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+                    case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
+                    case .loaded(let events) where events.isEmpty:
+                        Text("No events: the cluster keeps them about an hour.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                    case .loaded(let events):
+                        ForEach(events) { event in eventRow(event) }
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .onAppear { session.loadEvents() }
+        .accessibilityIdentifier("kubernetes.detail.events")
+    }
+
+    private var eventsNote: String {
+        guard let events = session.events.value else { return "Its events, newest first" }
+        let warnings = events.filter(\.isWarning).count
+        return "\(events.count) event\(events.count == 1 ? "" : "s"), newest first" + (warnings > 0 ? " · \(warnings) warning\(warnings == 1 ? "" : "s")" : "")
+    }
+
+    private func eventRow(_ event: KubeEvent) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: event.isWarning ? "exclamationmark.triangle.fill" : "info.circle")
+                .font(.system(size: 11)).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text3).frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(verbatim: event.reason).font(.system(size: 12, weight: .semibold)).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text)
+                    if event.count > 1 { Text(verbatim: "×\(event.count)").font(.system(size: 11)).foregroundStyle(theme.text3) }
+                    Spacer(minLength: 0)
+                    if let last = event.last {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(verbatim: KubeAge.format(context.date.timeIntervalSince(last)) + " ago").font(.system(size: 11)).foregroundStyle(theme.text3)
+                        }
+                    }
+                }
+                Text(verbatim: event.message).font(.system(size: 12)).foregroundStyle(theme.text2).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !event.source.isEmpty { Text(verbatim: event.source).font(.system(size: 10.5)).foregroundStyle(theme.text3) }
+            }
+        }
+        .accessibilityIdentifier("kubernetes.detail.event")
+    }
+}
