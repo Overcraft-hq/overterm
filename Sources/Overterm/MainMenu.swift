@@ -113,6 +113,8 @@ enum MainMenu {
         // Docker's way: ⌥⌘J again goes back to the terminal.
         command(viewMenu, "Kubernetes", #selector(TerminalWindowController.toggleKubernetesPage(_:)), "kubernetes.page")
         command(viewMenu, "Kubernetes Switcher", #selector(TerminalWindowController.showKubernetesSwitcher(_:)), "kubernetes.switch")
+        // Enabled while the page shows a list (TerminalWindowController.validateMenuItem).
+        command(viewMenu, "Export Kubernetes List as CSV…", #selector(TerminalWindowController.exportKubernetesList(_:)), "kubernetes.exportCSV")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).

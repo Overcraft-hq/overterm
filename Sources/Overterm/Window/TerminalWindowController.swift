@@ -3950,6 +3950,9 @@ extension TerminalWindowController: NSMenuItemValidation {
         {
             return Settings.shared.notesEnabled
         }
+        if menuItem.action == #selector(exportKubernetesList(_:)) {
+            return store.showingOverlay == .kubernetes && kubernetesPage.canExport
+        }
         if menuItem.action == #selector(toggleTabPeek(_:)) {
             menuItem.state = peek.isOpen ? .on : .off
             return store.tabs.count > 1 || peek.isOpen

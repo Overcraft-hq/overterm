@@ -13,6 +13,9 @@ struct KubernetesActions {
     /// One Secret value, Copy pressed for it: marked concealed, so
     /// clipboard managers that honour the marker keep no history of it.
     var copySecret: (String) -> Void
+    /// A file the user asked for (the list as CSV): a save panel, its name
+    /// suggested — in a scenario, the run's own folder.
+    var save: (_ name: String, _ text: String) -> Void = { _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -21,7 +24,7 @@ struct KubernetesActions {
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom
     case open, back, forward, close
-    case command, namespace, context, wide, allNamespaces, filter, help
+    case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
 
@@ -37,6 +40,7 @@ enum KubernetesKey: String, ResourceKey {
         case .context: return "c"
         case .wide: return "w"
         case .allNamespaces: return "0"
+        case .copyKubectl: return "k"
         case .filter: return "/"
         default: return "?"
         }
@@ -54,7 +58,8 @@ enum KubernetesKey: String, ResourceKey {
         case .context: return "Context"
         case .wide: return "Wide columns — what kubectl get -o wide adds (IP, Node…)"
         case .allNamespaces: return "All namespaces"
-        case .filter: return "Filter — web status:crashloopbackoff ns:shop -status:running label:app=web"
+        case .copyKubectl: return "Copy as kubectl — the selected object's command, else the list's (its namespace and selectors)"
+        case .filter: return "Filter — web status:crashloopbackoff ns:shop -status:running label:app=web field:status.phase=Running"
         default: return "These keys"
         }
     }
@@ -64,6 +69,8 @@ enum KubernetesKey: String, ResourceKey {
 struct KubeListRow: ResourceTableRow {
     let row: KubeRow
     let summary: KubePodSummary?
+    /// A Deployment's state off its cells, where the Table has no Status.
+    var hint: KubeDeploymentHint? = nil
 
     var id: String { row.id.description }
     var height: CGFloat { 26 }
@@ -79,8 +86,8 @@ final class KubernetesPageModel: ObservableObject {
     @Published private(set) var section: KubeSection = .workloads
     /// `:`: the command bar over the page.
     @Published var command: KubeCommandBar?
-    /// What the filter field says. Its `label:` words go to the server
-    /// (`KubeLabelSelector`), a moment after the typing stops.
+    /// What the filter field says. Its `label:` and `field:` words go to
+    /// the server (`KubeListSelectors`), a moment after the typing stops.
     @Published var filter = "" {
         didSet { if filter != oldValue { selectorChanged() } }
     }
@@ -110,7 +117,7 @@ final class KubernetesPageModel: ObservableObject {
             } else {
                 selecting?.cancel()
                 selecting = nil
-                model.releaseLabelSelector(for: self)
+                model.releaseSelectors(for: self)
                 // A Secret's values never outlive the page on screen.
                 detail?.secret?.drop(.pageHidden)
             }
@@ -123,7 +130,7 @@ final class KubernetesPageModel: ObservableObject {
     var actions: KubernetesActions?
 
     let model: KubernetesModel
-    /// How long the typing must stop before `label:` asks the server again.
+    /// How long the typing must stop before `label:` or `field:` asks the server again.
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
     private var pickerWatch: AnyCancellable?
@@ -261,6 +268,7 @@ final class KubernetesPageModel: ObservableObject {
             case .context: openPicker(.context)
             case .wide: wide.toggle()
             case .allNamespaces: model.setScope(.all)
+            case .copyKubectl: copyKubectl()
             default: return false
             }
         }
@@ -571,6 +579,10 @@ final class KubernetesPageModel: ObservableObject {
     /// What the filter's `label:` words say.
     var labelReading: KubeLabelSelector.Reading { KubeLabelSelector.read(filter) }
 
+    /// What the filter's `label:` and `field:` words ask the server for,
+    /// and the words that couldn't be read as either.
+    var selectorReading: KubeListSelectors.Reading { KubeListSelectors.read(filter) }
+
     private func selectorChanged() {
         selecting?.cancel()
         let delay = selectorDelay
@@ -588,12 +600,13 @@ final class KubernetesPageModel: ObservableObject {
         selecting?.cancel()
         selecting = nil
         guard visible else { return }
-        model.setLabelSelector(labelReading.selector, for: self)
+        model.setSelectors(selectorReading.selectors, for: self)
     }
 
     /// Whether the list is the one this page's filter asks for: false while
-    /// another window's page, showing too, asked last with its own `label:`.
-    var listIsOurs: Bool { model.isSelector(labelReading.selector, of: self) }
+    /// another window's page, showing too, asked last with its own `label:`
+    /// or `field:`.
+    var listIsOurs: Bool { model.isSelector(selectorReading.selectors, of: self) }
 
     // MARK: What the page says
 
@@ -630,8 +643,20 @@ final class KubernetesPageModel: ObservableObject {
         {
             columns.insert(ResourceColumn(id: Self.namespaceColumn, title: "Namespace", width: 150), at: 0)
         }
+        if hasStatusHint {
+            // Before Age, where kubectl's other lists have their Status.
+            let age = columns.firstIndex { $0.title.caseInsensitiveCompare("Age") == .orderedSame } ?? columns.count
+            columns.insert(
+                ResourceColumn(
+                    id: KubeDeploymentHint.column, title: "Status", width: 150, minWidth: 40,
+                    help: "Read off Ready, Up-to-date and Available — the server's Table has no Status. The detail's Rollout says why."), at: age)
+        }
         return columns
     }
+
+    /// Whether the list gets a Status column of the page's own: a
+    /// Deployments list whose Table has none (`KubeDeploymentHint`).
+    var hasStatusHint: Bool { KubeDeploymentHint.applies(to: model.kind, columns: model.rows.columns) }
 
     static let namespaceColumn = "namespace"
 
@@ -663,10 +688,14 @@ final class KubernetesPageModel: ObservableObject {
     var rows: [KubeListRow] {
         let columns = model.rows.columns
         var filter = ResourceFilter<KubeFilterKey>(self.filter)
-        filter.terms.removeAll { $0.key == .label }
+        filter.terms.removeAll { $0.key.isServers }
         let pods = isPods
-        let rows = model.rows.sorted.map { KubeListRow(row: $0, summary: pods ? KubePodSummary(row: $0, columns: columns) : nil) }
-            .filter { Self.matches($0, filter, columns: columns) }
+        let hints = hasStatusHint
+        let rows = model.rows.sorted.map {
+            KubeListRow(
+                row: $0, summary: pods ? KubePodSummary(row: $0, columns: columns) : nil, hint: hints ? KubeDeploymentHint(row: $0, columns: columns) : nil)
+        }
+        .filter { Self.matches($0, filter, columns: columns) }
         guard let sort else { return rows }
         let now = Date()
         return sort.sorted(rows) { sortKey($0, sort.column, now: now) }
@@ -679,17 +708,20 @@ final class KubernetesPageModel: ObservableObject {
         return model.rows.sorted.compactMap { KubePodSummary(row: $0, columns: columns) }.filter(\.isFailing)
     }
 
-    /// Text matches the name, the namespace or the Status (or, for a kind
-    /// with no Status column, its Type: a Service's, a Secret's, an event's).
+    /// Text matches the name, the namespace or the Status (a Deployment's
+    /// read off its cells; for a kind with no Status, its Type: a Service's,
+    /// a Secret's, an event's).
     static func matches(_ row: KubeListRow, _ filter: ResourceFilter<KubeFilterKey>, columns: [KubeColumn]) -> Bool {
         filter.matches { term in
             let namespace = row.row.id.namespace?.lowercased() ?? ""
-            let status = (row.summary?.status ?? (row.row.cell("Status", in: columns) ?? row.row.cell("Type", in: columns))?.text ?? "").lowercased()
+            let status =
+                (row.summary?.status ?? row.hint?.text ?? (row.row.cell("Status", in: columns) ?? row.row.cell("Type", in: columns))?.text ?? "")
+                .lowercased()
             switch term.key {
             case .text: return row.row.id.name.lowercased().contains(term.value) || namespace.contains(term.value) || status.contains(term.value)
             case .namespace: return namespace == term.value
             case .status: return status.contains(term.value)
-            case .label: return true
+            case .label, .field: return true
             }
         }
     }
@@ -702,6 +734,7 @@ final class KubernetesPageModel: ObservableObject {
 
     func sortKey(_ row: KubeListRow, _ id: String, now: Date) -> SortKey? {
         if id == Self.namespaceColumn { return row.row.id.namespace.map { .text($0) } }
+        if id == KubeDeploymentHint.column { return row.hint.map { .text($0.text.lowercased()) } }
         guard let (index, column) = column(id), index < row.row.cells.count else { return nil }
         switch column.name.lowercased() {
         case "age", "created at": return age(of: row.row.id, at: now).map { .number($0) }
@@ -724,15 +757,135 @@ final class KubernetesPageModel: ObservableObject {
         rows.filter { selection.contains($0.id) }.map(\.row.id.name)
     }
 
-    /// The right-click menu: only what reads — this page changes nothing.
+    /// The right-click menu: only what reads or copies — this page changes nothing.
     func verbs(for ids: Set<String>) -> [ResourceVerb] {
         let picked = model.rows.sorted.filter { ids.contains($0.id.description) }
         guard !picked.isEmpty else { return [] }
         let names = picked.map(\.id.name).joined(separator: "\n")
         let qualified = picked.map { $0.id.description }.joined(separator: "\n")
+        let commands = kubectl(for: Set(picked.map(\.id.description)))
+        let list = listKubectl
         return [
             ResourceVerb(title: picked.count == 1 ? "Copy Name" : "Copy Names", symbol: "doc.on.doc") { [weak self] in self?.actions?.copy(names) },
             ResourceVerb(title: "Copy Namespace/Name", symbol: "doc.on.doc") { [weak self] in self?.actions?.copy(qualified) },
+            ResourceVerb(title: "Copy as kubectl", symbol: "terminal", key: KubernetesKey.copyKubectl.key, group: 1) { [weak self] in
+                self?.actions?.copy(commands)
+            },
+            ResourceVerb(title: "Copy List as kubectl", symbol: "terminal", unavailable: list == nil ? "No context" : nil, group: 1) { [weak self] in
+                if let list { self?.actions?.copy(list) }
+            },
+            ResourceVerb(title: picked.count == 1 ? "Copy Row as TSV" : "Copy Rows as TSV", symbol: "tablecells", group: 2) { [weak self] in
+                self?.copyRows(.tsv, ids: ids)
+            },
+            ResourceVerb(title: picked.count == 1 ? "Copy Row as CSV" : "Copy Rows as CSV", symbol: "tablecells", group: 2) { [weak self] in
+                self?.copyRows(.csv, ids: ids)
+            },
+            ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
         ]
+    }
+
+    // MARK: Copy as kubectl
+
+    /// The list's command: the kind, the namespace (or `-A`), the
+    /// selectors sent to the server, `-o wide` when wide. The filter's text
+    /// words have no kubectl twin and are left out. Nil with no context.
+    var listKubectl: String? {
+        guard let context = model.selectedName else { return nil }
+        return KubectlLine.list(
+            context: context, kind: model.kind, scope: model.scope, selectors: selectorReading.selectors, wide: wide,
+            discovery: model.knownDiscovery(of: context))
+    }
+
+    /// Each row's own command, a line each.
+    func kubectl(for ids: Set<String>) -> String {
+        let discovery = model.selectedName.flatMap(model.knownDiscovery(of:))
+        return rows.filter { ids.contains($0.id) }.compactMap { ref(for: $0.id) }.map { KubectlLine.object($0, discovery: discovery) }
+            .joined(separator: "\n")
+    }
+
+    /// What the detail shows, as kubectl: its object, or on the Events tab
+    /// its events.
+    var detailKubectl: String? {
+        guard let ref = detail?.ref else { return nil }
+        let discovery = model.knownDiscovery(of: ref.context)
+        return detailTab == .events ? KubectlLine.events(for: ref, discovery: discovery) : KubectlLine.object(ref, discovery: discovery)
+    }
+
+    /// What `k` copies: the selected rows' commands, else the list's.
+    var copyTarget: String? {
+        let selected = kubectl(for: selection)
+        return selected.isEmpty ? listKubectl : selected
+    }
+
+    /// `k`: `copyTarget`, on the pasteboard.
+    @discardableResult
+    func copyKubectl() -> String? {
+        guard let text = copyTarget else { return nil }
+        actions?.copy(text)
+        return text
+    }
+
+    /// The detail's Copy as kubectl.
+    func copyDetailKubectl() {
+        guard let text = detailKubectl else { return }
+        actions?.copy(text)
+    }
+
+    // MARK: CSV
+
+    /// The list as the page shows it: its columns, the rows its filter lets
+    /// through in its order, each cell as drawn — an age as it reads now.
+    func csv(now: Date = Date()) -> String { rowsText(.csv, now: now) }
+
+    /// The rows as `format`, the shown columns' titles first: those of
+    /// `ids` that the filter shows, in the list's order — every shown row
+    /// when `ids` is nil.
+    func rowsText(_ format: ResultExport.Format, ids: Set<String>? = nil, now: Date = Date()) -> String {
+        let columns = self.columns
+        let picked = ids.map { ids in rows.filter { ids.contains($0.id) } } ?? rows
+        let lines = picked.map { row in columns.map { cellText(row, $0, now: now) } }
+        return KubeListExport.text(format, columns: columns.map(\.title), rows: lines)
+    }
+
+    /// Copy Rows as TSV or CSV: these rows, else the selected ones, else
+    /// every row the filter shows.
+    @discardableResult
+    func copyRows(_ format: ResultExport.Format, ids: Set<String>? = nil) -> String? {
+        guard canExport else { return nil }
+        let chosen = ids ?? selection
+        let shown = rows.contains { chosen.contains($0.id) }
+        let text = rowsText(format, ids: shown ? chosen : nil)
+        actions?.copy(text)
+        return text
+    }
+
+    /// A cell's text, as the list draws it.
+    func cellText(_ row: KubeListRow, _ column: ResourceColumn, now: Date) -> String {
+        if column.id == Self.namespaceColumn { return row.row.id.namespace ?? "" }
+        if column.id == KubeDeploymentHint.column { return row.hint?.text ?? "" }
+        guard let (index, server) = self.column(column.id), index < row.row.cells.count else { return "" }
+        let text = row.row.cells[index].text
+        switch server.name.lowercased() {
+        case "age", "created at": return age(of: row.row.id, at: now).map(KubeAge.format) ?? text
+        case "status" where row.summary?.isFailing == true: return row.summary?.exitReason ?? text
+        default: return text
+        }
+    }
+
+    var csvFileName: String {
+        KubeListExport.fileName(context: model.selectedName ?? "kubernetes", kind: model.kind, scope: model.scope)
+    }
+
+    /// Whether there is a list to export.
+    var canExport: Bool { showsSection && !columns.isEmpty }
+
+    /// Why the last export wrote no file (a read-only folder, a full
+    /// disk), nil once one is written; the window says it too.
+    var exportProblem: String?
+
+    /// The list, saved where the user says.
+    func exportCSV() {
+        guard canExport else { return }
+        actions?.save(csvFileName, csv())
     }
 }

@@ -84,14 +84,17 @@ final class KubernetesModel: ObservableObject {
     @Published private(set) var kind: KubeResourceKind = .pods
     /// The kind's rows in the scope.
     @Published private(set) var rows = KubeRows()
-    /// What the rows are asked for with: a page's `label:` words, sent to
-    /// the server (`KubeLabelSelector`). Nil: every row in the scope. It is
-    /// the page's that asked last (`selectorOwner`), and goes when that page
-    /// hides: a window's page, or the switcher, never gets a list narrowed
-    /// by a filter that isn't on screen.
-    @Published private(set) var labelSelector: String?
-    /// The page whose filter `labelSelector` is; nil when nobody's is.
+    /// What the rows are asked for with: a page's `label:` and `field:`
+    /// words, sent to the server (`KubeListSelectors`). Empty: every row in
+    /// the scope. They are the page's that asked last (`selectorOwner`), and
+    /// go when that page hides: a window's page, or the switcher, never gets
+    /// a list narrowed by a filter that isn't on screen.
+    @Published private(set) var selectors = KubeListSelectors()
+    /// The page whose filter `selectors` are; nil when nobody's are.
     private(set) var selectorOwner: ObjectIdentifier?
+
+    var labelSelector: String? { selectors.label }
+    var fieldSelector: String? { selectors.field }
     /// Where each row's age is counted from.
     @Published private(set) var anchors: [KubeRowID: KubeAge.Anchor] = [:]
     @Published private(set) var listState: ListState = .idle
@@ -176,7 +179,7 @@ final class KubernetesModel: ObservableObject {
         guard viewers == 0 else { return }
         // Whoever looks next asks with its own filter.
         selectorOwner = nil
-        labelSelector = nil
+        selectors = KubeListSelectors()
         stopReading()
     }
 
@@ -365,32 +368,37 @@ final class KubernetesModel: ObservableObject {
         restartReading(side: false)
     }
 
-    /// The pods asked for again, for `owner`'s filter, with only those the
-    /// selector picks — or all of them, nil. The namespaces and the version
-    /// stay as read. Two pages showing at once share one list: the one that
-    /// asked last has it, and the other says so (`isSelector(of:)`).
-    func setLabelSelector(_ selector: String?, for owner: AnyObject) {
+    /// The rows asked for again, for `owner`'s filter, with only those the
+    /// selectors pick — or all of them, empty. The namespaces and the
+    /// version stay as read. Two pages showing at once share one list: the
+    /// one that asked last has it, and the other says so (`isSelector(of:)`).
+    func setSelectors(_ selectors: KubeListSelectors, for owner: AnyObject) {
         selectorOwner = ObjectIdentifier(owner)
-        changeSelector(selector)
+        changeSelectors(selectors)
     }
 
-    /// `owner`'s page hides: the list it narrowed is every pod's again.
-    /// Another page's selector is left alone.
-    func releaseLabelSelector(for owner: AnyObject) {
+    /// Only a label selector (the switcher's tests, the `:` bar's words).
+    func setLabelSelector(_ selector: String?, for owner: AnyObject) {
+        setSelectors(KubeListSelectors(label: selector), for: owner)
+    }
+
+    /// `owner`'s page hides: the list it narrowed is every row's again.
+    /// Another page's selectors are left alone.
+    func releaseSelectors(for owner: AnyObject) {
         guard selectorOwner == ObjectIdentifier(owner) else { return }
         selectorOwner = nil
-        changeSelector(nil)
+        changeSelectors(KubeListSelectors())
     }
 
-    /// Whether the list is asked for with `selector` on `owner`'s behalf —
-    /// or, for no selector, with none at all.
-    func isSelector(_ selector: String?, of owner: AnyObject) -> Bool {
-        selector == labelSelector && (selector == nil || selectorOwner == ObjectIdentifier(owner))
+    /// Whether the list is asked for with `selectors` on `owner`'s behalf —
+    /// or, for none, with none at all.
+    func isSelector(_ selectors: KubeListSelectors, of owner: AnyObject) -> Bool {
+        selectors == self.selectors && (selectors.isEmpty || selectorOwner == ObjectIdentifier(owner))
     }
 
-    private func changeSelector(_ selector: String?) {
-        guard selector != labelSelector else { return }
-        labelSelector = selector
+    private func changeSelectors(_ new: KubeListSelectors) {
+        guard new != selectors else { return }
+        selectors = new
         guard selectedName != nil else { return }
         restartReading(side: false)
     }
@@ -454,7 +462,7 @@ final class KubernetesModel: ObservableObject {
     private func follow(_ kind: KubeResourceKind, _ client: KubeClient) {
         listState = .loading
         let scope = self.scope
-        let options = KubeListOptions(labelSelector: labelSelector)
+        let options = selectors.options
         let generation = self.generation
         following = Task { [weak self] in
             do {

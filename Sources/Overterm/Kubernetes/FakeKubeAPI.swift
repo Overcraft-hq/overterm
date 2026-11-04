@@ -272,7 +272,14 @@ final class FakeKubeAPI: @unchecked Sendable {
         var includeObject: String
         var bookmarks: Bool
         var labels: LabelSelector
+        /// Its `fieldSelector`, read against the object as a GET answers it.
+        var fields = FieldSelector(nil)
+        var kind: Kind? = nil
         var sentColumns = false
+
+        func matches(_ object: Object) -> Bool {
+            FakeKubeAPI.matches(object, resource, namespace, labels) && (fields.isEmpty || kind.map { fields.matches(FakeKubeAPI.full(object, $0)) } ?? true)
+        }
     }
 
     /// `socket` nil: TCP only (`listenTCP`).
@@ -495,7 +502,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             if type == "DELETED" { objects[key] = nil } else { objects[key] = object }
             history.append((current, type, object))
             return watchers.keys.compactMap { id in
-                guard let watcher = watchers[id], Self.matches(object, watcher.resource, watcher.namespace, watcher.labels) else { return nil }
+                guard let watcher = watchers[id], watcher.matches(object) else { return nil }
                 return (watcher.channel, eventLine(type, object, for: id))
             }
         }
@@ -615,7 +622,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// Where a page ended, ordered as the list is (namespace, then name).
     private static func pageKey(_ object: Object) -> String { (object.namespace ?? "") + "\u{0}" + object.name }
 
-    private static func matches(_ object: Object, _ resource: String, _ namespace: String?, _ labels: LabelSelector) -> Bool {
+    fileprivate static func matches(_ object: Object, _ resource: String, _ namespace: String?, _ labels: LabelSelector) -> Bool {
         object.resource == resource && (namespace == nil || object.namespace == namespace) && labels.matches(object.labels)
     }
 
@@ -663,6 +670,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// comma-separated, each a dotted path into the object as a GET answers it.
     struct FieldSelector: Sendable {
         var requirements: [(path: [String], value: String, equal: Bool)] = []
+        var isEmpty: Bool { requirements.isEmpty }
 
         init(_ text: String?) {
             for part in (text ?? "").split(separator: ",").map(String.init) where !part.isEmpty {
@@ -829,9 +837,11 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
         return locked {
             let id = ObjectIdentifier(channel)
-            watchers[id] = Watcher(
-                channel: channel, resource: kind.fullName, namespace: namespace, table: table, includeObject: includeObject, bookmarks: bookmarks, labels: labels)
-            let matching = { (object: Object) in Self.matches(object, kind.fullName, namespace, labels) }
+            let watcher = Watcher(
+                channel: channel, resource: kind.fullName, namespace: namespace, table: table, includeObject: includeObject, bookmarks: bookmarks, labels: labels,
+                fields: FieldSelector(query["fieldSelector"]), kind: kind)
+            watchers[id] = watcher
+            let matching = { (object: Object) in watcher.matches(object) }
             let version = query["resourceVersion"] ?? ""
             if initialEvents || version.isEmpty || version == "0" {
                 // Every object there now, ADDED; a streaming list ends with a bookmark.
