@@ -1798,11 +1798,11 @@ extension E2ERunner {
         // ⌘L on lines picked out of its log: whole lines, the container as context.
         page.selection = [worker]
         page.detailTab = .logs
-        func logView() -> DockerLogTextView? {
-            Self.find(DockerLogTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" }
+        func logView() -> LogLinesTextView? {
+            Self.find(LogLinesTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" }
         }
         let shown = await eventually(5) { logView()?.string.contains("Cannot find module") == true }
-        check("its log is a view that answers ⌘L itself", shown, logView()?.string ?? "no DockerLogTextView")
+        check("its log is a view that answers ⌘L itself", shown, logView()?.string ?? "no LogLinesTextView")
         if shown, let text = logView() {
             // Nothing picked: the log passes ⌘L on, to the container.
             text.setSelectedRange(NSRange(location: 0, length: 0))
@@ -3303,10 +3303,10 @@ extension E2ERunner {
         page.projectTab = .logs
         let merged = await eventually(5) {
             let lines = page.projectSession?.feed.lines ?? []
-            return lines.contains { $0.service == "db" && $0.message.contains("ready to accept") } && lines.contains { $0.service == "web" && $0.message == "GET /health 200" }
+            return lines.contains { $0.source == "db" && $0.message.contains("ready to accept") } && lines.contains { $0.source == "web" && $0.message == "GET /health 200" }
         }
-        let stamps = (page.projectSession?.feed.lines ?? []).compactMap(\.timestamp).map(DockerLogFeed.sortable)
-        check("a project's logs merge its services'", merged, "\(page.projectSession?.feed.lines.map { "\($0.service ?? "") \($0.message)" } ?? [])")
+        let stamps = (page.projectSession?.feed.lines ?? []).compactMap(\.timestamp).map(LogFeed.sortable)
+        check("a project's logs merge its services'", merged, "\(page.projectSession?.feed.lines.map { "\($0.source ?? "") \($0.message)" } ?? [])")
         check("in time order", stamps == stamps.sorted())
         await capture("project")
         page.selection = [web]

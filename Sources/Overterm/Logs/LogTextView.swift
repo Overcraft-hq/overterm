@@ -1,12 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Lines of text in an AppKit text view — a log, an inspect's JSON. A
+/// Lines of text in an AppKit text view — a log, an inspect's JSON, an
+/// object's YAML. A
 /// SwiftUI list of thousands of lines doesn't scroll; a text view also
 /// selects across lines and copies. New lines are appended rather than the
 /// whole text set again, and the view keeps to the bottom while it was
 /// there (`follow`).
-struct DockerTextView: NSViewRepresentable {
+struct LogTextView: NSViewRepresentable {
     /// How many lines there are, and the ones in a range, drawn — only the
     /// new ones are drawn as a log grows. `revision` changes when the text
     /// is something other than the old one with lines added (a filter, a
@@ -19,10 +20,13 @@ struct DockerTextView: NSViewRepresentable {
     /// Lines picked out of it, to an agent (⌘L, its right-click menu): a
     /// log's; nil for what isn't one (Inspect's JSON, a build's log).
     var ask: ((String) -> Void)? = nil
+    /// The text view's accessibility identifier, which the scenarios find
+    /// it by: Docker's page's are `docker.text`.
+    var identifier = "log.text"
 
     func makeNSView(context: Context) -> NSScrollView {
         // The class method makes the subclass's text view.
-        let scroll = DockerLogTextView.scrollableTextView()
+        let scroll = LogLinesTextView.scrollableTextView()
         scroll.drawsBackground = false
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
@@ -35,12 +39,12 @@ struct DockerTextView: NSViewRepresentable {
         text.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
         text.allowsUndo = false
         text.layoutManager?.allowsNonContiguousLayout = true
-        text.setAccessibilityIdentifier("docker.text")
+        text.setAccessibilityIdentifier(identifier)
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        (scroll.documentView as? DockerLogTextView)?.ask = ask
+        (scroll.documentView as? LogLinesTextView)?.ask = ask
         guard let text = scroll.documentView as? NSTextView, let storage = text.textStorage else { return }
         setWrap(wrap, scroll, text)
         let coordinator = context.coordinator
@@ -96,13 +100,14 @@ struct DockerTextView: NSViewRepresentable {
 /// whole lines — ⌘L (Edit's Ask an Agent About the Selection, which
 /// reaches it before the terminal hidden under the page) and its
 /// right-click menu. Without a selection, or a log, ⌘L goes on up the
-/// responder chain: the window then asks about the selected container.
-final class DockerLogTextView: NSTextView {
+/// responder chain: the window then asks about what its page has selected
+/// (a container). Who asks scrubs the text (Docker's: `DockerSecrets`).
+final class LogLinesTextView: NSTextView {
     var ask: ((String) -> Void)?
 
     @objc func askAboutSelection(_ sender: Any?) {
         let range = selectedRange()
-        if let ask, range.length > 0 { return ask(DockerAgentText.wholeLines(of: string, range)) }
+        if let ask, range.length > 0 { return ask(Self.wholeLines(of: string, range)) }
         if nextResponder?.tryToPerform(#selector(askAboutSelection(_:)), with: sender) != true { NSSound.beep() }
     }
 
@@ -112,6 +117,13 @@ final class DockerLogTextView: NSTextView {
 
     override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         item.action == #selector(askAboutSelection(_:)) ? true : super.validateUserInterfaceItem(item)
+    }
+
+    /// A selection widened to the whole lines it touches. Pure.
+    static func wholeLines(of text: String, _ range: NSRange) -> String {
+        let string = text as NSString
+        let clamped = NSIntersectionRange(range, NSRange(location: 0, length: string.length))
+        return string.substring(with: string.lineRange(for: clamped)).trimmingCharacters(in: .newlines)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -124,58 +136,5 @@ final class DockerLogTextView: NSTextView {
         shown.insertItem(.separator(), at: 0)
         shown.insertItem(item, at: 0)
         return shown
-    }
-}
-
-/// How a log line looks: its time dim, its level in its colour, a JSON
-/// line's fields after its message. Pure but for the colours.
-@MainActor
-enum DockerLogStyle {
-    static let font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
-
-    static func color(_ level: DockerLogLine.Level?) -> NSColor? {
-        switch level {
-        case .fatal, .error: NSColor(srgbRed: 0.94, green: 0.36, blue: 0.34, alpha: 1)
-        case .warning: TabStatusStyle.waitingNS
-        case .debug, .trace: nil
-        default: nil
-        }
-    }
-
-    /// A service's colour in merged logs: the same one each time, told
-    /// apart from its neighbours.
-    static func serviceColor(_ service: String) -> NSColor {
-        let palette: [NSColor] = [.systemTeal, .systemPurple, .systemOrange, .systemPink, .systemIndigo, .systemGreen, .systemYellow, .systemBlue]
-        let sum = service.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7fff_ffff }
-        return palette[sum % palette.count]
-    }
-
-    /// `2026-10-27T10:00:00.123456789Z` → `10:00:00.123`, local time.
-    static func time(_ stamp: String) -> String {
-        let trimmed = stamp.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = formatter.date(from: trimmed) ?? ISO8601DateFormatter().date(from: stamp) else { return stamp }
-        return timeFormatter.string(from: date)
-    }
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss.SSS"
-        return formatter
-    }()
-
-    static func line(_ line: DockerLogLine, text: NSColor, dim: NSColor, timestamps: Bool) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        func add(_ string: String, _ color: NSColor) {
-            out.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
-        }
-        if timestamps, let stamp = line.timestamp { add(time(stamp) + "  ", dim) }
-        if let service = line.service { add(service + " | ", serviceColor(service)) }
-        let levelColor = color(line.level)
-        let body = line.stream == .stderr && levelColor == nil ? text.withAlphaComponent(0.85) : text
-        add(line.message, levelColor ?? (line.level == .debug || line.level == .trace ? dim : body))
-        if !line.fields.isEmpty { add("  " + line.fields.map { "\($0.0)=\($0.1)" }.joined(separator: " "), dim) }
-        return out
     }
 }

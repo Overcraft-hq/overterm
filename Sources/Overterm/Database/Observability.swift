@@ -105,7 +105,7 @@ enum LogLevel: String, Sendable, CaseIterable {
     }
 }
 
-struct LogLine: Equatable, Sendable, Identifiable {
+struct LokiLine: Equatable, Sendable, Identifiable {
     /// Nanoseconds since 1970, as Loki says it — ordering and the tail's
     /// next start need all of them.
     var nanos: Int64
@@ -212,7 +212,7 @@ struct TraceDetail: Equatable, Sendable {
 /// What an observability query gave back, beyond the grid's rows.
 enum ObservabilityPayload: Equatable, Sendable {
     case series([MetricSeries])
-    case logs([LogLine])
+    case logs([LokiLine])
     case traces([TraceSummary])
     case trace(TraceDetail)
 }
@@ -286,7 +286,7 @@ enum ObservabilityParse {
         let object = try json(data)
         guard let body = object["data"] as? [String: Any] else { throw Failure(message: "No data in the answer.") }
         guard body["resultType"] as? String == "streams" else { return .series(series(body)) }
-        var lines: [LogLine] = []
+        var lines: [LokiLine] = []
         for stream in body["result"] as? [[String: Any]] ?? [] {
             let labels = stream["stream"] as? [String: String] ?? [:]
             for value in stream["values"] as? [[Any]] ?? [] {
@@ -298,14 +298,14 @@ enum ObservabilityParse {
                         all[key] = any
                     }
                 }
-                lines.append(LogLine(nanos: ns, labels: all, line: line))
+                lines.append(LokiLine(nanos: ns, labels: all, line: line))
             }
         }
         return .logs(ordered(lines))
     }
 
     /// Newest first; lines of one instant keep their order.
-    static func ordered(_ lines: [LogLine]) -> [LogLine] {
+    static func ordered(_ lines: [LokiLine]) -> [LokiLine] {
         var seen: [Int64: Int] = [:]
         var numbered = lines
         for index in numbered.indices {
@@ -558,7 +558,7 @@ enum ObservabilityText {
         if query.hasPrefix(".") { return String(query.dropFirst()) }
         switch kind {
         case .tempo:
-            if LogLine.isTraceID(query) { return "trace " + query.prefix(8) }
+            if LokiLine.isTraceID(query) { return "trace " + query.prefix(8) }
             return query == "{}" || query.isEmpty ? "recent traces" : String(query.prefix(40))
         case .loki:
             if let open = query.firstIndex(of: "{"), let close = query[open...].firstIndex(of: "}") { return String(query[open...close]) }

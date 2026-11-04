@@ -51,13 +51,13 @@ final class ObservabilityParseTests: XCTestCase {
         XCTAssertEqual(LogLevel.of("2026-11-13 ERROR something broke", labels: [:]), .error)
         XCTAssertEqual(LogLevel.of("anything", labels: ["level": "debug"]), .debug)
         XCTAssertNil(LogLevel.of("an error happened in lowercase prose", labels: [:]), "prose isn't a level")
-        let line = LogLine(nanos: 0, labels: [:], line: "msg=x traceID=4bf92f3577b34da6a3ce929d0e0e4736 status=500")
+        let line = LokiLine(nanos: 0, labels: [:], line: "msg=x traceID=4bf92f3577b34da6a3ce929d0e0e4736 status=500")
         XCTAssertEqual(line.traceID, "4bf92f3577b34da6a3ce929d0e0e4736")
-        XCTAssertEqual(LogLine(nanos: 0, labels: [:], line: #"{"trace_id":"00f067aa0ba902b7"}"#).traceID, "00f067aa0ba902b7")
-        XCTAssertNil(LogLine(nanos: 0, labels: [:], line: "no trace here").traceID)
+        XCTAssertEqual(LokiLine(nanos: 0, labels: [:], line: #"{"trace_id":"00f067aa0ba902b7"}"#).traceID, "00f067aa0ba902b7")
+        XCTAssertNil(LokiLine(nanos: 0, labels: [:], line: "no trace here").traceID)
         // Tempo's search drops an id's leading zeros.
-        XCTAssertTrue(LogLine.isTraceID("198686e929454322f5c0e1a2b3c4d5e"))
-        XCTAssertFalse(LogLine.isTraceID("deadbeef"), "too short to be one")
+        XCTAssertTrue(LokiLine.isTraceID("198686e929454322f5c0e1a2b3c4d5e"))
+        XCTAssertFalse(LokiLine.isTraceID("deadbeef"), "too short to be one")
     }
 
     func testTempoSearchTagsAndValues() throws {

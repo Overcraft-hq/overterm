@@ -185,7 +185,7 @@ actor ObservabilityDriver: DatabaseDriver {
     }
 
     /// Lines after `after` (nanoseconds), oldest first — the live tail, polled.
-    func tail(_ text: String, after: Int64, limit: Int) async throws -> [LogLine] {
+    func tail(_ text: String, after: Int64, limit: Int) async throws -> [LokiLine] {
         let query = ObservabilityText.clean(text)
         let data = try await get(
             "/loki/api/v1/query_range",
@@ -199,7 +199,7 @@ actor ObservabilityDriver: DatabaseDriver {
     // MARK: Tempo
 
     private func tempo(_ query: String, limit: Int, range: TimeRange) async throws -> QueryResult {
-        if LogLine.isTraceID(query) {
+        if LokiLine.isTraceID(query) {
             return ObservabilityRows.result(.trace(try await trace(query)), limit: 10_000)
         }
         let (start, end) = range.window()

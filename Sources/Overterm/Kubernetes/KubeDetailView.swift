@@ -305,9 +305,9 @@ struct KubeDetailView: View {
             Rectangle().fill(theme.border).frame(height: 1)
             let text = session.yaml
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-            DockerTextView(
+            LogTextView(
                 count: lines.count, revision: text.hashValue, render: { range in lines[range].map { Self.line(String($0), theme: theme) } }, wrap: false,
-                follow: false)
+                follow: false, identifier: "kubernetes.detail.text")
         }
         .accessibilityIdentifier("kubernetes.detail.yaml")
     }
@@ -315,7 +315,7 @@ struct KubeDetailView: View {
     /// A key in the text colour, its value dimmer, a block's lines and a
     /// list's dash as they are.
     static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
-        let out = NSMutableAttributedString(string: text, attributes: [.font: DockerLogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.72)])
+        let out = NSMutableAttributedString(string: text, attributes: [.font: LogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.72)])
         if let range = text.range(of: #"^\s*(- )?("[^"]*"|[^\s:"'#][^:]*?):(?=\s|$)"#, options: .regularExpression) {
             out.addAttribute(.foregroundColor, value: theme.textNS, range: NSRange(range, in: text))
         }

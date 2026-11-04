@@ -119,9 +119,9 @@ final class DockerTransportTests: XCTestCase {
         fake.log(id, "booting")
         fake.log(id, "warning: slow disk", stream: .stderr)
         let past = engine.logs(id, tty: false, tail: 10, follow: false)
-        var lines: [DockerLogLine] = []
+        var lines: [LogLine] = []
         for try await chunks in past {
-            lines += chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true) }
+            lines += chunks.flatMap { LogLine.lines(of: $0, timestamps: true) }
         }
         XCTAssertEqual(lines.map(\.message), ["booting", "warning: slow disk"])
         XCTAssertEqual(lines.map(\.stream), [.stdout, .stderr])
@@ -131,7 +131,7 @@ final class DockerTransportTests: XCTestCase {
         let reader = Task {
             var messages: [String] = []
             for try await chunks in followed {
-                messages += chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true) }.map(\.message)
+                messages += chunks.flatMap { LogLine.lines(of: $0, timestamps: true) }.map(\.message)
                 if messages.count == 2 { break }
             }
             return messages

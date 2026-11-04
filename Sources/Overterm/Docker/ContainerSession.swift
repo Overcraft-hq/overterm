@@ -11,8 +11,8 @@ final class ContainerSession: ObservableObject {
     @Published private(set) var error: String?
 
     /// Its log, as the Logs tab shows it.
-    let feed = DockerLogFeed()
-    var lines: [DockerLogLine] { feed.lines }
+    let feed = LogFeed()
+    var lines: [LogLine] { feed.lines }
     /// Whether the log is followed now — false once the container stops
     /// (the engine ends the stream), true again when it starts.
     var following: Bool { feed.following }
@@ -43,7 +43,8 @@ final class ContainerSession: ObservableObject {
     private var watching: AnyCancellable?
     private var starts: AnyCancellable?
     private var loading: Task<Void, Never>?
-    private var follower: DockerLogFollower?
+    private var follower: LogFollower?
+    private var logSource: DockerLogSource?
     private var sampling: Task<Void, Never>?
     private var lastState: String?
     private var wantsLogs = false
@@ -183,12 +184,16 @@ final class ContainerSession: ObservableObject {
 
     private func followLogs() {
         if follower == nil {
-            let follower = DockerLogFollower(id: id, feed: feed, docker: docker, merging: false)
+            let source = DockerLogSource(id: id, docker: docker)
+            let follower = LogFollower(source: source, feed: feed, merging: false)
             follower.onChange = { [weak self, weak follower] in self?.feed.following = follower?.following ?? false }
             self.follower = follower
+            logSource = source
         }
         if let container { feed.terminalCommand = DockerCommands.followLogs(of: container, endpoint: docker.endpoint) }
-        follower?.start(tail: Self.tail, tty: detail?.Config.Tty)
+        // The detail's word on its TTY; else the engine is asked.
+        logSource?.tty = detail?.Config.Tty
+        follower?.start(tail: Self.tail)
     }
 
     // MARK: Stats
