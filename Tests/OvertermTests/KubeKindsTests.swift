@@ -371,9 +371,10 @@ final class KubeKindsTests: XCTestCase {
         try await until(5, "deployments") { model.rows.sorted.map(\.id.description) == ["shop/web", "shop/worker"] }
         XCTAssertEqual(page.title, "Deployments")
         XCTAssertEqual(page.section, .workloads)
-        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Up-to-date", "Available", "Age"])
+        // The server's, and a Status of the page's before Age: its Table has none (KubeDeploymentHint).
+        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Up-to-date", "Available", "Status", "Age"])
         page.wide = true
-        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Up-to-date", "Available", "Age", "Containers", "Images", "Selector"])
+        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Up-to-date", "Available", "Status", "Age", "Containers", "Images", "Selector"])
         page.wide = false
         XCTAssertTrue(api.requests.contains { $0.path == "/apis/apps/v1/namespaces/shop/deployments" && $0.query["includeObject"] == "None" })
         XCTAssertEqual(page.failing, [], "only pods are read for failures")

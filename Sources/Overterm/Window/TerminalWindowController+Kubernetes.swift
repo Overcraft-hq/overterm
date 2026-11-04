@@ -24,7 +24,52 @@ extension TerminalWindowController {
                 item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.writeObjects([item])
-            })
+            },
+            save: { [weak self] name, text in self?.saveKubernetesFile(name, text) })
+    }
+
+    /// A file the page made (the list as CSV), where the user says. An
+    /// isolated run shows no panel: it writes into its own folder
+    /// (`kubernetesExportFolder`), where the scenario reads it. A write
+    /// that fails is said — an alert on the window, and the page's
+    /// `exportProblem`, which a scenario checks — never a place picked and
+    /// no file.
+    func saveKubernetesFile(_ name: String, _ text: String) {
+        if AppEnvironment.isIsolated {
+            let folder = Self.kubernetesExportFolder
+            writeKubernetesFile(text, to: folder.appendingPathComponent(name), alert: false) {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            return
+        }
+        guard let window else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = name
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.writeKubernetesFile(text, to: url, alert: true)
+        }
+    }
+
+    private func writeKubernetesFile(_ text: String, to url: URL, alert: Bool, before: () throws -> Void = {}) {
+        do {
+            try before()
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            kubernetesPage.exportProblem = nil
+        } catch {
+            kubernetesPage.exportProblem = error.localizedDescription
+            if alert, let window { NSAlert(error: error).beginSheetModal(for: window) }
+        }
+    }
+
+    /// Where an isolated run's exports go: its own support folder.
+    static var kubernetesExportFolder: URL { AppEnvironment.supportDirectory.appendingPathComponent("Exports", isDirectory: true) }
+
+    /// File ▸ Export Kubernetes List as CSV…: the page's list, while it shows.
+    @objc func exportKubernetesList(_ sender: Any?) {
+        guard store.showingOverlay == .kubernetes else { return }
+        kubernetesPage.exportCSV()
     }
 
     func kubernetesWorkspacePage() -> WorkspacePage {
@@ -204,12 +249,13 @@ extension TerminalWindowController {
                 self?.showKubernetesPage()
             }
         }
+        items += kubernetesPageCommands()
         let catalog = model.catalog
         items += KubeSection.allCases.flatMap { section in
             catalog.kinds(in: section).map { kind in
                 let names = ([kind.resource] + kind.shortNames).map { ":" + $0 }.joined(separator: " ")
                 return PaletteItem(
-                    id: "k.k.\(kind.fullName)", group: .kubernetes, title: KubeKindCatalog.title(of: kind),
+                    id: "k.k.\(kind.fullName)", group: .kubernetes, title: "Go to \(KubeKindCatalog.title(of: kind))",
                     subtitle: "Kind · \(section.title) · \(names) · \(kind.groupVersion)", symbol: section.symbol
                 ) { [weak self] _, _ in
                     self?.kubernetesPage.showKind(kind)
@@ -222,7 +268,7 @@ extension TerminalWindowController {
         let pods = kind.fullName == KubeResourceKind.pods.fullName
         let columns = model.rows.columns
         // A page showing somewhere asked with its filter: the rows are only those.
-        let selected = model.labelSelector.map { ["label: \($0)"] } ?? []
+        let selected = model.selectors.said.map { [$0] } ?? []
         items += model.rows.sorted.map { row in
             let summary = pods ? KubePodSummary(row: row, columns: columns) : nil
             let status = summary.map { $0.isFailing ? ($0.exitReason ?? $0.status) : $0.status }
@@ -232,6 +278,40 @@ extension TerminalWindowController {
                     .joined(separator: " · "),
                 symbol: summary?.isFailing == true ? "exclamationmark.triangle" : pods ? "cube.box" : "doc.text"
             ) { [weak self] _, _ in self?.revealOnKubernetesPage(row.id, kind: kind) }
+        }
+        return items
+    }
+
+    /// The page's own commands, while it shows in this window: what its
+    /// keys do, findable by name — the pickers, `:`, Copy as kubectl, the
+    /// CSV, wide and all namespaces.
+    func kubernetesPageCommands() -> [PaletteItem] {
+        guard store.showingOverlay == .kubernetes, KubernetesModel.shared.selected != nil else { return [] }
+        let page = kubernetesPage
+        func command(_ id: String, _ title: String, _ subtitle: String, _ symbol: String, _ run: @escaping @MainActor (KubernetesPageModel) -> Void)
+            -> PaletteItem
+        {
+            PaletteItem(id: "k.a.\(id)", group: .action, title: title, subtitle: subtitle, symbol: symbol) { [weak self] _, _ in
+                guard let self else { return }
+                self.showKubernetesPage()
+                run(self.kubernetesPage)
+            }
+        }
+        var items = [
+            command("context", "Kubernetes: Switch Context…", "The context picker  c", "steeringwheel") { $0.openPicker(.context) },
+            command("namespace", "Kubernetes: Switch Namespace…", "The namespace picker  n", "square.dashed") { $0.openPicker(.namespace) },
+            command("command", "Kubernetes: Go to Kind…", "The command bar  :  — :deploy, :po shop, :svc @fake-dev", "chevron.right") { $0.openCommand() },
+            command("allNamespaces", "Kubernetes: All Namespaces", "0", "square.grid.2x2") { $0.model.setScope(.all) },
+            command("wide", page.wide ? "Kubernetes: Default Columns" : "Kubernetes: Wide Columns", "w", "rectangle.split.3x1") { $0.wide.toggle() },
+        ]
+        if let line = page.copyTarget {
+            items.append(command("copyKubectl", "Kubernetes: Copy as kubectl", "k  —  \(line)", "terminal") { $0.copyKubectl() })
+        }
+        if page.canExport {
+            let rows = page.selection.isEmpty ? "The visible rows" : "The selected rows"
+            items.append(command("copyTSV", "Kubernetes: Copy Rows as TSV", rows + ", for a spreadsheet", "tablecells") { $0.copyRows(.tsv) })
+            items.append(command("copyCSV", "Kubernetes: Copy Rows as CSV", rows, "tablecells") { $0.copyRows(.csv) })
+            items.append(command("exportCSV", "Kubernetes: Export List as CSV…", page.csvFileName, "square.and.arrow.up") { $0.exportCSV() })
         }
         return items
     }
@@ -248,7 +328,7 @@ extension TerminalWindowController {
     func revealOnKubernetesPage(_ id: KubeRowID, kind: KubeResourceKind = .pods) {
         let page = kubernetesPage
         if KubernetesModel.shared.kind.fullName != kind.fullName || !page.showsSection { page.showKind(kind) }
-        if page.labelReading.selector != nil || !page.rows.contains(where: { $0.row.id == id }) { page.filter = "" }
+        if !page.selectorReading.selectors.isEmpty || !page.rows.contains(where: { $0.row.id == id }) { page.filter = "" }
         page.selection = [id.description]
         showKubernetesPage()
     }

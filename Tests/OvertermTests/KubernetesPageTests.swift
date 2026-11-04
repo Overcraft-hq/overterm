@@ -211,9 +211,9 @@ final class KubernetesPageTests: XCTestCase {
         page.sort = nil
         XCTAssertEqual(page.rows.map(\.id), ["shop/api-1", "shop/web-1"], "by namespace, then name")
 
-        // Only reads in the menu.
+        // Only reads and copies in the menu.
         let verbs = page.verbs(for: ["shop/api-1"]).map(\.title)
-        XCTAssertEqual(verbs, ["Copy Name", "Copy Namespace/Name"])
+        XCTAssertEqual(verbs, ["Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…"])
 
         // Keys.
         XCTAssertTrue(page.press("w"))

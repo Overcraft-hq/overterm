@@ -2222,8 +2222,9 @@ client that reads through them (and the fake API server it is tested
 against), and the page (⌥⌘J) with its pickers and the ⌃⌘J switcher —
 stage 1a of the design — and, of stage 1b, every kind and CRD as a list
 kept live, in the page's sections and behind the `:` bar, any
-object's detail beside its list, and a Secret's values shown only when
-asked. Nothing writes to a cluster.
+object's detail beside its list, a Secret's values shown only when
+asked, `label:` and `field:` sent to the server, the palette's page
+commands, Copy as kubectl and a list as CSV. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2537,14 +2538,15 @@ are read once a context is picked.
   again once (`lookedUpAfter404`, cleared by the next list): gone, the
   list says so (Pods too, when discovery has none); at another version, it
   is followed there. Hidden, the CRD
-  watch ends with the rest. `labelSelector` is what the pods are asked for with
-(a page's `label:` words): set to something else, the list is asked
-for again with it. It belongs to the page that asked last
+  watch ends with the rest. `selectors` (`KubeListSelectors`: a
+`labelSelector` and a `fieldSelector`) are what the list is asked for with
+(a page's `label:` and `field:` words), the list and its watch: set to
+something else, the list is asked for again with them. They belong to the page that asked last
 (`selectorOwner`): the list is the app's, and two windows can show the
 page at once, so the one that asked last has it and the other says so
 (`listIsOurs`, a line over its list), and a window becoming key asks
 with its page's filter. A page that hides gives it back
-(`releaseLabelSelector`) and a hidden one asks for nothing, so the ⌃⌘J
+(`releaseSelectors`) and a hidden one asks for nothing, so the ⌃⌘J
 switcher, or another page, never gets a list narrowed by a filter not on
 screen; the last `hide` drops it, and a page held again asks anew. The
 proxy's state (`KubeProxies.status`: open, signing in, waiting behind
@@ -2574,17 +2576,29 @@ read-only, how it signs in, its server). Middle: the kind's list as a
 `ResourceTable` of the server's columns — those `kubectl get` shows for
 it (a CRD's printer columns), `-o wide`'s too with `w`, a namespaced
 kind's Namespace first across all of them as `kubectl get -A` adds it
-(a cluster-scoped kind has none, its count "cluster-wide") — sorted by any column (numbers as numbers, ages
+(a cluster-scoped kind has none, its count "cluster-wide"); on Deployments,
+whose Table has no Status, a Status of the page's before Age
+(`KubeDeploymentHint`, pure, off the row's Ready, Up-to-date and Available:
+Available, Rolling out 1/3, Unavailable 0/1 in red, Not ready, Scaled to 0
+— the conditions aren't in a row; the detail's Rollout says why) — sorted by any column (numbers as numbers, ages
 — `Age`, or a CRD's `Created At` — by age) or by namespace and name, filtered by text (the name, the
-namespace, the Status — or Type — cell), `status:`, `ns:`,
-`label:` and `-` (`KubeFilterKey`, through `ResourceFilter`). A row is
-only cells — no labels — so `label:` words are the server's:
+namespace, the Status — or that hint, or Type — cell), `status:`, `ns:`,
+`label:`, `field:` and `-` (`KubeFilterKey`, through `ResourceFilter`). A row is
+only cells — no labels, no fields — so `label:` and `field:` words are the server's:
 `KubeLabelSelector` reads them as typed (labels are case-sensitive) into
 the list's `labelSelector` — `label:app=web`, `app!=web`, `-label:app`
 (`!app`), `label:a=1,b=2` — refusing what the server wouldn't take (a
-negated pair, a bad key) and saying so; the list is asked for again once
+negated pair, a bad key) and saying so; `KubeFieldSelector` reads `field:`
+words into its `fieldSelector` as `kubectl get --field-selector` takes
+one — `field:status.phase=Running`, `field:spec.nodeName==fake-node-1`,
+`-field:status.phase=Running` (`!=`), several with commas — refusing what
+has no operator (a field has no "exists"), a negated pair, a bad path or
+a value with the grammar's own characters; which fields a kind takes is
+the server's to say, its 400 said over the list (every kind
+`metadata.name` and `metadata.namespace`, pods `spec.nodeName`,
+`status.phase`…). The list is asked for again once
 the typing stops (`selectorDelay`, 350 ms) or on ↩, and the page says what
-went to the server. The rest of the filter matches the rows that came. On the Pods list a failing pod's
+went to the server (`label app=web, field status.phase=Running`). The rest of the filter matches the rows that came. On the Pods list a failing pod's
 Status is its reason in red (`KubePodSummary.exitReason`:
 `CrashLoopBackOff`, `OOMKilled`, `… (init container)`), and the header
 counts the failing ones. Bottom: the context bar — the proxy's state,
@@ -2601,8 +2615,47 @@ refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
 keyboard): `1`–`7` the sections, ↩ the detail, `[` `]` back and forward,
-Esc closes it, `:`, `n`, `c`, `w`, `0`, `/`, `?`. The right-click menu
-only copies names: nothing here changes a cluster.
+Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`. The right-click menu
+only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
+TSV or CSV — and exports the list: nothing here changes a cluster.
+
+**Copy as kubectl** (`k`, the right-click menu, the header's and the
+detail's buttons; `KubectlLine`, pure, docs/design/kubernetes/analysis.md
+3.14): the command that shows what the page shows, always with
+`--context`, offered on every class — a copied command is the user's to
+run. `k` copies the selected rows' (a line each, in the list's order),
+else the list's: `kubectl --context fake-dev get deploy -n shop -l app=web
+--field-selector status.phase=Running` (`-A` across all namespaces,
+nothing for a cluster-wide kind, `-o wide` with `w`; the filter's text
+words have no kubectl twin and are left out). An object's is `kubectl
+--context C -n NS get deploy NAME -o yaml`; on the detail's Events tab,
+`kubectl --context C -n NS events --for deploy/NAME` (`events -A` for a
+cluster-wide object's: `-A` is the command's own flag, after it, where
+`--context` and `-n` are global). The kind is said as kubectl resolves it
+(`resource`): a core kind by its short name (`po`, `svc`), a built-in
+group's by its short name or plural where no other kind served claims it
+(`deploy`), else `plural.group` (`events.events.k8s.io`, every CRD's).
+Every word not ours is quoted for zsh: bare only for letters, digits and
+`_ . / : @ + , - =` (no `=` or `-` in front), else single-quoted, where zsh
+expands nothing — `'app!=web'`. A command never holds a Secret's value: a
+Secret's is `kubectl describe secrets NAME`, which prints its keys' sizes
+as the masked detail does, never `-o yaml`.
+
+**CSV** (View ▸ Export Kubernetes List as CSV…, `kubernetes.exportCSV`,
+no key by default — ⇧⌘E is Tab Peek's; the header's button, the
+right-click menu, the palette; `KubeListExport`, pure): the columns the
+list shows, the rows its filter lets through in its order, each cell as
+drawn (an age as it reads now, a failing pod's reason), to a save panel
+named `<context>-<namespace|all>-<plural>.csv`. RFC 4180 through
+`ResultExport`, and a cell a spreadsheet would run as a formula (`=`, `+`,
+`@`, a tab or a carriage return in front; `-` unless a number) prefixed
+with `'`. An isolated run shows no panel: it writes into its own support
+folder's `Exports` (`kubernetesExportFolder`). A write that fails is
+said — an alert on the window, and the page's `exportProblem`, which the
+scenario checks. **Copy Rows as TSV or CSV** (the right-click menu, the
+palette; `copyRows`): the same columns and cells on the pasteboard, TSV
+for a spreadsheet's paste — the right-clicked rows, else the selected
+ones the filter shows, else every row it shows.
 
 **The sections** (`KubeSection`, `KubeKindCatalog`, pure): Workloads,
 Network, Config, Storage, Access Control, Cluster, Custom Resources — the
@@ -2765,10 +2818,15 @@ detail's chevrons.
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
-context, the context's namespaces, the kinds it serves (each with its
-section and `:` names) and the rows of the kind showing, each a palette
-item the page's `paletteItems` gives (so ⌘K finds them too; pods only
-while something looks at them, never a list left from before). It looks
+context, the context's namespaces, the kinds it serves ("Go to
+Deployments", with its section and `:` names) and the rows of the kind
+showing, each a palette item the page's `paletteItems` gives (so ⌘K
+finds them too; rows only while something looks at them, never a list
+left from before). ⌘K also has, while the page shows in its window, the
+page's commands (`kubernetesPageCommands`, actions: Switch Context…,
+Switch Namespace…, Go to Kind…, All Namespaces, Wide Columns, Copy as
+kubectl with the line it copies, Copy Rows as TSV and as CSV, Export
+List as CSV…). It looks
 as the page does: it holds the model while the palette shows it
 (`kubernetesSwitcherHeld`), so the kubeconfig is read and the pods
 followed with the page hidden, and lets go after the palette closes — once
@@ -2789,10 +2847,19 @@ a stand-in connection goes to the fake's socket. It checks the pods
 listed as rows only in the server's columns, a crashing pod's reason
 (and drawn, read off the window), the watch's changes, the keys, all
 namespaces (two same-named pods apart, metadata asked for there),
-`label:` sent to the server through the proxy (and said); every kind —
+`label:` sent to the server through the proxy (and said); `field:` too —
+a finished pod left out by `status.phase=Running`, the fake recording the
+fieldSelector on the list and its watch, said, and `k` by the key as the
+window takes it copying the list's command with it (the user's pasteboard
+put back after); every kind —
 what fake-dev serves read and drawn in its sections, `:` by the key as the
 window takes it (the field given the keyboard, its completions drawn),
-`:deploy`'s deployments in their own columns as rows only, Tab completing
+`:deploy`'s deployments in their own columns as rows only, with the Status
+read off them (drawn), `k` on one copying its `-o yaml` command, ⌘K finding
+a deployment, "Go to Deployments" and the page's Copy as kubectl, the list
+exported as CSV by the menu's action into the run's folder in the visible
+columns (no write problem), Copy Rows as TSV (the visible rows) and as CSV
+(the selected one) on the pasteboard, put back after, Tab completing
 and Esc closing by the field's own commands, `:widgets`' custom resources
 in the CRD's printer columns (the wide one behind `w`), a kind nobody
 serves said, `2` and `6` (Network's services, the cluster-wide nodes), a

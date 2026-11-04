@@ -47,6 +47,15 @@ struct KubeDetailView: View {
                     .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text3).padding(.leading, 4)
                 Spacer(minLength: 0)
                 Button {
+                    page.copyDetailKubectl()
+                } label: {
+                    Image(systemName: "terminal").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Copy as kubectl — \(page.detailKubectl ?? "")")
+                .accessibilityIdentifier("kubernetes.detail.copyKubectl")
+                Button {
                     page.closeDetail()
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)

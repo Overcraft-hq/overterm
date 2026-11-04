@@ -304,6 +304,23 @@ struct KubernetesPageView: View {
             .frame(width: 240, height: 26)
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
             Button {
+                page.copyKubectl()
+            } label: {
+                Image(systemName: "terminal").font(.system(size: 12)).foregroundStyle(theme.text2)
+            }
+            .buttonStyle(.plain)
+            .help("Copy as kubectl (\(KubernetesKey.copyKubectl.key)) — \(page.listKubectl ?? "")")
+            .accessibilityIdentifier("kubernetes.copyKubectl")
+            Button {
+                page.exportCSV()
+            } label: {
+                Image(systemName: "square.and.arrow.up").font(.system(size: 12)).foregroundStyle(theme.text2)
+            }
+            .buttonStyle(.plain)
+            .disabled(!page.canExport)
+            .help("Export the list as CSV — its columns and the rows the filter shows")
+            .accessibilityIdentifier("kubernetes.exportCSV")
+            Button {
                 page.cheatSheet.toggle()
             } label: {
                 Image(systemName: "keyboard").font(.system(size: 12)).foregroundStyle(theme.text2)
@@ -389,22 +406,23 @@ struct KubernetesPageView: View {
         return page.section == .custom ? "No custom resources: this cluster serves no CRD that can be listed." : "This cluster serves none of \(page.section.title)' kinds."
     }
 
-    /// What `label:` asks the server for, or why a word of it can't be —
-    /// or that the list is another window's, asked with its own filter.
+    /// What `label:` and `field:` ask the server for, or why a word of them
+    /// can't be — or that the list is another window's, asked with its own
+    /// filter.
     @ViewBuilder private var selectorLine: some View {
-        let reading = page.labelReading
+        let reading = page.selectorReading
         let ours = page.listIsOurs
-        if reading.selector != nil || !reading.refused.isEmpty || !ours {
+        if !reading.selectors.isEmpty || !reading.refused.isEmpty || !ours {
             HStack(spacing: 6) {
                 Image(systemName: reading.refused.isEmpty && ours ? "server.rack" : "exclamationmark.triangle").font(.system(size: 10))
                 if !ours {
-                    Text(verbatim: "Another window's list (\(model.labelSelector.map { "label: \($0)" } ?? "every pod")) — ↩ in the filter asks for this one's")
+                    Text(verbatim: "Another window's list (\(model.selectors.said ?? "every row")) — ↩ in the filter asks for this one's")
                         .foregroundStyle(TabStatusStyle.failed)
-                } else if let selector = model.labelSelector {
-                    Text(verbatim: "Asked of the server: \(selector)")
+                } else if let said = model.selectors.said {
+                    Text(verbatim: "Asked of the server: \(said)")
                 }
                 if !reading.refused.isEmpty {
-                    Text(verbatim: "Not a label selector: \(reading.refused.joined(separator: " "))").foregroundStyle(TabStatusStyle.failed)
+                    Text(verbatim: "Not a selector: \(reading.refused.joined(separator: " "))").foregroundStyle(TabStatusStyle.failed)
                 }
                 Spacer(minLength: 0)
             }
@@ -422,6 +440,11 @@ struct KubernetesPageView: View {
         let view: AnyView
         if column?.id == KubernetesPageModel.namespaceColumn {
             view = AnyView(Text(verbatim: row.row.id.namespace ?? "").foregroundStyle(theme.text2))
+        } else if column?.id == KubeDeploymentHint.column {
+            let hint = row.hint
+            view = AnyView(
+                Text(verbatim: hint?.text ?? "")
+                    .foregroundStyle(hint?.isBad == true ? TabStatusStyle.failed : hint?.isDone == true ? theme.text : TabStatusStyle.waiting))
         } else if let column, let (index, server) = page.column(column.id) {
             let text = index < row.row.cells.count ? row.row.cells[index].text : ""
             switch server.name.lowercased() {

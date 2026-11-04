@@ -1,14 +1,114 @@
 import Foundation
 
-/// What the Pods filter knows besides text: `ns:` and `status:`, matched
-/// on the rows, and `label:`, which goes to the server (`KubeLabelSelector`)
-/// — a row is only cells, it has no labels to match.
+/// What a list's filter knows besides text: `ns:` and `status:`, matched
+/// on the rows, and `label:` and `field:`, which go to the server
+/// (`KubeLabelSelector`, `KubeFieldSelector`) — a row is only cells, it has
+/// no labels or fields to match.
 enum KubeFilterKey: ResourceFilterKey {
-    case text, namespace, status, label
+    case text, namespace, status, label, field
 
     static let names: [String: KubeFilterKey] = [
-        "ns": .namespace, "namespace": .namespace, "status": .status, "s": .status, "label": .label, "l": .label,
+        "ns": .namespace, "namespace": .namespace, "status": .status, "s": .status, "label": .label, "l": .label, "field": .field, "f": .field,
     ]
+
+    /// Whether the server reads it, not the rows.
+    var isServers: Bool { self == .label || self == .field }
+}
+
+/// What a list is asked for with: the filter's `label:` words as a
+/// `labelSelector`, its `field:` words as a `fieldSelector`. Nil: none.
+struct KubeListSelectors: Equatable, Sendable {
+    var label: String?
+    var field: String?
+
+    init(label: String? = nil, field: String? = nil) {
+        self.label = label
+        self.field = field
+    }
+
+    var isEmpty: Bool { label == nil && field == nil }
+
+    var options: KubeListOptions { KubeListOptions(labelSelector: label, fieldSelector: field) }
+
+    /// `label app=web, field status.phase=Running`; nil for none.
+    var said: String? {
+        let parts = [label.map { "label \($0)" }, field.map { "field \($0)" }].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    /// Both read from a filter, with the words neither could read.
+    struct Reading: Equatable, Sendable {
+        var selectors = KubeListSelectors()
+        var refused: [String] = []
+    }
+
+    static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
+        let label = KubeLabelSelector.read(filter)
+        let field = KubeFieldSelector.read(filter)
+        return Reading(selectors: KubeListSelectors(label: label.selector, field: field.selector), refused: label.refused + field.refused)
+    }
+
+    static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
+}
+
+/// The filter's `field:` words as the field selector the list is asked
+/// for: what the server filters by, as `kubectl get --field-selector`
+/// does. Which fields a kind takes is the server's to say (every kind
+/// `metadata.name` and `metadata.namespace`; pods also `spec.nodeName`,
+/// `status.phase`, `status.podIP`…) — one it doesn't is its 400, said
+/// over the list. Read from the words as typed. Pure.
+///
+///     field:status.phase=Running        status.phase=Running
+///     field:spec.nodeName==node-1       spec.nodeName=node-1
+///     field:status.phase!=Running       status.phase!=Running
+///     -field:status.phase=Running       status.phase!=Running
+///     field:a=1,b=2                     a=1,b=2
+///
+/// A field has no "exists" form, and "not (a and b)" is no selector: such
+/// a word (`field:spec`, `-field:a=1,b=2`, `field:a=b=c`) is `refused`.
+enum KubeFieldSelector {
+    typealias Reading = KubeLabelSelector.Reading
+
+    static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
+        var read: [String] = []
+        var refused: [String] = []
+        for term in filter.terms where term.key == .field {
+            let parts = term.raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            let requirements = term.negated && parts.count > 1 ? nil : parts.map { requirement($0, negated: term.negated) }
+            if let requirements, !requirements.isEmpty, requirements.allSatisfy({ $0 != nil }) {
+                read += requirements.compactMap { $0 }
+            } else {
+                refused.append((term.negated ? "-" : "") + "field:" + term.raw)
+            }
+        }
+        return Reading(selector: read.isEmpty ? nil : read.joined(separator: ","), refused: refused)
+    }
+
+    static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
+
+    static func requirement(_ part: String, negated: Bool) -> String? {
+        let not = part.range(of: "!=")
+        guard let range = not ?? part.range(of: "==") ?? part.range(of: "=") else { return nil }
+        let key = String(part[..<range.lowerBound])
+        let value = String(part[range.upperBound...])
+        guard isPath(key), isValue(value) else { return nil }
+        return "\(key)\((not != nil) != negated ? "!=" : "=")\(value)"
+    }
+
+    /// A field's path: dotted names (`spec.nodeName`, `involvedObject.kind`).
+    static func isPath(_ key: String) -> Bool {
+        let names = key.split(separator: ".", omittingEmptySubsequences: false)
+        return !names.isEmpty
+            && names.allSatisfy { name in
+                !name.isEmpty && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+            }
+    }
+
+    /// A value as typed: nothing the selector's grammar reads (`,` `=` `!`
+    /// and its escape `\\`), at most 253 characters (a DNS subdomain).
+    static func isValue(_ value: String) -> Bool {
+        value.count <= 253 && !value.contains { ",=!\\".contains($0) || $0.isWhitespace }
+    }
 }
 
 /// The filter's `label:` words as the label selector the list is asked

@@ -201,10 +201,11 @@ extension E2ERunner {
         check(
             "as the list's selector, through the proxy",
             fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["labelSelector"] == "app=web" })
-        check("and the page says so", await shownText(15) { $0.contains("Asked of the server: app=web") } != nil)
+        check("and the page says so", await shownText(15) { $0.contains("Asked of the server: label app=web") } != nil)
         page.filter = ""
         page.applySelector()
         check("cleared, every pod again", await eventually(10) { model.rows.count == 2 }, "\(model.rows.count)")
+        await kubernetesFieldSelector(model, page, fake)
         let filterFocus = page.focusFilter
         check("/ goes to the filter", page.press("/") && page.focusFilter == filterFocus + 1)
         page.giveListTheKeyboard()
@@ -371,11 +372,14 @@ extension E2ERunner {
         check(
             "the server's deployments", await eventually(10) { model.rows.sorted.map(\.id.description) == ["shop/web", "shop/worker"] && model.listState == .live },
             "\(model.rows.sorted.map(\.id.description)) \(model.listState)")
-        check("in its own columns", page.columns.map(\.title) == ["Name", "Ready", "Up-to-date", "Available", "Age"], "\(page.columns.map(\.title))")
+        check(
+            "in its own columns, and a Status read off them", page.columns.map(\.title) == ["Name", "Ready", "Up-to-date", "Available", "Status", "Age"],
+            "\(page.columns.map(\.title))")
         check("as rows only", fake.requests.contains { $0.path == "/apis/apps/v1/namespaces/shop/deployments" && $0.query["includeObject"] == "None" })
         check("titled so", page.title == "Deployments", page.title)
         check("and drawn", await shownText(15) { $0.contains("Up-to-date") } != nil)
         check("the list has the keyboard again", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+        await kubernetesCopyAndExport(model, page)
 
         // Tab completes; Esc closes, the kind as it was.
         _ = page.press(":")
@@ -450,6 +454,124 @@ extension E2ERunner {
         check(":po is the pods again", model.kind.fullName == "pods" && page.section == .workloads)
         check("listed", await eventually(10) { model.rows.count == 2 && model.listState == .live }, "\(model.rows.count)")
         check("by GETs only", fake.writes.isEmpty, "\(fake.writes)")
+    }
+
+    /// `field:` on the Pods list: asked of the server (the fake records the
+    /// fieldSelector, the list and its watch), said, and `k` by the key as
+    /// the window takes it copies the list's command with it.
+    private func kubernetesFieldSelector(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        var done = FakeKubeAPI.Pod()
+        done.status = "Completed"
+        done.phase = "Succeeded"
+        done.ready = 0
+        fake.addPod("migrate-1", namespace: "shop", done)
+        check("a finished pod comes in", await eventually(5) { model.rows.count == 3 }, "\(model.rows.count)")
+        page.filter = "field:status.phase=Running"
+        page.applySelector()
+        check(
+            "field: is asked of the server", await eventually(10) { model.rows.sorted.map(\.id.name) == ["web-7d9", "worker-5c"] },
+            "\(model.rows.sorted.map(\.id.name))")
+        check(
+            "as the list's fieldSelector, through the proxy",
+            fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && !$0.isWatch && $0.query["fieldSelector"] == "status.phase=Running" },
+            "\(fake.requests.suffix(3))")
+        check("and its watch's", fake.requests.contains { $0.isWatch && $0.query["fieldSelector"] == "status.phase=Running" })
+        check("and the page says so", await shownText(15) { $0.contains("Asked of the server: field status.phase=Running") } != nil)
+        page.selection = []
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        let copied: String? = await withPasteboardKept {
+            guard
+                let k = NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: self.window.windowNumber, context: nil, characters: "k",
+                    charactersIgnoringModifiers: "k", isARepeat: false, keyCode: 40)
+            else { return nil }
+            return self.app.handlePageKey(k) ? NSPasteboard.general.string(forType: .string) : nil
+        }
+        check(
+            "k copies the list as kubectl, its field selector with it",
+            copied == "kubectl --context fake-dev get po -n shop --field-selector status.phase=Running", copied ?? "nothing")
+        page.filter = ""
+        page.applySelector()
+        fake.deletePod("migrate-1", namespace: "shop")
+        check("cleared, the two pods again", await eventually(10) { model.rows.count == 2 }, "\(model.rows.count)")
+    }
+
+    /// On the deployments: `k` on a selected one (its YAML's command), the
+    /// palette (⌘K) finding it, a page command and the kinds, and the list
+    /// as CSV — written into the run's folder, no panel — with the columns
+    /// shown, the Status read off the cells among them.
+    private func kubernetesCopyAndExport(_ model: KubernetesModel, _ page: KubernetesPageModel) async {
+        check(
+            "a Status read off the deployments' cells",
+            page.rows.map { $0.hint?.text } == ["Available", "Unavailable 0/1"], "\(page.rows.map { $0.hint?.text ?? "-" })")
+        check("and drawn", await shownText(15) { $0.contains("Unavailable 0/1") } != nil)
+        page.selection = ["shop/web"]
+        let copied: String? = await withPasteboardKept { page.press("k") ? NSPasteboard.general.string(forType: .string) : nil }
+        check("k copies the deployment as kubectl", copied == "kubectl --context fake-dev -n shop get deploy web -o yaml", copied ?? "nothing")
+
+        app.showPalette(nil)
+        app.palette.query = "worker"
+        check(
+            "⌘K finds a deployment", await eventually(10) { self.app.palette.results.contains { $0.id == "k.o.deployments.apps/shop/worker" } },
+            "\(app.palette.results.prefix(4).map(\.id))")
+        app.palette.query = "go to deployments"
+        check("and the kind", app.palette.results.first?.id == "k.k.deployments.apps", "\(app.palette.results.prefix(3).map(\.id))")
+        app.palette.query = "copy as kubectl"
+        check("and the page's commands", app.palette.results.first?.id == "k.a.copyKubectl", "\(app.palette.results.prefix(3).map(\.id))")
+        app.hidePalette()
+        // The palette gives the keyboard to the terminal under the page; the list takes it back.
+        await pause(0.3)
+        page.giveListTheKeyboard()
+        check("the list has the keyboard after the palette", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+
+        let file = TerminalWindowController.kubernetesExportFolder.appendingPathComponent("fake-dev-shop-deployments.csv")
+        try? FileManager.default.removeItem(at: file)
+        page.selection = []
+        app.exportKubernetesList(nil)
+        let csv = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+        let lines = csv.split(separator: "\n").map(String.init)
+        check("the export wrote its file", page.exportProblem == nil, page.exportProblem ?? "")
+        check("the list exported as CSV, into the run's folder", lines.first == "Name,Ready,Up-to-date,Available,Status,Age", csv)
+        check(
+            "its rows in the visible columns",
+            lines.count == 3 && lines[1].hasPrefix("web,1/1,1,1,Available,") && lines[2].hasPrefix("worker,0/1,1,0,Unavailable 0/1,"), csv)
+
+        // Copy Rows as TSV: the visible rows with nothing selected, the selected one else.
+        let visible: String? = await withPasteboardKept {
+            page.copyRows(.tsv)
+            return NSPasteboard.general.string(forType: .string)
+        }
+        let tsv = visible?.split(separator: "\n").map(String.init) ?? []
+        check(
+            "Copy Rows as TSV: the visible rows", tsv.first == "Name\tReady\tUp-to-date\tAvailable\tStatus\tAge" && tsv.count == 3,
+            visible ?? "nothing")
+        page.selection = ["shop/worker"]
+        let selected: String? = await withPasteboardKept {
+            page.copyRows(.csv)
+            return NSPasteboard.general.string(forType: .string)
+        }
+        let rows = selected?.split(separator: "\n").map(String.init) ?? []
+        check("Copy Rows as CSV: the selected one", rows.count == 2 && rows[1].hasPrefix("worker,0/1,"), selected ?? "nothing")
+        page.selection = []
+    }
+
+    /// `body` with the user's pasteboard put back after: what it copied is
+    /// read inside, then the pasteboard holds what it held before.
+    private func withPasteboardKept<T>(_ body: () async -> T) async -> T {
+        let board = NSPasteboard.general
+        let kept = (board.pasteboardItems ?? []).map { item in
+            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+        }
+        let result = await body()
+        board.clearContents()
+        let items = kept.map { pairs -> NSPasteboardItem in
+            let item = NSPasteboardItem()
+            for (type, data) in pairs { item.setData(data, forType: type) }
+            return item
+        }
+        if !items.isEmpty { board.writeObjects(items) }
+        return result
     }
 
     /// The detail: a pod opened by ↩ as the window takes it — one GET, its
