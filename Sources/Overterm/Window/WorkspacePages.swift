@@ -25,6 +25,10 @@ struct WorkspacePage {
     /// it by its own table (`ResourceKey.press`); false lets it go on to
     /// the list, never to the terminal under the page.
     var press: (@MainActor (String) -> Bool)?
+    /// A key with ⌘ alone (⌘[, ⌘]) while it shows and no text is being
+    /// typed: true when the page took it, before the menus do — false
+    /// leaves it to them.
+    var commandPress: (@MainActor (String) -> Bool)?
     /// ⌘L while it shows: its own answer (false beeps), never the terminal
     /// hidden under it.
     var askAboutSelection: (@MainActor () -> Bool)?

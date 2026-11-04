@@ -60,8 +60,45 @@ extension E2ERunner {
             FakeKubeAPI.Pod(status: "CrashLoopBackOff", phase: "Running", ready: 0, containers: 1, restarts: 5, lastRestart: "30s"))
         fake.addPod("web-7d9", namespace: "payments")
         fake.addPod("api-0", namespace: "payments")
-        fake.add("deployments.apps", "web", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1, "Images": "nginx:1.27"])
-        fake.add("deployments.apps", "worker", namespace: "shop", values: ["Ready": "0/1", "Up-to-date": 1, "Available": 0])
+        fake.add(
+            "deployments.apps", "web", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1, "Images": "nginx:1.27"],
+            fields: [
+                "metadata": ["generation": 2],
+                "spec": [
+                    "replicas": 1, "selector": ["matchLabels": ["app": "web"]],
+                    "strategy": ["type": "RollingUpdate", "rollingUpdate": ["maxSurge": "25%", "maxUnavailable": "25%"]],
+                ],
+                "status": [
+                    "observedGeneration": 2, "replicas": 1, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1,
+                    "conditions": [["type": "Available", "status": "True", "reason": "MinimumReplicasAvailable"]],
+                ],
+            ])
+        fake.add(
+            "deployments.apps", "worker", namespace: "shop", values: ["Ready": "0/1", "Up-to-date": 1, "Available": 0],
+            fields: [
+                "metadata": ["generation": 1],
+                "spec": ["replicas": 1, "selector": ["matchLabels": ["app": "worker"]]],
+                "status": [
+                    "observedGeneration": 1, "replicas": 1, "updatedReplicas": 1, "unavailableReplicas": 1,
+                    "conditions": [["type": "Progressing", "status": "False", "reason": "ProgressDeadlineExceeded"]],
+                ],
+            ])
+        fake.add(
+            "replicasets.apps", "web-7d9f", namespace: "shop",
+            fields: [
+                "metadata": ["ownerReferences": [["apiVersion": "apps/v1", "kind": "Deployment", "name": "web", "controller": true]]],
+                "spec": ["replicas": 1, "selector": ["matchLabels": ["app": "web"]]], "status": ["replicas": 1, "readyReplicas": 1, "availableReplicas": 1],
+            ])
+        fake.setFields(
+            "pods", "web-7d9", namespace: "shop",
+            [
+                "metadata": [
+                    "ownerReferences": [["apiVersion": "apps/v1", "kind": "ReplicaSet", "name": "web-7d9f", "controller": true]],
+                    "annotations": [KubeObjectStrip.lastApplied: "{\"kind\":\"Pod\"}"],
+                ]
+            ])
+        fake.addEvent(about: "pods", "web-7d9", namespace: "shop", reason: "Scheduled", message: "Assigned shop/web-7d9 to fake-node-1", last: Date().addingTimeInterval(-900))
+        fake.addEvent(about: "pods", "web-7d9", namespace: "shop", type: "Warning", reason: "Unhealthy", message: "Readiness probe failed: connection refused", count: 4)
         fake.add(
             "services", "web", namespace: "shop", values: ["Type": "ClusterIP", "Cluster-IP": "10.96.0.12", "External-IP": "<none>", "Port(s)": "80/TCP"])
         fake.add("configmaps", "web-config", namespace: "shop", data: ["nginx.conf": "worker_processes 1;"])
@@ -170,6 +207,7 @@ extension E2ERunner {
         check("any key closes them", !page.cheatSheet)
         await namespaceAndContextPickers(model, page)
         await kubernetesKinds(model, page, fake)
+        await kubernetesDetail(model, page, fake)
 
         // All namespaces: same-named pods in two are two rows.
         check("0 is all namespaces", page.press("0") && model.scope == .all)
@@ -399,6 +437,134 @@ extension E2ERunner {
         check(":po is the pods again", model.kind.fullName == "pods" && page.section == .workloads)
         check("listed", await eventually(10) { model.rows.count == 2 && model.listState == .live }, "\(model.rows.count)")
         check("by GETs only", fake.writes.isEmpty, "\(fake.writes)")
+    }
+
+    /// The detail: a pod opened by ↩ as the window takes it — one GET, its
+    /// overview, YAML without managedFields (the toggle shows them), its
+    /// events by uid — its owner and the owner's owner followed as links,
+    /// ⌘[ and ⌘] back and forward, a stuck deployment opened by a click,
+    /// a Secret's detail that reads nothing, Esc.
+    private func kubernetesDetail(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        func key(_ characters: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags = []) -> NSEvent? {
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)
+        }
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        page.selection = ["shop/web-7d9"]
+        check("a row selected opens no detail", page.detail == nil)
+        fake.forgetRequests()
+        guard let enter = key("\r", 36) else { return check("a ↩ key", false) }
+        check("↩ is the list's", app.handlePageKey(enter))
+        guard let pod = page.detail else { return check("↩ opens the pod's detail", false) }
+        check("↩ opens the pod's detail", pod.ref.name == "web-7d9" && pod.ref.kind.fullName == "pods" && pod.ref.namespace == "shop")
+        check("read whole", await eventually(10) { pod.state == .loaded }, "\(pod.state)")
+        check(
+            "with one GET", fake.requests.filter { $0.path.hasPrefix("/api/v1/namespaces/shop/pods/") }.map(\.path) == ["/api/v1/namespaces/shop/pods/web-7d9"],
+            "\(fake.requests)")
+        let overview = pod.overview
+        check("its phase", overview?.item("Phase")?.value == "Running", overview?.item("Phase")?.value ?? "none")
+        check("its node, a link", overview?.item("Node")?.value == "fake-node-1" && overview?.item("Node")?.link?.kind == "Node")
+        check("its container's image", overview?.section("Containers")?.items.first?.detail == "nginx:1.27")
+        check("its owner, a link", overview?.section("Owned by")?.items.first?.link?.name == "web-7d9f")
+        check("drawn beside the list", await shownText(15) { $0.contains("web-7d9f") } != nil)
+
+        page.showTab(.yaml)
+        check(
+            "the YAML, without managedFields or the last-applied annotation",
+            !pod.yaml.isEmpty && !pod.yaml.contains("managedFields") && !pod.yaml.contains(KubeObjectStrip.lastApplied) && pod.yaml.contains("image: nginx:1.27"),
+            String(pod.yaml.prefix(300)))
+        check("drawn", await shownText(15) { $0.contains("nodeName: fake-node-1") } != nil)
+        pod.showsHidden = true
+        check("the toggle shows them", pod.yaml.contains("managedFields:") && pod.yaml.contains(KubeObjectStrip.lastApplied))
+        pod.showsHidden = false
+
+        page.showTab(.events)
+        check("its events", await eventually(10) { pod.events.value?.map(\.reason) == ["Unhealthy", "Scheduled"] }, "\(pod.events)")
+        check("the warning first, marked", pod.events.value?.first?.isWarning == true && pod.events.value?.first?.count == 4)
+        let uid = fake.uid("pods", "web-7d9", namespace: "shop") ?? "?"
+        check(
+            "asked of the server by the pod's uid",
+            fake.requests.contains { $0.path == "/api/v1/namespaces/shop/events" && $0.query["fieldSelector"]?.contains("involvedObject.uid=\(uid)") == true },
+            "\(fake.requests.suffix(3))")
+        check("drawn", await shownText(15) { $0.contains("Readiness probe failed") } != nil)
+        page.showTab(.overview)
+
+        // Links: the ReplicaSet, then its Deployment.
+        guard let owner = overview?.section("Owned by")?.items.first?.link, page.follow(owner), let replicaSet = page.detail else {
+            return check("the owner is followed", false, page.linkProblem ?? "")
+        }
+        check("the owner is followed", replicaSet.ref.kind.fullName == "replicasets.apps" && replicaSet.ref.name == "web-7d9f")
+        check("read", await eventually(10) { replicaSet.state == .loaded }, "\(replicaSet.state)")
+        guard let up = replicaSet.overview?.section("Owned by")?.items.first?.link, page.follow(up), let deployment = page.detail else {
+            return check("and its own owner", false, page.linkProblem ?? "")
+        }
+        check("and its own owner, a deployment", deployment.ref.kind.fullName == "deployments.apps" && deployment.ref.name == "web")
+        check("read", await eventually(10) { deployment.state == .loaded }, "\(deployment.state)")
+        let workload = deployment.overview
+        check("its replicas", workload?.item("Replicas")?.value == "1/1 ready", workload?.item("Replicas")?.value ?? "none")
+        check("its strategy", workload?.item("Strategy")?.value == "RollingUpdate · maxSurge 25% · maxUnavailable 25%", workload?.item("Strategy")?.value ?? "")
+        check("its rollout, as kubectl rollout status says it", workload?.rollout?.message == "deployment \"web\" successfully rolled out")
+        check(
+            "the pods its selector picks, links too", await eventually(10) { deployment.pods.value?.map(\.row.id.name) == ["web-7d9"] },
+            "\(deployment.pods)")
+        check("drawn", await shownText(15) { $0.contains("successfully rolled out") || $0.contains("Pods it selects") } != nil)
+
+        // ⌘[ and ⌘] as the window takes them.
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        guard let back = key("[", 33, .command), let forward = key("]", 30, .command) else { return check("⌘[ and ⌘]", false) }
+        check("⌘[ is the detail's", app.handlePageKey(back))
+        check("back on the ReplicaSet", page.detail?.ref.name == "web-7d9f")
+        _ = app.handlePageKey(back)
+        check("⌘[ again, the pod", page.detail?.ref.name == "web-7d9" && page.detail?.ref.kind.fullName == "pods")
+        check("with nothing behind, ⌘[ is the menus'", !app.handlePageKey(back))
+        check("⌘] forward", app.handlePageKey(forward) && page.detail?.ref.name == "web-7d9f")
+        check("] forward again", page.press("]") && page.detail?.ref.kind.fullName == "deployments.apps")
+        check("[ back", page.press("[") && page.detail?.ref.name == "web-7d9f")
+        check("read again for each", await eventually(10) { page.detail?.state == .loaded })
+
+        // A deployment by a click, from its list: stuck.
+        _ = page.press(":")
+        page.command?.text = "deploy"
+        page.runCommand()
+        check("the deployments again", await eventually(10) { model.kind.fullName == "deployments.apps" && model.rows.count == 2 })
+        page.selection = ["shop/worker"]
+        page.pressed("shop/worker")
+        guard let worker = page.detail else { return check("a click opens the deployment", false) }
+        check("a click opens the deployment", worker.ref.name == "worker" && worker.ref.kind.fullName == "deployments.apps")
+        check("read", await eventually(10) { worker.state == .loaded }, "\(worker.state)")
+        check(
+            "its rollout is stuck", worker.overview?.rollout?.state == .stuck && worker.overview?.rollout?.message == "deployment \"worker\" exceeded its progress deadline",
+            "\(String(describing: worker.overview?.rollout))")
+        check("and says so", await shownText(15) { $0.contains("exceeded its progress deadline") } != nil)
+        page.selection = ["shop/web"]
+        check("the detail follows the list", page.detail?.ref.name == "web")
+
+        // A Secret's detail reads nothing.
+        _ = page.press(":")
+        page.command?.text = "secrets"
+        page.runCommand()
+        check("the secrets", await eventually(10) { model.kind.fullName == "secrets" && model.rows.count == 1 })
+        page.selection = ["shop/web-tls"]
+        check("a Secret's detail opens", page.detail?.ref.name == "web-tls" && page.detail?.state == .withheld)
+        check("and says it isn't read", await shownText(15) { $0.contains("Not read") } != nil)
+        check("no Secret was asked for", !fake.requests.contains { $0.path.contains("/secrets/") })
+
+        // Esc: closed, the list has the keyboard.
+        page.giveListTheKeyboard()
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        guard let escape = key("\u{1B}", 53) else { return check("an Esc key", false) }
+        check("Esc closes the detail", app.handlePageKey(escape) && page.detail == nil)
+        check("[ shows it again", page.press("[") && page.detail?.ref.name == "web-tls")
+        page.closeDetail()
+        _ = page.press(":")
+        page.command?.text = "po"
+        page.runCommand()
+        page.selection = []
+        check("the pods once more", await eventually(10) { model.kind.fullName == "pods" && model.rows.count == 2 && model.listState == .live })
+        check("the detail read by GETs only", fake.writes.isEmpty, "\(fake.writes)")
     }
 
     /// ⌃⌘J from the terminal, the page hidden: it reads as the page would,

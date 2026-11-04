@@ -71,9 +71,20 @@ extension TerminalWindowController {
     /// A key down: the showing page's when its list has the keyboard and the
     /// key means something there, with no ⌘, ⌃ or ⌥ — those are menus'.
     func handlePageKey(_ event: NSEvent) -> Bool {
+        if handlePageCommandKey(event) { return true }
         guard let overlay = store.showingOverlay, let press = pages[overlay]?.press, pageListHasKeyboard(overlay, event),
             WorkspacePage.isListKey(event.modifierFlags), let characters = event.characters
         else { return false }
+        return press(characters)
+    }
+
+    /// ⌘ and a key while a page shows (its `commandPress`), unless a text
+    /// field is being typed in: there ⌘[ is the field's.
+    func handlePageCommandKey(_ event: NSEvent) -> Bool {
+        guard let overlay = store.showingOverlay, let press = pages[overlay]?.commandPress, event.window ?? window === window,
+            event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command, let characters = event.charactersIgnoringModifiers
+        else { return false }
+        if let editor = window?.firstResponder as? NSTextView, editor.isEditable { return false }
         return press(characters)
     }
 

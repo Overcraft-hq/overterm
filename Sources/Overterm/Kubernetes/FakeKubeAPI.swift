@@ -66,6 +66,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         /// base64 in the object, as the server sends them). Only a plain GET
         /// of the object carries them; its Table row says how many.
         var data: [String: String] = [:]
+        /// The rest of the object as a plain GET answers it — `spec`,
+        /// `status`, an Event's `involvedObject` — as JSON; its `metadata`
+        /// is merged into the metadata (`ownerReferences`, `generation`).
+        var body: Data? = nil
     }
 
     /// One cell's value as the server types it.
@@ -351,16 +355,60 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// An object of any kind served (`deployments.apps`, `secrets`,
     /// `widgets.example.com`), its cells by column name; a namespaced
-    /// kind's in `namespace`.
+    /// kind's in `namespace`. `fields`: the rest of it, as a GET answers
+    /// it (`spec`, `status`, `metadata.ownerReferences`…).
     func add(
         _ resource: String, _ name: String, namespace: String? = nil, values: [String: Value] = [:], labels: [String: String] = [:],
-        annotations: [String: String] = [:], data: [String: String] = [:], created: Date = Date()
+        annotations: [String: String] = [:], data: [String: String] = [:], created: Date = Date(), fields: [String: Any] = [:]
     ) {
+        let body = fields.isEmpty ? nil : Self.encode(fields)
         change("ADDED") {
             Object(
                 resource: resource, namespace: namespace, name: name, uid: UUID().uuidString.lowercased(), resourceVersion: 0, created: created, labels: labels,
-                values: values, annotations: annotations, data: data)
+                values: values, annotations: annotations, data: data, body: body)
         }
+    }
+
+    /// An object's own fields (`spec`, `status`, `metadata.ownerReferences`)
+    /// set — a pod's too, over what its `Pod` makes: a MODIFIED event.
+    func setFields(_ resource: String, _ name: String, namespace: String? = nil, _ fields: [String: Any]) {
+        let key = Self.key(resource, namespace, name)
+        let body = Self.encode(fields)
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            object.body = body
+            return object
+        }
+    }
+
+    /// An object's uid, as its metadata says it.
+    func uid(_ resource: String, _ name: String, namespace: String? = nil) -> String? {
+        locked { objects[Self.key(resource, namespace, name)]?.uid }
+    }
+
+    /// A core Event about an object (`pods`, `deployments.apps`…), as the
+    /// kubelet or a controller records one: its `involvedObject` with the
+    /// object's Kind and uid, in the object's namespace (a cluster-scoped
+    /// one's in `default`), last seen `last`.
+    func addEvent(
+        about resource: String, _ objectName: String, namespace: String? = nil, type: String = "Normal", reason: String, message: String, count: Int = 1,
+        last: Date = Date(), component: String = "kubelet"
+    ) {
+        let kind = locked { kinds.first { $0.fullName == resource } }
+        let uid = uid(resource, objectName, namespace: namespace) ?? ""
+        let time = Self.time(last)
+        var involved: [String: Any] = ["kind": kind?.kind ?? "", "name": objectName, "uid": uid, "apiVersion": kind?.groupVersion ?? "v1"]
+        if let namespace { involved["namespace"] = namespace }
+        add(
+            "events", "\(objectName).\(UUID().uuidString.prefix(8).lowercased())", namespace: namespace ?? "default",
+            values: [
+                "Last Seen": .text(Self.age(since: last)), "Type": .text(type), "Reason": .text(reason),
+                "Object": .text("\((kind?.kind ?? resource).lowercased())/\(objectName)"), "Message": .text(message),
+            ], created: last,
+            fields: [
+                "involvedObject": involved, "type": type, "reason": reason, "message": message, "count": count, "firstTimestamp": time,
+                "lastTimestamp": time, "source": ["component": component],
+            ])
     }
 
     /// An object's cells change: a MODIFIED event.
@@ -587,6 +635,35 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     private static func selector(_ text: String?) -> LabelSelector { LabelSelector(text) }
 
+    /// A field selector as the fake reads one: `a.b=c`, `a.b==c`, `a.b!=c`,
+    /// comma-separated, each a dotted path into the object as a GET answers it.
+    struct FieldSelector: Sendable {
+        var requirements: [(path: [String], value: String, equal: Bool)] = []
+
+        init(_ text: String?) {
+            for part in (text ?? "").split(separator: ",").map(String.init) where !part.isEmpty {
+                let (key, value, equal): (String, String, Bool)
+                if let range = part.range(of: "!=") {
+                    (key, value, equal) = (String(part[..<range.lowerBound]), String(part[range.upperBound...]), false)
+                } else if let range = part.range(of: "==") ?? part.range(of: "=") {
+                    (key, value, equal) = (String(part[..<range.lowerBound]), String(part[range.upperBound...]), true)
+                } else {
+                    continue
+                }
+                requirements.append((key.split(separator: ".").map(String.init), value, equal))
+            }
+        }
+
+        func matches(_ object: [String: Any]) -> Bool {
+            requirements.allSatisfy { requirement in
+                var value: Any? = object
+                for key in requirement.path { value = (value as? [String: Any])?[key] }
+                let text = value.map { "\($0)" } ?? ""
+                return (text == requirement.value) == requirement.equal
+            }
+        }
+    }
+
     // MARK: Answers
 
     enum Answer {
@@ -688,7 +765,8 @@ final class FakeKubeAPI: @unchecked Sendable {
                 version = at
                 after = parts[2]
             }
-            var matching = objects.values.filter { Self.matches($0, kind.fullName, namespace, labels) }.sorted {
+            let fields = FieldSelector(query["fieldSelector"])
+            var matching = objects.values.filter { Self.matches($0, kind.fullName, namespace, labels) && fields.matches(Self.full($0, kind)) }.sorted {
                 ($0.namespace ?? "", $0.name) < ($1.namespace ?? "", $1.name)
             }
             if let after { matching = matching.filter { Self.pageKey($0) > after } }
@@ -886,7 +964,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         return table
     }
 
-    private static func time(_ date: Date) -> String { date.formatted(.iso8601) }
+    static func time(_ date: Date) -> String { date.formatted(.iso8601) }
 
     private static func metadata(_ object: Object, managedFields: Bool) -> [String: Any] {
         var metadata: [String: Any] = [
@@ -929,6 +1007,16 @@ final class FakeKubeAPI: @unchecked Sendable {
             full["data"] = object.data.mapValues { Data($0.utf8).base64EncodedString() }
         } else if object.resource == "configmaps" {
             full["data"] = object.data
+        }
+        if let body = object.body, let fields = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+            for (key, value) in fields {
+                if key == "metadata", let more = value as? [String: Any], var metadata = full["metadata"] as? [String: Any] {
+                    metadata.merge(more) { $1 }
+                    full["metadata"] = metadata
+                } else {
+                    full[key] = value
+                }
+            }
         }
         return full
     }

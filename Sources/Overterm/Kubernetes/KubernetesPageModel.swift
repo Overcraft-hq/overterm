@@ -17,6 +17,7 @@ struct KubernetesActions {
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom
+    case open, back, forward, close
     case command, namespace, context, wide, allNamespaces, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -24,6 +25,10 @@ enum KubernetesKey: String, ResourceKey {
     var key: String {
         if let section { return section.key }
         switch self {
+        case .open: return "↩"
+        case .back: return "["
+        case .forward: return "]"
+        case .close: return "Esc"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -37,6 +42,10 @@ enum KubernetesKey: String, ResourceKey {
     var title: String {
         if let section { return section.title }
         switch self {
+        case .open: return "The detail: overview, YAML, events (a click opens it too)"
+        case .back: return "Back in the detail's history (⌘[ too)"
+        case .forward: return "Forward in the detail's history (⌘] too)"
+        case .close: return "Close the detail"
         case .command: return "A kind by name — :deploy, :po shop, :svc @fake-dev, :widgets /blue; :ctx, :ns"
         case .namespace: return "Namespace — one listed, or a name typed"
         case .context: return "Context"
@@ -114,6 +123,17 @@ final class KubernetesPageModel: ObservableObject {
     private var kindWatch: AnyCancellable?
     /// The kind last shown in each section.
     private var lastKind: [KubeSection: String] = [:]
+    private var selectionWatch: AnyCancellable?
+    private var contextWatch: AnyCancellable?
+
+    /// The detail beside the list: one object, read once as it opens.
+    @Published private(set) var detail: KubeDetailSession?
+    @Published var detailTab: KubeDetailTab = .overview
+    /// Where the detail has been, back and forward: this page's, across
+    /// kinds, in the context shown.
+    @Published private(set) var history = KubeHistory()
+    /// Why a link couldn't be followed (its kind isn't served).
+    @Published private(set) var linkProblem: String?
 
     init(model: KubernetesModel = .shared) {
         self.model = model
@@ -130,6 +150,23 @@ final class KubernetesPageModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] kind, catalog in self?.follow(kind, catalog) }
         section = model.catalog.section(of: model.kind) ?? .workloads
+        // An open detail follows the list's one selected row (the arrows,
+        // a click): the emitted value, the property isn't set yet.
+        selectionWatch = $selection.dropFirst()
+            .sink { [weak self] ids in
+                guard let self, self.detail != nil, ids.count == 1, let id = ids.first, let ref = self.ref(for: id) else { return }
+                self.open(ref, from: .list)
+            }
+        // Another context: its objects aren't this one's — the detail and
+        // its history go.
+        contextWatch = model.$selectedName.dropFirst().removeDuplicates()
+            .sink { [weak self] name in
+                guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
+                self.detail?.cancel()
+                self.detail = nil
+                self.linkProblem = nil
+                self.history.clear()
+            }
     }
 
     private func follow(_ kind: KubeResourceKind, _ catalog: KubeKindCatalog) {
@@ -204,6 +241,12 @@ final class KubernetesPageModel: ObservableObject {
         case .filter: focusFilter += 1
         case .key(let key):
             switch key {
+            case .open: return openSelected()
+            case .back: goBack()
+            case .forward: goForward()
+            case .close:
+                guard detail != nil else { return false }
+                closeDetail()
             case .command: openCommand()
             case .namespace: openPicker(.namespace)
             case .context: openPicker(.context)
@@ -213,6 +256,109 @@ final class KubernetesPageModel: ObservableObject {
             }
         }
         return true
+    }
+
+    // MARK: The detail
+
+    /// The object a row of the list is: the kind shown, in the context shown.
+    func ref(for id: String) -> KubeObjectRef? {
+        guard let context = model.selectedName, let row = model.rows.sorted.first(where: { $0.id.description == id }) else { return nil }
+        return KubeObjectRef(context: context, kind: model.kind, namespace: row.id.namespace, name: row.id.name)
+    }
+
+    /// ↩: the detail of the selected row (the first, of several, in the
+    /// list's order).
+    @discardableResult
+    func openSelected() -> Bool {
+        guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id) else { return false }
+        open(ref, from: .list)
+        return true
+    }
+
+    /// A plain click on a row: its detail.
+    func pressed(_ id: String) {
+        guard let ref = ref(for: id) else { return }
+        open(ref, from: .list)
+    }
+
+    /// The detail on `ref`: a visit in the history, one GET.
+    func open(_ ref: KubeObjectRef, from origin: KubeHistory.Origin) {
+        history.visit(ref, from: origin)
+        show(ref)
+    }
+
+    /// A link in a detail (an owner, a node, a selected pod): its object,
+    /// as the context serves its kind.
+    @discardableResult
+    func follow(_ link: KubeLink) -> Bool {
+        guard let context = detail?.ref.context ?? model.selectedName else { return false }
+        guard let discovery = model.knownDiscovery(of: context), let ref = link.resolve(in: discovery, context: context) else {
+            linkProblem = "\(context) serves no \(link.kind) (\(link.apiVersion))."
+            return false
+        }
+        open(ref, from: .link)
+        return true
+    }
+
+    /// A pod of a detail's selected pods.
+    func openPod(_ row: KubeListRow) {
+        guard let context = detail?.ref.context ?? model.selectedName else { return }
+        let kind = model.knownDiscovery(of: context)?.kind(apiVersion: "v1", kind: "Pod") ?? .pods
+        open(KubeObjectRef(context: context, kind: kind, namespace: row.row.id.namespace, name: row.row.id.name), from: .link)
+    }
+
+    /// `[` or ⌘[: the object shown before.
+    func goBack() {
+        guard let ref = history.goBack() else { return }
+        show(ref)
+    }
+
+    /// `]` or ⌘]: the one after.
+    func goForward() {
+        guard let ref = history.goForward() else { return }
+        show(ref)
+    }
+
+    /// ⌘[ and ⌘] while the page shows: the detail's, when it has somewhere
+    /// to go — else the menus' (the panes).
+    func commandPress(_ characters: String) -> Bool {
+        switch characters {
+        case "[" where history.canGoBack:
+            goBack()
+            return true
+        case "]" where history.canGoForward:
+            goForward()
+            return true
+        default: return false
+        }
+    }
+
+    /// Esc, or its ×: the detail goes — what it read with it — and the list
+    /// has the keyboard. Back (`[`) shows it again.
+    func closeDetail() {
+        guard detail != nil else { return }
+        detail?.cancel()
+        detail = nil
+        linkProblem = nil
+        history.leave()
+        giveListTheKeyboard()
+    }
+
+    private func show(_ ref: KubeObjectRef) {
+        linkProblem = nil
+        guard detail?.ref != ref else { return }
+        detail?.cancel()
+        let session = KubeDetailSession(ref: ref, client: model.client(for: ref.context))
+        detail = session
+        session.load()
+        // Asked once the object is read, by its uid (the session waits).
+        if detailTab == .events { session.loadEvents() }
+    }
+
+    /// The detail's tab shown: what it reads is asked for then.
+    func showTab(_ tab: KubeDetailTab) {
+        detailTab = tab
+        if tab == .events { detail?.loadEvents() }
     }
 
     // MARK: The command bar

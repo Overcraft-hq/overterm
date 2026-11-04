@@ -417,6 +417,14 @@ final class KubernetesModel: ObservableObject {
         connectOverride?(context) ?? KubeProxyConnection(proxies: proxies, context: context)
     }
 
+    /// What a page's detail reads through: the context's proxy (the page's
+    /// slot), or a test's connection. Nil with Kubernetes off, or for a
+    /// context the kubeconfig no longer has.
+    func client(for name: String) -> KubeClient? {
+        guard enabled, let context = contexts.context(named: name) else { return nil }
+        return KubeClient(connection(for: context))
+    }
+
     private func restartReading(side readSide: Bool = true) {
         endFollow()
         rows = KubeRows()
