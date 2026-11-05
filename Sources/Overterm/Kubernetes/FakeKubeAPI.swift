@@ -914,8 +914,9 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// `pods/{p}/log`: a container's log (`container` needed with several),
     /// its last terminated instance's (`previous`, a 400 when it never
     /// restarted), with `timestamps`, from `sinceSeconds` or `sinceTime`
-    /// (whole seconds, as the API takes it), its last `tailLines`; with
-    /// `follow`, kept open and written to as lines are appended.
+    /// (whole seconds, as the API takes it), its last `tailLines`, at most
+    /// `limitBytes` of it (not followed); with `follow`, kept open and
+    /// written to as lines are appended.
     private func log(namespace: String, pod name: String, query: [String: String], channel: Channel) -> Answer {
         locked {
             guard let object = objects[Self.key("pods", namespace, name)], let pod = object.pod else {
@@ -957,7 +958,10 @@ final class FakeKubeAPI: @unchecked Sendable {
             let timestamps = query["timestamps"] == "true"
             let lines = entries.map { Data(((timestamps ? $0.stamp + " " : "") + $0.text + "\n").utf8) }
             guard query["follow"] == "true", !previous, !settings.endFollowsAtOnce else {
-                return .raw(200, lines.reduce(Data(), +), [("Content-Type", "text/plain")])
+                var body = lines.reduce(Data(), +)
+                // The API's limitBytes: it stops there, mid-line or not.
+                if let limit = Int(query["limitBytes"] ?? ""), limit > 0, body.count > limit { body = body.prefix(limit) }
+                return .raw(200, body, [("Content-Type", "text/plain")])
             }
             logFollowers[ObjectIdentifier(channel)] = (channel, key, timestamps)
             return .log(lines: lines)

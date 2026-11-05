@@ -111,11 +111,33 @@ struct AskAgentView: View {
             // What else came with it (a container's logs, its compose
             // service), a chip each.
             if !model.parts.isEmpty {
-                HStack(spacing: 6) {
-                    // By the part, not its place: a sheet given other parts
-                    // reuses no chip for a different one.
-                    ForEach($model.parts) { $part in chip(part.title, $part.on) }
+                if model.showsBrief {
+                    // A brief has more parts than a line holds.
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) {
+                        ForEach($model.parts) { $part in chip(part.title, $part.on) }
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        // By the part, not its place: a sheet given other parts
+                        // reuses no chip for a different one.
+                        ForEach($model.parts) { $part in chip(part.title, $part.on) }
+                    }
                 }
+            }
+            if model.showsBrief {
+                // What will be sent, whole: the chips switch parts in and out.
+                label("What is sent")
+                ScrollView {
+                    Text(verbatim: model.prompt(diff: nil))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(theme.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(height: 240)
+                .background(RoundedRectangle(cornerRadius: 7).fill(theme.term))
+                .accessibilityIdentifier("askAgent.brief")
             }
             TextField("What should it do with this?", text: $model.message)
                 .textFieldStyle(.plain)
@@ -131,7 +153,7 @@ struct AskAgentView: View {
             }
         }
         .padding(14)
-        .frame(width: 380)
+        .frame(width: model.showsBrief ? 620 : 380)
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
     }
 

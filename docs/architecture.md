@@ -2185,8 +2185,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`LogLinesTextView`), so the menu's action reaches it before the
   terminal hidden under the page; without a selection it passes the
   action on. Every word that can carry a secret goes through
-  `DockerSecrets.scrub`: the env's secret values and every URL's
-  password come out, since the prompt is typed into an agent and lands
+  `DockerSecrets.scrub` (`Secrets`, shared with Kubernetes): the env's
+  secret values and every URL's password come out, since the prompt is typed into an agent and lands
   in its transcript. A command and a health check are masked by their
   flags too (`maskArguments`: `--requirepass`, redis-cli's `-a`): Compose
   has put `.env`'s values into them, and the container's env needn't
@@ -2350,8 +2350,8 @@ object's detail beside its list, a Secret's values shown only when
 asked, `label:` and `field:` sent to the server, the palette's page
 commands, Copy as kubectl and a list as CSV — stage 1c, a pod's
 logs, and of stage 1d, Terminal in this context, a pod's shell,
-attach and followed log in a tab, and port-forwards. Nothing writes to a
-cluster.
+attach and followed log in a tab, and port-forwards — and, of stage 1e,
+Ask Why. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2950,9 +2950,10 @@ and opens on its Overview). Through the shared pieces (Logs, above): a
   [--timestamps]` (`KubectlLine.logs`).
 - **⌘L** on picked lines (`askAboutLogLines`): whole lines, scrubbed
   (`KubeLogScrub`, pure) of the pod's own env values whose names look
-  secret, a URL's password (`DockerSecrets.scrub`), bearer tokens, JWTs,
+  secret, a URL's password (`Secrets.scrub`), bearer tokens, JWTs,
   PEM blocks' bodies, AWS keys, a kubeconfig's `token:` and
-  `client-key-data:`, `password=`-style pairs — then the Ask Agent sheet
+  `client-key-data:`, `password=`-style pairs, base64 blobs
+  (`Secrets.scrubCredentials`) — then the Ask Agent sheet
   with the pod they come from and the command that reads them.
 - **Reading only while it shows** (`updateLogsReading`): the tab shown,
   the page on screen, its window on screen. Another tab, the page
@@ -3402,6 +3403,117 @@ never the proxy's socket, which refuses port-forward on every context.
   http://127.0.0.1:<port> in the right slot, `d` on a postgres pod to the
   filled-in form (the Secret's one GET, nothing saved), a Redis pod said,
   an Ingress's host recorded, and the palette's Stop.
+
+**Ask Why** (stage 1e; `KubeAgentBrief.swift`, `KubeAgentBriefing.swift`,
+`KubernetesPageModel+AskWhy.swift`; analysis 3.4): a failing pod or a stuck
+rollout handed to an agent with what it needs to say why — Docker's Ask Why
+(`DockerAgentBrief`), for Kubernetes.
+
+- **What is wrong** (`KubeTrouble`, pure): off a pod's object, its
+  containers (init first) — `CrashLoopBackOff` (`OOMKilled` when its last
+  end was the OOM killer), `ImagePullBackOff`/`ErrImagePull`/…,
+  `CreateContainerConfigError`/`CreateContainerError`, one that ended with
+  an error — then its phase (`Failed`, `Pending`); off a Deployment's, a
+  rollout past its progress deadline (`KubeRollout`'s stuck) or fewer
+  available replicas than wanted. The question an agent is started with
+  is the trouble's ("Why does pod shop/worker-1 keep crashing
+  (CrashLoopBackOff)?"). A list row says enough to offer it — a pod's
+  Status failing or Pending, a Deployment not Available — and the
+  detail's object, once read, says it exactly; else the verb is greyed
+  with why ("pod/web-1 isn't failing: Running, 1/1 ready.").
+- **The brief** (`KubeAgentText`, pure, every part bounded): always sent,
+  the pod — where (the context, production said as such, read-only), its
+  phase and reason, QoS, node, owners (`ReplicaSet … ← Deployment …`), its
+  conditions that aren't True, each container's state, restarts and last
+  terminated state with what its exit code means (`exitMeaning`: 1, 2,
+  126, 127, 137 the OOM killer when `OOMKilled` else a kill — a liveness
+  probe, a stop past its grace period —, 139, 143, 128 + a signal),
+  resources, probes, its command (`maskArguments`) and env: a value whose
+  name looks secret masked, a `secretKeyRef` or an `envFrom` Secret named
+  — `DB_PASSWORD from Secret web-db, key password (not read)` — never
+  valued; and how kubectl reads it. Then a chip each: its events (newest
+  first, 15, each message bounded); the last 60 lines of the troubled
+  container, and of one more that restarted or ended (`logTargets`) — its
+  previous instance's (`previous=true`) when it restarted, 8 KB, the newest
+  kept and a crash's one long line cut, not dropped — read with
+  `limitBytes` (256 KB, `KubeClient.logTail`), of which the last 64 KB are
+  taken apart (`KubeLogText.tail`: no part of a line kept where a cut went
+  through it) and each line bounded before it is scrubbed
+  (`KubeAgentText.bounded`), the brief saying when the server stopped at
+  the limit; its owner's pod template — the last owner read that has
+  `spec.template` (a CronJob's Job's) — as `kubectl get -o yaml` writes
+  it (`pod-template-hash` out, `KubeAgentText.masked`: env through
+  `KubeObjectStrip.maskingEnv`, every container's command and args, its
+  probes' and hooks' `exec`, through `Secrets.maskArguments`), and, under
+  a Deployment, its diff with the previous ReplicaSet's
+  (`currentAndPrevious`: the revision the Deployment names, else the
+  highest, and the one before; `lineDiff`, two lines of context; whether
+  they differ asked of the templates, not their masked YAML — a masked
+  value that changed, a rotated password, is marked "(changed)" and named,
+  `markingChanged`); for Pending, the scheduler's `PodScheduled` message,
+  what it requests (`requests`: the containers' summed, or the largest init
+  container's; `KubeQuantity`), its node selector and tolerations, against
+  each node's allocatable, readiness, cordon and taints (20 nodes, and
+  what other pods request isn't counted, said). A Deployment's brief is
+  its rollout as `kubectl rollout status` says it, its replicas, strategy,
+  deadline, conditions and ReplicaSets, then its events, its newest
+  ReplicaSet's (a FailedCreate — a quota — is there), that ReplicaSet's
+  pods (by its `pod-template-hash`), the first failing one's containers and
+  log, the template and the diff. `KubeAgentBrief.deployedCommit` is the
+  seam for the bound checkout's deployed commit (3.2): nil until stage 3a's
+  binding exists.
+- **The reads** (`KubeAgentBriefing`): once, when asked — the object, its
+  events, the logs, its owners (by discovery's kinds, else Kubernetes'
+  own; an ownerReference naming a Secret never followed), a Deployment's ReplicaSets (one page of 50), the nodes (one page of
+  50), its pods as rows only — every one a GET through the context's proxy
+  (`KubernetesModel.client`), each given `readTimeout` (10 s,
+  `KubeBriefRace`); one that fails or times out leaves its part out and
+  the brief says what couldn't be read. **No Secret is read**: none is
+  asked for, and a Secret asked about is refused before anything is.
+- **Scrubbed**: every word through `Secrets` — the pod's and its
+  template's env values that look secret and every URL's password
+  (`Secrets.scrub`, the names the brief says anyway kept:
+  `KubeAgentText.names`), then credentials in text
+  (`Secrets.scrubCredentials`: PEM bodies, bearer and basic
+  authorization, JWTs, AWS keys, a kubeconfig's `token`,
+  `client-key-data`, `client-certificate-data`, `password`, an auth
+  provider's `id-token`, `refresh-token`, `client-secret`…, env-style
+  names with a prefix (`DB_PASSWORD=`, `GITHUB_TOKEN:`) — only spaces and
+  tabs around the `:`, so a YAML block under `secret:` stays —, vendor
+  tokens by their prefix (`ghp_`, `xoxb-`, `glpat-`, `sk_live_`…), and
+  base64 or base64url blobs — 32 characters or more with upper- and
+  lowercase and a digit, so a digest, a SHA, a uid or a path stays).
+- **Asked from** `a` (on the list's one selected pod or Deployment, or the
+  detail's), ⌘L over the page (`WorkspacePage.askAboutSelection`; lines
+  picked in a log answer it themselves), a failing pod's Why in its row
+  (Docker's Ask Why, a button), and Ask an Agent Why… on the menu and the
+  detail's buttons (a `ResourceVerb`). Production too: it only reads.
+- **The sheet** (`presentKubernetesBrief`): the Ask Agent sheet with the
+  question typed, the subject the fixed chip, the parts their chips, and
+  the whole prompt shown before it is sent (`AskAgentModel.showsBrief`,
+  updated as chips go off; no git diff chip, which the preview wouldn't
+  show). No checkout is bound to a context yet, so the
+  selected tab's agent is offered first, then the window's others, then a
+  new one in the selected tab's folder; Send types it, as every Ask Agent
+  does, the page stepping aside.
+- **Checked** (`KubeAgentBriefTests`): each failure kind off fixture
+  objects, the exit codes, a container's env (a Secret named, a secret
+  value masked), the template diff, Pending's requests and nodes, the
+  bounds, the log targets; every scrubbing pattern and what isn't a blob,
+  Docker's scrubbing unchanged; against the fake, a crash loop's brief
+  with every section and its planted secrets out (the previous log read
+  once, never followed), production said, Pending's nodes, a stuck
+  rollout's ReplicaSet events, pods and diff, a pod that is fine and a
+  Secret refused with nothing asked, a read that hangs left out in time —
+  every test ending with only GETs and no `/secrets`; on the page, `a`,
+  the greyed verb, the detail's button, a Deployment's from its object,
+  production. The `kubernetes` scenario: on fake-dev's crash-looping pod,
+  its row's Why drawn, `a` opening the sheet with the brief shown whole
+  (its sections, the exit code's meaning, events, the previous log), the
+  planted secrets out and a Secret's env named, the selected tab's agent
+  first, read with GETs alone and no Secret — then Cancel, nothing sent; a
+  pod that is fine saying why; ⌘L over the page; the detail's button; and
+  on fake-prod the same, said production, reads only.
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and

@@ -134,6 +134,10 @@ struct KubeLogQuery: Equatable, Sendable {
     var previous = false
     var follow = false
     var tailLines: Int?
+    /// At most this many bytes of the answer (`limitBytes`): the server
+    /// stops there, so it cuts from the start of the tail — the newest
+    /// lines are the ones past it.
+    var limitBytes: Int?
     var since: KubeLogSince = .all
     /// From this time on (RFC 3339, whole seconds): a follow resumed.
     var sinceTime: String?
@@ -145,7 +149,8 @@ struct KubeLogQuery: Equatable, Sendable {
         return KubePath.query(
             base,
             [
-                ("container", container), ("follow", follow && !previous ? "true" : nil), ("previous", previous ? "true" : nil),
+                ("container", container), ("follow", follow && !previous ? "true" : nil), ("limitBytes", limitBytes.map(String.init)),
+                ("previous", previous ? "true" : nil),
                 ("sinceSeconds", time == nil ? since.seconds.map(String.init) : nil), ("sinceTime", time),
                 ("tailLines", tailLines.map(String.init)), ("timestamps", "true"),
             ])
@@ -232,6 +237,38 @@ enum KubeLogText {
         }
     }
 
+    /// The last `keep` bytes of a log's answer, no part of a line: a line
+    /// the cut went through is left out up to its first newline (or space,
+    /// for one longer than `keep`), and when the server `stopped` at its
+    /// limit mid-line, the last back to its last newline (or space). A
+    /// secret cut in two is never kept in part, where scrubbing can't
+    /// know it.
+    static func tail(_ body: Data, keep: Int, stopped: Bool) -> Data {
+        var kept = body
+        if stopped, kept.last != 0x0A {
+            if let newline = kept.lastIndex(of: 0x0A) {
+                kept = kept[...newline]
+            } else if let space = kept.lastIndex(of: 0x20) {
+                kept = kept[..<space]
+            } else {
+                kept = Data()
+            }
+        }
+        if kept.count > keep {
+            kept = kept.suffix(keep)
+            // Its own last newline ends the last line, not the cut one.
+            let head = kept.last == 0x0A ? kept.dropLast() : kept
+            if let newline = head.firstIndex(of: 0x0A) {
+                kept = kept[kept.index(after: newline)...]
+            } else if let space = head.firstIndex(of: 0x20) {
+                kept = kept[kept.index(after: space)...]
+            } else {
+                kept = Data()
+            }
+        }
+        return Data(kept)
+    }
+
     /// The lines an answer with a larger tail has before `shown`'s first:
     /// up to where `shown` starts in it (its first lines matched, not only
     /// one: a line can say the same twice), else those older than its
@@ -262,8 +299,8 @@ enum KubeLogText {
 /// values that look secret, and what looks like a credential whoever wrote
 /// it — a URL's password, a bearer token, a JWT, a PEM block's body, AWS
 /// keys, a kubeconfig's `token:`, `client-key-data:` and
-/// `client-certificate-data:`, `password=`/`secret:`-style pairs — taken
-/// out. Pure.
+/// `client-certificate-data:`, `password=`/`secret:`-style pairs, base64
+/// blobs — taken out (`Secrets`). Pure.
 enum KubeLogScrub {
     static let mask = "••••••"
 
@@ -282,23 +319,11 @@ enum KubeLogScrub {
         return out
     }
 
-    private static let patterns: [(String, String)] = [
-        // A PEM block's body, its armour kept.
-        (#"(-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----)[\s\S]*?(-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----)"#, "$1 \(mask) $2"),
-        (#"(?i)(\bbearer\s+)[A-Za-z0-9\-._~+/]+=*"#, "$1\(mask)"),
-        (#"\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+"#, mask),
-        (#"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[A-Z0-9]{16}\b"#, mask),
-        (
-            #"(?i)(\b(?:client-key-data|client-certificate-data|certificate-authority-data|token|id-token|refresh-token|access[_-]?token|api[_-]?key|apikey|secret|secret[_-]?key|aws_secret_access_key|aws_session_token|password|passwd|pwd)["']?\s*[:=]\s*["']?)[^\s"',;&]+"#,
-            "$1\(mask)"
-        ),
-    ]
-
+    /// The env's secret values and every URL's password taken out
+    /// (`Secrets.scrub`), then what looks like a credential
+    /// (`Secrets.scrubCredentials`: tokens, keys, a kubeconfig's fields,
+    /// base64 blobs).
     static func scrub(_ text: String, env: [(key: String, value: String)]) -> String {
-        var out = DockerSecrets.scrub(text, env: env)
-        for (pattern, template) in patterns {
-            out = out.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
-        }
-        return out
+        Secrets.scrubCredentials(Secrets.scrub(text, env: env))
     }
 }

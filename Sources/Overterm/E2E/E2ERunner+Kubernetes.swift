@@ -286,6 +286,7 @@ extension E2ERunner {
         await kubernetesSwitcher(model, page, fake)
         await kubernetesTerminal(model, page, kubeconfig: kubeconfig)
         await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log)
+        await kubernetesAskWhy(model, page, fake)
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
 
         // Off: the page says so, and no proxy is left.
@@ -1126,6 +1127,143 @@ extension E2ERunner {
 
         model.select("fake-dev")
         check("another context: no command's problem left", page.commandProblem == nil, page.commandProblem ?? "")
+        app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
+        if app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
+    }
+
+    /// The planted secrets Ask Why's brief must never carry.
+    static let askWhySecret = "sk_test_fake_e2e_7Hq2"
+    static let askWhyBearer = "fakeE2E.bearer-Tok3n"
+
+    /// Ask Why (3.4): on fake-dev's crash-looping pod, `a` reads the brief
+    /// — GETs through the proxy, its previous instance's log, its events —
+    /// and opens the Ask Agent sheet with the whole brief shown, a planted
+    /// secret (the pod's own env value, a bearer token in its log) scrubbed
+    /// and a Secret's env named, never read. Nothing is sent: the prompt is
+    /// read and the sheet cancelled (an agent's tab, not started, is the
+    /// target offered first — the selected tab's). A pod that is fine says
+    /// why and opens nothing; ⌘L over the page asks the same; on fake-prod
+    /// it works too, reads only.
+    private func kubernetesAskWhy(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        let opened = Set(app.store.tabs.map(\.id))
+        func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
+        func cancelSheet() async -> Bool {
+            let cancelled = sheet().map { $0.cancel() } != nil
+            return await eventually(3) { self.window.attachedSheet == nil } && cancelled
+        }
+        func reopen(_ id: String) async -> Bool {
+            if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
+            page.closeDetail()
+            page.filter = ""
+            page.applySelector()
+            if model.kind.fullName != KubeResourceKind.pods.fullName { page.showKind(.pods) }
+            let listed = await eventually(10) { page.rows.contains { $0.id == id } }
+            page.selection = [id]
+            return listed
+        }
+        var crashing = FakeKubeAPI.Pod(status: "CrashLoopBackOff", phase: "Running", ready: 0, restarts: 7, lastRestart: "40s", image: "acme/billing:2.3.0")
+        crashing.env = ["STRIPE_SECRET_KEY": Self.askWhySecret, "MODE": "live"]
+        crashing.secretEnv = ["DB_PASSWORD": FakeKubeAPI.SecretKeyRef(name: "web-db", key: "password")]
+        fake.addPod("billing-7f", namespace: "shop", crashing)
+        fake.addPod("calm-1", namespace: "shop")
+        fake.setLog(
+            "billing-7f", namespace: "shop",
+            ["billing 2.3.0 starting", "stripe key \(Self.askWhySecret) loaded", "Authorization: Bearer \(Self.askWhyBearer)", "FATAL: cannot reach ledger"],
+            previous: true)
+        fake.addEvent(about: "pods", "billing-7f", namespace: "shop", type: "Warning", reason: "BackOff", message: "Back-off restarting failed container app", count: 9)
+
+        // The agent offered first: the selected tab's, under the page.
+        app.newTab(in: FileManager.default.homeDirectoryForCurrentUser, agent: .claude, startAgent: false)
+        guard let agentTab = app.store.selected else { return check("an agent tab to offer", false) }
+        agentTab.customTitle = "shop · claude"
+
+        model.select("fake-dev")
+        check("the page on fake-dev's crashing pod", await reopen("shop/billing-7f") && model.selectedName == "fake-dev")
+        func askWhy(_ id: String) -> ResourceVerb? { page.verbs(for: [id]).first { $0.title == "Ask an Agent Why…" } }
+        check("its menu asks an agent why", askWhy("shop/billing-7f")?.unavailable == nil && askWhy("shop/billing-7f")?.key == "a")
+        check(
+            "greyed with why on a pod that is fine", askWhy("shop/calm-1")?.unavailable == "pod/calm-1 isn't failing: Running, 1/1 ready.",
+            askWhy("shop/calm-1")?.unavailable ?? "none")
+        check("its row has the Ask Why button", await shownText(15) { $0.contains("Why") } != nil)
+        fake.forgetRequests()
+        check("a asks why", page.press("a"))
+        check("the Ask Agent sheet opens", await eventually(15) { self.window.attachedSheet != nil && sheet() != nil }, page.commandProblem ?? "")
+        let ask = app.askAgent
+        check(
+            "the question is started for you",
+            ask.message == "Why does pod shop/billing-7f keep crashing (CrashLoopBackOff)?"
+                && ask.subject == "pod/billing-7f CrashLoopBackOff", "\(ask.message) / \(ask.subject ?? "none")")
+        check("and the whole brief is shown before it is sent", ask.showsBrief)
+        check(
+            "the selected tab's agent is offered first, and chosen; a new one last",
+            ask.targets.first?.id == agentTab.id && ask.chosen == agentTab.id && ask.targets.last?.id == nil, "\(ask.targets.map(\.title))")
+        check(
+            "its sections", ["events", "previous log of app"].allSatisfy { title in ask.parts.contains { $0.title == title } },
+            "\(ask.parts.map(\.title))")
+        let prompt = await app.askAgentPrompt()
+        check(
+            "how it ended, and what its exit code means",
+            prompt.contains("Kubernetes pod shop/billing-7f, in context fake-dev") && prompt.contains("Restarts: 7")
+                && prompt.contains("Last terminated: terminated — Error, exit 1") && prompt.contains("a general error"), prompt)
+        check("its events", prompt.contains("Warning BackOff ×9"), prompt)
+        check("its previous instance's log", prompt.contains("FATAL: cannot reach ledger") && prompt.contains("billing 2.3.0 starting"), prompt)
+        check(
+            "the planted secrets scrubbed", !prompt.contains(Self.askWhySecret) && !prompt.contains(Self.askWhyBearer) && prompt.contains("stripe key •••••• loaded"),
+            prompt)
+        check("a Secret's env named, never valued", prompt.contains("DB_PASSWORD from Secret web-db, key password (not read)"), prompt)
+        check(
+            "read with GETs alone, no Secret among them",
+            fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("/secrets") }
+                && fake.requests.contains { $0.isLog && $0.query["previous"] == "true" && $0.path.hasSuffix("/billing-7f/log") }, "\(fake.requests)")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty, let shown = window.attachedSheet {
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-kube-ask-why.png"), window: shown)
+        }
+        check("Cancel sends nothing and puts the sheet away", await cancelSheet() && !ask.isOpen)
+        check("the page is still there, its list has the keyboard", app.store.showingOverlay == .kubernetes)
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+
+        // A pod that is fine: why not, and nothing opens.
+        page.selection = ["shop/calm-1"]
+        check("a on a pod that is fine says why", page.press("a") && page.commandProblem == "pod/calm-1 isn't failing: Running, 1/1 ready.")
+        await pause(0.4)
+        check("and opens nothing", window.attachedSheet == nil)
+
+        // ⌘L over the page: the same, never the terminal hidden under it.
+        page.selection = ["shop/billing-7f"]
+        app.focusPageList(.kubernetes)
+        _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
+        let fromMenu = menuItem("Edit", "Ask an Agent About the Selection").map { perform($0) } == true
+        let overPage = await eventually(15) { self.window.attachedSheet != nil && sheet() != nil }
+        check("⌘L over the page asks why too", fromMenu && overPage && ask.subject == "pod/billing-7f CrashLoopBackOff", ask.subject ?? "none")
+        check("Cancel", await cancelSheet())
+
+        // The detail's button.
+        page.pressed("shop/billing-7f")
+        _ = await eventually(10) { page.detail?.object != nil }
+        let button = page.detail.map { page.detailVerbs(for: $0.ref) }?.first { $0.title == "Ask an Agent Why…" }
+        check("the detail has an Ask Why button", button?.place == .button && button?.unavailable == nil)
+        page.closeDetail()
+
+        // fake-prod: reads only, and it says production.
+        fake.addPod("ledger-0", namespace: "payments", crashing)
+        model.select("fake-prod")
+        check("on fake-prod's crashing pod", await reopen("payments/ledger-0"), "\(page.rows.map(\.id))")
+        fake.forgetRequests()
+        check("a asks why on production too", page.press("a"))
+        check("the sheet opens", await eventually(15) { self.window.attachedSheet != nil && sheet() != nil }, page.commandProblem ?? "")
+        let production = await app.askAgentPrompt()
+        check(
+            "saying it is production, read-only",
+            production.contains("PRODUCTION context fake-prod (read-only: Overterm changes nothing there)")
+                && !production.contains(Self.askWhySecret), production)
+        check("reads only: no write, no Secret", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("/secrets") }, "\(fake.writes)")
+        check("Cancel", await cancelSheet())
+
+        model.select("fake-dev")
+        fake.deletePod("billing-7f", namespace: "shop")
+        fake.deletePod("calm-1", namespace: "shop")
+        fake.deletePod("ledger-0", namespace: "payments")
+        page.commandProblem = nil
         app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
         if app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
     }

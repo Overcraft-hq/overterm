@@ -759,6 +759,6 @@ final class KubePodCommandsPageTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of("e"), .shell)
         XCTAssertEqual(KubernetesKey.of("A"), .attach)
         XCTAssertEqual(KubernetesKey.of("t"), .followInTab)
-        XCTAssertNil(KubernetesKey.of("a"), "a is Ask Why's, a later stage")
+        XCTAssertEqual(KubernetesKey.of("a"), .askWhy, "a is Ask Why's")
     }
 }

@@ -19,11 +19,12 @@ extension KubernetesPageModel {
         }
     }
 
-    /// A detail's buttons: a pod's tab verbs, then its forwards', then
+    /// A detail's buttons: Ask Why, a pod's tab verbs, then its forwards', then
     /// what opens through one (a database pod's Database client), and an
     /// Ingress's Open.
     func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
-        podVerbs(for: ref) + forwardVerbs(for: ref) + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 }
+        [askWhyVerb(for: ref)].compactMap { $0 } + podVerbs(for: ref) + forwardVerbs(for: ref)
+            + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 }
     }
 
     /// The one row picked: its forward verbs, and what opens through one.

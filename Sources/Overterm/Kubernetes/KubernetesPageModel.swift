@@ -44,6 +44,9 @@ struct KubernetesActions {
     var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
     /// A forward's OpenAPI document, imported into the API client on a press.
     var importAPI: (APIDiscovery.Source) -> Void = { _ in }
+    /// Ask Why: a failing pod's or a stuck rollout's brief, scrubbed, in
+    /// the Ask Agent sheet — the whole brief shown before it is sent.
+    var askWhy: (KubeAgentBrief) -> Void = { _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -51,7 +54,7 @@ struct KubernetesActions {
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom, forwards
-    case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database
+    case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -70,6 +73,7 @@ enum KubernetesKey: String, ResourceKey {
         case .portForward: return "f"
         case .openForward: return "o"
         case .database: return "d"
+        case .askWhy: return "a"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -94,6 +98,8 @@ enum KubernetesKey: String, ResourceKey {
             return "Open a forward in the browser column — the selected object's, or the one picked in Forwards; an Ingress in your browser"
         case .database:
             return "Database client: a database pod (\(KubeDatabase.spoken)) forwarded, its connection form filled in"
+        case .askWhy:
+            return "Ask an agent why: a failing pod (CrashLoopBackOff, OOMKilled, ImagePullBackOff, Pending…) or a stuck rollout — its brief, scrubbed, shown before it is sent (⌘L too)"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -209,6 +215,9 @@ final class KubernetesPageModel: ObservableObject {
     @Published var forwardSelection: UUID?
     /// Whether something on this Mac listens on a port: a test's stands in.
     var isPortBound: (Int) -> Bool = { ListeningPorts.isBound($0) }
+
+    /// The object Ask Why is reading a brief for, while it does.
+    @Published var askingWhy: KubeObjectRef?
 
     /// The detail beside the list: one object, read once as it opens.
     @Published private(set) var detail: KubeDetailSession?
@@ -374,6 +383,7 @@ final class KubernetesPageModel: ObservableObject {
             case .portForward: return portForward()
             case .openForward: return openForward()
             case .database: return openInDatabase()
+            case .askWhy: return askWhy()
             default: return false
             }
         }
@@ -939,7 +949,7 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ] + [terminalVerb(for: picked)].compactMap { $0 } + podVerbs(for: picked) + forwardVerbs(for: picked)
+        ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

@@ -371,6 +371,20 @@ struct KubeClient: Sendable {
         return KubeLogText.lines(response.body)
     }
 
+    /// A container's last lines for an agent, bounded in bytes twice: the
+    /// server stops at `query.limitBytes`, and of what came only the last
+    /// `keep` bytes are taken apart (and scrubbed after) — a line cut at
+    /// either end left out to its whitespace (`KubeLogText.tail`).
+    /// `stopped`: the server stopped at the limit, so newer lines may be
+    /// past it.
+    func logTail(namespace: String, pod: String, query: KubeLogQuery, keep: Int) async throws -> (lines: [LogLine], stopped: Bool) {
+        var query = query
+        query.follow = false
+        let body = try await get(query.path(namespace: namespace, pod: pod), accept: "text/plain, */*").body
+        let stopped = query.limitBytes.map { body.count >= $0 } ?? false
+        return (KubeLogText.lines(KubeLogText.tail(body, keep: keep, stopped: stopped)), stopped)
+    }
+
     /// A pod's log as it comes (`pods/{p}/log`, a GET like any other):
     /// its lines in batches, parsed on the cooperative pool. Ends when the
     /// server ends it — a follow ends at the kubelet's or the apiserver's

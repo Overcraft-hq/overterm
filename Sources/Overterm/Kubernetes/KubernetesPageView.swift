@@ -484,9 +484,11 @@ struct KubernetesPageView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
                         Text(verbatim: row.summary?.exitReason ?? text)
+                            .help("\(row.row.id.name): \(row.summary?.exitReason ?? text)")
+                        Spacer(minLength: 4)
+                        askWhyButton(row)
                     }
-                    .foregroundStyle(TabStatusStyle.failed)
-                    .help("\(row.row.id.name): \(row.summary?.exitReason ?? text)"))
+                    .foregroundStyle(TabStatusStyle.failed))
             case "status" where row.summary != nil:
                 let done = row.summary?.isReady == true || row.summary?.isCompleted == true
                 view = AnyView(Text(verbatim: text).foregroundStyle(done ? theme.text : TabStatusStyle.waiting))
@@ -506,6 +508,27 @@ struct KubernetesPageView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .padding(.horizontal, 6)
                 .environment(\.colorScheme, theme.isDark ? .dark : .light))
+    }
+
+    /// A failing pod's Ask Why, in its row — Docker's Ask Why button, as
+    /// the detail's and the menu's verb (`askWhyVerb`) is.
+    private func askWhyButton(_ row: KubeListRow) -> some View {
+        Button {
+            page.askWhy(row: row.id)
+        } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "sparkles").font(.system(size: 9))
+                Text("Why").font(.system(size: 11))
+            }
+            .padding(.horizontal, 5)
+            .frame(height: 18)
+            .background(Capsule().fill(TabColor.purple.color.opacity(0.18)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(TabColor.purple.color)
+        .help("Ask an Agent Why… (\(KubernetesKey.askWhy.key)) — the brief shown, scrubbed, before it is sent")
+        .accessibilityIdentifier("kubernetes.askWhy")
     }
 
     private func banner(_ text: String) -> some View {

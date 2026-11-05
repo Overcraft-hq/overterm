@@ -18,6 +18,25 @@ final class AskAgentTests: XCTestCase {
         return model
     }
 
+    /// A brief (Kubernetes' Ask Why) is shown whole before it is sent; a
+    /// selection isn't, and a sheet put away forgets it was one.
+    func testABriefIsShownWholeAndForgottenWhenPutAway() {
+        let plain = model()
+        XCTAssertFalse(plain.showsBrief)
+        let brief = AskAgentModel()
+        brief.begin(
+            selection: "Kubernetes pod shop/worker-1", command: nil, folder: nil, targets: [], diff: false, message: "Why?", subject: "pod/worker-1 OOMKilled",
+            parts: [.init(title: "events", text: "Events of pod/worker-1")], showsBrief: true)
+        XCTAssertTrue(brief.showsBrief)
+        XCTAssertFalse(brief.canDiff, "no git diff the sheet doesn't show")
+        let inRepository = AskAgentModel()
+        inRepository.begin(selection: "Kubernetes pod shop/worker-1", command: nil, folder: "/src/app", targets: [], diff: true, showsBrief: true)
+        XCTAssertFalse(inRepository.canDiff, "even in a checkout: the preview is the whole of what is sent")
+        XCTAssertEqual(brief.prompt(diff: nil), "Why?\n\nKubernetes pod shop/worker-1\n\nEvents of pod/worker-1")
+        brief.stop()
+        XCTAssertFalse(brief.showsBrief)
+    }
+
     private let failed = CommandBlock(
         id: 0, command: "pnpm --filter api test", startRow: 0, endRow: 10, exit: 1, seconds: 4)
 

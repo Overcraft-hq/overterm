@@ -61,24 +61,30 @@ final class AskAgentModel: ObservableObject {
     /// The chip is offered only then, and is off until it is asked for:
     /// the other extras are a line each, this one can be thousands.
     @Published private(set) var canDiff = false
+    /// The whole prompt is shown in the sheet before it is sent: a brief
+    /// assembled for the user (Kubernetes' Ask Why), not text they picked.
+    @Published private(set) var showsBrief = false
 
     var lines: Int { selection.isEmpty ? 0 : selection.components(separatedBy: "\n").count }
 
     /// `message`: the question already typed (a container's "Why did …?").
     func begin(
         selection: String, command: CommandBlock?, folder: String?, targets: [Target], diff: Bool, message: String = "", subject: String? = nil,
-        parts: [Part] = []
+        parts: [Part] = [], showsBrief: Bool = false
     ) {
         self.selection = selection
         self.command = command
         self.folder = folder
         self.targets = targets
         chosen = targets.first { $0.id != nil }?.id
-        canDiff = diff
+        // A brief's sheet shows the whole of what is sent; a git diff it
+        // never showed isn't offered with it.
+        canDiff = diff && !showsBrief
         extras = Extras(command: command != nil, exit: command?.exit != nil, diff: false)
         self.message = message
         self.subject = subject
         self.parts = parts
+        self.showsBrief = showsBrief
         isOpen = !selection.isEmpty
     }
 
@@ -87,6 +93,7 @@ final class AskAgentModel: ObservableObject {
         selection = ""
         parts = []
         subject = nil
+        showsBrief = false
     }
 
     /// What will actually be typed. Built here rather than in the view so
