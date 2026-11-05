@@ -30,15 +30,39 @@ extension TerminalWindowController {
             askAgent: { [weak self] text, about in self?.askAgent(aboutKubernetes: text, about) },
             openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) },
             runInTab: { [weak self] command, context, namespace in self?.runKubernetesCommand(command, in: context, namespace: namespace) },
-            confirm: { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, then) },
+            confirm: { [weak self] title, detail, button, then in self?.confirmKubernetes(title, detail, button, then) },
             choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) },
             openURL: { [weak self] url in self?.openDockerLink(url) },
             currentTab: { [weak self] in self?.store.selected?.id },
             openExternal: { [weak self] url in self?.openKubernetesExternally(url) },
             openDatabase: { [weak self] guess in self?.newDatabaseConnection(from: guess) },
             importAPI: { [weak self] source in self?.importForwardAPI(source) },
-            askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) })
+            askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) },
+            confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) })
     }
+
+    /// A write asked first (rule 3), in the one confirmation every write
+    /// takes (`WriteConfirmation`): the confirmation's words, the context
+    /// and namespace — red on production —, its button and Cancel, and —
+    /// where rule 4 asks it — a field for the object's name. What was typed
+    /// goes back to the page, which checks it; Cancel sends nothing.
+    func confirmKubernetesWrite(_ confirmation: KubeWriteConfirmation, _ then: @escaping (String) -> Void) {
+        guard let window else { return }
+        WriteConfirmation(
+            title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
+            button: confirmation.button, typedName: confirmation.typedName, critical: confirmation.production || confirmation.typedName != nil
+        ).present(on: window, then: then)
+    }
+
+    /// The page's other asks (production's switch, a shell on production):
+    /// the same sheet, a production scope on its first line drawn red.
+    func confirmKubernetes(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
+        guard let window else { return }
+        WriteConfirmation.splittingProduction(title: title, detail: detail, button: button).present(on: window) { _ in then() }
+    }
+
+    /// The typed-name field's identifier, for the scenario.
+    static let kubernetesTypedNameField = WriteConfirmation.typedNameField
 
     /// An Ingress's host, in the default browser. An isolated run opens
     /// nothing of the user's: it records what it would have opened.

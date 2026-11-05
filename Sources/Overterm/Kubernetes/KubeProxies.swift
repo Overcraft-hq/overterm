@@ -18,7 +18,11 @@ import NIOHTTP1
 /// - **A credential failure stops the context** (`KubeProxyProblem`): no
 ///   retries — each would run the plugin again — until `retry`.
 /// - **Read-only follows the context**: a context that stops (or starts)
-///   being writable gets a new proxy with the other flags.
+///   being writable gets a new proxy with the other flags. A production
+///   context's writes for the session are the proxies' own to know
+///   (`allowSessionWrites`, kept with the context they were turned on for): whichever copy of the context a request comes
+///   with, its proxy has the same flags — and a write (`sendWrite`) is
+///   refused here, before any socket, unless the context is writable.
 actor KubeProxies {
     struct Configuration: Equatable, Sendable {
         var maxProxies = 4
@@ -84,6 +88,10 @@ actor KubeProxies {
     private var waiting: [String: Int] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var sweeper: Task<Void, Never>?
+    /// The production contexts whose writes are on for this session, each
+    /// as it was read when they were turned on: a copy of the name that
+    /// reaches another cluster, user or class has none (`effective`).
+    private var sessionWrites: [String: KubeContext] = [:]
 
     init(
         configuration: Configuration = Configuration(), now: @escaping @Sendable () -> Date = { Date() }, sweepEvery: Duration = .seconds(60),
@@ -104,6 +112,54 @@ actor KubeProxies {
     /// The context the page shows: its proxy is never closed for another's.
     func setPage(_ context: String?) {
         page = context
+    }
+
+    // MARK: Writes for the session
+
+    /// A production context's writes on for this session: its proxy is
+    /// closed now, so the next request opens one without the method filter.
+    func allowSessionWrites(_ context: KubeContext) async {
+        guard context.isProduction else { return }
+        var kept = context
+        kept.sessionWrites = false
+        let was = sessionWrites[context.name]
+        sessionWrites[context.name] = kept
+        guard was.map({ !KubernetesModel.sameAccess($0, kept) }) ?? true else { return }
+        await closeProxy(context.name)
+    }
+
+    /// Off again: its proxy is closed, the next one has the filter back.
+    func endSessionWrites(_ name: String) async {
+        guard sessionWrites.removeValue(forKey: name) != nil else { return }
+        await closeProxy(name)
+    }
+
+    /// `context` as its proxy is planned: a production context's session
+    /// writes as the proxies know them, whatever the copy says — and only
+    /// while it is the cluster, user and class they were turned on for, so
+    /// a kubeconfig read again that points the name elsewhere is read-only
+    /// here before anyone has said so.
+    private func effective(_ context: KubeContext) -> KubeContext {
+        var context = context
+        context.sessionWrites =
+            context.isProduction && sessionWrites[context.name].map { KubernetesModel.sameAccess($0, context) } == true
+        return context
+    }
+
+    /// Whether `context` may be written to now.
+    func isWritable(_ context: KubeContext) -> Bool { effective(context).isWritable }
+
+    /// A write through `context`'s proxy — refused before it reaches any
+    /// socket unless the context is writable for this session (its
+    /// writable flag; production's switch). A read-only context's socket
+    /// refuses it too: this is the second lock, not the only one.
+    nonisolated func sendWrite(
+        _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)] = []
+    ) async throws -> HTTPResponse {
+        guard method != .GET, await isWritable(context) else {
+            throw KubeWriteRefused(reason: method == .GET ? "A write is never a GET." : KubeWriteCheck.readOnly(context))
+        }
+        return try await send(context, role: role, method, path, body: body, headers: headers)
     }
 
     // MARK: Requests
@@ -188,6 +244,7 @@ actor KubeProxies {
     /// one closed meanwhile ends the request (`closedWhileOpening`) rather
     /// than going on with a proxy that may be gone, uncounted.
     private func begin(_ context: KubeContext, _ role: Role) async throws -> (KubeProxy, Bool, UInt64) {
+        let context = effective(context)
         let name = context.name
         if let problem = stopped[name] { throw problem }
         if role == .page { page = name }

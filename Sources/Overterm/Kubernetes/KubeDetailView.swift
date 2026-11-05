@@ -71,8 +71,12 @@ struct KubeDetailView: View {
                 .truncationMode(.middle).textSelection(.enabled)
                 .accessibilityIdentifier("kubernetes.detail.name")
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
-            if session.ref.isPod || KubeForwardTarget.of(kind: session.ref.kind, name: session.ref.name) != nil {
-                KubePodActions(page: page, access: page.model.access, forwards: page.forwards, ref: session.ref, theme: theme).padding(.top, 4)
+            if session.ref.isPod || KubeForwardTarget.of(kind: session.ref.kind, name: session.ref.name) != nil
+                || KubeWriteVerb.allCases.contains(where: { KubeWriteCheck.offered($0, on: session.ref.kind) })
+            {
+                KubePodActions(
+                    page: page, access: page.model.access, writeAccess: page.model.writeAccess, forwards: page.forwards, ref: session.ref, theme: theme
+                ).padding(.top, 4)
             }
         }
         .padding(.horizontal, 14)
@@ -85,6 +89,8 @@ struct KubeDetailView: View {
     private struct KubePodActions: View {
         @ObservedObject var page: KubernetesPageModel
         @ObservedObject var access: KubeAccessChecks
+        /// The writes' access reviews.
+        @ObservedObject var writeAccess: KubeAccessChecks
         /// Open Forward comes and goes with its forward.
         @ObservedObject var forwards: KubeForwards
         let ref: KubeObjectRef
@@ -97,6 +103,10 @@ struct KubeDetailView: View {
                     Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityIdentifier("kubernetes.detail.commandProblem")
+                } else if let status = page.writeStatus {
+                    Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("kubernetes.detail.writeStatus")
                 }
             }
         }

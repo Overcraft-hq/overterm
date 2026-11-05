@@ -263,6 +263,7 @@ final class KubeFindTests: XCTestCase {
             [
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
                 "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward",
+                "Delete to Recreate…", "Evict…", "Remove Finalizers…", "Force Delete…", "Delete…",
             ])
         verbs.first { $0.title == "Copy as kubectl" }?.perform()
         XCTAssertEqual(copied.last, "kubectl --context fake-dev -n shop get po web-1 -o yaml")

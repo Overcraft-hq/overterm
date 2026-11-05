@@ -140,7 +140,8 @@ extension E2ERunner {
             note("kubectl proxy: \(kubectl), through the stand-in, KUBECONFIG \(kubeconfig.path) only")
         } else {
             note("no kubectl installed: a stand-in connection to the fake's socket")
-            model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name) }
+            // Writable as the context is (kind-fake; fake-prod with its switch on), or GETs only.
+            model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
             model.statusOverride = { _ in .open }
         }
 
@@ -289,6 +290,7 @@ extension E2ERunner {
         await kubernetesAskWhy(model, page, fake)
         await kubernetesAgentTools(model, fake)
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
+        await kubernetesWrites(model, page, fake, kubeconfig: kubeconfig, port: port, kubectl: kubectl)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -428,12 +430,19 @@ extension E2ERunner {
         check("the strip's label is in the page's red", prod?.kubeBadge?.alert == true)
 
         // View ▸ Terminal in Kubernetes Context…: the switcher, on its Terminal in items only.
+        // Up this window's responder chain, as the menu sends it to the key
+        // window: an isolated run is never activated, so after a sheet the
+        // window may be neither key nor main, and an action sent to nil
+        // then reaches nobody.
+        var delivered = false
         if let item = menuItem("View", "Terminal in Kubernetes Context…"), let action = item.action {
-            NSApp.sendAction(action, to: nil, from: item)
+            delivered = (window.firstResponder ?? window).tryToPerform(action, with: item)
         } else {
             check("View ▸ Terminal in Kubernetes Context…", false)
         }
-        check("View ▸ Terminal in Kubernetes Context… opens the switcher", app.paletteView?.isHidden == false && app.palette.scope == .kubernetes)
+        check(
+            "View ▸ Terminal in Kubernetes Context… opens the switcher", app.paletteView?.isHidden == false && app.palette.scope == .kubernetes,
+            "delivered \(delivered), palette hidden \(String(describing: app.paletteView?.isHidden)), scope \(String(describing: app.palette.scope))")
         check(
             "listing only its Terminal in items",
             await eventually(5) {
@@ -2265,26 +2274,29 @@ extension E2ERunner {
         check("the web pod is still there", fake.pod("web-7d9", namespace: "shop") != nil)
     }
 
-    /// Two contexts on the fake: one remote by name, one production by name.
-    static func fakeKubeconfig(port: Int) -> String {
-        """
-        apiVersion: v1
-        kind: Config
-        clusters:
-        - name: fake-dev
-          cluster: {server: "http://127.0.0.1:\(port)"}
-        - name: fake-prod
-          cluster: {server: "http://127.0.0.1:\(port)"}
-        users:
-        - name: anonymous
-          user: {}
-        contexts:
-        - name: fake-dev
-          context: {cluster: fake-dev, user: anonymous, namespace: shop}
-        - name: fake-prod
-          context: {cluster: fake-prod, user: anonymous, namespace: payments}
-        current-context: fake-dev
+    /// Two contexts on the fake: one remote by name, one production by
+    /// name — and, for the writes, `kind-fake`, local by name.
+    static func fakeKubeconfig(port: Int, kind: Bool = false) -> String {
+        let cluster = kind ? "\n- name: kind-fake\n  cluster: {server: \"http://127.0.0.1:\(port)\"}" : ""
+        let context = kind ? "\n- name: kind-fake\n  context: {cluster: kind-fake, user: anonymous, namespace: shop}" : ""
+        return """
+            apiVersion: v1
+            kind: Config
+            clusters:
+            - name: fake-dev
+              cluster: {server: "http://127.0.0.1:\(port)"}
+            - name: fake-prod
+              cluster: {server: "http://127.0.0.1:\(port)"}\(cluster)
+            users:
+            - name: anonymous
+              user: {}
+            contexts:
+            - name: fake-dev
+              context: {cluster: fake-dev, user: anonymous, namespace: shop}
+            - name: fake-prod
+              context: {cluster: fake-prod, user: anonymous, namespace: payments}\(context)
+            current-context: fake-dev
 
-        """
+            """
     }
 }

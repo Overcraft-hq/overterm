@@ -2269,7 +2269,9 @@ asked, `label:` and `field:` sent to the server, the palette's page
 commands, Copy as kubectl and a list as CSV — stage 1c, a pod's
 logs, and of stage 1d, Terminal in this context, a pod's shell,
 attach and followed log in a tab, and port-forwards — and, of stage 1e,
-Ask Why and agents' read tools. Nothing writes to a cluster.
+Ask Why and agents' read tools — and of stage 2a, writable contexts,
+production's switch for the session and the page's first writes (Writes,
+below): delete, force delete, finalizers, evict, rollout restart, scale.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2313,7 +2315,8 @@ kubeadm's `kubernetes-admin@prod` and `kind-prod-copy` are production; local by 
 `orbstack`, `minikube`, `rancher-desktop`, `colima`, `kind-…`, `k3d-…`);
 else remote. A loopback server never makes a context local: a tunnel to a
 remote cluster is on 127.0.0.1 too. `isWritable`: production never by a
-setting (its writes will be turned on for a session), remote only by its
+setting — only while its writes are on for the session
+(`KubeContext.sessionWrites`, Writes below) —, remote only by its
 `writable` flag, local unless the flag says no.
 
 **Settings** (Settings ▸ Kubernetes): `kubernetes.enabled` (on; nothing runs
@@ -2417,9 +2420,9 @@ the socket (`UnixHTTPTransport.kubernetes`: `Host: localhost`, readiness
 **The client** (`KubeClient`) reads a cluster over a `KubeConnection`: a
 context's proxy (`KubeProxyConnection`, through `KubeProxies`) or any
 transport (`KubeSocketConnection`: a socket spoken to directly, the
-tests'). The connection has no method to pass — every request is a GET;
-writes, when they come, are a path of their own with their review and
-confirmation.
+tests'). A read has no method to pass — it is a GET; a write is a path
+of its own (`KubeConnection.write`, `KubeClient.write`), refused unless
+the connection's context is writable (Writes, below).
 
 - **Discovery** (`discover`, `KubeDiscovery`): aggregated discovery when
   the server has it (always since 1.33) — `/api` and `/apis` asked for
@@ -2608,8 +2611,9 @@ switcher, or another page, never gets a list narrowed by a filter not on
 screen; the last `hide` drops it, and a page held again asks anew. The
 proxy's state (`KubeProxies.status`: open, signing in, waiting behind
 another context's browser sign-in, stopped with its reason) is asked
-once a second while a page shows. Every request is a GET; the model has
-no verb that writes.
+once a second while a page shows. The model reads only; it holds
+production's switch for the session (`productionWrites`) and the writes'
+access reviews (`writeAccess`), and the page's guard path writes.
 
 **Ages** (`KubeAge`, pure). The server renders Age when it answers, so a
 cell is stale once it arrives. A row across all namespaces carries its
@@ -2675,7 +2679,8 @@ keyboard): `1`–`7` the sections, ↩ the detail, `[` `]` back and forward,
 Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, `l` a pod's logs (↩ on a pod is them too), `f` and `o` a forward,
 `9` the Forwards section. The right-click menu
 only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
-TSV or CSV — and exports the list: nothing here changes a cluster.
+TSV or CSV — and exports the list, and has the object's writes, each
+greyed with why where it can't be done (Writes, below).
 
 **Copy as kubectl** (`k`, the right-click menu, the header's and the
 detail's buttons; `KubectlLine`, pure, docs/design/kubernetes/analysis.md
@@ -3542,6 +3547,82 @@ is named, an unknown context refused, a Secret without its value,
 taking the group from the endpoint's list and refusing a call (or, with no
 other group on, the endpoint gone), and on again back in its `tools/list`.
 
+**Writes** (stage 2a, part 1; `KubeWrites.swift` (pure, and
+`KubeClient`'s writes), `KubernetesPageModel+Writes`,
+`KubeScaleSheetView`; analysis Sections 2.4, 2.9, 4 and 5):
+
+- **Where** (rule 2): a writable context only — a remote or local
+  context's `writable` flag in `kubernetes.contexts` (local unless it
+  says no), and production only while its switch is on for the session
+  (`KubeContext.sessionWrites`; nothing else decides). The switch is the
+  context card's Allow Writes Until Quit…, asked first naming the
+  context, kept in memory by `KubernetesModel.productionWrites`
+  (`KubeProductionWrites`: off at launch, dropped when the kubeconfig
+  read again points the name at another cluster or user), and said in the
+  band ("writes on until quit"). `KubeProxies.allowSessionWrites` closes
+  the context's proxy so the next request opens it without the method
+  filter — only then — and `endSessionWrites` back with it; the proxies
+  plan from their own knowledge of the switch, kept with the context as
+  it was turned on for (`KubernetesModel.sameAccess`), so a stale copy of
+  the context never flips the flags, and a kubeconfig read again that
+  points the name at another cluster, user or class is planned with the
+  filter before the model has told them.
+- **Two locks before the socket**: `KubeClient.write` refuses unless the
+  connection's context is writable, and `KubeProxies.sendWrite` refuses
+  unless the proxies know it so (`KubeWriteRefused`); a read-only
+  context's socket refuses writes anyway (`KubeProxyFlags`).
+- **The verbs** (`KubeWriteVerb`, each offered where discovery says the
+  kind takes it, `KubeWriteCheck.offered`): delete (`DELETE` with
+  DeleteOptions, `propagationPolicy: Background`, the pod's own grace
+  period), delete to recreate (`r` on a pod; its controller named from
+  its metadata), force delete (grace 0, warned), remove finalizers (a JSON
+  patch that tests the finalizers confirmed before removing them, warned),
+  evict (`POST pods/{p}/eviction`; a PodDisruptionBudget's 429 said with
+  its cause, never retried), rollout restart (kubectl's strategic merge
+  of the template's `kubectl.kubernetes.io/restartedAt`), scale (a merge
+  patch of the `scale` subresource); patches carry
+  `fieldManager=overterm`. Keys: ⌫ delete, `r` restart (a pod: recreate),
+  `+`/`-` by one, `=` the scale sheet (its field takes the keyboard as it
+  appears, Return goes on to the confirmation); the rest are in the right-click
+  menu and the detail's buttons (`ResourceActionBar`, delete as its red
+  bin).
+- **The guard path** (`KubernetesPageModel.write`), in this order: the
+  class check (`KubeWriteCheck.rule`: refused with why on a read-only
+  context or production without its switch); the access review — a
+  SelfSubjectAccessReview through the writable socket
+  (`KubeAccessReview`, `KubernetesModel.writeAccess`: a minute per
+  context, namespace and verb, asked as a row is picked so the menu is
+  greyed with the cluster's own reason); a metadata-only read where the
+  confirmation needs it (`PartialObjectMetadata` — a Secret's values are
+  never read — or the scale subresource's replicas); the confirmation in
+  the window (`KubeWriteConfirmation`, `confirmKubernetesWrite`: the
+  verb and object, the context and namespace on a line of their own —
+  production's red on production —, the kubectl it equals, the
+  warning; the sheet is `WriteConfirmation`, the one every write is
+  asked with: DockerMCP's `allow` and the page's other asks too) with the object's name typed where rule 4
+  asks — on production a delete, recreate or scale to 0; force delete,
+  finalizers and a namespace's delete on every class — which the page
+  checks (`accepts`), a wrong name sending nothing; the context checked
+  once more as the button is pressed; then the request, its outcome said
+  over the list or under the detail's buttons (`KubeWriteStatus`), the
+  API's 403, 404, 409, 422 and an eviction's 429 in plain words
+  (`KubeWriteOutcome`), the answer's body never kept. The list follows
+  by its watch.
+- **Checked**: `KubeWritesTests` (each verb against each class, the
+  typed name, each request exactly, the review's attributes and answer,
+  the confirmation's words, the outcomes, the switch kept only for the
+  same cluster), `KubeWriteClientTests` (each write landing on
+  `FakeKubeAPI` — which applies deletes, finalizers, merge and JSON
+  patches, scale and evictions to its objects and its watches, answers
+  access reviews from `deniedAccess` and a metadata-only GET, and records
+  each write's body and content type — a read-only connection sending
+  nothing), `KubeWritesPageTests` (no write before the review and the
+  confirmation, Cancel, a refused review, a read-only context sending not
+  even a review, production's switch and the typed name, writes turned
+  off while asked, every verb through the page), `KubeProxiesTests`
+  (the switch restarting the proxy without the method filter and back;
+  another cluster under the name read-only at once).
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
@@ -3655,7 +3736,21 @@ pod on the same port — answering, the pill and Tab Info naming it, `9`
 listing it (drawn), `o` opening it; Edit moving its local port, kubectl
 exiting starting it again on the same pod, the Service gone stopping it
 and saying so (drawn); a Quick Forward of a pod opened once it forwards;
-nothing but GETs reaching the API; and Kubernetes off stopping every
+nothing but GETs reaching the API; writes
+(`E2ERunner+KubernetesWrites`) — `kind-fake` (local by name) added to
+the run's kubeconfig and read, a pod deleted by ⌫ as the window takes
+it once its access review reached the fake, the sheet naming the verb,
+object, context and namespace and the kubectl it equals, nothing
+written while it asks, ended by the runner's own `endSheet` and landing
+as one DELETE, the list following by its watch and the outcome drawn; a
+deployment scaled from the `=` sheet (drawn) 1 → 3, the scale
+subresource patched and its row 3/3 by the watch; on `fake-prod` Delete…
+greyed until the switch (⌫ only saying so, drawn, nothing sent), the
+switch asked naming it, the band saying writes are on (drawn), then ⌫
+asking for the name — a wrong one sending nothing, the right one
+landing — and writes off again, fake-prod's proxy refusing a POST once
+more; on `fake-dev` every write greyed with why and nothing reaching the
+fake, not even a review; and Kubernetes off stopping every
 forward, its kubectl ended;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.

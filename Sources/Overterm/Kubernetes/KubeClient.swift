@@ -5,31 +5,49 @@ import NIOHTTP1
 /// (`KubeProxyConnection`, through `KubeProxies`), or any transport — a
 /// test's fake API server (`KubeSocketConnection`).
 ///
-/// Only GETs: reading is all the client does, so there is no method to
-/// pass. Writes, when they come (stage 2a), are a separate path with their
-/// access review and confirmation; a read-only context's socket refuses
-/// them anyway.
+/// Reads are GETs, with no method to pass. A write is a path of its own
+/// (`write`), refused unless the connection's context is writable for
+/// this session — and only the page's guard path sends one, after its
+/// access review and confirmation (`KubernetesPageModel+Writes`); a
+/// read-only context's socket refuses writes anyway.
 protocol KubeConnection: Sendable {
     func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse
     /// A response read as it arrives: a watch.
     func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error>
     /// How the context signs in: what a proxy's 500 means.
     var signIn: KubeSignIn { get }
+    /// Whether the context may be written to now (its writable flag, or
+    /// production's switch for the session). False, `write` sends nothing.
+    var writable: Bool { get }
+    /// One write: DELETE, PATCH, a POST to a subresource or an access review.
+    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse
+}
+
+extension KubeConnection {
+    var writable: Bool { false }
+
+    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+        throw KubeWriteRefused(reason: "This connection reads only.")
+    }
 }
 
 /// A socket (or any transport) spoken to directly.
 struct KubeSocketConnection: KubeConnection {
     let transport: any HTTPTransport
     let signIn: KubeSignIn
+    /// The context's writability, as the caller knows it (a test's, the
+    /// scenario's stand-in): false, nothing but GETs leaves.
+    let writable: Bool
 
-    init(transport: any HTTPTransport, signIn: KubeSignIn = .none) {
+    init(transport: any HTTPTransport, signIn: KubeSignIn = .none, writable: Bool = false) {
         self.transport = transport
         self.signIn = signIn
+        self.writable = writable
     }
 
     /// A proxy's socket: `Host: localhost`, or it answers 403.
-    init(socket: String, context: String, signIn: KubeSignIn = .none) {
-        self.init(transport: UnixHTTPTransport.kubernetes(socket: socket, context: context), signIn: signIn)
+    init(socket: String, context: String, signIn: KubeSignIn = .none, writable: Bool = false) {
+        self.init(transport: UnixHTTPTransport.kubernetes(socket: socket, context: context), signIn: signIn, writable: writable)
     }
 
     func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse {
@@ -38,6 +56,11 @@ struct KubeSocketConnection: KubeConnection {
 
     func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
         transport.stream(.GET, path, body: nil, headers: headers)
+    }
+
+    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+        guard writable, method != .GET else { throw KubeWriteRefused(reason: "This context is read-only: Overterm changes nothing here.") }
+        return try await transport.send(method, path, body: body, headers: headers)
     }
 }
 
@@ -48,6 +71,7 @@ struct KubeProxyConnection: KubeConnection {
     var role: KubeProxies.Role = .page
 
     var signIn: KubeSignIn { KubeSignIn(context.auth) }
+    var writable: Bool { context.isWritable }
 
     func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse {
         try await proxies.send(context, role: role, .GET, path, headers: headers)
@@ -55,6 +79,13 @@ struct KubeProxyConnection: KubeConnection {
 
     func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
         proxies.stream(context, role: role, .GET, path, headers: headers)
+    }
+
+    /// Refused here unless this copy of the context is writable, and again
+    /// by the proxies unless they know it so (`KubeProxies.sendWrite`).
+    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+        guard writable else { throw KubeWriteRefused(reason: KubeWriteCheck.readOnly(context)) }
+        return try await proxies.sendWrite(context, role: role, method, path, body: body, headers: headers)
     }
 }
 
