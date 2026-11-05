@@ -1140,6 +1140,10 @@ Each key lands with its verb's stage; the last column says which.
 | `a` | Ask Agent (Ask Why) | same | 1e |
 | `r` | Rollout restart; on a pod, delete it to recreate (asked) | same idea | 2a |
 | `+` / `-` | Scale by one; `=` for a number | — | 2a |
+| `p` | Pause or resume a Deployment's rollout; suspend or resume a CronJob (the object read decides which) | same (pause or unpause) | 2a |
+| `s` | Trigger a CronJob now (`kubectl create job --from`) | same idea (start) | 2a |
+| `u` | Cordon or uncordon a node | Docker: compose Up — the exception, below | 2a |
+| `N` | New namespace (a sheet for its name) | — | 2a |
 | `x` | Dependency tree | — | 3b |
 | `h` | History (change timeline) | — | 3b |
 | `w` | Wide columns (`priority > 0`) | — | 1a |
@@ -1152,6 +1156,8 @@ Each key lands with its verb's stage; the last column says which.
 | ⌘A, ⇧↑/↓ | Bulk selection | same | 1b |
 | ⌘C | Copy the name | same | 1a |
 | `?` | This table | same | 1a |
+
+**`u` is the one letter that means something else.** Docker's `u` is a Compose project's Up, which has no Kubernetes counterpart, while cordon has no Docker one; `u` is k9s's uncordon (k9s's cordon, `c`, is our context picker), and here it toggles. The other free letters say nothing of a node.
 
 **Command mode grammar** (k9s's):
 - `:<kind>[ <namespace>][ /<filter>][ <label=value,…>][ @<context>]`

@@ -61,13 +61,18 @@ struct KubernetesPageView: View {
         .overlay(alignment: .top) {
             if page.scaleDraft != nil { KubeScaleSheetView(page: page, theme: theme).padding(.top, 70) }
         }
+        .overlay(alignment: .top) {
+            if page.namespaceDraft != nil { KubeNamespaceSheetView(page: page, theme: theme).padding(.top, 70) }
+        }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         // A table with no columns refuses the keyboard: given it while the
         // pods are asked for (the page opened, a namespace or a context
         // picked), the window keeps it. Once the server's columns come the
         // list takes it — if nothing else has it.
         .onChange(of: model.rows.columns.isEmpty) { empty in
-            guard !empty, focus != .filter, page.picker == nil, page.command == nil, page.scaleDraft == nil, page.forwardDraft == nil else { return }
+            guard !empty, focus != .filter, page.picker == nil, page.command == nil, page.scaleDraft == nil, page.namespaceDraft == nil,
+                page.forwardDraft == nil
+            else { return }
             DispatchQueue.main.async { page.offerListTheKeyboard() }
         }
     }

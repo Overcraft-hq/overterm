@@ -291,6 +291,7 @@ extension E2ERunner {
         await kubernetesAgentTools(model, fake)
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
         await kubernetesWrites(model, page, fake, kubeconfig: kubeconfig, port: port, kubectl: kubectl)
+        await kubernetesVerbs(model, page, fake)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
