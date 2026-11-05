@@ -246,31 +246,12 @@ enum DockerMCP {
     static func allow(_ title: String, _ detail: String) async -> Bool {
         let shown = displayed(detail)
         if let answer = askOverride { return answer(title + "\n" + shown) }
-        let alert = NSAlert()
-        alert.messageText = title
-        // All of it, never cut: the first 2,000 characters were shown and
-        // all of it ran — `ls` and two thousand spaces hid what came after.
-        if shown.count <= 600 {
-            alert.informativeText = shown
-        } else {
-            let scroll = NSTextView.scrollableTextView()
-            scroll.frame = NSRect(x: 0, y: 0, width: 460, height: 220)
-            if let text = scroll.documentView as? NSTextView {
-                text.string = shown
-                text.isEditable = false
-                text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-            }
-            alert.informativeText = "\(shown.count) characters — all of it below."
-            alert.accessoryView = scroll
-        }
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Don't")
-        alert.alertStyle = .warning
-        guard let window = NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else { return alert.runModal() == .alertFirstButtonReturn }
-        NSApp.activate(ignoringOtherApps: true)
-        return await withCheckedContinuation { continuation in
-            alert.beginSheetModal(for: window) { continuation.resume(returning: $0 == .alertFirstButtonReturn) }
-        }
+        // The one confirmation every write is asked with; all of it shown,
+        // never cut.
+        let confirmation = WriteConfirmation(title: title, detail: shown, button: "Allow", cancel: "Don't")
+        let window = NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible)
+        if window != nil { NSApp.activate(ignoringOtherApps: true) }
+        return await confirmation.ask(on: window) != nil
     }
 
     /// What a write's confirmation shows: every character visible — a

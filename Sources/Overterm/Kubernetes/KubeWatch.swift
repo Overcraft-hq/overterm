@@ -34,7 +34,11 @@ struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
     /// A `Status` object: a response's body, or an in-stream ERROR event's.
     static func status(_ object: [String: Any], code: Int? = nil) -> KubeAPIError {
         let status = (object["code"] as? NSNumber)?.intValue ?? code ?? 500
-        let message = object["message"] as? String ?? (object["reason"] as? String) ?? "HTTP \(status)"
+        var message = object["message"] as? String ?? (object["reason"] as? String) ?? "HTTP \(status)"
+        // What the message leaves out (an eviction's PodDisruptionBudget says which, and why, only here).
+        let causes = ((object["details"] as? [String: Any])?["causes"] as? [[String: Any]] ?? []).compactMap { $0["message"] as? String }
+            .filter { !$0.isEmpty && !message.contains($0) }
+        if !causes.isEmpty { message += " " + causes.joined(separator: " ") }
         return KubeAPIError(status: status, reason: object["reason"] as? String, message: message)
     }
 }

@@ -8,7 +8,9 @@ import SwiftUI
 /// page. Single letters act while the list has the keyboard
 /// (`KubernetesKey`; `?` lists them); `n` and `c` pick a namespace or a
 /// context over the page (`KubePicker`), `:` names a kind (`KubeCommandBar`).
-/// It reads only: no verb here changes a cluster.
+/// Its writes (stage 2a) are verbs like any other — only on a writable
+/// context, each through the page's guard path; production's are off until
+/// its card turns them on for the session.
 struct KubernetesPageView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var model: KubernetesModel
@@ -56,13 +58,16 @@ struct KubernetesPageView: View {
         .overlay(alignment: .top) {
             if page.forwardDraft != nil { KubeForwardSheetView(page: page, theme: theme).padding(.top, 70) }
         }
+        .overlay(alignment: .top) {
+            if page.scaleDraft != nil { KubeScaleSheetView(page: page, theme: theme).padding(.top, 70) }
+        }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         // A table with no columns refuses the keyboard: given it while the
         // pods are asked for (the page opened, a namespace or a context
         // picked), the window keeps it. Once the server's columns come the
         // list takes it — if nothing else has it.
         .onChange(of: model.rows.columns.isEmpty) { empty in
-            guard !empty, focus != .filter, page.picker == nil, page.command == nil else { return }
+            guard !empty, focus != .filter, page.picker == nil, page.command == nil, page.scaleDraft == nil, page.forwardDraft == nil else { return }
             DispatchQueue.main.async { page.offerListTheKeyboard() }
         }
     }
@@ -250,6 +255,25 @@ struct KubernetesPageView: View {
             .padding(.top, 4)
             .help("A tab whose plain kubectl, helm or k9s goes to \(context.name) — with your own rights. Your current context is unchanged.")
             .accessibilityIdentifier("kubernetes.terminal")
+            // Production's writes, for this session only (rule 2).
+            if context.isProduction {
+                Button {
+                    if context.sessionWrites { page.endProductionWrites() } else { page.allowProductionWrites() }
+                } label: {
+                    Label(
+                        context.sessionWrites ? "Writes On Until Quit — Turn Off" : "Allow Writes Until Quit…",
+                        systemImage: context.sessionWrites ? "lock.open.fill" : "lock.fill"
+                    ).font(.system(size: 11))
+                }
+                .buttonStyle(.link)
+                .foregroundStyle(Self.production)
+                .help(
+                    context.sessionWrites
+                        ? "Writes are on for \(context.name) until Overterm quits: each one is asked, a destructive one by its name."
+                        : "Production is read-only. Writes can be turned on for this session only — never by a setting."
+                )
+                .accessibilityIdentifier("kubernetes.productionWrites")
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -303,6 +327,9 @@ struct KubernetesPageView: View {
             if page.detail == nil, let problem = page.commandProblem {
                 Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
                     .help(problem).accessibilityIdentifier("kubernetes.commandProblem")
+            } else if page.detail == nil, let status = page.writeStatus {
+                Text(verbatim: status.text).font(.system(size: 11.5)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                    .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.writeStatus")
             }
             Spacer(minLength: 12)
             Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)

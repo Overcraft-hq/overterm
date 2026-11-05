@@ -211,15 +211,21 @@ final class KubernetesPageTests: XCTestCase {
         page.sort = nil
         XCTAssertEqual(page.rows.map(\.id), ["shop/api-1", "shop/web-1"], "by namespace, then name")
 
-        // Only reads and copies in the menu — and a terminal pinned to the
-        // context, in the row's namespace (the user's own kubectl).
+        // Reads and copies in the menu, a terminal pinned to the context,
+        // in the row's namespace (the user's own kubectl) — and the writes,
+        // greyed: fake-dev is read-only.
         let verbs = page.verbs(for: ["shop/api-1"])
         XCTAssertEqual(
             verbs.map(\.title),
             [
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
                 "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward",
+                "Delete to Recreate…", "Evict…", "Remove Finalizers…", "Force Delete…", "Delete…",
             ])
+        let writes = verbs.filter { KubeWriteVerb.allCases.map(\.title).contains($0.title) }
+        XCTAssertTrue(
+            writes.allSatisfy { $0.unavailable == "This context is read-only: Overterm changes nothing here (its writable setting)." },
+            "\(writes.map(\.unavailable))")
         var pinned: [String] = []
         page.actions = KubernetesActions(
             run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in },
@@ -257,7 +263,12 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of("c"), .context)
         XCTAssertNil(KubernetesKey.of("N"), "case matters")
         XCTAssertEqual(KubernetesKey.of("e"), .shell, "a shell in a tab: the user's own kubectl")
-        for key in ["r", "+", "-", "y", "E", "\u{7F}"] { XCTAssertNil(KubernetesKey.of(key), "no key that writes: \(key)") }
+        XCTAssertEqual(KubernetesKey.of("r"), .restart)
+        XCTAssertEqual(KubernetesKey.of("+"), .scaleUp)
+        XCTAssertEqual(KubernetesKey.of("-"), .scaleDown)
+        XCTAssertEqual(KubernetesKey.of("="), .scaleTo)
+        XCTAssertEqual(KubernetesKey.of("\u{7F}"), .delete, "⌫, through the guard path")
+        for key in ["y", "E"] { XCTAssertNil(KubernetesKey.of(key), "a later stage's: \(key)") }
     }
 
     // MARK: Navigating

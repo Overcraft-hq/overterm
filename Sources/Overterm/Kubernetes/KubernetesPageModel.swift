@@ -47,14 +47,22 @@ struct KubernetesActions {
     /// Ask Why: a failing pod's or a stuck rollout's brief, scrubbed, in
     /// the Ask Agent sheet — the whole brief shown before it is sent.
     var askWhy: (KubeAgentBrief) -> Void = { _ in }
+    /// A write asked first (rule 3), in the window: the context and
+    /// namespace, the object, the kubectl it equals, a field for the name
+    /// where rule 4 asks one; `then` gets what was typed, only when the
+    /// button was pressed — the page checks it.
+    var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (String) -> Void) -> Void = { _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
 /// keyboard. More join with their stages (docs/design/kubernetes/analysis.md,
-/// Section 7); none of these changes a cluster. Pure.
+/// Section 7); the writes (`r`, `+`, `-`, `=`, ⌫) each go through the
+/// guard path — the access review, the confirmation, a typed name where
+/// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom, forwards
     case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
+    case restart, scaleUp, scaleDown, scaleTo, delete
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -74,6 +82,11 @@ enum KubernetesKey: String, ResourceKey {
         case .openForward: return "o"
         case .database: return "d"
         case .askWhy: return "a"
+        case .restart: return "r"
+        case .scaleUp: return "+"
+        case .scaleDown: return "-"
+        case .scaleTo: return "="
+        case .delete: return "⌫"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -100,6 +113,11 @@ enum KubernetesKey: String, ResourceKey {
             return "Database client: a database pod (\(KubeDatabase.spoken)) forwarded, its connection form filled in"
         case .askWhy:
             return "Ask an agent why: a failing pod (CrashLoopBackOff, OOMKilled, ImagePullBackOff, Pending…) or a stuck rollout — its brief, scrubbed, shown before it is sent (⌘L too)"
+        case .restart: return "Rollout restart a Deployment, StatefulSet or DaemonSet; on a pod, delete it so its controller makes it again — asked first"
+        case .scaleUp: return "Scale up by one — asked first"
+        case .scaleDown: return "Scale down by one — asked first; to 0 on production, the name typed"
+        case .scaleTo: return "Scale to a number — asked first"
+        case .delete: return "Delete — asked first; on production (and a namespace anywhere) the name typed"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -220,6 +238,12 @@ final class KubernetesPageModel: ObservableObject {
     @Published var askingWhy: KubeObjectRef?
 
     /// The detail beside the list: one object, read once as it opens.
+    /// How the last write stands: asked, sent, done or why not.
+    @Published var writeStatus: KubeWriteStatus?
+    /// `=`: the scale sheet, over the page.
+    @Published var scaleDraft: KubeScaleDraft?
+    /// What a write is stamped with (a rollout restart's `restartedAt`).
+    var clock: () -> Date = { Date() }
     @Published private(set) var detail: KubeDetailSession?
     @Published var detailTab: KubeDetailTab = .overview
     /// Where the detail has been, back and forward: this page's, across
@@ -251,6 +275,7 @@ final class KubernetesPageModel: ObservableObject {
                 // Why the last command didn't open was about the pod picked then.
                 self?.commandProblem = nil
                 self?.askAccess(for: ids)
+                self?.askWriteAccess(for: ids)
                 guard let self, self.detail != nil, ids.count == 1, let id = ids.first, let ref = self.ref(for: id) else { return }
                 self.open(ref, from: .list)
             }
@@ -260,7 +285,10 @@ final class KubernetesPageModel: ObservableObject {
         // about the one before.
         scopeWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
             .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () })
-            .sink { [weak self] in self?.commandProblem = nil }
+            .sink { [weak self] in
+                self?.commandProblem = nil
+                self?.writeStatus = nil
+            }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
@@ -356,6 +384,12 @@ final class KubernetesPageModel: ObservableObject {
             closeForwardSheet()
             return true
         }
+        // So do the scale sheet's.
+        if scaleDraft != nil {
+            guard characters == "\u{1B}" else { return false }
+            closeScaleSheet()
+            return true
+        }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
         case .closeSheet: cheatSheet = false
@@ -384,6 +418,11 @@ final class KubernetesPageModel: ObservableObject {
             case .openForward: return openForward()
             case .database: return openInDatabase()
             case .askWhy: return askWhy()
+            case .restart: return restartKey()
+            case .scaleUp: return scaleKey(.by(1))
+            case .scaleDown: return scaleKey(.by(-1))
+            case .scaleTo: return scaleKey(nil)
+            case .delete: return deleteKey()
             default: return false
             }
         }
@@ -780,7 +819,8 @@ final class KubernetesPageModel: ObservableObject {
     /// The red band over the whole page on a production context; nil elsewhere.
     var band: String? {
         guard let context = model.selected, context.isProduction else { return nil }
-        return "PRODUCTION · \(context.displayName) · read-only: Overterm changes nothing here"
+        guard context.sessionWrites else { return "PRODUCTION · \(context.displayName) · read-only: Overterm changes nothing here" }
+        return "PRODUCTION · \(context.displayName) · writes on until quit: each one asked, a destructive one by its name"
     }
 
     /// The selected context's class and whether Overterm may write there.
@@ -950,6 +990,7 @@ final class KubernetesPageModel: ObservableObject {
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
         ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
+            + writeVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

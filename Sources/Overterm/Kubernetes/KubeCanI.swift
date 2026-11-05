@@ -93,13 +93,24 @@ enum KubeAccessState: Equatable {
     case answered(KubeCanIAnswer)
 
     /// Why the verb can't be used now (`ResourceVerb.unavailable`); nil when it can.
-    func unavailable(_ access: KubeAccess, namespace: String) -> String? {
+    /// `review`: asked of the API's access review (a write), not kubectl.
+    func unavailable(_ access: KubeAccess, namespace: String, review: Bool = false) -> String? {
+        if review {
+            let place = namespace.isEmpty ? "cluster-wide" : "in \(namespace)"
+            switch self {
+            case .unknown, .checking: return "Checking whether you may \(access) \(place)…"
+            case .answered(.yes): return nil
+            case .answered(.no(let reason)):
+                return "The cluster's access review says you may not \(access) \(place)" + (reason.map { ": \($0)" } ?? ".")
+            case .answered(.failed(let reason)): return "Couldn't review access to \(access): \(reason)"
+            }
+        }
         switch self {
-        case .unknown, .checking: "Checking kubectl auth can-i \(access) in \(namespace)…"
-        case .answered(.yes): nil
+        case .unknown, .checking: return "Checking kubectl auth can-i \(access) in \(namespace)…"
+        case .answered(.yes): return nil
         case .answered(.no(let reason)):
-            "kubectl auth can-i \(access) says no in \(namespace)" + (reason.map { ": \($0)" } ?? ".")
-        case .answered(.failed(let reason)): "Couldn't ask kubectl auth can-i \(access): \(reason)"
+            return "kubectl auth can-i \(access) says no in \(namespace)" + (reason.map { ": \($0)" } ?? ".")
+        case .answered(.failed(let reason)): return "Couldn't ask kubectl auth can-i \(access): \(reason)"
         }
     }
 }

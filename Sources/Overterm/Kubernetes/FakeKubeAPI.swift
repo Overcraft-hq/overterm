@@ -173,8 +173,16 @@ final class FakeKubeAPI: @unchecked Sendable {
         var path: String
         var query: [String: String]
         var accept: String
+        /// A write's body, and how it says it is encoded.
+        var body = Data()
+        var contentType = ""
 
         var description: String { "\(method) \(path)" }
+
+        /// The body read back, for the tests.
+        var json: Any? { try? JSONSerialization.jsonObject(with: body) }
+        /// An access review (SelfSubjectAccessReview): a POST, but no write.
+        var isAccessReview: Bool { path == FakeKubeAPI.accessReviewPath }
         /// A subresource: `pods/p/exec`, `services/s:80/proxy`, `pods/p/log`.
         var isSubresource: Bool { FakeKubeAPI.route(path)?.subresource != nil }
         /// A pod's log: the one subresource Overterm reads (a GET).
@@ -267,6 +275,30 @@ final class FakeKubeAPI: @unchecked Sendable {
         var unversionedLists = false
         var forbidden: Set<String> = []
         var endFollowsAtOnce = false
+        var deniedAccess: Set<String> = []
+        var evictionBlock: String?
+        var nextWriteFailure: (status: Int, reason: String, message: String)?
+    }
+
+    /// What the access review refuses, as `KubeAccess` says it: `delete
+    /// pods`, `patch deployments.apps/scale`, `create pods/eviction`.
+    /// Everything else is allowed.
+    var deniedAccess: Set<String> {
+        get { locked { settings.deniedAccess } }
+        set { locked { settings.deniedAccess = newValue } }
+    }
+
+    /// A PodDisruptionBudget that allows no eviction now: every eviction is
+    /// a 429 saying so, this its cause.
+    var evictionBlock: String? {
+        get { locked { settings.evictionBlock } }
+        set { locked { settings.evictionBlock = newValue } }
+    }
+
+    /// The next write (not an access review) is answered with this Status:
+    /// a 403 RBAC changed meanwhile, a 409, a 422.
+    func failNextWrite(_ status: Int, reason: String, message: String) {
+        locked { settings.nextWriteFailure = (status, reason, message) }
     }
 
     /// What `/version` says: a minor of 34 serves streaming lists.
@@ -831,13 +863,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         case log(lines: [Data])
     }
 
-    func answer(_ method: HTTPMethod, _ uri: String, accept: String, on channel: Channel) -> Answer {
+    func answer(_ method: HTTPMethod, _ uri: String, accept: String, body: Data = Data(), contentType: String = "", on channel: Channel) -> Answer {
         let components = URLComponents(string: "http://localhost" + uri)
         let path = components?.percentEncodedPath ?? uri
         let query = Dictionary((components?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
         let isWatch = query["watch"] == "1" || query["watch"] == "true"
         let (failure, throttle, failedWatch, settings) = locked { () -> (String?, Int?, (status: Int, retryAfter: Int?)?, Settings) in
-            asked.append(Request(method: method.rawValue, path: path, query: query, accept: accept))
+            asked.append(Request(method: method.rawValue, path: path, query: query, accept: accept, body: body, contentType: contentType))
             var failedWatch: (status: Int, retryAfter: Int?)?
             if isWatch && failedWatches.count > 0 {
                 failedWatches.count -= 1
@@ -861,7 +893,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             let reason = failedWatch.status == 429 ? "TooManyRequests" : failedWatch.status == 503 ? "ServiceUnavailable" : "InternalError"
             return .raw(failedWatch.status, Self.status(failedWatch.status, reason, "the server is busy (HTTP \(failedWatch.status))"), headers)
         }
-        guard method == .GET else { return .json(405, Self.status(405, "MethodNotAllowed", "the server does not allow this method on the requested resource")) }
+        guard method == .GET else { return write(method, path: path, query: query, body: body, contentType: contentType) }
         switch path {
         case "/version":
             return .json(200, Self.encode(["major": "1", "minor": settings.minor, "gitVersion": "v1.\(settings.minor.prefix { $0.isNumber }).1", "platform": "linux/arm64"]))
@@ -884,6 +916,12 @@ final class FakeKubeAPI: @unchecked Sendable {
             }
             return log(namespace: namespace, pod: name, query: query, channel: channel)
         }
+        if let kind = route.kind, route.subresource == "scale", kind.subresources.contains("scale"), let name = route.name {
+            guard let object = locked({ objects[Self.key(kind.fullName, route.namespace, name)] }) else {
+                return .json(404, Self.status(404, "NotFound", "\(resource) \"\(name)\" not found"))
+            }
+            return .json(200, Self.encode(Self.scale(of: object, kind)))
+        }
         guard let kind = route.kind, route.subresource == nil else {
             return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource"))
         }
@@ -899,6 +937,11 @@ final class FakeKubeAPI: @unchecked Sendable {
         if let name = route.name {
             guard let object = locked({ objects[Self.key(kind.fullName, route.namespace, name)] }) else {
                 return .json(404, Self.status(404, "NotFound", "\(resource) \"\(name)\" not found"))
+            }
+            if accept.contains("as=PartialObjectMetadata") {
+                var metadata = Self.full(object, kind)["metadata"] as? [String: Any] ?? [:]
+                metadata["managedFields"] = nil
+                return .json(200, Self.encode(["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": metadata]))
             }
             return .json(200, Self.encode(Self.full(object, kind)))
         }
@@ -1358,6 +1401,260 @@ final class FakeKubeAPI: @unchecked Sendable {
         return Self.encode(["kind": "APIResourceList", "apiVersion": "v1", "groupVersion": groupVersion, "resources": resources])
     }
 
+    // MARK: Writes
+
+    static let accessReviewPath = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+
+    /// A write, applied to the objects as the server applies it — and sent
+    /// to the watches as the change it is: an access review answered from
+    /// `deniedAccess`; a DELETE (an object with finalizers only marked
+    /// deleting); a merge, strategic (as a merge) or JSON patch; the
+    /// `scale` subresource's PATCH; a pod's eviction (`evictionBlock`, a
+    /// PodDisruptionBudget's 429).
+    private func write(_ method: HTTPMethod, path: String, query: [String: String], body: Data, contentType: String) -> Answer {
+        if method == .POST, path == Self.accessReviewPath { return review(body) }
+        if let failure = locked({ () -> (status: Int, reason: String, message: String)? in
+            defer { settings.nextWriteFailure = nil }
+            return settings.nextWriteFailure
+        }) {
+            return .json(failure.status, Self.status(failure.status, failure.reason, failure.message))
+        }
+        let notAllowed = Answer.json(405, Self.status(405, "MethodNotAllowed", "the server does not allow this method on the requested resource"))
+        guard let route = Self.route(path, kinds: locked { kinds }), let kind = route.kind, let name = route.name else { return notAllowed }
+        let key = Self.key(kind.fullName, kind.namespaced ? route.namespace : nil, name)
+        guard locked({ objects[key] }) != nil else { return .json(404, Self.status(404, "NotFound", "\(kind.resource) \"\(name)\" not found")) }
+        switch (method, route.subresource) {
+        case (.DELETE, nil): return delete(key, kind, options: (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:])
+        case (.PATCH, nil): return patch(key, kind, body, contentType)
+        case (.PATCH, "scale") where kind.subresources.contains("scale"): return patchScale(key, kind, body)
+        case (.POST, "eviction") where kind.fullName == "pods": return evict(key, kind)
+        default: return notAllowed
+        }
+    }
+
+    /// A SelfSubjectAccessReview, answered: allowed unless `deniedAccess` names it.
+    private func review(_ body: Data) -> Answer {
+        let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        let attributes = ((object["spec"] as? [String: Any])?["resourceAttributes"] as? [String: Any]) ?? [:]
+        let group = attributes["group"] as? String ?? ""
+        let subresource = attributes["subresource"] as? String ?? ""
+        let said =
+            "\(attributes["verb"] as? String ?? "") \(attributes["resource"] as? String ?? "")" + (group.isEmpty ? "" : ".\(group)")
+            + (subresource.isEmpty ? "" : "/\(subresource)")
+        let allowed = !locked { settings.deniedAccess }.contains(said)
+        var status: [String: Any] = ["allowed": allowed]
+        if !allowed { status["reason"] = "RBAC: \(said) is not allowed" }
+        return .json(
+            201,
+            Self.encode([
+                "kind": "SelfSubjectAccessReview", "apiVersion": "authorization.k8s.io/v1", "metadata": [String: Any](), "spec": object["spec"] ?? [:],
+                "status": status,
+            ]))
+    }
+
+    /// DELETE: gone, or — with finalizers — marked deleting until they're removed.
+    private func delete(_ key: String, _ kind: Kind, options: [String: Any]) -> Answer {
+        var answer = Answer.json(404, Self.status(404, "NotFound", "not found"))
+        var deleted = false
+        var podName: (String, String)?
+        change(locked({ (objects[key].map { Self.full($0, kind) }?["metadata"] as? [String: Any])?["finalizers"] as? [String] ?? [] }).isEmpty ? "DELETED" : "MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            let full = Self.full(object, kind)
+            let finalizers = (full["metadata"] as? [String: Any])?["finalizers"] as? [String] ?? []
+            if finalizers.isEmpty {
+                deleted = true
+                if object.pod != nil { podName = (object.name, object.namespace ?? "") }
+                answer = .json(200, Self.encode(full))
+                return object
+            }
+            var metadata = full["metadata"] as? [String: Any] ?? [:]
+            metadata["deletionTimestamp"] = Self.time(Date())
+            metadata["deletionGracePeriodSeconds"] = (options["gracePeriodSeconds"] as? NSNumber)?.intValue ?? 30
+            var changed = full
+            changed["metadata"] = metadata
+            Self.store(changed, in: &object)
+            answer = .json(200, Self.encode(Self.full(object, kind)))
+            return object
+        }
+        if deleted, let (name, namespace) = podName { endLogStreams(of: name, namespace: namespace) }
+        return answer
+    }
+
+    /// A PATCH of the object: merge and strategic (as a merge, which is
+    /// what Overterm's patches need), or JSON patch. Finalizers removed
+    /// from an object being deleted delete it.
+    private func patch(_ key: String, _ kind: Kind, _ body: Data, _ contentType: String) -> Answer {
+        guard let patch = try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed]) else {
+            return .json(400, Self.status(400, "BadRequest", "the body of the request was in an unknown format"))
+        }
+        guard let object = locked({ objects[key] }) else { return .json(404, Self.status(404, "NotFound", "not found")) }
+        let full = Self.full(object, kind)
+        let result: [String: Any]?
+        if contentType.hasPrefix("application/json-patch+json") {
+            guard let ops = patch as? [[String: Any]] else { return .json(400, Self.status(400, "BadRequest", "a JSON patch is a list of operations")) }
+            result = Self.jsonPatch(full, ops)
+        } else if contentType.hasPrefix("application/merge-patch+json") || contentType.hasPrefix("application/strategic-merge-patch+json") {
+            result = Self.mergePatch(full, patch) as? [String: Any]
+        } else {
+            return .json(415, Self.status(415, "UnsupportedMediaType", "the body of the request was in an unknown format: \(contentType)"))
+        }
+        guard let result else {
+            return .json(422, Self.status(422, "Invalid", "the server rejected our request due to an error in our request"))
+        }
+        let metadata = result["metadata"] as? [String: Any] ?? [:]
+        let gone = metadata["deletionTimestamp"] != nil && (metadata["finalizers"] as? [String] ?? []).isEmpty
+        var answer = Answer.json(200, Data())
+        change(gone ? "DELETED" : "MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            Self.store(result, in: &object)
+            answer = .json(200, Self.encode(Self.full(object, kind)))
+            return object
+        }
+        return answer
+    }
+
+    /// The `scale` subresource's PATCH: the replicas set, the rollout done at once.
+    private func patchScale(_ key: String, _ kind: Kind, _ body: Data) -> Answer {
+        let patch = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        guard let replicas = ((patch["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue, replicas >= 0 else {
+            return .json(422, Self.status(422, "Invalid", "Scale.autoscaling \"\" is invalid: spec.replicas: Invalid value: must be greater than or equal to 0"))
+        }
+        var answer = Answer.json(200, Data())
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            var full = Self.full(object, kind)
+            var spec = full["spec"] as? [String: Any] ?? [:]
+            spec["replicas"] = replicas
+            full["spec"] = spec
+            var status = full["status"] as? [String: Any] ?? [:]
+            for field in ["replicas", "readyReplicas", "availableReplicas", "updatedReplicas"] { status[field] = replicas }
+            full["status"] = status
+            Self.store(full, in: &object)
+            if object.values["Ready"] != nil { object.values["Ready"] = .text("\(replicas)/\(replicas)") }
+            for cell in ["Up-to-date", "Available", "Current", "Desired"] where object.values[cell] != nil { object.values[cell] = .integer(replicas) }
+            answer = .json(200, Self.encode(Self.scale(of: object, kind)))
+            return object
+        }
+        return answer
+    }
+
+    /// A pod's eviction: refused while `evictionBlock` says a
+    /// PodDisruptionBudget allows none, else the pod deleted.
+    private func evict(_ key: String, _ kind: Kind) -> Answer {
+        if let block = locked({ settings.evictionBlock }) {
+            var status = Self.statusObject(429, "TooManyRequests", "Cannot evict pod as it would violate the pod's disruption budget.")
+            status["details"] = ["causes": [["reason": "DisruptionBudget", "message": block]]]
+            return .raw(429, Self.encode(status), [("Content-Type", "application/json")])
+        }
+        var podName: (String, String)?
+        change("DELETED") {
+            guard let object = objects[key] else { return nil }
+            podName = (object.name, object.namespace ?? "")
+            return object
+        }
+        if let (name, namespace) = podName { endLogStreams(of: name, namespace: namespace) }
+        var success = Self.statusObject(201, "", "")
+        success["status"] = "Success"
+        return .json(201, Self.encode(success))
+    }
+
+    /// A Scale, as the subresource answers it.
+    static func scale(of object: Object, _ kind: Kind) -> [String: Any] {
+        let full = full(object, kind)
+        let replicas = ((full["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue ?? 1
+        let current = ((full["status"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue ?? replicas
+        var metadata: [String: Any] = ["name": object.name, "uid": object.uid, "resourceVersion": String(object.resourceVersion)]
+        if let namespace = object.namespace { metadata["namespace"] = namespace }
+        return ["kind": "Scale", "apiVersion": "autoscaling/v1", "metadata": metadata, "spec": ["replicas": replicas], "status": ["replicas": current]]
+    }
+
+    /// The object as a GET would now answer it, kept: labels and
+    /// annotations as its own, the rest of its metadata and — for a kind
+    /// the fake doesn't make from values (not a pod, Secret, ConfigMap or
+    /// Namespace) — its spec and status as its fields.
+    private static func store(_ full: [String: Any], in object: inout Object) {
+        var metadata = full["metadata"] as? [String: Any] ?? [:]
+        object.labels = metadata["labels"] as? [String: String] ?? [:]
+        object.annotations = metadata["annotations"] as? [String: String] ?? [:]
+        for generated in ["name", "namespace", "uid", "resourceVersion", "creationTimestamp", "managedFields", "labels", "annotations"] {
+            metadata[generated] = nil
+        }
+        let made = object.pod != nil || ["secrets", "configmaps", "namespaces"].contains(object.resource)
+        var fields = (object.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) ?? [:]
+        if !made {
+            for (key, value) in full where !["kind", "apiVersion", "metadata"].contains(key) { fields[key] = value }
+        }
+        fields["metadata"] = metadata
+        object.body = encode(fields)
+    }
+
+    /// RFC 7386: maps merged, `null` removing a key, anything else replaced.
+    static func mergePatch(_ target: Any?, _ patch: Any) -> Any {
+        guard let patch = patch as? [String: Any] else { return patch }
+        var result = target as? [String: Any] ?? [:]
+        for (key, value) in patch {
+            if value is NSNull { result[key] = nil } else { result[key] = mergePatch(result[key], value) }
+        }
+        return result
+    }
+
+    /// RFC 6902's `test`, `remove`, `add` and `replace`; nil when one fails.
+    static func jsonPatch(_ document: [String: Any], _ operations: [[String: Any]]) -> [String: Any]? {
+        var document: Any = document
+        for operation in operations {
+            guard let op = operation["op"] as? String, let pointer = operation["path"] as? String, pointer.hasPrefix("/") else { return nil }
+            let path = pointer.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map {
+                $0.replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+            }
+            switch op {
+            case "test":
+                guard let found = value(at: path, in: document), let expected = operation["value"], (found as AnyObject).isEqual(expected) else { return nil }
+            case "remove":
+                guard let changed = changing(document, at: path, to: nil, mustExist: true) else { return nil }
+                document = changed
+            case "add", "replace":
+                guard let new = operation["value"], let changed = changing(document, at: path, to: new, mustExist: op == "replace") else { return nil }
+                document = changed
+            default: return nil
+            }
+        }
+        return document as? [String: Any]
+    }
+
+    private static func value(at path: [String], in document: Any) -> Any? {
+        guard let first = path.first else { return document }
+        if let map = document as? [String: Any] { return map[first].flatMap { value(at: Array(path.dropFirst()), in: $0) } }
+        if let list = document as? [Any], let index = Int(first), list.indices.contains(index) { return value(at: Array(path.dropFirst()), in: list[index]) }
+        return nil
+    }
+
+    /// `document` with the value at `path` set (`new`) or removed (nil).
+    private static func changing(_ document: Any, at path: [String], to new: Any?, mustExist: Bool) -> Any? {
+        guard let first = path.first else { return new }
+        let rest = Array(path.dropFirst())
+        if var map = document as? [String: Any] {
+            if rest.isEmpty {
+                if mustExist && map[first] == nil { return nil }
+                map[first] = new
+                return map
+            }
+            guard let inner = map[first], let changed = changing(inner, at: rest, to: new, mustExist: mustExist) else { return nil }
+            map[first] = changed
+            return map
+        }
+        if var list = document as? [Any], let index = Int(first) {
+            if rest.isEmpty {
+                guard list.indices.contains(index) || (!mustExist && index == list.count) else { return nil }
+                if let new { if index == list.count { list.append(new) } else { list[index] = new } } else { list.remove(at: index) }
+                return list
+            }
+            guard list.indices.contains(index), let changed = changing(list[index], at: rest, to: new, mustExist: mustExist) else { return nil }
+            list[index] = changed
+            return list
+        }
+        return nil
+    }
+
     // MARK: Bytes
 
     static func statusObject(_ code: Int, _ reason: String, _ message: String) -> [String: Any] {
@@ -1397,6 +1694,7 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
 
     let api: FakeKubeAPI
     private var head: HTTPRequestHead?
+    private var body = Data()
     private var timeout: Scheduled<Void>?
 
     init(api: FakeKubeAPI) {
@@ -1405,8 +1703,10 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch unwrapInboundIn(data) {
-        case .head(let head): self.head = head
-        case .body: break
+        case .head(let head):
+            self.head = head
+            body = Data()
+        case .body(let buffer): body.append(contentsOf: buffer.readableBytesView)
         case .end:
             guard let head else { return }
             respond(context, head)
@@ -1415,7 +1715,9 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
 
     private func respond(_ context: ChannelHandlerContext, _ request: HTTPRequestHead) {
         let channel = context.channel
-        let answer = api.answer(request.method, request.uri, accept: request.headers["Accept"].joined(separator: ", "), on: channel)
+        let answer = api.answer(
+            request.method, request.uri, accept: request.headers["Accept"].joined(separator: ", "), body: body,
+            contentType: request.headers["Content-Type"].first ?? "", on: channel)
         func whole(_ status: Int, _ data: Data, _ headers: [(String, String)]) {
             var head = HTTPResponseHead(version: request.version, status: HTTPResponseStatus(statusCode: status), headers: HTTPHeaders(headers))
             head.headers.add(name: "Content-Length", value: "\(data.count)")

@@ -43,6 +43,13 @@ final class KubernetesModel: ObservableObject {
     let access = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
     /// The shells and attaches on production confirmed this session (rule 5).
     let shellConsent = KubeShellConsent()
+    /// The access reviews behind the page's writes (SelfSubjectAccessReview
+    /// through a writable context's socket), a minute each per context,
+    /// namespace and verb.
+    let writeAccess = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
+    /// The production contexts whose writes are on for this session (rule
+    /// 2): off at launch, turned on from the context's card, never a setting.
+    @Published private(set) var productionWrites = KubeProductionWrites()
 
     /// What the settings say, read once a page shows and on each change.
     struct Configuration: Equatable, Sendable {
@@ -172,7 +179,15 @@ final class KubernetesModel: ObservableObject {
             guard let (configuration, proxies) = await self?.canIRunWith else { return .failed("Kubernetes is off.") }
             return await KubeCanIRunner.run(context, namespace: namespace, access, configuration: configuration, proxies: proxies)
         }
+        // Through the context's socket as it stands now — writable, or
+        // the review isn't sent.
+        writeAccess.run = { [weak self] context, namespace, access in
+            guard let client = await self?.reviewClient(for: context.name) else { return .failed("Kubernetes is off, or the context is gone.") }
+            return await client.review(access, namespace: namespace.isEmpty ? nil : namespace)
+        }
     }
+
+    private func reviewClient(for name: String) -> KubeClient? { client(for: name) }
 
     /// What the proxies are started with: which kubectl, the extra kubeconfigs.
     var proxyConfiguration: KubeProxies.Configuration { configuration.proxies }
@@ -273,7 +288,16 @@ final class KubernetesModel: ObservableObject {
         }
     }
 
-    private func loaded(_ list: KubeContextList) {
+    private func loaded(_ read: KubeContextList) {
+        var list = read
+        // Production's writes stay on only for the cluster they were turned
+        // on for; the proxies are told of any that go. They don't wait to
+        // be told: they keep the context as it was turned on and plan any
+        // other copy of the name with the method filter.
+        for name in productionWrites.apply(to: &list) {
+            let proxies = self.proxies
+            Task { await proxies.endSessionWrites(name) }
+        }
         let before = selected
         // What was read for a context is kept only while it is the same
         // cluster: a name now pointing at another server, cluster or user
@@ -290,6 +314,7 @@ final class KubernetesModel: ObservableObject {
         // or now another cluster, user, credential or class, is asked again.
         for old in contexts.contexts where list.context(named: old.name).map({ !Self.sameAccess(old, $0) }) ?? true {
             access.forget(context: old.name)
+            writeAccess.forget(context: old.name)
         }
         contexts = list
         contextsRead = true
@@ -314,12 +339,12 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// Whether two readings of a context reach the same cluster as the same user. Pure.
-    static func sameCluster(_ old: KubeContext, _ new: KubeContext) -> Bool {
+    nonisolated static func sameCluster(_ old: KubeContext, _ new: KubeContext) -> Bool {
         old.server == new.server && old.cluster == new.cluster && old.user == new.user && old.auth == new.auth
     }
 
     /// The same cluster, and the same class: what can-i's answers hold for.
-    static func sameAccess(_ old: KubeContext, _ new: KubeContext) -> Bool {
+    nonisolated static func sameAccess(_ old: KubeContext, _ new: KubeContext) -> Bool {
         sameCluster(old, new) && old.contextClass == new.contextClass
     }
 
@@ -431,6 +456,24 @@ final class KubernetesModel: ObservableObject {
         restartReading(side: false)
     }
 
+    // MARK: Production's writes, for the session
+
+    /// A production context's writes on (or off) until quit: its proxy is
+    /// started again — without the method filter only while they are on —
+    /// and the context, as the page and its checks see it, says so. Only a
+    /// production context has the switch; any other's writability is its
+    /// `writable` setting alone.
+    func setProductionWrites(_ on: Bool, for name: String) async {
+        guard let context = contexts.context(named: name), context.isProduction, on != productionWrites.isOn(name) else { return }
+        if on { await proxies.allowSessionWrites(context) } else { await proxies.endSessionWrites(name) }
+        if on { productionWrites.turnOn(context) } else { productionWrites.turnOff(name) }
+        var list = contexts
+        _ = productionWrites.apply(to: &list)
+        contexts = list
+        writeAccess.forget(context: name)
+        if name == selectedName { restartReading() }
+    }
+
     /// After a sign-in, or a failure put right: the context's requests may go again.
     func retry() {
         guard let name = selectedName else { return }
@@ -477,7 +520,10 @@ final class KubernetesModel: ObservableObject {
         await proxies.configure(configuration.proxies)
         guard configuration.enabled else { return nil }
         let load = self.load
-        return await KubeBlocking.run { load(configuration) }
+        var list = await KubeBlocking.run { load(configuration) }
+        var writes = productionWrites
+        _ = writes.apply(to: &list)
+        return list
     }
 
     /// The context a tool works on unless told another: the one the page
@@ -820,7 +866,7 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// What went wrong, in words.
-    static func said(_ error: Error) -> String {
+    nonisolated static func said(_ error: Error) -> String {
         switch error {
         case let problem as KubeProxyProblem: return problem.reason
         case let api as KubeAPIError where api.isForbidden: return "Not allowed: \(api.message)"
