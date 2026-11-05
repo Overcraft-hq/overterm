@@ -36,7 +36,8 @@ extension TerminalWindowController {
             currentTab: { [weak self] in self?.store.selected?.id },
             openExternal: { [weak self] url in self?.openKubernetesExternally(url) },
             openDatabase: { [weak self] guess in self?.newDatabaseConnection(from: guess) },
-            importAPI: { [weak self] source in self?.importForwardAPI(source) })
+            importAPI: { [weak self] source in self?.importForwardAPI(source) },
+            askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) })
     }
 
     /// An Ingress's host, in the default browser. An isolated run opens
@@ -262,6 +263,22 @@ extension TerminalWindowController {
         presentAskAgent(text: text, command: nil, folder: store.selected?.workingDirectory, targets: agents, parts: [about])
     }
 
+    /// Ask Why's brief (`KubeAgentBriefing`, scrubbed): the Ask Agent sheet
+    /// with the whole brief shown before it is sent. No checkout is bound
+    /// to a context yet (stage 3a), so the agent offered first is the
+    /// selected tab's — the one under the page — then the window's others,
+    /// or a new one in the selected tab's folder. No git diff is offered:
+    /// the sheet shows the whole of what is sent, and a diff isn't in it.
+    func presentKubernetesBrief(_ brief: KubeAgentBrief) {
+        guard window?.attachedSheet == nil else { return NSSound.beep() }
+        let agents = store.tabs.filter { $0.agent != nil }
+        let selected = store.selected.flatMap { tab in agents.first { $0 === tab } }
+        let ordered = (selected.map { [$0] } ?? []) + agents.filter { $0 !== selected }
+        presentAskAgent(
+            text: brief.text, command: nil, folder: store.selected?.workingDirectory, targets: ordered, message: brief.message, subject: brief.subject,
+            parts: brief.parts, diff: false, showsBrief: true)
+    }
+
     /// Where an isolated run's exports go: its own support folder.
     static var kubernetesExportFolder: URL { AppEnvironment.supportDirectory.appendingPathComponent("Exports", isDirectory: true) }
 
@@ -292,6 +309,9 @@ extension TerminalWindowController {
         page.hasList = true
         page.press = { [weak self] characters in self?.kubernetesPage.press(characters) ?? false }
         page.commandPress = { [weak self] characters in self?.kubernetesPage.commandPress(characters) ?? false }
+        // ⌘L over the page: Ask Why on the pod or Deployment shown or
+        // picked (lines picked in a log answer it themselves).
+        page.askAboutSelection = { [weak self] in self?.kubernetesPage.askWhy() ?? false }
         page.occlusionChanged = { [weak self] in
             self?.updateKubernetesWindowVisible()
             self?.updateKubernetesPageHold()

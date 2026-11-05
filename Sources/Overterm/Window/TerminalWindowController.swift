@@ -2779,7 +2779,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// git diff chip is offered (the window's checkout, by default).
     func presentAskAgent(
         text: String, command: CommandBlock?, folder: String?, targets agents: [Tab], message: String = "", subject: String? = nil,
-        parts: [AskAgentModel.Part] = [], diff: Bool? = nil
+        parts: [AskAgentModel.Part] = [], diff: Bool? = nil, showsBrief: Bool = false
     ) {
         var targets = agents.map { other in
             AskAgentModel.Target(
@@ -2791,7 +2791,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
         askAgent.begin(
             selection: text, command: command, folder: folder, targets: targets, diff: diff ?? self.diff.isRepository, message: message,
-            subject: subject, parts: parts)
+            subject: subject, parts: parts, showsBrief: showsBrief)
         guard let theme else { return }
         presentSheet { [weak self] close in
             AskAgentView(
