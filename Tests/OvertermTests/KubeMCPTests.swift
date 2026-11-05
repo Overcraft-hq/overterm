@@ -184,10 +184,16 @@ final class KubeMCPTests: XCTestCase {
         XCTAssertTrue(KubeMCP.tools.allSatisfy { ($0["description"] as? String)?.isEmpty == false })
     }
 
-    func testAWriteToolIsUnknown() async {
-        for name in ["k8s_delete_pod", "k8s_scale", "k8s_restart", "k8s_apply", "k8s_secret"] {
+    func testAWriteOnAReadOnlyContextIsRefusedAndApplyIsUnknown() async {
+        for name in ["k8s_apply", "k8s_secret"] {
             let said = await refused(name, ["name": "web-1", "namespace": "shop"])
             XCTAssertTrue(said?.contains("Unknown tool") == true, "\(name): \(said ?? "answered")")
+        }
+        for name in KubeMCP.writes {
+            let said = await refused(name, ["name": "web-1", "namespace": "shop", "replicas": 2])
+            XCTAssertTrue(said?.contains("isn't offered on fake-dev") == true, "\(name): \(said ?? "answered")")
+            let prod = await refused(name, ["name": "api-0", "namespace": "payments", "context": "fake-prod", "replicas": 0])
+            XCTAssertTrue(prod?.contains("isn't offered on fake-prod") == true, "\(name): \(prod ?? "answered")")
         }
         XCTAssertTrue(api.requests.isEmpty, "nothing asked: \(api.requests)")
     }

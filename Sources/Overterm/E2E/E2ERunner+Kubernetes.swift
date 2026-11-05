@@ -292,6 +292,8 @@ extension E2ERunner {
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
         await kubernetesWrites(model, page, fake, kubeconfig: kubeconfig, port: port, kubectl: kubectl)
         await kubernetesVerbs(model, page, fake)
+        await kubernetesTabWrites(model, page, fake)
+        await kubernetesAgentWrites(model, page, fake, kubeconfig: kubeconfig, port: port)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -1350,7 +1352,7 @@ extension E2ERunner {
         let why = await call("k8s_why", ["name": "worker-5c", "context": "fake-dev", "namespace": "shop"])
         check("k8s_why is Ask Why's brief", !why.isError && why.text.contains("CrashLoopBackOff"), why.text)
         let write = await call("k8s_delete_pod", ["name": "api-0", "context": "fake-prod", "namespace": "payments"])
-        check("a write is impossible: no such tool", write.isError && write.text.contains("Unknown tool"), write.text)
+        check("a write on read-only production is refused", write.isError && write.text.contains("isn't offered on fake-prod"), write.text)
         check("every request a GET", !fake.requests.isEmpty && fake.writes.isEmpty, "\(fake.writes)")
         check("none to a Secret's object", !fake.requests.contains { $0.path.contains("/secrets/") }, "\(fake.requests.filter { $0.path.contains("secrets") })")
         check("nor any subresource but a log", fake.subresourceRequests.allSatisfy(\.isLog), "\(fake.subresourceRequests)")

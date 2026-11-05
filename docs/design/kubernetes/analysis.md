@@ -982,7 +982,7 @@ A shell or attach changes no object, but inside the container it can do anything
 2. **Writes are turned on per context, in one place.**
    - A non-production context's `writable` flag in `kubernetes.contexts` decides. Local contexts default to writable, remote ones to read-only. The flag persists.
    - A production context ignores that flag. Its writes are turned on from the context card for this session only, and end when the app quits, so they must be turned on again on purpose each day (decision 4).
-   - No other setting says whether a context is writable. `kubernetes.agentWrites` only says whether agents' write tools exist on a context that is writable.
+   - No other setting says whether a context is writable. `kubernetes.agentWrites` only says whether agents' write tools exist on a context that is writable: they exist only on a context it names, whatever its class (empty by default, so agents only read, even on a writable local context).
 3. **Every write is confirmed.** One shared confirmation sheet (extracted from `DockerMCP.allow`) shows:
    - the context and namespace, in red on production;
    - the object;
@@ -990,8 +990,8 @@ A shell or attach changes no object, but inside the container it can do anything
    - for apply, the dry-run diff and the fields' other owners.
 
    Each write ships with its access review and its confirmation in the same commit, never before them.
-4. **Destructive actions on production ask for the object's name to be typed**, GitHub's pattern for deleting a repository. These are: delete, scale to 0, force delete, removing finalizers, drain, `rollout undo`, deleting a namespace, node shell, Helm rollback, Helm uninstall, and apply where `applyOnProduction` allows it. Deleting a namespace and uninstalling a Helm release ask for the name on every class.
-5. **A shell or attach on production is confirmed** with the context, namespace and pod, once per pod and session. It runs in a tab whose header carries the red band. The verb is enabled only after `kubectl auth can-i` says yes.
+4. **Destructive actions on production ask for the object's name to be typed**, GitHub's pattern for deleting a repository. These are: delete, scale to 0, force delete, removing finalizers, drain, `rollout undo`, a debug container (it stays in the pod's spec until the pod goes), deleting a namespace, node shell, Helm rollback, Helm uninstall, and apply where `applyOnProduction` allows it. Deleting a namespace and uninstalling a Helm release ask for the name on every class.
+5. **A shell or attach on production is confirmed** with the context, namespace and pod, once per pod and session. It runs in a tab whose header carries the red band. The verb is enabled only after `kubectl auth can-i` says yes. A context's `shells` turned off refuses every shell Overterm would open there: exec, attach, a debug container (it is attached to) and a node shell.
 6. **The context is visible all the time.** On production the page carries a red band with the context's name. A "Terminal in this context" tab on production carries it in its header. From stage 3b, the pane header shows "⎈ <context>" when a kubectl-family command runs against production in any tab (3.11).
 7. **Overterm never writes a kubeconfig and never changes the current context.** Every command carries `--context` (`--kube-context` for helm) and `-n`, built by `KubeCommands`. A tab's pinned context is a separate small file of Overterm's that holds no secret (3.11).
 8. **Overterm installs nothing into a cluster.** That means no metrics stack, no operator and no agent. Node shells and debug containers are the user's explicit commands, run in a tab, on writable contexts only.
@@ -1007,7 +1007,7 @@ A shell or attach changes no object, but inside the container it can do anything
    - Logs and shell output handed to agents are scrubbed with the shared Secrets helper, which also covers bearer tokens, PEM blocks, AWS keys and kubeconfig `token:` and `client-key-data:` fields.
 10. **Agents:**
     - The default is read-only.
-    - Write tools exist only on writable contexts, and every call is confirmed.
+    - Write tools exist only on writable contexts that `kubernetes.agentWrites` names, and every call is confirmed. They are listed while it names any context (MCP's tool list isn't announced again, so an agent started before needs a restart); each call is refused where the context isn't writable for agents.
     - On production there are no write tools unless writes are on for the session and `kubernetes.agentWrites` names that context. `k8s_apply` also needs `applyOnProduction`.
     - There is no tool for Secrets.
     - An agent in a terminal still has its own kubectl and the user's credentials, and Overterm cannot take those away. The pinned tab context (3.11) and the warnings are the guard there. Overterm's tools claim only what the proxy enforces.

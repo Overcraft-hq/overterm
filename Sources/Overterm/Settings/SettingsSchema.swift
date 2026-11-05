@@ -733,8 +733,18 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:
-                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, and why a pod fails — reads only, through the context's proxy, production included. No tool writes, and none reads a Secret's values; what looks like a secret is taken out of every answer.",
+                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale and k8s_delete_pod, each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
             kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
+            help:
+                "By name: the contexts where agents get k8s_restart, k8s_scale and k8s_delete_pod — empty, agents only read. Only while Overterm may write there too: a local or remote one by its writable setting, a production one while its writes are on for the session. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
+            kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess"),
+        SettingSpec(
+            key: "kubernetes.debugImage", section: .kubernetes, group: "Tabs", title: "Debug container's image",
+            help:
+                "What E runs beside a pod's container (kubectl debug --target) or on a node, in a tab — unless the context's own debugImage (a node: its nodeShellImage, then debugImage) says another. Only on writable contexts.",
+            kind: .text(placeholder: "busybox:1.36", monospaced: true), defaultValue: .string("busybox:1.36"), requires: "kubernetes.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

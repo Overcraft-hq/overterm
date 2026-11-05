@@ -106,6 +106,9 @@ enum KubeProcessCheck {
         rule(verb, class: context.contextClass, writable: context.isWritable, settings: context.settings)
     }
 
+    /// Why a shell, an attach or a debug shell is refused where `shells` is off.
+    static let shellsOff = "Shells and attach are off for this context (its shells setting)."
+
     static func rule(_ verb: KubeProcessVerb, class kind: KubeContextClass, writable: Bool, settings: KubeContextSettings) -> KubeProcessRule {
         let production = kind == .production
         switch verb {
@@ -117,22 +120,29 @@ enum KubeProcessCheck {
         case .portForward:
             return KubeProcessRule(access: verb.access)
         case .shell, .attach:
-            if settings.shells == false {
-                return KubeProcessRule(refused: "Shells and attach are off for this context (its shells setting).")
-            }
+            if settings.shells == false { return KubeProcessRule(refused: shellsOff) }
             return KubeProcessRule(access: verb.access, confirm: production)
         case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall:
             guard writable else { return KubeProcessRule(refused: readOnly(kind)) }
+            // A debug container is attached to: an interactive shell in the
+            // pod, which a context's shells setting turned off promises not to open.
+            if verb == .debug, settings.shells == false { return KubeProcessRule(refused: shellsOff) }
             let typed: Bool =
                 switch verb {
                 case .helmUninstall: true
-                case .drain, .rolloutUndo, .helmRollback: production
+                // Rule 4; a debug container too, which stays in the pod's spec.
+                case .drain, .rolloutUndo, .debug, .helmRollback: production
                 default: false
                 }
             return KubeProcessRule(confirm: true, typedName: typed)
         case .nodeShell:
             guard writable else { return KubeProcessRule(refused: readOnly(kind)) }
-            return KubeProcessRule(refused: "Node shells are off until the context's nodeShell setting is on.")
+            if settings.shells == false { return KubeProcessRule(refused: shellsOff) }
+            guard settings.nodeShell == true else {
+                return KubeProcessRule(refused: "Node shells are off until the context's nodeShell setting is on.")
+            }
+            // Decision 20: its name typed on every class.
+            return KubeProcessRule(confirm: true, typedName: true)
         case .canI, .whoami, .version, .kustomize, .helmTemplate:
             return KubeProcessRule()
         case .terminal:

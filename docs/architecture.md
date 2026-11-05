@@ -2326,7 +2326,7 @@ reads the kubeconfig and starts that context's proxy), `kubernetes.kubeconfigs` 
 `kubernetes.contexts` — one entry per context name, the only place a
 context's own settings live (`KubeContextSettings`: `class`, `writable`,
 `displayName`, `defaultNamespace`, `accessibleNamespaces`,
-`favouriteNamespaces`, `terminalDirectory`; more fields join with the stages that read them).
+`favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`; more fields join with the stages that read them).
 It is the first `entries` setting: `SettingValue.entries`, written on one
 line and edited in place there, its fields checked one by one
 (`SettingSpec.fitted`) — a field that doesn't fit is reported and left
@@ -2334,8 +2334,12 @@ out, the rest of the entry kept, so a typo never takes a hand-set
 production class with it. The page lists the entries and sends you to
 settings.json to edit them. `kubernetes.proxyIdleMinutes` (10) and
 `kubernetes.kubectlPath` (empty: found) are the proxies'
-(`Settings.kubernetesProxyConfiguration`). `kubernetes.agentAccess` (on:
-reads) gives agents the `k8s_` tools (Agents' tools, below).
+(`Settings.kubernetesProxyConfiguration`). `kubernetes.agentAccess` (on)
+gives agents the `k8s_` tools (Agents' tools, below);
+`kubernetes.agentWrites` (a list, empty: agents only read) names the
+contexts whose agents get the write tools while Overterm may write there;
+`kubernetes.debugImage` (`busybox:1.36`) is what `E` runs unless the
+context names its own (Writes in a tab, below).
 
 **The proxies** (`KubeProxies`, one for the app). Everything Overterm asks a
 cluster goes through the context's own long-lived `kubectl proxy --context
@@ -3445,10 +3449,11 @@ group of the MCP server Claude Code gets from Overterm (`BrowserMCP`, as
 Docker's `docker_` are), offered and answered only while
 `kubernetes.agentAccess` is on (`Settings.kubernetesAgentAccess`, which
 `kubernetes.enabled` off turns off too; the bridge serves while any group
-is on, and follows `kubernetes.*` changes). Every tool reads:
+is on, and follows `kubernetes.*` changes). Seven tools read; three write
+where a context is writable for agents (Agents' writes, below):
 
 - `k8s_contexts`: each context's name, class (production said as such),
-  whether Overterm may write there (agents never do), its namespace, kubectl's current one,
+  whether Overterm may write there and whether agents may, its namespace, kubectl's current one,
   the one the tools use unless told another, and a stopped proxy's
   reason — never a server, a user or a credential; scrubbed and bounded
   like every answer. Read from the
@@ -3488,9 +3493,8 @@ is on, and follows `kubernetes.*` changes). Every tool reads:
   `KubeRollout` says it, its replicas, and its history — a Deployment's
   ReplicaSets, the others' ControllerRevisions (where served), the ones it
   owns, newest first: revision, images, ready, age, change-cause.
-- `k8s_top` isn't there: it waits for metrics (stage 2d). No write tool
-  exists in this stage (they are 2a's, each asked); a name that isn't one
-  of these is an unknown tool.
+- `k8s_top` isn't there: it waits for metrics (stage 2d); `k8s_apply` is
+  2b's. A name that isn't one of these is an unknown tool.
 
 **Where**: the context the call names — one the kubeconfig doesn't have
 is an error, never a fallback — else the page's selected one
@@ -3508,7 +3512,7 @@ the same cluster and user as the tool's (`knownDiscovery(of:)` with
 against the tools' own, kept five minutes per cluster and user. Every answer starts
 with the context, production in capitals (`KubeBriefContext.said`).
 
-**Reads only, no Secret**: every request a GET through
+**Reads, no Secret**: every read a GET through
 `KubernetesModel.agentClient` — the context's proxy in a background slot
 (never the page's), under the proxies' rules: a stopped context answers
 its problem and starts nothing, an oidc sign-in waits its turn — each read
@@ -3532,7 +3536,8 @@ its alias, none asked for but as a Table, across namespaces each with
 `includeObject=None` and its planted last-applied never seen; a token in
 a cell not found by `filter`; events past a page read before the newest
 are picked, a list cut said; logs scrubbed before `grep`;
-the tool list exactly the seven reads, a write tool unknown; a credential
+the tool list exactly the seven reads with no writable context, a write
+tool on a read-only context refused asking nothing, `k8s_apply` unknown; a credential
 failure through the real `KubeProxies` answered scrubbed, the context then
 stopped — the next call asks nothing and plans no proxy, `k8s_contexts`
 says why; Kubernetes off; the setting taking the
@@ -3543,7 +3548,7 @@ the bounds and the scrubbing. The `kubernetes` scenario calls them through
 the bridge's real HTTP endpoint at a pane's path, with its token: the list
 without a write tool, `k8s_get` on fake-prod, the page's context when none
 is named, an unknown context refused, a Secret without its value,
-`k8s_why`, a write tool unknown, only GETs; `kubernetes.agentAccess` off
+`k8s_why`, a write on read-only production refused, only GETs; `kubernetes.agentAccess` off
 taking the group from the endpoint's list and refusing a call (or, with no
 other group on, the endpoint gone), and on again back in its `tools/list`.
 
@@ -3666,6 +3671,83 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   `kubernetesVerbs` (`E2ERunner+KubernetesVerbs`) triggers, cordons and
   makes then deletes a namespace on `kind-fake` by the window's keys and
   sheets, and sees `fake-dev` refuse each.
+
+**Writes in a tab** (stage 2a; `KubeTabWrites.swift` (pure),
+`KubernetesPageModel+TabWrites`; analysis 2.4, 2.9, 2.15 and Section 5's
+process table): a drain, a rollback and a debug container are kubectl in
+a terminal tab — where evictions and what a PodDisruptionBudget blocks
+show as they go, and `rollout undo`'s logic stays kubectl's — not
+requests. `KubeTabWrite` is each one's words: `kubectl drain NODE
+--ignore-daemonsets` (Drain in a Tab…, a node's), `kubectl rollout undo
+deployment/D --to-revision=N` (Roll Back in a Tab…, a Deployment's: the
+revision picked from the ReplicaSets it owns, newest first, each with its
+images and age — `KubeRevision`, the current one never offered),
+`kubectl debug -it POD --image=I --target=C` (`E` on a pod where the
+server serves ephemeral containers; C picked when there are several) and
+`kubectl debug node/N -it --image=I` (`E` on a node), `--context` and `-n`
+always (a drain's `-n` is its tab's, harmless for a node), every word not
+ours quoted for zsh. A pod's image is the context's `debugImage`, else
+`kubernetes.debugImage`; a node's the context's `nodeShellImage` first
+(`KubernetesModel.nodeShellImage`).
+One path (`runTabWrite`), as the page's writes: the process class check
+(`KubeProcessCheck`: refused on every read-only context — each is
+`KubeProcessVerb.writes` —, a node's debug also needs the context's
+`nodeShell`; a debug container and a node's debug are shells, refused
+where the context's `shells` is off); the access review of what the command does
+(`KubeTabWrite.accesses` through `writeAccess`: patch nodes and create
+pods/eviction cluster-wide; patch deployments.apps; patch
+pods/ephemeralcontainers and create pods/attach; create pods); what it
+needs read; the confirmation (`KubeTabWrite.confirmation`, a
+`KubeWriteConfirmation` without a request verb: the context and
+namespace, what happens, the command the tab runs) with the name typed
+where rule 4 says — a drain, rollback or debug container on production,
+a node's debug on every class (decision 20) —; the class check once more
+against the context as it is at the button, which must still be the
+cluster, user and class reviewed (`KubernetesModel.sameAccess`: the tab's
+kubectl reaches it by name); then `KubeCommands.command(_:in:)` —
+which builds nothing the check refuses — typed into a new tab pinned to
+the context (`runKubernetesCommand`), recorded instead in a scenario.
+Checked: `KubeTabWritesTests` (each line, quoting, every read-only
+context refusing each, typed names, the confirmation's words, the
+reviews, which kinds, the revisions) and `KubeTabWritesPageTests`
+(reviewed then asked then typed, a read-only context sending not even a
+review, a refused review, a revision picked, `E`'s container, a wrong
+name, writes turned off and the kubeconfig pointing the name elsewhere
+at the button running nothing). ⌘K lists them beside the page's writes
+(`Kubernetes: Drain node N in a Tab…`).
+
+**Agents' writes** (stage 2a; `KubeMCP.write`, `KubeAgentWrites`; 3.5,
+rule 10): `k8s_restart`, `k8s_scale` and `k8s_delete_pod` work only on
+a context `kubernetes.agentWrites` names (empty by default: agents only
+read) and writable for Overterm — a local or remote one by its
+`writable`, a production one only with its switch on for the session
+(`KubeAgentWrites.refused`); `tools/list` offers them while the setting
+names any context — by the setting, not the contexts' state at the
+list, which MCP isn't told of again (an agent started before a name was
+added needs a restart) — and `k8s_contexts` says where they work. A call goes the page's way: the class check
+(`KubeWriteCheck.rule`), the access review through the context's
+socket, the replicas read for a scale, the confirmation
+(`KubeWriteConfirmation.make`) asked in the calling pane's window — "An
+agent asks, in <context · namespace>: …", the sheet `WriteConfirmation`
+with Allow and Don't, all of it shown, the name typed where rule 4 says
+—, the contexts read again and every check repeated (writes turned off,
+`agentWrites` changed or the kubeconfig pointing the name elsewhere
+while it asked stop it), then one request (`KubeWrites`) through
+`agentClient`. Declined, a wrong name, refused: an error to the agent
+and nothing sent. An isolated run with no window answers no.
+`KubeMCP.askOverride` answers in tests. Checked: `KubeMCPWritesTests`
+(where agents may write, the tool list by `agentWrites`, a writable
+context it doesn't name refused, every tool asking first and a refusal sending nothing, a
+scale reviewed then landing, production's typed name, a refused review,
+a change while asked); the scenario's `kubernetesTabWrites` and
+`kubernetesAgentWrites` (`E2ERunner+KubernetesTabWrites`): a drain
+refused on fake-dev and recorded on kind-fake after its review and its
+sheet, a rollback's revision picked, `E`'s debug container; through the
+bridge's endpoint no write tool and `k8s_scale` on kind-fake refused
+until `agentWrites` names it, then asked in the window (the runner
+answers) and landing on the fake, a declined delete sending nothing, and
+fake-prod's writes refused until its switch is on and `agentWrites`
+names it, then its name asked.
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and

@@ -579,11 +579,13 @@ extension TerminalWindowController {
             })
         if let target = page.writeTarget {
             let object = KubeWriteOutcome.spoken(target)
-            for verb in page.writeVerbs(for: target) where verb.unavailable == nil {
-                let name = verb.title.replacingOccurrences(of: "…", with: "")
+            let writes = page.writeVerbs(for: target).map { ($0, $0.title.replacingOccurrences(of: "…", with: "") + " " + object) }
+            // Drain, Roll Back, Debug: `Drain node fake-node-1 in a Tab`.
+            let tabWrites = page.tabWriteVerbs(for: target).map { ($0, ($0.label ?? $0.title) + " " + object + " in a Tab") }
+            for (verb, name) in writes + tabWrites where verb.unavailable == nil {
                 items.append(
                     PaletteItem(
-                        id: "k.w.\(name).\(target)", group: .action, title: "Kubernetes: \(name) \(object)…",
+                        id: "k.w.\(name).\(target)", group: .action, title: "Kubernetes: \(name)…",
                         subtitle: (verb.key.map { "\($0)  —  " } ?? "") + "asked first, naming \(target.context)", symbol: verb.symbol
                     ) { [weak self] _, _ in
                         self?.showKubernetesPage()

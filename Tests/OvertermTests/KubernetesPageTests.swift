@@ -221,6 +221,7 @@ final class KubernetesPageTests: XCTestCase {
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
                 "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward",
                 "Delete to Recreate…", "Evict…", "Remove Finalizers…", "Force Delete…", "Delete…",
+                "Debug Container in a Tab…",
             ])
         let writes = verbs.filter { KubeWriteVerb.allCases.map(\.title).contains($0.title) }
         XCTAssertTrue(
@@ -272,7 +273,8 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of("-"), .scaleDown)
         XCTAssertEqual(KubernetesKey.of("="), .scaleTo)
         XCTAssertEqual(KubernetesKey.of("\u{7F}"), .delete, "⌫, through the guard path")
-        for key in ["y", "E"] { XCTAssertNil(KubernetesKey.of(key), "a later stage's: \(key)") }
+        XCTAssertEqual(KubernetesKey.of("E"), .debug, "a debug container in a tab; case matters: e is a shell")
+        XCTAssertNil(KubernetesKey.of("y"), "a later stage's: y")
     }
 
     // MARK: Navigating

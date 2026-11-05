@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Kubernetes' MCP tools (docs/design/kubernetes/analysis.md, 3.5; stage
@@ -8,14 +9,20 @@ import Foundation
 /// log and events, a rollout's status and history, and a failing pod's
 /// brief (Ask Why's).
 ///
-/// **Reads only.** Every request is a GET through the context's
-/// `kubectl proxy` (`KubernetesModel.agentClient`: `KubeClient`, whose
-/// connection has no other method) in a background slot, under the
-/// proxies' rules — a stopped context answers its problem and starts
-/// nothing, an oidc sign-in waits its turn; no tool starts a process of
-/// its own. A read-only context's socket refuses writes anyway. **No tool
-/// writes** in this stage (writes are stage 2a), and **none reads a
-/// Secret's values**: a Secret is listed and described from its Table row
+/// **Reads, and three confirmed writes.** Every request goes through the
+/// context's `kubectl proxy` (`KubernetesModel.agentClient`) in a
+/// background slot, under the proxies' rules — a stopped context answers
+/// its problem and starts nothing, an oidc sign-in waits its turn; no tool
+/// starts a process of its own. The reads are GETs. The writes —
+/// `k8s_restart`, `k8s_scale`, `k8s_delete_pod` (stage 2a, `KubeAgentWrites`)
+/// — are listed while `kubernetes.agentWrites` names a context (an agent
+/// started before needs a restart to see them: the list isn't announced
+/// again), work only on a context it names that is writable for Overterm
+/// (a production one only with its writes on for the session), and each call is asked in the window, the context and
+/// namespace in its title, through the page's checks: the class check, the
+/// access review, the confirmation (the name typed where rule 4 says), the
+/// class check again, then the request. A read-only context's socket
+/// refuses writes anyway. **None reads a Secret's values**: a Secret is listed and described from its Table row
 /// (name, type, how many keys), never GET whole — its one GET is every
 /// value at once (rule 9) — and an env value from one is named, not valued.
 ///
@@ -37,8 +44,10 @@ import Foundation
 @MainActor
 enum KubeMCP {
     static let prefix = "k8s_"
-    /// Every tool there is: reads, all of them.
+    /// The reads, always offered.
     static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout"]
+    /// The writes, listed only while `kubernetes.agentWrites` names a context (`KubeAgentWrites`).
+    static let writes: [String] = KubeAgentWrites.tools
 
     /// How long one read may take: an oidc sign-in in the browser, a
     /// cluster that doesn't answer.
@@ -67,7 +76,9 @@ enum KubeMCP {
     static func call(
         _ name: String, _ arguments: [String: Any], kubernetes: KubernetesModel, pane: String? = nil, now: Date = Date()
     ) async throws -> [String: Any] {
-        guard reads.contains(name) else { throw BrowserMCP.ToolError(message: "Unknown tool: \(name). Agents only read Kubernetes here.") }
+        guard reads.contains(name) || writes.contains(name) else {
+            throw BrowserMCP.ToolError(message: "Unknown tool: \(name). Agents read Kubernetes here, and restart, scale or delete a pod where it is writable.")
+        }
         let call = Call(name: name, arguments: arguments)
         guard let list = await kubernetes.contextsForAgents() else {
             return BrowserMCP.errorResult("Kubernetes is off in Overterm's settings (Settings ▸ Kubernetes).")
@@ -84,6 +95,7 @@ enum KubeMCP {
         case "k8s_events": text = try await events(call, target, kubernetes: kubernetes, now: now)
         case "k8s_why": text = try await why(call, target, kubernetes: kubernetes, now: now)
         case "k8s_rollout": text = try await rollout(call, target, kubernetes: kubernetes, now: now)
+        case "k8s_restart", "k8s_scale", "k8s_delete_pod": text = try await write(call, target, kubernetes: kubernetes, pane: pane)
         default: throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
         return BrowserMCP.textResult(text)
@@ -280,7 +292,8 @@ enum KubeMCP {
             rows.append(
                 KubeMCPText.ContextRow(
                     name: context.name, displayName: context.settings.displayName, contextClass: context.contextClass, writable: context.isWritable,
-                    namespace: namespace, isDefault: context.name == chosen, isCurrent: context.name == list.current, problem: status.reason))
+                    namespace: namespace, isDefault: context.name == chosen, isCurrent: context.name == list.current, problem: status.reason,
+                    agentsWrite: KubeAgentWrites.refused(context, agentWrites: kubernetes.agentWrites) == nil))
         }
         return KubeMCPText.contexts(rows)
     }
@@ -583,8 +596,164 @@ enum KubeMCP {
         return KubeMCPText.finished(scrub(lines.joined(separator: "\n")))
     }
 
+    // MARK: Writes (stage 2a)
+
+    /// Answers the confirmation in a test or a scenario: what was typed, nil to refuse.
+    static var askOverride: ((KubeWriteConfirmation) -> String?)?
+
+    /// `k8s_restart`, `k8s_scale`, `k8s_delete_pod`: on a context writable
+    /// for agents only, through the page's checks — the class check, the
+    /// access review, what the confirmation says read (the replicas), the
+    /// confirmation in the window, the name typed where rule 4 says, the
+    /// checks again against the context as it is now — then one request.
+    /// Refused or declined, nothing is sent.
+    static func write(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil) async throws -> String {
+        if let refused = KubeAgentWrites.refused(target.context, agentWrites: kubernetes.agentWrites) {
+            throw BrowserMCP.ToolError(message: "\(call.name) isn't offered on \(target.context.name): \(refused) Tell the user what to change instead.")
+        }
+        let namespace = try target.oneNamespace(call.name)
+        let verb: KubeWriteVerb
+        let kind: KubeResourceKind
+        var replicas: Int?
+        switch call.name {
+        case "k8s_restart":
+            verb = .restart
+            kind = try await self.kind(call, target, kubernetes: kubernetes, default: "deployments")
+        case "k8s_scale":
+            verb = .scale
+            kind = try await self.kind(call, target, kubernetes: kubernetes, default: "deployments")
+            let given =
+                (call.arguments["replicas"] as? Int) ?? (call.arguments["replicas"] as? Double).flatMap { $0 == $0.rounded() ? Int($0) : nil }
+                ?? (call.arguments["replicas"] as? String).flatMap { Int($0) }
+            guard let given, (0...10_000).contains(given) else {
+                throw BrowserMCP.ToolError(message: "k8s_scale needs “replicas”: a whole number, 0 to 10000.")
+            }
+            replicas = given
+        default:
+            verb = .delete
+            let discovery = try await discovery(for: target, kubernetes: kubernetes)
+            guard let pods = KubeKinds.resolve("pods", in: discovery) else { throw BrowserMCP.ToolError(message: "\(target.context.name) serves no pods.") }
+            kind = pods
+        }
+        let name = try call.objectName("name", call.name == "k8s_delete_pod" ? "the pod's name, from k8s_get" : "the workload's name, from k8s_get")
+        let ref = KubeObjectRef(context: target.context.name, kind: kind, namespace: namespace, name: name)
+        let object = KubeWriteOutcome.spoken(ref)
+        let first = KubeWriteCheck.rule(verb, for: target.context, kind: kind)
+        if let refused = first.refused { throw BrowserMCP.ToolError(message: refused) }
+        let client = target.client
+        // The access review first: nothing is read or asked before it says yes.
+        if let access = first.access {
+            let answer = try await within { await client.review(access, namespace: namespace) }
+            if let why = KubeAccessState.answered(answer).unavailable(access, namespace: namespace, review: true) {
+                throw BrowserMCP.ToolError(message: KubeMCPText.scrubbed(why))
+            }
+        }
+        var from: Int?
+        if verb == .scale {
+            do {
+                from = try await within { try await client.replicas(ref) }
+            } catch {
+                throw BrowserMCP.ToolError(message: "Couldn't read \(object)'s replicas: \(said(error))")
+            }
+            if from == replicas { return KubeMCPText.finished(target.header(kind: kind) + "\n\(object) has \(replicas ?? 0) replicas already: nothing was changed.") }
+        }
+        let rule = KubeWriteCheck.rule(verb, for: target.context, kind: kind, replicas: replicas)
+        let confirmation = KubeWriteConfirmation.make(
+            verb, ref, context: target.context, rule: rule, from: from, to: replicas, discovery: known(for: target, kubernetes: kubernetes))
+        guard let typed = await ask(confirmation, pane: pane) else {
+            throw BrowserMCP.ToolError(message: "The user declined \(confirmation.kubectl ?? object): nothing was changed.")
+        }
+        guard confirmation.accepts(typed) else {
+            throw BrowserMCP.ToolError(message: "The name typed wasn't \(confirmation.typedName ?? name): nothing was changed.")
+        }
+        // As the context is now: writes turned off, agentWrites changed, or
+        // the kubeconfig pointing it elsewhere while it asked stop it here.
+        guard let list = await kubernetes.contextsForAgents(), let now = list.context(named: target.context.name),
+            KubernetesModel.sameAccess(target.context, now), KubeAgentWrites.refused(now, agentWrites: kubernetes.agentWrites) == nil,
+            KubeWriteCheck.rule(verb, for: now, kind: kind, replicas: replicas).refused == nil
+        else {
+            throw BrowserMCP.ToolError(message: "\(target.context.name) changed while it was asked (its writes, or agents' access): nothing was changed.")
+        }
+        let request: KubeWriteRequest =
+            switch verb {
+            case .restart: KubeWrites.restart(ref, at: Date())
+            case .scale: KubeWrites.scale(ref, replicas: replicas ?? 0)
+            default: KubeWrites.delete(ref)
+            }
+        let writer = kubernetes.agentClient(for: now)
+        do {
+            _ = try await within { try await writer.write(request) }
+        } catch let error as BrowserMCP.ToolError {
+            throw error
+        } catch {
+            throw BrowserMCP.ToolError(message: KubeMCPText.scrubbed(KubeWriteOutcome.failed(verb, ref, error)))
+        }
+        return KubeMCPText.finished(target.header(kind: kind) + "\n" + KubeWriteOutcome.done(verb, ref, from: from, replicas: replicas))
+    }
+
+    /// The confirmation in the window — the context and namespace in its
+    /// title, all of the detail shown, a field for the name where asked —
+    /// or a test's answer: what was typed, nil when refused.
+    static func ask(_ confirmation: KubeWriteConfirmation, pane: String? = nil) async -> String? {
+        if let askOverride { return askOverride(confirmation) }
+        let sheet = WriteConfirmation(
+            title: KubeAgentWrites.title(confirmation), scope: confirmation.scope, production: confirmation.production,
+            detail: DockerMCP.displayed(confirmation.detail), button: "Allow", cancel: "Don't", typedName: confirmation.typedName,
+            critical: confirmation.production || confirmation.typedName != nil)
+        let window = window(forPane: pane)
+        // An isolated run never stops on a dialog of its own: no window, no.
+        if window == nil, AppEnvironment.isIsolated { return nil }
+        if window != nil { NSApp.activate(ignoringOtherApps: true) }
+        return await sheet.ask(on: window)
+    }
+
+    /// The window of the pane that called, else the main one, else any
+    /// terminal window on screen.
+    static func window(forPane pane: String?) -> NSWindow? {
+        let terminals = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }
+        if let pane, let own = terminals.first(where: { $0.store.tabs.contains { $0.terminals.contains { $0.processTag == pane } } }) {
+            return own.window
+        }
+        return NSApp.mainWindow ?? terminals.first { $0.window?.isVisible == true }?.window
+    }
+
     // MARK: Tools
 
+    /// What is offered: the reads, and the writes while `kubernetes.agentWrites` names a context.
+    static func tools(writes: Bool) -> [[String: Any]] { writes ? tools + writeTools : tools }
+
+    static var writeTools: [[String: Any]] {
+        let context: [String: Any] = [
+            "type": "string",
+            "description": "A context k8s_contexts says agents may write in. Default: the one selected on the Kubernetes page; with none, name one.",
+        ]
+        let namespace: [String: Any] = ["type": "string", "description": "Its namespace. Default: the page's namespace on that context, else the context's own."]
+        let asked =
+            " Only on a context k8s_contexts says agents may write in; asked of the user in Overterm's window first, naming the context and namespace; declined, nothing changes."
+        return [
+            tool(
+                "k8s_restart", "Restart a workload's rollout, as kubectl rollout restart does: its pods are replaced one by one." + asked,
+                [
+                    "name": ["type": "string", "description": "The workload's name."],
+                    "kind": ["type": "string", "description": "deployment (default), statefulset or daemonset."],
+                    "namespace": namespace, "context": context,
+                ], required: ["name"]),
+            tool(
+                "k8s_scale", "Set a workload's replicas through its scale subresource, as kubectl scale does." + asked,
+                [
+                    "name": ["type": "string", "description": "The workload's name."],
+                    "replicas": ["type": "integer", "description": "How many, 0 to 10000."],
+                    "kind": ["type": "string", "description": "deployment (default), statefulset or replicaset."],
+                    "namespace": namespace, "context": context,
+                ], required: ["name", "replicas"]),
+            tool(
+                "k8s_delete_pod",
+                "Delete one pod, in the background after its grace period — its controller, if it has one, makes it again." + asked,
+                ["name": ["type": "string", "description": "The pod's name."], "namespace": namespace, "context": context], required: ["name"]),
+        ]
+    }
+
+    /// The reads.
     static var tools: [[String: Any]] {
         let context: [String: Any] = ["type": "string", "description": "A context's name from k8s_contexts. Default: the one selected on the Kubernetes page; with none, name one."]
         let namespace: [String: Any] = [
@@ -593,7 +762,7 @@ enum KubeMCP {
         return [
             tool(
                 "k8s_contexts",
-                "The kubeconfig's contexts: each one's class (production, remote, local), whether Overterm may write there (it doesn't: agents only read), its namespace, and which one the tools use unless told another. No server address or credential.",
+                "The kubeconfig's contexts: each one's class (production, remote, local), whether Overterm may write there and whether agents may (k8s_restart, k8s_scale, k8s_delete_pod work only there), its namespace, and which one the tools use unless told another. No server address or credential.",
                 [:]),
             tool(
                 "k8s_get",
@@ -658,7 +827,7 @@ enum KubeMCP {
     }
 
     static let instructions =
-        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page), reads only: k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). No tool changes a cluster or reads a Secret's values; to change something, tell the user what to run."
+        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale and k8s_delete_pod change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [
@@ -708,19 +877,30 @@ enum KubeMCPText {
         var isCurrent: Bool
         /// Why its requests stop now, when they do.
         var problem: String?
+        /// Whether the write tools work here (`KubeAgentWrites`).
+        var agentsWrite = false
+    }
+
+    /// What the header says of writes.
+    static func writesSaid(_ rows: [ContextRow]) -> String {
+        rows.contains(where: \.agentsWrite)
+            ? "Agents write only where a context says so (k8s_restart, k8s_scale, k8s_delete_pod), each call asked of the user first."
+            : "Agents only read: no context is writable for agents now."
     }
 
     static func contexts(_ rows: [ContextRow]) -> String {
         var lines = [
             rows.contains(where: \.isDefault)
-                ? "The kubeconfig's contexts (* the one the tools use unless told another). Agents only read: no tool writes."
-                : "The kubeconfig's contexts. None is selected on the Kubernetes page, so every call names its “context”. Agents only read: no tool writes."
+                ? "The kubeconfig's contexts (* the one the tools use unless told another). \(writesSaid(rows))"
+                : "The kubeconfig's contexts. None is selected on the Kubernetes page, so every call names its “context”. \(writesSaid(rows))"
         ]
         for row in rows {
             var line = "\(row.isDefault ? "*" : " ") \(row.name)"
             if let display = row.displayName, display != row.name { line += " (“\(display)”)" }
             line += row.contextClass == .production ? " — PRODUCTION" : " — \(row.contextClass.rawValue)"
-            line += row.writable ? ", writable for Overterm (not for agents)" : ", read-only for Overterm"
+            line +=
+                !row.writable
+                ? ", read-only for Overterm" : row.agentsWrite ? ", writable — agents may restart, scale and delete pods here, each asked first" : ", writable for Overterm (not for agents)"
             line += "; namespace \(row.namespace)"
             if row.isCurrent { line += "; kubectl's current context" }
             if let problem = row.problem { line += "; not answering now: \(problem)" }
@@ -947,5 +1127,35 @@ enum KubeMCPText {
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
+    }
+}
+
+/// Where agents' write tools work (3.5, rule 10): a context
+/// `kubernetes.agentWrites` names (the default is none: agents read only)
+/// **and** writable for Overterm — a local or remote one by its `writable`
+/// setting, a production one only with its writes on for the session.
+/// Nothing else turns them on. Pure.
+enum KubeAgentWrites {
+    static let tools = ["k8s_restart", "k8s_scale", "k8s_delete_pod"]
+
+    /// Why agents may not write on `context`; nil when they may.
+    static func refused(_ context: KubeContext, agentWrites: [String]) -> String? {
+        guard context.isWritable else {
+            return context.isProduction
+                ? "\(context.name) is production, read-only: its writes aren't on for this session."
+                : "\(context.name) is read-only for Overterm (its writable setting), so for agents too."
+        }
+        guard agentWrites.contains(context.name) else {
+            return context.isProduction
+                ? "\(context.name) is production: its writes are on for this session, but kubernetes.agentWrites doesn't name it."
+                : "kubernetes.agentWrites doesn't name \(context.name): agents only read there."
+        }
+        return nil
+    }
+
+    /// The confirmation's title: who asks, the context and namespace, then
+    /// what — `An agent asks, in kind-fake · namespace shop: Scale …?`.
+    static func title(_ confirmation: KubeWriteConfirmation) -> String {
+        "An agent asks, in \(confirmation.scope): \(confirmation.title)"
     }
 }

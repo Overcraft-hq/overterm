@@ -91,6 +91,15 @@ struct KubeContextSettings: Equatable, Sendable {
     /// False: no shell or attach from Overterm on this context (rule 5);
     /// unset, they are offered after `kubectl auth can-i`.
     var shells: Bool?
+    /// The image `E` debugs a pod with (and a node, when `nodeShellImage`
+    /// is unset); unset, `kubernetes.debugImage`.
+    var debugImage: String?
+    /// The image a node is debugged with (one with the host's tools, say);
+    /// unset, `debugImage`, then `kubernetes.debugImage`.
+    var nodeShellImage: String?
+    /// On: a node may be debugged (`kubectl debug node/…`, a node shell) on
+    /// a writable context, its name typed; unset or off, it is refused.
+    var nodeShell: Bool?
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -108,11 +117,21 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(
             name: "shells", kind: .toggle,
             help: "Off: Overterm opens no shell or attach in this context's pods. On or unset, they are offered once kubectl auth can-i allows them."),
+        SettingField(
+            name: "debugImage", kind: .text(placeholder: "busybox:1.36", monospaced: true),
+            help: "The image a debug container (E) runs; else Kubernetes' debug image setting."),
+        SettingField(
+            name: "nodeShellImage", kind: .text(placeholder: "busybox:1.36", monospaced: true),
+            help: "The image a node is debugged with (E on a node); else this context's debugImage, then Kubernetes' debug image setting."),
+        SettingField(
+            name: "nodeShell", kind: .toggle,
+            help: "On: a node may be debugged (kubectl debug node/…) on this context when it is writable, the node's name typed. Off by default."),
     ]
 
     init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
-        accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil
+        accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil,
+        debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -122,6 +141,9 @@ struct KubeContextSettings: Equatable, Sendable {
         self.favouriteNamespaces = favouriteNamespaces
         self.terminalDirectory = terminalDirectory
         self.shells = shells
+        self.debugImage = debugImage
+        self.nodeShellImage = nodeShellImage
+        self.nodeShell = nodeShell
     }
 
     init(fields: [String: SettingValue]) {
@@ -133,6 +155,14 @@ struct KubeContextSettings: Equatable, Sendable {
         favouriteNamespaces = fields["favouriteNamespaces"]?.list ?? []
         terminalDirectory = fields["terminalDirectory"]?.string.flatMap { $0.isEmpty ? nil : $0 }
         shells = fields["shells"]?.bool
+        debugImage = Self.image(fields["debugImage"])
+        nodeShellImage = Self.image(fields["nodeShellImage"])
+        nodeShell = fields["nodeShell"]?.bool
+    }
+
+    /// An image field's value, trimmed; empty, unset.
+    private static func image(_ value: SettingValue?) -> String? {
+        value?.string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// Every context's, from the setting's value.

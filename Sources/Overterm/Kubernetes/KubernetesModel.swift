@@ -58,6 +58,10 @@ final class KubernetesModel: ObservableObject {
         var contexts: [String: KubeContextSettings] = [:]
         var pinned: [String] = []
         var proxies = KubeProxies.Configuration()
+        /// The production contexts whose agents get write tools while their writes are on.
+        var agentWrites: [String] = []
+        /// What `E` runs, unless the context names its own.
+        var debugImage = KubeCommands.defaultDebugImage
     }
 
     /// How the list stands.
@@ -191,6 +195,19 @@ final class KubernetesModel: ObservableObject {
 
     /// What the proxies are started with: which kubectl, the extra kubeconfigs.
     var proxyConfiguration: KubeProxies.Configuration { configuration.proxies }
+
+    /// The image `E` runs on `context`: its own, else the setting's.
+    func debugImage(for context: KubeContext) -> String {
+        if let own = context.settings.debugImage { return own }
+        let image = readConfiguration().debugImage
+        return image.isEmpty ? KubeCommands.defaultDebugImage : image
+    }
+
+    /// The image a node is debugged with: the context's `nodeShellImage`,
+    /// else the debug container's (`debugImage(for:)`).
+    func nodeShellImage(for context: KubeContext) -> String {
+        context.settings.nodeShellImage ?? debugImage(for: context)
+    }
 
     private var canIRunWith: (KubeProxies.Configuration, KubeProxies) { (configuration.proxies, proxies) }
 
@@ -559,6 +576,11 @@ final class KubernetesModel: ObservableObject {
         KubeClient(connection(for: context, role: .background))
     }
 
+    /// The contexts where agents get write tools while Overterm may write
+    /// there (`kubernetes.agentWrites`), as the settings say now; empty,
+    /// the write tools aren't listed.
+    var agentWrites: [String] { readConfiguration().agentWrites }
+
     /// How the context's proxy stands, asked of the proxies (nothing started).
     func agentProxyStatus(of name: String) async -> KubeProxies.Status {
         if let statusOverride { return await statusOverride(name) }
@@ -628,11 +650,15 @@ final class KubernetesModel: ObservableObject {
                 guard let self, self.selectedName == name else { return }
                 self.version = version
             }
+            // Cancelled (another context, the page hidden, Kubernetes off):
+            // nothing more is asked — a failed version read goes on otherwise.
+            guard !Task.isCancelled, self?.selectedName == name else { return }
             if fresh {
                 self?.watchDiscovery(client)
             } else {
                 await self?.readDiscovery(client, context: name)
             }
+            guard !Task.isCancelled else { return }
             if !accessible.isEmpty {
                 self?.namespaces = accessible
                 return
@@ -881,6 +907,7 @@ extension KubernetesModel.Configuration {
     init(_ settings: Settings) {
         self.init(
             enabled: settings.kubernetesEnabled, extraKubeconfigs: settings.kubernetesKubeconfigs, contexts: settings.kubernetesContexts,
-            pinned: settings.kubernetesPinnedContexts, proxies: settings.kubernetesProxyConfiguration)
+            pinned: settings.kubernetesPinnedContexts, proxies: settings.kubernetesProxyConfiguration, agentWrites: settings.kubernetesAgentWrites,
+            debugImage: settings.kubernetesDebugImage)
     }
 }

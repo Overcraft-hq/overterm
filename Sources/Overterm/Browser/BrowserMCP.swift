@@ -54,7 +54,13 @@ enum BrowserMCP {
         case "ping":
             return reply([String: Any]())
         case "tools/list":
-            return reply(["tools": offered(in: settings)])
+            var tools = offered(in: settings)
+            // Kubernetes' writes while kubernetes.agentWrites names a context —
+            // a setting, not the contexts' state now, which changes after the
+            // list was read (it isn't announced again): each call is refused
+            // where the context isn't writable for agents.
+            if settings.kubernetesAgentAccess, !kubernetes.agentWrites.isEmpty { tools += KubeMCP.writeTools }
+            return reply(["tools": tools])
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
