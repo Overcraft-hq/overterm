@@ -105,6 +105,9 @@ struct KubeContextSettings: Equatable, Sendable {
     /// the name typed and never forced (decision 30); unset or off, a
     /// production context only diffs. Ignored on any other class.
     var applyOnProduction: Bool?
+    /// Where usage comes from: metrics-server when served (unset, `auto`),
+    /// or `none` — no usage columns, and metrics.k8s.io never asked.
+    var metrics: KubeMetricsSource?
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -136,12 +139,18 @@ struct KubeContextSettings: Equatable, Sendable {
             help:
                 "Production only: On lets Apply from the editor (and agents' k8s_apply) change this context while its writes are on for the session — the name typed, never forced. Off by default: production only diffs."
         ),
+        SettingField(
+            name: "metrics", kind: .choice(KubeMetricsSource.allCases.map { SettingOption(value: $0.rawValue, label: $0.title) }),
+            help:
+                "Where CPU and memory come from: auto (metrics-server, when the cluster serves metrics.k8s.io) or metricsServer; none shows no usage and never asks. Prometheus comes later."
+        ),
     ]
 
     init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
         accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil,
-        debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil, applyOnProduction: Bool? = nil
+        debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil, applyOnProduction: Bool? = nil,
+        metrics: KubeMetricsSource? = nil
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -155,6 +164,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.nodeShellImage = nodeShellImage
         self.nodeShell = nodeShell
         self.applyOnProduction = applyOnProduction
+        self.metrics = metrics
     }
 
     init(fields: [String: SettingValue]) {
@@ -170,6 +180,7 @@ struct KubeContextSettings: Equatable, Sendable {
         nodeShellImage = Self.image(fields["nodeShellImage"])
         nodeShell = fields["nodeShell"]?.bool
         applyOnProduction = fields["applyOnProduction"]?.bool
+        metrics = fields["metrics"]?.string.flatMap(KubeMetricsSource.init(rawValue:))
     }
 
     /// An image field's value, trimmed; empty, unset.

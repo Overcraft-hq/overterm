@@ -132,6 +132,10 @@ struct KubeRow: Equatable, Sendable, Identifiable {
     /// the rows carry it (across all namespaces, `includeObject=Metadata`);
     /// with rows only, the server's Age cell is all there is (`KubeAge`).
     var created: Date? = nil
+    /// Its `app.kubernetes.io/…` labels (name, instance, part-of…), from
+    /// the embedded metadata — only where the rows carry it. The others
+    /// aren't kept: they are the Applications grouping's, nothing else's.
+    var labels: [String: String] = [:]
 
     func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
@@ -216,7 +220,8 @@ enum KubeTableReader {
         } else if let embedded = metadata?["namespace"] as? String {
             rowNamespace = embedded
         }
-        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created)
+        let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
+        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels)
     }
 }
 

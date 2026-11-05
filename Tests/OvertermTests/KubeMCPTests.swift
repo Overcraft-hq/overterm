@@ -177,8 +177,8 @@ final class KubeMCPTests: XCTestCase {
         let names = KubeMCP.tools.compactMap { $0["name"] as? String }
         XCTAssertEqual(names, KubeMCP.reads)
         XCTAssertEqual(
-            Set(names), ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout"], "k8s_top waits for metrics (2d)")
-        for verb in ["restart", "scale", "delete", "apply", "patch", "exec", "edit", "secret", "top"] {
+            Set(names), ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top"], "k8s_top since metrics (2d)")
+        for verb in ["restart", "scale", "delete", "apply", "patch", "exec", "edit", "secret"] {
             XCTAssertFalse(names.contains { $0.contains(verb) }, "no \(verb) tool")
         }
         XCTAssertTrue(KubeMCP.tools.allSatisfy { ($0["description"] as? String)?.isEmpty == false })
@@ -396,6 +396,38 @@ final class KubeMCPTests: XCTestCase {
         assertClean(said)
         let pod = await refused("k8s_rollout", ["name": "web-1", "kind": "pods"])
         XCTAssertEqual(pod, "k8s_rollout is a Deployment's, a StatefulSet's or a DaemonSet's.")
+    }
+
+    func testTopSaysWhatPodsAndNodesUse() async throws {
+        api.setPodMetrics("web-1", namespace: "shop", [("app", "250m", "64Mi")], at: Date().addingTimeInterval(-20))
+        api.setPodMetrics("worker-1", namespace: "shop", [("app", "1500m", "32Mi")])
+        api.setPodMetrics("api-0", namespace: "payments", [("app", "5m", "16Mi")])
+        api.add("nodes", "fake-node-1", values: ["Status": "Ready"], fields: ["status": ["allocatable": ["cpu": "4", "memory": "8Gi"]]])
+        api.setNodeMetrics("fake-node-1", cpu: "2", memory: "1Gi")
+        let pods = try await text("k8s_top")
+        let lines = pods.components(separatedBy: "\n")
+        XCTAssertTrue(lines.first?.hasPrefix("Context fake-dev") == true && lines.first?.contains("namespace shop") == true, pods)
+        XCTAssertEqual(lines[1], "NAME       CPU(cores)   MEMORY(bytes)", pods)
+        XCTAssertTrue(lines[2].hasPrefix("worker-1") && lines[2].contains("1500m") && lines[3].hasPrefix("web-1"), "by cpu, the most first:\n\(pods)")
+        XCTAssertTrue(pods.contains("Sampled by metrics-server 20s ago over 15s."), pods)
+        XCTAssertFalse(pods.contains("api-0"), "the page's namespace only")
+        let byMemory = try await text("k8s_top", ["sort_by": "memory", "limit": 1])
+        XCTAssertTrue(byMemory.contains("web-1") && !byMemory.contains("worker-1 ") && byMemory.contains("… 1 more pods"), byMemory)
+        let all = try await text("k8s_top", ["namespace": "all", "containers": true])
+        XCTAssertTrue(all.contains("NAMESPACE") && all.contains("CONTAINER") && all.contains("payments") && all.contains("api-0"), all)
+        let nodes = try await text("k8s_top", ["kind": "nodes"])
+        XCTAssertTrue(nodes.contains("fake-node-1   2000m        50%      1024Mi          13%"), nodes)
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods" })
+        let wrong = await refused("k8s_top", ["kind": "deployments"])
+        XCTAssertTrue(wrong?.contains("pods or nodes") == true, wrong ?? "answered")
+
+        // No metrics-server: said, and nothing asked of metrics.k8s.io.
+        api.metricsServer = false
+        KubeMCP.forgetDiscoveries()
+        api.forgetRequests()
+        let absent = try await text("k8s_top", ["context": "fake-prod"])
+        XCTAssertTrue(absent.contains("No metrics-server"), absent)
+        XCTAssertFalse(api.requests.contains { $0.path.hasPrefix("/apis/metrics.k8s.io") }, "\(api.requests)")
     }
 
     // MARK: Failures

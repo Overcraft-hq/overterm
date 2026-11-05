@@ -733,7 +733,7 @@ final class KubeForwardPageTests: XCTestCase {
         XCTAssertEqual(page.section, .forwards)
         XCTAssertFalse(page.showsSection, "no kind's list")
         XCTAssertEqual(page.title, "Forwards")
-        XCTAssertTrue(page.press("1"), "and back")
+        XCTAssertTrue(page.press("2"), "and back")
         XCTAssertEqual(page.section, .workloads)
         XCTAssertEqual(api.writes, [])
     }

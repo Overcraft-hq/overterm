@@ -1,0 +1,140 @@
+import Foundation
+
+/// Usage (stage 2d; docs/design/kubernetes/analysis.md, 2.11): CPU and
+/// Memory columns on the pods and nodes lists — a node's with its share of
+/// allocatable, as `kubectl top nodes` says it — from metrics.k8s.io,
+/// polled by the model's monitor only while the page shows one of them in
+/// a window on screen (or the Overview's totals). A dash, with why, where
+/// metrics-server is absent, down, refused or its sample too old; none of
+/// it with the context's `metrics: none`. A pod's detail says its
+/// containers' usage against their requests and limits.
+extension KubernetesPageModel {
+    static let cpuColumn = "metrics.cpu"
+    static let memoryColumn = "metrics.memory"
+
+    static func measure(of column: String) -> KubeUsageCell.Measure? {
+        switch column {
+        case cpuColumn: .cpu
+        case memoryColumn: .memory
+        default: nil
+        }
+    }
+
+    static func metricsColumns(_ want: KubeMetricsWant) -> [ResourceColumn] {
+        let of = want == .nodes ? " — with its share of the node's allocatable, as kubectl top nodes says it" : " — its containers', summed"
+        return [
+            ResourceColumn(
+                id: cpuColumn, title: "CPU", width: want == .nodes ? 110 : 80, minWidth: 40,
+                help: "CPU used, in millicores, from metrics.k8s.io (kubectl top)\(of). Read every 15 s while shown."),
+            ResourceColumn(
+                id: memoryColumn, title: "Memory", width: want == .nodes ? 120 : 90, minWidth: 40,
+                help: "Memory used (working set) from metrics.k8s.io (kubectl top)\(of). Read every 15 s while shown."),
+        ]
+    }
+
+    /// The usage the list shows: its pods', its nodes' — nil for another
+    /// kind, or with the context's `metrics: none`.
+    var metricsWant: KubeMetricsWant? {
+        guard model.selected?.settings.metrics != KubeMetricsSource.none else { return nil }
+        switch model.kind.fullName {
+        case KubeResourceKind.pods.fullName: return .pods
+        case "nodes": return .nodes
+        default: return nil
+        }
+    }
+
+    /// What the page shows now that needs usage: the list's, the Overview's
+    /// (the nodes') — only while the page is on screen.
+    var metricsOnScreen: KubeMetricsWant? {
+        guard visible, windowVisible else { return nil }
+        if section == .overview { return model.selected?.settings.metrics == KubeMetricsSource.none ? nil : .nodes }
+        return section.listsKinds ? metricsWant : nil
+    }
+
+    /// The monitor told what this page shows.
+    func updateMetricsWanted() {
+        model.metrics.want(metricsOnScreen, for: self)
+    }
+
+    /// A row's usage cell.
+    func usage(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
+        guard let want = metricsWant else { return .dash(KubeMetricsAvailability.off.reason ?? "") }
+        return model.metrics.cell(measure, row: row.row.id, want: want, now: now)
+    }
+
+    /// What the header says of the usage: why there's none, how old it is.
+    var metricsNote: String? {
+        guard let want = metricsWant, showsSection else { return nil }
+        return model.metrics.note(want)
+    }
+
+    /// A pod's containers' usage against their requests and limits: the
+    /// detail's object and the list's sample of it. Nil without either.
+    func containerUsage(of ref: KubeObjectRef, object: [String: Any]?) -> [KubeContainerUsage.Line]? {
+        guard ref.isPod, let object, model.metrics.availability == .served, let reading = model.metrics.reading(.pods),
+            let sample = reading.sample, Date().timeIntervalSince(sample.read) <= model.metrics.staleAfter,
+            let pod = sample.pods[KubeRowID(namespace: ref.namespace, name: ref.name)]
+        else { return nil }
+        return KubeContainerUsage.lines(object, pod)
+    }
+
+    /// A pod's samples taken while the list showed (its sparkline): only
+    /// while its usage is current, as the numbers are.
+    func usageHistory(of ref: KubeObjectRef) -> [KubeUsagePoint] {
+        guard ref.isPod, model.metrics.availability == .served, let reading = model.metrics.reading(.pods), let sample = reading.sample,
+            Date().timeIntervalSince(sample.read) <= model.metrics.staleAfter
+        else { return [] }
+        return reading.history.points(KubeRowID(namespace: ref.namespace, name: ref.name))
+    }
+}
+
+/// The Overview section (`1`): read while it shows on a page on screen,
+/// in the context and namespace shown (`KubeClusterOverviewSession`).
+extension KubernetesPageModel {
+    var overviewShows: Bool { section == .overview && visible && windowVisible }
+
+    /// Shown: followed there; hidden, nothing is.
+    func updateOverviewReading() {
+        guard overviewShows, model.enabled, let context = model.selectedName else {
+            clusterOverview.hide()
+            return
+        }
+        if detail != nil, section == .overview { closeDetail() }
+        clusterOverview.show(context: context, scope: model.scope, discovery: model.discovery, client: model.client(for: context))
+    }
+
+    /// An object the Overview names (a failing pod, a workload, a node):
+    /// its kind's list, and its detail.
+    func openFromOverview(kind fullName: String, _ id: KubeRowID) {
+        guard let context = model.selectedName else { return }
+        let kind = model.catalog.kind(fullName: fullName) ?? (fullName == KubeResourceKind.pods.fullName ? .pods : nil)
+        guard let kind else { return }
+        showKind(kind)
+        open(KubeObjectRef(context: context, kind: kind, namespace: kind.namespaced ? id.namespace : nil, name: id.name), from: .list)
+        if kind.fullName == KubeResourceKind.pods.fullName { detailTab = .overview }
+    }
+
+    /// A key while the Overview shows: the page's own (sections, `n`, `c`,
+    /// `:`, `0`, `?`, `/`); the list's verbs would act on a kind not on
+    /// screen, so they are refused. Nil: the page's to decide.
+    func overviewPress(_ characters: String) -> Bool? {
+        guard !cheatSheet, case .key(let key) = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return nil }
+        return [.command, .namespace, .context, .allNamespaces].contains(key) ? nil : false
+    }
+
+    /// The cluster's CPU and memory used against what its nodes can give,
+    /// from the nodes' sample: nil until it is read (or without metrics-server).
+    var clusterUsage: (used: KubeUsage, allocatable: KubeUsage?)? {
+        guard model.metrics.availability == .served, let reading = model.metrics.reading(.nodes), let sample = reading.sample,
+            Date().timeIntervalSince(sample.read) <= model.metrics.staleAfter, !sample.nodes.isEmpty
+        else { return nil }
+        return (sample.clusterUsage, sample.clusterAllocatable)
+    }
+
+    /// The cluster's samples taken while the Overview showed: only while
+    /// its usage is current.
+    var clusterHistory: [KubeUsagePoint] {
+        guard clusterUsage != nil, let reading = model.metrics.reading(.nodes) else { return [] }
+        return reading.history.cluster
+    }
+}

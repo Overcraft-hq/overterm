@@ -187,6 +187,7 @@ struct KubeDetailView: View {
                 if let overview = session.overview {
                     if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
                     if !overview.facts.isEmpty { items(overview.facts) }
+                    if session.ref.isPod { KubePodUsageView(page: page, metrics: page.model.metrics, session: session, theme: theme) }
                     if overview.pods != nil { podsSection }
                     ForEach(overview.sections) { section in
                         if !section.items.isEmpty {
@@ -520,6 +521,57 @@ struct KubePodLogsView: View {
         case .ended(let reason?) where reason != KubeLogResume.podGone: TabStatusStyle.failed
         case .waiting, .resuming: TabStatusStyle.waiting
         default: theme.text3
+        }
+    }
+}
+
+
+/// A pod's containers' usage against what they request and are limited
+/// to: the detail's object and the pods list's sample (stage 2d) — shown
+/// while the list beside it reads usage, nothing read for it alone — with
+/// a sparkline of the pod's samples taken while shown.
+struct KubePodUsageView: View {
+    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject var metrics: KubeMetricsMonitor
+    @ObservedObject var session: KubeDetailSession
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        if let lines = page.containerUsage(of: session.ref, object: session.object?.json), !lines.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: "Usage").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                ForEach(lines, id: \.container) { line in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(verbatim: line.container).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                            .frame(width: 128, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: "cpu \(line.cpu)").font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text)
+                            Text(verbatim: "memory \(line.memory)").font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(line.nearLimit ? TabStatusStyle.failed : theme.text)
+                                .help(line.nearLimit ? "Within a tenth of its memory limit: past it, the container is OOMKilled." : "")
+                        }
+                        .textSelection(.enabled)
+                        Spacer(minLength: 0)
+                    }
+                }
+                let history = page.usageHistory(of: session.ref)
+                if let span = KubeUsageHistory.span(history) {
+                    HStack(spacing: 16) {
+                        sparkline("cpu", history.map(\.usage.cpu))
+                        sparkline("memory", history.map(\.usage.memory))
+                    }
+                    Text(verbatim: "The pod's total over \(span)").font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                        .accessibilityIdentifier("kubernetes.detail.usage.history")
+                }
+            }
+            .accessibilityIdentifier("kubernetes.detail.usage")
+        }
+    }
+
+    private func sparkline(_ title: String, _ values: [Double]) -> some View {
+        HStack(spacing: 6) {
+            Text(verbatim: title).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+            KubeSparkline(values: values, color: theme.accentText).frame(width: 120, height: 18)
         }
     }
 }

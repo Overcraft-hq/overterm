@@ -144,6 +144,12 @@ extension TerminalWindowController {
         showKubernetesPage()
     }
 
+    /// The Overview section: what fails, usage, counts, applications.
+    func showKubernetesOverview() {
+        kubernetesPage.showSection(.overview)
+        showKubernetesPage()
+    }
+
     // MARK: Terminal in this context (docs/design/kubernetes/analysis.md, 3.11)
 
     /// A tab pinned to `context`: its shell's `KUBECONFIG` starts with a
@@ -480,6 +486,10 @@ extension TerminalWindowController {
             PaletteItem(
                 id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, every kind  ⌥⌘J", symbol: "steeringwheel"
             ) { [weak self] _, _ in self?.toggleKubernetesPage(nil) },
+            PaletteItem(
+                id: "a.kubernetes.overview", group: .action, title: "Kubernetes Overview",
+                subtitle: "What fails, usage, workload counts, applications  \(KubeSection.overview.key)", symbol: "gauge.with.dots.needle.33percent"
+            ) { [weak self] _, _ in self?.showKubernetesOverview() },
             PaletteItem(
                 id: "a.kubernetes.forwards", group: .action, title: "Kubernetes Forwards",
                 subtitle: "The port-forwards: open, edit, stop  \(KubeSection.forwards.key)", symbol: "arrow.left.arrow.right"

@@ -1,26 +1,27 @@
 import Foundation
 
-/// The page's sections (docs/design/kubernetes/analysis.md, Section 6):
-/// the digits go to them while a Kubernetes list has the keyboard. Each
-/// names the built-in kinds it shows, in the order it shows them; Cluster
-/// takes the built-in kinds no other names, Custom resources every kind of
-/// a group that isn't Kubernetes' own — the CRDs, grouped by API group.
-/// Helm and Forwards are no kind: Helm's releases, read from its own
+/// The page's sections (docs/design/kubernetes/analysis.md, Section 6),
+/// `1`–`9` as the design numbers them: the digits go to them while a
+/// Kubernetes list has the keyboard. Each names the built-in kinds it
+/// shows, in the order it shows them; Cluster takes RBAC's and the
+/// built-in kinds no other names, Custom resources every kind of a group
+/// that isn't Kubernetes' own — the CRDs, grouped by API group. Overview,
+/// Helm and Forwards are no kind: the cluster's health at a glance
+/// (`KubeClusterOverviewSession`) on 1, Helm's releases, read from its own
 /// records (`KubeHelmSession`), on 8, and the app's port-forwards
-/// (`KubeForwards`) on 9, as the design numbers them. Overview joins with
-/// its stage. Pure.
+/// (`KubeForwards`) on 9. Pure.
 enum KubeSection: String, CaseIterable, Identifiable, Sendable {
-    case workloads, network, config, storage, access, cluster, custom, helm, forwards
+    case overview, workloads, network, config, storage, cluster, custom, helm, forwards
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .overview: "Overview"
         case .workloads: "Workloads"
         case .network: "Network"
         case .config: "Config"
         case .storage: "Storage"
-        case .access: "Access Control"
         case .cluster: "Cluster"
         case .custom: "Custom Resources"
         case .helm: "Helm"
@@ -30,11 +31,11 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
 
     var symbol: String {
         switch self {
+        case .overview: "gauge.with.dots.needle.33percent"
         case .workloads: "cube.box"
         case .network: "network"
         case .config: "slider.horizontal.3"
         case .storage: "externaldrive"
-        case .access: "person.badge.key"
         case .cluster: "server.rack"
         case .custom: "puzzlepiece.extension"
         case .helm: "shippingbox"
@@ -71,26 +72,22 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
                 "persistentvolumeclaims", "persistentvolumes", "storageclasses.storage.k8s.io", "volumeattachments.storage.k8s.io",
                 "csidrivers.storage.k8s.io", "csinodes.storage.k8s.io", "csistoragecapacities.storage.k8s.io",
             ]
-        case .access:
-            [
-                "serviceaccounts", "roles.rbac.authorization.k8s.io", "rolebindings.rbac.authorization.k8s.io",
-                "clusterroles.rbac.authorization.k8s.io", "clusterrolebindings.rbac.authorization.k8s.io",
-            ]
         case .cluster:
             [
-                "nodes", "namespaces", "events.events.k8s.io", "events", "customresourcedefinitions.apiextensions.k8s.io",
-                "apiservices.apiregistration.k8s.io",
+                "nodes", "namespaces", "events.events.k8s.io", "events", "serviceaccounts", "roles.rbac.authorization.k8s.io",
+                "rolebindings.rbac.authorization.k8s.io", "clusterroles.rbac.authorization.k8s.io", "clusterrolebindings.rbac.authorization.k8s.io",
+                "customresourcedefinitions.apiextensions.k8s.io", "apiservices.apiregistration.k8s.io",
             ]
-        case .custom, .helm, .forwards: []
+        case .overview, .custom, .helm, .forwards: []
         }
     }
 
-    /// Its digit on the list: Helm is 8, Forwards 9.
+    /// Its digit on the list: Overview is 1, Helm 8, Forwards 9.
     var key: String { String((Self.allCases.firstIndex(of: self) ?? 0) + 1) }
 
-    /// Whether it lists a cluster's kinds (Helm lists its releases,
-    /// Forwards Overterm's own forwards).
-    var listsKinds: Bool { self != .forwards && self != .helm }
+    /// Whether it lists a cluster's kinds (the Overview sums the cluster
+    /// up, Helm lists its releases, Forwards Overterm's own forwards).
+    var listsKinds: Bool { self != .forwards && self != .helm && self != .overview }
 }
 
 /// What the page offers of a cluster: every kind discovery says can be

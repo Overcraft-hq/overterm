@@ -328,11 +328,11 @@ final class KubeFindTests: XCTestCase {
         try await until(5, "listed") { model.rows.count == 4 }
         page.filter = "-db"
         let lines = page.csv().split(separator: "\n").map(String.init)
-        XCTAssertEqual(lines.first, "Name,Ready,Status,Restarts,Age")
+        XCTAssertEqual(lines.first, "Name,Ready,Status,Restarts,CPU,Memory,Age")
         XCTAssertEqual(lines.dropFirst().map { $0.split(separator: ",").first.map(String.init) ?? "" }, ["api-1", "migrate-1", "web-1"])
         XCTAssertTrue(lines.contains { $0.hasPrefix("api-1,0/1,CrashLoopBackOff,") }, "\(lines)")
         page.wide = true
-        XCTAssertTrue(page.csv().hasPrefix("Name,Ready,Status,Restarts,Age,IP,Node"), page.csv())
+        XCTAssertTrue(page.csv().hasPrefix("Name,Ready,Status,Restarts,CPU,Memory,Age,IP,Node"), page.csv())
         XCTAssertEqual(page.csvFileName, "fake-dev-shop-pods.csv")
         XCTAssertTrue(page.canExport)
         page.exportCSV()
@@ -351,12 +351,12 @@ final class KubeFindTests: XCTestCase {
         try await until(5, "listed") { model.rows.count == 3 }
         page.filter = "-db"
         let visible = try XCTUnwrap(page.copyRows(.tsv)).split(separator: "\n").map(String.init)
-        XCTAssertEqual(visible.first, "Name\tReady\tStatus\tRestarts\tAge")
+        XCTAssertEqual(visible.first, "Name\tReady\tStatus\tRestarts\tCPU\tMemory\tAge")
         XCTAssertEqual(visible.dropFirst().map { String($0.prefix { $0 != "\t" }) }, ["migrate-1", "web-1"], "the visible rows, no selection")
         XCTAssertEqual(copied.last, visible.joined(separator: "\n"))
         page.selection = ["shop/web-1"]
         let selected = try XCTUnwrap(page.copyRows(.csv)).split(separator: "\n").map(String.init)
-        XCTAssertEqual(selected.first, "Name,Ready,Status,Restarts,Age")
+        XCTAssertEqual(selected.first, "Name,Ready,Status,Restarts,CPU,Memory,Age")
         XCTAssertEqual(selected.count, 2)
         XCTAssertTrue(selected[1].hasPrefix("web-1,"), "\(selected)")
         page.selection = ["shop/db-0"]

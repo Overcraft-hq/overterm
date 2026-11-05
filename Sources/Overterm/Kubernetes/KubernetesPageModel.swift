@@ -63,7 +63,7 @@ struct KubernetesActions {
 /// guard path — the access review, the confirmation, a typed name where
 /// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
-    case workloads, network, config, storage, access, cluster, custom, helm, forwards
+    case overview, workloads, network, config, storage, cluster, custom, helm, forwards
     case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
@@ -169,7 +169,12 @@ final class KubernetesPageModel: ObservableObject {
     /// The section shown: the kind's, else one picked whose kinds aren't
     /// known yet (discovery not read) or that has none.
     @Published private(set) var section: KubeSection = .workloads {
-        didSet { if section != oldValue { updateHelmReading() } }
+        didSet {
+            guard section != oldValue else { return }
+            updateHelmReading()
+            updateOverviewReading()
+            updateMetricsWanted()
+        }
     }
     /// `:`: the command bar over the page.
     @Published var command: KubeCommandBar?
@@ -212,6 +217,8 @@ final class KubernetesPageModel: ObservableObject {
             }
             updateLogsReading()
             updateHelmReading()
+            updateOverviewReading()
+            updateMetricsWanted()
         }
     }
     /// Whether its window is on screen at all.
@@ -219,7 +226,11 @@ final class KubernetesPageModel: ObservableObject {
         didSet {
             if !windowVisible { detail?.secret?.drop(.pageHidden) }
             updateLogsReading()
-            if windowVisible != oldValue { updateHelmReading() }
+            if windowVisible != oldValue {
+                updateHelmReading()
+                updateOverviewReading()
+                updateMetricsWanted()
+            }
         }
     }
     /// How a pod's log shows — wrap, timestamps, newest first, the search
@@ -237,6 +248,10 @@ final class KubernetesPageModel: ObservableObject {
     /// The Helm section's releases and the one opened: this window's.
     let helm: KubeHelmSession
     private var helmWatch: AnyCancellable?
+    /// The Overview section's reading: this window's, while it shows.
+    let clusterOverview = KubeClusterOverviewSession()
+    private var overviewWatch: AnyCancellable?
+    private var metricsKindWatch: AnyCancellable?
     /// How long the typing must stop before `label:` or `field:` asks the server again.
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
@@ -329,6 +344,14 @@ final class KubernetesPageModel: ObservableObject {
         helmWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
             .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () })
             .sink { [weak self] in DispatchQueue.main.async { self?.helmScopeChanged() } }
+        // The Overview reads the context and namespace shown, as the
+        // cluster serves them: again with each (after the change).
+        overviewWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
+            .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () }, model.$discovery.removeDuplicates().dropFirst().map { _ in () })
+            .sink { [weak self] in DispatchQueue.main.async { self?.updateOverviewReading() } }
+        // Usage is wanted for the kind shown: pods' or nodes'.
+        metricsKindWatch = model.$kind.removeDuplicates().dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
@@ -438,6 +461,7 @@ final class KubernetesPageModel: ObservableObject {
             return true
         }
         if section == .helm, let handled = helmPress(characters) { return handled }
+        if section == .overview, let handled = overviewPress(characters) { return handled }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
         case .closeSheet: cheatSheet = false
@@ -912,6 +936,11 @@ final class KubernetesPageModel: ObservableObject {
                     id: KubeDeploymentHint.column, title: "Status", width: 150, minWidth: 40,
                     help: "Read off Ready, Up-to-date and Available — the server's Table has no Status. The detail's Rollout says why."), at: age)
         }
+        if let want = metricsWant, !columns.isEmpty {
+            // Before Age, as the Status hint is.
+            let age = columns.firstIndex { $0.title.caseInsensitiveCompare("Age") == .orderedSame } ?? columns.count
+            columns.insert(contentsOf: Self.metricsColumns(want), at: age)
+        }
         return columns
     }
 
@@ -996,6 +1025,7 @@ final class KubernetesPageModel: ObservableObject {
     func sortKey(_ row: KubeListRow, _ id: String, now: Date) -> SortKey? {
         if id == Self.namespaceColumn { return row.row.id.namespace.map { .text($0) } }
         if id == KubeDeploymentHint.column { return row.hint.map { .text($0.text.lowercased()) } }
+        if let measure = Self.measure(of: id) { return usage(measure, of: row, now: now).sort.map { .number($0) } }
         guard let (index, column) = column(id), index < row.row.cells.count else { return nil }
         switch column.name.lowercased() {
         case "age", "created at": return age(of: row.row.id, at: now).map { .number($0) }
@@ -1137,6 +1167,7 @@ final class KubernetesPageModel: ObservableObject {
     func cellText(_ row: KubeListRow, _ column: ResourceColumn, now: Date) -> String {
         if column.id == Self.namespaceColumn { return row.row.id.namespace ?? "" }
         if column.id == KubeDeploymentHint.column { return row.hint?.text ?? "" }
+        if let measure = Self.measure(of: column.id) { return usage(measure, of: row, now: now).text }
         guard let (index, server) = self.column(column.id), index < row.row.cells.count else { return "" }
         let text = row.row.cells[index].text
         switch server.name.lowercased() {

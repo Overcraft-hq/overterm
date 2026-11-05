@@ -40,12 +40,12 @@ import Foundation
 /// blobs); a log is filtered after it is scrubbed, as Docker's is. Rows,
 /// lines, events and characters are bounded.
 ///
-/// `k8s_top` waits for metrics (stage 2d).
+/// `k8s_top` (stage 2d) reads metrics.k8s.io: pods' and nodes' usage.
 @MainActor
 enum KubeMCP {
     static let prefix = "k8s_"
     /// The reads, always offered.
-    static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout"]
+    static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top"]
     /// The writes, listed only while `kubernetes.agentWrites` names a context (`KubeAgentWrites`).
     static let writes: [String] = KubeAgentWrites.tools
 
@@ -96,6 +96,7 @@ enum KubeMCP {
         case "k8s_events": text = try await events(call, target, kubernetes: kubernetes, now: now)
         case "k8s_why": text = try await why(call, target, kubernetes: kubernetes, now: now)
         case "k8s_rollout": text = try await rollout(call, target, kubernetes: kubernetes, now: now)
+        case "k8s_top": text = try await top(call, target, kubernetes: kubernetes, now: now)
         case "k8s_restart", "k8s_scale", "k8s_delete_pod": text = try await write(call, target, kubernetes: kubernetes, pane: pane)
         case "k8s_apply": text = try await apply(call, target, kubernetes: kubernetes, pane: pane)
         default: throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
@@ -230,7 +231,7 @@ enum KubeMCP {
         return kept.discovery
     }
 
-    private static func discovery(for target: Target, kubernetes: KubernetesModel) async throws -> KubeDiscovery {
+    static func discovery(for target: Target, kubernetes: KubernetesModel) async throws -> KubeDiscovery {
         if let known = known(for: target, kubernetes: kubernetes) { return known }
         let client = target.client
         let read = try await within { try await client.discover() }
@@ -834,11 +835,23 @@ enum KubeMCP {
                     "kind": ["type": "string", "description": "deployment (default), statefulset or daemonset."],
                     "namespace": namespace, "context": context,
                 ], required: ["name"]),
+            tool(
+                "k8s_top",
+                "CPU and memory used now, as `kubectl top` says it, from metrics-server (metrics.k8s.io): a namespace's pods (or all), one pod's containers, or the nodes with their share of allocatable. Sorted, bounded. Says so when the cluster has no metrics-server.",
+                [
+                    "kind": ["type": "string", "enum": ["pods", "nodes"], "description": "pods (default) or nodes."],
+                    "name": ["type": "string", "description": "Only this pod (its containers)."],
+                    "containers": ["type": "boolean", "description": "Each pod's containers, a line each."],
+                    "sort_by": ["type": "string", "enum": ["cpu", "memory"], "description": "Default cpu."],
+                    "label_selector": ["type": "string", "description": "app=web — the server picks."],
+                    "limit": ["type": "integer", "description": "Pods or nodes (default 20, at most 200)."],
+                    "namespace": namespace, "context": context,
+                ]),
         ]
     }
 
     static let instructions =
-        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
+        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's). They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [
