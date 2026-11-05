@@ -2410,7 +2410,7 @@ reads the kubeconfig and starts that context's proxy), `kubernetes.kubeconfigs` 
 `kubernetes.contexts` — one entry per context name, the only place a
 context's own settings live (`KubeContextSettings`: `class`, `writable`,
 `displayName`, `defaultNamespace`, `accessibleNamespaces`,
-`favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`, `applyOnProduction`; more fields join with the stages that read them).
+`favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`, `applyOnProduction`, `metrics` (Usage, below); more fields join with the stages that read them).
 It is the first `entries` setting: `SettingValue.entries`, written on one
 line and edited in place there, its fields checked one by one
 (`SettingSpec.fitted`) — a field that doesn't fit is reported and left
@@ -2763,7 +2763,8 @@ over it — so a keyboard given to it finds it; a table with no columns
 refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
-keyboard): `1`–`7` the sections (`8` Helm, below), ↩ the detail, `[` `]` back and forward,
+keyboard): `1` the Overview, `2`–`7` the sections of kinds (Workloads,
+Network, Config, Storage, Cluster, Custom Resources), `8` Helm (below), ↩ the detail, `[` `]` back and forward,
 Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, `l` a pod's logs (↩ on a pod is them too), `f` and `o` a forward,
 `9` the Forwards section. The right-click menu
 only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
@@ -2808,10 +2809,11 @@ palette; `copyRows`): the same columns and cells on the pasteboard, TSV
 for a spreadsheet's paste — the right-clicked rows, else the selected
 ones the filter shows, else every row it shows.
 
-**The sections** (`KubeSection`, `KubeKindCatalog`, pure): Workloads,
-Network, Config, Storage, Access Control, Cluster, Custom Resources — the
-digits `1`–`7` — then Helm on `8` and Forwards on `9`, which list no kind
-(`listsKinds`; Overview joins with its stage). Each
+**The sections** (`KubeSection`, `KubeKindCatalog`, pure), Section 6's
+`1`–`9`: Overview (`1`, below), Workloads, Network, Config, Storage,
+Cluster (with RBAC's kinds), Custom Resources — `2`–`7` — then Helm on `8`
+and Forwards on `9`; Overview, Helm and Forwards list no kind
+(`listsKinds`). Each
 names the built-in kinds it shows, in order (`named`, by full name); of
 two that are one Kind the first served shows (`events.events.k8s.io`
 rather than the core `events`). Cluster also takes Kubernetes' own kinds
@@ -4004,6 +4006,80 @@ encoding (`KubeHelm.encode`) and the fake answers
 made by the system's gzip, and the `kubernetes` scenario checks a
 release's values masked and a forbidden Secret list degrading.
 
+**Usage** (stage 2d; `KubeMetrics.swift` (pure), `KubeMetricsMonitor`,
+`KubernetesPageModel+Metrics`; analysis 2.11, decision 16): the Pods and
+Nodes lists have CPU and Memory columns before Age, from metrics.k8s.io
+as `kubectl top` says them (millicores, Mi; a pod's containers summed, a
+node's with its share of allocatable — the NodeList's
+`status.allocatable`, read with the first sample and every
+`allocatableEvery`th, since a Table row doesn't carry it). `KubeQuantity`
+reads the API's quantities (`n`, `u`, `m`, `Ki`…`Ei`, `k`…`E`, an
+exponent; never `nan`, `inf` or hex). The model's `KubeMetricsMonitor`
+polls only what a page on screen shows (`want`, per page: the pods list,
+the nodes, the Overview's totals) where the model says (`updateMetrics`:
+the context, the namespace, the list's label selector), every `interval`
+(15 s; metrics-server samples every 15 s and keeps no history) — the last
+answer, and Overterm's own ring of the samples taken while shown
+(`KubeUsageHistory`: the last 40 per pod, node and the cluster's total, a
+row no longer sampled forgotten), in memory and gone with the reading,
+for the sparklines (`KubeSparkline`) in a pod's detail and the Overview. Whether there is a metrics-server is discovery's
+to say (`KubeMetricsAvailability`): absent (EKS by default) or down
+(`Stale`, a 503), the columns stand with a dash and why, and nothing is
+asked — no error; the context's `metrics` (`auto`, `metricsServer`,
+`none`; Prometheus is stage 4's) at `none` takes the columns away and
+asks nothing. A read that fails leaves the last sample, aging, until it
+is older than `staleAfter` (three reads): then a dash, never a stale
+number shown as current (each failed read publishes, so the cells look
+at its age again); the header says why there is none, or the sample's
+age once it is old. A credential failure ends the polling (no retry runs
+the plugin again) and drops the sample at once, keeping why — nothing
+more would age it; a page asking again doesn't start it, only another
+context, namespace, selector or availability, or the model's `retry`
+after a sign-in (`KubeMetricsMonitor.retry`). The list shows raw usage:
+its Table rows carry no spec, so the percentages of requests and limits
+are the pod's detail's, and a node's share is of its allocatable. Sorting by CPU or Memory sorts by the
+numbers; CSV has the cells as drawn. A pod's detail says its containers'
+usage against their requests and limits (`KubeContainerUsage`, from its
+one GET and the list's sample: nothing read for it alone), red within a
+tenth of its memory limit. `k8s_top` (agents', `KubeMCP+Top`) is the
+same reads: a namespace's (or every) pod, a pod's containers, the nodes
+with their share — sorted by cpu or memory, bounded (20, at most 200),
+scrubbed, saying when metrics-server sampled; without one it says so,
+asking nothing more. The fake serves PodMetrics and NodeMetrics
+(`setPodMetrics`, `setNodeMetrics`) and a cluster without metrics-server
+(`metricsServer = false`); `KubeMetricsTests`.
+
+**The Overview** (`1`; stage 2d; `KubeClusterOverview.swift` (pure),
+`KubeClusterOverviewSession`, `KubeClusterOverviewView`; analysis 2.1,
+2.3, 2.10, 3.9's spirit): health at a glance for the context and
+namespace shown, read only while the section shows on a page on screen —
+every follow ends when another section shows or the page hides, and
+what was read goes. It follows, rows only as the lists do: the pods of
+each phase (`fieldSelector=status.phase=…`, five lists kept live, so the
+counts are the server's phases, not a guess from a Status cell — the
+fake, as the server's watch cache, sends DELETED and ADDED as a change
+leaves or joins a selector), Deployments, StatefulSets, DaemonSets and
+Jobs with their metadata (`KubeListOptions.metadata`: `includeObject=
+Metadata` in one namespace too, for their labels; a row keeps only its
+`app.kubernetes.io/…` ones), the nodes, and the Warning events
+(`type=Warning`). It shows what fails first — pods failing and why (a
+Failed or Unknown phase, a failing reason), workloads not ready
+(`KubeWorkloadState`: Ready `n/n`, a DaemonSet's Ready against Desired, a
+Failed Job), nodes not ready, the last hour's warnings newest first —
+each a link to its detail (`openFromOverview`), under the server's
+version and node count; then the cluster's CPU and memory against its
+nodes' allocatable (the monitor's nodes sample), each with a sparkline of
+the samples taken while it shows. The pods' requests and limits against
+allocatable wait for stage 4 (every pod's spec is a whole-object list,
+which the Overview's rows avoid; Prometheus has them as series);
+the counts per kind and pods by phase, each a link to its list; and the
+Applications (`KubeApplications`): workloads grouped by namespace and
+`app.kubernetes.io/instance` (else `name`) into applications, those by
+`part-of` into systems, the unlabelled counted. A part the cluster
+refuses (RBAC on events) is said; the rest stands. The list's verbs are
+no keys there; the page's are. The sidebar counts what fails beside it;
+the palette has Kubernetes Overview. `KubeClusterOverviewTests`.
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
@@ -4054,7 +4130,7 @@ columns (no write problem), Copy Rows as TSV (the visible rows) and as CSV
 (the selected one) on the pasteboard, put back after, Tab completing
 and Esc closing by the field's own commands, `:widgets`' custom resources
 in the CRD's printer columns (the wide one behind `w`), a kind nobody
-serves said, `2` and `6` (Network's services, the cluster-wide nodes), a
+serves said, `3` and `6` (Network's services, the cluster-wide nodes), a
 secret's row with no value, a CRD applied while the page shows appearing
 by the CRD watch and listed, `:po` back; the detail — a pod by ↩ as the
 window takes it, read with one GET, its phase, node, image and owner
@@ -4135,8 +4211,25 @@ fake, not even a review; and Kubernetes off stopping every
 forward, its kubectl ended;
 a manifest in the editor (`E2ERunner+KubernetesApply`, Manifests in the
 editor, above);
+usage and the Overview (`E2ERunner+KubernetesMetrics`): the Pods list's
+CPU and Memory dashes with the fake's metrics-server gone (said, drawn,
+nothing asked of metrics.k8s.io, the list fine), values once it serves
+them (drawn, asked in the namespace, polled while shown, not once
+hidden), `1`'s Overview — pods by phase asked by field selector, the
+crashing pod and the stuck Deployment first, the hour's warnings, an
+application by its labels, the cluster's usage of its allocatable
+(drawn) — and its follows ended by `2`;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
+
+**`kubernetesPerf`** (`E2ERunner+KubernetesPerf`, testKubernetesPerf, its
+own OVERTERM_KUBECONFIG): 5,000 pods in one namespace on the fake, with
+usage, spoken to on its socket directly — the first draw (opened until
+the table holds every row, under 5 s; ~0.7 s here), a burst of 500 watch
+events applied by the one watch (under 3 s; ~0.25 s), the list scrolled a
+third of a screen a step (p95 under 35 ms, as dockerPerf's; ~18 ms), and
+the 5,000 rows sorted by CPU (under 250 ms); closed, no watch and no
+polling are left.
 
 ## Simulator
 

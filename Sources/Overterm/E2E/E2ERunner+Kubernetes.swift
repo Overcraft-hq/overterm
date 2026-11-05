@@ -160,7 +160,9 @@ extension E2ERunner {
         check(
             "its pods are listed", await eventually(15) { model.rows.sorted.map(\.id.description) == ["shop/web-7d9", "shop/worker-5c"] },
             "\(model.rows.sorted.map(\.id.description)) \(model.listState) \(model.proxyStatus)")
-        check("in the server's columns", page.columns.map(\.title) == ["Name", "Ready", "Status", "Restarts", "Age"], "\(page.columns.map(\.title))")
+        check(
+            "in the server's columns, with usage before Age", page.columns.map(\.title) == ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "Age"],
+            "\(page.columns.map(\.title))")
         check("asked for as rows only", fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["includeObject"] == "None" })
         check("the list has the keyboard", await eventually(3) { self.app.kubernetesListHasKeyboard() }, "\(String(describing: window.firstResponder))")
         let worker = page.failing.first
@@ -296,6 +298,7 @@ extension E2ERunner {
         await kubernetesAgentWrites(model, page, fake, kubeconfig: kubeconfig, port: port)
         await kubernetesApply(model, page, fake, kubeconfig: kubeconfig, port: port)
         await kubernetesHelm(model, page, fake)
+        await kubernetesMetrics(model, page, fake)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -340,6 +343,10 @@ extension E2ERunner {
         let opened = app.store.tabs.map(\.id)
         app.toggleKubernetesPage(nil)
         check("the page again, on fake-dev in shop", await eventually(5) { model.selectedName == "fake-dev" && model.scope == .namespace("shop") })
+        // Listed before the page steps aside: the row's menu, below, is of a row.
+        check(
+            "its pods listed", await eventually(15) { model.listState == .live && model.rows[KubeRowID(namespace: "shop", name: "web-7d9")] != nil },
+            "\(model.listState)")
         page.openTerminal()
         func newPinned(_ context: String) -> Tab? { app.store.tabs.first { !opened.contains($0.id) && $0.kubePin?.context == context } }
         _ = await eventually(10) { newPinned("fake-dev") != nil }
@@ -1585,7 +1592,7 @@ extension E2ERunner {
         page.closeCommand()
 
         // The digits: Network's first kind, Cluster's cluster-scoped nodes.
-        check("2 is Network", page.press("2") && model.kind.fullName == "services" && page.section == .network)
+        check("3 is Network", page.press("3") && model.kind.fullName == "services" && page.section == .network)
         check("its services", await eventually(10) { model.rows.sorted.map(\.id.name) == ["web"] }, "\(model.rows.sorted.map(\.id.name))")
         check("6 is Cluster", page.press("6") && model.kind.fullName == "nodes")
         check(
@@ -2204,7 +2211,10 @@ extension E2ERunner {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             let lines = await readWindow().map(\.text)
-            if texts.allSatisfy({ text in lines.contains { $0.contains(text) } }) { return true }
+            // Vision may read one line as two boxes ("panic:", "out of
+            // cheese"): the boxes in reading order, joined, count too.
+            let joined = lines.joined(separator: " ")
+            if texts.allSatisfy({ text in lines.contains { $0.contains(text) } || joined.contains(text) }) { return true }
             await pause(0.3)
         } while Date() < deadline
         return false

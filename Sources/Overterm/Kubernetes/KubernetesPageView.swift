@@ -119,6 +119,8 @@ struct KubernetesPageView: View {
                     Spacer()
                     if section == .helm {
                         KubeHelmCount(helm: page.helm, theme: theme)
+                    } else if section == .overview {
+                        KubeOverviewCount(session: page.clusterOverview)
                     } else if !section.listsKinds {
                         KubeForwardsCount(forwards: page.forwards, theme: theme)
                     } else if !model.catalog.isEmpty {
@@ -331,6 +333,10 @@ struct KubernetesPageView: View {
                     .font(.system(size: 12)).foregroundStyle(failing > 0 ? TabStatusStyle.failed : theme.text3)
                     .accessibilityIdentifier("kubernetes.counts")
             }
+            if let note = page.metricsNote {
+                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail).help(note)
+                    .accessibilityIdentifier("kubernetes.metricsNote")
+            }
             if page.detail == nil, let problem = page.commandProblem {
                 Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
                     .help(problem).accessibilityIdentifier("kubernetes.commandProblem")
@@ -428,7 +434,9 @@ struct KubernetesPageView: View {
                     let names = page.selectedNames
                     if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
                 }, accessibilityIdentifier: "kubernetes.list", pressed: { page.pressed($0) })
-            if page.section == .helm {
+            if page.section == .overview {
+                KubeClusterOverviewView(page: page, session: page.clusterOverview, model: model, theme: theme)
+            } else if page.section == .helm {
                 KubeHelmSection(page: page, helm: page.helm, theme: theme)
             } else if !page.section.listsKinds {
                 KubeForwardsSection(page: page, forwards: page.forwards, theme: theme)
@@ -501,6 +509,12 @@ struct KubernetesPageView: View {
         let view: AnyView
         if column?.id == KubernetesPageModel.namespaceColumn {
             view = AnyView(Text(verbatim: row.row.id.namespace ?? "").foregroundStyle(theme.text2))
+        } else if let column, let measure = KubernetesPageModel.measure(of: column.id) {
+            let usage = page.usage(measure, of: row)
+            view = AnyView(
+                Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
+                    .help(usage.help ?? ""))
         } else if column?.id == KubeDeploymentHint.column {
             let hint = row.hint
             view = AnyView(
@@ -650,5 +664,17 @@ struct KubernetesPageView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier(id)
+    }
+}
+
+
+/// How many things the Overview says fail, beside its section's name.
+struct KubeOverviewCount: View {
+    @ObservedObject var session: KubeClusterOverviewSession
+
+    var body: some View {
+        if session.state != .idle, session.overview.problems > 0 {
+            Text(verbatim: "\(session.overview.problems)").foregroundStyle(TabStatusStyle.failed).font(.system(size: 10.5, design: .monospaced))
+        }
     }
 }

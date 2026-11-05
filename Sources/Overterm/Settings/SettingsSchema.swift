@@ -733,7 +733,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:
-                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
+                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
             kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
         SettingSpec(
             key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",

@@ -183,14 +183,15 @@ final class KubeKindsTests: XCTestCase {
     func testTheSectionsOfferWhatCanBeListedAndWatched() async throws {
         addWidgets()
         let catalog = KubeKindCatalog(try await discover())
-        XCTAssertEqual(catalog.kinds(in: .workloads).map(\.fullName), ["pods", "deployments.apps", "statefulsets.apps", "replicasets.apps", "jobs.batch", "cronjobs.batch"])
+        XCTAssertEqual(catalog.kinds(in: .workloads).map(\.fullName), ["pods", "deployments.apps", "statefulsets.apps", "daemonsets.apps", "replicasets.apps", "jobs.batch", "cronjobs.batch"])
         XCTAssertEqual(catalog.kinds(in: .network).map(\.fullName), ["services", "endpointslices.discovery.k8s.io", "ingresses.networking.k8s.io"])
         XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets"])
         XCTAssertEqual(catalog.kinds(in: .storage), [])
-        XCTAssertEqual(catalog.kinds(in: .access).map(\.fullName), ["serviceaccounts", "roles.rbac.authorization.k8s.io"])
+        XCTAssertEqual(catalog.kinds(in: .overview), [], "the Overview lists no kind")
         XCTAssertEqual(
-            catalog.kinds(in: .cluster).map(\.fullName), ["nodes", "namespaces", "events.events.k8s.io", KubernetesModel.crdName],
-            "events.k8s.io's events, not the core's as well")
+            catalog.kinds(in: .cluster).map(\.fullName),
+            ["nodes", "namespaces", "events.events.k8s.io", "serviceaccounts", "roles.rbac.authorization.k8s.io", KubernetesModel.crdName],
+            "events.k8s.io's events, not the core's as well; RBAC's with them")
         XCTAssertEqual(catalog.kinds(in: .custom).map(\.fullName), ["widgets.example.com"])
         let all = catalog.all.map(\.fullName)
         for left in ["componentstatuses", "bindings", "pods.metrics.k8s.io", "nodes.metrics.k8s.io", "events"] {
@@ -206,7 +207,8 @@ final class KubeKindsTests: XCTestCase {
         for group in ["example.com", "cert-manager.io", "argoproj.io", "karpenter.sh", "k8s.io.example.com"] {
             XCTAssertFalse(KubeKindCatalog.isBuiltIn(group: group), group)
         }
-        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "8", "9"], "Helm is 8, Forwards 9")
+        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "8", "9"], "Overview is 1, Helm 8, Forwards 9")
+        XCTAssertEqual(KubeSection.allCases, [.overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .forwards], "Section 6's order")
     }
 
     func testAKindsTitle() {
@@ -353,6 +355,7 @@ final class KubeKindsTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of(":"), .command)
         XCTAssertEqual(KubeSection.allCases.map { KubernetesKey.of($0.key)?.section }, KubeSection.allCases)
         XCTAssertEqual(KubernetesKey.of("8"), .helm, "8 is Helm's")
+        XCTAssertEqual(KubernetesKey.of("1"), .overview, "1 is the Overview's")
     }
 
     // MARK: Any kind, followed
@@ -365,7 +368,7 @@ final class KubeKindsTests: XCTestCase {
         try await until(5, "discovery") { !model.catalog.isEmpty && model.rows.count == 1 }
 
         // Deployments: the server's columns, rows only, watched.
-        XCTAssertTrue(page.press("1"))
+        XCTAssertTrue(page.press("2"))
         XCTAssertEqual(model.kind.fullName, "pods", "Workloads' first")
         page.showKind(try XCTUnwrap(model.catalog.kind(fullName: "deployments.apps")))
         try await until(5, "deployments") { model.rows.sorted.map(\.id.description) == ["shop/web", "shop/worker"] }
@@ -398,14 +401,14 @@ final class KubeKindsTests: XCTestCase {
         XCTAssertEqual(page.section, .cluster)
         XCTAssertEqual(model.kind.fullName, "nodes")
         try await until(5, "nodes") { model.rows.sorted.map(\.id.description) == ["fake-node-1"] }
-        XCTAssertEqual(page.columns.map(\.title), ["Name", "Status", "Roles", "Age", "Version"])
+        XCTAssertEqual(page.columns.map(\.title), ["Name", "Status", "Roles", "CPU", "Memory", "Age", "Version"], "usage before Age")
         XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/nodes" && $0.query["includeObject"] == "None" })
 
         // Back to Workloads: the kind last shown there.
-        XCTAssertTrue(page.press("1"))
+        XCTAssertTrue(page.press("2"))
         XCTAssertEqual(model.kind.fullName, "deployments.apps")
         // A section with nothing served: it says so, and lists nothing new.
-        XCTAssertTrue(page.press("4"))
+        XCTAssertTrue(page.press("5"))
         XCTAssertEqual(page.section, .storage)
         XCTAssertFalse(page.showsSection)
         XCTAssertEqual(page.title, "Storage")
@@ -427,7 +430,7 @@ final class KubeKindsTests: XCTestCase {
         model.show()
         defer { model.hide() }
         try await until(5, "discovery") { !model.catalog.isEmpty }
-        XCTAssertTrue(page.press("3"))
+        XCTAssertTrue(page.press("4"))
         page.showKind(try XCTUnwrap(model.catalog.kind(fullName: "secrets")))
         model.setScope(.all)
         try await until(5, "secrets") { model.rows.count == 1 && model.kind.fullName == "secrets" }

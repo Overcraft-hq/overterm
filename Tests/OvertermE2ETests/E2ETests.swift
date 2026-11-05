@@ -111,6 +111,14 @@ final class E2ETests: XCTestCase {
             XCTAssertFalse(output.contains(needle), "kubernetes: a Secret's value reached the app's output")
         }
     }
+    /// 5,000 pods on the fake API server: the first draw, a burst of 500
+    /// events, the scroll. Its kubeconfig is this temporary file alone.
+    func testKubernetesPerf() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kperf-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try run("kubernetesPerf", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 240)
+    }
     func testSuspend() throws { try run("suspend") }
     func testDatabaseAgent() throws { try run("databaseAgent") }
     func testDatabaseTunnel() throws { try run("databaseTunnel") }

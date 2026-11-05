@@ -926,22 +926,3 @@ enum KubeAgentText {
         return (current, previous)
     }
 }
-
-/// Kubernetes' quantities (`500m`, `1.5`, `128Mi`, `1G`, `1e3`) as numbers:
-/// cores for cpu, bytes for memory. Pure.
-enum KubeQuantity {
-    static func value(_ text: String) -> Double? {
-        let text = text.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return nil }
-        let suffixes: [(String, Double)] = [
-            ("Ki", 1024), ("Mi", 1_048_576), ("Gi", 1_073_741_824), ("Ti", 1_099_511_627_776), ("Pi", 1_125_899_906_842_624),
-            ("Ei", 1_152_921_504_606_846_976), ("n", 1e-9), ("u", 1e-6), ("m", 1e-3), ("k", 1e3), ("M", 1e6), ("G", 1e9), ("T", 1e12), ("P", 1e15),
-            ("E", 1e18),
-        ]
-        for (suffix, scale) in suffixes where text.hasSuffix(suffix) {
-            guard let number = Double(text.dropLast(suffix.count)) else { return nil }
-            return number * scale
-        }
-        return Double(text)
-    }
-}

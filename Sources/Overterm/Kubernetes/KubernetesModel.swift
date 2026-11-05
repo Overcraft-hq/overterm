@@ -50,6 +50,9 @@ final class KubernetesModel: ObservableObject {
     /// The production contexts whose writes are on for this session (rule
     /// 2): off at launch, turned on from the context's card, never a setting.
     @Published private(set) var productionWrites = KubeProductionWrites()
+    /// Usage from metrics.k8s.io, polled only while a page shows it (stage 2d).
+    let metrics = KubeMetricsMonitor()
+    private var metricsChanges: AnyCancellable?
 
     /// What the settings say, read once a page shows and on each change.
     struct Configuration: Equatable, Sendable {
@@ -175,6 +178,8 @@ final class KubernetesModel: ObservableObject {
 
     init(proxies: KubeProxies = .shared) {
         self.proxies = proxies
+        // A sample read is the page's to draw: the list's cells read it.
+        metricsChanges = metrics.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         // The kubectl and the environment the context's proxy would get,
         // as the settings say them when asked.
         // Under the proxies' credential rules: a stopped context isn't
@@ -243,6 +248,7 @@ final class KubernetesModel: ObservableObject {
         reading?.cancel()
         reading = nil
         listState = .idle
+        updateMetrics()
         let proxies = self.proxies
         Task { await proxies.setPage(nil) }
     }
@@ -343,6 +349,7 @@ final class KubernetesModel: ObservableObject {
             listState = .idle
             discovery = nil
             catalog = KubeKindCatalog()
+            updateMetrics()
             return
         }
         if name != selectedName {
@@ -498,6 +505,7 @@ final class KubernetesModel: ObservableObject {
         Task { [weak self] in
             await proxies.retry(name)
             self?.restartReading()
+            self?.metrics.retry()
         }
     }
 
@@ -594,11 +602,13 @@ final class KubernetesModel: ObservableObject {
         lookedUpAfter404 = false
         guard isShown, enabled, let context = selected else {
             listState = .idle
+            updateMetrics()
             return
         }
         let client = KubeClient(connection(for: context))
         if readSide { self.readSide(context, client) }
         follow(kind, client)
+        updateMetrics()
     }
 
     /// The list again, the kind as it stands now.
@@ -755,6 +765,7 @@ final class KubernetesModel: ObservableObject {
             discovery = new
             let newCatalog = KubeKindCatalog(new)
             if newCatalog != catalog { catalog = newCatalog }
+            updateMetrics()
         }
         // The kind shown, as the cluster serves it now.
         guard let current = Self.resolved(kind, in: new) else {
@@ -872,6 +883,24 @@ final class KubernetesModel: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: Usage
+
+    /// Where usage is read: the context shown, its namespace, the list's
+    /// label selector, and whether discovery says metrics-server is there
+    /// (`metrics: none` skips it). Nobody looking, nowhere.
+    func updateMetrics() {
+        guard isShown, enabled, let context = selected else {
+            metrics.update(nil) { nil }
+            return
+        }
+        let name = context.name
+        metrics.update(
+            KubeMetricsMonitor.Situation(
+                context: name, scope: scope, labels: labelSelector,
+                availability: KubeMetricsAvailability.of(discovery, source: context.settings.metrics ?? .auto))
+        ) { [weak self] in self?.client(for: name) }
     }
 
     // MARK: The proxy

@@ -229,6 +229,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true, shortNames: ["deploy"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "apps", version: "v1", resource: "replicasets", kind: "ReplicaSet", namespaced: true, shortNames: ["rs"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", namespaced: true, shortNames: ["sts"], categories: ["all"], subresources: ["scale", "status"]),
+        Kind(group: "apps", version: "v1", resource: "daemonsets", kind: "DaemonSet", namespaced: true, shortNames: ["ds"], categories: ["all"], subresources: ["status"]),
         Kind(group: "batch", version: "v1", resource: "jobs", kind: "Job", namespaced: true, categories: ["all"], subresources: ["status"]),
         Kind(group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", namespaced: true, shortNames: ["cj"], categories: ["all"], subresources: ["status"]),
         Kind(group: "events.k8s.io", version: "v1", resource: "events", kind: "Event", namespaced: true, shortNames: ["ev"]),
@@ -340,6 +341,36 @@ final class FakeKubeAPI: @unchecked Sendable {
         get { locked { settings.interimBookmarks } }
         set { locked { settings.interimBookmarks = newValue } }
     }
+    /// Whether metrics-server is there: metrics.k8s.io served (pods and
+    /// nodes, `get` and `list`, as metrics-server serves them). Off, a
+    /// cluster without one — EKS's by default: neither discovery names it
+    /// nor its paths answer but 404.
+    var metricsServer: Bool {
+        get { locked { kinds.contains { $0.group == "metrics.k8s.io" } } }
+        set {
+            locked {
+                kinds.removeAll { $0.group == "metrics.k8s.io" }
+                if newValue { kinds += Self.builtinKinds.filter { $0.group == "metrics.k8s.io" } }
+            }
+        }
+    }
+
+    /// A pod's sample, as metrics-server writes one: each container's cpu
+    /// and memory (`"12m"`, `"48Mi"`, `"1234567n"`), stamped `at`.
+    func setPodMetrics(_ pod: String, namespace: String, _ containers: [(name: String, cpu: String, memory: String)], at time: Date = Date()) {
+        add(
+            "pods.metrics.k8s.io", pod, namespace: namespace,
+            fields: [
+                "timestamp": Self.time(time), "window": "15s",
+                "containers": containers.map { ["name": $0.name, "usage": ["cpu": $0.cpu, "memory": $0.memory]] },
+            ])
+    }
+
+    /// A node's sample.
+    func setNodeMetrics(_ node: String, cpu: String, memory: String, at time: Date = Date()) {
+        add("nodes.metrics.k8s.io", node, fields: ["timestamp": Self.time(time), "window": "15s", "usage": ["cpu": cpu, "memory": memory]])
+    }
+
     /// Lists answer without a resourceVersion, as metrics.k8s.io's do.
     var unversionedLists: Bool {
         get { locked { settings.unversionedLists } }
@@ -733,11 +764,19 @@ final class FakeKubeAPI: @unchecked Sendable {
             current += 1
             object.resourceVersion = current
             let key = Self.key(object.resource, object.namespace, object.name)
+            let old = objects[key]
             if type == "DELETED" { objects[key] = nil } else { objects[key] = object }
             history.append((current, type, object))
             return watchers.keys.compactMap { id in
-                guard let watcher = watchers[id], watcher.matches(object) else { return nil }
-                return (watcher.channel, eventLine(type, object, for: id))
+                guard let watcher = watchers[id] else { return nil }
+                let now = watcher.matches(object)
+                let was = old.map(watcher.matches) ?? false
+                // As the server's watch cache says a change to a watch with
+                // a selector: one that stops matching is DELETED from it,
+                // one that starts is ADDED.
+                let sent: String? = type == "MODIFIED" ? (was && now ? type : was ? "DELETED" : now ? "ADDED" : nil) : (now ? type : nil)
+                guard let sent else { return nil }
+                return (watcher.channel, eventLine(sent, object, for: id))
             }
         }
         for (channel, line) in sends { Self.write(line, to: channel) }
@@ -1296,6 +1335,19 @@ final class FakeKubeAPI: @unchecked Sendable {
             return [
                 column("Last Seen"), column("Type"), column("Reason"), column("Object"), column("Message"),
                 Column(name: "Name", format: "name", priority: 1, description: "Name must be unique within a namespace."),
+            ]
+        case "statefulsets.apps":
+            return [
+                name, column("Ready", "Number of the pod with ready state"), age,
+                column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
+            ]
+        case "daemonsets.apps":
+            return [
+                name, column("Desired", "integer", "The desired number of pods."), column("Current", "integer", "The current number of pods."),
+                column("Ready", "integer", "The number of pods ready."), column("Up-to-date", "integer", "The number of pods updated."),
+                column("Available", "integer", "The number of pods available."), column("Node Selector", "The node selector."), age,
+                column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
+                column("Selector", priority: 1, "Label selector for pods."),
             ]
         case "jobs.batch":
             return [

@@ -183,9 +183,9 @@ final class KubernetesPageTests: XCTestCase {
         defer { model.hide() }
         try await until(5, "listed") { model.rows.count == 2 }
 
-        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "Age"], "the server's, priority 0")
+        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "Age"], "the server's, priority 0, and usage")
         page.wide = true
-        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "Age", "IP", "Node", "Nominated Node", "Readiness Gates"])
+        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "Age", "IP", "Node", "Nominated Node", "Readiness Gates"])
         page.wide = false
 
         XCTAssertEqual(page.failing.map(\.id.name), ["api-1"])
@@ -248,7 +248,7 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertTrue(page.press("q"), "an open sheet takes any key")
         XCTAssertFalse(page.cheatSheet)
         XCTAssertFalse(page.press("q"), "not a key of the list's")
-        XCTAssertTrue(page.press("1"))
+        XCTAssertTrue(page.press("2"))
         XCTAssertEqual(page.section, .workloads)
 
         // Production: the band.
@@ -259,7 +259,8 @@ final class KubernetesPageTests: XCTestCase {
 
     func testTheKeysAreWellFormed() {
         XCTAssertTrue(KubernetesKey.isWellFormed)
-        XCTAssertEqual(KubernetesKey.of("1")?.section, .workloads)
+        XCTAssertEqual(KubernetesKey.of("2")?.section, .workloads)
+        XCTAssertEqual(KubernetesKey.of("1")?.section, .overview)
         XCTAssertEqual(KubernetesKey.of("n"), .namespace)
         XCTAssertEqual(KubernetesKey.of("c"), .context)
         XCTAssertEqual(KubernetesKey.of("N"), .newNamespace, "case matters: n is the picker, N a new namespace")
