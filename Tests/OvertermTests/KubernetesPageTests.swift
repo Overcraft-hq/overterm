@@ -219,7 +219,7 @@ final class KubernetesPageTests: XCTestCase {
             verbs.map(\.title),
             [
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
-                "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward",
+                "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward", "Edit YAML in Editor",
                 "Delete to Recreate…", "Evict…", "Remove Finalizers…", "Force Delete…", "Delete…",
                 "Debug Container in a Tab…",
             ])
@@ -274,7 +274,7 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of("="), .scaleTo)
         XCTAssertEqual(KubernetesKey.of("\u{7F}"), .delete, "⌫, through the guard path")
         XCTAssertEqual(KubernetesKey.of("E"), .debug, "a debug container in a tab; case matters: e is a shell")
-        XCTAssertNil(KubernetesKey.of("y"), "a later stage's: y")
+        XCTAssertEqual(KubernetesKey.of("y"), .edit, "the YAML in the editor (2b)")
     }
 
     // MARK: Navigating

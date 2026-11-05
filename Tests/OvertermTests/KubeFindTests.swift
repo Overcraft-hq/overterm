@@ -262,7 +262,7 @@ final class KubeFindTests: XCTestCase {
             verbs.map(\.title),
             [
                 "Copy Name", "Copy Namespace/Name", "Copy as kubectl", "Copy List as kubectl", "Copy Row as TSV", "Copy Row as CSV", "Export List as CSV…",
-                "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward",
+                "Terminal in This Context", "Ask an Agent Why…", "Shell in a Tab", "Attach in a Tab", "Follow Logs in a Tab", "Port-forward…", "Quick Forward", "Edit YAML in Editor",
                 "Delete to Recreate…", "Evict…", "Remove Finalizers…", "Force Delete…", "Delete…",
                 "Debug Container in a Tab…",
             ])

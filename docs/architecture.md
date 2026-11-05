@@ -2271,7 +2271,8 @@ logs, and of stage 1d, Terminal in this context, a pod's shell,
 attach and followed log in a tab, and port-forwards — and, of stage 1e,
 Ask Why and agents' read tools — and of stage 2a, writable contexts,
 production's switch for the session and the page's first writes (Writes,
-below): delete, force delete, finalizers, evict, rollout restart, scale.
+below): delete, force delete, finalizers, evict, rollout restart, scale — and of stage 2b, a manifest in the editor diffed
+with its cluster and applied (Manifests in the editor, below).
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2326,7 +2327,7 @@ reads the kubeconfig and starts that context's proxy), `kubernetes.kubeconfigs` 
 `kubernetes.contexts` — one entry per context name, the only place a
 context's own settings live (`KubeContextSettings`: `class`, `writable`,
 `displayName`, `defaultNamespace`, `accessibleNamespaces`,
-`favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`; more fields join with the stages that read them).
+`favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`, `applyOnProduction`; more fields join with the stages that read them).
 It is the first `entries` setting: `SettingValue.entries`, written on one
 line and edited in place there, its fields checked one by one
 (`SettingSpec.fitted`) — a field that doesn't fit is reported and left
@@ -3749,6 +3750,112 @@ answers) and landing on the fake, a declined delete sending nothing, and
 fake-prod's writes refused until its switch is on and `agentWrites`
 names it, then its name asked.
 
+**Manifests in the editor** (stage 2b; `KubeApply.swift` (pure),
+`KubeManifestSession.swift`, `KubeManifestViews.swift`,
+`KubernetesPageModel+Edit`, `EditorViewController+Kubernetes`,
+`KubeMCP+Apply`; analysis 2.8, 3.3, decisions 11 and 30):
+
+- **What gets the bar** (`attachManifest`, where a `.sql` file's console
+  sits): `y` on a row or the detail's Edit YAML in Editor — Overterm's
+  copy of the object (`KubeManifestEdits`: one GET, `forEditing` strips
+  managedFields, status, the last-applied annotation, resourceVersion,
+  uid, timestamps, and masks a Secret's values and secret-looking env as
+  the YAML tab does; written 0600 under the support folder's
+  `Kubernetes/Edits/<pid>/<context hash>/<namespace>/`, never a checkout's
+  file; removed when its tab closes and at quit, a gone Overterm's folder
+  swept; the resourceVersion it was read at kept beside it; never saved —
+  `EditorDocument.unsaveable`: ⌘S, `:w` and format-on-save write nothing,
+  closing asks nothing, so a value retyped in it stays in memory). On production
+  a Secret's `y` is asked once a session, as Show is. A YAML file of a
+  checkout's with `apiVersion:` and `kind:` at the top
+  (`KubeManifest.looksLikeManifest`), or `kustomization.yaml` — its folder
+  rendered by `kubectl kustomize` (`KubeKustomize`: the planner's kubectl,
+  `KUBECONFIG=/dev/null`; files only, Section 5 starts it on every class) —
+  the saved files, so refused while one in its folder is unsaved, and
+  labelled so.
+  A copy's context and namespace are fixed; a file picks a context (the
+  page's at first), an object without a namespace going to the page's
+  namespace there.
+- **Diff with Cluster** (`KubeManifestRun.diff`): each object resolved at
+  its own apiVersion (`refs`; discovery holds each group's preferred
+  version, so another one the manifest names — `autoscaling/v1`, a CRD's
+  older one — is read from its own list, `served`), its live
+  object (a GET; 404 is a create), then on a writable context a
+  server-side apply with `dryRun=All` (`PATCH`,
+  `application/apply-patch+yaml`, `fieldManager=overterm`, the body JSON —
+  which is YAML — forced as `kubectl diff --force-conflicts`, since a dry
+  run takes nothing). A read-only context sends nothing, and a refused
+  dry run (RBAC's 403, `KubeWriteRefused`, a webhook's 400 "does not
+  support dry run") falls back too — an admission's denial is shown as
+  the error, never as a client-side diff: the file merged over
+  the live object here (`clientSide`, a Secret's stringData folded),
+  labelled "client-side: defaults and admission not applied" with why.
+  Both sides stripped and masked together (`KubeManifestDiff.masked`): a
+  Secret's `data`/`stringData` `***`, changed `*** (before)` / `***
+  (after)`, a secret-looking env value `••••••` the same way paired by
+  name; a value still masked in the file stands for the live one for the
+  diff only (`KubeApplyCheck.unmasked`, in memory); what an apply sends
+  is each item's own `sent` object — an env value still masked as `y`
+  masked it given back the live entry's value of the same name in the
+  same container (`restoringEnv`, in memory, never a Secret's). A unified diff
+  (`LineDiff.blocks`) per object in the right-hand pane's ⎈ tab
+  (`RightPane.manifest`, `KubeManifestPane`), the fields other managers
+  own named first (`KubeFieldOwners`: managedFields' paths against what
+  the dry run's result changes, for objects whose diff isn't empty — a
+  checkout's list without the server's defaults changes nothing —
+  "Helm manages this…", "Argo CD manages this;
+  your change will be reverted", Flux's two controllers; their labels too).
+  A production Secret's values are read for a diff after the once-a-session
+  ask Show uses. Another context picked while it works drops its answer
+  (the picker is off meanwhile).
+- **Apply** (`runApply`, a step of its own): the class check
+  (`KubeApplyCheck.refused`: writable contexts only; production only with
+  its switch on **and** the context's `applyOnProduction`; never forced
+  there), the manifest read once — the diff confirmed and the objects sent
+  are that text's —, a Secret's masked values refused before anything is
+  read (`maskedBeforeReading`; retyped — a key Overterm's own apply owns,
+  `KubeFieldOwners.overterms`, is never offered for taking out, since
+  leaving it out removes it), the access review (`patch` the kind;
+  `create` for a new object) through the context's socket, a fresh dry
+  run of those objects, an env mask the live object couldn't give back
+  refused, the confirmation (`KubeApplyConfirmation`: the context and
+  namespace, the dry-run diff, the owners, `kubectl apply --server-side
+  --field-manager=overterm -f …`, the name typed on production), the
+  context checked again at the button (`sameAccess`), then each item's
+  `sent` PATCHed to its own ref with the resourceVersion a copy was opened at. A 409's
+  `FieldManagerConflict` causes become `KubeApplyConflict.fields` — said
+  with each manager and field, Force… (`force=true`, asked again) offered
+  off production —, one without them `.changed`: Replace… applies without
+  the old version, asked again. The diff is read again after an apply.
+- **Agents** (`k8s_apply`): the same path where `kubernetes.agentWrites`
+  names a writable context — on production `applyOnProduction` too —,
+  no Secret (rule 10: refused before anything is read, so its "no change"
+  can't say whether a guessed value is right),
+  the dry-run diff and owners in the window's confirmation, never forced
+  (a conflict is reported).
+- **The fake** serves a kind at a second version (`serve(_:alsoAt:)`,
+  listed after the preferred one) and server-side apply: `fieldManager` required, a create
+  when absent, a stale resourceVersion's 409, other managers' fields
+  (`setManagedFields`) a 409 naming them unless forced, `dryRun=All`
+  keeping nothing.
+- **Checked**: `KubeApplyTests` (the manifest read, the requests, stripping
+  and masking, owners, a 409 read, production's rules, the confirmation)
+  and `KubeApplySessionTests` (against the fake: the dry run changing
+  nothing, read-only and refused diffs client-side sending nothing, a
+  Secret's values never shown, production's Secret asked once, a
+  kustomization rendered, review then confirmation then apply, Cancel and
+  a refused review sending nothing, a conflict then Force, Replace, masks
+  refused, no Apply on production without `applyOnProduction`, the typed
+  name, `k8s_apply` and its refused Secret, an edit during the review not
+  sent, a non-preferred version, `y`'s env mask applied untouched, a
+  context picked mid-diff, a kustomization's unsaved file, a webhook
+  without dry run and an admission's denial, the copy never saved); the scenario's `kubernetesApply`
+  (`E2ERunner+KubernetesApply`): `y` on kind-fake, its copy not saved by ⌘S, the dry run and its
+  diff drawn, Helm named, the 409 shown, Force landing, a checkout's
+  Secret diffed masked, a kustomization through the stand-in kubectl,
+  fake-dev client-side sending nothing, and no Apply on fake-prod with its
+  writes on.
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
@@ -3878,6 +3985,8 @@ landing — and writes off again, fake-prod's proxy refusing a POST once
 more; on `fake-dev` every write greyed with why and nothing reaching the
 fake, not even a review; and Kubernetes off stopping every
 forward, its kubectl ended;
+a manifest in the editor (`E2ERunner+KubernetesApply`, Manifests in the
+editor, above);
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
 

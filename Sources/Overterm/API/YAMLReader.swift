@@ -9,6 +9,16 @@ import TreeSitterKit
 /// guess.
 enum YAMLReader {
     static func parse(_ text: String) -> Any? {
+        guard let documents = read(text, all: false) else { return nil }
+        return documents.first ?? NSNull()
+    }
+
+    /// Every document of a stream (`---` between them), in order — a
+    /// manifest file's objects; an empty one is NSNull. Nil when the
+    /// grammar can't read the text whole.
+    static func documents(_ text: String) -> [Any]? { read(text, all: true) }
+
+    private static func read(_ text: String, all: Bool) -> [Any]? {
         guard let language = EditorLanguage.named("yaml") else { return nil }
         let parser = ts_parser_new()
         defer { ts_parser_delete(parser) }
@@ -25,12 +35,20 @@ enum YAMLReader {
         let root = ts_tree_root_node(tree)
         guard !ts_node_has_error(root) else { return nil }
         var reader = Reader(bytes: bytes)
-        // stream → the first document → its node.
-        guard let document = reader.namedChildren(root).first(where: { reader.type($0) == "document" }) else { return nil }
-        guard let node = reader.namedChildren(document).first(where: { ["block_node", "flow_node"].contains(reader.type($0)) }) else {
-            return NSNull()
+        // stream → its documents → each one's node.
+        let documents = reader.namedChildren(root).filter { reader.type($0) == "document" }
+        if !all && documents.isEmpty { return nil }
+        var values: [Any] = []
+        for document in all ? documents : Array(documents.prefix(1)) {
+            // Anchors belong to their document.
+            reader.anchors = [:]
+            guard let node = reader.namedChildren(document).first(where: { ["block_node", "flow_node"].contains(reader.type($0)) }) else {
+                values.append(NSNull())
+                continue
+            }
+            values.append(reader.value(node))
         }
-        return reader.value(node)
+        return values
     }
 
     private struct Reader {

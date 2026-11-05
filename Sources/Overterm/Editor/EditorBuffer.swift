@@ -36,6 +36,9 @@ final class EditorBuffer {
     var drawing: DrawingModel?
     /// A `.sql` file: the console under it (connection, results).
     var sqlConsole: SQLConsole?
+    /// A Kubernetes manifest — a cluster object's copy (`y`), a checkout's
+    /// file, a kustomization: the bar under it (Diff with Cluster, Apply).
+    var kubeManifest: KubeManifestSession?
     /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.
     var livePreview = false
     /// The caret's lines when Live Preview last styled them: their markup shows.

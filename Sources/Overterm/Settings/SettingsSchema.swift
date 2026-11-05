@@ -733,12 +733,12 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:
-                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale and k8s_delete_pod, each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
+                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
             kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
         SettingSpec(
             key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
             help:
-                "By name: the contexts where agents get k8s_restart, k8s_scale and k8s_delete_pod — empty, agents only read. Only while Overterm may write there too: a local or remote one by its writable setting, a production one while its writes are on for the session. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
+                "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while Overterm may write there too: a local or remote one by its writable setting, a production one while its writes are on for the session. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
             kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess"),
         SettingSpec(
             key: "kubernetes.debugImage", section: .kubernetes, group: "Tabs", title: "Debug container's image",

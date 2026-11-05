@@ -10,6 +10,9 @@ struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
     var message: String
     /// A 429's `Retry-After`, in seconds.
     var retryAfter: Int?
+    /// The Status's `details.causes`: an apply's 409 names each field and
+    /// the manager that owns it there (`FieldManagerConflict`).
+    var causes: [KubeStatusCause] = []
 
     var errorDescription: String? { message }
 
@@ -39,8 +42,19 @@ struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
         let causes = ((object["details"] as? [String: Any])?["causes"] as? [[String: Any]] ?? []).compactMap { $0["message"] as? String }
             .filter { !$0.isEmpty && !message.contains($0) }
         if !causes.isEmpty { message += " " + causes.joined(separator: " ") }
-        return KubeAPIError(status: status, reason: object["reason"] as? String, message: message)
+        var error = KubeAPIError(status: status, reason: object["reason"] as? String, message: message)
+        error.causes = ((object["details"] as? [String: Any])?["causes"] as? [[String: Any]] ?? []).map {
+            KubeStatusCause(reason: $0["reason"] as? String ?? "", message: $0["message"] as? String ?? "", field: $0["field"] as? String ?? "")
+        }
+        return error
     }
+}
+
+/// One of a Status's `details.causes`.
+struct KubeStatusCause: Equatable, Sendable {
+    var reason: String
+    var message: String
+    var field: String
 }
 
 /// One event of a watch, its object a Table of one row (or, from a server

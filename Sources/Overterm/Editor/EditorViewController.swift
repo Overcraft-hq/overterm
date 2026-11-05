@@ -23,6 +23,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var workspaceRoot: (() -> URL?)?
     /// The window's API client: a `.bru` request opens as one, sent through it.
     var apiWorkspace: APIWorkspace?
+    /// The window: a Kubernetes manifest's confirmations and its diff.
+    weak var kubernetesHost: KubeManifestHost?
     /// The file showing changed (another tab, a rename, the last one closed):
     /// the notes panel highlights it.
     var onActiveChanged: ((URL?) -> Void)?
@@ -46,7 +48,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private let emptyDocument = EditorDocument()
     /// The file showing — E2E, the window's close questions.
     var document: EditorDocument { active?.document ?? emptyDocument }
-    var unsavedNames: [String] { buffers.filter(\.document.isDirty).map(\.name) }
+    var unsavedNames: [String] { buffers.filter { $0.document.isDirty && $0.document.unsaveable == nil }.map(\.name) }
 
     private(set) var textView: CodeTextView!
     private(set) var gutter: EditorGutter!
@@ -304,6 +306,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         attachNote(buffer)
         attachDrawing(buffer)
         attachConsole(buffer)
+        attachManifest(buffer)
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
@@ -400,6 +403,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         }
         bufferWillClose(buffer)
         closeDrawing(buffer)
+        // A cluster object's copy goes with its tab.
+        buffer.kubeManifest?.close()
         // Read first: closing the document forgets its URL.
         let closed = buffer.url
         buffer.document.close()
@@ -1001,6 +1006,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     }
 
     func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
+        // Overterm's copy of a cluster object: never written, never formatted (its text never leaves).
+        if let why = buffer.document.unsaveable {
+            buffer.kubeManifest?.say(why)
+            return
+        }
         // A new request: saving it is naming it and putting it in its collection.
         if isDraft(buffer) { return saveDraft(buffer) }
         if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
@@ -1038,7 +1048,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// Unsaved edits: Save, Don't Save, or Cancel. `proceed` is false only
     /// for Cancel (or a failed save).
     private func confirmDiscard(_ buffer: EditorBuffer, _ proceed: @escaping (Bool) -> Void) {
-        guard buffer.document.isDirty, let window = view.window else { return proceed(true) }
+        guard buffer.document.isDirty, buffer.document.unsaveable == nil, let window = view.window else { return proceed(true) }
         let alert = NSAlert()
         alert.messageText = "Save changes to “\(buffer.name)”?"
         alert.informativeText = "Your changes will be lost if you don’t save them."

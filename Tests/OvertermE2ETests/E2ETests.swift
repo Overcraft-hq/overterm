@@ -102,9 +102,10 @@ final class E2ETests: XCTestCase {
             "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300, stderr: stderr)
         // The scenario's Secret value (E2ERunner.secretValue), shown and
         // revealed in the app: never in what it printed, nor its errors.
-        let value = "acme-e2e-pw-Zq7Lm"
+        // And the Secret's values the editor diffs (E2ERunner.applySecretOld, applySecretNew).
+        let values = ["acme-e2e-pw-Zq7Lm", "acme-e2e-apply-Hx4Wq", "acme-e2e-apply-Rt8Pz"]
         let output = printed + ((try? String(contentsOf: stderr, encoding: .utf8)) ?? "")
-        for needle in [value, Data(value.utf8).base64EncodedString()] {
+        for needle in values + values.map({ Data($0.utf8).base64EncodedString() }) {
             XCTAssertFalse(output.contains(needle), "kubernetes: a Secret's value reached the app's output")
         }
     }

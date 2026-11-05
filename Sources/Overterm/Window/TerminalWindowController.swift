@@ -193,6 +193,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let compare = CompareModel()
     /// A stored file opened from the Database panel.
     let storageObject = StorageObjectModel()
+    /// A Kubernetes manifest's diff with its cluster (the editor's Diff with Cluster).
+    let kubernetesManifest = KubeManifestPane()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -544,6 +546,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             self.setEditorZoomed(!self.isEditorZoomed)
         }
         editor.workspaceRoot = { [weak self] in self?.diff.root ?? self?.tree.root }
+        editor.kubernetesHost = self
         self.editor = editor
         self.editorItem = editorItem
 
@@ -593,7 +596,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     onReview: { [weak self] base, head in self?.reviewRange(base: base, head: head) }),
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
-                graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
+                graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) }),
+                manifest: KubeManifestDiffView(
+                    pane: kubernetesManifest, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onOpen: { [weak self] in self?.openInEditor($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))

@@ -12,6 +12,17 @@ final class EditorDocument: ObservableObject {
     private(set) var text = ""
     /// On-disk modification date at load/save, to notice outside changes.
     private var loadedModification: Date?
+    /// Why this file is never saved, when it isn't: Overterm's copy of a
+    /// cluster object (`KubeManifestEdits`) — a value retyped in it stays in
+    /// memory, never in the file. Nothing writes it, and its edits ask
+    /// nothing on close.
+    var unsaveable: String?
+
+    /// Refused: `unsaveable` says why.
+    struct Unsaveable: LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
+    }
 
     /// Bigger than this is a log or a dump, not something to edit here.
     static let maxBytes = 5 * 1024 * 1024
@@ -77,6 +88,7 @@ final class EditorDocument: ObservableObject {
     /// target — an atomic write to the link would replace it with a file.
     func save(_ newText: String, overwriting: Bool = false) throws {
         guard let url, unavailable == nil else { return }
+        if let unsaveable { throw Unsaveable(reason: unsaveable) }
         if changedOnDisk, !overwriting { throw ChangedOnDisk(name: name) }
         let target = url.resolvingSymlinksInPath()
         try Data(newText.utf8).write(to: target, options: .atomic)

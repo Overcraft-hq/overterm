@@ -100,6 +100,11 @@ struct KubeContextSettings: Equatable, Sendable {
     /// On: a node may be debugged (`kubectl debug node/…`, a node shell) on
     /// a writable context, its name typed; unset or off, it is refused.
     var nodeShell: Bool?
+    /// On: Apply from the editor (and agents' `k8s_apply`) is offered on
+    /// this production context while its writes are on for the session,
+    /// the name typed and never forced (decision 30); unset or off, a
+    /// production context only diffs. Ignored on any other class.
+    var applyOnProduction: Bool?
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -126,12 +131,17 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(
             name: "nodeShell", kind: .toggle,
             help: "On: a node may be debugged (kubectl debug node/…) on this context when it is writable, the node's name typed. Off by default."),
+        SettingField(
+            name: "applyOnProduction", kind: .toggle,
+            help:
+                "Production only: On lets Apply from the editor (and agents' k8s_apply) change this context while its writes are on for the session — the name typed, never forced. Off by default: production only diffs."
+        ),
     ]
 
     init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
         accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil,
-        debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil
+        debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil, applyOnProduction: Bool? = nil
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -144,6 +154,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.debugImage = debugImage
         self.nodeShellImage = nodeShellImage
         self.nodeShell = nodeShell
+        self.applyOnProduction = applyOnProduction
     }
 
     init(fields: [String: SettingValue]) {
@@ -158,6 +169,7 @@ struct KubeContextSettings: Equatable, Sendable {
         debugImage = Self.image(fields["debugImage"])
         nodeShellImage = Self.image(fields["nodeShellImage"])
         nodeShell = fields["nodeShell"]?.bool
+        applyOnProduction = fields["applyOnProduction"]?.bool
     }
 
     /// An image field's value, trimmed; empty, unset.

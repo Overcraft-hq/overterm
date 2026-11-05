@@ -116,6 +116,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         /// `status`, an Event's `involvedObject` — as JSON; its `metadata`
         /// is merged into the metadata (`ownerReferences`, `generation`).
         var body: Data? = nil
+        /// `metadata.managedFields` as JSON (`setManagedFields`, a server-side
+        /// apply's); nil: one kubectl-client-side-apply entry, as before.
+        var managedFields: Data? = nil
     }
 
     /// A self-signed certificate for a fake TLS Secret's `tls.crt`: public
@@ -567,6 +570,26 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
+    /// An object's managedFields, as a GET answers them: who owns which
+    /// fields (`manager`, `operation`, `fieldsV1`) — a server-side apply's
+    /// conflicts come from them. A MODIFIED event.
+    func setManagedFields(_ resource: String, _ name: String, namespace: String? = nil, _ entries: [[String: Any]]) {
+        let key = Self.key(resource, namespace, name)
+        let data = Self.encode(entries)
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            object.managedFields = data
+            return object
+        }
+    }
+
+    /// The object whole, as a GET answers it now (a test's look).
+    func object(_ resource: String, _ name: String, namespace: String? = nil) -> [String: Any]? {
+        let (object, kind) = locked { (objects[Self.key(resource, namespace, name)], kinds.first { $0.fullName == resource }) }
+        guard let object, let kind else { return nil }
+        return Self.full(object, kind)
+    }
+
     /// An object's uid, as its metadata says it.
     func uid(_ resource: String, _ name: String, namespace: String? = nil) -> String? {
         locked { objects[Self.key(resource, namespace, name)]?.uid }
@@ -627,6 +650,18 @@ final class FakeKubeAPI: @unchecked Sendable {
             subresources: ["status"], columns: columns)
         locked { kinds.append(served) }
         add("customresourcedefinitions.apiextensions.k8s.io", "\(plural).\(group)", values: [:], labels: [:])
+    }
+
+    /// A kind served at another version too (a CRD's older one,
+    /// `autoscaling/v1`): its own path and resource list, the objects the
+    /// same; discovery's preferred version stays the first one served.
+    func serve(_ fullName: String, alsoAt version: String) {
+        locked {
+            guard var kind = kinds.first(where: { $0.fullName == fullName }), !kinds.contains(where: { $0.fullName == fullName && $0.version == version })
+            else { return }
+            kind.version = version
+            kinds.append(kind)
+        }
     }
 
     /// A CRD deleted: its kind no longer served (a request for it is 404),
@@ -907,6 +942,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         guard let route = Self.route(path, kinds: locked { kinds }) else { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
         guard let resource = route.resource else {
             if settings.failingGroups.contains(route.groupVersion) { return .json(503, Self.status(503, "ServiceUnavailable", "the server is currently unable to handle the request")) }
+            guard locked({ kinds.contains { $0.groupVersion == route.groupVersion } }) else {
+                return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource"))
+            }
             return .json(200, resourceList(route.groupVersion))
         }
         if route.groupVersion == "v1", resource == "pods", route.subresource == "log", let namespace = route.namespace, let name = route.name {
@@ -1279,7 +1317,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         if let namespace = object.namespace { metadata["namespace"] = namespace }
         if !object.labels.isEmpty { metadata["labels"] = object.labels }
         if !object.annotations.isEmpty { metadata["annotations"] = object.annotations }
-        if managedFields {
+        if managedFields, let own = object.managedFields, let entries = try? JSONSerialization.jsonObject(with: own) {
+            metadata["managedFields"] = entries
+        } else if managedFields {
             metadata["managedFields"] = [
                 [
                     "manager": "kubectl-client-side-apply", "operation": "Update", "apiVersion": "v1", "time": time(object.created),
@@ -1396,10 +1436,16 @@ final class FakeKubeAPI: @unchecked Sendable {
                     "subresources": kind.subresources.map { ["subresource": $0, "verbs": ["get"]] },
                 ]
             }
-            if stale.contains(kinds[0].groupVersion) {
-                return ["metadata": ["name": group], "versions": [["version": kinds[0].version, "resources": [Any](), "freshness": "Stale"]]]
+            // Each version its own entry, the preferred (first served) first, as the server lists them.
+            var versions: [String] = []
+            for kind in kinds where !versions.contains(kind.version) { versions.append(kind.version) }
+            let entries: [[String: Any]] = versions.map { version in
+                let groupVersion = group.isEmpty ? version : "\(group)/\(version)"
+                if stale.contains(groupVersion) { return ["version": version, "resources": [Any](), "freshness": "Stale"] }
+                let served = zip(kinds, resources).filter { $0.0.version == version }.map(\.1)
+                return ["version": version, "resources": served, "freshness": "Current"]
             }
-            return ["metadata": ["name": group], "versions": [["version": kinds[0].version, "resources": resources, "freshness": "Current"]]]
+            return ["metadata": ["name": group], "versions": entries]
         }
         return encode(["kind": "APIGroupDiscoveryList", "apiVersion": "apidiscovery.k8s.io/v2", "metadata": [String: Any](), "items": items])
     }
@@ -1452,6 +1498,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         if method == .POST, route.name == nil, route.subresource == nil { return create(kind, namespace: route.namespace, body) }
         guard let name = route.name else { return notAllowed }
         let key = Self.key(kind.fullName, kind.namespaced ? route.namespace : nil, name)
+        if method == .PATCH, route.subresource == nil, contentType.hasPrefix("application/apply-patch+yaml") {
+            return apply(kind, key: key, namespace: kind.namespaced ? route.namespace : nil, name: name, query: query, body: body)
+        }
         guard locked({ objects[key] }) != nil else { return .json(404, Self.status(404, "NotFound", "\(kind.resource) \"\(name)\" not found")) }
         switch (method, route.subresource) {
         case (.DELETE, nil) where kind.fullName == "namespaces":
@@ -1599,6 +1648,167 @@ final class FakeKubeAPI: @unchecked Sendable {
             return object
         }
         return answer
+    }
+
+    /// A server-side apply (`application/apply-patch+yaml`, its body JSON —
+    /// which is YAML): `fieldManager` required; the object made when it
+    /// isn't there; a `resourceVersion` in the body that isn't the object's
+    /// a 409 (the object changed); a field another manager owns set to
+    /// another value a 409 naming it (`FieldManagerConflict`), unless
+    /// `force=true` — which takes the field from it; else merged (maps
+    /// merged, the rest replaced) and the applier made the owner of what it
+    /// sent. `dryRun=All` answers the result and keeps nothing.
+    private func apply(_ kind: Kind, key: String, namespace: String?, name: String, query: [String: String], body: Data) -> Answer {
+        guard let manager = query["fieldManager"], !manager.isEmpty else {
+            return .json(422, Self.status(422, "Invalid", "PatchOptions.meta.k8s.io \"\" is invalid: fieldManager: Required value: is required for apply patch"))
+        }
+        guard kind.verbs.contains("patch") else {
+            return .json(405, Self.status(405, "MethodNotAllowed", "the server does not allow this method on the requested resource"))
+        }
+        guard let patch = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+            return .json(400, Self.status(400, "BadRequest", "error decoding YAML: the body of the request was in an unknown format"))
+        }
+        var metadata = patch["metadata"] as? [String: Any] ?? [:]
+        guard metadata["name"] as? String == name else {
+            return .json(400, Self.status(400, "BadRequest", "the name of the object (\(metadata["name"] ?? "")) does not match the name on the URL (\(name))"))
+        }
+        let dryRun = query["dryRun"] == "All"
+        let force = query["force"] == "true"
+        let sentVersion = metadata["resourceVersion"] as? String
+        metadata["resourceVersion"] = nil
+        var sent = patch
+        sent["metadata"] = metadata
+        let own: [String: Any] = ["manager": manager, "operation": "Apply", "apiVersion": kind.groupVersion, "time": Self.time(Date()), "fieldsType": "FieldsV1", "fieldsV1": Self.fieldsV1(sent)]
+        guard let existing = locked({ objects[key] }) else {
+            if sentVersion != nil { return .json(404, Self.status(404, "NotFound", "\(kind.resource) \"\(name)\" not found")) }
+            if dryRun {
+                var made = sent
+                var madeMetadata = metadata
+                madeMetadata["uid"] = UUID().uuidString.lowercased()
+                madeMetadata["creationTimestamp"] = Self.time(Date())
+                madeMetadata["managedFields"] = [own]
+                if let namespace { madeMetadata["namespace"] = namespace }
+                made["metadata"] = madeMetadata
+                return .json(201, Self.encode(made))
+            }
+            let answer = create(kind, namespace: namespace, Self.encode(sent))
+            locked { objects[key]?.managedFields = Self.encode([own]) }
+            if let made = locked({ objects[key] }) { return .json(201, Self.encode(Self.full(made, kind))) }
+            return answer
+        }
+        if let sentVersion, sentVersion != String(existing.resourceVersion) {
+            return .json(
+                409,
+                Self.status(
+                    409, "Conflict",
+                    "Operation cannot be fulfilled on \(kind.fullName) \"\(name)\": the object has been modified; please apply your changes to the latest version and try again"
+                ))
+        }
+        let full = Self.full(existing, kind)
+        var managers = ((full["metadata"] as? [String: Any])?["managedFields"] as? [[String: Any]]) ?? []
+        var conflicts: [(manager: String, field: String)] = []
+        for (index, entry) in managers.enumerated() {
+            guard let other = entry["manager"] as? String, other != manager, let fields = entry["fieldsV1"] as? [String: Any] else { continue }
+            var owned = Self.ownedPaths(fields)
+            let taken = owned.filter { path in
+                guard let wanted = Self.value(at: path, in: sent) else { return false }
+                return !(wanted as AnyObject).isEqual(Self.value(at: path, in: full) as AnyObject?)
+            }
+            for path in taken { conflicts.append((other, "." + path.joined(separator: "."))) }
+            if force, !taken.isEmpty {
+                owned.removeAll { taken.contains($0) }
+                managers[index]["fieldsV1"] = Self.fieldsV1(paths: owned)
+            }
+        }
+        if !conflicts.isEmpty, !force {
+            let said = conflicts.map { "conflict with \"\($0.manager)\" using \(kind.groupVersion): \($0.field)" }
+            var status = Self.statusObject(409, "Conflict", "Apply failed with \(conflicts.count) conflict\(conflicts.count == 1 ? "" : "s"): " + said.joined(separator: "\n"))
+            status["details"] = [
+                "name": name, "kind": kind.resource,
+                "causes": conflicts.map { ["reason": "FieldManagerConflict", "message": "conflict with \"\($0.manager)\" using \(kind.groupVersion)", "field": $0.field] },
+            ]
+            return .raw(409, Self.encode(status), [("Content-Type", "application/json")])
+        }
+        managers.removeAll { $0["manager"] as? String == manager }
+        managers.append(own)
+        var result = (Self.mergePatch(full, sent) as? [String: Any]) ?? full
+        if var merged = result["metadata"] as? [String: Any] {
+            merged["managedFields"] = managers
+            result["metadata"] = merged
+        }
+        if existing.resource == "secrets", let plain = result["stringData"] as? [String: Any] {
+            var data = result["data"] as? [String: Any] ?? [:]
+            for (field, value) in plain { data[field] = Data("\(value)".utf8).base64EncodedString() }
+            result["data"] = data
+            result["stringData"] = nil
+        }
+        if dryRun { return .json(200, Self.encode(result)) }
+        var answer = Answer.json(200, Data())
+        let kept = managers
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            Self.store(result, in: &object)
+            object.managedFields = Self.encode(kept)
+            if object.resource == "secrets" {
+                object.data = (result["data"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? String).flatMap { Data(base64Encoded: $0) }.map { String(decoding: $0, as: UTF8.self) } }
+            } else if object.resource == "configmaps" {
+                object.data = (result["data"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
+            }
+            if let replicas = ((result["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue, object.values["Ready"] != nil {
+                object.values["Ready"] = .text("\(replicas)/\(replicas)")
+                for cell in ["Up-to-date", "Available"] where object.values[cell] != nil { object.values[cell] = .integer(replicas) }
+            }
+            answer = .json(200, Self.encode(Self.full(object, kind)))
+            return object
+        }
+        return answer
+    }
+
+    /// What an apply's body owns, as managedFields says it: a map's keys
+    /// `f:`, anything else a leaf.
+    static func fieldsV1(_ value: Any) -> [String: Any] {
+        guard let map = value as? [String: Any] else { return [:] }
+        var out: [String: Any] = [:]
+        for (key, inner) in map where !["apiVersion", "kind"].contains(key) {
+            if key == "metadata", let metadata = inner as? [String: Any] {
+                let kept = metadata.filter { !["name", "namespace", "resourceVersion", "uid", "creationTimestamp", "managedFields"].contains($0.key) }
+                if !kept.isEmpty { out["f:metadata"] = fieldsV1(kept) }
+                continue
+            }
+            if let nested = inner as? [String: Any], !nested.isEmpty { out["f:" + key] = fieldsV1(nested) } else { out["f:" + key] = [String: Any]() }
+        }
+        return out
+    }
+
+    /// `fieldsV1`'s owned paths, each a list of keys: a list's items
+    /// (`k:`, `v:`, `i:`) the list's own path, `.` the node's.
+    static func ownedPaths(_ fields: [String: Any], _ path: [String] = []) -> [[String]] {
+        var out: [[String]] = []
+        for (key, inner) in fields {
+            if key.hasPrefix("f:") {
+                let next = path + [String(key.dropFirst(2))]
+                let nested = inner as? [String: Any] ?? [:]
+                if nested.isEmpty || nested.keys.contains(where: { $0.hasPrefix("k:") || $0.hasPrefix("v:") || $0.hasPrefix("i:") }) {
+                    out.append(next)
+                } else {
+                    out += ownedPaths(nested.filter { $0.key != "." }, next)
+                }
+            }
+        }
+        return out
+    }
+
+    /// Paths as fieldsV1 again.
+    static func fieldsV1(paths: [[String]]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for path in paths {
+            guard let first = path.first else { continue }
+            let rest = Array(path.dropFirst())
+            var inner = out["f:" + first] as? [String: Any] ?? [:]
+            if !rest.isEmpty { inner = (mergePatch(inner, fieldsV1(paths: [rest])) as? [String: Any]) ?? inner }
+            out["f:" + first] = inner
+        }
+        return out
     }
 
     /// The `scale` subresource's PATCH: the replicas set, the rollout done at once.

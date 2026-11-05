@@ -14,7 +14,7 @@ import Foundation
 /// background slot, under the proxies' rules — a stopped context answers
 /// its problem and starts nothing, an oidc sign-in waits its turn; no tool
 /// starts a process of its own. The reads are GETs. The writes —
-/// `k8s_restart`, `k8s_scale`, `k8s_delete_pod` (stage 2a, `KubeAgentWrites`)
+/// `k8s_restart`, `k8s_scale`, `k8s_delete_pod` (stage 2a), `k8s_apply` (2b; `KubeAgentWrites`)
 /// — are listed while `kubernetes.agentWrites` names a context (an agent
 /// started before needs a restart to see them: the list isn't announced
 /// again), work only on a context it names that is writable for Overterm
@@ -77,7 +77,8 @@ enum KubeMCP {
         _ name: String, _ arguments: [String: Any], kubernetes: KubernetesModel, pane: String? = nil, now: Date = Date()
     ) async throws -> [String: Any] {
         guard reads.contains(name) || writes.contains(name) else {
-            throw BrowserMCP.ToolError(message: "Unknown tool: \(name). Agents read Kubernetes here, and restart, scale or delete a pod where it is writable.")
+            throw BrowserMCP.ToolError(
+                message: "Unknown tool: \(name). Agents read Kubernetes here, and restart, scale, delete a pod or apply a manifest where it is writable.")
         }
         let call = Call(name: name, arguments: arguments)
         guard let list = await kubernetes.contextsForAgents() else {
@@ -96,6 +97,7 @@ enum KubeMCP {
         case "k8s_why": text = try await why(call, target, kubernetes: kubernetes, now: now)
         case "k8s_rollout": text = try await rollout(call, target, kubernetes: kubernetes, now: now)
         case "k8s_restart", "k8s_scale", "k8s_delete_pod": text = try await write(call, target, kubernetes: kubernetes, pane: pane)
+        case "k8s_apply": text = try await apply(call, target, kubernetes: kubernetes, pane: pane)
         default: throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
         return BrowserMCP.textResult(text)
@@ -750,6 +752,15 @@ enum KubeMCP {
                 "k8s_delete_pod",
                 "Delete one pod, in the background after its grace period — its controller, if it has one, makes it again." + asked,
                 ["name": ["type": "string", "description": "The pod's name."], "namespace": namespace, "context": context], required: ["name"]),
+            tool(
+                "k8s_apply",
+                "Server-side apply a manifest (kubectl apply --server-side, field manager overterm): a server-side dry run first, its diff (masked) and the fields other managers own (Helm, Argo CD, Flux) shown to the user, who allows or not. Never forced: a conflict is reported. On production only where the context's applyOnProduction is on. No Secret: there is no tool for Secrets."
+                    + asked + " Answers the diff that was applied.",
+                [
+                    "manifest": ["type": "string", "description": "The objects as YAML (several documents with ---) or JSON. No masked value (••••••, ***)."],
+                    "namespace": ["type": "string", "description": "Where an object that names none goes. Default: the page's namespace on that context."],
+                    "context": context,
+                ], required: ["manifest"]),
         ]
     }
 
@@ -827,7 +838,7 @@ enum KubeMCP {
     }
 
     static let instructions =
-        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale and k8s_delete_pod change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
+        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [
@@ -884,7 +895,7 @@ enum KubeMCPText {
     /// What the header says of writes.
     static func writesSaid(_ rows: [ContextRow]) -> String {
         rows.contains(where: \.agentsWrite)
-            ? "Agents write only where a context says so (k8s_restart, k8s_scale, k8s_delete_pod), each call asked of the user first."
+            ? "Agents write only where a context says so (k8s_restart, k8s_scale, k8s_delete_pod, k8s_apply), each call asked of the user first."
             : "Agents only read: no context is writable for agents now."
     }
 
@@ -1136,7 +1147,7 @@ enum KubeMCPText {
 /// setting, a production one only with its writes on for the session.
 /// Nothing else turns them on. Pure.
 enum KubeAgentWrites {
-    static let tools = ["k8s_restart", "k8s_scale", "k8s_delete_pod"]
+    static let tools = ["k8s_restart", "k8s_scale", "k8s_delete_pod", "k8s_apply"]
 
     /// Why agents may not write on `context`; nil when they may.
     static func refused(_ context: KubeContext, agentWrites: [String]) -> String? {
