@@ -52,6 +52,9 @@ struct KubernetesActions {
     /// where rule 4 asks one; `then` gets what was typed, only when the
     /// button was pressed — the page checks it.
     var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (String) -> Void) -> Void = { _, _ in }
+    /// An object's YAML, Overterm's copy of it, in the editor (`y`): the
+    /// page steps aside.
+    var openEditor: (URL) -> Void = { _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -62,7 +65,7 @@ struct KubernetesActions {
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom, forwards
     case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
-    case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete
+    case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -92,6 +95,7 @@ enum KubernetesKey: String, ResourceKey {
         case .newNamespace: return "N"
         case .debug: return "E"
         case .delete: return "⌫"
+        case .edit: return "y"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -129,6 +133,8 @@ enum KubernetesKey: String, ResourceKey {
         case .debug:
             return "Debug container in a tab (kubectl debug --target); on a node, the node debugged — writable contexts only, asked first"
         case .delete: return "Delete — asked first; on production (and a namespace anywhere, warned what it holds) the name typed"
+        case .edit:
+            return "Edit the YAML in the editor — Overterm's copy, values masked; Diff with Cluster there, then Apply on a writable context, asked first"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -455,6 +461,7 @@ final class KubernetesPageModel: ObservableObject {
             case .newNamespace: return openNamespaceSheet()
             case .debug: return debugKey()
             case .delete: return deleteKey()
+            case .edit: return editKey()
             default: return false
             }
         }
@@ -1022,7 +1029,7 @@ final class KubernetesPageModel: ObservableObject {
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
         ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
-            + writeVerbs(for: picked) + tabWriteVerbs(for: picked)
+            + editVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

@@ -294,6 +294,7 @@ extension E2ERunner {
         await kubernetesVerbs(model, page, fake)
         await kubernetesTabWrites(model, page, fake)
         await kubernetesAgentWrites(model, page, fake, kubeconfig: kubeconfig, port: port)
+        await kubernetesApply(model, page, fake, kubeconfig: kubeconfig, port: port)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -540,6 +541,11 @@ extension E2ERunner {
               case "$4" in pods/attach) echo no; exit 1;; *) echo yes; exit 0;; esac
             fi
             if [ "$1" = port-forward ]; then exec '\(forward.path)' "$@"; fi
+            if [ "$1" = kustomize ]; then
+              printf '%s|%s\\n' "$KUBECONFIG" "$*" >> '\(kustomizeLog(in: folder).path)'
+              for file in "$2"/*.yaml; do case "$file" in */kustomization.yaml) ;; *) echo ---; cat "$file";; esac; done
+              exit 0
+            fi
             \(real.map { "exec '\($0)' \"$@\"" } ?? "echo 'no kubectl here' >&2; exit 1")
 
             """
@@ -551,6 +557,11 @@ extension E2ERunner {
         }
         return (script, log, forwards)
     }
+
+    /// Where the stand-in kubectl records each `kustomize` it rendered —
+    /// its KUBECONFIG and arguments — by concatenating the folder's YAML
+    /// files but the kustomization's own: the run's files, no cluster.
+    static func kustomizeLog(in folder: URL) -> URL { folder.appendingPathComponent("stand-in-kustomize.log") }
 
     /// A stand-in `kubectl port-forward pod/P L:R … --address A` in `folder`
     /// (the fake API has no port-forward): it appends its KUBECONFIG and

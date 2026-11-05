@@ -38,7 +38,14 @@ extension TerminalWindowController {
             openDatabase: { [weak self] guess in self?.newDatabaseConnection(from: guess) },
             importAPI: { [weak self] source in self?.importForwardAPI(source) },
             askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) },
-            confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) })
+            confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) },
+            openEditor: { [weak self] url in self?.openKubernetesEdit(url) })
+    }
+
+    /// `y`: an object's copy in the editor, the page stepping aside.
+    func openKubernetesEdit(_ url: URL) {
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        openInEditor(url)
     }
 
     /// A write asked first (rule 3), in the one confirmation every write
@@ -628,5 +635,35 @@ extension TerminalWindowController {
         if !page.selectorReading.selectors.isEmpty || !page.rows.contains(where: { $0.row.id == id }) { page.filter = "" }
         page.selection = [id.description]
         showKubernetesPage()
+    }
+}
+
+// MARK: A manifest in the editor, against its cluster (stage 2b)
+
+extension TerminalWindowController: KubeManifestHost {
+    /// An apply asked as every write is (`WriteConfirmation`): its scope red
+    /// on production, the dry-run diff and the owners in its detail, the
+    /// name typed where asked. An isolated run with no window answers no.
+    func askManifestWrite(_ confirmation: KubeWriteConfirmation) async -> String? {
+        guard let window else { return nil }
+        return await WriteConfirmation(
+            title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
+            button: confirmation.button, typedName: confirmation.typedName, critical: confirmation.production || confirmation.typedName != nil
+        ).ask(on: window)
+    }
+
+    func askManifest(_ title: String, _ detail: String, _ button: String) async -> Bool {
+        guard let window else { return false }
+        return await WriteConfirmation.splittingProduction(title: title, detail: detail, button: button).ask(on: window) != nil
+    }
+
+    /// The diff in the right-hand pane — the slot the browser shares, so it
+    /// steps aside as it does for the changes pane.
+    func showManifestDiff(_ session: KubeManifestSession) {
+        kubernetesManifest.session = session
+        rightPane.manifestOpened = true
+        rightPane.mode = .manifest
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
     }
 }

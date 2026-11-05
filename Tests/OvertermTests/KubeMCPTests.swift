@@ -184,8 +184,9 @@ final class KubeMCPTests: XCTestCase {
         XCTAssertTrue(KubeMCP.tools.allSatisfy { ($0["description"] as? String)?.isEmpty == false })
     }
 
-    func testAWriteOnAReadOnlyContextIsRefusedAndApplyIsUnknown() async {
-        for name in ["k8s_apply", "k8s_secret"] {
+    func testAWriteOnAReadOnlyContextIsRefusedAndSecretIsUnknown() async {
+        XCTAssertTrue(KubeMCP.writes.contains("k8s_apply"), "k8s_apply is a write tool (2b): refused where agents may not write")
+        for name in ["k8s_secret"] {
             let said = await refused(name, ["name": "web-1", "namespace": "shop"])
             XCTAssertTrue(said?.contains("Unknown tool") == true, "\(name): \(said ?? "answered")")
         }

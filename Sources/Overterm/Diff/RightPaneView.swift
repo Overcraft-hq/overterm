@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis, manifest
     }
 
     @Published var mode: Mode = .changes
@@ -18,6 +18,8 @@ final class RightPane: ObservableObject {
     @Published var containerOpened = false
     /// A Redis key or server was opened (Database panel): its tab stays from then on.
     @Published var redisOpened = false
+    /// A Kubernetes manifest was diffed with its cluster: its tab stays from then on.
+    @Published var manifestOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -44,6 +46,7 @@ struct RightPaneView: View {
     let container: DockerSlotView
     let redis: RedisSlotView
     let graph: NotesGraphView
+    let manifest: KubeManifestDiffView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -112,6 +115,11 @@ struct RightPaneView: View {
                         Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
+                if pane.manifestOpened {
+                    tab(.manifest, help: "A Kubernetes manifest against its cluster") {
+                        Text(verbatim: "⎈").font(.system(size: 12))
+                    }
+                }
                 if pane.compareOpened {
                     tab(.compare, help: "The comparison picked in Overgit") {
                         Image(systemName: "arrow.left.arrow.right.square").font(.system(size: ChromeMetrics.text(11)))
@@ -137,6 +145,7 @@ struct RightPaneView: View {
             case .object: object
             case .container: container
             case .redis: redis
+            case .manifest: manifest
             }
         }
         .background(theme.panelGround)

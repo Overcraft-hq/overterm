@@ -26,6 +26,7 @@ extension EditorViewController {
         guard isViewLoaded, let consoleHost else { return }
         consoleObserver = nil
         guard let console = buffer?.sqlConsole else {
+            if let manifest = buffer?.kubeManifest { return showManifestBar(manifest) }
             consoleHost.rootView = AnyView(EmptyView())
             consoleHeight.constant = 0
             return

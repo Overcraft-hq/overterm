@@ -112,6 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         KubeProcessRun.stopAll()
         // The proxies' sockets' folder, once kubectl is gone.
         KubeSocketFolder.app.remove()
+        // The Kubernetes objects' copies the editor had open (`y`).
+        KubeManifestEdits.removeAll()
         // A scan's Scout, or it outlives the app.
         DockerScoutScans.shared.cancelAll()
         BrowserBridge.shared.stop()

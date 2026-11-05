@@ -258,6 +258,8 @@ enum KubeProcessRun {
         var status: Int32
         var stdout: String
         var stderr: String
+        /// Its output went past the limit: what came is the start of it.
+        var truncated = false
     }
 
     private static let lock = NSLock()
@@ -276,10 +278,12 @@ enum KubeProcessRun {
         }
     }
 
-    static func run(_ executable: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval) -> Result? {
+    static func run(
+        _ executable: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval, outputLimit: Int = 64 * 1024
+    ) -> Result? {
         let out = Pipe()
         let err = Pipe()
-        let outReader = PipeReader(out, limit: 64 * 1024)
+        let outReader = PipeReader(out, limit: outputLimit)
         let errReader = PipeReader(err, limit: 64 * 1024)
         let pid = lock.withLock { () -> pid_t? in
             guard
@@ -317,7 +321,8 @@ enum KubeProcessRun {
         outReader.finish(waitingUntil: .now() + 2)
         errReader.finish(waitingUntil: .now() + 2)
         return Result(
-            status: exitStatus(status), stdout: String(decoding: outReader.data, as: UTF8.self), stderr: String(decoding: errReader.data, as: UTF8.self))
+            status: exitStatus(status), stdout: String(decoding: outReader.data, as: UTF8.self), stderr: String(decoding: errReader.data, as: UTF8.self),
+            truncated: outReader.reachedLimit)
     }
 
     /// The exit code, or 128 + the signal that ended it, as a shell says it.
