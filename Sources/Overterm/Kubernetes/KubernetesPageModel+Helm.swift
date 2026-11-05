@@ -3,7 +3,8 @@ import Foundation
 /// The Helm section (`8`; stage 2c): the releases of the context and
 /// namespace shown, from Helm's records' metadata, read while the section
 /// shows on a page on screen; a release opened is its one record read
-/// (`KubeHelmSession`). Reads only: Helm's writes are stage 2f's.
+/// (`KubeHelmSession`). Its writes — rollback, uninstall — are helm in a
+/// tab (`KubernetesPageModel+HelmWrites`).
 extension KubernetesPageModel {
     /// Whether the Helm section is on screen.
     var helmShows: Bool { section == .helm && visible && windowVisible }
@@ -48,7 +49,8 @@ extension KubernetesPageModel {
     }
 
     /// A key while the Helm section shows: ↑ ↓ along the releases, ↩
-    /// opens one, Esc closes it, `k` copies its helm command — and the
+    /// opens one, Esc closes it, `k` copies its helm command, ⌫ uninstalls
+    /// it (asked, its name typed) — and the
     /// page's own keys (sections, `n`, `c`, `:`, `0`, `?`, `/`) as ever.
     /// The list's verbs would act on the kind under the section: refused.
     /// Nil: not Helm's, the page's to decide — every key while `?` shows.
@@ -75,6 +77,8 @@ extension KubernetesPageModel {
             return true
         default:
             guard case .key(let key) = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return nil }
+            // ⌫: the release picked uninstalled — asked, its name typed (stage 2f).
+            if key == .delete { return helmDeleteKey() }
             return [.command, .namespace, .context, .allNamespaces].contains(key) ? nil : false
         }
     }
@@ -82,7 +86,7 @@ extension KubernetesPageModel {
     /// The release picked's `helm status`, else the list's `helm list`.
     var helmCommand: String {
         let context = helm.context ?? model.selectedName ?? ""
-        if let release = helm.opened?.release ?? helm.selectedRelease {
+        if let release = helmPicked {
             return KubeHelmLine.status(context: context, namespace: release.namespace, release: release.name)
         }
         return KubeHelmLine.list(context: context, scope: helm.scope ?? model.scope)

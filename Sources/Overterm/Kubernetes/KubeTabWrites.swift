@@ -216,14 +216,36 @@ enum KubeTabWrite: Equatable, Sendable {
     }
 }
 
+/// A write that runs as a command in a tab pinned to its context —
+/// kubectl's (`KubeTabWrite`) or helm's (`KubeHelmWrite`) — as the page's
+/// one path for them takes it (`confirmTabWrite`): its process verb for
+/// the class check, the name rule 4 asks to be typed, its words, its
+/// confirmation and what the page says once its tab is open.
+protocol KubeTabCommand: Sendable {
+    var verb: KubeProcessVerb { get }
+    var name: String { get }
+    /// Why it can't be built whatever the context: nil when it can.
+    var refused: String? { get }
+    func line(context: String) -> String
+    func confirmation(context: KubeContext, rule: KubeProcessRule) -> KubeWriteConfirmation
+    func opened(context: String) -> String
+}
+
+extension KubeTabCommand {
+    var refused: String? { nil }
+}
+
+extension KubeTabWrite: KubeTabCommand {}
+
 extension KubeCommands {
     /// The debug container's image when neither the context nor the setting names one.
     static let defaultDebugImage = "busybox:1.36"
 
     /// A tab write's command, checked against the context first: nothing
     /// the process class check refuses is built.
-    static func command(_ write: KubeTabWrite, in context: KubeContext) throws -> String {
+    static func command(_ write: some KubeTabCommand, in context: KubeContext) throws -> String {
         if let refused = KubeProcessCheck.rule(write.verb, for: context).refused { throw Refused(reason: refused) }
+        if let refused = write.refused { throw Refused(reason: refused) }
         return write.line(context: context.name)
     }
 }

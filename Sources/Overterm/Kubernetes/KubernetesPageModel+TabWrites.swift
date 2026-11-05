@@ -199,6 +199,11 @@ extension KubernetesPageModel {
     /// (still the cluster reviewed: the tab's kubectl reaches it by name),
     /// typed into a tab pinned to the context in `pin`.
     func confirmTabWrite(_ write: KubeTabWrite, reviewed: KubeContext, pin: String) {
+        confirmTabCommand(write, reviewed: reviewed, pin: pin)
+    }
+
+    /// `confirmTabWrite`'s path, for any write a tab runs (helm's too).
+    func confirmTabCommand(_ write: some KubeTabCommand, reviewed: KubeContext, pin: String) {
         let name = reviewed.name
         guard let context = model.contexts.context(named: name) else {
             writeStatus = .failed("The context is gone: nothing was run.")

@@ -6,8 +6,9 @@ import SwiftUI
 /// version, updated — read from Helm's records' labels alone, and beside
 /// them the release opened: its Overview, History, Values (the user's or
 /// computed), Manifest and Notes, every value that looks secret and every
-/// Secret's data masked. Where Secrets can't be listed it says so, with
-/// helm in a terminal offered.
+/// Secret's data masked, and its writes — Roll Back, Uninstall, helm in a
+/// tab (`KubeHelmWrite`) — greyed with why where they can't be done.
+/// Where Secrets can't be listed it says so, with helm in a terminal offered.
 struct KubeHelmSection: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var helm: KubeHelmSession
@@ -175,6 +176,7 @@ struct KubeHelmSection: View {
         .background(Rectangle().fill(picked ? theme.selected : .clear))
         .contentShape(Rectangle())
         .onTapGesture { page.openHelm(release) }
+        .contextMenu { ResourceVerbMenu(verbs: page.helmWriteVerbs(for: release)) }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("kubernetes.helm.release.\(release.namespace).\(release.name)")
     }
@@ -257,9 +259,32 @@ struct KubeHelmDetailView: View {
                     .joined(separator: " · ")
             )
             .font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+            KubeHelmActions(page: page, writeAccess: page.model.writeAccess, release: opened.release, theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    /// The release's writes as buttons — the same list as its row's menu
+    /// (`helmWriteVerbs`), greyed with why until the access review says
+    /// yes — and what the last one did.
+    private struct KubeHelmActions: View {
+        @ObservedObject var page: KubernetesPageModel
+        /// The writes' access reviews.
+        @ObservedObject var writeAccess: KubeAccessChecks
+        let release: KubeHelmRelease
+        @ObservedObject var theme: ChromeTheme
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                ResourceActionBar(verbs: page.helmWriteVerbs(for: release), theme: theme, identifier: "kubernetes.helm.actions")
+                if let status = page.writeStatus {
+                    Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("kubernetes.helm.writeStatus")
+                }
+            }
+        }
     }
 
     private var tabs: some View {
@@ -361,6 +386,7 @@ struct KubeHelmDetailView: View {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(verbatim: record.updated.map { KubeAge.format(context.date.timeIntervalSince($0)) } ?? "—").foregroundStyle(theme.text3)
                         }
+                        if record.revision != opened.release.revision { rollBack(to: record) }
                     }
                     .font(.system(size: 12))
                     .padding(.horizontal, 14)
@@ -376,6 +402,34 @@ struct KubeHelmDetailView: View {
             }
         }
         .accessibilityIdentifier("kubernetes.helm.history")
+    }
+
+    private func rollBack(to record: KubeHelmRecord) -> some View {
+        KubeHelmRollBack(page: page, writeAccess: page.model.writeAccess, release: opened.release, revision: record.revision, theme: theme)
+    }
+
+    /// A History row's Roll Back: to that revision, asked as any rollback
+    /// is, greyed with why until the access review says yes.
+    private struct KubeHelmRollBack: View {
+        @ObservedObject var page: KubernetesPageModel
+        @ObservedObject var writeAccess: KubeAccessChecks
+        let release: KubeHelmRelease
+        let revision: Int
+        @ObservedObject var theme: ChromeTheme
+
+        var body: some View {
+            let unavailable = page.helmContext.flatMap { page.helmWriteUnavailable(.helmRollback, $0, release) }
+            Button {
+                page.runHelmWrite(.helmRollback, on: release, revision: revision)
+            } label: {
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(unavailable == nil ? theme.text2 : theme.text3.opacity(0.5)).frame(width: 22, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(unavailable != nil)
+            .help(["Roll back to revision \(revision) in a tab", unavailable].compactMap { $0 }.joined(separator: " — "))
+            .accessibilityIdentifier("kubernetes.helm.rollback.\(revision)")
+        }
     }
 
     private func values(_ detail: KubeHelmDetail) -> some View {
