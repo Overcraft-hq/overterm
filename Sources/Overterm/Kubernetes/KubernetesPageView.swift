@@ -117,7 +117,9 @@ struct KubernetesPageView: View {
                     Image(systemName: section.symbol).frame(width: 18)
                     Text(section.title)
                     Spacer()
-                    if !section.listsKinds {
+                    if section == .helm {
+                        KubeHelmCount(helm: page.helm, theme: theme)
+                    } else if !section.listsKinds {
                         KubeForwardsCount(forwards: page.forwards, theme: theme)
                     } else if !model.catalog.isEmpty {
                         Text(verbatim: "\(kinds.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
@@ -426,7 +428,9 @@ struct KubernetesPageView: View {
                     let names = page.selectedNames
                     if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
                 }, accessibilityIdentifier: "kubernetes.list", pressed: { page.pressed($0) })
-            if !page.section.listsKinds {
+            if page.section == .helm {
+                KubeHelmSection(page: page, helm: page.helm, theme: theme)
+            } else if !page.section.listsKinds {
                 KubeForwardsSection(page: page, forwards: page.forwards, theme: theme)
             } else if !page.showsSection {
                 Text(verbatim: sectionNote).font(.system(size: 12)).foregroundStyle(theme.text3)

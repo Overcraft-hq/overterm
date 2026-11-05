@@ -138,6 +138,12 @@ extension TerminalWindowController {
         showKubernetesPage()
     }
 
+    /// The page on its Helm section (the palette's Kubernetes Helm Releases).
+    func showKubernetesHelm() {
+        kubernetesPage.showSection(.helm)
+        showKubernetesPage()
+    }
+
     // MARK: Terminal in this context (docs/design/kubernetes/analysis.md, 3.11)
 
     /// A tab pinned to `context`: its shell's `KUBECONFIG` starts with a
@@ -478,6 +484,10 @@ extension TerminalWindowController {
                 id: "a.kubernetes.forwards", group: .action, title: "Kubernetes Forwards",
                 subtitle: "The port-forwards: open, edit, stop  \(KubeSection.forwards.key)", symbol: "arrow.left.arrow.right"
             ) { [weak self] _, _ in self?.showKubernetesForwards() },
+            PaletteItem(
+                id: "a.kubernetes.helm", group: .action, title: "Kubernetes Helm Releases",
+                subtitle: "Releases, their history, values and manifest — masked  \(KubeSection.helm.key)", symbol: "shippingbox"
+            ) { [weak self] _, _ in self?.showKubernetesHelm() },
         ]
         items += kubernetesPage.forwardPaletteItems { [weak self] in self?.showKubernetesPage() }
         guard model.contextsRead else { return items }
