@@ -206,7 +206,7 @@ final class KubeKindsTests: XCTestCase {
         for group in ["example.com", "cert-manager.io", "argoproj.io", "karpenter.sh", "k8s.io.example.com"] {
             XCTAssertFalse(KubeKindCatalog.isBuiltIn(group: group), group)
         }
-        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "9"], "Forwards is 9, leaving 8 to Helm")
+        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "8", "9"], "Helm is 8, Forwards 9")
     }
 
     func testAKindsTitle() {
@@ -352,7 +352,7 @@ final class KubeKindsTests: XCTestCase {
         XCTAssertTrue(KubernetesKey.isWellFormed)
         XCTAssertEqual(KubernetesKey.of(":"), .command)
         XCTAssertEqual(KubeSection.allCases.map { KubernetesKey.of($0.key)?.section }, KubeSection.allCases)
-        XCTAssertNil(KubernetesKey.of("8"))
+        XCTAssertEqual(KubernetesKey.of("8"), .helm, "8 is Helm's")
     }
 
     // MARK: Any kind, followed

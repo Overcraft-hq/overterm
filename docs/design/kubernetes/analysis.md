@@ -303,7 +303,7 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 
 | Feature | Lens | Freelens | Ours | How | Stage |
 |---|---|---|---|---|---|
-| Releases: chart, revision, versions, status, updated | Yes | Yes | Read from the labels on Helm's storage Secrets, metadata only. ConfigMap storage too | API | 2c |
+| Releases: chart, revision, versions, status, updated | Yes | Yes | Name, revision, status and updated read from the labels on Helm's storage Secrets, metadata only. ConfigMap storage too; Helm 2's (Tiller's) across all namespaces only, in Tiller's namespace. Helm's labels carry no chart or app version: those show once a release is opened (rule 9 forbids reading every record for the list) | API | 2c |
 | Release detail: values, resources, notes, history | Yes | Yes | One Secret decoded on demand. The user's `config` values and any Secrets in the manifest are masked | API | 2c |
 | Rollback to a chosen revision, uninstall | Yes | Yes | `helm rollback <r> <rev>` / `helm uninstall`, with `--kube-context X -n Y`, in a tab. The revision is picked from the history. Refused on read-only contexts. Rollback on production asks for the release's name; uninstall asks for it on every class | Tab | 2f |
 | Upgrade with values and a version pick | Yes | Yes | `helm upgrade --version V` in a tab, with the values file in the editor. Refused on read-only contexts | Tab | 3a |

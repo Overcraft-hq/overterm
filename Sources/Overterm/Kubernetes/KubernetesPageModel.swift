@@ -63,7 +63,7 @@ struct KubernetesActions {
 /// guard path — the access review, the confirmation, a typed name where
 /// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
-    case workloads, network, config, storage, access, cluster, custom, forwards
+    case workloads, network, config, storage, access, cluster, custom, helm, forwards
     case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
@@ -168,7 +168,9 @@ struct KubeListRow: ResourceTableRow {
 final class KubernetesPageModel: ObservableObject {
     /// The section shown: the kind's, else one picked whose kinds aren't
     /// known yet (discovery not read) or that has none.
-    @Published private(set) var section: KubeSection = .workloads
+    @Published private(set) var section: KubeSection = .workloads {
+        didSet { if section != oldValue { updateHelmReading() } }
+    }
     /// `:`: the command bar over the page.
     @Published var command: KubeCommandBar?
     /// What the filter field says. Its `label:` and `field:` words go to
@@ -209,6 +211,7 @@ final class KubernetesPageModel: ObservableObject {
                 detail?.secret?.drop(.pageHidden)
             }
             updateLogsReading()
+            updateHelmReading()
         }
     }
     /// Whether its window is on screen at all.
@@ -216,6 +219,7 @@ final class KubernetesPageModel: ObservableObject {
         didSet {
             if !windowVisible { detail?.secret?.drop(.pageHidden) }
             updateLogsReading()
+            if windowVisible != oldValue { updateHelmReading() }
         }
     }
     /// How a pod's log shows — wrap, timestamps, newest first, the search
@@ -230,6 +234,9 @@ final class KubernetesPageModel: ObservableObject {
     let model: KubernetesModel
     /// The app's port-forwards: the Forwards section, `f`, `o`.
     let forwards: KubeForwards
+    /// The Helm section's releases and the one opened: this window's.
+    let helm: KubeHelmSession
+    private var helmWatch: AnyCancellable?
     /// How long the typing must stop before `label:` or `field:` asks the server again.
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
@@ -282,6 +289,7 @@ final class KubernetesPageModel: ObservableObject {
     init(model: KubernetesModel = .shared, forwards: KubeForwards = .shared) {
         self.model = model
         self.forwards = forwards
+        helm = KubeHelmSession(consent: model.secretConsent)
         // A picker that shows follows what comes in: the namespaces listed
         // after it opened, the kubeconfig read again. The emitted values:
         // the model's properties aren't set yet.
@@ -316,6 +324,11 @@ final class KubernetesPageModel: ObservableObject {
                 self?.commandProblem = nil
                 self?.writeStatus = nil
             }
+        // Helm's list is of the context and namespace shown: read again
+        // with them while it shows (the emitted values: after the change).
+        helmWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
+            .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () })
+            .sink { [weak self] in DispatchQueue.main.async { self?.helmScopeChanged() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
@@ -329,8 +342,9 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     private func follow(_ kind: KubeResourceKind, _ catalog: KubeKindCatalog) {
-        // Forwards shows the app's forwards, whatever kind the list is on.
-        if section == .forwards {
+        // Forwards shows the app's forwards, Helm its releases, whatever
+        // kind the list is on.
+        if !section.listsKinds {
             if let shown = catalog.section(of: kind) { lastKind[shown] = kind.fullName }
             return
         }
@@ -423,6 +437,7 @@ final class KubernetesPageModel: ObservableObject {
             closeNamespaceSheet()
             return true
         }
+        if section == .helm, let handled = helmPress(characters) { return handled }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
         case .closeSheet: cheatSheet = false

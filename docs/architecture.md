@@ -2272,7 +2272,8 @@ attach and followed log in a tab, and port-forwards — and, of stage 1e,
 Ask Why and agents' read tools — and of stage 2a, writable contexts,
 production's switch for the session and the page's first writes (Writes,
 below): delete, force delete, finalizers, evict, rollout restart, scale — and of stage 2b, a manifest in the editor diffed
-with its cluster and applied (Manifests in the editor, below).
+with its cluster and applied (Manifests in the editor, below) — and of
+stage 2c, Helm's releases, read (Helm releases, below).
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2680,7 +2681,7 @@ over it — so a keyboard given to it finds it; a table with no columns
 refuses the keyboard, so when the server's columns come the list takes it
 if nothing else has it (`offerListTheKeyboard`). The keys
 (`KubernetesKey`, through `ResourceKey`, while the list has the
-keyboard): `1`–`7` the sections, ↩ the detail, `[` `]` back and forward,
+keyboard): `1`–`7` the sections (`8` Helm, below), ↩ the detail, `[` `]` back and forward,
 Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, `l` a pod's logs (↩ on a pod is them too), `f` and `o` a forward,
 `9` the Forwards section. The right-click menu
 only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
@@ -2727,7 +2728,8 @@ ones the filter shows, else every row it shows.
 
 **The sections** (`KubeSection`, `KubeKindCatalog`, pure): Workloads,
 Network, Config, Storage, Access Control, Cluster, Custom Resources — the
-digits `1`–`7` (Overview, Helm and Forwards join with their stages). Each
+digits `1`–`7` — then Helm on `8` and Forwards on `9`, which list no kind
+(`listsKinds`; Overview joins with its stage). Each
 names the built-in kinds it shows, in order (`named`, by full name); of
 two that are one Kind the first served shows (`events.events.k8s.io`
 rather than the core `events`). Cluster also takes Kubernetes' own kinds
@@ -3855,6 +3857,70 @@ names it, then its name asked.
   Secret diffed masked, a kustomization through the stand-in kubectl,
   fake-dev client-side sending nothing, and no Apply on fake-prod with its
   writes on.
+
+**Helm releases** (stage 2c; `KubeHelm.swift` (pure), `KubeHelmSession`,
+`KubernetesPageModel+Helm`, `KubeHelmView`; analysis 2.12, Section 4's
+Helm releases, rule 9): the page's Helm section (`8`, the palette's
+Kubernetes Helm Releases) lists the releases of the context and namespace
+shown with no `helm`, from Helm's own records — a Secret of type
+`helm.sh/release.v1` per revision (`HELM_DRIVER=secret`, the default), a
+ConfigMap (`configmap`), Tiller's ConfigMaps (`OWNER=TILLER`, Helm 2:
+listed only across all namespaces, cluster-wide, since they sit in
+Tiller's namespace and say no other — the row says it is Tiller's) —
+by their metadata alone: `KubeClient.helmRecords` asks with
+`as=PartialObjectMetadataList` and no fallback (a server that couldn't
+would send every record's data), `labelSelector=owner=helm` and, for
+Secrets, `fieldSelector=type=helm.sh/release.v1`, paged. A record's labels
+(`name`, `status`, `version`, `modifiedAt`; Tiller's uppercase) — else its
+name, `sh.helm.release.v1.<name>.v<revision>` — make a `KubeHelmRecord`;
+a release (`KubeHelmRelease`) is a name's records, newest first. Listed
+when the section shows, on Refresh and with another context or namespace
+— not watched. The chart and app version aren't in the labels: the list
+says them once the release was opened (`charts`, names and versions only).
+Opening one (a click, ↩) is the one GET of its latest record — or of a
+revision picked in its History — through the proxy (`helmRelease`), and
+reading it is reading a Secret: on production the session's first asks,
+naming the context (`KubeSecretConsent`, shared with a Secret's Show).
+It is decoded on a queue of its own, one record at a time, never on a
+Swift-concurrency thread (`KubeHelm.decodeOffPool` over
+`KubeHelm.decoding`; cancelled, it stops between steps) (`KubeHelm.decode`: the API's
+base64, Helm's base64, then gzip — inflated with Compression, capped at
+32 MB decompressed — or plain JSON for old releases; Tiller's protobuf is
+said, not read) and masked at once (`KubeHelmMask`); only the masked
+`KubeHelmDetail` stays, whose description names the release alone.
+Values — the user's (`config`) and the computed ones (the chart's
+defaults with the user's over them, a `null` taking one away, Helm's
+coalesce) — have a string under any secret-looking key on its path
+(`Secrets.isSecret`: password, token, key, auth…), a number under one,
+and a secret-named env entry's value — strings and numbers — as `***`, and credentials in other
+text taken out (`Secrets.scrubCredentials`, a URL's password). The
+manifest is read document by document (its `# Source:` lines kept) and
+each shown as `KubeObjectStrip.shown` shows an object (a `*List`'s
+items each so) — every Secret's
+`data` and `stringData` `***`, env values by name — with credentials out
+of every string; a document that can't be read whole is left out and
+said, since it couldn't be masked. Notes and descriptions are scrubbed.
+Tabs: Overview (status, revision, chart, app version, description,
+deployed), History (each revision, its status and age; its description
+once read, kept only while that release stays open), Values (user-supplied or computed), Manifest, Notes — each
+copyable as shown, masked. What was read goes when another release or
+section opens, the context or namespace changes, or on Esc; the page or
+its window hiding leaves it open saying so, with Read Again. A Secret
+list the cluster refuses (403) is said in plain words — releases can't
+be read here because Secrets can't be listed — with `helm list
+--kube-context C -n NS` to copy and Terminal in This Context
+(`KubeHelmLine`, pure, always `--kube-context` and `-n`); ConfigMap
+records still list. A storage whose list fails otherwise (a 5xx, a
+timeout) while another's lists is said over the list (`unlisted`), with
+Refresh, so the rest isn't taken for all of them. While the section shows, ↑ ↓ move along the
+releases, ↩ opens, Esc closes, `k` copies `helm status`; the sections,
+`n`, `c`, `:` and `0` stay the page's, and a kind's verbs do nothing.
+Nothing of a release is logged, written or given to an agent: there is no
+Helm tool. `FakeKubeAPI.addHelmRelease` writes records in Helm's own
+encoding (`KubeHelm.encode`) and the fake answers
+`as=PartialObjectMetadataList` lists; `KubeHelmTests` decodes members
+made by the system's gzip, and the `kubernetes` scenario checks a
+release's values masked and a forbidden Secret list degrading.
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and

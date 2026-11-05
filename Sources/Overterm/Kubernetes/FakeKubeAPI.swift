@@ -277,6 +277,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var interimBookmarks = false
         var unversionedLists = false
         var forbidden: Set<String> = []
+        var failingResources: Set<String> = []
         var endFollowsAtOnce = false
         var deniedAccess: Set<String> = []
         var evictionBlock: String?
@@ -350,6 +351,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     var forbidden: Set<String> {
         get { locked { settings.forbidden } }
         set { locked { settings.forbidden = newValue } }
+    }
+
+    /// Resources whose every list or GET the server fails: a 500, as an
+    /// overloaded server or a broken etcd answers.
+    var failingResources: Set<String> {
+        get { locked { settings.failingResources } }
+        set { locked { settings.failingResources = newValue } }
     }
 
     /// A followed log is answered with what it has and ended at once, as a
@@ -633,6 +641,42 @@ final class FakeKubeAPI: @unchecked Sendable {
     func delete(_ resource: String, _ name: String, namespace: String? = nil) {
         let key = Self.key(resource, namespace, name)
         change("DELETED") { objects[key] }
+    }
+
+    /// A Helm release's record, as Helm 3 and 4 store it: a Secret of type
+    /// `helm.sh/release.v1` named `sh.helm.release.v1.<name>.v<revision>`,
+    /// labelled `owner=helm`, `name`, `status`, `version` and `modifiedAt`,
+    /// its one key `release` the release as JSON, gzipped and base64'd
+    /// (`KubeHelm.encode`; the API base64s it again) — or with `configMap`,
+    /// the same in a ConfigMap. `config` is the user's values, `values` the
+    /// chart's defaults.
+    func addHelmRelease(
+        _ name: String, namespace: String, revision: Int = 1, status: String = "deployed", chart: String = "web", version: String = "1.0.0",
+        appVersion: String = "1.27", description: String = "Install complete", config: [String: Any] = [:], values: [String: Any] = [:],
+        manifest: String = "", notes: String = "", configMap: Bool = false, modified: Date = Date()
+    ) {
+        let stamp = FakeKubeAPI.time(modified)
+        let release: [String: Any] = [
+            "name": name, "namespace": namespace, "version": revision, "config": config, "manifest": manifest,
+            "info": [
+                "status": status, "description": description, "notes": notes, "first_deployed": stamp, "last_deployed": stamp,
+            ],
+            "chart": [
+                "metadata": ["name": chart, "version": version, "appVersion": appVersion, "apiVersion": "v2"], "values": values,
+                "templates": [["name": "templates/deployment.yaml", "data": Data("kind: Deployment".utf8).base64EncodedString()]],
+            ],
+        ]
+        let labels = [
+            "owner": "helm", "name": name, "status": status, "version": String(revision), "modifiedAt": String(Int(modified.timeIntervalSince1970)),
+        ]
+        let object = "sh.helm.release.v1.\(name).v\(revision)"
+        if configMap {
+            add("configmaps", object, namespace: namespace, labels: labels, data: ["release": KubeHelm.encode(release)], created: modified)
+        } else {
+            add(
+                "secrets", object, namespace: namespace, values: ["Type": .text(KubeHelm.secretType)], labels: labels,
+                data: ["release": KubeHelm.encode(release)], created: modified)
+        }
     }
 
     /// The names of the objects of a kind it holds.
@@ -972,6 +1016,9 @@ final class FakeKubeAPI: @unchecked Sendable {
                     403, "Forbidden",
                     "\(resource) is forbidden: User \"system:anonymous\" cannot list resource \"\(resource)\" in API group \"\(kind.group)\" \(scope)"))
         }
+        if settings.failingResources.contains(resource) {
+            return .json(500, Self.status(500, "InternalError", "an error on the server (\"etcdserver: request timed out\") has prevented the request from succeeding"))
+        }
         if let name = route.name {
             guard let object = locked({ objects[Self.key(kind.fullName, route.namespace, name)] }) else {
                 return .json(404, Self.status(404, "NotFound", "\(resource) \"\(name)\" not found"))
@@ -989,7 +1036,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         if isWatch {
             return watch(kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels, channel: channel)
         }
-        return list(kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels)
+        return list(
+            kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels,
+            metadataOnly: !table && accept.contains("as=PartialObjectMetadataList"))
     }
 
     /// `pods/{p}/log`: a container's log (`container` needed with several),
@@ -1057,7 +1106,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         return whole + "." + String(format: "%09d", nanos) + "Z"
     }
 
-    private func list(_ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: LabelSelector) -> Answer {
+    private func list(
+        _ kind: Kind, namespace: String?, query: [String: String], table: Bool, includeObject: String, labels: LabelSelector, metadataOnly: Bool = false
+    ) -> Answer {
         locked {
             var version = current
             var after: String?
@@ -1095,6 +1146,18 @@ final class FakeKubeAPI: @unchecked Sendable {
                 var object = Self.tableObject(matching, kind, includeObject: includeObject, columns: true)
                 object["metadata"] = metadata
                 return .json(200, Self.encode(object))
+            }
+            if metadataOnly {
+                // `as=PartialObjectMetadataList`: each item's metadata alone —
+                // a Secret's data never comes this way.
+                return .json(
+                    200,
+                    Self.encode([
+                        "kind": "PartialObjectMetadataList", "apiVersion": "meta.k8s.io/v1", "metadata": metadata,
+                        "items": matching.map {
+                            ["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": Self.metadata($0, managedFields: false)]
+                        },
+                    ]))
             }
             return .json(
                 200, Self.encode(["kind": kind.kind + "List", "apiVersion": kind.groupVersion, "metadata": metadata, "items": matching.map { Self.full($0, kind) }]))

@@ -5,11 +5,12 @@ import Foundation
 /// names the built-in kinds it shows, in the order it shows them; Cluster
 /// takes the built-in kinds no other names, Custom resources every kind of
 /// a group that isn't Kubernetes' own — the CRDs, grouped by API group.
-/// Forwards is no kind: the app's port-forwards (`KubeForwards`), on its
-/// digit 9 as the design numbers it. Overview and Helm join with their
-/// stages. Pure.
+/// Helm and Forwards are no kind: Helm's releases, read from its own
+/// records (`KubeHelmSession`), on 8, and the app's port-forwards
+/// (`KubeForwards`) on 9, as the design numbers them. Overview joins with
+/// its stage. Pure.
 enum KubeSection: String, CaseIterable, Identifiable, Sendable {
-    case workloads, network, config, storage, access, cluster, custom, forwards
+    case workloads, network, config, storage, access, cluster, custom, helm, forwards
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
         case .access: "Access Control"
         case .cluster: "Cluster"
         case .custom: "Custom Resources"
+        case .helm: "Helm"
         case .forwards: "Forwards"
         }
     }
@@ -35,6 +37,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
         case .access: "person.badge.key"
         case .cluster: "server.rack"
         case .custom: "puzzlepiece.extension"
+        case .helm: "shippingbox"
         case .forwards: "arrow.left.arrow.right"
         }
     }
@@ -78,15 +81,16 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
                 "nodes", "namespaces", "events.events.k8s.io", "events", "customresourcedefinitions.apiextensions.k8s.io",
                 "apiservices.apiregistration.k8s.io",
             ]
-        case .custom, .forwards: []
+        case .custom, .helm, .forwards: []
         }
     }
 
-    /// Its digit on the list: Forwards is 9, leaving 8 to Helm.
-    var key: String { self == .forwards ? "9" : String((Self.allCases.firstIndex(of: self) ?? 0) + 1) }
+    /// Its digit on the list: Helm is 8, Forwards 9.
+    var key: String { String((Self.allCases.firstIndex(of: self) ?? 0) + 1) }
 
-    /// Whether it lists a cluster's kinds (Forwards lists Overterm's own).
-    var listsKinds: Bool { self != .forwards }
+    /// Whether it lists a cluster's kinds (Helm lists its releases,
+    /// Forwards Overterm's own forwards).
+    var listsKinds: Bool { self != .forwards && self != .helm }
 }
 
 /// What the page offers of a cluster: every kind discovery says can be
