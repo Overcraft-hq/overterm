@@ -3970,7 +3970,7 @@ be read here because Secrets can't be listed — with `helm list
 records still list. A storage whose list fails otherwise (a 5xx, a
 timeout) while another's lists is said over the list (`unlisted`), with
 Refresh, so the rest isn't taken for all of them. While the section shows, ↑ ↓ move along the
-releases, ↩ opens, Esc closes, `k` copies `helm status`; the sections,
+releases, ↩ opens, Esc closes, `k` copies `helm status`, ⌫ uninstalls (below); the sections,
 `n`, `c`, `:` and `0` stay the page's, and a kind's verbs do nothing.
 Nothing of a release is logged, written or given to an agent: there is no
 Helm tool. `FakeKubeAPI.addHelmRelease` writes records in Helm's own
@@ -3978,6 +3978,51 @@ encoding (`KubeHelm.encode`) and the fake answers
 `as=PartialObjectMetadataList` lists; `KubeHelmTests` decodes members
 made by the system's gzip, and the `kubernetes` scenario checks a
 release's values masked and a forbidden Secret list degrading.
+
+**Helm writes** (stage 2f; `KubeHelmWrites.swift` (pure),
+`KubernetesPageModel+HelmWrites`; analysis 2.12, Section 5, decision 15):
+a release rolled back to a revision of its history, or uninstalled, is
+`helm` in a terminal tab pinned to the context, as drain and `rollout
+undo` are kubectl in one (Writes in a tab, above) — never a request of
+Overterm's, and never a chart browser, an install or repositories.
+`KubeHelmWrite` is each one's words: `helm rollback NAME REVISION` and
+`helm uninstall NAME`, `--kube-context` and `-n` always, every word not
+ours quoted for zsh, and `HELM_DRIVER=configmap` before them for a
+release kept in ConfigMaps; a Helm 2 (Tiller) release is refused, and so
+is a name helm wouldn't give a release (`isReleaseName`: DNS-1123, at
+most 53) — the name goes before the flags, and quotes don't keep `-x`
+from being a flag to helm. Both
+conform to `KubeTabCommand` with `KubeTabWrite`, so they take the same
+path (`confirmTabCommand`): the process class check (`helmRollback`,
+`helmUninstall` are `KubeProcessVerb.writes`: refused on every read-only
+context, production only with its session switch); the access review
+through `writeAccess` — the release's records (create and update
+secrets for a rollback, update and delete for an uninstall; configmaps
+for that storage) and, when the release was opened and its masked
+manifest read, the kinds it names that the server serves, patch or
+delete, at most eight (`KubeHelmWrite.resourceAccesses`; a manifest is
+never read only for this); a rollback's revision picked from the history,
+newest first, the latest never offered, nine at most — every earlier
+one helm keeps by default (`KubeHelmWrite.choices`) —, or the one its
+History row's button names, any kept one but the latest
+(`canRollBack`); the confirmation naming the context
+and namespace and the helm the tab runs, the release's name typed for a
+rollback on production and an uninstall on every class (rule 4); then
+the command typed into a tab whose `KUBECONFIG` is the pin then exactly
+Overterm's files (`runKubernetesCommand`), recorded in a scenario. The
+opened release's header has Roll Back and Uninstall (`helmWriteVerbs`,
+`ResourceActionBar`), its rows the same in their menu, ⌘K both, each
+greyed with why; ⌫ and ⌘K act on the row highlighted, else the one
+opened (`helmPicked`) — ↑ ↓ move the highlight off the opened release. Checked: `KubeHelmWritesTests` (lines, quoting, the
+driver, every read-only context refusing both, Tiller, typed names, the
+confirmation's words, the reviews, the manifest's kinds, the revisions)
+and `KubeHelmWritesPageTests` (reviewed, picked, asked, typed; an opened
+release's kinds reviewed; ⌫'s uninstall and a wrong name; a read-only
+context sending not even a review; a refused review; production's typed
+name and writes turned off at the button); the `kubernetes` scenario's
+`kubernetesHelmWrites` (`E2ERunner+KubernetesHelmWrites`): refused on
+fake-dev, both recorded, not typed, on kind-fake, the name asked on
+fake-prod with writes on.
 
 **Usage** (stage 2d; `KubeMetrics.swift` (pure), `KubeMetricsMonitor`,
 `KubernetesPageModel+Metrics`; analysis 2.11, decision 16): the Pods and

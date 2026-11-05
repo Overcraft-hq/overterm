@@ -620,6 +620,20 @@ extension TerminalWindowController {
                     })
             }
         }
+        // The Helm section's release: Roll Back and Uninstall, by the same path.
+        if page.section == .helm, let release = page.helmPicked, let context = page.helmContext {
+            for verb in page.helmWriteVerbs(for: release) where verb.unavailable == nil {
+                let name = (verb.label ?? verb.title) + " Helm Release \(release.namespace)/\(release.name) in a Tab"
+                items.append(
+                    PaletteItem(
+                        id: "k.h.\(name).\(context.name)", group: .action, title: "Kubernetes: \(name)…",
+                        subtitle: (verb.key.map { "\($0)  —  " } ?? "") + "asked first, naming \(context.name)", symbol: verb.symbol
+                    ) { [weak self] _, _ in
+                        self?.showKubernetesPage()
+                        verb.perform()
+                    })
+            }
+        }
         if let line = page.copyTarget {
             items.append(command("copyKubectl", "Kubernetes: Copy as kubectl", "k  —  \(line)", "terminal") { $0.copyKubectl() })
         }
