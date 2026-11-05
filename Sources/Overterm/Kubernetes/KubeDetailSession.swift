@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// One object's detail, while the page shows it: one GET of the object
@@ -49,6 +50,12 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     let secret: KubeSecretSession?
     /// A pod's Logs tab; nil for any other kind.
     let logs: KubePodLogSession?
+    /// A workload's (a Job's, a Service's) Logs tab: the pods its selector
+    /// picks, merged — made once the object is read and its selector known.
+    @Published private(set) var merged: KubeMergedLogSession?
+    /// The Logs tab shows, from this far back: a merged log made later is
+    /// shown at once.
+    private var logsShown: KubeLogSince?
 
     private let client: KubeClient?
     private var tasks: [Task<Void, Never>] = []
@@ -122,7 +129,31 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         yaml = makeYAML()
         state = .loaded
         logs?.podRead(json)
+        if ref.selectsPods, merged == nil, let pods = overview?.pods, !pods.selector.isEmpty {
+            let session = KubeMergedLogSession(
+                context: ref.context, namespace: pods.namespace, selector: pods.selector,
+                title: KubeMergedLogSession.title(kind: object.kind.isEmpty ? ref.kind.kind : object.kind, name: ref.name), client: client,
+                cap: { Settings.shared.kubernetesLogStreams },
+                capChanged: Settings.shared.changes.filter { $0.contains("kubernetes.logStreams") }.map { _ in () }.eraseToAnyPublisher())
+            merged = session
+            if let since = logsShown { session.show(since: since) }
+        }
         askEventsIfWanted()
+    }
+
+    /// The Logs tab shows (the page on screen): its log read — a pod's, or
+    /// the pods' it picks.
+    func showLogs(since: KubeLogSince) {
+        logsShown = since
+        logs?.show(since: since)
+        merged?.show(since: since)
+    }
+
+    /// The Logs tab is gone, or the page hidden: nothing read.
+    func hideLogs() {
+        logsShown = nil
+        logs?.hide()
+        merged?.hide()
     }
 
     private func askEventsIfWanted() {
@@ -194,6 +225,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         for task in tasks { task.cancel() }
         tasks = []
         logs?.cancel()
+        merged?.cancel()
         secret?.drop(.navigation)
     }
 }

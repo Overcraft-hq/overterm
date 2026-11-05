@@ -776,12 +776,20 @@ final class KubeDetailTests: XCTestCase {
         page.showKind(deployments)
         try await until(5, "deployments") { model.kind.fullName == "deployments.apps" && model.rows.count == 1 }
         page.selection = ["shop/web"]
-        XCTAssertFalse(page.press("l"), "no logs for a deployment yet")
         XCTAssertTrue(page.press("\r"))
-        XCTAssertEqual(page.detailTab, .overview, "a deployment's detail opens on its Overview")
-        XCTAssertNil(page.detail?.logs)
-        XCTAssertEqual(KubeDetailTab.tabs(for: try XCTUnwrap(page.detail?.ref)), [.overview, .yaml, .events])
+        XCTAssertEqual(page.detailTab, .overview, "a deployment's ↩ opens its Overview")
+        XCTAssertNil(page.detail?.logs, "no pod's log")
+        XCTAssertEqual(KubeDetailTab.tabs(for: try XCTUnwrap(page.detail?.ref)), [.overview, .logs, .yaml, .events])
         try await until(5, "nothing open") { self.api.openLogStreams == 0 }
+        // `l` on a deployment: its pods' logs, merged.
+        XCTAssertTrue(page.press("l"), "l: a deployment's pods' logs")
+        XCTAssertEqual(page.detailTab, .logs)
+        try await until(5, "merged") { page.detail?.merged != nil }
+        let merged = try XCTUnwrap(page.detail?.merged)
+        XCTAssertEqual(merged.title, "deployment/web")
+        XCTAssertEqual(page.detailKubectl?.hasPrefix("kubectl --context fake-dev -n shop logs -l app=web --all-containers --prefix"), true, page.detailKubectl ?? "")
+        page.showTab(.overview)
+        try await until(5, "hidden with another tab") { !merged.watching && self.api.openLogStreams == 0 }
         page.visible = false
     }
 }

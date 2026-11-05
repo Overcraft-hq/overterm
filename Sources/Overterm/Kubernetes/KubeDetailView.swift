@@ -28,7 +28,16 @@ struct KubeDetailView: View {
                 switch page.detailTab {
                 case .overview: overview
                 case .logs:
-                    if let logs = session.logs { KubePodLogsView(page: page, logs: logs, theme: theme) } else { overview }
+                    if let logs = session.logs {
+                        KubePodLogsView(page: page, logs: logs, theme: theme)
+                    } else if let merged = session.merged {
+                        KubeMergedLogsView(page: page, logs: merged, theme: theme)
+                    } else if session.ref.selectsPods {
+                        Text(verbatim: "It picks no pods by label: there are no logs to merge.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        overview
+                    }
                 case .yaml: yaml
                 case .events: events
                 }

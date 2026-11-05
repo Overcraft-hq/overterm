@@ -2324,7 +2324,7 @@ setting — only while its writes are on for the session
 **Settings** (Settings ▸ Kubernetes): `kubernetes.enabled` (on; nothing runs
 until the page or the panel opens, or an agent calls a `k8s_` tool — which
 reads the kubeconfig and starts that context's proxy), `kubernetes.kubeconfigs` and
-`kubernetes.pinnedContexts` (lists), `kubernetes.maxProxies` (4), and
+`kubernetes.pinnedContexts` (lists), `kubernetes.maxProxies` (4), `kubernetes.logStreams` (10, a merged log's streams), and
 `kubernetes.contexts` — one entry per context name, the only place a
 context's own settings live (`KubeContextSettings`: `class`, `writable`,
 `displayName`, `defaultNamespace`, `accessibleNamespaces`,
@@ -2894,6 +2894,61 @@ and opens on its Overview). Through the shared pieces (Logs, above): a
   hidden, the window off screen close the stream; shown again it is
   resumed from its last line. The detail closing or moving on (the
   arrows), and another context, end it (`KubeDetailSession.cancel`).
+
+**A workload's logs, merged** (stage 2e, stern's way; `KubeMergedLog`,
+`KubeMergedLogSession`, `KubeMergedLogSource`, `KubeMergedLogsView`): the
+detail of what picks pods by a label selector (`KubeObjectRef.selectsPods`:
+Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, Services) has a
+Logs tab too, opened by `l` (↩ stays its Overview); its session is made
+once the object is read and its Overview has the selector
+(`KubeOverview.pods`), shown at once if the tab already shows
+(`KubeDetailSession.showLogs`/`hideLogs`, which the page's
+`updateLogsReading` calls for either kind of Logs).
+
+- **The pods**: one watch of `pods` in the namespace with the selector
+  (`KubeClient.follow`, rows only) while the tab shows — the API has no
+  log of several pods, and a selector given to `kubectl logs` misses pods
+  made later. A pod joining is read once (its GET: the containers, not
+  the init or ephemeral ones, and its env for scrubbing), one gone has its
+  streams closed, what it said kept — and its env with it, for scrubbing
+  those lines, until none of them is left in the feed. Streams start only
+  once the watch has listed the pods, shown again too, so a pod deleted
+  while the tab was hidden is never asked for. A pod that can't be read
+  is said beside the summary (`problems`), never in its place, until it
+  is read or gone.
+- **The plan** (`KubeMergedLogPlan`, pure): one stream a container, the
+  pods by name, their containers in the spec's order, at most
+  `kubernetes.logStreams` (10) at once; streams open keep their place, so
+  a pod joining takes none from them, and one left out joins when a
+  followed one goes, or one ends for good while its pod stays (a Job's
+  Completed pod, an Evicted one: `ended`, its lines kept and still in the
+  picker, not read again until the filter or since changes). A pod not
+  read yet is read only while there is room. The cap is planned again as
+  the setting changes. The tab says what is followed and the cap
+  (`summary`: "N containers of M pods followed · K more left out · E
+  ended · at most C at once").
+- **The streams**: each a `KubePodLogSource` (a pod's log's rules: the
+  resume from `sinceTime`, the back-off, stopped once the pod is gone)
+  under a `KubeMergedLogSource`, which tags each line `pod/container`
+  (`LogLine.source`: its prefix and colour, `LogStyle.sourceColor`) and
+  drops what the filter leaves out, off the main actor; a `LogFollower`
+  each, merging into one `LogFeed` (`merge`: by time, padded fractions,
+  each source's last lines kept), so a resume drops what it showed. The
+  pane's picker shows one stream's lines (`LogFilter.source`); a stream
+  no longer followed nor ended goes back to all of them.
+- **Include and exclude** (`KubeMergedLogFilter`, pure): regular
+  expressions, case aside, over the pods' names (`--pod-query`,
+  `--exclude-pod`), the containers' (`--container`) and the lines
+  (`--include`, `--exclude`; a JSON line's fields too), in a popover; one
+  that isn't one is said and changes nothing. A pod or container left out
+  takes no stream; a change reads every stream again from its start.
+- **Reading only while it shows**: hidden (another tab, the page or the
+  window off screen) the watch and every stream close and nothing is
+  asked; shown again each stream resumes from its last line. ⌘L's lines
+  are scrubbed of every pod's env values and what looks like a credential
+  (`KubeLogScrub`); Save As is `<kind>-<name>-<time>.log`; Copy as kubectl
+  is `kubectl logs -l SELECTOR --all-containers --prefix
+  --max-log-requests=C` (`KubectlLine.mergedLogs`).
 
 **Secrets** (rule 9; `KubeSecretSession`, `KubeSecretView`, `KubeSecret`,
 `KubeCertificate`). The list is the server's Table — Name, Type, Data (how
