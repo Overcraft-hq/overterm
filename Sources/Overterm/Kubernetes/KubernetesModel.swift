@@ -464,6 +464,61 @@ final class KubernetesModel: ObservableObject {
         return KubeClient(connection(for: context, role: role))
     }
 
+    // MARK: Agents (KubeMCP)
+
+    /// The kubeconfig's contexts as an agent's tool sees them: the page's,
+    /// while one shows; else the files read again now (locally — no
+    /// cluster is asked anything), the settings applied to the proxies
+    /// first. Nil with Kubernetes off. Nothing the page shows changes.
+    func contextsForAgents() async -> KubeContextList? {
+        if isShown, contextsRead { return enabled ? contexts : nil }
+        let configuration = readConfiguration()
+        apply(configuration)
+        await proxies.configure(configuration.proxies)
+        guard configuration.enabled else { return nil }
+        let load = self.load
+        return await KubeBlocking.run { load(configuration) }
+    }
+
+    /// The context a tool works on unless told another: the one the page
+    /// has selected, and nothing else — never the one it would open on,
+    /// which falls back to kubectl's current context (production, often):
+    /// with no selection a call names its context. Stage 3a's binding (the
+    /// calling pane's checkout) comes before it.
+    func agentDefaultContext(in list: KubeContextList) -> String? {
+        guard let name = selectedName, list.context(named: name) != nil else { return nil }
+        return name
+    }
+
+    /// What `context` — as an agent's tool read it — is known to serve: the
+    /// page's discovery only while the page's reading of the name is the
+    /// same cluster as the tool's (the kubeconfig may have changed while
+    /// the page was hidden); nil otherwise.
+    func knownDiscovery(of context: KubeContext) -> KubeDiscovery? {
+        guard let known = knownDiscovery(of: context.name), let read = contexts.context(named: context.name), Self.sameCluster(read, context) else {
+            return nil
+        }
+        return known
+    }
+
+    /// The namespace a tool works in unless told another: the page's, on
+    /// its context; else the one last picked there, else the context's own.
+    func agentDefaultScope(for context: KubeContext) -> KubeScope {
+        context.name == selectedName ? scope : (scopes[context.name] ?? Self.defaultScope(context))
+    }
+
+    /// What a tool reads through: the context's proxy in a background slot
+    /// — never the page's — or a test's connection. GETs only.
+    func agentClient(for context: KubeContext) -> KubeClient {
+        KubeClient(connection(for: context, role: .background))
+    }
+
+    /// How the context's proxy stands, asked of the proxies (nothing started).
+    func agentProxyStatus(of name: String) async -> KubeProxies.Status {
+        if let statusOverride { return await statusOverride(name) }
+        return await proxies.status(of: name)
+    }
+
     private func restartReading(side readSide: Bool = true) {
         endFollow()
         rows = KubeRows()

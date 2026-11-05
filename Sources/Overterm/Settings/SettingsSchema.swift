@@ -699,7 +699,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.enabled", section: .kubernetes, group: "Kubernetes", title: "Kubernetes in Overterm",
             help:
-                "The contexts of your kubeconfig, their namespaces and pods. Nothing runs and no cluster is asked anything until the page or the panel opens.",
+                "The contexts of your kubeconfig, their namespaces and pods. Nothing runs and no cluster is asked anything until the page or the panel opens, or an agent calls a k8s_ tool (Agents can read the clusters).",
             kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "kubernetes.kubeconfigs", section: .kubernetes, group: "Kubeconfigs", title: "More kubeconfig files",
@@ -730,6 +730,11 @@ enum SettingsSchema {
             help:
                 "Empty: the installed kubectl closest to the cluster's version — /usr/local/bin, /opt/homebrew/bin, Docker Desktop's, your shell's PATH. Overterm never downloads one.",
             kind: .text(placeholder: "/usr/local/bin/kubectl", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
+            help:
+                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, and why a pod fails — reads only, through the context's proxy, production included. No tool writes, and none reads a Secret's values; what looks like a secret is taken out of every answer.",
+            kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
     ]
 
     private static let notifications: [SettingSpec] = [

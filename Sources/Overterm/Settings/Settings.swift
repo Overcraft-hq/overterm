@@ -335,6 +335,8 @@ final class Settings: ObservableObject {
     var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
     var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
     var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
+    /// Agents' `k8s_` read tools (KubeMCP).
+    var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }
     /// The setting's extra kubeconfig files and folders, as written (`~` unexpanded).
     var kubernetesKubeconfigs: [String] { value("kubernetes.kubeconfigs")?.list ?? [] }
     /// Each context's own settings, by its name.
