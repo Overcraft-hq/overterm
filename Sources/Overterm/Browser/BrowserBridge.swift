@@ -19,10 +19,10 @@ final class BrowserBridge {
     /// The API client of the checkout a pane's tab is in — the window answers.
     var resolveAPI: ((String) -> AgentAPI?)?
 
-    /// Agents get the browser, the API client, the notes, the databases — any of them.
+    /// Agents get the browser, the API client, the notes, the databases, Docker, Kubernetes — any of them.
     private var wanted: Bool {
         Settings.shared.browserAgentControl || Settings.shared.apiAgentControl || Settings.shared.notesAgentAccess
-            || Settings.shared.databaseAgentAccess || Settings.shared.dockerAgentAccess
+            || Settings.shared.databaseAgentAccess || Settings.shared.dockerAgentAccess || Settings.shared.kubernetesAgentAccess
     }
 
     private var server: BridgeServer?
@@ -59,7 +59,7 @@ final class BrowserBridge {
     }
 
     private func handle(tag: String, message: [String: Any]) async -> [String: Any]? {
-        await BrowserMCP.handle(message, browser: { [weak self] in self?.resolve?(tag) }, api: { [weak self] in self?.resolveAPI?(tag) })
+        await BrowserMCP.handle(message, browser: { [weak self] in self?.resolve?(tag) }, api: { [weak self] in self?.resolveAPI?(tag) }, pane: tag)
     }
 
     /// The config file for a new pane — written now, while the server is

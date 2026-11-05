@@ -287,6 +287,7 @@ extension E2ERunner {
         await kubernetesTerminal(model, page, kubeconfig: kubeconfig)
         await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log)
         await kubernetesAskWhy(model, page, fake)
+        await kubernetesAgentTools(model, fake)
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
 
         // Off: the page says so, and no proxy is left.
@@ -1266,6 +1267,104 @@ extension E2ERunner {
         page.commandProblem = nil
         app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
         if app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
+    }
+
+    /// Agents' `k8s_` tools (3.5, stage 1e) through the app's own MCP
+    /// endpoint — the bridge's HTTP, with its token, at a pane's path, as
+    /// Claude Code in that pane would call it: listed with no write tool,
+    /// k8s_get answering on fake-prod (production said), the page's context
+    /// when none is named, an unknown context refused, a Secret said from
+    /// its row with no value, a write tool unknown — every request to the
+    /// fake a GET and none to a Secret's object; with
+    /// `kubernetes.agentAccess` off the group is gone. Nothing reaches a
+    /// real agent: the scenario is the caller.
+    private func kubernetesAgentTools(_ model: KubernetesModel, _ fake: FakeKubeAPI) async {
+        guard let tab = app.store.selected else { return check("a tab to call from", false) }
+        check("the MCP bridge listens", await eventually(5) { BrowserBridge.shared.port != nil })
+        guard BrowserBridge.shared.port != nil else { return }
+        let tag = tab.terminal.processTag
+        // The bridge's port now: it stops when no group is on, and comes back on another.
+        var port = BrowserBridge.shared.port
+        func post(_ body: [String: Any]) async -> [String: Any]? {
+            guard let port, let endpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(tag)") else { return nil }
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("Bearer \(BrowserBridge.shared.token)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+            return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        }
+        func listed() async -> [String]? {
+            let answer = await post(["jsonrpc": "2.0", "id": 1, "method": "tools/list"])
+            return ((answer?["result"] as? [String: Any])?["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }
+        }
+        func call(_ name: String, _ arguments: [String: Any] = [:]) async -> (text: String, isError: Bool) {
+            let answer = await post(["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": name, "arguments": arguments]])
+            if let error = answer?["error"] as? [String: Any] { return (error["message"] as? String ?? "", true) }
+            let result = answer?["result"] as? [String: Any]
+            return (((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "\(answer ?? [:])", result?["isError"] as? Bool == true)
+        }
+        fake.forgetRequests()
+
+        let tools = await listed() ?? []
+        let kube = tools.filter { $0.hasPrefix("k8s_") }
+        check("agents are offered the k8s_ reads", kube == KubeMCP.reads, "\(kube)")
+        check(
+            "and no write tool", !kube.contains { name in ["restart", "scale", "delete", "apply", "exec", "patch", "secret"].contains { name.contains($0) } },
+            "\(kube)")
+        let contexts = await call("k8s_contexts")
+        check(
+            "k8s_contexts says each one's class",
+            contexts.text.contains("fake-dev — remote, read-only") && contexts.text.contains("fake-prod — PRODUCTION")
+                && !contexts.text.contains("127.0.0.1"), contexts.text)
+        let prod = await call("k8s_get", ["kind": "pods", "context": "fake-prod", "namespace": "payments"])
+        check(
+            "k8s_get on fake-prod answers, said production",
+            !prod.isError && prod.text.hasPrefix("PRODUCTION context fake-prod") && prod.text.contains("api-0") && prod.text.contains("STATUS"), prod.text)
+        if let selected = model.selectedName {
+            let unnamed = await call("k8s_get", ["kind": "deploy", "namespace": "shop"])
+            check(
+                "unnamed, the page's context",
+                !unnamed.isError && (unnamed.text.lowercased().hasPrefix("context \(selected)") || unnamed.text.hasPrefix("PRODUCTION context \(selected)")) && unnamed.text.contains("web"),
+                unnamed.text)
+        }
+        let unknown = await call("k8s_get", ["kind": "pods", "context": "acme-prod"])
+        check("an unknown context is an error, not a fallback", unknown.isError && unknown.text.contains("No context “acme-prod”"), unknown.text)
+        let secret = await call("k8s_describe", ["kind": "secret", "name": "web-db", "context": "fake-dev", "namespace": "shop"])
+        check(
+            "a Secret is said from its row, no value",
+            !secret.isError && secret.text.contains("Secret shop/web-db: type Opaque") && !secret.text.contains(Self.secretValue)
+                && !secret.text.contains(Self.secretValueBase64), secret.text)
+        let why = await call("k8s_why", ["name": "worker-5c", "context": "fake-dev", "namespace": "shop"])
+        check("k8s_why is Ask Why's brief", !why.isError && why.text.contains("CrashLoopBackOff"), why.text)
+        let write = await call("k8s_delete_pod", ["name": "api-0", "context": "fake-prod", "namespace": "payments"])
+        check("a write is impossible: no such tool", write.isError && write.text.contains("Unknown tool"), write.text)
+        check("every request a GET", !fake.requests.isEmpty && fake.writes.isEmpty, "\(fake.writes)")
+        check("none to a Secret's object", !fake.requests.contains { $0.path.contains("/secrets/") }, "\(fake.requests.filter { $0.path.contains("secrets") })")
+        check("nor any subresource but a log", fake.subresourceRequests.allSatisfy(\.isLog), "\(fake.subresourceRequests)")
+
+        Settings.shared.set("kubernetes.agentAccess", .bool(false))
+        check("off, the group is gone", !BrowserMCP.offered.contains { ($0["name"] as? String)?.hasPrefix("k8s_") == true })
+        fake.forgetRequests()
+        if BrowserBridge.shared.isServing {
+            let without = await listed() ?? ["?"]
+            check("from the endpoint too", !without.contains { $0.hasPrefix("k8s_") }, "\(without)")
+            let refused = await call("k8s_get", ["kind": "pods", "context": "fake-dev"])
+            check("and a call is refused, asking nothing", refused.isError && refused.text.contains("Settings ▸ Kubernetes") && fake.requests.isEmpty, refused.text)
+        } else {
+            // No other group keeps it serving: the endpoint itself is gone.
+            check("with nothing else on, the bridge stops", await eventually(5) { BrowserBridge.shared.port == nil })
+            let answer = await post(["jsonrpc": "2.0", "id": 3, "method": "tools/list"])
+            check("and the endpoint no longer answers, asking nothing", answer == nil && fake.requests.isEmpty, "\(answer ?? [:])")
+        }
+        Settings.shared.set("kubernetes.agentAccess", nil)
+        check("on again, offered", await eventually(5) { BrowserMCP.offered.contains { ($0["name"] as? String) == "k8s_get" } })
+        check("and served", await eventually(5) { BrowserBridge.shared.isServing })
+        port = BrowserBridge.shared.port
+        let again = await listed() ?? []
+        check("the endpoint lists k8s_get again", again.contains("k8s_get"), "\(again)")
     }
 
     /// The window's pixels, as RGBA, for what SwiftUI draws (no AppKit

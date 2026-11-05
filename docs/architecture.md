@@ -2269,7 +2269,7 @@ asked, `label:` and `field:` sent to the server, the palette's page
 commands, Copy as kubectl and a list as CSV — stage 1c, a pod's
 logs, and of stage 1d, Terminal in this context, a pod's shell,
 attach and followed log in a tab, and port-forwards — and, of stage 1e,
-Ask Why. Nothing writes to a cluster.
+Ask Why and agents' read tools. Nothing writes to a cluster.
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -2317,7 +2317,8 @@ setting (its writes will be turned on for a session), remote only by its
 `writable` flag, local unless the flag says no.
 
 **Settings** (Settings ▸ Kubernetes): `kubernetes.enabled` (on; nothing runs
-until the page or the panel opens), `kubernetes.kubeconfigs` and
+until the page or the panel opens, or an agent calls a `k8s_` tool — which
+reads the kubeconfig and starts that context's proxy), `kubernetes.kubeconfigs` and
 `kubernetes.pinnedContexts` (lists), `kubernetes.maxProxies` (4), and
 `kubernetes.contexts` — one entry per context name, the only place a
 context's own settings live (`KubeContextSettings`: `class`, `writable`,
@@ -2330,7 +2331,8 @@ out, the rest of the entry kept, so a typo never takes a hand-set
 production class with it. The page lists the entries and sends you to
 settings.json to edit them. `kubernetes.proxyIdleMinutes` (10) and
 `kubernetes.kubectlPath` (empty: found) are the proxies'
-(`Settings.kubernetesProxyConfiguration`).
+(`Settings.kubernetesProxyConfiguration`). `kubernetes.agentAccess` (on:
+reads) gives agents the `k8s_` tools (Agents' tools, below).
 
 **The proxies** (`KubeProxies`, one for the app). Everything Overterm asks a
 cluster goes through the context's own long-lived `kubectl proxy --context
@@ -3432,6 +3434,113 @@ rollout handed to an agent with what it needs to say why — Docker's Ask Why
   first, read with GETs alone and no Secret — then Cancel, nothing sent; a
   pod that is fine saying why; ⌘L over the page; the detail's button; and
   on fake-prod the same, said production, reads only.
+
+**Agents' tools** (stage 1e; `KubeMCP.swift`; analysis 3.5): the `k8s_`
+group of the MCP server Claude Code gets from Overterm (`BrowserMCP`, as
+Docker's `docker_` are), offered and answered only while
+`kubernetes.agentAccess` is on (`Settings.kubernetesAgentAccess`, which
+`kubernetes.enabled` off turns off too; the bridge serves while any group
+is on, and follows `kubernetes.*` changes). Every tool reads:
+
+- `k8s_contexts`: each context's name, class (production said as such),
+  whether Overterm may write there (agents never do), its namespace, kubectl's current one,
+  the one the tools use unless told another, and a stopped proxy's
+  reason — never a server, a user or a credential; scrubbed and bounded
+  like every answer. Read from the
+  kubeconfig files (`KubernetesModel.contextsForAgents`: the page's list
+  while one shows, else the files read again, locally) — no cluster asked.
+- `k8s_get`: a kind (any name `KubeKinds.resolve` takes: `po`, `deploy`,
+  a CRD's plural) as the server's Table, one page of `limit` rows (100, at
+  most 500) — rows only, `includeObject` as the page's lists ask, but
+  Secrets across namespaces one namespace at a time with
+  `includeObject=None` (`secretsAcrossNamespaces`, 100 namespaces at
+  most): a row's metadata would carry a Secret's last-applied data —, with
+  `label_selector` and `field_selector` sent to the server, `name` as
+  `metadata.name=`, `filter` on the rows' text once each cell is
+  scrubbed (else a row's being there would test a guess), `wide` for the
+  `priority > 0` columns; printed as kubectl prints it, a NAMESPACE column
+  across namespaces, cells cut at 200 characters, a cut list said
+  (`KubeMCPText.table`).
+- `k8s_describe`: one object's GET, as the YAML tab strips it
+  (`KubeObjectStrip.shown`: managed fields and last-applied out, env that
+  looks secret masked), said by its `KubeOverview` — facts, sections,
+  rollout — then the pods its selector picks (rows, 30) and its events.
+- `k8s_logs`: a pod's container (kubectl's default, else named; checked
+  against the pod's), `tail` (200, at most 2000), `since` (`30s`…`1d`, as
+  `sinceTime`), `previous`, read once — `limitBytes` 1 MB, the last 512 KB
+  taken apart (`KubeClient.logTail`) — every line scrubbed with the pod's
+  env, then `grep`: matched after scrubbing, so a secret can't be found a
+  character at a time.
+- `k8s_events`: a namespace's (or every namespace's) core Events, newest
+  first — every page read (500 a page, 4 pages at most) before the newest
+  are picked, since the server lists them in key order, and a list cut
+  there says so —, `warnings_only` as `type=Warning`, or one object's by `name` (and
+  `kind`, a pod's by default), at most 200.
+- `k8s_why`: Ask Why's brief (`KubeAgentBriefing`) on a pod or a
+  Deployment, as one text — the question, the brief, each part; one that
+  isn't failing says why.
+- `k8s_rollout`: a Deployment's, StatefulSet's or DaemonSet's rollout as
+  `KubeRollout` says it, its replicas, and its history — a Deployment's
+  ReplicaSets, the others' ControllerRevisions (where served), the ones it
+  owns, newest first: revision, images, ready, age, change-cause.
+- `k8s_top` isn't there: it waits for metrics (stage 2d). No write tool
+  exists in this stage (they are 2a's, each asked); a name that isn't one
+  of these is an unknown tool.
+
+**Where**: the context the call names — one the kubeconfig doesn't have
+is an error, never a fallback — else the page's selected one
+(`KubernetesModel.agentDefaultContext`), and with none selected the call
+names one: never the one the page would open on, which falls back to
+kubectl's current context, often production; the namespace
+named (`all` for every one) else the page's on that context, else the
+context's own (`agentDefaultScope`); a tool that needs one namespace and
+gets all says so. `KubeMCP.defaultContext` takes the calling pane's tag
+(`BrowserMCP.handle`'s `pane`, from the bridge's path): the seam for stage
+3a's binding, whose checkout's context comes first. Kinds are resolved
+against the page's discovery only while the page's reading of the name is
+the same cluster and user as the tool's (`knownDiscovery(of:)` with
+`sameCluster` — the kubeconfig may change while the page is hidden), else
+against the tools' own, kept five minutes per cluster and user. Every answer starts
+with the context, production in capitals (`KubeBriefContext.said`).
+
+**Reads only, no Secret**: every request a GET through
+`KubernetesModel.agentClient` — the context's proxy in a background slot
+(never the page's), under the proxies' rules: a stopped context answers
+its problem and starts nothing, an oidc sign-in waits its turn — each read
+given `readTimeout` (30 s). A read-only context's socket refuses writes
+anyway. A Secret (`sec`, `secret`, `secrets`) is listed and described from
+its Table row alone — type, how many keys, age, with `includeObject=None`
+for one — never GET, since that one GET is every value; Ask Why's brief
+names a Secret's env, never values it. **Scrubbed and bounded**: every
+answer through `Secrets` — the object's env (`KubeLogScrub.env`, its
+template's too, the names said kept), every URL's password, credentials
+and base64 blobs (`KubeMCPText.scrubbed`) — and cut at 60,000 characters
+(a log keeps its end). A failure — a proxy's credential problem, the
+server's — is said scrubbed.
+
+**Checked** (`KubeMCPTests`, against `FakeKubeAPI` and a model of two
+fictional contexts): each tool's answer; the default context and
+namespace, another named, an unknown one refused with nothing asked; a
+read on fake-prod; no selection with fake-prod current refused unnamed,
+nothing asked; a Secret listed and described with no key and no value,
+its alias, none asked for but as a Table, across namespaces each with
+`includeObject=None` and its planted last-applied never seen; a token in
+a cell not found by `filter`; events past a page read before the newest
+are picked, a list cut said; logs scrubbed before `grep`;
+the tool list exactly the seven reads, a write tool unknown; a credential
+failure through the real `KubeProxies` answered scrubbed, the context then
+stopped — the next call asks nothing and plans no proxy, `k8s_contexts`
+says why; Kubernetes off; the setting taking the
+group from `tools/list`, the instructions and the calls (a `Settings` of
+the test's own) — every test ending with only GETs, no subresource but a
+log, no Secret's object. `KubeMCPTextTests`: durations, names, the table,
+the bounds and the scrubbing. The `kubernetes` scenario calls them through
+the bridge's real HTTP endpoint at a pane's path, with its token: the list
+without a write tool, `k8s_get` on fake-prod, the page's context when none
+is named, an unknown context refused, a Secret without its value,
+`k8s_why`, a write tool unknown, only GETs; `kubernetes.agentAccess` off
+taking the group from the endpoint's list and refusing a call (or, with no
+other group on, the endpoint gone), and on again back in its `tools/list`.
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
