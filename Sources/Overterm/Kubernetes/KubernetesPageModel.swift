@@ -62,7 +62,7 @@ struct KubernetesActions {
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom, forwards
     case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
-    case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, delete
+    case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -90,6 +90,7 @@ enum KubernetesKey: String, ResourceKey {
         case .trigger: return "s"
         case .cordon: return "u"
         case .newNamespace: return "N"
+        case .debug: return "E"
         case .delete: return "⌫"
         case .command: return ":"
         case .namespace: return "n"
@@ -125,6 +126,8 @@ enum KubernetesKey: String, ResourceKey {
         case .trigger: return "Trigger a CronJob now: a Job made from its template, as kubectl create job --from — asked first"
         case .cordon: return "Cordon or uncordon a node — asked first"
         case .newNamespace: return "New namespace — its name, then asked first; on a writable context"
+        case .debug:
+            return "Debug container in a tab (kubectl debug --target); on a node, the node debugged — writable contexts only, asked first"
         case .delete: return "Delete — asked first; on production (and a namespace anywhere, warned what it holds) the name typed"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
@@ -450,6 +453,7 @@ final class KubernetesPageModel: ObservableObject {
             case .trigger: return triggerKey()
             case .cordon: return cordonKey()
             case .newNamespace: return openNamespaceSheet()
+            case .debug: return debugKey()
             case .delete: return deleteKey()
             default: return false
             }
@@ -1018,7 +1022,7 @@ final class KubernetesPageModel: ObservableObject {
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
         ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
-            + writeVerbs(for: picked)
+            + writeVerbs(for: picked) + tabWriteVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

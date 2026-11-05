@@ -726,7 +726,8 @@ enum KubeWriteOutcome {
 /// command it equals, what it warns of, and the name to type where rule 4
 /// says. Its answer is checked here, not in the window. Pure.
 struct KubeWriteConfirmation: Equatable, Sendable {
-    var verb: KubeWriteVerb
+    /// The request's verb; nil for a write that runs as kubectl in a tab (`KubeTabWrite`).
+    var verb: KubeWriteVerb?
     var title: String
     /// The context and namespace, drawn on their own line — in production's
     /// red on production (`WriteConfirmation`).

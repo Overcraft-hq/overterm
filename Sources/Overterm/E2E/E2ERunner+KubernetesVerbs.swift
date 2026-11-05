@@ -186,7 +186,7 @@ extension E2ERunner {
     }
 
     /// The kind by kubectl's name, until `row` is listed.
-    private func showKubernetesKind(_ model: KubernetesModel, _ page: KubernetesPageModel, _ name: String, row: KubeRowID) async -> Bool {
+    func showKubernetesKind(_ model: KubernetesModel, _ page: KubernetesPageModel, _ name: String, row: KubeRowID) async -> Bool {
         guard let kind = model.discovery?.kind(name) else {
             check("\(model.selectedName ?? "?") serves \(name)", false)
             return false
@@ -198,7 +198,7 @@ extension E2ERunner {
     }
 
     /// A key down as the window takes it, once the list has the keyboard.
-    private func pressKubernetesKey(_ characters: String, keyCode: UInt16, shift: Bool = false) async -> Bool {
+    func pressKubernetesKey(_ characters: String, keyCode: UInt16, shift: Bool = false) async -> Bool {
         _ = await eventually(3) { self.app.kubernetesListHasKeyboard() }
         guard
             let event = NSEvent.keyEvent(

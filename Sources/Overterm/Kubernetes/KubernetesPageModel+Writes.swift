@@ -381,7 +381,7 @@ extension KubernetesPageModel {
         }
     }
 
-    private func endChecking(_ token: Int) {
+    func endChecking(_ token: Int) {
         if writeChecking == token { writeChecking = nil }
     }
 
@@ -463,7 +463,7 @@ extension KubernetesPageModel {
             "Allow writes to \(context.displayName) until you quit?",
             "PRODUCTION · \(context.name)\nOverterm's page may then change objects in this cluster: each change is still asked first, naming the "
                 + "context and namespace, and a destructive one asks for the object's name. Its socket stops refusing writes until Overterm quits or "
-                + "you turn writes off. Agents get no write tool from this.",
+                + "you turn writes off. Agents get write tools here only if kubernetes.agentWrites names it.",
             "Allow Writes Until Quit"
         ) { [weak self] in
             guard let self else { return }

@@ -342,6 +342,10 @@ final class Settings: ObservableObject {
     /// Each context's own settings, by its name.
     var kubernetesContexts: [String: KubeContextSettings] { KubeContextSettings.all(from: value("kubernetes.contexts")) }
     var kubernetesPinnedContexts: [String] { value("kubernetes.pinnedContexts")?.list ?? [] }
+    var kubernetesAgentWrites: [String] {
+        (value("kubernetes.agentWrites")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    var kubernetesDebugImage: String { string("kubernetes.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("busybox:1.36") }
     var kubernetesMaxProxies: Int { Int(number("kubernetes.maxProxies") ?? 4) }
     var kubernetesProxyIdleMinutes: Int { Int(number("kubernetes.proxyIdleMinutes") ?? 10) }
     /// The kubectl the proxies run, as written; empty: found (`KubectlLocator`).
