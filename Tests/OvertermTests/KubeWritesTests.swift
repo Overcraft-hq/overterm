@@ -24,6 +24,16 @@ final class KubeWritesTests: XCTestCase {
         group: "", version: "v1", resource: "configmaps", kind: "ConfigMap", singular: "configmap", namespaced: true,
         verbs: ["create", "delete", "get", "list", "patch", "update", "watch"], shortNames: ["cm"])
 
+    static let statefulsets = KubeResourceKind(
+        group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", singular: "statefulset", namespaced: true,
+        verbs: ["create", "delete", "get", "list", "patch", "update", "watch"], shortNames: ["sts"], subresources: ["scale", "status"])
+    static let cronjobs = KubeResourceKind(
+        group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", singular: "cronjob", namespaced: true,
+        verbs: ["create", "delete", "get", "list", "patch", "update", "watch"], shortNames: ["cj"], subresources: ["status"])
+    static let nodes = KubeResourceKind(
+        group: "", version: "v1", resource: "nodes", kind: "Node", singular: "node", namespaced: false,
+        verbs: ["create", "delete", "get", "list", "patch", "update", "watch"], shortNames: ["no"], subresources: ["proxy", "status"])
+
     static func pod(_ name: String = "web-1", in context: String = "kind-fake") -> KubeObjectRef {
         KubeObjectRef(context: context, kind: .pods, namespace: "shop", name: name)
     }
@@ -36,7 +46,13 @@ final class KubeWritesTests: XCTestCase {
 
     func testWhichKindHasWhichVerb() {
         XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: .pods) }, [.delete, .recreate, .forceDelete, .removeFinalizers, .evict])
-        XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: Self.deployments) }, [.delete, .removeFinalizers, .restart, .scale])
+        XCTAssertEqual(
+            KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: Self.deployments) }, [.delete, .removeFinalizers, .restart, .scale, .pause, .resume])
+        XCTAssertEqual(
+            KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: Self.cronjobs) }, [.delete, .removeFinalizers, .trigger, .suspend, .unsuspend])
+        XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: Self.nodes) }, [.delete, .removeFinalizers, .cordon, .uncordon])
+        XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: .namespaces) }, [.delete, .removeFinalizers, .createNamespace])
+        XCTAssertFalse(KubeWriteCheck.offered(.pause, on: Self.statefulsets), "kubectl rollout pause takes Deployments only")
         XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: Self.configmaps) }, [.delete, .removeFinalizers])
         var readOnly = Self.configmaps
         readOnly.verbs = ["get", "list", "watch"]
@@ -58,7 +74,7 @@ final class KubeWritesTests: XCTestCase {
         let prodFlag = Self.context("fake-prod", settings: KubeContextSettings(writable: true))
         let prodOn = Self.context("fake-prod", session: true)
         for verb in KubeWriteVerb.allCases {
-            let kindOfObject = KubeWriteCheck.offered(verb, on: .pods) ? KubeResourceKind.pods : Self.deployments
+            let kindOfObject = [.pods, Self.deployments, Self.cronjobs, Self.nodes, .namespaces].first { KubeWriteCheck.offered(verb, on: $0) }!
             XCTAssertEqual(
                 KubeWriteCheck.rule(verb, for: dev, kind: kindOfObject).refused, "This context is read-only: Overterm changes nothing here (its writable setting).",
                 "\(verb)")

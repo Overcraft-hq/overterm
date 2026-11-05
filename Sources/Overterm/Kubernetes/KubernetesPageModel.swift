@@ -62,7 +62,7 @@ struct KubernetesActions {
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom, forwards
     case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
-    case restart, scaleUp, scaleDown, scaleTo, delete
+    case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, delete
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -86,6 +86,10 @@ enum KubernetesKey: String, ResourceKey {
         case .scaleUp: return "+"
         case .scaleDown: return "-"
         case .scaleTo: return "="
+        case .pause: return "p"
+        case .trigger: return "s"
+        case .cordon: return "u"
+        case .newNamespace: return "N"
         case .delete: return "⌫"
         case .command: return ":"
         case .namespace: return "n"
@@ -117,7 +121,11 @@ enum KubernetesKey: String, ResourceKey {
         case .scaleUp: return "Scale up by one — asked first"
         case .scaleDown: return "Scale down by one — asked first; to 0 on production, the name typed"
         case .scaleTo: return "Scale to a number — asked first"
-        case .delete: return "Delete — asked first; on production (and a namespace anywhere) the name typed"
+        case .pause: return "Pause or resume a Deployment's rollout; suspend or resume a CronJob — asked first"
+        case .trigger: return "Trigger a CronJob now: a Job made from its template, as kubectl create job --from — asked first"
+        case .cordon: return "Cordon or uncordon a node — asked first"
+        case .newNamespace: return "New namespace — its name, then asked first; on a writable context"
+        case .delete: return "Delete — asked first; on production (and a namespace anywhere, warned what it holds) the name typed"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -242,8 +250,18 @@ final class KubernetesPageModel: ObservableObject {
     @Published var writeStatus: KubeWriteStatus?
     /// `=`: the scale sheet, over the page.
     @Published var scaleDraft: KubeScaleDraft?
+    /// `N`: the new namespace's sheet, over the page.
+    @Published var namespaceDraft: KubeNamespaceDraft?
     /// What a write is stamped with (a rollout restart's `restartedAt`).
     var clock: () -> Date = { Date() }
+    /// A triggered Job's name's last five characters.
+    var jobSuffix: () -> String = { KubeWrites.randomSuffix() }
+    /// The write between its key and its confirmation (the access review,
+    /// the reads): another one isn't started meanwhile — two triggers
+    /// confirmed would make two Jobs. Its token, so a later one isn't
+    /// ended by an earlier one's finish.
+    var writeChecking: Int?
+    var writeChecks = 0
     @Published private(set) var detail: KubeDetailSession?
     @Published var detailTab: KubeDetailTab = .overview
     /// Where the detail has been, back and forward: this page's, across
@@ -390,6 +408,12 @@ final class KubernetesPageModel: ObservableObject {
             closeScaleSheet()
             return true
         }
+        // And the new namespace's.
+        if namespaceDraft != nil {
+            guard characters == "\u{1B}" else { return false }
+            closeNamespaceSheet()
+            return true
+        }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
         case .closeSheet: cheatSheet = false
@@ -422,6 +446,10 @@ final class KubernetesPageModel: ObservableObject {
             case .scaleUp: return scaleKey(.by(1))
             case .scaleDown: return scaleKey(.by(-1))
             case .scaleTo: return scaleKey(nil)
+            case .pause: return pauseKey()
+            case .trigger: return triggerKey()
+            case .cordon: return cordonKey()
+            case .newNamespace: return openNamespaceSheet()
             case .delete: return deleteKey()
             default: return false
             }

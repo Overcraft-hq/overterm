@@ -1196,6 +1196,19 @@ final class FakeKubeAPI: @unchecked Sendable {
                 column("Last Seen"), column("Type"), column("Reason"), column("Object"), column("Message"),
                 Column(name: "Name", format: "name", priority: 1, description: "Name must be unique within a namespace."),
             ]
+        case "jobs.batch":
+            return [
+                name, column("Status", "Status of the job."), column("Completions", "The completion status of the job."),
+                column("Duration", "Time required to complete the job."), age,
+                column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
+            ]
+        case "cronjobs.batch":
+            return [
+                name, column("Schedule", "The schedule in Cron format."), column("Timezone", "The time zone the schedule is in."),
+                column("Suspend", "boolean", "Whether further executions are suspended."), column("Active", "integer", "The number of running jobs."),
+                column("Last Schedule", "The last time the job was successfully scheduled."), age,
+                column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
+            ]
         case "customresourcedefinitions.apiextensions.k8s.io":
             return [name, Column(name: "Created At", type: "date", description: "CreationTimestamp is a timestamp representing the server time when this object was created.")]
         default:
@@ -1210,7 +1223,21 @@ final class FakeKubeAPI: @unchecked Sendable {
             let restarts: Any = pod.restarts > 0 && pod.lastRestart != nil ? "\(pod.restarts) (\(pod.lastRestart!) ago)" : pod.restarts
             return [object.name, "\(pod.ready)/\(pod.containers)", pod.status, restarts, age, pod.ip, pod.node, "<none>", "<none>"]
         }
+        // What the spec says that kubectl's columns show: a node's
+        // SchedulingDisabled, a CronJob's Suspend.
+        let spec: [String: Any]? =
+            ["nodes", "cronjobs.batch"].contains(object.resource)
+            ? (object.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["spec"] as? [String: Any]) : nil
         return columns(for: kind).map { column -> Any in
+            if object.resource == "nodes", column.name == "Status" {
+                let base = object.values["Status"].map { "\($0.json)" } ?? "Ready"
+                let conditions = base.split(separator: ",").filter { $0 != "SchedulingDisabled" }.map(String.init)
+                return (conditions + (spec?["unschedulable"] as? Bool == true ? ["SchedulingDisabled"] : [])).joined(separator: ",")
+            }
+            if object.resource == "cronjobs.batch", column.name == "Suspend", object.values["Suspend"] == nil {
+                // kubectl's printer says it as a word.
+                return spec?["suspend"] as? Bool == true ? "True" : "False"
+            }
             if let value = object.values[column.name] { return value.json }
             switch column.name {
             case "Name": return object.name
@@ -1410,7 +1437,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// `deniedAccess`; a DELETE (an object with finalizers only marked
     /// deleting); a merge, strategic (as a merge) or JSON patch; the
     /// `scale` subresource's PATCH; a pod's eviction (`evictionBlock`, a
-    /// PodDisruptionBudget's 429).
+    /// PodDisruptionBudget's 429); a POST to a collection made (a Job, a
+    /// namespace); a namespace's DELETE taking what it holds.
     private func write(_ method: HTTPMethod, path: String, query: [String: String], body: Data, contentType: String) -> Answer {
         if method == .POST, path == Self.accessReviewPath { return review(body) }
         if let failure = locked({ () -> (status: Int, reason: String, message: String)? in
@@ -1420,10 +1448,16 @@ final class FakeKubeAPI: @unchecked Sendable {
             return .json(failure.status, Self.status(failure.status, failure.reason, failure.message))
         }
         let notAllowed = Answer.json(405, Self.status(405, "MethodNotAllowed", "the server does not allow this method on the requested resource"))
-        guard let route = Self.route(path, kinds: locked { kinds }), let kind = route.kind, let name = route.name else { return notAllowed }
+        guard let route = Self.route(path, kinds: locked { kinds }), let kind = route.kind else { return notAllowed }
+        if method == .POST, route.name == nil, route.subresource == nil { return create(kind, namespace: route.namespace, body) }
+        guard let name = route.name else { return notAllowed }
         let key = Self.key(kind.fullName, kind.namespaced ? route.namespace : nil, name)
         guard locked({ objects[key] }) != nil else { return .json(404, Self.status(404, "NotFound", "\(kind.resource) \"\(name)\" not found")) }
         switch (method, route.subresource) {
+        case (.DELETE, nil) where kind.fullName == "namespaces":
+            let answer = delete(key, kind, options: [:])
+            emptyNamespace(name)
+            return answer
         case (.DELETE, nil): return delete(key, kind, options: (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:])
         case (.PATCH, nil): return patch(key, kind, body, contentType)
         case (.PATCH, "scale") where kind.subresources.contains("scale"): return patchScale(key, kind, body)
@@ -1450,6 +1484,60 @@ final class FakeKubeAPI: @unchecked Sendable {
                 "kind": "SelfSubjectAccessReview", "apiVersion": "authorization.k8s.io/v1", "metadata": [String: Any](), "spec": object["spec"] ?? [:],
                 "status": status,
             ]))
+    }
+
+    /// A POST to a collection: the object made from its body — a
+    /// namespace (its name a DNS label), a Job (Running, 0/1) — or 409
+    /// when its name is taken, 404 when its namespace isn't there.
+    private func create(_ kind: Kind, namespace: String?, _ body: Data) -> Answer {
+        guard kind.verbs.contains("create") else {
+            return .json(405, Self.status(405, "MethodNotAllowed", "the server does not allow this method on the requested resource"))
+        }
+        let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        var metadata = object["metadata"] as? [String: Any] ?? [:]
+        guard let name = metadata["name"] as? String, !name.isEmpty else {
+            return .json(422, Self.status(422, "Invalid", "\(kind.kind) \"\" is invalid: metadata.name: Required value: name or generateName is required"))
+        }
+        if kind.fullName == "namespaces", KubeNamespaceName.problem(name) != nil {
+            return .json(
+                422,
+                Self.status(
+                    422, "Invalid",
+                    "Namespace \"\(name)\" is invalid: metadata.name: Invalid value: \"\(name)\": a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-'"))
+        }
+        let scope = kind.namespaced ? namespace : nil
+        if kind.namespaced {
+            guard let namespace, locked({ objects[Self.key("namespaces", nil, namespace)] }) != nil else {
+                return .json(404, Self.status(404, "NotFound", "namespaces \"\(namespace ?? "")\" not found"))
+            }
+        }
+        let key = Self.key(kind.fullName, scope, name)
+        guard locked({ objects[key] }) == nil else {
+            return .json(409, Self.status(409, "AlreadyExists", "\(kind.resource) \"\(name)\" already exists"))
+        }
+        let labels = metadata["labels"] as? [String: String] ?? [:]
+        let annotations = metadata["annotations"] as? [String: String] ?? [:]
+        for generated in ["name", "namespace", "uid", "resourceVersion", "creationTimestamp", "labels", "annotations"] { metadata[generated] = nil }
+        var fields = object.filter { !["kind", "apiVersion", "metadata"].contains($0.key) }
+        if !metadata.isEmpty { fields["metadata"] = metadata }
+        let values: [String: Value] =
+            kind.fullName == "jobs.batch" ? ["Status": .text("Running"), "Completions": .text("0/1"), "Duration": .text("0s")] : [:]
+        var made: [String: Any] = [:]
+        change("ADDED") {
+            let object = Object(
+                resource: kind.fullName, namespace: scope, name: name, uid: UUID().uuidString.lowercased(), resourceVersion: 0, created: Date(),
+                labels: labels, values: values, annotations: annotations, body: fields.isEmpty ? nil : Self.encode(fields))
+            made = Self.full(object, kind)
+            return object
+        }
+        return .json(201, Self.encode(made))
+    }
+
+    /// A namespace deleted: everything in it goes too (the namespace
+    /// controller's work, done at once).
+    private func emptyNamespace(_ name: String) {
+        let keys = locked { objects.filter { $0.value.namespace == name }.map(\.key) }
+        for key in keys { change("DELETED") { objects[key] } }
     }
 
     /// DELETE: gone, or — with finalizers — marked deleting until they're removed.

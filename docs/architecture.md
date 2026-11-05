@@ -3629,9 +3629,10 @@ is named, an unknown context refused, a Secret without its value,
 taking the group from the endpoint's list and refusing a call (or, with no
 other group on, the endpoint gone), and on again back in its `tools/list`.
 
-**Writes** (stage 2a, part 1; `KubeWrites.swift` (pure, and
+**Writes** (stage 2a; `KubeWrites.swift` (pure, and
 `KubeClient`'s writes), `KubernetesPageModel+Writes`,
-`KubeScaleSheetView`; analysis Sections 2.4, 2.9, 4 and 5):
+`KubeScaleSheetView`, `KubeNamespaceSheetView`; analysis Sections 2.2,
+2.3, 2.4, 2.9, 2.15, 4 and 5):
 
 - **Where** (rule 2): a writable context only — a remote or local
   context's `writable` flag in `kubernetes.contexts` (local unless it
@@ -3662,12 +3663,32 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   evict (`POST pods/{p}/eviction`; a PodDisruptionBudget's 429 said with
   its cause, never retried), rollout restart (kubectl's strategic merge
   of the template's `kubectl.kubernetes.io/restartedAt`), scale (a merge
-  patch of the `scale` subresource); patches carry
-  `fieldManager=overterm`. Keys: ⌫ delete, `r` restart (a pod: recreate),
-  `+`/`-` by one, `=` the scale sheet (its field takes the keyboard as it
-  appears, Return goes on to the confirmation); the rest are in the right-click
+  patch of the `scale` subresource), rollout pause and resume (a
+  Deployment's `spec.paused`, as kubectl's strategic merge sets it —
+  resume takes the field away), a CronJob triggered (`POST jobs`: the
+  Job `kubectl create job --from=cronjob/…` makes — the jobTemplate's
+  spec and labels, its annotations over
+  `cronjob.kubernetes.io/instantiate: manual`, the CronJob as its
+  controller with `blockOwnerDeletion`, as `metav1.NewControllerRef` sets it, named `<cronjob>-manual-<5>` within 63), suspended and
+  resumed (a merge patch of `spec.suspend`, said as `kubectl patch
+  --type=merge`), a node cordoned and
+  uncordoned (`spec.unschedulable`), and a namespace made (`POST
+  namespaces`, nothing but its name — a DNS label, `KubeNamespaceName`,
+  checked in its sheet as the server would). Pause, suspend and cordon
+  are states (`KubeWriteToggle`): what a row says of one — a CronJob's
+  Suspend, a node's Status, which follow the watch (a Deployment's rows
+  don't say paused; the detail's object is read only as it opens) —
+  greys the verb that is so already with why; the key toggles, and the
+  object read decides — the row may be behind it (the watch's
+  coalescing, a watch stale after sleep). Patches and creates
+  carry `fieldManager=overterm`. Keys: ⌫ delete, `r` restart (a pod:
+  recreate), `+`/`-` by one, `=` the scale sheet (its field takes the
+  keyboard as it appears, Return goes on to the confirmation), `p` pause
+  or resume (a CronJob: suspend or resume), `s` trigger, `u` cordon or
+  uncordon, `N` the new namespace's sheet; the rest are in the right-click
   menu and the detail's buttons (`ResourceActionBar`, delete as its red
-  bin).
+  bin). ⌘K has New Namespace… and the selected object's writes that can
+  be done now, each by the same path.
 - **The guard path** (`KubernetesPageModel.write`), in this order: the
   class check (`KubeWriteCheck.rule`: refused with why on a read-only
   context or production without its switch); the access review — a
@@ -3676,7 +3697,18 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   context, namespace and verb, asked as a row is picked so the menu is
   greyed with the cluster's own reason); a metadata-only read where the
   confirmation needs it (`PartialObjectMetadata` — a Secret's values are
-  never read — or the scale subresource's replicas); the confirmation in
+  never read —, the scale subresource's replicas, the object whole for a
+  state's field or a CronJob's template — `KubeClient.spec`, never a
+  Secret —, or a namespace's contents counted from Tables of rows alone,
+  `KubeNamespaceContents`: a row a kind with the server's
+  `remainingItemCount`, a page of 500 only without one; its twelve
+  kinds said as a lower bound, a 403 said as not allowed apart from a
+  kind that couldn't be counted, and nothing said as none while
+  discovery isn't known; a
+  toggle read as so already is turned round, its review being the
+  same; carried on as `KubeWriteFacts` — meanwhile the page says
+  Checking…, and no other write starts (`writeChecking`): two triggers
+  confirmed would make two Jobs); the confirmation in
   the window (`KubeWriteConfirmation`, `confirmKubernetesWrite`: the
   verb and object, the context and namespace on a line of their own —
   production's red on production —, the kubectl it equals, the
@@ -3703,7 +3735,19 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   even a review, production's switch and the typed name, writes turned
   off while asked, every verb through the page), `KubeProxiesTests`
   (the switch restarting the proxy without the method filter and back;
-  another cluster under the name read-only at once).
+  another cluster under the name read-only at once), `KubeWriteVerbsTests`
+  (the other verbs' requests exactly, the trigger's Job, the kubectl each
+  equals, their reviews and no typed name, states from an object or a
+  row, a namespace's name, what its delete warns of) and
+  `KubeWriteVerbsPageTests` (each through the page against the fake: the
+  review before the CronJob is read, the Job made and owned, suspend and
+  resume by the row, pause turned round by the read, cordon's
+  SchedulingDisabled, the sheet's name checked, a name taken, a
+  namespace's counts and typed name, fake-dev refusing each with nothing
+  sent, production's switch checked again at the button). The scenario's
+  `kubernetesVerbs` (`E2ERunner+KubernetesVerbs`) triggers, cordons and
+  makes then deletes a namespace on `kind-fake` by the window's keys and
+  sheets, and sees `fake-dev` refuse each.
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
@@ -3716,7 +3760,7 @@ left from before). ⌘K also has, while the page shows in its window, the
 page's commands (`kubernetesPageCommands`, actions: Switch Context…,
 Switch Namespace…, Go to Kind…, All Namespaces, Wide Columns, Copy as
 kubectl with the line it copies, Copy Rows as TSV and as CSV, Export
-List as CSV…). It looks
+List as CSV…, New Namespace…, the selected object's writes). It looks
 as the page does: it holds the model while the palette shows it
 (`kubernetesSwitcherHeld`), so the kubeconfig is read and the pods
 followed with the page hidden, and lets go after the palette closes — once

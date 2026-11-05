@@ -571,6 +571,26 @@ extension TerminalWindowController {
                 $0.openTerminal()
             },
         ]
+        // The writes, findable by name: each by the guard path, as its key.
+        // A context that takes none says why when one is picked.
+        items.append(
+            command("newNamespace", "Kubernetes: New Namespace…", "N  —  a name, then asked first; on a writable context", "plus.square.dashed") {
+                $0.openNamespaceSheet()
+            })
+        if let target = page.writeTarget {
+            let object = KubeWriteOutcome.spoken(target)
+            for verb in page.writeVerbs(for: target) where verb.unavailable == nil {
+                let name = verb.title.replacingOccurrences(of: "…", with: "")
+                items.append(
+                    PaletteItem(
+                        id: "k.w.\(name).\(target)", group: .action, title: "Kubernetes: \(name) \(object)…",
+                        subtitle: (verb.key.map { "\($0)  —  " } ?? "") + "asked first, naming \(target.context)", symbol: verb.symbol
+                    ) { [weak self] _, _ in
+                        self?.showKubernetesPage()
+                        verb.perform()
+                    })
+            }
+        }
         if let line = page.copyTarget {
             items.append(command("copyKubectl", "Kubernetes: Copy as kubectl", "k  —  \(line)", "terminal") { $0.copyKubectl() })
         }
