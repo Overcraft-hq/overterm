@@ -19,13 +19,17 @@ extension KubernetesPageModel {
         }
     }
 
-    /// A detail's buttons: a pod's tab verbs, then its forwards'.
-    func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] { podVerbs(for: ref) + forwardVerbs(for: ref) }
+    /// A detail's buttons: a pod's tab verbs, then its forwards', then
+    /// what opens through one (a database pod's Database client), and an
+    /// Ingress's Open.
+    func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+        podVerbs(for: ref) + forwardVerbs(for: ref) + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 }
+    }
 
-    /// The one row picked: its forward verbs.
+    /// The one row picked: its forward verbs, and what opens through one.
     func forwardVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
-        return forwardVerbs(for: ref)
+        return forwardVerbs(for: ref) + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 }
     }
 
     /// Port-forward… (`f`) and Quick Forward on a pod, a Service or a
@@ -207,7 +211,8 @@ extension KubernetesPageModel {
     }
 
     /// `o`: in Forwards the one picked (else the first forwarding), else the
-    /// forward of the object `f` would act on.
+    /// forward of the object `f` would act on — or, on an Ingress, where
+    /// it is reached, in the default browser.
     @discardableResult
     func openForward() -> Bool {
         let forward: KubeForward?
@@ -217,7 +222,11 @@ extension KubernetesPageModel {
         } else {
             forward = forwardRef.flatMap { forwards(of: $0).first }
         }
-        guard let forward else { return false }
+        guard let forward else {
+            guard section != .forwards, let ingress = ingressRef else { return false }
+            openIngress(ingress)
+            return true
+        }
         openForward(forward.id)
         return true
     }
@@ -247,7 +256,7 @@ extension KubernetesPageModel {
 
     /// The context, namespace and target `ref` is, or why not (the page's
     /// `commandProblem`): the process check first.
-    private func forwardable(_ ref: KubeObjectRef) -> (KubeContext, String, KubeForwardTarget)? {
+    func forwardable(_ ref: KubeObjectRef) -> (KubeContext, String, KubeForwardTarget)? {
         guard let target = KubeForwardTarget.of(kind: ref.kind, name: ref.name) else { return nil }
         guard let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else {
             commandProblem = "No context called \(ref.context)."

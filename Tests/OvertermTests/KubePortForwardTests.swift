@@ -90,13 +90,15 @@ final class KubePortForwardTests: XCTestCase {
     func testTheAddressIsAnIPOrLocalhost() {
         for good in ["127.0.0.1", "0.0.0.0", "::1", "localhost", "192.168.1.20"] { XCTAssertNil(KubeForwardAddress.problem(good), good) }
         for bad in ["", "web", "127.0.0", "1.2.3.4.5"] { XCTAssertNotNil(KubeForwardAddress.problem(bad), bad) }
-        XCTAssertEqual(KubeForwardAddress.host(for: "127.0.0.1"), "localhost")
-        XCTAssertEqual(KubeForwardAddress.host(for: "0.0.0.0"), "localhost")
+        XCTAssertEqual(KubeForwardAddress.host(for: "127.0.0.1"), "127.0.0.1", "where kubectl listens, not localhost (which may be ::1)")
+        XCTAssertEqual(KubeForwardAddress.host(for: "localhost"), "127.0.0.1")
+        XCTAssertEqual(KubeForwardAddress.host(for: "0.0.0.0"), "127.0.0.1")
+        XCTAssertEqual(KubeForwardAddress.host(for: "::"), "[::1]")
         XCTAssertEqual(KubeForwardAddress.host(for: "fd00::1"), "[fd00::1]")
         var spec = KubeForwardSpec(context: "c", namespace: "n", target: .service("web"), remotePort: 443, localPort: 31443)
-        XCTAssertEqual(spec.url?.absoluteString, "http://localhost:31443")
+        XCTAssertEqual(spec.url?.absoluteString, "http://127.0.0.1:31443")
         spec.https = true
-        XCTAssertEqual(spec.url?.absoluteString, "https://localhost:31443")
+        XCTAssertEqual(spec.url?.absoluteString, "https://127.0.0.1:31443")
     }
 
     // MARK: Resolution
@@ -726,7 +728,7 @@ final class KubeForwardPageTests: XCTestCase {
         while forwards.forward(id)?.isForwarding != true && Date() < deadline.addingTimeInterval(10) { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertEqual(launches.played.map(\.pod), ["web-1"])
         XCTAssertTrue(page.press("o"))
-        XCTAssertEqual(opened, [URL(string: "http://localhost:\(local)")!])
+        XCTAssertEqual(opened, [URL(string: "http://127.0.0.1:\(local)")!])
         XCTAssertTrue(page.press("9"))
         XCTAssertEqual(page.section, .forwards)
         XCTAssertFalse(page.showsSection, "no kind's list")

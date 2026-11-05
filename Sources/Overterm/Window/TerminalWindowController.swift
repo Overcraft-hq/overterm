@@ -31,8 +31,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var pageKeys: Any?
     /// What the engine's events say went wrong (DockerAttention).
     var dockerAttention = DockerAttention()
-    /// The last connection a container was opened in the Database panel with.
-    var dockerDatabaseDraft: DockerDatabaseGuess.Guess?
+    /// The last connection a database container or pod was opened in the
+    /// Database panel's form with — its password only in an isolated run,
+    /// and only while the form shows (the scenarios' check).
+    var databaseDraft: DockerDatabaseGuess.Guess?
     /// Containers' files open in the editor, by their local copy's path.
     var dockerFileCopies: [String: DockerFileCopy] = [:]
     var dockerSaveHooked = false
@@ -108,6 +110,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let kubernetesPage = KubernetesPageModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
+    /// What an isolated run would have opened in the default browser (an Ingress).
+    var kubernetesOpenedExternally: [URL] = []
     /// …and for the ⌃⌘J switcher, while the palette shows it.
     var kubernetesSwitcherHeld = false
     /// The review tabs' page: the one showing, over the body as the pages are.
@@ -3240,7 +3244,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Shows a SwiftUI view as a sheet; the builder gets the closure that
     /// dismisses it.
-    func presentSheet<Content: View>(_ build: (@escaping () -> Void) -> Content) {
+    /// `ended` runs once the sheet is gone, however it was put away.
+    func presentSheet<Content: View>(ended: (@MainActor () -> Void)? = nil, _ build: (@escaping () -> Void) -> Content) {
         guard let window else { return }
         let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let close = { [weak window, weak sheet] in
@@ -3250,7 +3255,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         sheet.contentViewController = NSHostingController(rootView: build(close))
         // Over the Docker page, its list: the terminal is hidden under it,
         // and keys sent there would type into a shell nobody sees.
-        window.beginSheet(sheet) { [weak self] _ in self?.focusAfterSheet() }
+        window.beginSheet(sheet) { [weak self] _ in
+            ended?()
+            self?.focusAfterSheet()
+        }
     }
 
     private func showAlert(_ title: String, _ message: String) {
@@ -3561,7 +3569,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             said = "Still running: \(names.joined(separator: ", "))\(more). Closing kills \(busy.count == 1 ? "it" : "them")."
         }
         guard !running.isEmpty else { return said }
-        let named = running.prefix(2).map { "localhost:\($0.spec.localPort) → \($0.spec.target)" }.joined(separator: ", ")
+        let named = running.prefix(2).map { "\($0.spec.hostPort) → \($0.spec.target)" }.joined(separator: ", ")
         let more = running.count > 2 ? " and \(running.count - 2) more" : ""
         let one = running.count == 1
         if quitting {
