@@ -1126,7 +1126,10 @@ final class FakeKubeAPI: @unchecked Sendable {
             if let tail = Int(query["tailLines"] ?? ""), tail >= 0 { entries = Array(entries.suffix(tail)) }
             let timestamps = query["timestamps"] == "true"
             let lines = entries.map { Data(((timestamps ? $0.stamp + " " : "") + $0.text + "\n").utf8) }
-            guard query["follow"] == "true", !previous, !settings.endFollowsAtOnce else {
+            // A container ended for good (the pod Succeeded or Failed): its
+            // log answered whole and the follow ended, as the kubelet does.
+            let endedForGood = container == names.first && pod.terminatedReason != nil && (pod.phase == "Succeeded" || pod.phase == "Failed")
+            guard query["follow"] == "true", !previous, !settings.endFollowsAtOnce, !endedForGood else {
                 var body = lines.reduce(Data(), +)
                 // The API's limitBytes: it stops there, mid-line or not.
                 if let limit = Int(query["limitBytes"] ?? ""), limit > 0, body.count > limit { body = body.prefix(limit) }

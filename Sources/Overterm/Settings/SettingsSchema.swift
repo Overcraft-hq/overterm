@@ -726,6 +726,11 @@ enum SettingsSchema {
             help: "A proxy nothing has used for this long is closed; the next request starts it again.",
             kind: .integer(1...240, step: 1, unit: "minutes"), defaultValue: .int(10), requires: "kubernetes.enabled"),
         SettingSpec(
+            key: "kubernetes.logStreams", section: .kubernetes, group: "Connections", title: "Containers followed at once in merged logs",
+            help:
+                "A Deployment's, StatefulSet's, DaemonSet's, Job's or Service's Logs tab follows each of its pods' containers, one stream each, merged by time. Past this many, the rest are left out — the tab says how many — until a followed pod goes.",
+            kind: .integer(1...50, step: 1, unit: "streams"), defaultValue: .int(10), requires: "kubernetes.enabled"),
+        SettingSpec(
             key: "kubernetes.kubectlPath", section: .kubernetes, group: "Connections", title: "kubectl",
             help:
                 "Empty: the installed kubectl closest to the cluster's version — /usr/local/bin, /opt/homebrew/bin, Docker Desktop's, your shell's PATH. Overterm never downloads one.",

@@ -111,7 +111,7 @@ enum KubernetesKey: String, ResourceKey {
         if let section { return section.title }
         switch self {
         case .open: return "The detail: overview, YAML, events — a pod's logs (a click opens it too)"
-        case .logs: return "Logs: the pod's, followed — its containers, previous, since"
+        case .logs: return "Logs: the pod's, followed — its containers, previous, since; a workload's, its pods' merged"
         case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
         case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
         case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
@@ -520,17 +520,19 @@ final class KubernetesPageModel: ObservableObject {
     @discardableResult
     func openSelected() -> Bool {
         guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id) else { return false }
-        // A pod's ↩ is its logs (docs/design/kubernetes/analysis.md, Section 7).
-        if ref.isPod { detailTab = .logs }
+        // A pod's ↩ is its logs (docs/design/kubernetes/analysis.md, Section
+        // 7); another kind's is its detail — a workload's logs are `l`.
+        if ref.isPod { detailTab = .logs } else if detailTab == .logs { detailTab = .overview }
         open(ref, from: .list)
         updateLogsReading()
         return true
     }
 
-    /// `l`: the selected pod's logs; nothing for another kind.
+    /// `l`: the selected pod's logs, or a workload's (a Job's, a Service's)
+    /// pods' merged; nothing for another kind.
     @discardableResult
     func openLogs() -> Bool {
-        guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.isPod else { return false }
+        guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.hasLogs else { return false }
         detailTab = .logs
         open(ref, from: .list)
         updateLogsReading()
@@ -540,14 +542,15 @@ final class KubernetesPageModel: ObservableObject {
     /// The Logs tab reads while it shows — the page on screen, in a window
     /// on screen — and closes its stream otherwise.
     func updateLogsReading() {
-        guard let logs = detail?.logs else { return }
-        if visible && windowVisible && detailTab == .logs { logs.show(since: logSince) } else { logs.hide() }
+        guard let detail, detail.ref.hasLogs else { return }
+        if visible && windowVisible && detailTab == .logs { detail.showLogs(since: logSince) } else { detail.hideLogs() }
     }
 
     /// Lines picked out of a pod's log (⌘L, its right-click menu): scrubbed
     /// of what looks secret — the pod's own env values, tokens, keys — then
     /// to the Ask Agent sheet with the pod they come from.
     func askAboutLogLines(_ picked: String) {
+        if let merged = detail?.merged { return askAboutMergedLines(picked, merged) }
         guard let detail, let logs = detail.logs else { return }
         let ref = detail.ref
         let command = KubectlLine.logs(
@@ -561,8 +564,25 @@ final class KubernetesPageModel: ObservableObject {
         actions?.askAgent(logs.scrubbed(picked), AskAgentModel.Part(title: "pod/\(logs.pod)", text: logs.scrubbed(about)))
     }
 
-    /// Save As… for a pod's log: the lines shown, under a timestamped name.
+    /// Lines picked out of a workload's merged log: scrubbed of every
+    /// pod's env values and what looks like a credential, then to the Ask
+    /// Agent sheet with what picks the pods and how kubectl reads them.
+    private func askAboutMergedLines(_ picked: String, _ merged: KubeMergedLogSession) {
+        let production = model.contexts.context(named: merged.context)?.isProduction ?? true
+        let about =
+            "They come from the logs of the pods \(merged.title) picks (\(merged.selector)) in namespace \(merged.namespace), merged by time, "
+            + "each line prefixed with its pod/container, in Kubernetes context \(merged.context)" + (production ? " (production: read-only)" : "")
+            + ".\nRead them with: \(merged.kubectl(timestamps: true))"
+        actions?.askAgent(merged.scrubbed(picked), AskAgentModel.Part(title: merged.title, text: merged.scrubbed(about)))
+    }
+
+    /// Save As… for a pod's log, or a workload's merged one: the lines
+    /// shown, under a timestamped name.
     func saveLogs(_ text: String) {
+        if let merged = detail?.merged {
+            actions?.save(merged.fileName, text)
+            return
+        }
         guard let logs = detail?.logs else { return }
         actions?.save(logs.fileName, text)
     }
@@ -616,7 +636,7 @@ final class KubernetesPageModel: ObservableObject {
     /// showing: its filter (`/` is the list's).
     func commandPress(_ characters: String) -> Bool {
         switch characters {
-        case "f" where detailTab == .logs && detail?.logs != nil:
+        case "f" where detailTab == .logs && (detail?.logs != nil || detail?.merged != nil):
             focusLogFilter += 1
             return true
         case "[" where history.canGoBack:
@@ -648,8 +668,8 @@ final class KubernetesPageModel: ObservableObject {
         let client = model.client(for: ref.context)
         let session = KubeDetailSession(ref: ref, client: client, secret: ref.isSecret ? secretSession(for: ref, client: client) : nil)
         detail = session
-        // Logs are a pod's: another kind's detail opens on its Overview.
-        if detailTab == .logs && !ref.isPod { detailTab = .overview }
+        // Logs are a pod's or a workload's: another kind's detail opens on its Overview.
+        if detailTab == .logs && !ref.hasLogs { detailTab = .overview }
         session.load()
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
@@ -1107,6 +1127,7 @@ final class KubernetesPageModel: ObservableObject {
     var detailKubectl: String? {
         guard let ref = detail?.ref else { return nil }
         let discovery = model.knownDiscovery(of: ref.context)
+        if detailTab == .logs, let merged = detail?.merged { return merged.kubectl(timestamps: logOptions.timestamps) }
         if detailTab == .logs, let logs = detail?.logs {
             return KubectlLine.logs(
                 context: ref.context, namespace: logs.namespace, pod: logs.pod, container: logs.container, previous: logs.previous, since: logSince,

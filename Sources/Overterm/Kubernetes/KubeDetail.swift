@@ -24,6 +24,21 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     /// A pod: its detail has a Logs tab.
     var isPod: Bool { kind.group.isEmpty && kind.resource == "pods" && namespace != nil }
 
+    /// A workload, a Job or a Service: it picks pods by a label selector,
+    /// so its detail has a Logs tab too — theirs, merged (stage 2e).
+    var selectsPods: Bool {
+        guard namespace != nil else { return false }
+        switch kind.group {
+        case "apps": return ["deployments", "statefulsets", "daemonsets", "replicasets"].contains(kind.resource)
+        case "batch": return kind.resource == "jobs"
+        case "": return kind.resource == "services"
+        default: return false
+        }
+    }
+
+    /// Its detail has a Logs tab: a pod's own, or the pods it picks, merged.
+    var hasLogs: Bool { isPod || selectsPods }
+
     static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
         lhs.context == rhs.context && lhs.kind.fullName == rhs.kind.fullName && lhs.namespace == rhs.namespace && lhs.name == rhs.name
     }
@@ -161,9 +176,10 @@ enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// The tabs an object's detail has: Logs only a pod's.
+    /// The tabs an object's detail has: Logs a pod's, and a workload's
+    /// (its pods', merged).
     static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
-        ref.isPod ? allCases : allCases.filter { $0 != .logs }
+        ref.hasLogs ? allCases : allCases.filter { $0 != .logs }
     }
 }
 

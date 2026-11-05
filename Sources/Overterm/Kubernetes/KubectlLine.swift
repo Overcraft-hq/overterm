@@ -75,6 +75,17 @@ enum KubectlLine {
         return words.joined(separator: " ")
     }
 
+    /// A merged log as kubectl reads it: the pods a selector picks, every
+    /// container, each line prefixed with its pod and container, at most
+    /// `streams` at once.
+    static func mergedLogs(context: String, namespace: String, selector: String, streams: Int, since: KubeLogSince, timestamps: Bool) -> String {
+        var words = ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "logs", "-l", quoted(selector), "--all-containers", "--prefix"]
+        words.append("--max-log-requests=\(streams)")
+        if since != .all { words.append("--since=\(since.rawValue)") }
+        if timestamps { words.append("--timestamps") }
+        return words.joined(separator: " ")
+    }
+
     /// What kubectl is told the kind is: the core group's short name (it
     /// wins in kubectl's lookup: `po`, `svc`, `cm`); a built-in group's
     /// short name or plural where no other kind served claims it

@@ -348,6 +348,8 @@ final class Settings: ObservableObject {
     var kubernetesDebugImage: String { string("kubernetes.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("busybox:1.36") }
     var kubernetesMaxProxies: Int { Int(number("kubernetes.maxProxies") ?? 4) }
     var kubernetesProxyIdleMinutes: Int { Int(number("kubernetes.proxyIdleMinutes") ?? 10) }
+    /// How many containers a merged log follows at once.
+    var kubernetesLogStreams: Int { max(Int(number("kubernetes.logStreams") ?? 10), 1) }
     /// The kubectl the proxies run, as written; empty: found (`KubectlLocator`).
     var kubernetesKubectlPath: String { string("kubernetes.kubectlPath").trimmingCharacters(in: .whitespaces) }
 
