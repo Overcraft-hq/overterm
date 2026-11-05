@@ -321,12 +321,12 @@ struct APIPanelView: View {
                 .font(.system(size: ChromeMetrics.text(11.5)))
                 .foregroundStyle(theme.text3)
                 .fixedSize(horizontal: false, vertical: true)
-            if !workspace.discovered.isEmpty {
+            if !workspace.importable.isEmpty {
                 Text("Found here, to import:")
                     .font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
                     .foregroundStyle(theme.text2)
                     .padding(.top, 2)
-                ForEach(workspace.discovered) { source in
+                ForEach(workspace.importable) { source in
                     startButton(source.title, symbol: Self.symbol(source)) { importSource(source) }
                         .accessibilityIdentifier("apiImport-\(source.id)")
                 }
@@ -359,9 +359,9 @@ struct APIPanelView: View {
         Button("Import a File…") { importFile() }
         Button("New Request from cURL in the Clipboard") { importCurl() }
             .disabled(!Self.clipboardHasCurl)
-        if !workspace.discovered.isEmpty {
+        if !workspace.importable.isEmpty {
             Divider()
-            ForEach(workspace.discovered) { source in
+            ForEach(workspace.importable) { source in
                 Button("Import \(source.title)") { importSource(source) }
             }
         }

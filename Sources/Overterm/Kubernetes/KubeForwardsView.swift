@@ -51,7 +51,7 @@ struct KubeForwardsSection: View {
             DockerStatusDot(color: color(forward))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(verbatim: "localhost:\(spec.localPort)").font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                    Text(verbatim: spec.hostPort).font(.system(size: 12.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(theme.text)
                     Text(verbatim: "→ \(spec.target):\(spec.remotePort)").font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
                     if let pod = forward.pod {
@@ -62,6 +62,15 @@ struct KubeForwardsSection: View {
                 Text(verbatim: details(forward)).font(.system(size: 11)).lineLimit(2).truncationMode(.tail)
                     .foregroundStyle(forward.state.isStopped ? TabStatusStyle.failed : forward.production ? KubernetesPageView.production : theme.text3)
                     .textSelection(.enabled)
+                if let api = forwards.openAPI[forward.id] {
+                    Label {
+                        Text(verbatim: "Serves an OpenAPI document: \(api.title)").lineLimit(1).truncationMode(.tail)
+                    } icon: {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                    }
+                    .font(.system(size: 11)).foregroundStyle(theme.text2)
+                    .accessibilityIdentifier("kubernetes.forward.api.\(spec.localPort)")
+                }
             }
             Spacer(minLength: 8)
             if forward.state.isStopped {
@@ -69,6 +78,10 @@ struct KubeForwardsSection: View {
                 button("Remove") { page.stopForward(forward.id) }
             } else {
                 button("Open") { page.openForward(forward.id) }.disabled(!forward.isForwarding)
+                if forwards.openAPI[forward.id] != nil {
+                    button("Import API") { page.importForwardAPI(forward.id) }
+                        .help("Its OpenAPI document as a Bruno collection in the checkout, in the API client")
+                }
                 button("Edit…") { page.editForward(forward.id) }
                 button("Stop") { page.stopForward(forward.id) }
             }

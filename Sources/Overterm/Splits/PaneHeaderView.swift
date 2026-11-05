@@ -242,7 +242,7 @@ private struct PortPill: View {
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
-                    Text(verbatim: "localhost:\(port.port)")
+                    Text(verbatim: port.forward == nil ? "localhost:\(port.port)" : "\(KubeForwardAddress.host(for: port.address)):\(port.port)")
                         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .foregroundStyle(theme.text)
                     Text(verbatim: origin)

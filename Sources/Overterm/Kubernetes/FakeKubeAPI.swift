@@ -56,6 +56,8 @@ final class FakeKubeAPI: @unchecked Sendable {
         var exitCode = 0
         /// The first container's env, as plain values.
         var env: [String: String] = [:]
+        /// The first container's env taken from Secrets: name → the Secret and its key.
+        var secretEnv: [String: SecretKeyRef] = [:]
         /// The first container's declared ports (TCP).
         var ports: [ContainerPort] = []
         /// Its `Ready` condition, when one is reported (nil: none, readiness
@@ -64,6 +66,12 @@ final class FakeKubeAPI: @unchecked Sendable {
 
         /// Its containers' names: `app`, then `sidecar-1`…
         var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
+    }
+
+    /// An env value a container takes from a Secret's key (`valueFrom.secretKeyRef`).
+    struct SecretKeyRef: Equatable, Sendable {
+        var name: String
+        var key: String
     }
 
     /// A port a container declares: `containerPort`, and its name.
@@ -1213,7 +1221,12 @@ final class FakeKubeAPI: @unchecked Sendable {
         var full: [String: Any] = ["kind": kind.kind, "apiVersion": kind.groupVersion, "metadata": metadata(object, managedFields: true)]
         if let pod = object.pod {
             let names = pod.containerNames
-            let env = pod.env.keys.sorted().map { ["name": $0, "value": pod.env[$0]!] }
+            let env =
+                pod.env.keys.sorted().map { ["name": $0, "value": pod.env[$0]!] as [String: Any] }
+                + pod.secretEnv.keys.sorted().map { name -> [String: Any] in
+                    let ref = pod.secretEnv[name]!
+                    return ["name": name, "valueFrom": ["secretKeyRef": ["name": ref.name, "key": ref.key]]]
+                }
             var spec: [String: Any] = [
                 "containers": names.enumerated().map { index, name -> [String: Any] in
                     var container: [String: Any] = ["name": name, "image": pod.image]

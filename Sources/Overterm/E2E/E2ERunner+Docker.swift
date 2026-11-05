@@ -3523,13 +3523,14 @@ extension E2ERunner {
         page.selection = [pgID]
         page.press("d")
         check("d opens a database container in the connection form", await eventually(5) { self.window.attachedSheet != nil })
-        let draft = app.dockerDatabaseDraft?.connection
+        let draft = app.databaseDraft?.connection
         check(
             "filled in from its image, env and port",
             draft?.kind == .postgres && draft?.port == 55432 && draft?.user == "shop" && draft?.database == "orders"
-                && app.dockerDatabaseDraft?.password == "hunter2", "\(String(describing: draft))")
+                && app.databaseDraft?.password == "hunter2", "\(String(describing: draft))")
         if let sheet = window.attachedSheet { window.endSheet(sheet) }
         _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("the form put away, the window keeps no password", app.databaseDraft != nil && app.databaseDraft?.password == nil)
         check(
             "the form put away gives the keyboard back to the list, not the terminal under the page",
             await eventually(3) { self.app.dockerListHasKeyboard() },

@@ -184,10 +184,10 @@ final class TabStoreTests: XCTestCase {
         XCTAssertTrue(ask([other], [forward], true), "quitting stops every forward")
         XCTAssertEqual(
             TerminalWindowController.closeWarning(for: [idle], forwards: [forward]),
-            "Its shell is idle. Its port-forward (localhost:31234 → svc/web) keeps running: Kubernetes ▸ Forwards shows and stops it.")
+            "Its shell is idle. Its port-forward (127.0.0.1:31234 → svc/web) keeps running: Kubernetes ▸ Forwards shows and stops it.")
         XCTAssertEqual(
             TerminalWindowController.closeWarning(for: [other], forwards: [forward], quitting: true),
-            "Its shell is idle. Quitting stops the port-forward (localhost:31234 → svc/web).")
+            "Its shell is idle. Quitting stops the port-forward (127.0.0.1:31234 → svc/web).")
         forward.state = .stopped("svc/web is gone")
         XCTAssertFalse(ask([idle], [forward], true), "a stopped one runs nothing")
         XCTAssertEqual(TerminalWindowController.closeWarning(for: [idle], forwards: [forward]), "Its shell is idle.")

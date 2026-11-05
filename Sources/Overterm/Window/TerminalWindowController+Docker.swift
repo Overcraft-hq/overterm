@@ -163,13 +163,17 @@ extension TerminalWindowController {
 
     // MARK: Database
 
-    /// A database container's connection, in the form, filled in. The
-    /// page steps aside for the Database panel once it is saved.
+    /// A database container's connection — or a pod's, through its
+    /// forward — in the form, filled in. The page steps aside for the
+    /// Database panel once it is saved.
     func newDatabaseConnection(from guess: DockerDatabaseGuess.Guess) {
         guard Settings.shared.databaseEnabled else { return openSettings(.database) }
-        dockerDatabaseDraft = guess
+        // What the scenarios read: the password only in an isolated run,
+        // and only while the form shows — it is the form's, then the
+        // keychain's, never kept here (rule 9).
+        databaseDraft = DockerDatabaseGuess.Guess(connection: guess.connection, password: AppEnvironment.isIsolated ? guess.password : nil)
         let model = DatabaseModel.shared
-        presentSheet { [weak self] close in
+        presentSheet(ended: { [weak self] in self?.databaseDraft?.password = nil }) { [weak self] close in
             DatabaseConnectionForm(
                 connection: guess.connection, isNew: true, store: model.store,
                 done: { saved in

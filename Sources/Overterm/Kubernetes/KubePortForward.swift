@@ -139,14 +139,20 @@ struct KubeForwardSpec: Hashable, Sendable, Identifiable {
     var address = KubeForwardAddress.loopback
     /// The page it serves is https: what Open and Copy URL say.
     var https = false
+    /// Started by `d` for the Database client: its server is a database,
+    /// never asked for an API document.
+    var forDatabase = false
     /// The tab whose pane header shows its pill: the one under the page
     /// when it was asked for.
     var tab: UUID?
 
     var url: URL? { URL(string: "\(https ? "https" : "http")://\(KubeForwardAddress.host(for: address)):\(localPort)") }
 
-    /// `localhost:8080 → svc/web:80`.
-    var summary: String { "localhost:\(localPort) → \(target):\(remotePort)" }
+    /// Where it is reached, as its URL has it: `127.0.0.1:8080`.
+    var hostPort: String { "\(KubeForwardAddress.host(for: address)):\(localPort)" }
+
+    /// `127.0.0.1:8080 → svc/web:80`.
+    var summary: String { "\(hostPort) → \(target):\(remotePort)" }
 }
 
 /// The listen address: an IP literal or `localhost`. Pure.
@@ -169,11 +175,16 @@ enum KubeForwardAddress {
         ["127.0.0.1", "localhost", "::1"].contains(address) || address.hasPrefix("127.")
     }
 
-    /// Where a browser reaches it: `localhost` for a loopback or wildcard
-    /// address, else the address (an IPv6 one in brackets).
+    /// Where a browser reaches it: the address kubectl listens on, never
+    /// `localhost` — which a browser may try as ::1 first, where a forward
+    /// on 127.0.0.1 doesn't listen. A wildcard is reached on loopback; an
+    /// IPv6 address in brackets.
     static func host(for address: String) -> String {
-        if isLoopback(address) || address == "0.0.0.0" || address == "::" { return "localhost" }
-        return address.contains(":") ? "[\(address)]" : address
+        switch address {
+        case "localhost", "0.0.0.0": return loopback
+        case "::", "::1": return "[::1]"
+        default: return address.contains(":") ? "[\(address)]" : address
+        }
     }
 }
 

@@ -127,6 +127,10 @@ final class KubeForwards: ObservableObject {
     static let shared = KubeForwards(model: .shared)
 
     @Published private(set) var forwards: [KubeForward] = []
+    /// The OpenAPI document a forward's server publishes, found once it
+    /// first forwards on its local port (3.8): offered to the API client,
+    /// never imported without a press. Gone with the forward, or its port.
+    @Published private(set) var openAPI: [UUID: APIDiscovery.Source] = [:]
 
     typealias Launch = @Sendable (KubeContext, KubeForwardSpec, KubeForwardResolve.Pinned) async throws -> any KubeForwardProcess
 
@@ -143,11 +147,20 @@ final class KubeForwards: ObservableObject {
     /// The backoff's waits, times this: a test's are short.
     var backoffScale: Double = 1
     var now: () -> Date = { Date() }
+    /// Asks a forward's server for its OpenAPI document (`APIDiscovery`'s
+    /// paths, bounded); nil asks nothing — a test's, or the app's while
+    /// the API client or its server discovery is off (`probes`).
+    var probe: (@Sendable (URL) async -> APIDiscovery.Source?)?
+    /// Whether a forward is probed now: the app's asks Settings.
+    var probes: () -> Bool = { true }
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private var processes: [UUID: any KubeForwardProcess] = [:]
     private var contexts: [UUID: KubeContext] = [:]
     private var watches: [AnyCancellable] = []
+    private var probing: [UUID: Task<Void, Never>] = [:]
+    /// The local port each forward was probed on.
+    private var probed: [UUID: Int] = [:]
 
     init(
         client: @escaping (KubeContext) -> KubeClient?, canI: @escaping (KubeContext, String) async -> KubeCanIAnswer, launch: @escaping Launch
@@ -166,6 +179,12 @@ final class KubeForwards: ObservableObject {
                 await model?.access.answer(context, namespace: namespace, .portForward) ?? .failed("Kubernetes is off.")
             },
             launch: Self.kubectl(model))
+        probe = { url in await APIDiscovery.probe(url) }
+        probes = { Settings.shared.apiEnabled && Settings.shared.apiDiscoverServers }
+        // Turned on while forwards run: those are asked now, not at their next start.
+        watches.append(
+            Settings.shared.changes.filter { $0.contains("api.enabled") || $0.contains("api.discoverServers") }
+                .sink { [weak self] _ in self?.probeForwarding() })
         // The emitted values: the model's properties aren't set yet.
         watches.append(model.$contexts.dropFirst().sink { [weak self] list in self?.contextsChanged(list) })
         watches.append(
@@ -241,9 +260,11 @@ final class KubeForwards: ObservableObject {
 
     /// Every one, at quit and when Kubernetes is turned off.
     func stopAll() {
-        for id in Array(tasks.keys) + Array(processes.keys) { end(id) }
+        for id in Array(tasks.keys) + Array(processes.keys) + Array(probing.keys) { end(id) }
         forwards = []
         contexts = [:]
+        openAPI = [:]
+        probed = [:]
     }
 
     /// The kubeconfig read again: a forward whose context is gone, or now
@@ -277,10 +298,56 @@ final class KubeForwards: ObservableObject {
         tasks[id] = Task { [weak self] in await self?.run(id) }
     }
 
-    /// Its task cancelled and its kubectl closed, by its pid.
+    /// Its task cancelled and its kubectl closed, by its pid; what its
+    /// server was found to be goes with it.
     private func end(_ id: UUID) {
         tasks.removeValue(forKey: id)?.cancel()
         processes.removeValue(forKey: id)?.close()
+        forgetProbe(id)
+    }
+
+    private func forgetProbe(_ id: UUID) {
+        probing.removeValue(forKey: id)?.cancel()
+        probed[id] = nil
+        if openAPI[id] != nil { openAPI[id] = nil }
+    }
+
+    /// The remote ports of servers that speak no HTTP — the databases the
+    /// Database client and Docker's clients know, queues, caches: an API
+    /// probe there is ten requests a database logs as bad handshakes, and
+    /// MySQL counts toward blocking the host.
+    static let nonHTTPPorts: Set<Int> = Set(DatabaseKind.allCases.compactMap(\.defaultPort)).union([
+        33060, 9000, 9440, 9009, 1433, 1521, 26257, 6379, 6380, 26379, 27017, 27018, 27019, 11211, 5672, 5671, 9092, 2181, 9042, 7687, 4222, 1883,
+        6650, 2379, 2380, 25, 22,
+    ])
+
+    /// Every forward that forwards, asked now if it hasn't been on its
+    /// port: Settings turned discovery on while it ran.
+    func probeForwarding() {
+        for forward in forwards where forward.isForwarding { probeOnce(forward.id) }
+    }
+
+    /// Its server asked once for an OpenAPI document — on its local port,
+    /// the first time it forwards there (or discovery is turned on while
+    /// it does); started again on another pod, it is the same server. Not
+    /// a production forward's: nothing is sent to production that the user
+    /// didn't ask for. Nor one to a database — `d`'s, or a port where a
+    /// server speaks no HTTP (`nonHTTPPorts`).
+    private func probeOnce(_ id: UUID) {
+        guard let probe, probes(), let forward = forward(id), !forward.production, !forward.spec.forDatabase,
+            !Self.nonHTTPPorts.contains(forward.spec.remotePort), !(forward.podPort.map(Self.nonHTTPPorts.contains) ?? false),
+            probed[id] != forward.spec.localPort, let url = forward.spec.url
+        else { return }
+        let port = forward.spec.localPort
+        probed[id] = port
+        probing[id]?.cancel()
+        probing[id] = Task { [weak self] in
+            let found = await probe(url)
+            guard let self, !Task.isCancelled, self.probed[id] == port, let forward = self.forward(id), !forward.state.isStopped else { return }
+            self.probing[id] = nil
+            guard case .server(let base, let spec, let title)? = found else { return }
+            self.openAPI[id] = .server(base: base, spec: spec, title: "\(title) — \(forward.spec.target) in \(forward.spec.context)")
+        }
     }
 
     /// Stopped where it stands: kept in the list, saying why.
@@ -350,6 +417,7 @@ final class KubeForwards: ObservableObject {
                 }
                 processes[id] = process
                 update(id) { $0.state = .forwarding(pod: pinned.pod, pid: process.pid) }
+                probeOnce(id)
                 let started = now()
                 why = await watch(process, pod: pinned.pod, namespace: forward.spec.namespace, client: client, ready: forward.spec.target.followsEndpoints)
                 ran = now().timeIntervalSince(started)
@@ -376,6 +444,7 @@ final class KubeForwards: ObservableObject {
         guard !Task.isCancelled else { return }
         tasks[id] = nil
         processes.removeValue(forKey: id)?.close()
+        forgetProbe(id)
         update(id) { $0.state = .stopped(why) }
     }
 

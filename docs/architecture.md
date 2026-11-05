@@ -3235,6 +3235,92 @@ never the proxy's socket, which refuses port-forward on every context.
   kubeconfig alone, closed by its pid, a port it can't listen on said);
   the page's `f`, the sheet, `o` and `9`.
 
+**What opens through a forward** (stage 1d; `KubeOpen.swift` (pure),
+`KubernetesPageModel+Open.swift`; analysis 3.8):
+
+- **`o`** on a forward is the browser column of the tab under the page
+  (`openDockerLink`): the page steps aside and the column takes the right
+  slot (`RightSlot`) — the changes pane gives way and comes back when it
+  closes; never a column of its own. That, and the terminal tabs `t`, `e`
+  and `A` open, is Section 2's dock under the list. A forward's URL is the
+  address kubectl listens on (`KubeForwardAddress.host`: 127.0.0.1 for
+  loopback, `localhost` and 0.0.0.0, `[::1]` for IPv6) — never
+  `localhost`, which a browser may try as ::1 first. **`o` on an Ingress**
+  (`KubeIngressLinks`, pure; `ingressRef`, Open in Browser) is where it is
+  reached: each rule's host — https when a TLS entry names it, a wildcard
+  skipped, a regex path the root — else its load balancer's address; the
+  first in the default browser, several asked. An isolated run records it
+  (`kubernetesOpenedExternally`) instead of opening anything.
+- **`d`** on a database pod (`databaseRef`, Open in Database Client on a
+  pod whose detail read it): the image says which (`KubeDatabase.detect`,
+  `DockerClient`'s table — postgres, mysql and mariadb, clickhouse; an
+  exporter beside it is a tool; Redis and Mongo are said, with their
+  client in a shell), the container's port (the image's, or the one it
+  declares — unless that is a port the image speaks another protocol on:
+  ClickHouse's native 9000/9440/9009, MySQL's X Protocol 33060,
+  `KubeDatabase.port`), and where its user, database and password come
+  from: each field an ordered list of sources (`KubeEnvValue`: written in
+  the spec, a Secret's key by `secretKeyRef`, an `envFrom` `secretRef`'s
+  key under its prefix *only if the Secret holds it* — `secretIfHeld` —,
+  or elsewhere, never read), resolved against what was read
+  (`KubeDatabase.resolve`, `KubeSecretValues`): a key a Secret read
+  doesn't hold gives way to the image's next name (Bitnami's
+  `POSTGRESQL_PASSWORD`), and MySQL's app user is taken only with its
+  password, else root with root's — decided after the read. What the env
+  takes from a Secret is asked about first — every time, naming the
+  Secret and its keys (`KubeSecretWant`: `envFrom`'s as "whichever of …
+  it holds"), production in its band's words — and Cancel starts nothing.
+  Then a forward to that port — one running reused, else one started on
+  the database's own port where it is free, after `kubectl auth can-i`,
+  marked `forDatabase` — and once it forwards, the Secret read if the
+  user said so (one GET, only the keys named kept, `KubeDatabase.take`,
+  the rest of the answer dropped) and the Database client's form
+  (`newDatabaseConnection`) filled in with 127.0.0.1 and its local port
+  (`KubeDatabase.connection`); a password written in the spec is left to
+  type. Nothing is saved or connected: the form does that, its password
+  to the keychain only (`DatabaseStore`). The window's `databaseDraft`,
+  which the scenarios read, holds the password only in an isolated run
+  and only while the form shows (`presentSheet`'s `ended`).
+- **A forward's API**: the first time a forward forwards on its local port,
+  its server is asked for an OpenAPI document (`KubeForwards.probe`,
+  `APIDiscovery.probe`: every usual path at once, 1.5 s each, 3 s in all) —
+  not a production forward's, not `d`'s (`forDatabase`) nor one to a port
+  where a server speaks no HTTP (`KubeForwards.nonHTTPPorts`: databases,
+  caches, queues — ten requests there are ten bad handshakes, and MySQL
+  counts them toward blocking the host), and only while the API client
+  and its server discovery are on; turned on while forwards run, those
+  are asked then (`probeForwarding`, on Settings' `changes`). One found (`KubeForwards.openAPI`, gone with
+  the forward or its port) is offered, never imported unasked: the API
+  panel lists it with what the checkout has (`APIWorkspace.forwardSources`,
+  `importable`), and the Forwards row and the palette import it on a
+  press (`importForwardAPI`: into the checkout's collection, its first
+  request opened).
+- **The palette** (`forwardPaletteItems`): Kubernetes: New Port-forward…
+  (the sheet on the selected object, else the Services list saying what
+  to pick), each forward (↩ as `o`), its Stop, and its API's import —
+  each named by the address `o` opens (`KubeForwardSpec.hostPort`,
+  127.0.0.1:<port>, as the Forwards list, the pill and the close warning
+  say it); an open palette is restocked as forwards and their APIs
+  change.
+- **Checked** (`KubeOpenTests`, `KubeOpenForwardsTests`): an Ingress's
+  links; the database detection (images, env names, `secretKeyRef` and
+  `envFrom`, ports — a lone other-protocol port not taken —, what isn't
+  spoken); an `envFrom` Secret holding only MySQL's root key or
+  Bitnami's names resolved to those; the connection filled in, a
+  password only from a Secret read on the user's word, never from the
+  spec; only the keys named taken; a pod's connection saved keeps its
+  password out of connections.json; the probe against a local server and
+  bounded against a closed port; a forward probed once, not again on its
+  next pod, forgotten with it, never on production or with discovery
+  off, probed when discovery is turned on while it runs; a database
+  forward never probed (the echo server sees no connection); `d` against
+  the fake (one GET of the Secret when asked, none when not, the forward
+  reused, Redis said, Cancel at the Secret's question starting no
+  forward); the palette's items and what they do. The `kubernetes` scenario opens a forward in the browser column at
+  http://127.0.0.1:<port> in the right slot, `d` on a postgres pod to the
+  filled-in form (the Secret's one GET, nothing saved), a Redis pod said,
+  an Ingress's host recorded, and the palette's Stop.
+
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
 Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
 `]`): the palette scoped to `PaletteItem.Group.kubernetes` — every

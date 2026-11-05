@@ -35,6 +35,15 @@ struct KubernetesActions {
     var openURL: (URL) -> Void = { _ in }
     /// The tab under the page: a forward started now is its pill's.
     var currentTab: () -> UUID? = { nil }
+    /// Where an Ingress is reached: the default browser — it is the
+    /// cluster's front door, not a page of this Mac's.
+    var openExternal: (URL) -> Void = { _ in }
+    /// A database pod's connection through its forward, in the Database
+    /// client's form, filled in: nothing is saved or connected until the
+    /// user does (a password given goes to the keychain only then).
+    var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
+    /// A forward's OpenAPI document, imported into the API client on a press.
+    var importAPI: (APIDiscovery.Source) -> Void = { _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -42,7 +51,7 @@ struct KubernetesActions {
 /// Section 7); none of these changes a cluster. Pure.
 enum KubernetesKey: String, ResourceKey {
     case workloads, network, config, storage, access, cluster, custom, forwards
-    case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward
+    case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
@@ -60,6 +69,7 @@ enum KubernetesKey: String, ResourceKey {
         case .attach: return "A"
         case .portForward: return "f"
         case .openForward: return "o"
+        case .database: return "d"
         case .command: return ":"
         case .namespace: return "n"
         case .context: return "c"
@@ -80,7 +90,10 @@ enum KubernetesKey: String, ResourceKey {
         case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
         case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
         case .portForward: return "Port-forward a pod, a Service or a Deployment — kubectl port-forward, started again on its next pod"
-        case .openForward: return "Open a forward in the browser column — the selected object's, or the one picked in Forwards"
+        case .openForward:
+            return "Open a forward in the browser column — the selected object's, or the one picked in Forwards; an Ingress in your browser"
+        case .database:
+            return "Database client: a database pod (\(KubeDatabase.spoken)) forwarded, its connection form filled in"
         case .back: return "Back in the detail's history (⌘[ too)"
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
@@ -360,6 +373,7 @@ final class KubernetesPageModel: ObservableObject {
             case .attach: return runPodCommand(.attach)
             case .portForward: return portForward()
             case .openForward: return openForward()
+            case .database: return openInDatabase()
             default: return false
             }
         }

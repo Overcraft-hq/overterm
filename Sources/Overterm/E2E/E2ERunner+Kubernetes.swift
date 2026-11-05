@@ -557,6 +557,8 @@ extension E2ERunner {
             unless ($server) { print STDERR "error: unable to listen on port $local: $!\n"; exit 1; }
             print "Forwarding from $address:$local -> $remote\n";
             while (my $client = $server->accept) {
+                # The request read first: a reply to one unread is reset, which a browser shows as nothing.
+                eval { local $SIG{ALRM} = sub { die "slow\n" }; alarm 2; while (my $line = <$client>) { last if $line =~ /^\r?\n$/; } alarm 0; };
                 print $client "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n$pod\n";
                 close $client;
             }
@@ -719,11 +721,11 @@ extension E2ERunner {
                     && TerminalWindowController.needsCloseConfirmation([tab], confirmClose: .whenRunning))
             check(
                 "and says it keeps running, on the page",
-                TerminalWindowController.closeWarning(for: [tab]).contains("(localhost:\(local) → svc/web) keeps running"),
+                TerminalWindowController.closeWarning(for: [tab]).contains("(127.0.0.1:\(local) → svc/web) keeps running"),
                 TerminalWindowController.closeWarning(for: [tab]))
             check(
                 "quitting says it stops it",
-                TerminalWindowController.closeWarning(for: [tab], quitting: true).contains("Quitting stops the port-forward (localhost:\(local) → svc/web)"),
+                TerminalWindowController.closeWarning(for: [tab], quitting: true).contains("Quitting stops the port-forward (127.0.0.1:\(local) → svc/web)"),
                 TerminalWindowController.closeWarning(for: [tab], quitting: true))
         }
 
@@ -732,19 +734,29 @@ extension E2ERunner {
         let forwardItem = paletteItems.first { $0.id == "k.f.\(id)" }
         check(
             "the palette lists the forward with its pod",
-            forwardItem?.title == "Forward localhost:\(local) → svc/web" && forwardItem?.subtitle?.contains("pod web-8k2") == true,
+            forwardItem?.title == "Forward 127.0.0.1:\(local) → svc/web" && forwardItem?.subtitle?.contains("pod web-8k2") == true,
             "\(forwardItem?.title ?? "none") \(forwardItem?.subtitle ?? "")")
         check("and Kubernetes Forwards", paletteItems.contains { $0.id == "a.kubernetes.forwards" })
+        check("its Stop", paletteItems.contains { $0.id == "k.fs.\(id)" && $0.title == "Stop Forward 127.0.0.1:\(local) → svc/web" })
+        check("and New Port-forward…", paletteItems.contains { $0.id == "a.kubernetes.forward.new" })
+        app.showPalette(nil)
+        app.palette.query = "stop forward"
+        check(
+            "⌘K finds the forward's Stop", await eventually(5) { self.app.palette.results.contains { $0.id == "k.fs.\(id)" } },
+            "\(app.palette.results.prefix(4).map(\.id))")
+        app.hidePalette()
+        await pause(0.3)
         opened = []
         forwardItem?.perform(true, [:])
-        check("↩ opens its URL", opened.last?.absoluteString == "http://localhost:\(local)", "\(opened)")
+        check("↩ opens its URL", opened.last?.absoluteString == "http://127.0.0.1:\(local)", "\(opened)")
         if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
 
         // The Forwards section: 9.
         page.giveListTheKeyboard()
         check("9 is Forwards", page.press("9") && page.section == .forwards && !page.showsSection)
         check("it lists the forward with its pod", await shownText(15) { $0.contains("pod web-8k2") } != nil)
-        check("o opens it", page.press("o") && opened.last?.absoluteString == "http://localhost:\(local)", "\(opened)")
+        check("o opens it", page.press("o") && opened.last?.absoluteString == "http://127.0.0.1:\(local)", "\(opened)")
+        await kubernetesForwardInBrowser(page, local: local, pod: "web-8k2", open: actions?.openURL)
 
         // Edit: another local port, kubectl started again with it.
         page.editForward(id)
@@ -807,8 +819,146 @@ extension E2ERunner {
             "\(String(describing: quick?.spec))")
         if let quick { check("which answers", await answer(quick.spec.localPort) == "web-8k2") }
         check("nothing of it reached the API but GETs", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
+        await kubernetesDatabaseAndIngress(model, page, fake, forwards: log)
+        check("nor of d and o", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
         app.toggleKubernetesPage(nil)
         return forwards.forwards.compactMap(\.pid)
+    }
+
+    /// `o` on a forward, the window's own way (3.8; Section 2's dock: the
+    /// right slot and terminal tabs): the page steps aside and the tab's
+    /// browser column loads http://127.0.0.1:<port>, taking the right slot
+    /// from the changes pane (`RightSlot`), never a column of its own;
+    /// closed, it gives the slot back.
+    private func kubernetesForwardInBrowser(_ page: KubernetesPageModel, local: Int, pod: String, open: ((URL) -> Void)?) async {
+        guard let open, let tab = app.store.selected else { return check("the window's own Open", false) }
+        let recording = page.actions?.openURL
+        page.actions?.openURL = open
+        defer { if let recording { page.actions?.openURL = recording } }
+        if app.diffItem?.isCollapsed != false { app.toggleDiff(nil) }
+        _ = await eventually(2) { self.app.diffItem?.isCollapsed == false }
+        app.showKubernetesPage()
+        page.giveListTheKeyboard()
+        check("o, the window's own way", page.press("o"))
+        check(
+            "opens the browser column in the right slot, the changes pane giving way",
+            await eventually(5) { self.app.browserItem?.isCollapsed == false && self.app.diffItem?.isCollapsed == true },
+            "browser \(app.browserItem?.isCollapsed as Any), diff \(app.diffItem?.isCollapsed as Any)")
+        check("the page steps aside for it", app.store.showingOverlay == nil)
+        let session = app.browserWorkspaces[tab.id]?.active
+        check(
+            "at http://127.0.0.1:\(local), the forward's address",
+            await eventually(10) { session?.url?.absoluteString.hasPrefix("http://127.0.0.1:\(local)") == true && session?.isLoading == false },
+            session?.url?.absoluteString ?? "no page")
+        var text = ""
+        for _ in 0..<50 {
+            if let webView = session?.webView, let body = (try? await webView.evaluateJavaScript("document.body.innerText")) as? String { text = body }
+            if text.contains(pod) { break }
+            await pause(0.2)
+        }
+        check("which the pod answers, through its forward", text.contains(pod), text)
+        app.closeBrowser()
+        check("closed, the slot goes back to the changes pane", await eventually(3) { self.app.diffItem?.isCollapsed == false && self.app.browserItem?.isCollapsed == true })
+        app.toggleDiff(nil)
+        app.showKubernetesPage()
+    }
+
+    /// `d` on a postgres-looking pod (3.8): a forward to its 5432 through
+    /// the stand-in kubectl, after `kubectl auth can-i`; the password its
+    /// env takes from Secret web-db read only once the user says so —
+    /// asked, naming the Secret and key, one GET — and the Database
+    /// client's form, over the page, filled in with 127.0.0.1 and the
+    /// forward's local port, the user and database the env writes. Nothing
+    /// is saved or connected: the form is put away, and connections.json
+    /// never holds the value. A Redis pod says why not. An Ingress's `o`
+    /// opens its host in the default browser — recorded, in this run.
+    private func kubernetesDatabaseAndIngress(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, forwards log: URL) async {
+        func launched() -> [String] { ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init) }
+        fake.addPod(
+            "db-0", namespace: "shop",
+            FakeKubeAPI.Pod(
+                image: "postgres:16", env: ["POSTGRES_USER": "shop", "POSTGRES_DB": "orders"],
+                secretEnv: ["POSTGRES_PASSWORD": FakeKubeAPI.SecretKeyRef(name: "web-db", key: "password")], ports: [FakeKubeAPI.ContainerPort(5432)]))
+        fake.addPod("cache-0", namespace: "shop", FakeKubeAPI.Pod(image: "redis:7.4"))
+        if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
+        model.setKind(.pods)
+        page.showKind(.pods)
+        check("the database pod is listed", await eventually(10) { page.rows.contains { $0.id == "shop/db-0" } }, "\(page.rows.map(\.id))")
+        let actions = page.actions
+        defer { page.actions = actions }
+        var asked: [String] = []
+        page.actions?.choose = { title, detail, buttons, then in
+            asked.append(title + " | " + detail + " | " + buttons.joined(separator: ", "))
+            then(0)
+        }
+        fake.forgetRequests()
+        let before = launched().count
+        page.selection = ["shop/db-0"]
+        page.giveListTheKeyboard()
+        check("d on a postgres-looking pod", page.press("d"))
+        check("opens the Database client's form", await eventually(20) { self.window.attachedSheet != nil }, page.commandProblem ?? "")
+        let draft = app.databaseDraft
+        let forward = KubeForwards.shared.forwards.first { $0.spec.target == .pod("db-0") }
+        check(
+            "through a forward to the pod's 5432, by the stand-in kubectl",
+            forward?.isForwarding == true && forward?.spec.remotePort == 5432
+                && launched().dropFirst(before).contains { $0.contains("port-forward pod/db-0 \(forward?.spec.localPort ?? 0):5432 --context fake-dev --namespace shop") },
+            "\(launched().dropFirst(before))")
+        check(
+            "filled in: 127.0.0.1 and the forward's local port, the env's user and database",
+            draft?.connection.kind == .postgres && draft?.connection.host == "127.0.0.1" && draft?.connection.port == forward?.spec.localPort
+                && draft?.connection.user == "shop" && draft?.connection.database == "orders",
+            "\(String(describing: draft?.connection))")
+        check(
+            "the Secret read only once asked, naming it and its key",
+            asked.count == 1 && asked.first?.contains("web-db (password)") == true, asked.first ?? "not asked")
+        check("its value in the form, masked there", draft?.password == Self.secretValue)
+        check(
+            "one GET of that Secret, nothing else of it",
+            fake.requests.filter { $0.path.hasPrefix("/api/v1/namespaces/shop/secrets") }.map(\.path) == ["/api/v1/namespaces/shop/secrets/web-db"],
+            "\(fake.requests.filter { $0.path.contains("secrets") }.map(\.path))")
+        if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("the form put away, the window keeps no password", app.databaseDraft != nil && app.databaseDraft?.password == nil)
+        check(
+            "the forward d started is the Database client's: its server not probed for an API",
+            forward?.spec.forDatabase == true && forward.map { KubeForwards.shared.openAPI[$0.id] == nil } == true)
+        let connections = DatabaseModel.shared.store.file
+        let saved = (try? String(contentsOf: connections, encoding: .utf8)) ?? ""
+        check("put away unsaved: nothing saved, nothing of the Secret on disk", !saved.contains(Self.secretValue) && !saved.contains("db-0"))
+        if let forward { page.stopForward(forward.id) }
+
+        page.selection = ["shop/cache-0"]
+        check("d on a Redis pod", page.press("d"))
+        check(
+            "says the Database client doesn't speak it, and what does",
+            await eventually(10) { page.commandProblem?.contains("redis-cli") == true }, page.commandProblem ?? "")
+        check("and starts nothing", !KubeForwards.shared.forwards.contains { $0.spec.target == .pod("cache-0") })
+        fake.deletePod("db-0", namespace: "shop")
+        fake.deletePod("cache-0", namespace: "shop")
+
+        // An Ingress: o opens its host, in the default browser.
+        fake.add(
+            "ingresses.networking.k8s.io", "web", namespace: "shop", values: ["Class": "nginx", "Hosts": "shop.acme.test"],
+            fields: [
+                "spec": [
+                    "tls": [["hosts": ["shop.acme.test"], "secretName": "web-tls"]],
+                    "rules": [["host": "shop.acme.test", "http": ["paths": [["path": "/", "pathType": "Prefix", "backend": ["service": ["name": "web", "port": ["number": 80]]]]]]]],
+                ]
+            ])
+        guard let ingresses = model.catalog.kind(fullName: "ingresses.networking.k8s.io") else { return check("fake-dev serves ingresses", false) }
+        page.showKind(ingresses)
+        check("the Ingresses list", await eventually(10) { page.rows.contains { $0.id == "shop/web" } }, "\(page.rows.map(\.id))")
+        page.selection = ["shop/web"]
+        app.kubernetesOpenedExternally = []
+        check("o on an Ingress", page.press("o"))
+        check(
+            "opens its host in the default browser, https as its TLS says",
+            await eventually(10) { self.app.kubernetesOpenedExternally == [URL(string: "https://shop.acme.test/")!] }, "\(app.kubernetesOpenedExternally)")
+        check("Open in Browser is its verb", page.verbs(for: ["shop/web"]).contains { $0.title == "Open in Browser" && $0.key == "o" })
+        fake.delete("ingresses.networking.k8s.io", "web", namespace: "shop")
+        model.setKind(.pods)
+        page.showKind(.pods)
     }
 
     /// What answers on 127.0.0.1:port — the stand-in says its pod's name.

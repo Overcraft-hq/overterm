@@ -33,7 +33,40 @@ extension TerminalWindowController {
             confirm: { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, then) },
             choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) },
             openURL: { [weak self] url in self?.openDockerLink(url) },
-            currentTab: { [weak self] in self?.store.selected?.id })
+            currentTab: { [weak self] in self?.store.selected?.id },
+            openExternal: { [weak self] url in self?.openKubernetesExternally(url) },
+            openDatabase: { [weak self] guess in self?.newDatabaseConnection(from: guess) },
+            importAPI: { [weak self] source in self?.importForwardAPI(source) })
+    }
+
+    /// An Ingress's host, in the default browser. An isolated run opens
+    /// nothing of the user's: it records what it would have opened.
+    func openKubernetesExternally(_ url: URL) {
+        if AppEnvironment.isIsolated {
+            kubernetesOpenedExternally.append(url)
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// A forward's OpenAPI document, imported on a press as the API
+    /// panel imports a tab's server: into the checkout's collection, its
+    /// first request opened — the panel on screen, saying what went wrong.
+    func importForwardAPI(_ source: APIDiscovery.Source) {
+        showAPIClient(nil)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let imported = try await self.apiWorkspace.importSource(source)
+                self.kubernetesPage.commandProblem = nil
+                if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
+                if let first = imported.firstRequest { self.openInEditor(first) }
+            } catch {
+                self.kubernetesPage.commandProblem = "Couldn't import \(source.title): \(error.localizedDescription)"
+                guard !AppEnvironment.isIsolated, let window = self.window else { return }
+                NSAlert(error: error).beginSheetModal(for: window) { _ in }
+            }
+        }
     }
 
     // MARK: Port-forwards (docs/design/kubernetes/analysis.md, 3.8)
@@ -46,6 +79,16 @@ extension TerminalWindowController {
         KubeForwards.shared.$forwards
             .sink { [weak self] forwards in
                 DispatchQueue.main.async { self?.updateForwardPorts(forwards) }
+            }
+            .store(in: &cancellables)
+        // What a forward's server publishes: offered by the API client (3.8).
+        KubeForwards.shared.$openAPI
+            .sink { [weak self] found in
+                let sources = found.values.sorted { $0.id < $1.id }
+                DispatchQueue.main.async {
+                    guard let self, self.apiWorkspace.forwardSources != sources else { return }
+                    self.apiWorkspace.forwardSources = sources
+                }
             }
             .store(in: &cancellables)
     }
@@ -352,14 +395,17 @@ extension TerminalWindowController {
         }
     }
 
-    /// What the switcher lists changed while the palette shows it.
+    /// What the switcher lists changed while the palette shows it — the
+    /// forwards too: one started or stopped, its server's API found.
     func watchKubernetesPalette() -> AnyCancellable {
         let model = KubernetesModel.shared
+        let forwards = KubeForwards.shared
         return model.$contexts.dropFirst().map { _ in () }
             .merge(
                 with: model.$namespaces.dropFirst().map { _ in () }, model.$rows.dropFirst().map { _ in () }, model.$scope.dropFirst().map { _ in () },
                 model.$catalog.dropFirst().map { _ in () }
             )
+            .merge(with: forwards.$forwards.dropFirst().map { _ in () }, forwards.$openAPI.dropFirst().map { _ in () })
             .sink { [weak self] _ in DispatchQueue.main.async { self?.restockPalette() } }
     }
 
@@ -382,19 +428,7 @@ extension TerminalWindowController {
                 subtitle: "The port-forwards: open, edit, stop  \(KubeSection.forwards.key)", symbol: "arrow.left.arrow.right"
             ) { [weak self] _, _ in self?.showKubernetesForwards() },
         ]
-        // Each forward: ↩ opens it (the browser column), else shows it on the page.
-        items += KubeForwards.shared.forwards.map { forward in
-            let spec = forward.spec
-            return PaletteItem(
-                id: "k.f.\(forward.id)", group: .kubernetes, title: "Forward localhost:\(spec.localPort) → \(spec.target)",
-                subtitle: ([forward.pod.map { "pod \($0)" }, spec.context, spec.namespace, forward.state.text].compactMap { $0 }).joined(separator: " · "),
-                symbol: "arrow.left.arrow.right"
-            ) { [weak self] _, _ in
-                guard let self else { return }
-                // As `o` opens it: the page's actions, the browser column.
-                if forward.isForwarding { self.kubernetesPage.openForward(forward.id) } else { self.showKubernetesForwards() }
-            }
-        }
+        items += kubernetesPage.forwardPaletteItems { [weak self] in self?.showKubernetesPage() }
         guard model.contextsRead else { return items }
         items += model.contexts.contexts.map { context in
             let detail = [
