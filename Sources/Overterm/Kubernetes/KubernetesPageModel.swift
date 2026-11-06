@@ -71,7 +71,7 @@ struct KubernetesActions {
 /// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
     case overview, workloads, network, config, storage, cluster, custom, helm, forwards
-    case open, back, forward, close, logs, history, followInTab, shell, attach, portForward, openForward, database, askWhy
+    case open, back, forward, close, logs, history, tree, followInTab, shell, attach, portForward, openForward, database, askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
@@ -86,6 +86,7 @@ enum KubernetesKey: String, ResourceKey {
         case .close: return "Esc"
         case .logs: return "l"
         case .history: return "h"
+        case .tree: return "x"
         case .followInTab: return "t"
         case .shell: return "e"
         case .attach: return "A"
@@ -122,6 +123,9 @@ enum KubernetesKey: String, ResourceKey {
         case .logs: return "Logs: the pod's, followed — its containers, previous, since; a workload's, its pods' merged"
         case .history:
             return "History: a Deployment's, StatefulSet's or DaemonSet's changes, newest first — revisions, restarts, Helm, scaling, warnings; each opens its diff"
+        case .tree:
+            return
+                "Dependency tree: what it owns down to containers, what it uses (ConfigMaps, Secrets by name, PVCs), the Services and routes to it — a missing one red; Argo CD's and Flux's, what they manage"
         case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
         case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
         case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
@@ -305,6 +309,8 @@ final class KubernetesPageModel: ObservableObject {
     var writeChecks = 0
     @Published private(set) var detail: KubeDetailSession?
     @Published var detailTab: KubeDetailTab = .overview
+    /// Bumped for `x`: the Overview scrolls its dependency tree into view.
+    @Published var revealTree = 0
     /// Where the detail has been, back and forward: this page's, across
     /// kinds, in the context shown.
     @Published private(set) var history = KubeHistory()
@@ -494,6 +500,7 @@ final class KubernetesPageModel: ObservableObject {
             case .copyKubectl: copyKubectl()
             case .logs: return openLogs()
             case .history: return openHistory()
+            case .tree: return openTree()
             case .followInTab: return runPodCommand(.followLogs)
             case .shell: return runPodCommand(.shell)
             case .attach: return runPodCommand(.attach)
@@ -677,7 +684,8 @@ final class KubernetesPageModel: ObservableObject {
         commandProblem = nil
         detail?.cancel()
         let client = model.client(for: ref.context)
-        let session = KubeDetailSession(ref: ref, client: client, secret: ref.isSecret ? secretSession(for: ref, client: client) : nil)
+        let session = KubeDetailSession(
+            ref: ref, client: client, secret: ref.isSecret ? secretSession(for: ref, client: client) : nil, discovery: model.knownDiscovery(of: ref.context))
         detail = session
         // Logs are a pod's or a workload's: another kind's detail opens on its Overview.
         if detailTab == .logs && !ref.hasLogs { detailTab = .overview }
@@ -686,6 +694,7 @@ final class KubernetesPageModel: ObservableObject {
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
         if detailTab == .history { session.showHistory() }
+        if detailTab == .overview { session.showTree() }
         updateLogsReading()
     }
 
@@ -724,6 +733,7 @@ final class KubernetesPageModel: ObservableObject {
         detailTab = tab
         if tab == .events { detail?.loadEvents() }
         if tab == .history { detail?.showHistory() }
+        if tab == .overview { detail?.showTree() }
         updateLogsReading()
     }
 

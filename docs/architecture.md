@@ -1422,7 +1422,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `DockerPageModel+Verbs`): what can be done to a container, a project,
   an image, a volume, a network, a build or a model is one list, drawn twice — as the buttons under its detail's title
   (`ResourceActionBar`: the used ones labelled, the rest behind ⋯, removal
-  last as a red bin) and as its right-click menu (`ResourceVerbMenu`) — so
+  last as a red bin) and as its right-click menu (`ResourceVerbMenu`;
+  `ResourceVerbMenuArea` where the verbs are dear to make: an AppKit menu
+  over a SwiftUI view, made only as it opens) — so
   nothing is only in the menu and the two never disagree. A verb that
   can't be done now (a mounted volume's removal, the shell of a stopped
   container) is greyed with the reason in its help. Too narrow for the
@@ -4436,6 +4438,71 @@ the fake, `h` and production's ask) and the scenario's `kubernetesTimeline`
 (`E2ERunner+KubernetesTimeline`): `h` on fake-dev, the bounded list and the
 metadata-only records, the timeline drawn, a revision's diff in the changes
 pane masked, a Helm revision's two records read for its diff.
+
+**The dependency tree** (stage 3b; `KubeTree.swift` (pure: `KubeTree`,
+`KubeTreeNode`, `KubeTreeHealth`, `KubeTreeRead`), `KubeGitOpsTree` (pure),
+`KubeTreeSession`, `KubeTreeView`, `KubernetesPageModel+Tree`; analysis 3.7,
+k9s's xray): a pod's, a workload's (Deployment, StatefulSet, DaemonSet,
+ReplicaSet, Job, CronJob), a Service's, an Ingress's and an HTTPRoute's
+Overview has its tree (`x` on its row opens the Overview scrolled to it):
+
+- **Down the owner chain**, by `ownerReferences` uid: a Deployment's
+  ReplicaSets (older ones scaled to 0 counted, not drawn), their pods (50
+  drawn a parent, the rest counted), the pods' containers as their Overview
+  says them; a CronJob's newest five Jobs followed to their pods.
+- **Across**: what the pod spec names (`KubeTree.references`: volumes,
+  projected sources, `env`/`envFrom`, image pull secrets, the
+  ServiceAccount — `default` when none —; a StatefulSet's claim
+  templates' `<template>-<name>-<ordinal>`), each checked against its
+  kind's **Table** with `includeObject=None` — names only, a Secret's Type
+  and a PVC's Status from its row, never a Secret's or a ConfigMap's data:
+  the Accept is a Table and nothing else (`KubeClient.tableOnlyAccept`, no
+  `application/json` to fall back to), and an answer that isn't one is
+  dropped unread and said. Not there is red (`.missing`), grey when
+  `optional`; a list cut, refused or not a Table checks nothing and is said
+  in `notes`.
+- **What reaches it**: the Services whose selector matches its pods'
+  labels (one selecting none of them red — grey when the workload wants
+  none, scaled to 0 or a Job done, "not checked" when its pods weren't
+  listed), under each the Ingresses and
+  HTTPRoutes that send to it (a port it hasn't red; a route's `Accepted` or
+  `ResolvedRefs` False red). A Service's own tree: the pods it selects
+  (none red), the routes to it; an Ingress's or a route's: its Services
+  (missing, selecting nothing or without the port, red) with their pods, an
+  Ingress's TLS Secrets by name, a route's Gateways.
+- **Argo CD and Flux** (`KubeGitOpsTree`, read-only, when their CRDs are
+  served): an Application's `status.resources` with Argo's own sync and
+  health, its sources (another cluster's destination: listed, not
+  opened); a Kustomization's `status.inventory` and `sourceRef`,
+  `dependsOn`; a HelmRelease's chart source and the Deployments,
+  StatefulSets, DaemonSets and Services Helm's controller labelled
+  (`helm.toolkit.fluxcd.io/name`/`namespace`). Either applying to another
+  cluster (`spec.kubeConfig`, `KubeGitOpsTree.fluxRemote`) is Argo's
+  remote case: said, its objects listed without a link — no verb reaches
+  this cluster's same-named object — and a HelmRelease's labels not read
+  here. An Application and a
+  Kustomization read nothing but their own object.
+
+Read once when the Overview shows (`KubeDetailSession.showTree`, asked for
+once the object is read; Refresh again), each list in the object's
+namespace, bounded (`limit`, pods 200, others 500), by a selector where
+there is one, only the kinds it uses and the context serves
+(`KubeTreeSession.kind(_:in:)`), each answer decoded and the tree built
+off the main thread (`KubeBlocking`); no watch, GETs only, dropped with
+the detail. A node's name opens its detail; its right-click menu is its
+object's verbs (`treeVerbs`: Open, the detail's own buttons with their
+guards, Copy as kubectl), made only as it opens (`ResourceVerbMenuArea`,
+an AppKit menu over the row): a guard asks can-i and access reviews, and
+drawing the tree asks nothing — nor observes the page, whose every publish
+would draw each row again. Checked: `KubeTreeTests`
+(which kinds, what each reads, every reference, the trees and their red
+marks, Argo's and Flux's, against the fake: once, names only, no Secret
+read, no watch, `x` and a node's verbs) and the scenario's `kubernetesTree`
+(`E2ERunner+KubernetesTree`): `x` on fake-dev's Deployment, the chain to
+its crashing pod, the missing ConfigMap red, the Secret from its Table,
+the Service and its Ingress, read once in its namespace, a node's verbs,
+a Service selecting nothing red; then an Application's, a Kustomization's
+and a HelmRelease's trees.
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before

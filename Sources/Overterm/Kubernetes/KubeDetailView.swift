@@ -192,29 +192,42 @@ struct KubeDetailView: View {
     // MARK: Overview
 
     private var overview: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if let secret = session.secret { KubeSecretView(page: page, secret: secret, theme: theme) }
-                if let overview = session.overview {
-                    if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
-                    if !overview.facts.isEmpty { items(overview.facts) }
-                    if session.ref.isPod { KubePodUsageView(page: page, metrics: page.model.metrics, session: session, theme: theme) }
-                    if overview.pods != nil { podsSection }
-                    ForEach(overview.sections) { section in
-                        if !section.items.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                caption(section.title)
-                                items(section.items)
-                            }
+        ScrollViewReader { proxy in
+            ScrollView {
+                overviewContent
+            }
+            .onChange(of: page.revealTree) { _ in
+                withAnimation { proxy.scrollTo("kubernetes.detail.tree", anchor: .top) }
+            }
+        }
+        .onAppear {
+            session.loadPods()
+            session.showTree()
+        }
+        .accessibilityIdentifier("kubernetes.detail.overview")
+    }
+
+    private var overviewContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let secret = session.secret { KubeSecretView(page: page, secret: secret, theme: theme) }
+            if let overview = session.overview {
+                if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
+                if !overview.facts.isEmpty { items(overview.facts) }
+                if let tree = session.tree { KubeTreeView(page: page, tree: tree, theme: theme).id("kubernetes.detail.tree") }
+                if session.ref.isPod { KubePodUsageView(page: page, metrics: page.model.metrics, session: session, theme: theme) }
+                if overview.pods != nil { podsSection }
+                ForEach(overview.sections) { section in
+                    if !section.items.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            caption(section.title)
+                            items(section.items)
                         }
                     }
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear { session.loadPods() }
-        .accessibilityIdentifier("kubernetes.detail.overview")
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func rolloutNote(_ rollout: KubeRollout) -> some View {

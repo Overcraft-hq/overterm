@@ -224,6 +224,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "", version: "v1", resource: "events", kind: "Event", namespaced: true, shortNames: ["ev"]),
         Kind(group: "", version: "v1", resource: "nodes", kind: "Node", namespaced: false, shortNames: ["no"], subresources: ["proxy", "status"]),
         Kind(group: "", version: "v1", resource: "serviceaccounts", kind: "ServiceAccount", namespaced: true, shortNames: ["sa"], subresources: ["token"]),
+        Kind(
+            group: "", version: "v1", resource: "persistentvolumeclaims", kind: "PersistentVolumeClaim", namespaced: true, shortNames: ["pvc"],
+            subresources: ["status"]),
         Kind(group: "", version: "v1", resource: "componentstatuses", kind: "ComponentStatus", namespaced: false, shortNames: ["cs"], verbs: ["get", "list"]),
         Kind(group: "", version: "v1", resource: "bindings", kind: "Binding", namespaced: true, verbs: ["create"]),
         Kind(group: "apps", version: "v1", resource: "deployments", kind: "Deployment", namespaced: true, shortNames: ["deploy"], categories: ["all"], subresources: ["scale", "status"]),
@@ -285,6 +288,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var forbidden: Set<String> = []
         var failingResources: Set<String> = []
         var endFollowsAtOnce = false
+        var ignoresTables: Set<String> = []
         var deniedAccess: Set<String> = []
         var evictionBlock: String?
         var nextWriteFailure: (status: Int, reason: String, message: String)?
@@ -401,6 +405,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     var endFollowsAtOnce: Bool {
         get { locked { settings.endFollowsAtOnce } }
         set { locked { settings.endFollowsAtOnce = newValue } }
+    }
+
+    /// Resources whose lists ignore the Accept's Table, as a proxy that
+    /// doesn't negotiate one: the whole objects, a Secret's data with them.
+    var ignoresTables: Set<String> {
+        get { locked { settings.ignoresTables } }
+        set { locked { settings.ignoresTables = newValue } }
     }
 
     /// One open watch.
@@ -799,6 +810,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         delete("customresourcedefinitions.apiextensions.k8s.io", name)
     }
 
+    /// A built-in kind not served, as a smaller cluster's (before discovery
+    /// is read: a section with nothing in it).
+    func unserve(_ fullName: String) { locked { kinds.removeAll { $0.fullName == fullName } } }
+
     /// The kinds it serves now.
     var servedKinds: [Kind] { locked { kinds } }
 
@@ -1131,7 +1146,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             }
             return .json(200, Self.encode(Self.full(object, kind)))
         }
-        let table = accept.contains("as=Table")
+        let table = accept.contains("as=Table") && !settings.ignoresTables.contains(resource)
         let includeObject = query["includeObject"] ?? "Metadata"
         let labels = Self.selector(query["labelSelector"])
         if isWatch {
@@ -1386,6 +1401,12 @@ final class FakeKubeAPI: @unchecked Sendable {
             ]
         case "configmaps":
             return [name, column("Data", "integer", "Data contains the configuration data."), age]
+        case "persistentvolumeclaims":
+            return [
+                name, column("Status", "Status is the current state of the claim."), column("Volume", "The volume bound to it."),
+                column("Capacity", "The actual resources of the underlying volume."), column("Access Modes", "The access modes the volume has."),
+                column("StorageClass", "The name of the StorageClass it asks for."), age,
+            ]
         case "secrets":
             return [name, column("Type", "Used to facilitate programmatic handling of secret data."), column("Data", "integer", "Data contains the secret data."), age]
         case "nodes":

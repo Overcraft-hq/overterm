@@ -186,7 +186,7 @@ final class KubeKindsTests: XCTestCase {
         XCTAssertEqual(catalog.kinds(in: .workloads).map(\.fullName), ["pods", "deployments.apps", "statefulsets.apps", "daemonsets.apps", "replicasets.apps", "jobs.batch", "cronjobs.batch"])
         XCTAssertEqual(catalog.kinds(in: .network).map(\.fullName), ["services", "endpointslices.discovery.k8s.io", "ingresses.networking.k8s.io"])
         XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets"])
-        XCTAssertEqual(catalog.kinds(in: .storage), [])
+        XCTAssertEqual(catalog.kinds(in: .storage).map(\.fullName), ["persistentvolumeclaims"])
         XCTAssertEqual(catalog.kinds(in: .overview), [], "the Overview lists no kind")
         XCTAssertEqual(
             catalog.kinds(in: .cluster).map(\.fullName),
@@ -361,6 +361,8 @@ final class KubeKindsTests: XCTestCase {
     // MARK: Any kind, followed
 
     func testAnyKindIsTheServersTableWatched() async throws {
+        // Storage served nothing: the section that says so, below.
+        api.unserve("persistentvolumeclaims")
         let model = model()
         let page = KubernetesPageModel(model: model)
         model.show()
@@ -478,6 +480,26 @@ final class KubeKindsTests: XCTestCase {
             return false
         }
         XCTAssertEqual(model.rows.count, 0)
+    }
+
+    /// Hidden and shown again with a kind picked before the kubeconfig is
+    /// read back (`show` reads it off the main thread): the list starts
+    /// at once, and the CRD watch with it — a CRD applied then still shows.
+    func testShownAgainWithAKindPickedAtOnceTheCRDWatchComesBack() async throws {
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        model.show()
+        try await until(5, "watching CRDs") { self.api.watched.contains(KubernetesModel.crdName) && !model.catalog.isEmpty }
+        let pods = try XCTUnwrap(model.catalog.kind(fullName: "pods"))
+        let deployments = try XCTUnwrap(model.catalog.kind(fullName: "deployments.apps"))
+        model.hide()
+        try await until(5, "the watch ends hidden") { !self.api.watched.contains(KubernetesModel.crdName) }
+        model.show()
+        defer { model.hide() }
+        page.showKind(model.kind == pods ? deployments : pods)
+        try await until(5, "the CRD watch, again") { self.api.watched.contains(KubernetesModel.crdName) }
+        addWidgets()
+        try await until(5, "the widgets kind, by the watch") { model.catalog.kind(fullName: "widgets.example.com") != nil }
     }
 
     /// Where CRDs can't be listed (RBAC), discovery is read again on a timer.
