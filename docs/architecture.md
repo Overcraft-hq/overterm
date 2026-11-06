@@ -2343,7 +2343,10 @@ gives agents the `k8s_` tools (Agents' tools, below);
 `kubernetes.agentWrites` (a list, empty: agents only read) names the
 contexts whose agents get the write tools while Overterm may write there;
 `kubernetes.debugImage` (`busybox:1.36`) is what `E` runs unless the
-context names its own (Writes in a tab, below).
+context names its own (Writes in a tab, below). `kubernetes.notifyOnFailure`
+(on) and `kubernetes.backgroundWatches` (4) are the attention marks';
+`kubernetes.helmPath` (empty: found) is the `helm template` a bound
+release's diff runs (Attention marks and Helm upgrade from the checkout, below).
 
 **The proxies** (`KubeProxies`, one for the app). Everything Overterm asks a
 cluster goes through the context's own long-lived `kubectl proxy --context
@@ -2402,9 +2405,20 @@ the socket (`UnixHTTPTransport.kubernetes`: `Host: localhost`, readiness
   (`needsTerminal`: run `kubectl --context C version` in a tab), and a
   plugin that isn't on the PATH says so with its `installHint`.
 - **Slots**: at most `maxProxies`, one always the page's (`setPage`, or a
-  `.page` request): background requests use `maxProxies − 1` at most and
-  are refused (`noSlot`) when none is idle; the page takes the least
-  recently used idle one's slot, else a busy background one's. A proxy no
+  `.page` request): background requests (`.background`: the rail,
+  agents, Ask Why; `.watch`: the attention watches) use `maxProxies − 1`
+  at most, the least recently used idle one's slot first; a
+  `.background` one, none idle, takes the least recently used proxy only
+  watches hold (its watch says "not watched" and tries again), a
+  `.watch` is refused (`noSlot`) — so watches never fill the background's
+  slots for good. The page takes an idle background slot first, then the
+  least recently used idle one, else — every slot busy — a background
+  one's (an entry whose last request was the background's), the least
+  recently used of them, before another busy context's; every background
+  proxy closed for the page is noted (`closedForPage`). A `.watch` never
+  opens a browser sign-in: an oidc context it reaches only once a request
+  someone made has signed in (`needsPageSignIn`, "Sign in on the page
+  first"). A proxy no
   request has used for `idleTime` is closed (a sweep every minute while any
   is open); a request or stream in flight keeps it. A request counts
   itself in its context's entry by the entry's id: two first requests
@@ -4008,8 +4022,12 @@ undo` are kubectl in one (Writes in a tab, above) — never a request of
 Overterm's, and never a chart browser, an install or repositories.
 `KubeHelmWrite` is each one's words: `helm rollback NAME REVISION` and
 `helm uninstall NAME`, `--kube-context` and `-n` always, every word not
-ours quoted for zsh, and `HELM_DRIVER=configmap` before them for a
-release kept in ConfigMaps; a Helm 2 (Tiller) release is refused, and so
+ours quoted for zsh, and before `helm` `KubeHelmWrite.prefix`: `env -u`
+helm's kube settings that would send the write to another server or
+identity (`HELM_KUBEAPISERVER`, `HELM_KUBETOKEN`, `HELM_KUBEASUSER`…: the
+user's rc files run after a pinned tab's environment is set, so only the
+line can be sure) and the driver always said (`HELM_DRIVER=secret` or
+`configmap`, whatever the shell exports); a Helm 2 (Tiller) release is refused, and so
 is a name helm wouldn't give a release (`isReleaseName`: DNS-1123, at
 most 53) — the name goes before the flags, and quotes don't keep `-x`
 from being a flag to helm. Both
@@ -4247,6 +4265,121 @@ default to.
   checkout's agent first, `k8s_get` from its pane in the bound
   namespace, and hidden nothing asked — then shown again, read again.
 
+**Attention marks** (stage 3a; `KubeAttention.swift` (pure),
+`KubeAttentionWatches`, `TerminalWindowController+KubernetesAttention`;
+analysis 3.13, Section 10, decision 9): a failure in a bound namespace
+marks the bound checkout's tab — the one stated exception to "only what
+is on screen", with a budget.
+
+- **The watches** (`KubeAttentionWatches`, one for the app): two a bound
+  namespace — Pods as rows only, Deployments with `includeObject=Object`
+  (`KubeListOptions.objects`; the reader keeps their `status.conditions`
+  as `KubeRow.conditions`, nothing else of the object) —, both with the
+  binding's selector sent to the server, through the context's proxy in a
+  background slot as a `.watch` (`KubernetesModel.watchClient`: no
+  browser sign-in, given up for a request someone made); nothing else is
+  read. Open only while a checkout bound there has a tab open — each
+  window reports its tabs' checkouts and the selected one
+  (`reportKubernetesCheckouts`, nothing while the marks are off) — and
+  `kubernetes.notifyOnFailure` is on; at most `kubernetes.backgroundWatches`
+  bound namespaces (default 4, so 8 watches), the most recently used
+  checkouts first (`KubeAttentionBudget`: one scope a context, namespace
+  and selector). Events applied in batches every 120 ms, a list at once.
+- **What marks** (`KubeAttention`, news only): a pod's Status going into
+  `CrashLoopBackOff`, `OOMKilled` or `ImagePullBackOff` (an init
+  container's too), once a pod — its crash loop's restarts mark nothing
+  more, a new rollout's pod is news of its own —; a Deployment's
+  `Progressing` False with `ProgressDeadlineExceeded`, again each time it
+  gets stuck. What failed when the watches began isn't news. **Cleared**
+  when what marked goes: the pod deleted, the rollout progressing; the
+  tab's mark goes once nothing behind it stands (`TabActivity.clusterFailed`
+  / `clusterRecovered`: only a cluster's mark, never one something else
+  made since). A watch dropped (the budget, its binding edited, the marks
+  off) takes its standing marks down first (`retire`, to the checkouts it
+  told): no later watch knows of them to clear them.
+- **The mark** goes on the checkout's selected tab, else its agent's, else
+  its first (`applyKubernetesAttention`), as a failed command's does —
+  the notification, the Dock badge, the Inbox — with `pod/web-1
+  CrashLoopBackOff — fake-dev · shop` (`KubeAttentionAlert.note`). A tab
+  whose mark is something else's — its agent waiting, a failed command —
+  keeps it, but the failure is still told (`clusterNewsUnderOtherMark`, a
+  notification of its own beside the tab's), and Ask Why follows the
+  tab's alerts, not who holds the mark. Ask Why
+  on the mark (the tab's menu, the Inbox's button: `askWhy(onMarkOf:)`)
+  reads the newest one's brief (`KubeAgentBriefing`, scrubbed, the
+  checkout's deployed commit with it) for the Ask Agent sheet, that tab's
+  agent first.
+- **Not watched**: past the budget, a context the kubeconfig lacks, a
+  list refused, or the proxy closed for the page's slot (or none to be
+  had: `noSlot`) — the tab says "⎈ not watched" in the strip
+  (`Tab.kubeNotWatched`, the reason its help) and the watch tries again
+  after a wait (5, 10, 20, 30 s), watched again once a slot is free.
+- **Checked**: `KubeAttentionTests` (the marks' triggers, once each, the
+  baseline, clearing and re-arming; the budget; a tab's cluster mark; the
+  rows' conditions; the watches against `FakeKubeAPI` — two a namespace,
+  the selector the server's, a crash and a stuck rollout raised, a pod
+  replaced cleared, the budget's over said and moved by use, a refused
+  list not watched then watched again, a gone context said, the tab
+  closed ending them, a watch dropped by the budget taking its marks
+  down; a crash under a waiting mark told, Ask Why in the Inbox; only
+  GETs, no Secret, no log) and `KubeProxiesTests` (the page takes a busy
+  background slot first, an idle background one before an idle
+  foreground one; an agent's request takes a proxy only watches hold; a
+  watch never signs in).
+
+**Helm upgrade from the checkout** (stage 3a; `KubeHelmUpgrade.swift`
+(pure, with `KubeHelmTemplate` and `KubeHelmLocator`),
+`KubeHelmUpgradeSession`, `KubeHelmUpgradeViews`; analysis 2.12, 3.1,
+3.3, Section 5, decision 15): a binding with a release gets, in the
+rail's panel, Diff Chart and Upgrade….
+
+- **The diff**: the checkout's chart for the release
+  (`KubeHelmUpgrade.chart`: the `Chart.yaml` named so, else the only one,
+  through the bounded scan), the release's newest record read — on
+  production asked first, once a context and session (`secretConsent`)
+  — and decoded raw for two things only (`KubeHelm.upgradeInputs`: the
+  user's values as JSON, the manifest), `helm template NAME CHART
+  --namespace NS --values - --is-upgrade` with the cluster as `helm
+  upgrade` will see it (`KubeHelmCapabilities`: `--kube-version` its
+  gitVersion, `--api-versions` the group versions and kinds discovery
+  says it serves — the page's, else read for the diff — over helm's
+  built-in ones; a chart switching on `.Capabilities` renders as it will
+  apply) run by Overterm itself
+  (`KubeHelmTemplate`, a process that changes nothing: every class) with
+  the values on its stdin — a pipe (`KubeProcessRun.run(input:)`), never
+  a file — `KUBECONFIG=/dev/null` and no `HELM_KUBE*` (guarded, helm's
+  folders the run's own, removed after it), `kubernetes.helmPath` else the installed one; then
+  object by object against the release's manifest (`KubeHelmUpgrade.diff`:
+  stripped, masked together as `kubectl diff` masks — `***`, `***
+  (before)`, `*** (after)`, secret-looking env values, credentials in
+  text —, an unreadable document left out and counted), in the right-hand
+  pane where a manifest's diff shows (`KubeManifestPane.helm`,
+  `KubeHelmDiffContent`). Nothing raw is kept.
+- **The upgrade** (`KubeHelmUpgradeWrite`, a `KubeTabCommand`): `helm
+  upgrade NAME CHART --reset-then-reuse-values --kube-context C -n NS`
+  (the chart's defaults with the release's values over them, as the diff
+  rendered; `KubeHelmWrite.prefix` before it; Tiller and a name
+  helm wouldn't give refused), by the guard path: the process class check
+  (`helmUpgrade` is a write: writable contexts only, production with its
+  switch), a fresh diff, the access review through the writable socket
+  (`KubeHelmUpgrade.accesses`, from the diff: the records' create and
+  update, then `create` for an added kind, `patch` for a changed one,
+  `delete` for a removed one — without the server's kinds only the
+  records, and the confirmation says so), the confirmation naming the context,
+  namespace, what changes and the command — the release's name typed on
+  production —, the context checked again, then typed into a tab pinned
+  to the context (`KubeHelmUpgradeHost.runHelmUpgrade`), recorded in a
+  scenario.
+- **Checked**: `KubeHelmUpgradeTests` (the chart found, the template's
+  arguments and environment, a stand-in helm given the values through a
+  pipe and nothing written, its failure scrubbed, the diff masked on both
+  sides, the record's inputs, the line and its quoting, every read-only
+  context refusing it, the confirmation, the reviews) and
+  `KubeHelmUpgradeSessionTests` (against the fake's release: the diff,
+  refused on fake-dev with nothing sent, reviewed and run on kind-fake, a
+  refused review and a Cancel running nothing, production's values asked
+  once and its name typed).
+
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
@@ -4366,6 +4499,22 @@ hidden), `1`'s Overview — pods by phase asked by field selector, the
 crashing pod and the stuck Deployment first, the hour's warnings, an
 application by its labels, the cluster's usage of its allocatable
 (drawn) — and its follows ended by `2`;
+attention and the checkout's chart (`E2ERunner+KubernetesAttention`): a
+fixture checkout bound to fake-dev/shop with a release and a selector,
+its tab open and another selected — its pods and deployments watched in
+the background with the page hidden, the selector the server's and
+nothing else read; a pod going into CrashLoopBackOff marking that tab
+only (its menu's and the Inbox's Ask Why, the brief of that pod for that
+checkout), a stuck rollout marking it again, both gone clearing it; with
+`maxProxies` 2 the page moving to another context while every slot is
+busy closing the background proxy, the tab's "not watched" (drawn), and
+watched again once a slot is free; Diff Chart through a stand-in helm
+(the values on its stdin, `KUBECONFIG=/dev/null`, no values file), the
+Secret masked before and after and the Deployment's replicas in the
+changes pane (drawn); Upgrade… refused on fake-dev, reviewed, asked and
+recorded on kind-fake in a pinned tab, the values asked for and a wrong
+name running nothing on fake-prod with writes on; its tabs closed, the
+watches end;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.
 

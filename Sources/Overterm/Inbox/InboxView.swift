@@ -6,6 +6,8 @@ struct InboxActions {
     /// Type a choice's key and Return into that tab's agent.
     var answer: (Tab.ID, AgentPrompt.Choice) -> Void
     var open: (Tab.ID) -> Void
+    /// Ask Why on a cluster's mark (KubeAttention): the brief to the tab's agent.
+    var askWhy: (Tab.ID) -> Void = { _ in }
     var close: () -> Void
 }
 
@@ -121,6 +123,7 @@ private struct InboxCard: View {
             } else if entry.note != nil || entry.mark != .waiting {
                 HStack {
                     Spacer(minLength: 0)
+                    if entry.asksWhy { button("Ask Why") { actions.askWhy(entry.id) } }
                     button("Open tab") { actions.open(entry.id) }
                 }
             }

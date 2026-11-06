@@ -33,8 +33,15 @@ actor KubeProxies {
         var extraKubeconfigs: [String] = []
     }
 
-    /// Who asks: the page (its context keeps a slot) or the background.
-    enum Role: Sendable { case page, background }
+    /// Who asks: the page (its context keeps a slot), the background (an
+    /// agent's tools, the rail, Ask Why), or an attention watch — the
+    /// background too, but nobody asked for it: it never opens a browser
+    /// sign-in (an oidc context it reaches only once a request someone made
+    /// has signed in, `needsPageSignIn`), and a proxy only watches hold is
+    /// given up for another background request (the watch says "not
+    /// watched" and tries again), so watches never fill the background's
+    /// slots for good.
+    enum Role: Sendable { case page, background, watch }
 
     enum Status: Equatable, Sendable {
         case closed
@@ -76,6 +83,11 @@ actor KubeProxies {
         var spec: KubeProxySpec?
         var lastUsed: Date
         var inFlight = 0
+        /// Its last request was the background's (attention watches, the
+        /// rail, agents): the first closed when the page needs a slot.
+        var background = false
+        /// Its requests in flight that are attention watches'.
+        var watches = 0
     }
 
     private var entries: [String: Entry] = [:]
@@ -92,6 +104,9 @@ actor KubeProxies {
     /// as it was read when they were turned on: a copy of the name that
     /// reaches another cluster, user or class has none (`effective`).
     private var sessionWrites: [String: KubeContext] = [:]
+    /// The background proxies closed for the page's slot, the last first
+    /// (the last few): what a test and the scenario read.
+    private(set) var closedForPage: [String] = []
 
     init(
         configuration: Configuration = Configuration(), now: @escaping @Sendable () -> Date = { Date() }, sweepEvery: Duration = .seconds(60),
@@ -172,18 +187,19 @@ actor KubeProxies {
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data? = nil, headers: [(String, String)] = []
     ) async throws -> HTTPResponse {
         let (proxy, holds, id) = try await begin(context, role)
+        let watch = role == .watch
         let response: HTTPResponse
         do {
             response = try await proxy.transport.send(method, path, body: body, headers: headers)
         } catch {
-            await finish(context.name, id, holds: holds, problem: nil, answered: false)
+            await finish(context.name, id, watch: watch, holds: holds, problem: nil, answered: false)
             throw error
         }
         let problem = KubeProxyProblem.classify(
             status: response.status, contentType: response.header("Content-Type"), text: String(decoding: response.body.prefix(4096), as: UTF8.self),
             stderr: proxy.stderr, signIn: proxy.signIn)
         let minor = path == "/version" && response.status == 200 ? KubeVersion.minor(response.body) : nil
-        await finish(context.name, id, holds: holds, problem: problem, answered: true, serverMinor: minor)
+        await finish(context.name, id, watch: watch, holds: holds, problem: problem, answered: true, serverMinor: minor)
         if let problem { throw problem }
         return response
     }
@@ -207,6 +223,7 @@ actor KubeProxies {
         let proxy: KubeProxy
         var holds: Bool
         let id: UInt64
+        let watch = role == .watch
         do {
             (proxy, holds, id) = try await begin(context, role)
         } catch {
@@ -222,14 +239,14 @@ actor KubeProxies {
                 }
                 continuation.yield(piece)
             }
-            await finish(context.name, id, holds: holds, problem: nil, answered: true)
+            await finish(context.name, id, watch: watch, holds: holds, problem: nil, answered: true)
             continuation.finish()
         } catch let error as HTTPError {
             let problem = KubeProxyProblem.classify(error, stderr: proxy.stderr, signIn: proxy.signIn)
-            await finish(context.name, id, holds: holds, problem: problem, answered: error.status != 0)
+            await finish(context.name, id, watch: watch, holds: holds, problem: problem, answered: error.status != 0)
             continuation.finish(throwing: problem ?? error)
         } catch {
-            await finish(context.name, id, holds: holds, problem: nil, answered: false)
+            await finish(context.name, id, watch: watch, holds: holds, problem: nil, answered: false)
             continuation.finish(throwing: error)
         }
     }
@@ -247,6 +264,9 @@ actor KubeProxies {
         let context = effective(context)
         let name = context.name
         if let problem = stopped[name] { throw problem }
+        let watch = role == .watch
+        // A watch never signs in: an oidc context only once someone has.
+        if watch, KubeSignIn(context.auth) == .oidc, !signedIn.contains(name) { throw KubeProxyProblem.needsPageSignIn }
         if role == .page { page = name }
         let readOnly = !context.isWritable
         if let spec = entries[name]?.spec, spec.readOnly != readOnly { await closeProxy(name) }
@@ -259,7 +279,9 @@ actor KubeProxies {
         }
         let id = entries[name]!.id
         entries[name]!.inFlight += 1
+        if watch { entries[name]!.watches += 1 }
         entries[name]!.lastUsed = now()
+        entries[name]!.background = role != .page && name != page
         let proxy: KubeProxy
         do {
             let spec: KubeProxySpec
@@ -282,33 +304,36 @@ actor KubeProxies {
             }
         } catch {
             if let problem = error as? KubeProxyProblem, problem.stopsRequests { stopped[name] = problem }
-            end(name, id)
+            end(name, id, watch: watch)
             if let entry = entries[name], entry.id == id, entry.inFlight == 0 { entries[name] = nil }
             throw error
         }
         startSweeping()
         do {
-            return (proxy, try await signIn(name, proxy), id)
+            return (proxy, try await signIn(name, proxy.signIn, interactive: !watch), id)
         } catch {
-            end(name, id)
+            end(name, id, watch: watch)
             throw error
         }
     }
 
     /// One request done: its problem kept when it stops the context, the
     /// sign-in released, the server's minor noted.
-    private func finish(_ name: String, _ id: UInt64, holds: Bool, problem: KubeProxyProblem?, answered: Bool, serverMinor: Int? = nil) {
+    private func finish(
+        _ name: String, _ id: UInt64, watch: Bool, holds: Bool, problem: KubeProxyProblem?, answered: Bool, serverMinor: Int? = nil
+    ) {
         if let problem, problem.stopsRequests { stopped[name] = problem }
         if let serverMinor { serverMinors[name] = serverMinor }
         if holds { released(name, signedIn: answered && problem == nil) }
-        end(name, id)
+        end(name, id, watch: watch)
     }
 
     /// The request no longer holds entry `id` — nothing, when that entry
     /// was closed since.
-    private func end(_ name: String, _ id: UInt64) {
+    private func end(_ name: String, _ id: UInt64, watch: Bool) {
         guard entries[name]?.id == id else { return }
         entries[name]!.inFlight = max(0, entries[name]!.inFlight - 1)
+        if watch { entries[name]!.watches = max(0, entries[name]!.watches - 1) }
         entries[name]!.lastUsed = now()
     }
 
@@ -335,15 +360,13 @@ actor KubeProxies {
     // MARK: Sign-ins, one at a time
 
     /// Waits until the context is signed in or no other sign-in runs;
-    /// true when this request is the one signing in.
-    private func signIn(_ name: String, _ proxy: KubeProxy) async throws -> Bool {
-        try await signIn(name, proxy.signIn)
-    }
-
-    private func signIn(_ name: String, _ kind: KubeSignIn) async throws -> Bool {
+    /// true when this request is the one signing in. Not `interactive` (an
+    /// attention watch): refused unless the context is signed in already.
+    private func signIn(_ name: String, _ kind: KubeSignIn, interactive: Bool = true) async throws -> Bool {
         guard kind == .oidc else { return false }
         while !signedIn.contains(name) {
             if let problem = stopped[name] { throw problem }
+            guard interactive else { throw KubeProxyProblem.needsPageSignIn }
             if signingIn == nil {
                 signingIn = name
                 return true
@@ -367,24 +390,47 @@ actor KubeProxies {
 
     // MARK: Slots
 
-    /// Closes what must close for `name` to open: for the background, a
-    /// background slot (`maxProxies − 1`); then any slot, the least recently
-    /// used idle one first — for the page, a busy background one too.
+    /// Closes what must close for `name` to open (decision 26, 3.13):
+    ///
+    /// - The background has a background slot (`maxProxies − 1`): the least
+    ///   recently used idle one's; else, for a request someone made (not a
+    ///   watch), the least recently used one only watches hold — its
+    ///   watches say "not watched" and try again.
+    /// - Then any slot: an idle background one first, then the least
+    ///   recently used idle one. The page, every slot held, takes a
+    ///   background one's — busy or not, its watches then say "not watched"
+    ///   until a slot is free — before another context's that is busy; every
+    ///   background proxy closed for the page is noted (`closedForPage`).
     private func makeRoom(for name: String, _ role: Role) async throws {
         let max = configuration.maxProxies
-        if role == .background {
+        if role != .page {
             let background = entries.keys.filter { $0 != name && $0 != page }
             if background.count >= max - 1 {
-                guard let victim = leastRecent(background, idleOnly: true) else { throw KubeProxyProblem.noSlot(max: max) }
+                var victim = leastRecent(background, idleOnly: true)
+                if victim == nil, role == .background { victim = leastRecent(background.filter(onlyWatched), idleOnly: false) }
+                guard let victim else { throw KubeProxyProblem.noSlot(max: max) }
                 await closeProxy(victim)
             }
         }
         while entries.keys.filter({ $0 != name }).count >= max {
             let others = entries.keys.filter { $0 != name && $0 != page }
-            let victim = leastRecent(others, idleOnly: true) ?? (role == .page ? leastRecent(others, idleOnly: false) : nil)
+            let background = others.filter { entries[$0]?.background == true }
+            var victim = leastRecent(background, idleOnly: true) ?? leastRecent(others, idleOnly: true)
+            switch role {
+            case .page: victim = victim ?? leastRecent(background, idleOnly: false) ?? leastRecent(others, idleOnly: false)
+            case .background: victim = victim ?? leastRecent(others.filter(onlyWatched), idleOnly: false)
+            case .watch: break
+            }
             guard let victim else { throw KubeProxyProblem.noSlot(max: max) }
+            if role == .page, entries[victim]?.background == true { closedForPage = Array(([victim] + closedForPage).prefix(8)) }
             await closeProxy(victim)
         }
+    }
+
+    /// Busy with attention watches only: given up for a request someone made.
+    private func onlyWatched(_ name: String) -> Bool {
+        guard let entry = entries[name] else { return false }
+        return entry.watches > 0 && entry.inFlight == entry.watches
     }
 
     /// One already planned (one being planned can't be closed yet).

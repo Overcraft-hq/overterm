@@ -109,11 +109,16 @@ struct KubeListOptions: Hashable, Sendable {
     /// The rows carry their metadata (`includeObject=Metadata`) in one
     /// namespace too: the Overview's workloads, for their labels.
     var metadata = false
+    /// The rows carry the whole object (`includeObject=Object`): only for a
+    /// kind with few objects whose conditions matter — the attention
+    /// watches' Deployments. The reader keeps their conditions, nothing else.
+    var objects = false
 
-    init(labelSelector: String? = nil, fieldSelector: String? = nil, metadata: Bool = false) {
+    init(labelSelector: String? = nil, fieldSelector: String? = nil, metadata: Bool = false, objects: Bool = false) {
         self.labelSelector = labelSelector
         self.fieldSelector = fieldSelector
         self.metadata = metadata
+        self.objects = objects
     }
 }
 
@@ -254,8 +259,9 @@ struct KubeClient: Sendable {
     /// What a list's or a watch's rows carry besides their cells: nothing
     /// in one namespace (or for a cluster-scoped kind), the metadata across
     /// all of them — where the namespace is only there.
-    static func includeObject(_ kind: KubeResourceKind, _ scope: KubeScope, metadata: Bool = false) -> String {
-        metadata || (kind.namespaced && scope.namespace(for: kind) == nil) ? "Metadata" : "None"
+    static func includeObject(_ kind: KubeResourceKind, _ scope: KubeScope, metadata: Bool = false, objects: Bool = false) -> String {
+        if objects { return "Object" }
+        return metadata || (kind.namespaced && scope.namespace(for: kind) == nil) ? "Metadata" : "None"
     }
 
     func version() async throws -> KubeServerVersion {
@@ -347,7 +353,7 @@ struct KubeClient: Sendable {
                     kind.path(namespace: namespace),
                     [
                         ("limit", String(pageSize)), ("continue", token), ("labelSelector", options.labelSelector), ("fieldSelector", options.fieldSelector),
-                        ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata)),
+                        ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata, objects: options.objects)),
                     ])
                 let page: KubeTable
                 do {
@@ -453,7 +459,7 @@ struct KubeClient: Sendable {
     private func watchPath(_ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, from version: String?) -> String {
         var items: [(String, String?)] = [
             ("watch", "1"), ("allowWatchBookmarks", "true"), ("labelSelector", options.labelSelector), ("fieldSelector", options.fieldSelector),
-            ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata)), ("timeoutSeconds", String(watchTimeout())),
+            ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata, objects: options.objects)), ("timeoutSeconds", String(watchTimeout())),
         ]
         if let version {
             items.insert(("resourceVersion", version), at: 1)

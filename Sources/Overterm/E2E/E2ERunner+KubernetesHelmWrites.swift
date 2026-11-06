@@ -108,7 +108,8 @@ extension E2ERunner {
         check(
             "then the rollback is asked",
             await eventually(10) { self.sheetTexts().contains { $0.contains("Roll back Helm release shop/web to revision 1?") } }, "\(sheetTexts())")
-        let rollLine = "helm rollback web 1 --kube-context kind-fake -n shop"
+        let secretPrefix = KubeHelmWrite.prefix(.secret).joined(separator: " ")
+        let rollLine = secretPrefix + " helm rollback web 1 --kube-context kind-fake -n shop"
         check(
             "naming kind-fake and shop, and the helm it runs", sheetTexts().contains { $0.contains("kind-fake · namespace shop") } && sheetTexts().contains { $0.contains(rollLine) }, "\(sheetTexts())"
         )
@@ -117,6 +118,10 @@ extension E2ERunner {
         answer(.alertFirstButtonReturn)
         check("confirmed, it is recorded, not typed", await eventually(10) { recorded.count == 1 }, "\(String(describing: page.writeStatus))")
         check("helm rollback, its context and namespace said", recorded.first?.command == rollLine, recorded.first?.command ?? "")
+        check(
+            "the shell's helm kube settings unset, its driver said",
+            recorded.first?.command.hasPrefix("env -u HELM_KUBEAPISERVER -u HELM_KUBETOKEN -u HELM_KUBEASUSER") == true
+                && recorded.first?.command.contains(" HELM_DRIVER=secret helm rollback ") == true, recorded.first?.command ?? "")
         check(
             "in a tab pinned to kind-fake", recorded.first?.tab.kubePin?.context == "kind-fake" && recorded.first?.tab.kubePin?.namespace == "shop",
             "\(String(describing: recorded.first?.tab.kubePin))")
@@ -132,7 +137,7 @@ extension E2ERunner {
             verb(.helmUninstall, web)?.unavailable ?? "none")
         verb(.helmUninstall, web)?.perform()
         check("the uninstall is asked", await eventually(10) { self.window.attachedSheet != nil && self.typedNameField() != nil }, "\(String(describing: page.writeStatus))")
-        let uninstallLine = "helm uninstall web --kube-context kind-fake -n shop"
+        let uninstallLine = secretPrefix + " helm uninstall web --kube-context kind-fake -n shop"
         check(
             "naming the release and the helm it runs",
             sheetTexts().contains { $0.contains("Uninstall Helm release shop/web?") } && sheetTexts().contains { $0.contains(uninstallLine) }, "\(sheetTexts())")
@@ -154,7 +159,8 @@ extension E2ERunner {
             verb(.helmUninstall, cache)?.perform()
             check("asked", await eventually(10) { self.window.attachedSheet != nil })
             check(
-                "with its driver said", sheetTexts().contains { $0.contains("HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop") },
+                "with its driver said",
+                sheetTexts().contains { $0.contains("HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop") && $0.contains("env -u HELM_KUBEAPISERVER") },
                 "\(sheetTexts())")
             answer(.alertSecondButtonReturn)
             await pause(0.3)
@@ -188,7 +194,7 @@ extension E2ERunner {
         check("asked again", await eventually(10) { self.typedNameField() != nil })
         typedNameField()?.stringValue = "web"
         answer(.alertFirstButtonReturn)
-        let prodLine = "helm rollback web 1 --kube-context fake-prod -n shop"
+        let prodLine = secretPrefix + " helm rollback web 1 --kube-context fake-prod -n shop"
         check("its name typed, recorded, not typed", await eventually(10) { recorded.count == 3 } && recorded.last?.command == prodLine, recorded.last?.command ?? "")
         back()
         page.endProductionWrites()

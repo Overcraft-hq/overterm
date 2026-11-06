@@ -503,7 +503,7 @@ enum KubeHelmMask {
         return KubeObjectStrip.shown(object, full: false)
     }
 
-    private static func scrubbingStrings(_ value: Any) -> Any {
+    static func scrubbingStrings(_ value: Any) -> Any {
         switch value {
         case let map as [String: Any]: map.mapValues(scrubbingStrings)
         case let list as [Any]: list.map(scrubbingStrings)

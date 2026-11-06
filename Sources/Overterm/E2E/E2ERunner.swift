@@ -262,6 +262,8 @@ final class E2ERunner {
         var texts: [String] = []
         func walk(_ v: NSView) {
             if let field = v as? NSTextField { texts.append(field.stringValue) }
+            // A long detail is a scrolling text view below the message (WriteConfirmation).
+            if let text = v as? NSTextView { texts.append(text.string) }
             v.subviews.forEach(walk)
         }
         walk(root)

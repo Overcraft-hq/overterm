@@ -201,6 +201,125 @@ final class KubeProxiesTests: XCTestCase {
         _ = await watch.result
     }
 
+    /// Every slot busy, the page takes a background proxy's (the attention
+    /// watches', 3.13) before another context's that is busy — and says which.
+    func testThePageTakesABackgroundSlotFirst() async throws {
+        let proxies = proxies(max: 2)
+        answers.hold("a")
+        let page = Task { try await proxies.send(Self.context("a"), .GET, "/") }
+        try await until { self.answers.isHeld("a") }
+        answers.hold("watch")
+        let watch = Task {
+            for try await _ in proxies.stream(Self.context("watch"), role: .background, .GET, "/api/v1/pods?watch=1") {}
+        }
+        try await until { self.answers.isHeld("watch") }
+        clock.advance(1)
+        // a was used before the watch began, but it isn't the background's.
+        _ = try await proxies.send(Self.context("b"), .GET, "/")
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, ["a", "b"])
+        XCTAssertEqual(closed.values, ["watch"])
+        let evicted = await proxies.closedForPage
+        XCTAssertEqual(evicted, ["watch"])
+        // The background can't have one back while both are busy.
+        do {
+            _ = try await proxies.send(Self.context("watch"), role: .background, .GET, "/")
+            XCTFail("no background slot while the page's and a busy one hold both")
+        } catch {
+            XCTAssertEqual(error as? KubeProxyProblem, .noSlot(max: 2))
+        }
+        answers.release("a")
+        _ = try await page.value
+        answers.release("watch")
+        watch.cancel()
+        _ = await watch.result
+        // a idle now: the background's request closes it and opens its own.
+        _ = try await proxies.send(Self.context("watch"), role: .background, .GET, "/")
+        let after = await proxies.connected
+        XCTAssertEqual(after, ["b", "watch"])
+    }
+
+    /// Attention watches on `maxProxies − 1` contexts hold every background
+    /// slot busy; a request someone made (an agent's, the rail's) still gets
+    /// one — the least recently used proxy only watches hold is given up —,
+    /// while another watch doesn't.
+    func testARequestSomeoneMadeTakesAProxyOnlyWatchesHold() async throws {
+        let proxies = proxies(max: 4)
+        _ = try await proxies.send(Self.context("page"), .GET, "/")
+        var watches: [Task<Void, Error>] = []
+        for name in ["w1", "w2", "w3"] {
+            clock.advance(1)
+            answers.hold(name)
+            watches.append(
+                Task { for try await _ in proxies.stream(Self.context(name), role: .watch, .GET, "/api/v1/pods?watch=1") {} })
+            try await until { self.answers.isHeld(name) }
+        }
+        do {
+            _ = try await proxies.send(Self.context("w4"), role: .watch, .GET, "/")
+            XCTFail("a watch never takes another watch's slot")
+        } catch {
+            XCTAssertEqual(error as? KubeProxyProblem, .noSlot(max: 4))
+        }
+        clock.advance(1)
+        let answer = try await proxies.send(Self.context("agent"), role: .background, .GET, "/api/v1/namespaces/shop/pods")
+        XCTAssertEqual(answer.status, 200)
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, ["agent", "page", "w2", "w3"], "the oldest watch's proxy given up")
+        XCTAssertEqual(closed.values, ["w1"])
+        let closedForPage = await proxies.closedForPage
+        XCTAssertEqual(closedForPage, [], "not the page's doing")
+        for name in ["w1", "w2", "w3"] { answers.release(name) }
+        for watch in watches {
+            watch.cancel()
+            _ = await watch.result
+        }
+    }
+
+    /// A watch never opens a browser sign-in: an oidc context is reached
+    /// only once a request someone made has signed in.
+    func testAWatchNeverSignsIn() async throws {
+        let proxies = proxies()
+        let oidc = Self.context("globex-eu-west-1-dev", auth: Self.oidc)
+        do {
+            _ = try await proxies.send(oidc, role: .watch, .GET, "/api/v1/pods")
+            XCTFail("not signed in")
+        } catch {
+            XCTAssertEqual(error as? KubeProxyProblem, .needsPageSignIn)
+            XCTAssertTrue(KubeProxyProblem.needsPageSignIn.reason.hasPrefix("Sign in on the page first"))
+        }
+        XCTAssertTrue(opened.values.isEmpty, "nothing started")
+        XCTAssertEqual(answers.count(oidc.name), 0)
+        let status = await proxies.status(of: oidc.name)
+        XCTAssertEqual(status, .closed, "and it holds no sign-in turn")
+        // The page signs in; then the watch rides on it.
+        _ = try await proxies.send(oidc, .GET, "/api/v1/pods")
+        let watched = try await proxies.send(oidc, role: .watch, .GET, "/api/v1/pods")
+        XCTAssertEqual(watched.status, 200)
+        // A context that signs in some other way is watched at once.
+        let plain = try await proxies.send(Self.context("fake-dev"), role: .watch, .GET, "/")
+        XCTAssertEqual(plain.status, 200)
+    }
+
+    /// Decision 26: when the page needs a slot, an idle background proxy
+    /// goes before an idle one of another context the page used — and is
+    /// noted as closed for the page.
+    func testThePageClosesAnIdleBackgroundProxyBeforeAnIdleForegroundOne() async throws {
+        let proxies = proxies(max: 3)
+        _ = try await proxies.send(Self.context("a"), .GET, "/")
+        clock.advance(1)
+        _ = try await proxies.send(Self.context("bg"), role: .background, .GET, "/")
+        clock.advance(1)
+        _ = try await proxies.send(Self.context("b"), .GET, "/")
+        clock.advance(1)
+        // a was used longest ago, but it isn't the background's.
+        _ = try await proxies.send(Self.context("c"), .GET, "/")
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, ["a", "b", "c"])
+        XCTAssertEqual(closed.values, ["bg"])
+        let evicted = await proxies.closedForPage
+        XCTAssertEqual(evicted, ["bg"], "an idle background proxy closed for the page is noted too")
+    }
+
     func testAnIdleProxyCloses() async throws {
         let proxies = proxies(idle: 600)
         _ = try await proxies.send(Self.context("a"), .GET, "/")

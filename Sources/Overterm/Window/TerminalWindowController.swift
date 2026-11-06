@@ -177,6 +177,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A scenario's: a pod's command (a shell, a log followed) isn't typed
     /// — its tab opens pinned, and the command is handed here with it.
     var kubernetesCommandRecorder: ((String, Tab) -> Void)?
+    /// Ask Why on a tab's mark, in a scenario: the brief handed here
+    /// instead of the sheet.
+    var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
+    /// What Ask Why on a mark couldn't do, said (the scenario reads it).
+    var kubernetesAttentionProblem: String?
+    /// Cluster failures told under another mark (an agent waiting): the scenario's count.
+    var clusterNotices = 0
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
@@ -636,6 +643,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 actions: InboxActions(
                     answer: { [weak self] id, choice in self?.answer(choice, in: id) },
                     open: { [weak self] id in self?.reveal(tabID: id) },
+                    askWhy: { [weak self] id in
+                        guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
+                        self.askWhy(onMarkOf: tab)
+                    },
                     close: { [weak self] in self?.toggleInbox(nil) })))
         inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
         let inboxPanel = NSViewController()
@@ -682,6 +693,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireKubernetesPanel()
         wireDockerPorts()
         wireDockerAttention()
+        wireKubernetesAttention()
         watchDockerPalette().store(in: &cancellables)
         watchKubernetesPalette().store(in: &cancellables)
         installPageKeys()
@@ -1229,6 +1241,26 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if tab.activity.containerFailed(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
+
+    /// What `tab`'s checkout deploys failed in its bound namespace
+    /// (KubeAttention): marked as a failed command is, told while you are
+    /// elsewhere — Ask Why on the mark (its menu, the Inbox).
+    /// A tab whose mark is something else's (an agent waiting, a failed
+    /// command) keeps it, but the failure is still told — the bound
+    /// checkout's agent waiting after a deploy is where it matters most.
+    func markClusterFailure(_ note: String, on tab: Tab) {
+        let visible = isVisible(tab)
+        if tab.activity.clusterFailed(note, visible: visible) {
+            notifyUnlessHeld(tab)
+        } else if tab.activity.clusterNewsUnderOtherMark(visible: visible) {
+            clusterNotices += 1
+            notifyUnlessHeld(tab, note: note, mark: .failed)
+        }
+        updateAttentionBadge()
+    }
+
+    /// A cluster mark came or went: the Dock badge, the menu bar, the Inbox.
+    func kubernetesAttentionChanged() { updateAttentionBadge() }
 
     private func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
@@ -2454,6 +2486,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
         menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        if let askWhy = kubernetesAttentionMenuItem(for: tab) { menu.addItem(askWhy) }
         menu.addItem(
             tab.isSuspended
                 ? ClosureMenuItem("Resume Tab") { [weak self] in self?.resumeTab(tab) }
@@ -4021,6 +4054,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
+        forgetKubernetesCheckouts()
         for page in pages.all { page.windowClosing?() }
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }

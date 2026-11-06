@@ -47,11 +47,14 @@ final class GroupFocus: ObservableObject {
 
     /// Call for every notice while focusing. Returns whether to post it;
     /// a held one is queued for the summary instead.
-    func shouldNotify(tab: Tab, groupName: String) -> Bool {
+    /// `note` and `mark`: what the notice says, when it isn't the tab's own
+    /// mark (a cluster failure under an agent's waiting mark).
+    func shouldNotify(tab: Tab, groupName: String, note: String? = nil, mark: TabActivity.Mark? = nil) -> Bool {
         guard let groupID else { return true }
-        if Self.breaksThrough(tabGroup: tab.groupID, focused: groupID, mark: tab.activity.mark) { return true }
+        let mark = mark ?? tab.activity.mark
+        if Self.breaksThrough(tabGroup: tab.groupID, focused: groupID, mark: mark) { return true }
         let entry = Held(
-            id: tab.id, title: tab.title, note: tab.activity.note ?? Self.describe(tab.activity.mark),
+            id: tab.id, title: tab.title, note: note ?? tab.activity.note ?? Self.describe(mark),
             groupName: groupName)
         // One line per tab: a chatty tab must not bury the others.
         held.removeAll { $0.id == tab.id }

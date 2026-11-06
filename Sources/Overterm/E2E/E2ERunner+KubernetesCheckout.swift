@@ -16,6 +16,10 @@ import AppKit
 extension E2ERunner {
     func kubernetesCheckout(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let panel = app.kubernetesPanel
+        // The panel alone here: the attention watches (3.13) are
+        // `kubernetesAttention`'s, and would keep two watches open.
+        Settings.shared.set("kubernetes.notifyOnFailure", .bool(false))
+        defer { Settings.shared.set("kubernetes.notifyOnFailure", nil) }
         if app.store.showingOverlay != nil { app.hideOverlay(focus: false) }
         _ = await eventually(5) { fake.openWatches == 0 }
 

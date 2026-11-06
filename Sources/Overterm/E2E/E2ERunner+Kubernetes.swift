@@ -300,6 +300,7 @@ extension E2ERunner {
         await kubernetesApply(model, page, fake, kubeconfig: kubeconfig, port: port)
         await kubernetesHelm(model, page, fake)
         await kubernetesHelmWrites(model, page, fake)
+        await kubernetesAttention(model, page, fake, realProxy: kubectl != nil)
         await kubernetesMetrics(model, page, fake)
         await kubernetesMergedLogs(model, page, fake)
 

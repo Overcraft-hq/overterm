@@ -126,7 +126,8 @@ final class KubeCommandsTests: XCTestCase {
         // Production with its writes on for the session (a later stage): a typed name where rule 4 says.
         let session = KubeProcessCheck.rule(.drain, class: .production, writable: true, settings: settings)
         XCTAssertEqual(session, KubeProcessRule(confirm: true, typedName: true))
-        XCTAssertFalse(KubeProcessCheck.rule(.helmUpgrade, class: .production, writable: true, settings: settings).typedName)
+        XCTAssertTrue(KubeProcessCheck.rule(.helmUpgrade, class: .production, writable: true, settings: settings).typedName, "an upgrade on production")
+        XCTAssertFalse(KubeProcessCheck.rule(.helmUpgrade, class: .local, writable: true, settings: settings).typedName)
         XCTAssertTrue(KubeProcessCheck.rule(.helmUninstall, class: .local, writable: true, settings: settings).typedName, "every class")
         XCTAssertFalse(KubeProcessCheck.rule(.drain, class: .local, writable: true, settings: settings).typedName)
     }

@@ -25,6 +25,8 @@ final class InboxModel: ObservableObject {
         let prompt: AgentPrompt?
         /// How long it has been waiting.
         let since: Date?
+        /// A cluster's failure marked it (KubeAttention): Ask Why is offered.
+        var asksWhy = false
 
         /// What the card is called: the tab, and what it is asking for.
         var headline: String {
@@ -33,7 +35,7 @@ final class InboxModel: ObservableObject {
         }
 
         static func == (a: Entry, b: Entry) -> Bool {
-            a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt
+            a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt && a.asksWhy == b.asksWhy
         }
     }
 
@@ -66,7 +68,7 @@ final class InboxModel: ObservableObject {
                 // Only a blocked agent is being asked anything; a finished
                 // one has a prompt on screen that is nobody's question.
                 prompt: tab.activity.mark == .waiting ? screen(tab).flatMap(AgentPrompt.parse) : nil,
-                since: tab.activity.mark == .waiting ? now : nil)
+                since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty)
         }
         if built != entries { entries = built }
         if highlighted == nil || !built.contains(where: { $0.id == highlighted }) { highlighted = built.first?.id }

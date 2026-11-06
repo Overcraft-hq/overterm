@@ -350,6 +350,12 @@ final class Settings: ObservableObject {
     var kubernetesProxyIdleMinutes: Int { Int(number("kubernetes.proxyIdleMinutes") ?? 10) }
     /// How many containers a merged log follows at once.
     var kubernetesLogStreams: Int { max(Int(number("kubernetes.logStreams") ?? 10), 1) }
+    /// The helm `helm template` runs, as written; empty: found (`KubeHelmLocator`).
+    var kubernetesHelmPath: String { string("kubernetes.helmPath").trimmingCharacters(in: .whitespaces) }
+    /// The attention watches (3.13): a bound checkout's tab marked when its pods or rollouts fail.
+    var kubernetesNotifyOnFailure: Bool { kubernetesEnabled && bool("kubernetes.notifyOnFailure") }
+    /// How many bound namespaces the attention watches follow at once.
+    var kubernetesBackgroundWatches: Int { max(Int(number("kubernetes.backgroundWatches") ?? 4), 1) }
     /// The kubectl the proxies run, as written; empty: found (`KubectlLocator`).
     var kubernetesKubectlPath: String { string("kubernetes.kubectlPath").trimmingCharacters(in: .whitespaces) }
 
