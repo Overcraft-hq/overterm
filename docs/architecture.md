@@ -5215,3 +5215,93 @@ saved: their conversation resumes (`claude --continue`) instead.
 The final save runs once, at whichever comes first of the window closing and
 the app quitting: after the window closes its terminals are gone, and a later
 save would drop the text.
+
+**The cluster's own API docs** (stage 4; `KubeOpenAPI.swift` and
+`KubeManifestFields.swift` (pure), `KubeAPIDocs`, `KubeExplainView`;
+analysis 3.15): `kubectl explain` beside the file, from the cluster's own
+`/openapi/v3`, CRDs included. `KubeOpenAPIIndex` reads the index (each group
+version's `serverRelativeURL`, its hash in the query; only a path under
+`/openapi/v3/` is ever followed — the URL is the server's word and goes
+through Overterm's proxy), `KubeOpenAPIDocument` one group version's
+document into `KubeSchema`s by component name and kind
+(`x-kubernetes-group-version-kind`), bounded as it is read: 32 MB, 20,000
+schemas, 500,000 nodes, 64 deep (a deeper schema is taken as saying
+nothing of its fields). `lookup(gvk, path)` walks a field path through
+`$ref`s and `allOf` (folded, refs followed 32 deep, so JSONSchemaProps
+ends), arrays (by `[]` or by the next field's name, kubectl's
+`pod.spec.containers.image`) and maps (any key): the field's
+`KubeFieldDoc` — kubectl's type names (`[]Container`,
+`map[string]string`, `IntOrString`, `Quantity`), required, its words and
+its fields —, else where it stops (`.unknown(index, parent)`), `.opaque`
+under preserve-unknown or a bare `Object`, `.noKind`. `KubeExplain`
+parses `deployment.spec.replicas` and says it as kubectl explain's plain
+text does, and the hover's words. `KubeAPIDocs` (`KubernetesModel.apiDocs`)
+reads them only when asked — a hover over a field, ⌃Space, Explain —, with
+GETs through the context's proxy in a background slot (`agentClient`; a
+hover where the mouse merely rests reads as nobody asked, `spareClient`:
+never a browser sign-in, never a proxy closed for it):
+`/version` (again after five minutes; another version drops what was read),
+`/openapi/v3` (again when it lacks the group version asked and is 30 s
+old: a CRD applied since), the group version's document (once per URL:
+a new hash reads it again), parsed off the main actor, concurrent reads of
+one shared. Kept in memory per context and cluster (`sameCluster`: the
+kubeconfig pointing the name elsewhere is another cache), never on disk:
+4 contexts, 12 documents a context, 96 MB in all, the least recently used
+out first (`maxBytes`). Each answer is read as it arrives
+(`KubeClient.get(_:maxBytes:)`, over the connection's stream) and cut off,
+its connection closed, once it passes its bound — 4 MB for the index,
+32 MB for a document: an aggregated server's oversized one is never held
+whole (`KubeBodyTooLarge`). A failure of the context's (unreachable, a
+sign-in, no OpenAPI v3) is kept a minute, one group version's (its
+document forbidden or too big) for that group version — a hover doesn't
+ask again at every move, an expired sign-in would run its exec plugin each
+time —; a group version the index lacks (`KubeDocsUnserved`) and what an
+unasked read was refused aren't kept, and Explain asks anew (`retry`).
+⌃Space whose docs can't be read falls back to the regular completion
+(`triggerCompletion(skipKube:)`). An explain run's answer shows only if
+it is the latest and its query and context are still the ones asked
+(`generation`); a failure clears the answer before it. `KubeManifestFields` scans a manifest's lines
+— block maps and `- ` items (at their key's indent or deeper), quoted keys,
+comments, block scalars and unclosed flow values skipped, documents split
+on `---`, 2 MB and 50,000 lines at most — into each key's path and the
+document's apiVersion and kind, the key at an offset (its line's, on a
+value), and the `Slot` a key typed at the caret goes in (its holder's
+path, the word typed, the keys already beside it). The editor
+(`EditorViewController+Kubernetes`, a manifest buffer's
+`KubeManifestSession`): a hover asks the session (`fieldHover`) before
+the language server, and falls through to it when the docs say nothing;
+completion offers the holder's fields not yet there (`candidates`:
+prefix first, then required, then by name; `name: ` inserted at a line's
+end) from what is cached while typing, read first on ⌃Space; the fields
+the cached docs don't know are warnings (`fieldMarks`, from the cache
+alone, again once typing pauses: `buffer.kubeDiagnostics`, shown with the
+server's), and a kind the document lacks is marked on its `kind:`. The
+manifest bar's Explain opens `KubeExplainSession` on the field at the caret,
+at the document's apiVersion, in the right-hand pane
+(`KubeManifestPane.Shown.explain`, `showExplain`); the palette's Kubernetes
+Explain… opens it on the page's context, reading nothing until Explain is
+pressed. A field's fields open with a press, Up goes back a step, Copy as
+kubectl gives `kubectl explain Q --context C [--api-version V]`; a kind not
+in the page's discovery is asked of the server once. `FakeKubeAPI` serves
+`/openapi/v3` and each group version's document (`FakeKubeAPI+OpenAPI`:
+the server's shape — `allOf: [{$ref}]`, the shared types in every
+document —; Deployment, Pod, Service, ConfigMap and Secret with their real
+fields, trimmed; others a `spec` that takes anything; a CRD the schema
+`addCRD(schema:)` gave it; `servesOpenAPI` off, an old server's 404).
+`KubeOpenAPITests` (fixture documents in the server's shape — a core
+group's and a CRD's —: refs, allOf, arrays, maps, types, unknown fields,
+a self-referring schema, the bounds, explain's text),
+`KubeManifestFieldsTests` (paths, slots, marks, completion) and
+`KubeAPIDocsTests` (against the fake: GETs only, cached, a new version,
+another cluster, a CRD applied since, a failure kept — the context's or
+one group version's —, an unserved apiVersion not failing other kinds, an
+oversized document cut off as read, the cache's bounds (the bytes' too,
+across contexts), a mouse hover on an unsigned oidc context starting
+nothing;
+the session's hover, marks and completion; explain) check it, and the
+scenario's `kubernetesAPIDocs` (`E2ERunner+KubernetesAPIDocs`): a checkout's
+Deployment reads nothing until hovered, the hover shows `replicas`' docs
+from fake-dev's API through its proxy, `replicaz` is marked, completion
+offers `revisionHistoryLimit` from the cache, Explain says
+`deployment.spec.replicas` in the pane, a CRD's field is explained, and
+⌃Space against a server without OpenAPI v3 still offers the buffer's words.

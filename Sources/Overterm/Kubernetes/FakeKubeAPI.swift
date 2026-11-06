@@ -262,6 +262,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     private let lock = NSLock()
     /// What it serves now: the built-in kinds and the CRDs added.
     private var kinds = FakeKubeAPI.builtinKinds
+    /// CRDs' `spec` schemas, by full name: what their `/openapi/v3` document says.
+    private var crdSchemas: [String: [String: Any]] = [:]
     private var objects: [String: Object] = [:]
     /// The Prometheus behind a Service's proxy, and its series.
     private var prometheus: (namespace: String, service: String, port: String)?
@@ -308,6 +310,21 @@ final class FakeKubeAPI: @unchecked Sendable {
         var deniedAccess: Set<String> = []
         var evictionBlock: String?
         var nextWriteFailure: (status: Int, reason: String, message: String)?
+        var servesOpenAPI = true
+        var openAPIPadding = 0
+    }
+
+    /// Whether it serves `/openapi/v3` (an old server's 404 when not).
+    var servesOpenAPI: Bool {
+        get { locked { settings.servesOpenAPI } }
+        set { locked { settings.servesOpenAPI = newValue } }
+    }
+
+    /// Bytes of whitespace before each `/openapi/v3/…` document: an
+    /// aggregated server's oversized one, for the read's bound.
+    var openAPIPadding: Int {
+        get { locked { settings.openAPIPadding } }
+        set { locked { settings.openAPIPadding = newValue } }
     }
 
     /// What the access review refuses, as `KubeAccess` says it: `delete
@@ -813,14 +830,19 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// A CustomResourceDefinition: its kind served from now on — in
     /// discovery and in paths — and the CRD itself an object, ADDED to the
     /// watches of CRDs, as the server has it once the CRD is established.
-    /// `columns`: its `additionalPrinterColumns` (Name and Age come with them).
+    /// `columns`: its `additionalPrinterColumns` (Name and Age come with them);
+    /// `schema`: its `spec`'s OpenAPI schema, as `/openapi/v3` says it (nil: anything).
     func addCRD(
-        group: String, version: String, plural: String, kind: String, namespaced: Bool = true, shortNames: [String] = [], columns: [Column] = []
+        group: String, version: String, plural: String, kind: String, namespaced: Bool = true, shortNames: [String] = [], columns: [Column] = [],
+        schema: [String: Any]? = nil
     ) {
         let served = Kind(
             group: group, version: version, resource: plural, kind: kind, namespaced: namespaced, shortNames: shortNames, categories: [],
             subresources: ["status"], columns: columns, custom: true)
-        locked { kinds.append(served) }
+        locked {
+            kinds.append(served)
+            if let schema { crdSchemas[served.fullName] = schema }
+        }
         add("customresourcedefinitions.apiextensions.k8s.io", "\(plural).\(group)", values: [:], labels: [:])
     }
 
@@ -842,6 +864,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     func removeCRD(_ name: String) {
         let ended = locked { () -> [Channel] in
             kinds.removeAll { $0.fullName == name }
+            crdSchemas[name] = nil
             objects = objects.filter { $0.value.resource != name }
             let ids = watchers.filter { $0.value.resource == name }.map(\.key)
             defer { ids.forEach { watchers[$0] = nil } }
@@ -1133,12 +1156,22 @@ final class FakeKubeAPI: @unchecked Sendable {
         switch path {
         case "/version":
             return .json(200, Self.encode(["major": "1", "minor": settings.minor, "gitVersion": "v1.\(settings.minor.prefix { $0.isNumber }).1", "platform": "linux/arm64"]))
+        case "/openapi/v3":
+            guard settings.servesOpenAPI else { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
+            let (served, schemas) = locked { (kinds, crdSchemas) }
+            return .json(200, Self.openAPIIndex(served, crdSchemas: schemas))
         case "/api", "/apis":
             if settings.aggregatedDiscovery && accept.contains("as=APIGroupDiscoveryList") {
                 return .json(200, Self.aggregated(locked { kinds }, core: path == "/api", stale: settings.failingGroups))
             }
             return .json(200, path == "/api" ? Self.encode(["kind": "APIVersions", "versions": ["v1"]]) : groupList())
         default: break
+        }
+        if path.hasPrefix("/openapi/v3/") {
+            let (served, schemas) = locked { (kinds, crdSchemas) }
+            guard settings.servesOpenAPI, let document = Self.openAPIDocument(String(path.dropFirst("/openapi/v3/".count)), kinds: served, crdSchemas: schemas)
+            else { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
+            return .json(200, settings.openAPIPadding > 0 ? Data(repeating: 0x20, count: settings.openAPIPadding) + document : document)
         }
         guard let route = Self.route(path, kinds: locked { kinds }) else { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
         guard let resource = route.resource else {

@@ -210,10 +210,13 @@ protocol KubeManifestHost: AnyObject {
     /// A template's copy was applied and closed (2.18: what was typed in
     /// it, a Secret's value, goes with it): what was applied, said.
     func manifestTemplateApplied(_ said: String)
+    /// The explain view, in the right-hand pane (3.15).
+    func showExplain(_ session: KubeExplainSession)
 }
 
 extension KubeManifestHost {
     func manifestTemplateApplied(_ said: String) {}
+    func showExplain(_ session: KubeExplainSession) {}
 }
 
 /// The diff and the apply, shared by the editor's sessions and agents'
@@ -458,6 +461,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     @Published var contextName: String? {
         didSet {
             guard contextName != oldValue else { return }
+            docsNote = nil
             result = nil
             conflict = nil
             state = .idle
@@ -474,9 +478,15 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     @Published private(set) var contexts: [KubeContext] = []
     /// Why Apply isn't offered on the context picked now; nil when it is.
     @Published private(set) var applyRefusal: String?
+    /// Where the field docs came from, or why they couldn't be read (3.15).
+    @Published var docsNote: String?
 
     /// The buffer's text, as it is now.
     var text: () -> String = { "" }
+    /// Where the editor's caret is in it: what Explain explains.
+    var caret: () -> Int = { 0 }
+    /// The field docs were read (a hover, a completion, Explain): the editor marks unknown fields.
+    var onDocsRead: (() -> Void)?
     /// The editor's files with unsaved edits: a kustomization renders the
     /// saved files, so it refuses while one of its folder's is unsaved.
     var unsaved: () -> [URL] = { [] }
@@ -484,6 +494,10 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     /// What a request goes through: the context's proxy in a background
     /// slot (the page keeps its own), or a test's connection.
     var client: (KubeContext) -> KubeClient
+    /// What a read nobody asked for goes through — a hover where the mouse
+    /// rests (3.15) —: a slot free as it stands, never a browser sign-in
+    /// (`KubeProxies.Role.spare`), or a test's connection.
+    var unaskedClient: (KubeContext) -> KubeClient
     /// A kustomization rendered: a test's stands in.
     var render: (URL, KubeContext) async throws -> String
     /// What the session is told when an apply lands (the scenario).
@@ -494,6 +508,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
         self.file = file
         self.model = model
         client = { context in model.agentClient(for: context) }
+        unaskedClient = { context in model.spareClient(for: context) }
         render = { folder, context in
             try await KubeKustomize.render(folder, context: context, configuration: model.readConfiguration().proxies)
         }

@@ -46,7 +46,14 @@ final class EditorBuffer {
     /// The note's frontmatter and code blocks, for the text's `version`.
     var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
-    var diagnostics: [EditorDiagnostic] = []
+    /// The language server's problems, and the fields a Kubernetes
+    /// manifest's cluster doesn't know (3.15): shown together.
+    var diagnostics: [EditorDiagnostic] {
+        get { serverDiagnostics + kubeDiagnostics }
+        set { serverDiagnostics = newValue }
+    }
+    var serverDiagnostics: [EditorDiagnostic] = []
+    var kubeDiagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.
     var gitBase: String?
     var gitMarks: [GitGutterMark] = []

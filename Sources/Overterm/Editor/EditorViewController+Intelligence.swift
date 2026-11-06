@@ -101,6 +101,7 @@ extension EditorViewController {
 
     /// An edit: the server hears it once typing pauses (or before any request).
     func bufferDidChange(_ buffer: EditorBuffer) {
+        if buffer.kubeManifest != nil { scheduleKubeFieldMarks(buffer) }
         guard buffer.serverOpen else { return }
         pendingServerChange?.cancel()
         let work = DispatchWorkItem { [weak self, weak buffer] in
