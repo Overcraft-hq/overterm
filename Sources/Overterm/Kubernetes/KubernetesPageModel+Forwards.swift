@@ -25,7 +25,7 @@ extension KubernetesPageModel {
     func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         [askWhyVerb(for: ref)].compactMap { $0 } + podVerbs(for: ref) + forwardVerbs(for: ref) + [editVerb(for: ref), compareVerb(for: ref)] + writeVerbs(for: ref)
             + tabWriteVerbs(for: ref)
-            + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 }
+            + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 } + snippetVerbs(for: ref)
     }
 
     /// The one row picked: its forward verbs, and what opens through one.

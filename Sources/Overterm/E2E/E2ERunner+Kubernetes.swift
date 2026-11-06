@@ -306,6 +306,7 @@ extension E2ERunner {
         await kubernetesTimeline(model, page, fake)
         await kubernetesTree(model, page, fake)
         await kubernetesHealth(model, page, fake, kubeconfig: kubeconfig, port: port)
+        await kubernetesTabContext(model, page, fake, kubeconfig: kubeconfig)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))

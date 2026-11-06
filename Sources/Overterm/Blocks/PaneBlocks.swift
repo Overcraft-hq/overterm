@@ -43,13 +43,28 @@ final class PaneBlocks: ObservableObject {
     /// The shell set its title. With shell integration that is the command
     /// about to run — the only name a command ever gets — except when it
     /// is the directory, which means the prompt came back.
-    func titleChanged(_ title: String, cwd: String?) {
+    /// `kubeconfig`: the pane's own `KUBECONFIG` (a pinned pane's).
+    func titleChanged(_ title: String, cwd: String?, kubeconfig: String? = nil) {
         if CommandLedger.isPrompt(title, cwd: cwd) {
             ledger.prompted()
         } else {
+            commandFolder = cwd
             ledger.began(command: title)
+            // A kubectl-family command: the files its context comes from are
+            // read the first time (KubeAmbientContexts), never per command.
+            KubeAmbientContexts.shared.noticed(title, cwd: cwd, kubeconfig: kubeconfig)
         }
     }
+
+    /// The folder the latest command began in: what a relative
+    /// `--kubeconfig ./prod.yaml` in it is relative to.
+    private(set) var commandFolder: String?
+
+    /// The command running, else the last one run: what the header's
+    /// Kubernetes warning is about (3.11): a quick `kubectl delete` ends
+    /// before anyone reads a header, so what it reached stays said until
+    /// the next command.
+    var latestCommand: String? { ledger.blocks.last?.command }
 
     /// Shown while the pointer is over the right edge, as a scrollbar is.
     func hoverMap(_ inside: Bool) {

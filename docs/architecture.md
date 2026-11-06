@@ -4605,6 +4605,80 @@ own, and fake-prod pinned, their cards read through their proxies as rows
 the changes pane, its secret env value masked (drawn), and a Secret against
 fake-prod asked first, compared by hashes.
 
+**A tab's context, and what helps type kubectl** (stage 3b; analysis 3.11,
+2.8, 2.11, decision 18):
+- *The pane-header warning* (`KubePaneWarning.swift`): `KubeCommandLine`
+  (pure) reads the command a pane runs — or ran last
+  (`PaneBlocks.latestCommand`, the title shell integration sets) — as zsh
+  splits it, only `kubectl`, `helm`, `k9s` and `stern` (behind `sudo`,
+  `env`, `watch`, assignments, in a pipeline), with `--context`
+  (`--kube-context` for helm) and `--kubeconfig` or a `KUBECONFIG=` before
+  it. `KubePaneWarning.resolve` (pure) settles the context in the design's
+  order — the flag, the kubeconfig the flag names, the pane's pin, else
+  the current context of the files a plain kubectl reads, which only says
+  "probably" (a shell's own `KUBECONFIG` is out of sight) — and classes it
+  with the current settings. `KubeAmbientContexts` (the app's) reads those
+  files — `AppEnvironment.kubeconfigs` without the setting's extras, so
+  guarded only `OVERTERM_KUBECONFIG`'s — the first time a kubectl-family
+  title shows (`PaneBlocks.titleChanged`), and then only when one of them
+  or its folder changes (`KubeconfigFileWatcher`: a dispatch source on
+  each file and each folder, nothing below them — a kubeconfig in the home
+  folder must not watch the home tree), or when a folder that wasn't there
+  is at the next such title; never runs kubectl, never writes. A
+  `--kubeconfig` is placed against the folder the command ran in (`./prod.yaml`,
+  `$HOME/…`; `KubePaneWarning.kubeconfigKey`); a pinned pane's `--context`
+  is looked up in its own `KUBECONFIG` (the pin's file, then Overterm's,
+  extras too). Guarded, a file a command names is read only when it is
+  `OVERTERM_KUBECONFIG`'s or a pin's (`KubeAmbientContexts.admitted`). The header's `KubeRunWarningLabel` shows
+  `⎈ fake-prod` in the page's red for production, not again where the
+  pin's own label says it.
+- *New Task pinned* (`KubeTaskPin`, pure, in `KubeTerminal.swift`): the
+  sheet offers every context but production, the repository's bound one
+  first and picked; the task's tab opens as Terminal in this context
+  opens one (`kubernetesTaskPin`: read again — gone or production now,
+  refused before the worktree is made —, the binding's namespace on its
+  context; the pin's file written only once the worktree is made, so a
+  failed one leaves none), its agent started there.
+- *Snippets* (`KubeSnippets.swift`, `KubernetesPageModel+Snippets`): a
+  snippet of the Snippets store naming `${context}`, `${namespace}`,
+  `${pod}`, `${container}`, `${name}` or `${kind}` is a submenu of an
+  object's verbs where it fits (a pod's only on pods), filled and quoted
+  for zsh (`${container}` the pod's default, one GET, a picker for
+  several), its `{{…}}` asked for as Snippets asks, on production asked
+  first with the line shown, typed into a tab pinned to the context and
+  namespace (`runInTab` — recorded by a scenario).
+- *Templates* (`KubeTemplates.swift`, `Resources/kubernetes/templates`,
+  copied by `make-app.sh`; the user's in the support folder's
+  `Kubernetes/Templates`, one of the same name winning): ⌘K's New
+  Kubernetes <Kind> writes Overterm's copy (`KubeManifestEdits.writeTemplate`,
+  0600 under `Kubernetes/Edits`, its `${namespace}` the one shown) and
+  opens it in the editor, where the manifest bar diffs and applies it by
+  2b's path; the buffer is never saved, so a Secret's value typed in it
+  stays in memory, and the copy goes with its tab — which closes once it
+  is applied (`onApplied`; 2.18: the typed value isn't kept open), what
+  was applied said on the page.
+- *Saved filters* (`KubeSavedFilters.swift`,
+  `KubernetesPageModel+Templates`): the filter with its context, kind and
+  namespace, by name per context, in `Kubernetes/filters.json` under the
+  support folder (an unreadable file set aside); the bookmark beside the
+  filter and ⌘K (`Kubernetes Filter: <name>`) show it again, the context
+  switched to, its `label:` and `field:` asked of the server.
+
+Checked: `KubeTabContextTests` (the line's words, flags and wrappers;
+flag, kubeconfig flag, pin and files in order, "probably", a lost pin;
+New Task's offer; snippets' fit and quoting; every bundled template a
+manifest with its namespace; a user's template winning; a copy's
+permissions and removal; filters kept, replaced, removed, set aside) and
+the scenario's `kubernetesTabContext` (`E2ERunner+KubernetesTabContext`):
+titles set as shell integration sets them — never a kubectl run —, the
+run's kubeconfig read and a `--context fake-prod` said (drawn), the file
+rewritten as a `kubectx` would seen without a command and a plain
+kubectl's "probably fake-prod" (drawn), the file put back; a task in a
+repository of the run's own pinned to kind-fake and one to fake-prod
+refused before its worktree; a snippet recorded on fake-dev and on
+fake-prod after its question; the Deployment template's copy in the
+editor; a saved filter shown again from another context.
+
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket

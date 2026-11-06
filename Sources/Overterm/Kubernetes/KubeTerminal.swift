@@ -249,7 +249,7 @@ struct KubeTerminalFiles: Sendable {
 
 /// A pinned tab made ready: its file written, its shell's environment.
 enum KubeTerminalLaunch {
-    enum Problem: Error, Equatable, CustomStringConvertible {
+    enum Problem: LocalizedError, Equatable, CustomStringConvertible {
         /// No kubeconfig to read — guarded, none but `OVERTERM_KUBECONFIG`'s.
         case noKubeconfig
         /// Guarded, and a file under `~/.kube` came: refused, nothing written.
@@ -263,6 +263,17 @@ enum KubeTerminalLaunch {
             case .file(let text): text
             }
         }
+
+        var errorDescription: String? { description }
+    }
+
+    /// What `prepare` refuses before it writes anything: no kubeconfig,
+    /// or — guarded — one under `~/.kube`.
+    static func check(
+        kubeconfigs: [URL], guarded: Bool = AppEnvironment.guardsKubeconfig, home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) throws {
+        guard !kubeconfigs.isEmpty else { throw Problem.noKubeconfig }
+        if guarded, kubeconfigs.contains(where: { KubeconfigSources.isUsersOwn($0, home: home) }) { throw Problem.usersOwn }
     }
 
     /// `pin` with the files its `KUBECONFIG` names after its own, its file
@@ -272,8 +283,7 @@ enum KubeTerminalLaunch {
         _ pin: KubeTerminalPin, kubeconfigs: [URL], files: KubeTerminalFiles = KubeTerminalFiles(),
         guarded: Bool = AppEnvironment.guardsKubeconfig, home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> (environment: [String: String], pin: KubeTerminalPin) {
-        guard !kubeconfigs.isEmpty else { throw Problem.noKubeconfig }
-        if guarded, kubeconfigs.contains(where: { KubeconfigSources.isUsersOwn($0, home: home) }) { throw Problem.usersOwn }
+        try check(kubeconfigs: kubeconfigs, guarded: guarded, home: home)
         var pin = pin
         pin.kubeconfigs = kubeconfigs.map(\.path)
         let file: URL
@@ -416,5 +426,56 @@ struct KubeTabBadge: Equatable {
         return KubeTabBadge(
             text: "⎈ mixed", help: "Its panes reach different contexts: " + names.joined(separator: ", ") + ".",
             alert: pins.contains { $0?.isProduction != false })
+    }
+}
+
+/// New Task's pin (3.11): the new task's tab opened as Terminal in this
+/// context opens one, so the agent's own kubectl goes to a dev context by
+/// default rather than to the user's current one — production, often.
+/// Production is never offered here: an agent's tab pinned there is a
+/// Terminal in this context of its own, asked first. Pure.
+enum KubeTaskPin {
+    struct Choice: Identifiable, Equatable, Sendable {
+        var context: String
+        var title: String
+        /// The binding's namespace on its context; nil, the context's own.
+        var namespace: String?
+        var id: String { context }
+    }
+
+    struct Offer: Equatable, Sendable {
+        var choices: [Choice] = []
+        /// Picked as the sheet opens: the checkout's bound context, when it isn't production.
+        var suggested: String?
+        /// Said under the picker: why the bound context isn't offered.
+        var note: String?
+    }
+
+    /// The contexts a task may pin to — every one but production, the
+    /// checkout's bound one first and suggested.
+    static func offer(_ list: KubeContextList, binding: KubeBinding?) -> Offer {
+        var offer = Offer()
+        var bound: Choice?
+        for context in list.contexts where !context.isProduction {
+            let namespace = binding?.context == context.name ? binding?.namespace : nil
+            let choice = Choice(
+                context: context.name, title: context.displayName + ((namespace ?? context.namespace).map { " · " + $0 } ?? ""), namespace: namespace)
+            if binding?.context == context.name { bound = choice } else { offer.choices.append(choice) }
+        }
+        if let bound {
+            offer.choices.insert(bound, at: 0)
+            offer.suggested = bound.context
+        } else if let binding, let context = list.context(named: binding.context), context.isProduction {
+            offer.note =
+                "The checkout is bound to \(context.displayName), production: not offered here. The agent's kubectl goes to your current context unless pinned."
+        }
+        return offer
+    }
+
+    /// Whether `name` may be pinned to — read again as the task is made:
+    /// a context that became production since the sheet opened is refused.
+    static func refused(_ name: String, in list: KubeContextList) -> String? {
+        guard let context = list.context(named: name) else { return "No kubeconfig of Overterm's names \(name) any more." }
+        return context.isProduction ? "\(context.displayName) is production: a task's tab isn't pinned there." : nil
     }
 }

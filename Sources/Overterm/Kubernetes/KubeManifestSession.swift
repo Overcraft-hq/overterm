@@ -119,6 +119,13 @@ enum KubeManifestEdits {
         try prepare()
         let file = url(for: ref)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try writePrivately(text, to: file)
+        opened[file.standardizedFileURL.path] = Opened(ref: ref, resourceVersion: resourceVersion)
+        return file
+    }
+
+    /// 0600 before a byte is in it, never through a link.
+    private static func writePrivately(_ text: String, to file: URL) throws {
         let data = Data(text.utf8)
         let fd = open(file.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw KubeManifestProblem("Overterm couldn't write \(file.path): \(String(cString: strerror(errno))).") }
@@ -126,11 +133,31 @@ enum KubeManifestEdits {
         guard fchmod(fd, 0o600) == 0 else { throw KubeManifestProblem("\(file.path) couldn't be made private.") }
         let written = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
         guard written == data.count else { throw KubeManifestProblem("Overterm couldn't write \(file.path).") }
-        opened[file.standardizedFileURL.path] = Opened(ref: ref, resourceVersion: resourceVersion)
-        return file
     }
 
     static func edit(at url: URL) -> Opened? { opened[url.standardizedFileURL.path] }
+
+    /// The templates' copies open now (`KubeTemplates`), by path: a file to
+    /// apply, never saved, removed with its tab — and its tab closed once
+    /// it is applied (2.18: a Secret's value typed into it goes then).
+    private(set) static var templates: Set<String> = []
+
+    static func isTemplate(_ url: URL) -> Bool { templates.contains(url.standardizedFileURL.path) }
+
+    /// A template's copy, `templates/<name>-<a tab's id>.yaml`: 0600, its folders 0700.
+    static func writeTemplate(_ text: String, name: String) throws -> URL {
+        try prepare()
+        let folder = self.folder.appendingPathComponent("templates", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let file = folder.appendingPathComponent("\(safe(name))-\(UUID().uuidString.prefix(6).lowercased()).yaml")
+        try writePrivately(text, to: file)
+        templates.insert(file.standardizedFileURL.path)
+        return file
+    }
+
+    /// Said for a save of a template's copy.
+    static let templateUnsaved =
+        "A template's copy isn't saved: what you type in it — a Secret's value too — stays in memory. Apply sends what is in the editor and closes the tab; closing it drops it."
 
     /// Said for a save of one: the copy stays as `y` wrote it, masked.
     static let unsaved =
@@ -145,13 +172,15 @@ enum KubeManifestEdits {
 
     /// Its tab closed.
     static func remove(_ url: URL) {
-        guard opened.removeValue(forKey: url.standardizedFileURL.path) != nil else { return }
+        let key = url.standardizedFileURL.path
+        guard opened.removeValue(forKey: key) != nil || templates.remove(key) != nil else { return }
         try? FileManager.default.removeItem(at: url)
     }
 
     /// At quit: this Overterm's folder.
     static func removeAll() {
         opened = [:]
+        templates = []
         try? FileManager.default.removeItem(at: folder)
     }
 
@@ -178,6 +207,13 @@ protocol KubeManifestHost: AnyObject {
     func askManifest(_ title: String, _ detail: String, _ button: String) async -> Bool
     /// The diff, in the right-hand pane.
     func showManifestDiff(_ session: KubeManifestSession)
+    /// A template's copy was applied and closed (2.18: what was typed in
+    /// it, a Secret's value, goes with it): what was applied, said.
+    func manifestTemplateApplied(_ said: String)
+}
+
+extension KubeManifestHost {
+    func manifestTemplateApplied(_ said: String) {}
 }
 
 /// The diff and the apply, shared by the editor's sessions and agents'
@@ -783,7 +819,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
 
     /// The tab closed: an object's copy goes with it.
     func close() {
-        if isOwnCopy { KubeManifestEdits.remove(file) }
+        if isOwnCopy || KubeManifestEdits.isTemplate(file) { KubeManifestEdits.remove(file) }
         result = nil
         fileDiffs = [:]
     }

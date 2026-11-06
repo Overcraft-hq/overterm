@@ -41,7 +41,24 @@ extension TerminalWindowController {
             selectedBinding: { [weak self] in KubeBindingStore.shared.binding(for: self?.kubernetesCheckout) },
             confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) },
             openEditor: { [weak self] url in self?.openKubernetesEdit(url) },
-            showChange: { [weak self] change in self?.showKubernetesChange(change) })
+            showChange: { [weak self] change in self?.showKubernetesChange(change) },
+            snippets: { [weak self] in Settings.shared.snippetsEnabled ? self?.snippets.snippets ?? [] : [] },
+            fillSnippet: { [weak self] snippet, then in self?.fillKubernetesSnippet(snippet, then) })
+    }
+
+    /// A Kubernetes snippet's own `{{…}}`, asked for as Snippets asks;
+    /// none, it goes straight on.
+    func fillKubernetesSnippet(_ snippet: Snippet, _ then: @escaping (String) -> Void) {
+        guard !snippet.placeholders.isEmpty else { return then(snippet.command) }
+        presentSheet { close in
+            SnippetFillView(
+                snippet: snippet,
+                onUse: { command, _ in
+                    close()
+                    then(command)
+                },
+                onCancel: close)
+        }
     }
 
     /// A workload's change, its diff masked, in the right-hand pane where a
@@ -524,7 +541,9 @@ extension TerminalWindowController {
             ) { [weak self] _, _ in self?.showKubernetesHelm() },
         ]
         items += kubernetesPage.forwardPaletteItems { [weak self] in self?.showKubernetesPage() }
+        items += kubernetesTemplateItems()
         guard model.contextsRead else { return items }
+        items += kubernetesSavedFilterItems(model)
         items += model.contexts.contexts.map { context in
             let detail = [
                 "Context", context.contextClass.title, context.isWritable ? "writable" : "read-only",
@@ -658,6 +677,12 @@ extension TerminalWindowController {
                     })
             }
         }
+        if !page.filter.trimmingCharacters(in: .whitespaces).isEmpty {
+            items.append(
+                command("saveFilter", "Kubernetes: Save This Filter", "“\(page.filter)” on \(KubernetesModel.shared.selectedName ?? "")", "bookmark") {
+                    $0.saveFilter()
+                })
+        }
         if let line = page.copyTarget {
             items.append(command("copyKubectl", "Kubernetes: Copy as kubectl", "k  —  \(line)", "terminal") { $0.copyKubectl() })
         }
@@ -710,6 +735,11 @@ extension TerminalWindowController: KubeManifestHost {
         ).ask(on: window)
     }
 
+    /// Said on the page: the copy's tab is gone, and the bar with it.
+    func manifestTemplateApplied(_ said: String) {
+        kubernetesPage.writeStatus = .done(said + " The template's copy is closed: nothing typed in it is kept.")
+    }
+
     func askManifest(_ title: String, _ detail: String, _ button: String) async -> Bool {
         guard let window else { return false }
         return await WriteConfirmation.splittingProduction(title: title, detail: detail, button: button).ask(on: window) != nil
@@ -724,5 +754,83 @@ extension TerminalWindowController: KubeManifestHost {
         rightPane.mode = .manifest
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
+    }
+}
+
+// MARK: New Task pinned to a context (docs/design/kubernetes/analysis.md, 3.11)
+
+extension TerminalWindowController {
+    /// What New Task offers: Overterm's contexts but production, the
+    /// repository's bound one first (`KubeTaskPin`). Read off the main thread.
+    static func kubernetesTaskOffer(for repo: URL) async -> KubeTaskPin.Offer {
+        let extra = Settings.shared.kubernetesKubeconfigs
+        let settings = Settings.shared.kubernetesContexts
+        let list = await KubeBlocking.run { KubeContextList.load(files: AppEnvironment.kubeconfigs(extra: extra), settings: settings, guarded: AppEnvironment.guardsKubeconfig) }
+        return KubeTaskPin.offer(list, binding: KubeBindingStore.shared.binding(for: repo))
+    }
+
+    /// The task's pin, checked — the context read again: gone, or
+    /// production now, it is refused —, nothing written yet: its file is
+    /// written once the worktree is made (`KubeTerminalLaunch.prepare`), so
+    /// a task that fails leaves no pin behind. The namespace is the
+    /// repository's binding's on it, else the context's own.
+    func kubernetesTaskPin(_ name: String, repo: URL) async throws -> (pin: KubeTerminalPin, kubeconfigs: [URL]) {
+        let extra = Settings.shared.kubernetesKubeconfigs
+        let settings = Settings.shared.kubernetesContexts
+        let (files, list) = await KubeBlocking.run {
+            let files = AppEnvironment.kubeconfigs(extra: extra)
+            return (files, KubeContextList.load(files: files, settings: settings, guarded: AppEnvironment.guardsKubeconfig))
+        }
+        if let refused = KubeTaskPin.refused(name, in: list) { throw KubeTerminalLaunch.Problem.file(refused) }
+        guard let context = list.context(named: name) else { throw KubeTerminalLaunch.Problem.noKubeconfig }
+        let binding = KubeBindingStore.shared.binding(for: repo)
+        let namespace = binding?.context == name ? binding?.namespace : nil
+        try KubeTerminalLaunch.check(kubeconfigs: files)
+        return (KubeTerminalPin(context, namespace: namespace), files)
+    }
+}
+
+// MARK: Templates and saved filters, in the palette
+
+extension TerminalWindowController {
+    /// A new resource from each template, in the editor — and the user's templates' folder.
+    func kubernetesTemplateItems() -> [PaletteItem] {
+        let namespace = kubernetesPage.templateNamespace
+        var items = KubeTemplates.list().map { template in
+            PaletteItem(
+                id: "k.template.\(template.id)", group: .action, title: "New Kubernetes \(template.kind)",
+                subtitle: (template.isUsers ? "Your template" : "A template") + " in the editor, namespace \(namespace) — Diff with Cluster, then Apply…",
+                symbol: "doc.badge.plus"
+            ) { [weak self] _, _ in self?.kubernetesPage.newFromTemplate(template) }
+        }
+        items.append(
+            PaletteItem(
+                id: "k.templates.folder", group: .action, title: "Open Kubernetes Templates Folder",
+                subtitle: "Your own templates: a YAML file there, by name, replaces Overterm's", symbol: "folder"
+            ) { _, _ in
+                let folder = KubeTemplates.userFolder
+                try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                if !AppEnvironment.isIsolated { NSWorkspace.shared.open(folder) }
+            })
+        return items
+    }
+
+    /// Each saved filter of a context the kubeconfig names: shown again on ↩.
+    func kubernetesSavedFilterItems(_ model: KubernetesModel) -> [PaletteItem] {
+        KubeSavedFilters.shared.all.filter { model.contexts.context(named: $0.context) != nil }.flatMap { saved in
+            [
+                PaletteItem(
+                    id: "k.f.\(saved.id)", group: .kubernetes, title: "Kubernetes Filter: \(saved.name)", subtitle: saved.said + " · " + saved.filter,
+                    symbol: "line.3.horizontal.decrease.circle"
+                ) { [weak self] _, _ in
+                    self?.kubernetesPage.applySavedFilter(saved)
+                    self?.showKubernetesPage()
+                },
+                PaletteItem(
+                    id: "k.f.remove.\(saved.id)", group: .action, title: "Kubernetes: Remove Saved Filter \(saved.name)", subtitle: saved.said,
+                    symbol: "bookmark.slash"
+                ) { _, _ in KubeSavedFilters.shared.remove(saved.id) },
+            ]
+        }
     }
 }

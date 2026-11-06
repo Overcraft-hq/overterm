@@ -59,6 +59,7 @@ struct PaneHeaderView: View {
             } else if let lost = pane.kubePinLost {
                 KubePinLostLabel(lost: lost)
             }
+            KubeRunWarningLabel(blocks: blocks, kubeconfig: pane.environment["KUBECONFIG"], pin: pane.kubePin, lost: pane.kubePinLost != nil)
             Spacer(minLength: 4)
             if let link = blocks.hoveredLink {
                 // Where the pointer is, since libghostty gives no rectangle
@@ -367,5 +368,39 @@ private struct KubePinLostLabel: View {
         .background(RoundedRectangle(cornerRadius: 5).fill(KubernetesPageView.production))
         .help(lost.help)
         .accessibilityIdentifier("pane.kubePinLost")
+    }
+}
+
+/// A kubectl-family command in this pane reaches production (3.11): what
+/// it runs, else ran last, against what Overterm can know of its context —
+/// `⎈ acme-prod` in the page's red, "probably" when only the kubeconfig's
+/// current context says so (`KubePaneWarning`).
+struct KubeRunWarningLabel: View {
+    @ObservedObject var blocks: PaneBlocks
+    /// The pane's own `KUBECONFIG`: where a `--context` in a pinned pane is looked up.
+    let kubeconfig: String?
+    let pin: KubeTerminalPin?
+    let lost: Bool
+    @ObservedObject var ambient: KubeAmbientContexts = .shared
+
+    var body: some View {
+        if let warning = ambient.warning(command: blocks.latestCommand, cwd: blocks.commandFolder, kubeconfig: kubeconfig, pin: pin, lost: lost),
+            warning.shown
+        {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10))
+                Text(verbatim: warning.label)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(KubernetesPageView.production.opacity(warning.probably ? 0.8 : 1)))
+            .help(warning.help)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("pane.kubeWarning")
+        }
     }
 }

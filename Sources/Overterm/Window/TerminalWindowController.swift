@@ -970,7 +970,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         pane.onTitleChange = { [weak self, weak tab, weak pane] title in
             // Every pane's ledger, not only the focused one's: a build left
             // running in a split still wants its blocks recorded.
-            self?.blocks(of: pane).titleChanged(title, cwd: pane?.workingDirectory)
+            self?.blocks(of: pane).titleChanged(title, cwd: pane?.workingDirectory, kubeconfig: pane?.environment["KUBECONFIG"])
             guard let tab, tab.terminal === pane else { return }
             tab.shellTitle = title
         }
@@ -1196,6 +1196,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+    }
+
+    /// An agent's tab (or a shell's), pinned as Terminal in this context
+    /// pins one: New Task's, its agent's kubectl going to `kubePin`'s context.
+    func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let input = agent.map { $0.command(arguments: Settings.shared.arguments(for: $0)) + "\n" }
+        let terminal = TerminalView(
+            workingDirectory: directory.path, initialInput: input, fontSize: fontSize, environment: environment, kubePin: kubePin)
+        addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+        followKubernetesPins()
     }
 
     /// A shell tab after the selected one, in `directory`, its shell
@@ -1984,10 +1995,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 defaultAgent: Settings.shared.defaultTaskAgent,
                 location: Settings.shared.worktreeLocation,
                 composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
-                onCreate: { [weak self] branch, base, agent, startStack in
+                kubernetes: Settings.shared.kubernetesEnabled ? { await Self.kubernetesTaskOffer(for: repo) } : nil,
+                onCreate: { [weak self] branch, base, agent, startStack, pin in
                     guard let self else { return nil }
                     do {
-                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack)
+                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack, kubeContext: pin)
                         close()
                         return nil
                     } catch {
@@ -3236,9 +3248,28 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What New Task does once the sheet is filled in: the worktree, then a
     /// tab in it named after the branch, with the agent started.
-    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false) async throws {
+    /// `kubeContext`: the tab pinned to it, as Terminal in this context
+    /// pins one (3.11) — read and checked before the worktree is made, so a
+    /// pin refused leaves nothing behind; its file written after it, so a
+    /// worktree that fails leaves none either.
+    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false, kubeContext: String? = nil) async throws {
+        var checked: (pin: KubeTerminalPin, kubeconfigs: [URL])?
+        if let kubeContext { checked = try await kubernetesTaskPin(kubeContext, repo: repo) }
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
-        newTab(in: path, agent: agent)
+        var pinned: (environment: [String: String], pin: KubeTerminalPin)?
+        if let checked {
+            do {
+                pinned = try KubeTerminalLaunch.prepare(checked.pin, kubeconfigs: checked.kubeconfigs)
+            } catch {
+                throw KubeTerminalLaunch.Problem.file(
+                    "The worktree is at \(path.path), but its tab couldn't be pinned to \(checked.pin.context): \(error.localizedDescription)")
+            }
+        }
+        if let pinned {
+            newTab(in: path, agent: agent, environment: pinned.environment, kubePin: pinned.pin)
+        } else {
+            newTab(in: path, agent: agent)
+        }
         store.selected?.customTitle = branch
         await worktrees.refresh()
         // Its own stack, in a tab beside it — the page's Up, which looks at

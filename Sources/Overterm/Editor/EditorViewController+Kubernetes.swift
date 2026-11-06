@@ -29,6 +29,16 @@ extension EditorViewController {
         }
         // Overterm's copy is never saved: a value retyped in it stays in memory.
         if case .object = source { buffer.document.unsaveable = KubeManifestEdits.unsaved }
+        // A template's copy neither: a Secret's value typed into it never reaches a file.
+        if KubeManifestEdits.isTemplate(url) {
+            buffer.document.unsaveable = KubeManifestEdits.templateUnsaved
+            // Applied, it is closed: a Secret's value typed into it isn't kept open (2.18).
+            session.onApplied = { [weak self, weak buffer] said in
+                guard let self, let buffer, let index = self.buffers.firstIndex(where: { $0 === buffer }) else { return }
+                self.removeBuffer(at: index)
+                self.kubernetesHost?.manifestTemplateApplied(said)
+            }
+        }
         session.host = kubernetesHost
         buffer.kubeManifest = session
     }
