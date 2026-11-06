@@ -31,6 +31,9 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
     case restart
     /// The `scale` subresource's replicas.
     case scale
+    /// A pod's containers' cpu and memory changed in place: its `resize`
+    /// subresource (stage 3b, `KubeResize`).
+    case resize
     /// A Deployment's rollout paused: `spec.paused` (kubectl rollout pause).
     case pause
     /// …and resumed.
@@ -58,6 +61,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .evict: "Evict…"
         case .restart: "Rollout Restart…"
         case .scale: "Scale…"
+        case .resize: "Resize in Place…"
         case .pause: "Pause Rollout…"
         case .resume: "Resume Rollout…"
         case .trigger: "Trigger Now…"
@@ -78,6 +82,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .evict: "Evict"
         case .restart: "Restart"
         case .scale: "Scale"
+        case .resize: "Resize"
         case .pause: "Pause"
         case .resume, .unsuspend: "Resume"
         case .trigger: "Trigger"
@@ -95,6 +100,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .removeFinalizers: "scissors"
         case .evict: "arrow.up.forward.square"
         case .scale: "plusminus"
+        case .resize: "arrow.up.left.and.arrow.down.right"
         case .pause, .suspend: "pause.circle"
         case .resume, .unsuspend: "play.circle"
         case .trigger: "play.fill"
@@ -204,6 +210,8 @@ enum KubeWriteCheck {
         case .evict: return pods && kind.subresources.contains("eviction")
         case .restart: return kind.group == "apps" && ["deployments", "statefulsets", "daemonsets"].contains(kind.resource) && kind.verbs.contains("patch")
         case .scale: return kind.subresources.contains("scale")
+        // Offered on every server's pods, refused with why where it isn't served.
+        case .resize: return pods && kind.verbs.contains("patch")
         // kubectl rollout pause takes Deployments only.
         case .pause, .resume: return kind.group == "apps" && kind.resource == "deployments" && kind.verbs.contains("patch")
         // The CronJob is read whole for its jobTemplate.
@@ -224,6 +232,7 @@ enum KubeWriteCheck {
         case .removeFinalizers, .restart, .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon: KubeAccess(verb: "patch", resource: kind.fullName)
         case .evict: KubeAccess(verb: "create", resource: "pods/eviction")
         case .scale: KubeAccess(verb: "patch", resource: kind.fullName + "/scale")
+        case .resize: KubeAccess(verb: "patch", resource: "pods/resize")
         // What is made is a Job, in the CronJob's namespace.
         case .trigger: KubeAccess(verb: "create", resource: "jobs.batch")
         case .createNamespace: KubeAccess(verb: "create", resource: "namespaces")
@@ -235,6 +244,7 @@ enum KubeWriteCheck {
         guard offered(verb, on: kind) else {
             return KubeWriteRule(refused: "A \(kind.kind.isEmpty ? kind.resource : kind.kind) has no \(verb.label.lowercased()).")
         }
+        if verb == .resize, !KubeResize.supported(kind) { return KubeWriteRule(refused: KubeResize.unsupported) }
         guard context.isWritable else { return KubeWriteRule(refused: readOnly(context)) }
         let production = context.isProduction
         let namespace = kind.group.isEmpty && kind.resource == "namespaces"
@@ -247,7 +257,7 @@ enum KubeWriteCheck {
             case .scale: production && replicas == 0
             // Not in rule 4's list: each is undone by its opposite (a
             // triggered Job by deleting it), and asked all the same.
-            case .evict, .restart, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .createNamespace: false
+            case .evict, .restart, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .createNamespace: false
             }
         return KubeWriteRule(access: access(verb, on: kind), typedName: typed, warning: warning(verb, kind: kind))
     }
@@ -262,6 +272,9 @@ enum KubeWriteCheck {
                 + "Removed, that cleanup may never happen, and an object already being deleted goes at once."
         case .delete where kind.group.isEmpty && kind.resource == "namespaces":
             "Everything in the namespace is deleted with it."
+        case .resize:
+            "A pod its controller made gets its template's values back when it is made again: change the template to keep them. "
+                + "The kubelet may not apply it at once (the pod's PodResizePending condition says why)."
         default: nil
         }
     }
@@ -416,7 +429,9 @@ enum KubeWrites {
     /// `--context` and `-n` always, quoted for zsh. Nil for an eviction —
     /// no kubectl command evicts one pod (drain evicts this way).
     /// `job`: a trigger's Job name.
-    static func kubectl(_ verb: KubeWriteVerb, _ ref: KubeObjectRef, replicas: Int? = nil, job: String? = nil, discovery: KubeDiscovery? = nil) -> String? {
+    static func kubectl(
+        _ verb: KubeWriteVerb, _ ref: KubeObjectRef, replicas: Int? = nil, job: String? = nil, resize: [KubeResize.Change] = [], discovery: KubeDiscovery? = nil
+    ) -> String? {
         let resource = KubectlLine.quoted(KubectlLine.resource(ref.kind, in: discovery))
         let name = KubectlLine.quoted(ref.name)
         let slash = KubectlLine.quoted(KubectlLine.resource(ref.kind, in: discovery) + "/" + ref.name)
@@ -430,6 +445,8 @@ enum KubeWrites {
         case .restart: words = ["kubectl", "rollout", "restart", KubectlLine.quoted(KubectlLine.resource(ref.kind, in: discovery) + "/" + ref.name)]
         case .scale:
             words = ["kubectl", "scale", slash, "--replicas=\(replicas ?? 0)"]
+        case .resize:
+            words = ["kubectl", "patch", resource, name, "--subresource", "resize", "-p", KubectlLine.quoted(KubeResize.patchText(resize))]
         case .pause: words = ["kubectl", "rollout", "pause", slash]
         case .resume: words = ["kubectl", "rollout", "resume", slash]
         case .trigger: words = ["kubectl", "create", "job", KubectlLine.quoted(job ?? ref.name + "-manual"), "--from=cronjob/" + KubectlLine.quoted(ref.name)]
@@ -698,6 +715,7 @@ enum KubeWriteOutcome {
         case .scale:
             let to = replicas.map(String.init) ?? "?"
             return "Scaled \(object) " + (from.map { "from \($0) " } ?? "") + "to \(to) in \(ref.context)."
+        case .resize: return "Resized \(object) in place in \(ref.context): the kubelet applies it — its PodResizePending condition says if it can't."
         }
     }
 
@@ -751,7 +769,8 @@ struct KubeWriteConfirmation: Equatable, Sendable {
     /// `from`/`to`: a scale's replicas; `meta`: what the pre-read found.
     static func make(
         _ verb: KubeWriteVerb, _ ref: KubeObjectRef, context: KubeContext, rule: KubeWriteRule, from: Int? = nil, to: Int? = nil,
-        meta: KubeObjectMeta? = nil, job: String? = nil, contents: KubeNamespaceContents? = nil, discovery: KubeDiscovery? = nil
+        meta: KubeObjectMeta? = nil, job: String? = nil, contents: KubeNamespaceContents? = nil, resize: [KubeResize.Change] = [],
+        discovery: KubeDiscovery? = nil
     ) -> KubeWriteConfirmation {
         let object = KubeWriteOutcome.spoken(ref)
         let place = (context.isProduction ? productionMark : "") + context.name + " · " + (ref.namespace.map { "namespace \($0)" } ?? "cluster-wide")
@@ -829,10 +848,14 @@ struct KubeWriteConfirmation: Equatable, Sendable {
             title = "Scale \(object)" + (from.map { " from \($0)" } ?? "") + " to \(to ?? 0) replicas?"
             what = to == 0 ? "Every one of its pods stops." : "Its controller adds or removes pods to match."
             button = "Scale"
+        case .resize:
+            title = "Resize \(object) in place?"
+            what = "Its containers' resources change without the pod being made again:\n" + KubeResize.said(resize)
+            button = "Resize"
         }
         var lines = [what]
         if let warning = rule.warning { lines.append("⚠︎ " + warning) }
-        let kubectl = KubeWrites.kubectl(verb, ref, replicas: to, job: job, discovery: discovery)
+        let kubectl = KubeWrites.kubectl(verb, ref, replicas: to, job: job, resize: resize, discovery: discovery)
         lines.append(kubectl.map { "Equals: \($0)" } ?? "kubectl drain evicts this way; no kubectl command evicts one pod.")
         let typed = rule.typedName ? ref.name : nil
         if let typed { lines.append("Type \(typed) to confirm.") }

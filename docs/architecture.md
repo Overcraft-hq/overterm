@@ -3781,7 +3781,7 @@ revision picked from the ReplicaSets it owns, newest first, each with its
 images and age — `KubeRevision`, the current one never offered),
 `kubectl debug -it POD --image=I --target=C` (`E` on a pod where the
 server serves ephemeral containers; C picked when there are several) and
-`kubectl debug node/N -it --image=I` (`E` on a node), `--context` and `-n`
+a node shell (`E` on a node; stage 3b, below), `--context` and `-n`
 always (a drain's `-n` is its tab's, harmless for a node), every word not
 ours quoted for zsh. A pod's image is the context's `debugImage`, else
 `kubernetes.debugImage`; a node's the context's `nodeShellImage` first
@@ -4678,6 +4678,63 @@ repository of the run's own pinned to kind-fake and one to fake-prod
 refused before its worktree; a snippet recorded on fake-dev and on
 fake-prod after its question; the Deployment template's copy in the
 editor; a saved filter shown again from another context.
+
+**Node shell and in-place resize** (stage 3b; analysis 2.3, 2.6,
+decision 20, Section 5's process table):
+- *Node shell* (`KubeTabWrite.nodeShell`, `E` on a node, Node Shell in a
+  Tab…): `kubectl debug node/N -it --profile=sysadmin --image=I --context
+  C -n NS -- chroot /host sh -c '…'` — a privileged pod on the node, in
+  its process, network and IPC namespaces, its shell rooted in the node's
+  own filesystem (bash where the node has it). The image is the context's
+  `nodeShellImage`, then its `debugImage`, then `kubernetes.debugImage`
+  (it needs `chroot`; busybox has it). It goes 2a's tab-write path: the
+  process class check (writable only, `shells` on, the context's
+  `nodeShell` on), the review (create pods, pods/attach in the tab's
+  namespace), the confirmation with the node's name typed on every class,
+  the check again at the button, then typed into a tab pinned to the
+  context (recorded in a scenario). kubectl leaves its pod
+  (`node-debugger-N-…`); the confirmation says so.
+- *In-place resize* (`KubeResize.swift` (pure: `KubeContainerResources`,
+  `KubeResize` — `Field`, `Change`, `plan`, `qos`, `rebase`, the patch —,
+  `KubeResizeDraft`), `KubeResizeSheetView`, `KubeWriteVerb.resize`):
+  Resize in Place… on a pod (its menu and detail, ⌘K) opens a sheet of
+  its regular containers' cpu and memory requests and limits as the pod
+  says them; what is typed is checked (a quantity, cpu not in bytes or
+  thousands of cores, memory not in millibytes (`512m`), a request under
+  its limit, nothing removed, the pod's QoS class — `qos`, Kubernetes'
+  `GetPodQOS` over its regular and init containers, a missing request its
+  limit — the same after as before, as the server's `ValidatePodResize`
+  insists: a Guaranteed pod's limit raised alone, a BestEffort one's first
+  request, a Burstable one's limits made its requests are refused with
+  why; something changed); a write still being checked is said in the
+  sheet, the values kept; then the page's one guard path: the class
+  check — refused with why where discovery lists no `pods/resize`
+  (Kubernetes 1.33 and later serve it), as on a read-only context —, the
+  review (`patch pods/resize`), the pod read again (`rebase`: the changes
+  typed over it and planned again, so a limit lowered meanwhile or a class
+  changed is refused before the confirmation; each change's from as it is
+  now, one there already dropped, a container gone stops it), the
+  confirmation listing each change with the kubectl it
+  equals (`kubectl patch po P --subresource resize -p '…'`) and a warning
+  that a controller's pod gets its template's values back, then a
+  strategic merge patch of only what changed to `…/pods/P/resize`. The
+  kubelet applies it; the pod's PodResizePending condition says if not.
+  `FakeKubeAPI` serves the subresource (`servesResize`, off for an older
+  server), cpu and memory only, a QoS class change 422 as the server
+  answers it.
+
+Checked: `KubeTabWritesTests` (the node shell's line, its confirmation,
+off until its setting, reviewed then typed with the name, a wrong one
+running nothing), `KubeResizeTests` (the values read, planned, refused,
+rebased; the request and its kubectl; the server and class checks) and
+`KubeResizePageTests` (the sheet, review before the read, the PATCH on
+the fake, the pod's image untouched; an older server and read-only
+contexts sending nothing), and the scenario's
+`kubernetesNodeShellAndResize` (`E2ERunner+KubernetesNodeResize`): `E` on
+a node refused until `kubernetes.contexts` turns kind-fake's `nodeShell`
+on, then reviewed, asked with the name typed and recorded; a pod's
+resize typed into the sheet's field, confirmed, landing on the fake; with
+the fake no longer serving `pods/resize`, refused with why, nothing sent.
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before

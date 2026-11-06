@@ -151,7 +151,7 @@ enum KubernetesKey: String, ResourceKey {
         case .cordon: return "Cordon or uncordon a node — asked first"
         case .newNamespace: return "New namespace — its name, then asked first; on a writable context"
         case .debug:
-            return "Debug container in a tab (kubectl debug --target); on a node, the node debugged — writable contexts only, asked first"
+            return "Debug container in a tab (kubectl debug --target); on a node, a node shell (a privileged pod, its nodeShell setting on, the name typed) — writable contexts only, asked first"
         case .delete: return "Delete — asked first; on production (and a namespace anywhere, warned what it holds) the name typed"
         case .edit:
             return "Edit the YAML in the editor — Overterm's copy, values masked; Diff with Cluster there, then Apply on a writable context, asked first"
@@ -316,6 +316,8 @@ final class KubernetesPageModel: ObservableObject {
     @Published var writeStatus: KubeWriteStatus?
     /// `=`: the scale sheet, over the page.
     @Published var scaleDraft: KubeScaleDraft?
+    /// Resize in Place…: the pod's containers' values, over the page.
+    @Published var resizeDraft: KubeResizeDraft?
     /// `N`: the new namespace's sheet, over the page.
     @Published var namespaceDraft: KubeNamespaceDraft?
     /// What a write is stamped with (a rollout restart's `restartedAt`).
@@ -493,6 +495,12 @@ final class KubernetesPageModel: ObservableObject {
         if scaleDraft != nil {
             guard characters == "\u{1B}" else { return false }
             closeScaleSheet()
+            return true
+        }
+        // And the resize sheet's.
+        if resizeDraft != nil {
+            guard characters == "\u{1B}" else { return false }
+            closeResizeSheet()
             return true
         }
         // And the new namespace's.

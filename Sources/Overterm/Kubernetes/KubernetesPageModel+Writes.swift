@@ -22,6 +22,8 @@ struct KubeWriteFacts {
     var job: String?
     var request: KubeWriteRequest?
     var contents: KubeNamespaceContents?
+    /// A resize's changes, against the pod as read after the review.
+    var resize: [KubeResize.Change] = []
 }
 
 /// How a scale changes the replicas.
@@ -48,7 +50,7 @@ enum KubeScaleChange: Equatable {
 extension KubernetesPageModel {
     /// The verbs in the order a menu shows them.
     static let writeVerbOrder: [KubeWriteVerb] = [
-        .restart, .scale, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .recreate, .evict, .removeFinalizers, .forceDelete, .delete,
+        .restart, .scale, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .recreate, .evict, .removeFinalizers, .forceDelete, .delete,
     ]
 
     /// What a write key means: the object the detail shows, while it
@@ -92,7 +94,11 @@ extension KubernetesPageModel {
                 group: 5
             ) { [weak self] in
                 guard let self else { return }
-                if verb == .scale { self.openScaleSheet(ref) } else { self.write(verb, on: ref) }
+                switch verb {
+                case .scale: self.openScaleSheet(ref)
+                case .resize: self.openResizeSheet(ref)
+                default: self.write(verb, on: ref)
+                }
             }
         }
     }
@@ -285,13 +291,73 @@ extension KubernetesPageModel {
         write(.scale, on: draft.ref, scale: .to(replicas))
     }
 
+    // MARK: The resize sheet
+
+    /// Resize in Place…: the pod's containers' values read into the sheet
+    /// — on a server that resizes in place and a writable context; refused
+    /// with why elsewhere.
+    func openResizeSheet(_ ref: KubeObjectRef) {
+        writeStatus = nil
+        guard let context = model.contexts.context(named: ref.context) else { return }
+        if let refused = KubeWriteCheck.rule(.resize, for: context, kind: ref.kind).refused {
+            writeStatus = .failed(refused)
+            return
+        }
+        resizeDraft = KubeResizeDraft(ref: ref)
+        guard let client = model.client(for: ref.context) else { return }
+        Task { [weak self] in
+            let read: Result<([KubeContainerResources], [KubeContainerResources]), Error>
+            do {
+                let pod = try await client.object(ref.kind, namespace: ref.namespace, name: ref.name).json
+                read = .success((KubeResize.containers(of: pod), KubeResize.initContainers(of: pod)))
+            } catch {
+                read = .failure(error)
+            }
+            guard let self, self.resizeDraft?.ref == ref, self.resizeDraft?.current == nil else { return }
+            switch read {
+            case .success(let (containers, _)) where containers.isEmpty:
+                self.resizeDraft?.problem = "\(KubeWriteOutcome.spoken(ref)) has no container to resize."
+            case .success(let (containers, others)):
+                self.resizeDraft?.others = others
+                self.resizeDraft?.current = containers
+                if self.resizeDraft?.typed.isEmpty == true { self.resizeDraft?.typed = containers }
+            case .failure(let error):
+                self.resizeDraft?.problem = "Couldn't read \(KubeWriteOutcome.spoken(ref)): \(KubernetesModel.said(error))"
+            }
+        }
+    }
+
+    func closeResizeSheet() {
+        resizeDraft = nil
+        giveListTheKeyboard()
+    }
+
+    /// The sheet's Resize: what is typed checked against what was read —
+    /// then the write's own confirmation. While another write is being
+    /// checked, said in the sheet, the values kept.
+    func confirmResize() {
+        guard let draft = resizeDraft, let current = draft.current else { return }
+        guard writeChecking == nil else {
+            resizeDraft?.problem = "Another write is being checked: try again once it is asked or done."
+            return
+        }
+        switch KubeResize.plan(current: current, typed: draft.typed, others: draft.others) {
+        case .failure(let refused):
+            resizeDraft?.problem = refused.reason
+        case .success(let changes):
+            resizeDraft = nil
+            giveListTheKeyboard()
+            write(.resize, on: draft.ref, resize: changes)
+        }
+    }
+
     // MARK: The guard path
 
     /// `verb` on the object, by the one path every write takes. `toggles`:
     /// a key's pause, suspend or cordon, turned to its opposite when the
     /// object read says it is so already. While another write is between
     /// its key and its confirmation, nothing.
-    func write(_ verb: KubeWriteVerb, on ref: KubeObjectRef, scale: KubeScaleChange? = nil, toggles: Bool = false) {
+    func write(_ verb: KubeWriteVerb, on ref: KubeObjectRef, scale: KubeScaleChange? = nil, resize: [KubeResize.Change] = [], toggles: Bool = false) {
         guard writeChecking == nil else { return }
         writeStatus = nil
         guard let context = model.contexts.context(named: ref.context) else {
@@ -359,6 +425,27 @@ extension KubernetesPageModel {
                     }
                     facts.job = job
                     facts.request = request
+                case .resize:
+                    // Against the pod as it is now: a value changed meanwhile is said as it is.
+                    // Planned again on it, so what the read makes wrong is refused before the confirmation.
+                    let pod = try await client.object(ref.kind, namespace: ref.namespace, name: ref.name).json
+                    let rebased = KubeResize.rebase(resize, on: KubeResize.containers(of: pod), others: KubeResize.initContainers(of: pod))
+                    guard let rebased else {
+                        self?.writeStatus = .failed("\(object)'s containers changed meanwhile: nothing was sent — look again.")
+                        return
+                    }
+                    let changes: [KubeResize.Change]
+                    switch rebased {
+                    case .success(let planned): changes = planned
+                    case .failure(let refused):
+                        self?.writeStatus = .failed("\(object) changed meanwhile, nothing was sent: \(refused.reason)")
+                        return
+                    }
+                    guard !changes.isEmpty else {
+                        self?.writeStatus = .failed("\(object) has those values already.")
+                        return
+                    }
+                    facts.resize = changes
                 case .delete where KubeWriteCheck.isNamespace(ref.kind):
                     facts.contents = await client.contents(of: ref.name, discovery: discovery)
                 default: break
@@ -400,7 +487,7 @@ extension KubernetesPageModel {
         writeStatus = nil
         let confirmation = KubeWriteConfirmation.make(
             facts.verb, ref, context: context, rule: rule, from: facts.from, to: facts.to, meta: facts.meta, job: facts.job, contents: facts.contents,
-            discovery: model.knownDiscovery(of: ref.context))
+            resize: facts.resize, discovery: model.knownDiscovery(of: ref.context))
         actions?.confirmWrite(confirmation) { [weak self] typed in
             guard let self else { return }
             guard confirmation.accepts(typed) else {
@@ -431,6 +518,7 @@ extension KubernetesPageModel {
         case .evict: request = KubeWrites.evict(ref)
         case .restart: request = KubeWrites.restart(ref, at: clock())
         case .scale: request = KubeWrites.scale(ref, replicas: facts.to ?? 0)
+        case .resize: request = KubeResize.request(ref, facts.resize)
         case .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon:
             guard let (toggle, on) = verb.toggle else { return }
             request = KubeWrites.toggle(ref, toggle, on: on)
