@@ -370,6 +370,7 @@ struct KubernetesPageView: View {
             .padding(.horizontal, 8)
             .frame(width: 240, height: 26)
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+            KubeSavedFilterMenu(page: page, theme: theme)
             Button {
                 page.copyKubectl()
             } label: {
@@ -680,5 +681,38 @@ struct KubeOverviewCount: View {
         if session.state != .idle, session.overview.problems > 0 {
             Text(verbatim: "\(session.overview.problems)").foregroundStyle(TabStatusStyle.failed).font(.system(size: 10.5, design: .monospaced))
         }
+    }
+}
+
+/// The filter's saved ones, for the context shown (`KubeSavedFilters`):
+/// Save This Filter, each saved filter shown again, each removed.
+struct KubeSavedFilterMenu: View {
+    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject var theme: ChromeTheme
+    @ObservedObject var store: KubeSavedFilters = .shared
+
+    var body: some View {
+        let saved = page.model.selectedName.map { store.filters(on: $0) } ?? []
+        Menu {
+            Button("Save This Filter") { page.saveFilter() }
+                .disabled(page.filter.trimmingCharacters(in: .whitespaces).isEmpty)
+            if !saved.isEmpty {
+                Divider()
+                ForEach(saved) { filter in
+                    Button(filter.name + " — " + filter.said) { page.applySavedFilter(filter) }
+                }
+                Divider()
+                Menu("Remove") {
+                    ForEach(saved) { filter in Button(filter.name) { store.remove(filter.id) } }
+                }
+            }
+        } label: {
+            Image(systemName: saved.isEmpty ? "bookmark" : "bookmark.fill").font(.system(size: 12)).foregroundStyle(theme.text2)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Saved filters for this context — also in the palette (⌘K)")
+        .accessibilityIdentifier("kubernetes.savedFilters")
     }
 }

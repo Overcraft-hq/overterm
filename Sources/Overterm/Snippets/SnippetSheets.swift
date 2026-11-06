@@ -16,9 +16,12 @@ struct SnippetEditorView: View {
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1...6)
             }
-            Text("{{name}} marks a value you’ll be asked for when using it.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Text(
+                "{{name}} marks a value you’ll be asked for when using it. ${context}, ${namespace}, ${pod}, ${container}, ${name} and ${kind} make it a Kubernetes snippet: offered in the Kubernetes page’s menu, filled from the object, run in a tab pinned to its context."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            .font(.callout)
+            .foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)

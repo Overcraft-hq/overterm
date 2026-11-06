@@ -46,20 +46,25 @@ enum KubeconfigSources {
     }
 
     /// A colon-separated list, as KUBECONFIG has it.
-    static func list(_ value: String, home: URL) -> [URL] {
+    static func list(_ value: String, home: URL, relativeTo folder: URL? = nil) -> [URL] {
         var seen = Set<String>()
-        return value.split(separator: ":").compactMap { expand(String($0).trimmingCharacters(in: .whitespaces), home: home) }
+        return value.split(separator: ":").compactMap { expand(String($0).trimmingCharacters(in: .whitespaces), home: home, relativeTo: folder) }
             .filter { seen.insert($0.standardizedFileURL.path).inserted }
     }
 
-    /// `~` and `~/…` against `home`; a relative path has nothing to be
-    /// relative to in an app, so it is passed over.
-    static func expand(_ path: String, home: URL) -> URL? {
+    /// `~`, `$HOME` and `${HOME}` (and what follows them) against `home`; a
+    /// relative path against `folder` — a command's own folder, for a
+    /// `--kubeconfig ./prod.yaml` a pane ran — and without one passed over:
+    /// an app has nothing to be relative to.
+    static func expand(_ path: String, home: URL, relativeTo folder: URL? = nil) -> URL? {
         if path.isEmpty { return nil }
-        if path == "~" { return home }
-        if path.hasPrefix("~/") { return home.appendingPathComponent(String(path.dropFirst(2))) }
-        guard path.hasPrefix("/") else { return nil }
-        return URL(fileURLWithPath: path)
+        for prefix in ["~", "$HOME", "${HOME}"] {
+            if path == prefix { return home }
+            if path.hasPrefix(prefix + "/") { return home.appendingPathComponent(String(path.dropFirst(prefix.count + 1))) }
+        }
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+        guard let folder else { return nil }
+        return folder.appendingPathComponent(path).standardizedFileURL
     }
 
     /// Whether `url` is in the user's own `~/.kube` (its config, its other

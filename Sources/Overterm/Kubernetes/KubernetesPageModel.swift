@@ -62,6 +62,12 @@ struct KubernetesActions {
     /// A change of a workload's timeline, its diff masked, in the changes
     /// pane: the page steps aside.
     var showChange: (KubeChangeDiff) -> Void = { _ in }
+    /// The Snippets store's snippets: those naming `${context}`, `${pod}`…
+    /// are offered in the verb menu (`KubeSnippet`).
+    var snippets: () -> [Snippet] = { [] }
+    /// A snippet's own `{{…}}` asked for, as Snippets asks: `then` gets the
+    /// filled line, only when the user goes on.
+    var fillSnippet: (_ snippet: Snippet, _ then: @escaping (String) -> Void) -> Void = { snippet, then in then(snippet.command) }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -1147,7 +1153,7 @@ final class KubernetesPageModel: ObservableObject {
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
         ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
-            + editVerbs(for: picked) + compareVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked)
+            + editVerbs(for: picked) + compareVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked) + snippetVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.
