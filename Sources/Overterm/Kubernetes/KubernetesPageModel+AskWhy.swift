@@ -82,7 +82,14 @@ extension KubernetesPageModel {
         askingWhy = ref
         Task { [weak self] in
             do {
-                let brief = try await KubeAgentBriefing.brief(ref, client: client, context: context, discovery: discovery)
+                var brief = try await KubeAgentBriefing.brief(ref, client: client, context: context, discovery: discovery)
+                // A checkout bound there — the selected tab's, else another's —:
+                // its deployed commit, and its agent first (3.2, 3.4).
+                if let namespace = brief.namespace,
+                    let bound = KubeBindingStore.shared.binding(on: ref.context, namespace: namespace, preferring: self?.actions?.selectedBinding())
+                {
+                    brief = await KubeAgentBriefing.withDeployedCommit(brief, checkout: URL(fileURLWithPath: bound.checkout))
+                }
                 guard let self else { return }
                 self.askingWhy = nil
                 self.actions?.askWhy(brief)

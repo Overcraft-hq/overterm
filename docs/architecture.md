@@ -2273,7 +2273,9 @@ Ask Why and agents' read tools — and of stage 2a, writable contexts,
 production's switch for the session and the page's first writes (Writes,
 below): delete, force delete, finalizers, evict, rollout restart, scale — and of stage 2b, a manifest in the editor diffed
 with its cluster and applied (Manifests in the editor, below) — and of
-stage 2c, Helm's releases, read (Helm releases, below).
+stage 2c, Helm's releases, read (Helm releases, below) — and of stage
+3a, a checkout bound to what it deploys, the rail's panel and the right
+slot, and the deployed commit (A checkout's binding, below).
 
 **Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
 list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
@@ -3072,8 +3074,9 @@ production band are its guard.
   `~/.kube`, or none at all, is refused before anything is written.
 - **Where** (`KubeTerminalDirectory`, pure): the context's
   `terminalDirectory` (`kubernetes.contexts`' field, `~` allowed) when it
-  is a folder, else the checkout bound to the context (stage 3a), else
-  home.
+  is a folder, else the checkout bound to the context (the panel's
+  checkout's binding when it is on that context, else the first bound
+  there; `KubeBindingStore`), else home.
 - **Opened from** (`openKubernetesTerminal`, the window's; the page's
   `KubernetesActions.openTerminal`): the context card's "Terminal in This
   Context" and a context's right-click (the namespace shown), a row's verb
@@ -3454,9 +3457,12 @@ rollout handed to an agent with what it needs to say why — Docker's Ask Why
   deadline, conditions and ReplicaSets, then its events, its newest
   ReplicaSet's (a FailedCreate — a quota — is there), that ReplicaSet's
   pods (by its `pod-template-hash`), the first failing one's containers and
-  log, the template and the diff. `KubeAgentBrief.deployedCommit` is the
-  seam for the bound checkout's deployed commit (3.2): nil until stage 3a's
-  binding exists.
+  log, the template and the diff. The brief keeps where it is about
+  (`context`, `namespace`) and its images; with a checkout bound to that
+  namespace, `KubeAgentBriefing.withDeployedCommit` adds the deployed
+  commit (3.2) as a part of its own (`deployedCommit`, `checkout`) — the
+  images' SHA-shaped tag looked up in the checkout, nothing read from
+  the cluster for it.
 - **The reads** (`KubeAgentBriefing`): once, when asked — the object, its
   events, the logs, its owners (by discovery's kinds, else Kubernetes'
   own; an ownerReference naming a Secret never followed), a Deployment's ReplicaSets (one page of 50), the nodes (one page of
@@ -3487,10 +3493,15 @@ rollout handed to an agent with what it needs to say why — Docker's Ask Why
   question typed, the subject the fixed chip, the parts their chips, and
   the whole prompt shown before it is sent (`AskAgentModel.showsBrief`,
   updated as chips go off; no git diff chip, which the preview wouldn't
-  show). No checkout is bound to a context yet, so the
-  selected tab's agent is offered first, then the window's others, then a
-  new one in the selected tab's folder; Send types it, as every Ask Agent
-  does, the page stepping aside.
+  show). The agents offered (`kubernetesBriefTargets`, ordered by
+  `KubeBriefTargets`, pure): those in a tab of a checkout bound to the
+  brief's namespace first — the brief's own checkout's leading: the
+  selected tab's binding when it is bound there
+  (`KubeBindingStore.binding(on:namespace:preferring:)`, `KubernetesActions.selectedBinding`;
+  `k8s_why` prefers the calling pane's), else the first —, it has the code
+  that failed —, then the selected tab's, then the window's others, then
+  a new one in the bound checkout (else the selected tab's folder); Send
+  types it, as every Ask Agent does, the page stepping aside.
 - **Checked** (`KubeAgentBriefTests`): each failure kind off fixture
   objects, the exit codes, a container's env (a Secret named, a secret
   value masked), the template diff, Pending's requests and nodes, the
@@ -3569,9 +3580,13 @@ names one: never the one the page would open on, which falls back to
 kubectl's current context, often production; the namespace
 named (`all` for every one) else the page's on that context, else the
 context's own (`agentDefaultScope`); a tool that needs one namespace and
-gets all says so. `KubeMCP.defaultContext` takes the calling pane's tag
-(`BrowserMCP.handle`'s `pane`, from the bridge's path): the seam for stage
-3a's binding, whose checkout's context comes first. Kinds are resolved
+gets all says so. Before both comes the calling pane's checkout's
+binding (`KubeMCP.binding(for:in:)`: the pane's tag — `BrowserMCP.handle`'s
+`pane`, from the bridge's path — to its tab's checkout through
+`KubeMCP.paneCheckout`, the windows' answer, then `KubeBindingStore`):
+its context (`defaultContext`) and, on it, its namespace
+(`defaultScope`), when the kubeconfig has that context; `k8s_why` adds
+the bound checkout's deployed commit. Kinds are resolved
 against the page's discovery only while the page's reading of the name is
 the same cluster and user as the tool's (`knownDiscovery(of:)` with
 `sameCluster` — the kubeconfig may change while the page is hidden), else
@@ -4123,6 +4138,114 @@ what was picked has opened the page, so the watch runs on. ↩ on a context
 or a namespace switches to it on the page; on a kind, the page on its
 list; on a row, the page on its kind's list with it selected and in view
 (`revealOnKubernetesPage`).
+
+**A checkout's binding** (stage 3a; `KubeBinding.swift`,
+`KubeDeployedCommit.swift` (pure, and its `Git.run` lookup),
+`KubernetesPanelModel`, `KubernetesPanelView`,
+`TerminalWindowController+KubernetesPanel`; analysis 3.1, 3.2, Section 6):
+a checkout tied to the context, namespace and workloads (or Helm
+release) it deploys — the scope the rail's panel shows, the deployed
+commit is read for, Ask Why's brief goes back to and agents' tools
+default to.
+
+- **The binding** (`KubeBinding`: the checkout's real path, context,
+  namespace, an optional release, label selector and workloads as
+  kubectl's short names — `deploy/web`, `sts/db`, `ds/agent`,
+  `KubeWorkloadRef`). Kept in `Kubernetes/bindings.json` under
+  `AppEnvironment.supportDirectory` (`KubeBindingStore`; an isolated
+  run's own folder, a unit test's temporary one), keyed by the checkout's
+  real path, written whole on each change — never anything in the
+  repository, and no secret. One without a context or a namespace is
+  refused; fields are trimmed, an emptied one is none.
+- **The guess** (`KubeBindingGuess`, pure, over `KubeCheckoutScan`'s
+  files): `Chart.yaml`, `kustomization.yaml`, plain manifests (a YAML
+  whose text has `apiVersion` and `kind`), `skaffold.yaml`, `Tiltfile`,
+  `helmfile.yaml` — a chart's name as the release (and Helm's
+  `app.kubernetes.io/instance=` as its selector), a kustomization's
+  `namespace:` else the namespace most manifests name, their
+  Deployments, StatefulSets and DaemonSets, an
+  `app.kubernetes.io/part-of` label as the selector. The scan walks down
+  breadth first, hidden folders, `node_modules`, `vendor` and the like
+  passed over (`Library` too), bounded (`maxDepth` 5, `maxEntries`, `maxFiles` 120, 256 KB
+  a file), off the main thread, and only from a repository's root
+  (`isRepositoryRoot`: its `.git`; never the home folder or `/` — from
+  `~` a walk would reach Desktop and Documents' privacy prompts, other
+  apps' containers and iCloud's placeholders); any other folder a tab
+  sits in is neither walked nor offered Bind; a YAML inside a chart is a template, not
+  a manifest — `chartRoot` walks up to the checkout's root at most, stopping
+  at `pathComponents.count <= 1` and after a bounded number of steps.
+  The user confirms it and picks the context (the page's when it isn't
+  production, else the first that isn't).
+- **The rail's panel** (`SidebarPanel.kubernetes`, after Docker's, on
+  `kubernetes.enabled`; `KubernetesPanelModel`, one a window): the
+  selected tab's checkout (`Tab.checkoutSource`'s root, as the diff and
+  `KubeMCP.paneCheckout` have it), unbound its guess and Bind…, bound the context and namespace
+  — production red —, the deployed commit, the bound workloads with
+  their health (a Deployment's state off its cells, a StatefulSet's and
+  DaemonSet's Ready), their pods, and the forwards in that namespace.
+  **It reads nothing while it isn't the panel on screen** (the sidebar
+  open on it, the window visible: `updateKubernetesPanelVisibility`): no
+  file of the checkout, no kubeconfig, no cluster. Shown and bound, it
+  follows Deployments, StatefulSets (DaemonSets when one is bound) and
+  Pods in the bound namespace — rows only, the binding's selector sent
+  to the server — through the context's proxy in a background slot
+  (`KubernetesModel.panelClient`, never the page's); events applied in
+  batches every 120 ms (`flushInterval`, as the page's), at most
+  `podLimit` pods listed — failing ones first — and "and N more on the
+  page…". A kind that can't be listed (a 403 for a namespace-scoped
+  user, the background proxy closed for the page's slot) is said over
+  the rest and followed again after a wait (`retryDelays`); all of them
+  failed, Try Again. Hidden, every watch ends and the rows go, the
+  look-ups' state with them. Reads only.
+- **The right slot** (`RightPane.Mode.kubernetes`, `KubeSlotView`): a
+  pod clicked in the panel takes the slot as Docker's container does —
+  its log (`KubeDetailSession`'s `KubePodLogSession`) followed only while
+  it shows and the window is on screen, its Overview from one GET made
+  once the slot shows it. It outlives the panel hiding (the rail on
+  Files, another tab) and goes, its session cancelled, when the binding
+  moves off its namespace or another pod is picked.
+- **The deployed commit** (`KubeDeployedCommit`, 3.2): the sources in
+  order of trust — the image's `org.opencontainers.image.revision` label
+  or annotation (`buildx imagetools inspect --format '{{json .}}'`
+  through the user's docker, only on Look Up Revision; none in an
+  isolated run), a tag shaped like a commit (7–40 hex, the whole tag or
+  its last `-`/`_`/`.` part; digits alone count only when the checkout
+  has them — a build number otherwise), a bound release's chart
+  `appVersion` (on Look Up, not on production; kept by the binding's
+  context, namespace and release, never offered to another binding) — the images read off the
+  workload's Table row (`Images`). The first candidate the checkout has
+  is compared with it by `Git.run`, nothing fetched (`rev-parse`,
+  `rev-list --count`, `--left-right` against `main`/`master`, else
+  `origin/HEAD`): "deployed abc1234, 4 commits behind main; this branch is
+  2 commits ahead", "…, up to date with main", "…; it has 2 commits this
+  branch doesn't"; else "commit abc1234 is not in this checkout", else
+  "no commit found in the image" (`KubeDeployedAnswer.text`). A
+  workload's answer is asked again only when its images, or what was
+  asked, change. Diff Deployed…Current opens a review tab (⇧⌘R) for
+  `deployed...HEAD` (`ReviewSource.range`).
+- **Checked**: `KubeBindingTests` (guesses from fixture checkouts, the
+  bounded scan and walk up, the store by real path, nothing written into
+  the checkout, unit tests off the user's file), `KubeDeployedCommitTests`
+  (the shapes, the sources' order, imagetools' label, every wording, a
+  real repository's ahead, behind, elsewhere, HEAD, missing, none),
+  `KubernetesPanelModelTests` (hidden it reads nothing; unbound it
+  guesses and asks no cluster, a folder that isn't a repository's root
+  not at all; bound it follows with the selector, says
+  the deployed commit, Look Up's label and a release's appVersion for
+  its binding only — refused on production —, a look-up outlived by the
+  panel or the binding leaving nothing behind, a refused kind said and
+  followed again, Try Again, the pods capped, the slot read only once
+  shown and kept while the panel hides, hidden every watch ends),
+  `KubeBriefTargetsTests`, `KubeMCPTests` (the bound pane's context and
+  namespace before the page's, a binding to a gone context passed over,
+  `k8s_why`'s deployed commit) and `KubeAgentBriefTests`. The `kubernetes`
+  scenario (`E2ERunner+KubernetesCheckout`): a fixture checkout guessed
+  without a request, bound to fake-dev/shop in the run's support folder
+  with the repository untouched, its workload and pod drawn, the deployed
+  commit answered and drawn, Diff Deployed…Current's review tab, a pod
+  in the right slot, Ask Why's brief with the commit offered to the
+  checkout's agent first, `k8s_get` from its pane in the bound
+  namespace, and hidden nothing asked — then shown again, read again.
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before

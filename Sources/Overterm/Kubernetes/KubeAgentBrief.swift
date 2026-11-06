@@ -173,10 +173,19 @@ struct KubeAgentBrief: Equatable {
     var subject: String
     var text: String
     var parts: [AskAgentModel.Part]
-    /// The bound checkout's deployed commit (3.2): stage 3a, with the
-    /// binding (3.1). Nil until a checkout is bound; a part of its own then.
+    /// The bound checkout's deployed commit (3.2), with the binding (3.1):
+    /// nil while no checkout is bound to the brief's namespace; a part of
+    /// its own then (`KubeAgentBriefing.withDeployedCommit`).
     var deployedCommit: String? = nil
     var production: Bool
+    /// Where it is about: the context and namespace — which checkout's
+    /// agent it goes to first.
+    var context: String = ""
+    var namespace: String? = nil
+    /// The pod's (or template's) images: what the deployed commit is read from.
+    var images: [String] = []
+    /// The checkout bound there whose deployed commit it says.
+    var checkout: String? = nil
 }
 
 /// Why no brief was made.

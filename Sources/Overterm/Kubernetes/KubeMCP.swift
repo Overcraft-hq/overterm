@@ -30,8 +30,8 @@ import Foundation
 /// and that page's namespace, unless the call names another; with no
 /// selection the call must name one — never kubectl's current context,
 /// which is often production. A context the kubeconfig doesn't have is an
-/// error, never a fallback. Stage 3a's binding — the calling pane's checkout's
-/// context and namespace — comes before the page's (`defaultContext`).
+/// error, never a fallback. A binding — the calling pane's checkout's
+/// context and namespace (3.1) — comes before the page's (`defaultContext`).
 /// Every answer says the context first, production as such.
 ///
 /// **Scrubbed and bounded.** Every answer goes through `Secrets`: the
@@ -71,8 +71,8 @@ enum KubeMCP {
 
     // MARK: Calls
 
-    /// `pane`: the calling pane's tag — stage 3a's binding picks its
-    /// checkout's context from it; unused until then.
+    /// `pane`: the calling pane's tag — its checkout's binding (3.1) is
+    /// the context and namespace a call doesn't name.
     static func call(
         _ name: String, _ arguments: [String: Any], kubernetes: KubernetesModel, pane: String? = nil, now: Date = Date()
     ) async throws -> [String: Any] {
@@ -94,7 +94,7 @@ enum KubeMCP {
         case "k8s_describe": text = try await describe(call, target, kubernetes: kubernetes, now: now)
         case "k8s_logs": text = try await logs(call, target, now: now)
         case "k8s_events": text = try await events(call, target, kubernetes: kubernetes, now: now)
-        case "k8s_why": text = try await why(call, target, kubernetes: kubernetes, now: now)
+        case "k8s_why": text = try await why(call, target, kubernetes: kubernetes, pane: pane, list: list, now: now)
         case "k8s_rollout": text = try await rollout(call, target, kubernetes: kubernetes, now: now)
         case "k8s_top": text = try await top(call, target, kubernetes: kubernetes, now: now)
         case "k8s_restart", "k8s_scale", "k8s_delete_pod": text = try await write(call, target, kubernetes: kubernetes, pane: pane)
@@ -168,10 +168,32 @@ enum KubeMCP {
         }
     }
 
-    /// The context a call doesn't name: the calling pane's checkout's once
-    /// bindings exist (stage 3a, `pane`), until then the page's.
+    /// The checkout a pane's tab works in — the window answers (nil
+    /// outside any window's tabs, and in tests that set none).
+    static var paneCheckout: ((String) -> URL?)?
+    /// Where bindings are kept (a test's own store).
+    static var bindings: KubeBindingStore = .shared
+
+    /// The calling pane's checkout's binding (3.1), when its context is
+    /// one the kubeconfig has.
+    static func binding(for pane: String?, in list: KubeContextList) -> KubeBinding? {
+        guard let pane, let checkout = paneCheckout?(pane), let binding = bindings.binding(for: checkout),
+            list.context(named: binding.context) != nil
+        else { return nil }
+        return binding
+    }
+
+    /// The context a call doesn't name: the calling pane's checkout's
+    /// binding's, else the page's selected one.
     static func defaultContext(in list: KubeContextList, kubernetes: KubernetesModel, pane: String?) -> String? {
-        kubernetes.agentDefaultContext(in: list)
+        binding(for: pane, in: list)?.context ?? kubernetes.agentDefaultContext(in: list)
+    }
+
+    /// The namespace a call doesn't name, on `context`: the binding's when
+    /// the binding is on it, else the page's (`agentDefaultScope`).
+    static func defaultScope(for context: KubeContext, list: KubeContextList, kubernetes: KubernetesModel, pane: String?) -> KubeScope {
+        if let binding = binding(for: pane, in: list), binding.context == context.name { return .namespace(binding.namespace) }
+        return kubernetes.agentDefaultScope(for: context)
     }
 
     static func target(_ call: Call, list: KubeContextList, kubernetes: KubernetesModel, pane: String?) throws -> Target {
@@ -201,7 +223,7 @@ enum KubeMCP {
                 scope = .namespace(namespace)
             }
         } else {
-            scope = kubernetes.agentDefaultScope(for: context)
+            scope = defaultScope(for: context, list: list, kubernetes: kubernetes, pane: pane)
         }
         return Target(context: context, client: kubernetes.agentClient(for: context), scope: scope)
     }
@@ -288,7 +310,7 @@ enum KubeMCP {
         for context in list.contexts {
             let status = await kubernetes.agentProxyStatus(of: context.name)
             let namespace: String =
-                switch kubernetes.agentDefaultScope(for: context) {
+                switch defaultScope(for: context, list: list, kubernetes: kubernetes, pane: pane) {
                 case .all: "all namespaces"
                 case .namespace(let name): name
                 }
@@ -534,7 +556,9 @@ enum KubeMCP {
 
     // MARK: k8s_why
 
-    static func why(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
+    static func why(
+        _ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil, list: KubeContextList = KubeContextList(), now: Date
+    ) async throws -> String {
         let name = try call.objectName("name", "a failing pod's or Deployment's name, from k8s_get")
         let namespace = try target.oneNamespace(call.name)
         let wanted = (call.string("kind") ?? "pod").lowercased()
@@ -547,7 +571,11 @@ enum KubeMCP {
         let ref = KubeObjectRef(context: target.context.name, kind: kind, namespace: namespace, name: name)
         let discovery = known(for: target, kubernetes: kubernetes)
         do {
-            let brief = try await KubeAgentBriefing.brief(ref, client: target.client, context: target.brief, discovery: discovery, now: now)
+            var brief = try await KubeAgentBriefing.brief(ref, client: target.client, context: target.brief, discovery: discovery, now: now)
+            // The checkout bound there: the calling pane's, else any (3.2).
+            if let bound = bindings.binding(on: target.context.name, namespace: namespace, preferring: binding(for: pane, in: list)) {
+                brief = await KubeAgentBriefing.withDeployedCommit(brief, checkout: URL(fileURLWithPath: bound.checkout))
+            }
             return KubeMCPText.bounded(KubeMCPText.brief(brief))
         } catch let problem as KubeBriefProblem {
             if case .notFailing(let why) = problem { return [target.header(), why].joined(separator: "\n") }
@@ -1122,7 +1150,6 @@ enum KubeMCPText {
     static func brief(_ brief: KubeAgentBrief) -> String {
         var text = "Question: \(brief.message)\n\n\(brief.text)"
         for part in brief.parts { text += "\n\n## \(part.title)\n\(part.text)" }
-        if let commit = brief.deployedCommit { text += "\n\n## deployed commit\n\(commit)" }
         return text
     }
 

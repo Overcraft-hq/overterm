@@ -128,7 +128,7 @@ enum KubeAgentBriefing {
         if !notes.isEmpty { text += "\nNot in this brief, couldn't be read: " + notes.joined(separator: "; ") + "." }
         return KubeAgentBrief(
             message: trouble.question("pod \(namespace)/\(ref.name)"), subject: "pod/\(ref.name) \(trouble.reason)", text: scrub(text), parts: parts,
-            production: context.production)
+            production: context.production, context: ref.context, namespace: namespace, images: images(of: json["spec"]))
     }
 
     // MARK: A Deployment
@@ -240,7 +240,35 @@ enum KubeAgentBriefing {
         if !notes.isEmpty { text += "\nNot in this brief, couldn't be read: " + notes.joined(separator: "; ") + "." }
         return KubeAgentBrief(
             message: trouble.question("deployment \(namespace)/\(ref.name)"), subject: "deploy/\(ref.name) \(trouble.reason)", text: scrub(text),
-            parts: parts, production: context.production)
+            parts: parts, production: context.production, context: ref.context, namespace: namespace, images: images(of: template["spec"]))
+    }
+
+    /// A pod spec's containers' images (init containers after), as the
+    /// deployed commit reads them.
+    static func images(of spec: Any?) -> [String] {
+        let spec = KubeAgentText.map(spec)
+        let containers = KubeAgentText.list(spec["containers"]) + KubeAgentText.list(spec["initContainers"])
+        var seen = Set<String>()
+        return containers.compactMap { $0["image"] as? String }.filter { seen.insert($0).inserted }
+    }
+
+    // MARK: The bound checkout's deployed commit (3.2)
+
+    /// The brief with the bound checkout's deployed commit — its images'
+    /// commit looked up there (`Git.run`, nothing fetched) — as a part of
+    /// its own. Nothing is read from the cluster for it; a commit only
+    /// the revision label would give (asked for in the rail) isn't here.
+    static func withDeployedCommit(_ brief: KubeAgentBrief, checkout: URL) async -> KubeAgentBrief {
+        let answer = await KubeDeployedCommit.answer(KubeDeployedCommit.candidates(images: brief.images), in: checkout)
+        var brief = brief
+        var text = "Checkout \(checkout.path): " + answer.text + (answer.sourceSaid.map { " (\($0))" } ?? "") + "."
+        if let found = answer.found, !found.isHead {
+            text += " What it has that isn't deployed: git log \(found.short)..HEAD."
+        }
+        brief.deployedCommit = text
+        brief.checkout = checkout.path
+        brief.parts.append(AskAgentModel.Part(title: "deployed commit", text: text))
+        return brief
     }
 
     // MARK: Reads
@@ -374,4 +402,21 @@ extension KubeResourceKind {
         group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", singular: "cronjob", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["cj"], categories: ["all"],
         subresources: ["status"])
+}
+
+/// The agents Ask Why's brief is offered to, in order (3.4): the agents in
+/// a tab of a checkout bound to the brief's namespace — the brief's own
+/// checkout's (the selected tab's binding when it is bound there) first —,
+/// then the selected tab's agent, then the others. Pure over what it is given.
+enum KubeBriefTargets {
+    static func ordered<Agent: AnyObject>(
+        _ agents: [Agent], selected: Agent?, checkout: (Agent) -> String?, bound: Set<String>, first: String?
+    ) -> [Agent] {
+        var ordered = agents.filter { checkout($0).map(bound.contains) ?? false }
+        if let first, let index = ordered.firstIndex(where: { checkout($0) == first }) {
+            ordered.insert(ordered.remove(at: index), at: 0)
+        }
+        if let selected, agents.contains(where: { $0 === selected }), !ordered.contains(where: { $0 === selected }) { ordered.append(selected) }
+        return ordered + agents.filter { agent in !ordered.contains { $0 === agent } }
+    }
 }

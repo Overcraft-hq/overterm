@@ -47,6 +47,10 @@ struct KubernetesActions {
     /// Ask Why: a failing pod's or a stuck rollout's brief, scrubbed, in
     /// the Ask Agent sheet — the whole brief shown before it is sent.
     var askWhy: (KubeAgentBrief) -> Void = { _ in }
+    /// The selected tab's checkout's binding: the one Ask Why's brief
+    /// speaks for when it is bound to the namespace (several checkouts
+    /// often are).
+    var selectedBinding: () -> KubeBinding? = { nil }
     /// A write asked first (rule 3), in the window: the context and
     /// namespace, the object, the kubectl it equals, a field for the name
     /// where rule 4 asks one; `then` gets what was typed, only when the

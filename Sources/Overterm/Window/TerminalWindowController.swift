@@ -108,6 +108,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var dockerPageHeld = false
     /// The Kubernetes page's own state; its view is made the first time it opens.
     let kubernetesPage = KubernetesPageModel()
+    /// The rail's Kubernetes panel (the selected tab's checkout's binding)
+    /// and the pod it put on the right.
+    let kubernetesPanel = KubernetesPanelModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
     /// What an isolated run would have opened in the default browser (an Ingress).
@@ -353,6 +356,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 notes: NotesModel.shared,
                 database: DatabaseModel.shared,
                 dockerPanel: dockerPanel,
+                kubernetesPanel: kubernetesPanel,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -418,6 +422,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 notesActions: notesActions,
                 databaseActions: databaseActions,
                 dockerActions: dockerActions,
+                openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -599,7 +604,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) }),
                 manifest: KubeManifestDiffView(
                     pane: kubernetesManifest, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
-                    onOpen: { [weak self] in self?.openInEditor($0) })))
+                    onOpen: { [weak self] in self?.openInEditor($0) }),
+                kubernetes: KubeSlotView(panel: kubernetesPanel, theme: theme, runInTerminal: { [weak self] in self?.runDockerCommand($0, in: nil) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -673,6 +679,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDockerPage()
         wireKubernetesPage()
         wireDockerPanel()
+        wireKubernetesPanel()
         wireDockerPorts()
         wireDockerAttention()
         watchDockerPalette().store(in: &cancellables)
@@ -3452,7 +3459,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("docker.") }) { self.dockerSettingsChanged(keys) }
                 // Agents' Kubernetes tools come and go with the settings.
-                if keys.contains(where: { $0.hasPrefix("kubernetes.") }) { BrowserBridge.shared.update() }
+                if keys.contains(where: { $0.hasPrefix("kubernetes.") }) {
+                    BrowserBridge.shared.update()
+                    self.kubernetesPanelSettingsChanged()
+                }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
@@ -3830,6 +3840,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         compare.visible = shown && rightPane.mode == .compare
         storageObject.visible = shown && rightPane.mode == .object
         dockerPanel.slotVisible = shown && rightPane.mode == .container
+        kubernetesPanel.slotVisible = shown && rightPane.mode == .kubernetes
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -3842,6 +3853,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         updateAPIVisibility()
         updateNotesVisibility()
         updateDockerVisibility()
+        updateKubernetesPanelVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).

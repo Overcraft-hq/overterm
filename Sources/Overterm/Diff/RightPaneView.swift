@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, manifest
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, manifest, kubernetes
     }
 
     @Published var mode: Mode = .changes
@@ -18,6 +18,8 @@ final class RightPane: ObservableObject {
     @Published var containerOpened = false
     /// A Kubernetes manifest was diffed with its cluster: its tab stays from then on.
     @Published var manifestOpened = false
+    /// A pod was picked in the Kubernetes panel: its tab stays from then on.
+    @Published var kubernetesOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -44,6 +46,7 @@ struct RightPaneView: View {
     let container: DockerSlotView
     let graph: NotesGraphView
     let manifest: KubeManifestDiffView
+    let kubernetes: KubeSlotView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -107,6 +110,11 @@ struct RightPaneView: View {
                         Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
+                if pane.kubernetesOpened {
+                    tab(.kubernetes, help: "The pod picked in the Kubernetes panel") {
+                        Image(systemName: "helm").font(.system(size: 11))
+                    }
+                }
                 if pane.manifestOpened {
                     tab(.manifest, help: "A Kubernetes manifest against its cluster") {
                         Text(verbatim: "⎈").font(.system(size: 12))
@@ -137,6 +145,7 @@ struct RightPaneView: View {
             case .object: object
             case .container: container
             case .manifest: manifest
+            case .kubernetes: kubernetes
             }
         }
         .background(theme.panelGround)

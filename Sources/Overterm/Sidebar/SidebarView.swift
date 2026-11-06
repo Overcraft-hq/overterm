@@ -63,7 +63,7 @@ struct SessionActions {
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, git, sessions, snippets, api, notes, database, docker
+    case files, git, sessions, snippets, api, notes, database, docker, kubernetes
 
     var id: String { rawValue }
 
@@ -112,6 +112,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .notes: "notes.enabled"
         case .database: "database.enabled"
         case .docker: "docker.enabled"
+        case .kubernetes: "kubernetes.enabled"
         case .sessions: "general.sessions"
         case .snippets: "general.snippets"
         case .files, .git: nil
@@ -146,6 +147,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .notes: "note.text"
         case .database: "cylinder.split.1x2"
         case .docker: "shippingbox"
+        case .kubernetes: "helm"
         }
     }
 
@@ -185,6 +187,7 @@ struct SidebarView: View {
     @ObservedObject var notes: NotesModel
     @ObservedObject var database: DatabaseModel
     @ObservedObject var dockerPanel: DockerPanelModel
+    @ObservedObject var kubernetesPanel: KubernetesPanelModel
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
@@ -198,6 +201,8 @@ struct SidebarView: View {
     let notesActions: NotesActions
     let databaseActions: DatabaseActions
     let dockerActions: DockerActions
+    /// The Kubernetes page, from the panel's header.
+    let openKubernetesPage: () -> Void
     /// The gear at the foot of the rail.
     let onSettings: () -> Void
     let onClose: () -> Void
@@ -225,6 +230,10 @@ struct SidebarView: View {
                         theme: theme, group: group,
                         actions: dockerActions,
                         openPage: dockerActions.openPage, show: dockerActions.showContainer)
+                case .kubernetes:
+                    KubernetesPanelView(
+                        panel: kubernetesPanel, kubernetes: .shared, forwards: .shared, settings: .shared, theme: theme, group: group,
+                        openPage: openKubernetesPage)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
