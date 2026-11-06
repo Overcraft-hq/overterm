@@ -291,6 +291,7 @@ extension E2ERunner {
         await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log)
         await kubernetesAskWhy(model, page, fake)
         await kubernetesAgentTools(model, fake)
+        await kubernetesCheckout(model, page, fake)
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
         await kubernetesWrites(model, page, fake, kubeconfig: kubeconfig, port: port, kubectl: kubectl)
         await kubernetesVerbs(model, page, fake)

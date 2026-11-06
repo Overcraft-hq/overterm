@@ -670,4 +670,78 @@ final class KubeMCPTextTests: XCTestCase {
         let shown = KubeMCPText.table(table, kind: .pods, allNamespaces: true, wide: false, filter: "hook")
         XCTAssertTrue(shown.contains("hook") && !shown.contains("fake-token-value-123"), shown)
     }
+
+}
+
+// MARK: A bound checkout (3.1, 3.2)
+
+extension KubeMCPTests {
+
+    /// A git checkout of the test's own, one commit; its sha.
+    private func boundRepo() async throws -> (URL, String) {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("kube-mcp-bound-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        func git(_ arguments: [String]) async throws -> String {
+            try await Git.run(["-c", "user.email=t@overterm", "-c", "user.name=t", "-c", "commit.gpgsign=false"] + arguments, in: repo)
+        }
+        _ = try await git(["init", "-q", "-b", "main"])
+        try "worker".write(to: repo.appendingPathComponent("worker.go"), atomically: true, encoding: .utf8)
+        _ = try await git(["add", "worker.go"])
+        _ = try await git(["commit", "-q", "-m", "worker"])
+        return (repo, try await git(["rev-parse", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func testTheCallingPanesBoundCheckoutIsTheDefault() async throws {
+        let (repo, sha) = try await boundRepo()
+        let store = KubeBindingStore(file: repo.deletingLastPathComponent().appendingPathComponent("bindings-\(UUID().uuidString).json"))
+        let (kept, keptPane) = (KubeMCP.bindings, KubeMCP.paneCheckout)
+        KubeMCP.bindings = store
+        KubeMCP.paneCheckout = { $0 == "pane-bound" ? repo : nil }
+        defer {
+            KubeMCP.bindings = kept
+            KubeMCP.paneCheckout = keptPane
+            try? FileManager.default.removeItem(at: repo)
+            try? FileManager.default.removeItem(at: store.file)
+        }
+        func said(_ name: String, _ arguments: [String: Any] = [:], pane: String?) async throws -> String {
+            let result = try await KubeMCP.call(name, arguments, kubernetes: model, pane: pane)
+            XCTAssertNil(result["isError"], "\(name): \(result)")
+            return ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        }
+        await pageSelected()
+        XCTAssertEqual(model.selectedName, "fake-dev")
+        XCTAssertTrue(store.set(KubeBinding(checkout: repo.path, context: "fake-prod", namespace: "payments")))
+
+        // The bound pane's call goes to its binding, the page's selection aside.
+        let bound = try await said("k8s_get", ["kind": "pods"], pane: "pane-bound")
+        XCTAssertTrue(bound.hasPrefix("PRODUCTION context fake-prod") && bound.contains("namespace payments"), bound)
+        XCTAssertTrue(bound.contains("api-0") && !bound.contains("worker-1"), bound)
+        // Another pane, unbound: the page's.
+        let other = try await said("k8s_get", ["kind": "pods"], pane: "pane-other")
+        XCTAssertTrue(other.contains("fake-dev") && other.contains("worker-1"), other)
+        // Named, the call's own.
+        let named = try await said("k8s_get", ["kind": "pods", "context": "fake-dev"], pane: "pane-bound")
+        XCTAssertTrue(named.contains("worker-1"), named)
+        let contexts = try await said("k8s_contexts", pane: "pane-bound")
+        XCTAssertTrue(contexts.contains("* fake-prod"), contexts)
+        XCTAssertTrue(contexts.components(separatedBy: "\n").contains { $0.contains("fake-prod") && $0.contains("payments") }, contexts)
+
+        // A binding to a context the kubeconfig hasn't: the page's again.
+        XCTAssertTrue(store.set(KubeBinding(checkout: repo.path, context: "gone", namespace: "shop")))
+        let gone = try await said("k8s_get", ["kind": "pods"], pane: "pane-bound")
+        XCTAssertTrue(gone.contains("fake-dev"), gone)
+
+        // Bound to fake-dev/shop, its failing pod's image tagged with the
+        // checkout's commit: the brief says what is deployed.
+        XCTAssertTrue(store.set(KubeBinding(checkout: repo.path, context: "fake-dev", namespace: "shop")))
+        api.updatePod("worker-1", namespace: "shop") { $0.image = "ghcr.io/acme/worker:\(sha.prefix(7))" }
+        let why = try await said("k8s_why", ["name": "worker-1"], pane: "pane-bound")
+        XCTAssertTrue(why.contains("## deployed commit"), why)
+        XCTAssertTrue(why.contains("deployed \(sha.prefix(7)), up to date with main") && why.contains("(from the image's tag)"), why)
+        assertClean(why)
+        // Unbound, none.
+        store.remove(repo)
+        let unbound = try await said("k8s_why", ["name": "worker-1"], pane: "pane-bound")
+        XCTAssertFalse(unbound.contains("## deployed commit"), unbound)
+    }
 }

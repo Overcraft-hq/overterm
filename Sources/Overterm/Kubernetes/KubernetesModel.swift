@@ -559,8 +559,8 @@ final class KubernetesModel: ObservableObject {
     /// The context a tool works on unless told another: the one the page
     /// has selected, and nothing else — never the one it would open on,
     /// which falls back to kubectl's current context (production, often):
-    /// with no selection a call names its context. Stage 3a's binding (the
-    /// calling pane's checkout) comes before it.
+    /// with no selection a call names its context. A binding (the calling
+    /// pane's checkout's, `KubeMCP.defaultContext`) comes before it.
     func agentDefaultContext(in list: KubeContextList) -> String? {
         guard let name = selectedName, list.context(named: name) != nil else { return nil }
         return name
@@ -586,6 +586,13 @@ final class KubernetesModel: ObservableObject {
     /// What a tool reads through: the context's proxy in a background slot
     /// — never the page's — or a test's connection. GETs only.
     func agentClient(for context: KubeContext) -> KubeClient {
+        KubeClient(connection(for: context, role: .background))
+    }
+
+    /// What the rail's panel reads through while it shows a bound
+    /// checkout: the context's proxy in a background slot, as an agent's
+    /// tools — never the page's slot — or a test's connection.
+    func panelClient(for context: KubeContext) -> KubeClient {
         KubeClient(connection(for: context, role: .background))
     }
 

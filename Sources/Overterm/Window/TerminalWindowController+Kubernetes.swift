@@ -38,6 +38,7 @@ extension TerminalWindowController {
             openDatabase: { [weak self] guess in self?.newDatabaseConnection(from: guess) },
             importAPI: { [weak self] source in self?.importForwardAPI(source) },
             askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) },
+            selectedBinding: { [weak self] in KubeBindingStore.shared.binding(for: self?.kubernetesCheckout) },
             confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) },
             openEditor: { [weak self] url in self?.openKubernetesEdit(url) })
     }
@@ -184,7 +185,11 @@ extension TerminalWindowController {
     private func startKubernetesTerminal(_ context: KubeContext, _ pin: KubeTerminalPin, running command: String? = nil) {
         let extra = Settings.shared.kubernetesKubeconfigs
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let directory = KubeTerminalDirectory.choose(setting: context.settings.terminalDirectory, checkout: nil, home: home)
+        // The checkout bound to the context (3.11): the selected tab's when it is, else the first.
+        let bound = KubeBindingStore.shared.bindings(on: context.name, namespace: nil)
+        let selected = kubernetesPanel.binding.flatMap { $0.context == context.name ? $0 : nil }
+        let checkout = (selected ?? bound.first).map { URL(fileURLWithPath: $0.checkout, isDirectory: true) }
+        let directory = KubeTerminalDirectory.choose(setting: context.settings.terminalDirectory, checkout: checkout, home: home)
         Task { @MainActor [weak self] in
             // The files are the proxies' list; blocking the first time (the shell is asked).
             let files = await KubeBlocking.run { AppEnvironment.kubeconfigs(extra: extra) }
@@ -307,18 +312,17 @@ extension TerminalWindowController {
     }
 
     /// Ask Why's brief (`KubeAgentBriefing`, scrubbed): the Ask Agent sheet
-    /// with the whole brief shown before it is sent. No checkout is bound
-    /// to a context yet (stage 3a), so the agent offered first is the
-    /// selected tab's — the one under the page — then the window's others,
-    /// or a new one in the selected tab's folder. No git diff is offered:
-    /// the sheet shows the whole of what is sent, and a diff isn't in it.
+    /// with the whole brief shown before it is sent. The agent offered
+    /// first is the one in a tab of the checkout bound to the brief's
+    /// namespace (3.4: it has the code that failed), else the selected
+    /// tab's — the one under the page — then the window's others, or a new
+    /// one in the bound checkout (else the selected tab's folder). No git
+    /// diff is offered: the sheet shows the whole of what is sent.
     func presentKubernetesBrief(_ brief: KubeAgentBrief) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
-        let agents = store.tabs.filter { $0.agent != nil }
-        let selected = store.selected.flatMap { tab in agents.first { $0 === tab } }
-        let ordered = (selected.map { [$0] } ?? []) + agents.filter { $0 !== selected }
+        let folder = brief.checkout ?? store.selected?.workingDirectory
         presentAskAgent(
-            text: brief.text, command: nil, folder: store.selected?.workingDirectory, targets: ordered, message: brief.message, subject: brief.subject,
+            text: brief.text, command: nil, folder: folder, targets: kubernetesBriefTargets(brief), message: brief.message, subject: brief.subject,
             parts: brief.parts, diff: false, showsBrief: true)
     }
 
@@ -358,6 +362,7 @@ extension TerminalWindowController {
         page.occlusionChanged = { [weak self] in
             self?.updateKubernetesWindowVisible()
             self?.updateKubernetesPageHold()
+            self?.updateKubernetesPanelVisibility()
         }
         page.windowClosing = { [weak self] in self?.kubernetesWindowClosing() }
         page.paletteItems = { [weak self] in self?.kubernetesPaletteItems() ?? [] }
@@ -417,6 +422,7 @@ extension TerminalWindowController {
 
     func kubernetesWindowClosing() {
         releaseKubernetesSwitcher(now: true)
+        kubernetesPanel.panelVisible = false
         kubernetesPage.visible = false
         guard kubernetesPageHeld else { return }
         kubernetesPageHeld = false

@@ -159,8 +159,8 @@ enum KubeTerminalEnvironment {
 }
 
 /// Where the tab starts: the context's `terminalDirectory` when it is a
-/// folder, else the checkout bound to the context (stage 3a's binding;
-/// none yet), else the home folder. Pure.
+/// folder, else the checkout bound to the context (`KubeBinding`), else
+/// the home folder. Pure.
 enum KubeTerminalDirectory {
     static func choose(
         setting: String?, checkout: URL?, home: URL,

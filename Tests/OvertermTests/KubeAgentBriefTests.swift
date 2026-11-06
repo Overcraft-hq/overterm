@@ -523,7 +523,10 @@ final class KubeAgentBriefingTests: XCTestCase {
         XCTAssertEqual(brief.message, "Why does pod shop/worker-6b8f-x1 keep crashing (CrashLoopBackOff)?")
         XCTAssertEqual(brief.subject, "pod/worker-6b8f-x1 CrashLoopBackOff")
         XCTAssertFalse(brief.production)
-        XCTAssertNil(brief.deployedCommit, "stage 3a: no binding, no deployed commit")
+        XCTAssertNil(brief.deployedCommit, "no checkout bound: no deployed commit")
+        XCTAssertEqual(brief.context, "fake-dev")
+        XCTAssertEqual(brief.namespace, "shop")
+        XCTAssertFalse(brief.images.isEmpty, "what the deployed commit is read from")
         XCTAssertEqual(brief.parts.map(\.title), ["events", "previous log of app", "pod template", "template diff"])
         let text = brief.text
         for said in [
@@ -864,5 +867,75 @@ final class KubeAskWhyPageTests: XCTestCase {
         try await until("the brief") { box.briefs.count == 1 }
         XCTAssertEqual(box.briefs.first?.production, true)
         XCTAssertTrue(box.briefs.first?.text.contains("PRODUCTION context fake-prod") == true)
+    }
+
+    // MARK: The bound checkout's deployed commit (3.2)
+
+    func testTheBoundCheckoutsDeployedCommitIsAPartOfItsOwn() async throws {
+        let repo = FileManager.default.temporaryDirectory.appendingPathComponent("kube-brief-bound-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        func git(_ arguments: [String]) async throws -> String {
+            try await Git.run(["-c", "user.email=t@overterm", "-c", "user.name=t", "-c", "commit.gpgsign=false"] + arguments, in: repo)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        _ = try await git(["init", "-q", "-b", "main"])
+        try "a".write(to: repo.appendingPathComponent("a"), atomically: true, encoding: .utf8)
+        _ = try await git(["add", "a"])
+        _ = try await git(["commit", "-q", "-m", "a"])
+        let sha = try await git(["rev-parse", "HEAD"])
+
+        let brief = KubeAgentBrief(
+            message: "Why?", subject: "pod/worker-1 CrashLoopBackOff", text: "t", parts: [.init(title: "events", text: "e")], production: false,
+            context: "fake-dev", namespace: "shop", images: ["ghcr.io/acme/worker:\(sha.prefix(7))", "busybox:1.36"])
+        let with = await KubeAgentBriefing.withDeployedCommit(brief, checkout: repo)
+        XCTAssertEqual(with.parts.map(\.title), ["events", "deployed commit"])
+        let said = try XCTUnwrap(with.deployedCommit)
+        XCTAssertEqual(with.parts.last?.text, said)
+        XCTAssertTrue(said.contains("deployed \(sha.prefix(7)), up to date with main (from the image's tag)"), said)
+        XCTAssertEqual(with.checkout, repo.path)
+        XCTAssertEqual(with.text, brief.text, "what is always sent is unchanged")
+
+        var plain = brief
+        plain.images = ["nginx:1.27"]
+        let none = await KubeAgentBriefing.withDeployedCommit(plain, checkout: repo)
+        XCTAssertTrue(none.deployedCommit?.contains("no commit found in the image") == true, none.deployedCommit ?? "")
+        plain.images = ["ghcr.io/acme/worker:deadbee"]
+        let missing = await KubeAgentBriefing.withDeployedCommit(plain, checkout: repo)
+        XCTAssertTrue(missing.deployedCommit?.contains("commit deadbee is not in this checkout") == true, missing.deployedCommit ?? "")
+    }
+}
+
+/// Who Ask Why's brief is offered to (3.4): several checkouts of one
+/// repository bound to one namespace, the brief's own checkout first,
+/// then the others bound there, the selected tab's agent, the rest.
+final class KubeBriefTargetsTests: XCTestCase {
+    private final class Agent {
+        let name: String
+        let checkout: String?
+        init(_ name: String, _ checkout: String?) {
+            self.name = name
+            self.checkout = checkout
+        }
+    }
+
+    func testTheBriefsCheckoutFirstThenTheBoundOnesThenTheSelected() {
+        let a = Agent("a", "/repo/a")
+        let b = Agent("b", "/repo/b")
+        let other = Agent("other", "/elsewhere")
+        let loose = Agent("loose", nil)
+        let agents = [other, a, loose, b]
+        func names(selected: Agent?, first: String?, bound: Set<String> = ["/repo/a", "/repo/b"]) -> [String] {
+            KubeBriefTargets.ordered(agents, selected: selected, checkout: \.checkout, bound: bound, first: first).map(\.name)
+        }
+        // The selected tab's binding made the brief: its checkout's agent first.
+        XCTAssertEqual(names(selected: other, first: "/repo/b"), ["b", "a", "other", "loose"])
+        XCTAssertEqual(names(selected: loose, first: "/repo/a"), ["a", "b", "loose", "other"])
+        // No checkout in the brief: the bound ones in the window's order, then the selected.
+        XCTAssertEqual(names(selected: loose, first: nil), ["a", "b", "loose", "other"])
+        // Nothing bound: the selected agent first.
+        XCTAssertEqual(names(selected: loose, first: nil, bound: []), ["loose", "other", "a", "b"])
+        // A selected tab that isn't an agent's is not offered.
+        XCTAssertEqual(names(selected: Agent("shell", "/repo/a"), first: nil, bound: []), ["other", "a", "loose", "b"])
     }
 }
