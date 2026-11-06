@@ -37,6 +37,8 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     @Published private(set) var state: State
     @Published private(set) var object: KubeObject?
     @Published private(set) var overview: KubeOverview?
+    /// What the object says of itself to the health checks (3.9).
+    @Published private(set) var health: [KubeHealth.Finding] = []
     /// The YAML shows `managedFields` and the last-applied annotation.
     @Published var showsHidden = false {
         didSet { if showsHidden != oldValue { yaml = makeYAML() } }
@@ -138,6 +140,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         self.object = object
         let json = object.json
         overview = KubeOverview.of(json)
+        health = KubeHealth.object(json)
         yaml = makeYAML()
         state = .loaded
         logs?.podRead(json)

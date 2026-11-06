@@ -103,9 +103,11 @@ final class E2ETests: XCTestCase {
         // The scenario's Secret value (E2ERunner.secretValue), shown and
         // revealed in the app: never in what it printed, nor its errors.
         // And the Secret's values the editor diffs (E2ERunner.applySecretOld, applySecretNew),
-        // and the env values and Helm values a workload's timeline diffs.
+        // and the env values and Helm values a workload's timeline diffs,
+        // and the env values Compare with… diffs across contexts.
         let values = [
             "acme-e2e-pw-Zq7Lm", "acme-e2e-apply-Hx4Wq", "acme-e2e-apply-Rt8Pz", "acme-e2e-timeline-pw-old-W2n", "acme-e2e-timeline-pw-new-P5k",
+            "acme-e2e-compare-pw-dev-T8s", "acme-e2e-compare-pw-stage-K3d",
         ]
         let output = printed + ((try? String(contentsOf: stderr, encoding: .utf8)) ?? "")
         for needle in values + values.map({ Data($0.utf8).base64EncodedString() }) {

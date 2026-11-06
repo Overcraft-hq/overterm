@@ -343,6 +343,10 @@ struct KubernetesPageView: View {
             } else if page.detail == nil, let status = page.writeStatus {
                 Text(verbatim: status.text).font(.system(size: 11.5)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                     .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.writeStatus")
+            } else if page.detail == nil, let status = page.compareStatus {
+                // Compare with… from a row's menu, no detail open: said here.
+                Text(verbatim: status.text).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                    .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.compareStatus")
             }
             Spacer(minLength: 12)
             Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)

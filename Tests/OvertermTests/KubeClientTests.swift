@@ -103,6 +103,7 @@ final class KubeClientTests: XCTestCase {
             [
                 "/api", "/apis", "/api/v1", "/apis/apps/v1", "/apis/batch/v1", "/apis/events.k8s.io/v1", "/apis/apiextensions.k8s.io/v1",
                 "/apis/rbac.authorization.k8s.io/v1", "/apis/discovery.k8s.io/v1", "/apis/networking.k8s.io/v1", "/apis/metrics.k8s.io/v1beta1",
+                "/apis/policy/v1", "/apis/autoscaling/v2",
             ])
         XCTAssertEqual(Array(discovery.failedGroups.keys), ["metrics.k8s.io/v1beta1"])
         XCTAssertNil(discovery.kind("pods.metrics.k8s.io"))

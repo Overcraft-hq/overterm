@@ -17,19 +17,52 @@ struct KubePickerView: View {
         }
     }
 
+    private static func symbol(_ kind: KubePicker.Kind) -> String {
+        switch kind {
+        case .namespace: "square.dashed"
+        case .context: "steeringwheel"
+        case .compare: "arrow.left.arrow.right.square"
+        }
+    }
+
+    private static func placeholder(_ kind: KubePicker.Kind) -> String {
+        switch kind {
+        case .namespace: "Namespace — find one, or type its name"
+        case .context: "Context"
+        case .compare(let context, let namespace):
+            namespace == nil ? "Compare with a context" : "Compare with a context — or a namespace of \(context), or namespace@context"
+        }
+    }
+
+    private static func key(_ kind: KubePicker.Kind) -> String {
+        switch kind {
+        case .namespace: "n"
+        case .context: "c"
+        case .compare: ""
+        }
+    }
+
+    private static func nothing(_ kind: KubePicker.Kind) -> String {
+        switch kind {
+        case .namespace: "Not a namespace's name."
+        case .context: "No context matches."
+        case .compare(_, let namespace): namespace == nil ? "No other context." : "Nothing matches: type a namespace, or namespace@context."
+        }
+    }
+
     private func card(_ picker: KubePicker) -> some View {
         let results = picker.results
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: picker.kind == .namespace ? "square.dashed" : "steeringwheel").font(.system(size: 13)).foregroundStyle(theme.text3)
+                Image(systemName: Self.symbol(picker.kind)).font(.system(size: 13)).foregroundStyle(theme.text3)
                 PaletteField(
                     text: Binding(get: { page.picker?.query ?? "" }, set: { page.picker?.query = $0 }),
                     onMove: { page.picker?.move($0) },
                     onSubmit: { _ in page.choosePicked() },
                     onCancel: { page.closePicker() },
-                    placeholder: picker.kind == .namespace ? "Namespace — find one, or type its name" : "Context",
+                    placeholder: Self.placeholder(picker.kind),
                     textColor: NSColor(theme.text), focusesOnAppear: true, fontSize: 14)
-                Text(verbatim: picker.kind == .namespace ? "n" : "c").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: Self.key(picker.kind)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
             }
             .padding(.horizontal, 14)
             .frame(height: 42)
@@ -49,7 +82,7 @@ struct KubePickerView: View {
                                 }
                         }
                         if results.isEmpty {
-                            Text(picker.kind == .namespace ? "Not a namespace's name." : "No context matches.").font(.system(size: 12))
+                            Text(verbatim: Self.nothing(picker.kind)).font(.system(size: 12))
                                 .foregroundStyle(theme.text3).padding(.horizontal, 10).padding(.vertical, 6)
                         }
                     }

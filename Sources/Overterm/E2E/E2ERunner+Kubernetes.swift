@@ -305,6 +305,7 @@ extension E2ERunner {
         await kubernetesMergedLogs(model, page, fake)
         await kubernetesTimeline(model, page, fake)
         await kubernetesTree(model, page, fake)
+        await kubernetesHealth(model, page, fake, kubeconfig: kubeconfig, port: port)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -2306,10 +2307,16 @@ extension E2ERunner {
     }
 
     /// Two contexts on the fake: one remote by name, one production by
-    /// name — and, for the writes, `kind-fake`, local by name.
-    static func fakeKubeconfig(port: Int, kind: Bool = false) -> String {
-        let cluster = kind ? "\n- name: kind-fake\n  cluster: {server: \"http://127.0.0.1:\(port)\"}" : ""
-        let context = kind ? "\n- name: kind-fake\n  context: {cluster: kind-fake, user: anonymous, namespace: shop}" : ""
+    /// name — and, for the writes, `kind-fake`, local by name; for the
+    /// health view and compare, `fake-stage` on a fake of its own.
+    static func fakeKubeconfig(port: Int, kind: Bool = false, stagePort: Int? = nil) -> String {
+        var cluster = kind ? "\n- name: kind-fake\n  cluster: {server: \"http://127.0.0.1:\(port)\"}" : ""
+        var context = kind ? "\n- name: kind-fake\n  context: {cluster: kind-fake, user: anonymous, namespace: shop}" : ""
+        // A second fake of its own: health across pinned contexts, compare.
+        if let stagePort {
+            cluster += "\n- name: fake-stage\n  cluster: {server: \"http://127.0.0.1:\(stagePort)\"}"
+            context += "\n- name: fake-stage\n  context: {cluster: fake-stage, user: anonymous, namespace: shop}"
+        }
         return """
             apiVersion: v1
             kind: Config

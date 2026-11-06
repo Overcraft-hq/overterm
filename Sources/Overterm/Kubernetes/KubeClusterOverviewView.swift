@@ -22,9 +22,11 @@ struct KubeClusterOverviewView: View {
                         Text("Reading the cluster…").font(.system(size: 12)).foregroundStyle(theme.text3)
                     }
                 }
+                KubePinnedHealthView(page: page, session: page.pinnedHealth, theme: theme)
                 header
                 attention(overview)
                 usage
+                KubeOverviewHealthView(page: page, session: page.health, theme: theme)
                 counts(overview)
                 applications(overview)
                 if !session.problems.isEmpty {
@@ -53,9 +55,13 @@ struct KubeClusterOverviewView: View {
         let version = model.version.map { "Kubernetes \($0.gitVersion)" }
         let nodes = session.state == .idle ? nil : "\(session.overview.nodes) node\(session.overview.nodes == 1 ? "" : "s")"
         if version != nil || nodes != nil {
-            Text(verbatim: [version, nodes].compactMap { $0 }.joined(separator: " · "))
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text2).textSelection(.enabled)
-                .accessibilityIdentifier("kubernetes.overview.version")
+            HStack(spacing: 10) {
+                Text(verbatim: [version, nodes].compactMap { $0 }.joined(separator: " · "))
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text2).textSelection(.enabled)
+                    .accessibilityIdentifier("kubernetes.overview.version")
+                // The health checks' count, where it is seen first; the findings below.
+                KubeHealthCount(session: page.health, theme: theme)
+            }
         }
     }
 

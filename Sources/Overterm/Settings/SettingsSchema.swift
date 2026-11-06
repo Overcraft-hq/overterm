@@ -714,7 +714,8 @@ enum SettingsSchema {
             requires: "kubernetes.enabled"),
         SettingSpec(
             key: "kubernetes.pinnedContexts", section: .kubernetes, group: "Contexts", title: "Pinned contexts",
-            help: "At the top of the context picker and in the palette, in this order.",
+            help:
+                "At the top of the context picker and in the palette, in this order. While the Kubernetes Overview shows, each pinned context — production too — is read in the background every 30 seconds for its card (one page of pods, workloads and nodes; reads only), in a connection nothing else needs.",
             kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.enabled"),
         SettingSpec(
             key: "kubernetes.maxProxies", section: .kubernetes, group: "Connections", title: "Contexts connected at once",

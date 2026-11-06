@@ -82,13 +82,10 @@ struct KubeDetailView: View {
                 .truncationMode(.middle).textSelection(.enabled)
                 .accessibilityIdentifier("kubernetes.detail.name")
             Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
-            if session.ref.isPod || KubeForwardTarget.of(kind: session.ref.kind, name: session.ref.name) != nil
-                || KubeWriteVerb.allCases.contains(where: { KubeWriteCheck.offered($0, on: session.ref.kind) })
-            {
-                KubePodActions(
-                    page: page, access: page.model.access, writeAccess: page.model.writeAccess, forwards: page.forwards, ref: session.ref, theme: theme
-                ).padding(.top, 4)
-            }
+            // Every object can be edited and compared (3.10): its verbs always show.
+            KubePodActions(
+                page: page, access: page.model.access, writeAccess: page.model.writeAccess, forwards: page.forwards, ref: session.ref, theme: theme
+            ).padding(.top, 4)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -118,6 +115,10 @@ struct KubeDetailView: View {
                     Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                         .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityIdentifier("kubernetes.detail.writeStatus")
+                } else if let status = page.compareStatus, status.ref == ref {
+                    Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(theme.text2).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("kubernetes.detail.compareStatus")
                 }
             }
         }
@@ -214,6 +215,12 @@ struct KubeDetailView: View {
                 if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
                 if !overview.facts.isEmpty { items(overview.facts) }
                 if let tree = session.tree { KubeTreeView(page: page, tree: tree, theme: theme).id("kubernetes.detail.tree") }
+                // Under the tree, which `x` scrolls to: what the checks say of it.
+                if let tree = session.tree {
+                    KubeObjectHealthView(page: page, own: session.health, tree: tree, theme: theme)
+                } else {
+                    KubeObjectHealthList(page: page, findings: session.health, theme: theme)
+                }
                 if session.ref.isPod { KubePodUsageView(page: page, metrics: page.model.metrics, session: session, theme: theme) }
                 if overview.pods != nil { podsSection }
                 ForEach(overview.sections) { section in

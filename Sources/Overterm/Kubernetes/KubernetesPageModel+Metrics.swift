@@ -97,10 +97,14 @@ extension KubernetesPageModel {
     func updateOverviewReading() {
         guard overviewShows, model.enabled, let context = model.selectedName else {
             clusterOverview.hide()
+            health.hide()
+            pinnedHealth.hide(by: self)
             return
         }
         if detail != nil, section == .overview { closeDetail() }
         clusterOverview.show(context: context, scope: model.scope, discovery: model.discovery, client: model.client(for: context))
+        health.show(context: context, scope: model.scope, discovery: model.discovery, client: model.client(for: context))
+        showPinnedHealth()
     }
 
     /// An object the Overview names (a failing pod, a workload, a node):

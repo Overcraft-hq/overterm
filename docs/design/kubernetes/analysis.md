@@ -447,7 +447,7 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 | Pulses: live counts per kind | k9s | The Overview section's counts | 2d |
 | Read-only mode | k9s | Built in: classes, enforced in the proxy for what Overterm sends, and by refusing to start writing processes (Section 5) | 1a |
 | Benchmarks over a forward | k9s | **Out** (2.7) | Out |
-| Lint (Popeye) | Popeye | Health checks over what is already read (3.9) | 3b |
+| Lint (Popeye) | Popeye | Health checks over what a detail reads, and bounded reads for the Overview (3.9, decision 33) | 3b |
 | Map | Headlamp | The dependency tree (3.7); no free-form graph | 3b |
 | Projects | Headlamp | Checkout bindings (3.1) | 3a |
 | Diff of one resource across clusters | Aptakube | "Compare with…" (3.10) | 3b |
@@ -597,8 +597,8 @@ Overterm already has the pieces to do both:
   - restarts in the last hour, or pods `Pending` for more than a minute;
   - a custom resource whose `Ready` condition is false (Argo, Flux, cert-manager).
 
-  The section shows a count, and each row links to its object. Nothing is written, nothing is installed, and nothing extra is read.
-- **Why it matters.** Popeye's findings live in a separate tool. Here they sit in the list the developer is already reading.
+  The section shows a count, and each row links to its object. Nothing is written and nothing is installed. A detail's findings come from its own GET and its tree's lists, so nothing extra is read there. The Overview's count is the one stated addition (decision 33): while it shows, one bounded GET of whole objects for each list the checks need.
+- **Why it matters.** Popeye's findings live in a separate tool. Here they sit where the developer already looks: the Overview and each object's detail.
 
 ### 3.10 Diff across contexts
 
@@ -1449,6 +1449,7 @@ The first analysis's 11, updated, then new ones. Each has a recommended option.
 30. **New: apply on production:** server-side apply from the editor (and `k8s_apply`) is not offered on a production context, even with writes on for the session. The context's `applyOnProduction` opts in; even then each apply asks for the typed name and is never forced. The diff with the cluster works everywhere (**recommended**) / apply on production whenever writes are on.
 31. **New: class precedence:** a class set by hand, then production by name, then local by name, then remote. A loopback server never makes a context local (**recommended**) / a loopback server counts as local.
 32. **New: per-context settings:** one `kubernetes.contexts` object per context, with Lens's and Freelens's cluster settings except the icon and the OpenShift Prometheus token, which stay out (**recommended**) / separate top-level settings per field.
+33. **New: what the Overview's health checks read (3.9):** the Overview's count reads more than the lists already hold, because list rows are Table rows with no object, and the template checks need specs. While the Overview shows on screen it makes one GET a list of whole objects, with no watch, in the context and namespace shown (all namespaces too). Each list is bounded: pods 200, and 500 each for Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, Services, Ingresses, PDBs, HPAs, and the Argo CD, Flux and cert-manager kinds the context serves. A cut list is said. Production is read the same way, since the page already reads it when shown. Never a Secret or a ConfigMap. What may carry a secret is dropped as each list is decoded: env values (names kept), Helm values, the last-applied annotation, managedFields. Nothing is kept once the Overview hides. The findings show on the Overview and in each object's detail, not as a list column, because a column would need the same reads on every list (**recommended**) / Table rows only, with only the status checks (restarts, Pending, PDB, HPA, Ready) and no template checks / a findings column on every list, read with each list.
 
 ## 14. Sources
 

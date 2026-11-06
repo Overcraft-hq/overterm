@@ -22,6 +22,9 @@ final class KubeTreeSession: ObservableObject {
     let root: KubeTree.Root
     @Published private(set) var state: State = .idle
     @Published private(set) var tree: KubeTree?
+    /// What the lists read for the tree say of its root's relations (3.9):
+    /// a Service selecting no pod, an Ingress to a missing Service or port.
+    @Published private(set) var findings: [KubeHealth.Finding] = []
 
     private let client: KubeClient?
     /// Where each kind is served; nil: the built-in kinds' own places.
@@ -62,9 +65,10 @@ final class KubeTreeSession: ObservableObject {
                 guard await Self.read(wanted, into: &read, client: client, discovery: discovery) else { return }
             }
             let done = read
-            let tree = await KubeBlocking.run { KubeTree.build(root, read: done) }
+            let (tree, findings) = await KubeBlocking.run { (KubeTree.build(root, read: done), KubeHealth.related(root, read: done)) }
             guard let self, !Task.isCancelled else { return }
             self.tree = tree
+            self.findings = findings
             self.state = .loaded
         }
     }
@@ -122,6 +126,7 @@ final class KubeTreeSession: ObservableObject {
         task?.cancel()
         task = nil
         tree = nil
+        findings = []
         if state == .loading { state = .idle }
     }
 }

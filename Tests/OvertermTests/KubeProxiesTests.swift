@@ -559,6 +559,39 @@ final class KubeProxiesTests: XCTestCase {
         XCTAssertEqual(again.status, 200)
     }
 
+    /// The Overview's pinned cards read in spare slots only: with
+    /// `maxProxies` 2 and three pinned contexts, the one the background's
+    /// slot can't hold is said not read — no proxy is closed for a card,
+    /// cycle after cycle, so no kubectl (and no credential plugin) is
+    /// started again and again.
+    @MainActor
+    func testPinnedCardsNeverCloseAProxy() async throws {
+        let proxies = proxies(max: 2)
+        _ = try await proxies.send(Self.context("page"), .GET, "/")
+        let list = KubeContextList(contexts: ["p1", "p2", "page"].map { Self.context($0) }, current: "page")
+        let session = KubePinnedHealthSession()
+        session.interval = .milliseconds(30)
+        session.show(
+            pinned: ["p1", "p2", "page"], contexts: list, discovery: { _ in nil },
+            target: { context in (KubeClient(KubeProxyConnection(proxies: proxies, context: context, role: .spare)), .namespace("shop")) })
+        let deadline = Date().addingTimeInterval(5)
+        while session.cards.contains(where: { $0.state == .waiting }) || answers.count("p1") < 3, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertGreaterThanOrEqual(answers.count("p1"), 3, "several cycles")
+        XCTAssertEqual(session.cards.first { $0.context == "p2" }?.state, .notRead(KubePinnedHealthSession.noSlot))
+        XCTAssertEqual(closed.values, [], "no proxy closed for a card")
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, ["p1", "page"])
+        XCTAssertEqual(opened.values.map(\.context), ["page", "p1"], "each opened once")
+        XCTAssertEqual(answers.count("p2"), 0, "nothing sent to the one with no slot")
+        session.hide()
+        // A request someone made still gets its slot: the spare one's is given up.
+        clock.advance(1)
+        _ = try await proxies.send(Self.context("agent"), role: .background, .GET, "/")
+        XCTAssertEqual(closed.values, ["p1"])
+    }
+
     private func until(_ ok: @escaping () async -> Bool) async throws {
         let deadline = Date().addingTimeInterval(5)
         while await !ok(), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
