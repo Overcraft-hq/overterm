@@ -104,6 +104,14 @@ final class KubeCommandsTests: XCTestCase {
                         XCTAssertEqual(rule, KubeProcessRule(access: .exec, confirm: kind == .production), label)
                     case .attach:
                         XCTAssertEqual(rule, KubeProcessRule(access: .attach, confirm: kind == .production), label)
+                    case .copyOut:
+                        XCTAssertEqual(rule, KubeProcessRule(access: .exec, confirm: true), "\(label): tar through exec, every copy asked")
+                    case .copyIn:
+                        if writable {
+                            XCTAssertEqual(rule, KubeProcessRule(access: .exec, confirm: true), label)
+                        } else {
+                            XCTAssertEqual(rule.refused, readOnly(kind), "\(label): it writes the container's files")
+                        }
                     case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .argoSync, .fluxReconcile:
                         if writable {
                             XCTAssertNil(rule.refused, label)

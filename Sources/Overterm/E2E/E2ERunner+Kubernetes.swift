@@ -315,6 +315,7 @@ extension E2ERunner {
         await kubernetesNodeShellAndResize(model, page, fake)
         await kubernetesPrometheus(model, page, fake, realProxy: kubectl != nil)
         await kubernetesAPIDocs(model, page, fake)
+        await kubernetesPodFiles(model, page, fake)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))

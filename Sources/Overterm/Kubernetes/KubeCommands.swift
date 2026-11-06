@@ -16,6 +16,10 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
     case shell
     /// `kubectl attach -it`, in a tab (`A`).
     case attach
+    /// `kubectl cp POD:PATH LOCAL` and `kubectl cp LOCAL POD:PATH`, in a tab
+    /// (stage 4, `KubePodCopy`): tar through exec; a copy in changes the
+    /// container's files.
+    case copyOut, copyIn
     /// `kubectl debug` (an ephemeral container), `drain`, `rollout undo`.
     case debug, drain, rolloutUndo
     /// `helm rollback`, `upgrade`, `uninstall`.
@@ -35,6 +39,8 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
         case .portForward: "Port-forward"
         case .shell: "Shell"
         case .attach: "Attach"
+        case .copyOut: "Copy from Container"
+        case .copyIn: "Copy into Container"
         case .debug: "Debug Container"
         case .drain: "Drain"
         case .rolloutUndo: "Roll Back"
@@ -53,10 +59,10 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
         }
     }
 
-    /// Whether it changes objects in the cluster: refused on a read-only context.
+    /// Whether it changes the cluster — its objects, or a container's files: refused on a read-only context.
     var writes: Bool {
         switch self {
-        case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .nodeShell, .argoSync, .fluxReconcile: true
+        case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .nodeShell, .argoSync, .fluxReconcile, .copyIn: true
         default: false
         }
     }
@@ -66,7 +72,7 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
         switch self {
         case .followLogs: .logs
         case .portForward: .portForward
-        case .shell: .exec
+        case .shell, .copyOut, .copyIn: .exec
         case .attach: .attach
         default: nil
         }
@@ -112,6 +118,8 @@ enum KubeProcessCheck {
 
     /// Why a shell, an attach or a debug shell is refused where `shells` is off.
     static let shellsOff = "Shells and attach are off for this context (its shells setting)."
+    /// Why a copy is refused there: kubectl cp is exec in the pod.
+    static let copiesOff = "Copying files is exec in the pod, and shells and exec are off for this context (its shells setting)."
 
     static func rule(_ verb: KubeProcessVerb, class kind: KubeContextClass, writable: Bool, settings: KubeContextSettings) -> KubeProcessRule {
         let production = kind == .production
@@ -126,6 +134,12 @@ enum KubeProcessCheck {
         case .shell, .attach:
             if settings.shells == false { return KubeProcessRule(refused: shellsOff) }
             return KubeProcessRule(access: verb.access, confirm: production)
+        case .copyOut, .copyIn:
+            // Writing the container's files: on a writable context only.
+            if verb == .copyIn, !writable { return KubeProcessRule(refused: readOnly(kind)) }
+            if settings.shells == false { return KubeProcessRule(refused: copiesOff) }
+            // Each copy is asked in the window, naming both paths, on every class.
+            return KubeProcessRule(access: verb.access, confirm: true)
         case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .argoSync, .fluxReconcile:
             guard writable else { return KubeProcessRule(refused: readOnly(kind)) }
             // A debug container is attached to: an interactive shell in the
