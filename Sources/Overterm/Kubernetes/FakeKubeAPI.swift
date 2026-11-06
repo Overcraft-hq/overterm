@@ -259,6 +259,10 @@ final class FakeKubeAPI: @unchecked Sendable {
     private var channels: [Channel] = []
     private var credentialFailure: String?
     private var throttled = 0
+    /// Paths whose answers are held this many milliseconds (`answerSlowly`).
+    private var slowPaths: [String: Int] = [:]
+    private var heldNow = 0
+    private var dropped: [String] = []
     private var throttleAfter = 0
     /// The next watches' answer: a status, its `Retry-After`.
     private var failedWatches: (count: Int, status: Int, retryAfter: Int?) = (0, 0, nil)
@@ -823,6 +827,23 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// exec plugin that failed — until `nil`.
     func failCredentials(_ text: String? = "getting credentials: exec: executable aws failed with exit code 255") {
         locked { credentialFailure = text }
+    }
+
+    /// Every answer to `path` (a whole one, not a watch's or a log's) held
+    /// `milliseconds` after it is asked — recorded when it arrives, as any
+    /// request; nil answers it at once again.
+    func answerSlowly(_ path: String, milliseconds: Int?) { locked { slowPaths[path] = milliseconds } }
+    /// Answers held now.
+    var heldAnswers: Int { locked { heldNow } }
+    /// The paths of held answers whose client closed before they went.
+    var droppedAnswers: [String] { locked { dropped } }
+
+    fileprivate func slowness(_ path: String) -> Int? { locked { slowPaths[path] } }
+    fileprivate func holding(_ change: Int, dropped path: String? = nil) {
+        locked {
+            heldNow += change
+            if let path { dropped.append(path) }
+        }
     }
 
     /// The next `count` requests are 429, `Retry-After` said.
@@ -2112,6 +2133,8 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
     private var head: HTTPRequestHead?
     private var body = Data()
     private var timeout: Scheduled<Void>?
+    /// The path of the answer held now (`answerSlowly`); its event loop's.
+    private var held: String?
 
     init(api: FakeKubeAPI) {
         self.api = api
@@ -2135,6 +2158,19 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
             request.method, request.uri, accept: request.headers["Accept"].joined(separator: ", "), body: body,
             contentType: request.headers["Content-Type"].first ?? "", on: channel)
         func whole(_ status: Int, _ data: Data, _ headers: [(String, String)]) {
+            let path = URLComponents(string: "http://localhost" + request.uri)?.percentEncodedPath ?? request.uri
+            if let delay = api.slowness(path) {
+                held = path
+                api.holding(1)
+                channel.eventLoop.scheduleTask(in: .milliseconds(Int64(delay))) {
+                    // Closed by its client meanwhile: said so then (`channelInactive`).
+                    guard self.held != nil else { return }
+                    self.held = nil
+                    self.api.holding(-1)
+                    Self.send(channel, request.version, status, data, headers)
+                }
+                return
+            }
             var head = HTTPResponseHead(version: request.version, status: HTTPResponseStatus(statusCode: status), headers: HTTPHeaders(headers))
             head.headers.add(name: "Content-Length", value: "\(data.count)")
             context.write(wrapOutboundOut(.head(head)), promise: nil)
@@ -2169,7 +2205,21 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
         }
     }
 
+    /// A held answer, written on the channel itself: the handler's context
+    /// may be gone by then.
+    private static func send(_ channel: Channel, _ version: HTTPVersion, _ status: Int, _ data: Data, _ headers: [(String, String)]) {
+        var head = HTTPResponseHead(version: version, status: HTTPResponseStatus(statusCode: status), headers: HTTPHeaders(headers))
+        head.headers.add(name: "Content-Length", value: "\(data.count)")
+        channel.write(HTTPServerResponsePart.head(head), promise: nil)
+        if !data.isEmpty { channel.write(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(bytes: data))), promise: nil) }
+        channel.writeAndFlush(HTTPServerResponsePart.end(nil)).whenComplete { _ in channel.close(promise: nil) }
+    }
+
     func channelInactive(context: ChannelHandlerContext) {
+        if let held {
+            self.held = nil
+            api.holding(-1, dropped: held)
+        }
         timeout?.cancel()
         api.forget(context.channel)
     }

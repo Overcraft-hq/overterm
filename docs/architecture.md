@@ -3242,7 +3242,13 @@ never the proxy's socket, which refuses port-forward on every context.
   context) — a `ManagedProcess`, ready on its `Forwarding from` line, its
   stderr kept, closed by its pid.
 - **Started again** (`KubeForwards.run`): when kubectl exits, or its pod
-  goes — the pod read every `podCheckInterval` (5 s) while it forwards:
+  goes — the pod read every `podCheckInterval` (5 s) while it forwards
+  and the page shows (`checksPods`, the model's `isShown`: hidden, the
+  page reads nothing and kubectl exiting is what says the pod went; shown
+  again, the pod is read at once; a check in flight when the page hides
+  is cancelled, its request closed — `KubernetesModel.visibility` — and a
+  forward started again while hidden waits, `.restarting`, to resolve
+  until the page shows; only its first start, asked for, resolves hidden):
   gone, terminating or no longer running, and for a Service or a
   Deployment (`KubeForwardTarget.followsEndpoints`) no longer ready, as
   a pod failing readiness leaves the Service's endpoints — the target is resolved again
