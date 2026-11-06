@@ -303,6 +303,7 @@ extension E2ERunner {
         await kubernetesAttention(model, page, fake, realProxy: kubectl != nil)
         await kubernetesMetrics(model, page, fake)
         await kubernetesMergedLogs(model, page, fake)
+        await kubernetesTimeline(model, page, fake)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))

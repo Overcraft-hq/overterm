@@ -39,6 +39,10 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     /// Its detail has a Logs tab: a pod's own, or the pods it picks, merged.
     var hasLogs: Bool { isPod || selectsPods }
 
+    /// A Deployment, StatefulSet or DaemonSet: its detail has a History tab
+    /// (its change timeline, 3.6).
+    var hasHistory: Bool { KubeTimeline.Source.of(self) != nil }
+
     static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
         lhs.context == rhs.context && lhs.kind.fullName == rhs.kind.fullName && lhs.namespace == rhs.namespace && lhs.name == rhs.name
     }
@@ -164,7 +168,7 @@ struct KubeHistory: Equatable, Sendable {
 
 /// The detail's tabs.
 enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
-    case overview, logs, yaml, events
+    case overview, logs, yaml, events, history
 
     var id: String { rawValue }
     var title: String {
@@ -173,13 +177,20 @@ enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
         case .logs: "Logs"
         case .yaml: "YAML"
         case .events: "Events"
+        case .history: "History"
         }
     }
 
     /// The tabs an object's detail has: Logs a pod's, and a workload's
-    /// (its pods', merged).
+    /// (its pods', merged); History a Deployment's, StatefulSet's or DaemonSet's.
     static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
-        ref.hasLogs ? allCases : allCases.filter { $0 != .logs }
+        allCases.filter { tab in
+            switch tab {
+            case .logs: ref.hasLogs
+            case .history: ref.hasHistory
+            default: true
+            }
+        }
     }
 }
 
@@ -197,6 +208,9 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
     var last: Date?
     /// Who said it: the reporting component, and its host.
     var source: String
+    /// What it is about: `involvedObject`'s Kind and name.
+    var objectKind = ""
+    var object = ""
 
     var isWarning: Bool { type == "Warning" }
 
@@ -232,7 +246,12 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
             .map(\.element)
     }
 
-    init(id: String, type: String, reason: String, message: String, count: Int = 1, first: Date? = nil, last: Date? = nil, source: String = "") {
+    init(
+        id: String, type: String, reason: String, message: String, count: Int = 1, first: Date? = nil, last: Date? = nil, source: String = "",
+        objectKind: String = "", object: String = ""
+    ) {
+        self.objectKind = objectKind
+        self.object = object
         self.id = id
         self.type = type
         self.reason = reason
@@ -252,11 +271,13 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
         let last = time("lastTimestamp") ?? (series?["lastObservedTime"] as? String).flatMap(KubeTime.date) ?? time("eventTime") ?? first
         let component = (source?["component"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? item["reportingComponent"] as? String ?? ""
         let host = (source?["host"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? item["reportingInstance"] as? String
+        let involved = item["involvedObject"] as? [String: Any] ?? [:]
         self.init(
             id: metadata["uid"] as? String ?? metadata["name"] as? String ?? UUID().uuidString, type: item["type"] as? String ?? "Normal",
             reason: item["reason"] as? String ?? "", message: (item["message"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             count: KubeRollout.int(item["count"]) ?? KubeRollout.int(series?["count"]) ?? 1, first: first, last: last,
-            source: [component, host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "))
+            source: [component, host].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", "),
+            objectKind: involved["kind"] as? String ?? "", object: involved["name"] as? String ?? "")
     }
 }
 

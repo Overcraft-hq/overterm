@@ -91,6 +91,12 @@ enum KubeHelmUpgrade {
     /// masked: what is new, gone, changed or the same. Neither side is kept
     /// whole — only the masked diffs.
     static func diff(current: String, rendered: String, namespace: String, revision: Int) -> KubeHelmDiff {
+        diff(current: current, rendered: rendered, namespace: namespace, from: "revision \(revision)", to: "checkout")
+    }
+
+    /// The same, its two sides named (`revision 2`, `revision 3`): two of a
+    /// release's revisions against each other (the change timeline's).
+    static func diff(current: String, rendered: String, namespace: String, from: String, to: String) -> KubeHelmDiff {
         let (before, beforeWithheld) = documents(current, namespace: namespace)
         let (after, afterWithheld) = documents(rendered, namespace: namespace)
         let old = Dictionary(before.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
@@ -105,7 +111,7 @@ enum KubeHelmUpgrade {
             if [a, b].contains(where: { $0.map { KubeObjectStrip.isSecret($0.object) } == true }) { secrets += 1 }
             let (left, right) = sides(a?.object, b?.object)
             let file = "\(any.kind.lowercased())-\(any.name).yaml"
-            let unified = KubeManifestDiff.unified(before: left, after: right, from: "revision \(revision)/\(file)", to: "checkout/\(file)")
+            let unified = KubeManifestDiff.unified(before: left, after: right, from: "\(from)/\(file)", to: "\(to)/\(file)")
             let change: KubeHelmDiffItem.Change = a == nil ? .added : b == nil ? .removed : unified.text.isEmpty ? .unchanged : .modified
             items.append(
                 KubeHelmDiffItem(

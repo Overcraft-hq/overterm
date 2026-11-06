@@ -190,7 +190,7 @@ final class KubeKindsTests: XCTestCase {
         XCTAssertEqual(catalog.kinds(in: .overview), [], "the Overview lists no kind")
         XCTAssertEqual(
             catalog.kinds(in: .cluster).map(\.fullName),
-            ["nodes", "namespaces", "events.events.k8s.io", "serviceaccounts", "roles.rbac.authorization.k8s.io", KubernetesModel.crdName],
+            ["nodes", "namespaces", "events.events.k8s.io", "serviceaccounts", "roles.rbac.authorization.k8s.io", KubernetesModel.crdName, "controllerrevisions.apps"],
             "events.k8s.io's events, not the core's as well; RBAC's with them")
         XCTAssertEqual(catalog.kinds(in: .custom).map(\.fullName), ["widgets.example.com"])
         let all = catalog.all.map(\.fullName)

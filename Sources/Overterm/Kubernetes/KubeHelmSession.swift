@@ -8,8 +8,10 @@ extension KubeClient {
 
     /// Helm's records in one storage, as their metadata says them — the
     /// labels — paged; an expired `continue` lists again from the start.
-    func helmRecords(_ storage: KubeHelmStorage, in scope: KubeScope) async throws -> [KubeHelmRecord] {
+    /// With `release`, that release's alone (its `name` label too).
+    func helmRecords(_ storage: KubeHelmStorage, in scope: KubeScope, release: String? = nil) async throws -> [KubeHelmRecord] {
         let kind = storage.kind
+        let selector = storage.labelSelector + (release.map { ",\(storage == .tiller ? "NAME" : "name")=\($0)" } ?? "")
         // Tiller keeps every release's ConfigMaps in its own namespace and
         // their labels don't say the release's: listed across the cluster.
         let namespace = storage == .tiller ? nil : scope.namespace(for: kind)
@@ -21,8 +23,7 @@ extension KubeClient {
                 let path = KubePath.query(
                     kind.path(namespace: namespace),
                     [
-                        ("limit", String(pageSize)), ("continue", token), ("labelSelector", storage.labelSelector),
-                        ("fieldSelector", storage.fieldSelector),
+                        ("limit", String(pageSize)), ("continue", token), ("labelSelector", selector), ("fieldSelector", storage.fieldSelector),
                     ])
                 do {
                     let page = try KubeHelm.records(try await get(path, accept: Self.metadataListAccept).body, storage: storage)

@@ -50,6 +50,10 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     let secret: KubeSecretSession?
     /// A pod's Logs tab; nil for any other kind.
     let logs: KubePodLogSession?
+    /// A workload's History tab (its change timeline); nil for any other kind.
+    let timeline: KubeTimelineSession?
+    /// The History tab showed before the object was read: read once it is.
+    private var historyWanted = false
     /// A workload's (a Job's, a Service's) Logs tab: the pods its selector
     /// picks, merged — made once the object is read and its selector known.
     @Published private(set) var merged: KubeMergedLogSession?
@@ -71,6 +75,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         self.secret =
             ref.isSecret ? (secret ?? KubeSecretSession(ref: ref, client: client, consent: KubernetesModel.shared.secretConsent, isProduction: true)) : nil
         logs = ref.isPod ? KubePodLogSession(namespace: ref.namespace ?? "", pod: ref.name, client: client) : nil
+        timeline = KubeTimeline.Source.of(ref).map { KubeTimelineSession(ref: ref, source: $0, client: client) }
         self.secret?.onRead = { [weak self] stripped in self?.secretRead(stripped) }
         self.secret?.onDrop = { [weak self] in self?.secretDropped() }
     }
@@ -111,6 +116,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
                     guard let self, !Task.isCancelled else { return }
                     self.state = .failed(KubernetesModel.said(error))
                     self.logs?.podFailed(KubernetesModel.said(error))
+                    self.timeline?.fail(KubernetesModel.said(error))
                     self.askEventsIfWanted()
                 }
             })
@@ -139,6 +145,21 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             if let since = logsShown { session.show(since: since) }
         }
         askEventsIfWanted()
+        if historyWanted {
+            historyWanted = false
+            timeline?.load(json)
+        }
+    }
+
+    /// The History tab shows: the timeline read once, off the object —
+    /// asked for once it is read.
+    func showHistory(again: Bool = false) {
+        guard let timeline else { return }
+        if let object {
+            timeline.load(object.json, again: again)
+        } else if state == .loading {
+            historyWanted = true
+        }
     }
 
     /// The Logs tab shows (the page on screen): its log read — a pod's, or
@@ -226,6 +247,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         tasks = []
         logs?.cancel()
         merged?.cancel()
+        timeline?.cancel()
         secret?.drop(.navigation)
     }
 }

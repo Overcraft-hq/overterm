@@ -59,6 +59,9 @@ struct KubernetesActions {
     /// An object's YAML, Overterm's copy of it, in the editor (`y`): the
     /// page steps aside.
     var openEditor: (URL) -> Void = { _ in }
+    /// A change of a workload's timeline, its diff masked, in the changes
+    /// pane: the page steps aside.
+    var showChange: (KubeChangeDiff) -> Void = { _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -68,7 +71,7 @@ struct KubernetesActions {
 /// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
     case overview, workloads, network, config, storage, cluster, custom, helm, forwards
-    case open, back, forward, close, logs, followInTab, shell, attach, portForward, openForward, database, askWhy
+    case open, back, forward, close, logs, history, followInTab, shell, attach, portForward, openForward, database, askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
@@ -82,6 +85,7 @@ enum KubernetesKey: String, ResourceKey {
         case .forward: return "]"
         case .close: return "Esc"
         case .logs: return "l"
+        case .history: return "h"
         case .followInTab: return "t"
         case .shell: return "e"
         case .attach: return "A"
@@ -116,6 +120,8 @@ enum KubernetesKey: String, ResourceKey {
         switch self {
         case .open: return "The detail: overview, YAML, events — a pod's logs (a click opens it too)"
         case .logs: return "Logs: the pod's, followed — its containers, previous, since; a workload's, its pods' merged"
+        case .history:
+            return "History: a Deployment's, StatefulSet's or DaemonSet's changes, newest first — revisions, restarts, Helm, scaling, warnings; each opens its diff"
         case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
         case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
         case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
@@ -487,6 +493,7 @@ final class KubernetesPageModel: ObservableObject {
             case .allNamespaces: model.setScope(.all)
             case .copyKubectl: copyKubectl()
             case .logs: return openLogs()
+            case .history: return openHistory()
             case .followInTab: return runPodCommand(.followLogs)
             case .shell: return runPodCommand(.shell)
             case .attach: return runPodCommand(.attach)
@@ -674,9 +681,11 @@ final class KubernetesPageModel: ObservableObject {
         detail = session
         // Logs are a pod's or a workload's: another kind's detail opens on its Overview.
         if detailTab == .logs && !ref.hasLogs { detailTab = .overview }
+        if detailTab == .history && !ref.hasHistory { detailTab = .overview }
         session.load()
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
+        if detailTab == .history { session.showHistory() }
         updateLogsReading()
     }
 
@@ -714,6 +723,7 @@ final class KubernetesPageModel: ObservableObject {
     func showTab(_ tab: KubeDetailTab) {
         detailTab = tab
         if tab == .events { detail?.loadEvents() }
+        if tab == .history { detail?.showHistory() }
         updateLogsReading()
     }
 
