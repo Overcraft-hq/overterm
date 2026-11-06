@@ -46,6 +46,7 @@ version is tagged `v<version>`.
 - kubernetes: Prometheus per context, opt-in (`metrics: prometheus`, or a `prometheus` Service named): charts over 1 h, 6 h, 24 h or 7 d on the Overview and in a pod's and a claim's detail, the cluster's requests and limits against allocatable, and a Used column on PVCs — through a second proxy that reaches only that Service's queries
 - kubernetes: Flux and Argo CD verbs — suspend, resume and reconcile a Kustomization, HelmRelease or Source, refresh an Argo CD Application, each asked first on a writable context; Argo CD's sync and Flux's reconcile with its source run as argocd and flux in a pinned tab
 - kubernetes: the cluster's own API docs in the editor — hover a field of a manifest to read what its context's `/openapi/v3` says of it (custom resources too), ⌃Space for the fields that can go there, a field the cluster doesn't know marked; Explain on the manifest's bar or Kubernetes Explain… in ⌘K shows a kind or field path (`deployment.spec.replicas`) as `kubectl explain` would, beside the editor; read only when you ask, kept in memory for that context and server version
+- kubernetes: copy a file or folder out of a pod's container, or into it on a writable context, as `kubectl cp` in a pinned tab — the container picked, a save or open panel for this Mac's side, each copy asked first naming the context, namespace, pod, container and both paths
 
 ## 1.5.6 — 2026-11-13
 

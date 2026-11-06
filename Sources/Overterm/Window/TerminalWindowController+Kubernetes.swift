@@ -31,6 +31,37 @@ extension TerminalWindowController {
             openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) },
             runInTab: { [weak self] command, context, namespace in self?.runKubernetesCommand(command, in: context, namespace: namespace) },
             confirm: { [weak self] title, detail, button, then in self?.confirmKubernetes(title, detail, button, then) },
+            askText: { [weak self] title, detail, initial, then in
+                self?.askForName(title: title, detail: detail, initial: initial, action: "OK") { text in
+                    let trimmed = text.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { return "A path, please." }
+                    then(trimmed)
+                    return nil
+                }
+            },
+            pickSave: { [weak self] name, then in
+                guard let window = self?.window else { return }
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = name
+                panel.prompt = "Copy Here"
+                panel.beginSheetModal(for: window) { response in
+                    guard response == .OK, let url = panel.url else { return }
+                    MainActor.assumeIsolated { then(url) }
+                }
+            },
+            pickOpen: { [weak self] message, then in
+                guard let window = self?.window else { return }
+                let panel = NSOpenPanel()
+                panel.canChooseFiles = true
+                panel.canChooseDirectories = true
+                panel.allowsMultipleSelection = false
+                panel.prompt = "Copy"
+                panel.message = message
+                panel.beginSheetModal(for: window) { response in
+                    guard response == .OK, let url = panel.url else { return }
+                    MainActor.assumeIsolated { then(url) }
+                }
+            },
             choose: { [weak self] title, detail, buttons, then in self?.chooseDocker(title, detail, buttons, then) },
             openURL: { [weak self] url in self?.openDockerLink(url) },
             currentTab: { [weak self] in self?.store.selected?.id },
@@ -656,7 +687,9 @@ extension TerminalWindowController {
             let writes = page.writeVerbs(for: target).map { ($0, $0.title.replacingOccurrences(of: "…", with: "") + " " + object) }
             // Drain, Roll Back, Debug: `Drain node fake-node-1 in a Tab`.
             let tabWrites = page.tabWriteVerbs(for: target).map { ($0, ($0.label ?? $0.title) + " " + object + " in a Tab") }
-            for (verb, name) in writes + tabWrites where verb.unavailable == nil {
+            // Copy Out, Copy In: `Copy In pod shop/web-7d9 in a Tab`.
+            let copies = page.podFileVerbs(for: target).map { ($0, ($0.label ?? $0.title) + " " + object + " in a Tab") }
+            for (verb, name) in writes + tabWrites + copies where verb.unavailable == nil {
                 items.append(
                     PaletteItem(
                         id: "k.w.\(name).\(target)", group: .action, title: "Kubernetes: \(name)…",

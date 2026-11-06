@@ -5305,3 +5305,36 @@ from fake-dev's API through its proxy, `replicaz` is marked, completion
 offers `revisionHistoryLimit` from the cache, Explain says
 `deployment.spec.replicas` in the pane, a CRD's field is explained, and
 ⌃Space against a server without OpenAPI v3 still offers the buffer's words.
+
+**Pod files** (stage 4; `KubePodFiles.swift` (pure: `KubePodCopy`),
+`KubernetesPageModel+PodFiles`; analysis 2.24, decision 10, Section 5's
+process table): no file browser — pod files are rare — but `kubectl cp` in
+a tab. A pod's Copy from Container in a Tab… and Copy into Container in a
+Tab… (its menu, its detail's More, ⌘K; no letter, `f` is forwards) build
+`kubectl cp POD:PATH LOCAL` or `kubectl cp LOCAL POD:PATH`, `-c`,
+`--context` and `-n` always, each word quoted for zsh. kubectl cp is tar
+through exec, so both are `KubeProcessVerb`s with `create pods/exec` asked
+of `kubectl auth can-i` first, and a context's `shells` off refuses both; a
+copy in writes the container's files, so it is a writing process — refused
+on a read-only context (remote by its `writable`, production without its
+session switch). The path: the class check, can-i, the pod read for its
+containers (one picked as a shell's, the default first), the paths — out,
+the container's path asked (from its `workingDir`, else empty), then a
+save panel (the path's last part suggested, a colon made `-`); in, an open panel (a file or a folder), then where in the container
+(`/tmp/<name>` offered) —, `KubePodCopy.problem` (a control character would
+break the typed line; a local path must be absolute and colon-free, since
+kubectl reads `x:` as a pod; a copy out of `/` alone, the container's whole
+filesystem, is refused — `outProblem`), then `confirmTabCommand`: every copy is
+confirmed in the window on every class, naming the context and namespace
+(red on production), the pod, container and both paths and the command,
+the class check made again, and the command typed into a tab pinned to the
+context (`KubernetesActions.askText`, `pickSave`, `pickOpen` ask the
+window). `KubePodFilesTests` checks the lines, odd paths' quoting, the
+paths refused, every class for both directions, shells off and the
+confirmation; the scenario's `kubernetesPodFiles`
+(`E2ERunner+KubernetesPodFiles`): on fake-dev Copy In greyed and refused,
+Copy Out asked through the window's text sheet, the runner answering the
+save panel, cancelled then recorded quoted in a tab pinned to fake-dev;
+fake-dev made writable by its entry, Copy In recorded the same way; on
+fake-prod Copy In refused and Copy Out asked with PRODUCTION; only GETs and
+access reviews on the fake (the stand-in kubectl answers can-i).

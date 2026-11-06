@@ -28,6 +28,13 @@ struct KubernetesActions {
     var runInTab: (_ command: String, _ context: KubeContext, _ namespace: String) -> Void = { _, _, _ in }
     /// Asked first, with this button and Cancel (a shell on production).
     var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void = { _, _, _, _ in }
+    /// A line of text asked for, with OK and Cancel (a path in a container):
+    /// `then` gets it trimmed, only when OK was pressed with something in it.
+    var askText: (_ title: String, _ detail: String, _ initial: String, _ then: @escaping (String) -> Void) -> Void = { _, _, _, _ in }
+    /// Where on this Mac a file goes: a save panel, the name suggested.
+    var pickSave: (_ name: String, _ then: @escaping (URL) -> Void) -> Void = { _, _ in }
+    /// A file or folder on this Mac: an open panel, one item.
+    var pickOpen: (_ message: String, _ then: @escaping (URL) -> Void) -> Void = { _, _ in }
     /// One of these chosen, or Cancel: the index of the one chosen (a container).
     var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
     /// A forward's URL: the browser column (the page steps aside), or the
@@ -1173,7 +1180,7 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
+        ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + podFileVerbs(for: picked) + forwardVerbs(for: picked)
             + editVerbs(for: picked) + compareVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked) + snippetVerbs(for: picked)
     }
 
@@ -1404,7 +1411,7 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
 
-    private func choose(
+    func choose(
         _ pick: KubeContainerPick, _ verb: KubeProcessVerb, context: KubeContext, namespace: String, pod: String,
         then: @escaping (String?) -> Void
     ) {
