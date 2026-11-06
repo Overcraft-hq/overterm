@@ -221,3 +221,54 @@ final class ResourceVerbMenuItem: NSMenuItem {
         return items
     }
 }
+
+/// A right-click menu of verbs over a SwiftUI view, made only as it opens
+/// (SwiftUI's `.contextMenu` builds its content with every render of the
+/// view under it, and a verb's guard may ask kubectl or a server). Only a
+/// right-click (or a control-click) lands on it: every other press, the
+/// pointer's hover and tooltips go through to the view under it.
+struct ResourceVerbMenuArea: NSViewRepresentable {
+    let verbs: @MainActor () -> [ResourceVerb]
+
+    func makeNSView(context: Context) -> ResourceVerbMenuView { ResourceVerbMenuView(verbs: verbs) }
+
+    func updateNSView(_ view: ResourceVerbMenuView, context: Context) { view.verbs = verbs }
+}
+
+@MainActor
+final class ResourceVerbMenuView: NSView {
+    var verbs: @MainActor () -> [ResourceVerb]
+
+    init(verbs: @escaping @MainActor () -> [ResourceVerb]) {
+        self.verbs = verbs
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// Whether `type` (with `flags`) opens a context menu.
+    nonisolated static func opensMenu(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags) -> Bool {
+        type == .rightMouseDown || (type == .leftMouseDown && flags.contains(.control))
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let event = NSApp.currentEvent, Self.opensMenu(event.type, event.modifierFlags) else { return nil }
+        return super.hitTest(point)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard Self.opensMenu(event.type, event.modifierFlags), let menu = menu(for: event) else { return super.mouseDown(with: event) }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    /// The verbs as they stand now, asked for here and nowhere else.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let items = ResourceVerbMenuItem.items(verbs())
+        guard !items.isEmpty else { return nil }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for item in items { menu.addItem(item) }
+        return menu
+    }
+}

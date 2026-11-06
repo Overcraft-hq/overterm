@@ -210,6 +210,9 @@ struct KubeClient: Sendable {
     }
 
     static let tableAccept = "application/json;as=Table;v=v1;g=meta.k8s.io, application/json"
+    /// A Table or nothing (406): for what must never come back whole — a
+    /// Secret list's names.
+    static let tableOnlyAccept = "application/json;as=Table;v=v1;g=meta.k8s.io"
     static let discoveryAccept =
         "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList, application/json;g=apidiscovery.k8s.io;v=v2beta1;as=APIGroupDiscoveryList, application/json"
 

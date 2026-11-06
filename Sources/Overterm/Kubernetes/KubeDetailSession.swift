@@ -54,6 +54,10 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     let timeline: KubeTimelineSession?
     /// The History tab showed before the object was read: read once it is.
     private var historyWanted = false
+    /// The Overview's dependency tree (3.7); nil for a kind that has none.
+    let tree: KubeTreeSession?
+    /// The Overview showed before the object was read: its tree read once it is.
+    private var treeWanted = false
     /// A workload's (a Job's, a Service's) Logs tab: the pods its selector
     /// picks, merged — made once the object is read and its selector known.
     @Published private(set) var merged: KubeMergedLogSession?
@@ -68,7 +72,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     /// is, by its uid.
     private var eventsWanted = false
 
-    init(ref: KubeObjectRef, client: KubeClient?, secret: KubeSecretSession? = nil) {
+    init(ref: KubeObjectRef, client: KubeClient?, secret: KubeSecretSession? = nil, discovery: KubeDiscovery? = nil) {
         self.ref = ref
         self.client = client
         state = ref.isSecret ? .withheld : .loading
@@ -76,6 +80,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             ref.isSecret ? (secret ?? KubeSecretSession(ref: ref, client: client, consent: KubernetesModel.shared.secretConsent, isProduction: true)) : nil
         logs = ref.isPod ? KubePodLogSession(namespace: ref.namespace ?? "", pod: ref.name, client: client) : nil
         timeline = KubeTimeline.Source.of(ref).map { KubeTimelineSession(ref: ref, source: $0, client: client) }
+        tree = ref.isSecret ? nil : KubeTree.Root.of(ref.kind).map { KubeTreeSession(ref: ref, root: $0, client: client, discovery: discovery) }
         self.secret?.onRead = { [weak self] stripped in self?.secretRead(stripped) }
         self.secret?.onDrop = { [weak self] in self?.secretDropped() }
     }
@@ -117,6 +122,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
                     self.state = .failed(KubernetesModel.said(error))
                     self.logs?.podFailed(KubernetesModel.said(error))
                     self.timeline?.fail(KubernetesModel.said(error))
+                    self.tree?.fail(KubernetesModel.said(error))
                     self.askEventsIfWanted()
                 }
             })
@@ -148,6 +154,21 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         if historyWanted {
             historyWanted = false
             timeline?.load(json)
+        }
+        if treeWanted {
+            treeWanted = false
+            tree?.load(object)
+        }
+    }
+
+    /// The Overview shows: its dependency tree read once, off the object —
+    /// asked for once it is read.
+    func showTree(again: Bool = false) {
+        guard let tree else { return }
+        if let object {
+            tree.load(object, again: again)
+        } else if state == .loading {
+            treeWanted = true
         }
     }
 
@@ -248,6 +269,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         logs?.cancel()
         merged?.cancel()
         timeline?.cancel()
+        tree?.cancel()
         secret?.drop(.navigation)
     }
 }

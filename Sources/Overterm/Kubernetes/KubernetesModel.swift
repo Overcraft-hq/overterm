@@ -359,7 +359,7 @@ final class KubernetesModel: ObservableObject {
         }
         if name != selectedName {
             select(name)
-        } else if selected != before || following == nil {
+        } else if selected != before || following == nil || side == nil {
             // Its class, its server, its settings may have changed: a
             // context that stopped being writable gets a proxy with the
             // other flags on its next request.
@@ -625,7 +625,11 @@ final class KubernetesModel: ObservableObject {
             return
         }
         let client = KubeClient(connection(for: context))
-        if readSide { self.readSide(context, client) }
+        // Shown again, a kind picked before the kubeconfig was read back
+        // (`show` reads it off the main thread) starts the list alone: the
+        // side — the version, discovery, the CRD watch — goes with it, or
+        // a CRD applied then never shows.
+        if readSide || side == nil { self.readSide(context, client) }
         follow(kind, client)
         updateMetrics()
     }
