@@ -195,6 +195,8 @@ final class FakeKubeAPI: @unchecked Sendable {
         var isLog: Bool { FakeKubeAPI.route(path).map { $0.resource == "pods" && $0.subresource == "log" } ?? false }
         /// A watch's request.
         var isWatch: Bool { query["watch"] == "1" || query["watch"] == "true" }
+        /// A Prometheus query through a Service's proxy (`…/proxy/api/v1/query`, `query_range`).
+        var isPrometheusQuery: Bool { path.contains("/proxy/api/v1/query") }
     }
 
     /// A kind it serves, as discovery says it.
@@ -259,6 +261,11 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// What it serves now: the built-in kinds and the CRDs added.
     private var kinds = FakeKubeAPI.builtinKinds
     private var objects: [String: Object] = [:]
+    /// The Prometheus behind a Service's proxy, and its series.
+    private var prometheus: (namespace: String, service: String, port: String)?
+    private var prometheusSeries: [(metric: String, labels: [String: String], value: Double)] = []
+    /// What the fake Prometheus answers instead of its queries (`failPrometheus`).
+    private var prometheusFailure: (status: Int, text: String)?
     private var history: [(version: Int, type: String, object: Object)] = []
     private var current = 1000
     /// Events up to this are gone: a watch from a version before it is 410.
@@ -385,6 +392,31 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// A node's sample.
     func setNodeMetrics(_ node: String, cpu: String, memory: String, at time: Date = Date()) {
         add("nodes.metrics.k8s.io", node, fields: ["timestamp": Self.time(time), "window": "15s", "usage": ["cpu": cpu, "memory": memory]])
+    }
+
+    /// A Prometheus answers at `namespace/service:port`'s proxy — its
+    /// `api/v1/query` and `api/v1/query_range`, as the apiserver's service
+    /// proxy would reach it; every other proxy path (another Service's,
+    /// another path of this one's) is a 403, as the metrics proxy's flags
+    /// would answer. The Service itself is the test's to add (`add`).
+    func servePrometheus(namespace: String, service: String, port: String) {
+        locked { prometheus = (namespace, service, port) }
+    }
+
+    /// The fake Prometheus answers its queries with this plain text and
+    /// status instead — a process in the cluster, saying what it likes; nil, its queries again.
+    func failPrometheus(_ status: Int?, _ text: String = "") {
+        locked { prometheusFailure = status.map { ($0, text) } }
+    }
+
+    /// A series Prometheus holds: its metric's name, labels and value now —
+    /// what a query (`sum`, `sum by`, `rate` taken as the value) adds up.
+    /// A range answers it rising to the value over the range.
+    func setPrometheusSeries(_ metric: String, labels: [String: String] = [:], value: Double) {
+        locked {
+            prometheusSeries.removeAll { $0.metric == metric && $0.labels == labels }
+            prometheusSeries.append((metric, labels, value))
+        }
     }
 
     /// Lists answer without a resourceVersion, as metrics.k8s.io's do.
@@ -1121,6 +1153,9 @@ final class FakeKubeAPI: @unchecked Sendable {
             }
             return log(namespace: namespace, pod: name, query: query, channel: channel)
         }
+        if route.groupVersion == "v1", resource == "services", route.subresource?.hasPrefix("proxy") == true {
+            return prometheusAnswer(route, query: query)
+        }
         if let kind = route.kind, route.subresource == "scale", kind.subresources.contains("scale"), let name = route.name {
             guard let object = locked({ objects[Self.key(kind.fullName, route.namespace, name)] }) else {
                 return .json(404, Self.status(404, "NotFound", "\(resource) \"\(name)\" not found"))
@@ -1162,6 +1197,85 @@ final class FakeKubeAPI: @unchecked Sendable {
         return list(
             kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels,
             metadataOnly: !table && accept.contains("as=PartialObjectMetadataList"))
+    }
+
+    /// A Service's proxy: the fake Prometheus's two query paths, else 403.
+    private func prometheusAnswer(_ route: Route, query: [String: String]) -> Answer {
+        let (served, series, failure) = locked { (prometheus, prometheusSeries, prometheusFailure) }
+        guard let served, route.namespace == served.namespace, route.name == "\(served.service):\(served.port)",
+            let sub = route.subresource, sub == "proxy/api/v1/query" || sub == "proxy/api/v1/query_range"
+        else { return .text(403, "Forbidden") }
+        if let failure { return .text(failure.status, failure.text) }
+        let promql = query["query"] ?? ""
+        let groups = Self.evaluate(promql, series)
+        let result: [[String: Any]]
+        if sub.hasSuffix("query_range") {
+            guard let start = Double(query["start"] ?? ""), let end = Double(query["end"] ?? ""), let step = Self.seconds(query["step"] ?? ""), step > 0, end >= start
+            else {
+                return .json(400, Self.encode(["status": "error", "errorType": "bad_data", "error": "invalid parameter: start, end and step are needed"]))
+            }
+            let count = min(11_000, Int((end - start) / step) + 1)
+            result = groups.map { labels, value in
+                let values: [[Any]] = (0..<count).map { index in
+                    let share = count > 1 ? 0.8 + 0.2 * Double(index) / Double(count - 1) : 1
+                    return [start + Double(index) * step, Self.number(value * share)]
+                }
+                return ["metric": labels, "values": values]
+            }
+            return .json(200, Self.encode(["status": "success", "data": ["resultType": "matrix", "result": result]]))
+        }
+        let now = Double(query["time"] ?? "") ?? Date().timeIntervalSince1970
+        result = groups.map { labels, value in ["metric": labels, "value": [now, Self.number(value)]] }
+        return .json(200, Self.encode(["status": "success", "data": ["resultType": "vector", "result": result]]))
+    }
+
+    private static func number(_ value: Double) -> String { value == value.rounded() ? String(Int(value)) : String(value) }
+
+    /// `30s`, `3m`, `1h`, or plain seconds.
+    private static func seconds(_ text: String) -> Double? {
+        if let plain = Double(text) { return plain }
+        guard let unit = text.last, let number = Double(text.dropLast()) else { return nil }
+        switch unit {
+        case "s": return number
+        case "m": return number * 60
+        case "h": return number * 3600
+        case "d": return number * 86400
+        default: return nil
+        }
+    }
+
+    /// As much PromQL as Overterm's queries need: the first metric named,
+    /// its `a="b"` and `a!="b"` matchers, `sum` or `sum by (…)`; a `rate`
+    /// is the series' value. Each group's labels and summed value.
+    static func evaluate(_ promql: String, _ series: [(metric: String, labels: [String: String], value: Double)]) -> [([String: String], Double)] {
+        let metrics = Set(series.map(\.metric))
+        guard let metric = metrics.compactMap({ name in promql.range(of: name).map { (name, $0.lowerBound) } }).min(by: { $0.1 < $1.1 })?.0,
+            let at = promql.range(of: metric)
+        else { return [] }
+        var equal: [String: String] = [:]
+        var unequal: [String: String] = [:]
+        if promql[at.upperBound...].hasPrefix("{"), let close = promql[at.upperBound...].firstIndex(of: "}") {
+            let body = promql[promql.index(after: at.upperBound)..<close]
+            for part in body.split(separator: ",") {
+                let text = String(part)
+                if let range = text.range(of: "!=") {
+                    unequal[String(text[..<range.lowerBound])] = String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                } else if let range = text.range(of: "=") {
+                    equal[String(text[..<range.lowerBound])] = String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                }
+            }
+        }
+        var by: [String] = []
+        if let range = promql.range(of: "sum by ("), let close = promql[range.upperBound...].firstIndex(of: ")") {
+            by = promql[range.upperBound..<close].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        }
+        var groups: [[String: String]: Double] = [:]
+        for item in series where item.metric == metric {
+            guard equal.allSatisfy({ item.labels[$0.key] == $0.value }), unequal.allSatisfy({ (item.labels[$0.key] ?? "") != $0.value }) else { continue }
+            let key = Dictionary(uniqueKeysWithValues: by.compactMap { name in item.labels[name].map { (name, $0) } })
+            groups[key, default: 0] += item.value
+        }
+        return groups.map { ($0.key, $0.value) }.sorted { $0.0.description < $1.0.description }
     }
 
     /// `pods/{p}/log`: a container's log (`container` needed with several),

@@ -43,6 +43,7 @@ version is tagged `v<version>`.
 - kubernetes: a pane's header warns in red when its kubectl, helm, k9s or stern reaches production — for certain from `--context` or the tab's pin, "probably" from your current context; New Task can pin the task's tab to a context; snippets with `${context}`, `${namespace}`, `${pod}` in a resource's menu; New Kubernetes <Kind> from templates in the editor; saved filters per context
 - kubernetes: the pane header's warning also reads a relative `--kubeconfig`, `$HOME/…`, a command behind `sudo -u` or `env -u`, and a pinned tab's own kubeconfigs; it notices a kubeconfig written after the first kubectl; a Secret made from a template closes its copy once applied
 - kubernetes: a shell on a node (a privileged pod, the context's nodeShell on, the node's name typed), and a running pod's cpu and memory resized in place where the cluster serves it
+- kubernetes: Prometheus per context, opt-in (`metrics: prometheus`, or a `prometheus` Service named): charts over 1 h, 6 h, 24 h or 7 d on the Overview and in a pod's and a claim's detail, the cluster's requests and limits against allocatable, and a Used column on PVCs — through a second proxy that reaches only that Service's queries
 
 ## 1.5.4 — 2026-11-09
 

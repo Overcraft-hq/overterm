@@ -139,7 +139,8 @@ final class KubeMetricsTests: XCTestCase {
         XCTAssertEqual(KubeMetricsTarget.pods(.namespace("shop"), labels: "app=web").path, "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods?labelSelector=app%3Dweb")
         XCTAssertEqual(KubeMetricsTarget.pods(.all, labels: nil).path, "/apis/metrics.k8s.io/v1beta1/pods")
         XCTAssertEqual(KubeContextSettings(fields: ["metrics": .string("none")]).metrics, KubeMetricsSource.none)
-        XCTAssertNil(KubeContextSettings(fields: ["metrics": .string("prometheus")]).metrics, "stage 4's")
+        XCTAssertEqual(KubeContextSettings(fields: ["metrics": .string("prometheus")]).metrics, .prometheus, "stage 4's")
+        XCTAssertEqual(KubeMetricsAvailability.of(KubeDiscovery(kinds: [.pods]), source: .prometheus), .absent, "metrics-server's columns as before")
     }
 
     func testACellIsANumberOrADashSayingWhy() {

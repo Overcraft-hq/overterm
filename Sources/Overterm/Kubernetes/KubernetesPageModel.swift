@@ -287,6 +287,7 @@ final class KubernetesPageModel: ObservableObject {
     @Published var compareStatus: KubeCompareStatus?
     private var overviewWatch: AnyCancellable?
     private var metricsKindWatch: AnyCancellable?
+    private var prometheusWatch: AnyCancellable?
     /// How long the typing must stop before `label:` or `field:` asks the server again.
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
@@ -395,6 +396,12 @@ final class KubernetesPageModel: ObservableObject {
         // Usage is wanted for the kind shown: pods' or nodes'.
         metricsKindWatch = model.$kind.removeDuplicates().dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.updateMetricsWanted() } }
+        // Prometheus is wanted for what shows: a detail's chart, the PVC
+        // list's column — where the context shown opts in.
+        prometheusWatch = $detail.map { _ in () }.merge(
+            with: $detailTab.map { _ in () }, model.$selectedName.map { _ in () }, model.$contexts.map { _ in () }, model.$kind.map { _ in () }
+        )
+        .sink { [weak self] in DispatchQueue.main.async { self?.updatePrometheusWanted() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
@@ -1028,6 +1035,10 @@ final class KubernetesPageModel: ObservableObject {
             let age = columns.firstIndex { $0.title.caseInsensitiveCompare("Age") == .orderedSame } ?? columns.count
             columns.insert(contentsOf: Self.metricsColumns(want), at: age)
         }
+        if showsVolumeColumn, !columns.isEmpty {
+            let age = columns.firstIndex { $0.title.caseInsensitiveCompare("Age") == .orderedSame } ?? columns.count
+            columns.insert(Self.volumeColumnSpec, at: age)
+        }
         return columns
     }
 
@@ -1113,6 +1124,7 @@ final class KubernetesPageModel: ObservableObject {
         if id == Self.namespaceColumn { return row.row.id.namespace.map { .text($0) } }
         if id == KubeDeploymentHint.column { return row.hint.map { .text($0.text.lowercased()) } }
         if let measure = Self.measure(of: id) { return usage(measure, of: row, now: now).sort.map { .number($0) } }
+        if id == Self.volumeColumn { return volumeUsage(of: row).sort.map { .number($0) } }
         guard let (index, column) = column(id), index < row.row.cells.count else { return nil }
         switch column.name.lowercased() {
         case "age", "created at": return age(of: row.row.id, at: now).map { .number($0) }
@@ -1256,6 +1268,7 @@ final class KubernetesPageModel: ObservableObject {
         if column.id == Self.namespaceColumn { return row.row.id.namespace ?? "" }
         if column.id == KubeDeploymentHint.column { return row.hint?.text ?? "" }
         if let measure = Self.measure(of: column.id) { return usage(measure, of: row, now: now).text }
+        if column.id == Self.volumeColumn { return volumeUsage(of: row).text }
         guard let (index, server) = self.column(column.id), index < row.row.cells.count else { return "" }
         let text = row.row.cells[index].text
         switch server.name.lowercased() {

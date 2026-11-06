@@ -214,6 +214,10 @@ struct KubeDetailView: View {
             if let overview = session.overview {
                 if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
                 if !overview.facts.isEmpty { items(overview.facts) }
+                // Over the range picked, near the top: what it used, where Prometheus has it.
+                if page.prometheusOn, let chart = page.chart(for: session.ref) {
+                    KubePrometheusChartView(page: page, monitor: page.model.prometheus, chart: chart, theme: theme)
+                }
                 if let tree = session.tree { KubeTreeView(page: page, tree: tree, theme: theme).id("kubernetes.detail.tree") }
                 // Under the tree, which `x` scrolls to: what the checks say of it.
                 if let tree = session.tree {
@@ -585,7 +589,8 @@ struct KubePodUsageView: View {
                         Spacer(minLength: 0)
                     }
                 }
-                let history = page.usageHistory(of: session.ref)
+                // With Prometheus its chart, below, has the history.
+                let history = page.chartsFromPrometheus ? [] : page.usageHistory(of: session.ref)
                 if let span = KubeUsageHistory.span(history) {
                     HStack(spacing: 16) {
                         sparkline("cpu", history.map(\.usage.cpu))

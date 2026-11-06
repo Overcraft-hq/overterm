@@ -523,6 +523,12 @@ struct KubernetesPageView: View {
                 Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
                     .help(usage.help ?? ""))
+        } else if column?.id == KubernetesPageModel.volumeColumn {
+            let usage = page.volumeUsage(of: row)
+            view = AnyView(
+                Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
+                    .help(usage.help ?? ""))
         } else if column?.id == KubeDeploymentHint.column {
             let hint = row.hint
             view = AnyView(

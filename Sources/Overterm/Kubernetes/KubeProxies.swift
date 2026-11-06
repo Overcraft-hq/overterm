@@ -17,6 +17,11 @@ import NIOHTTP1
 ///   no other such sign-in is running ("Waiting for the browser sign-in").
 /// - **A credential failure stops the context** (`KubeProxyProblem`): no
 ///   retries — each would run the plugin again — until `retry`.
+/// - **A metrics proxy** (stage 4, `sendPrometheus`): a context's second
+///   proxy, its own entry and slot, accepting only its Prometheus
+///   Service's query paths; closed when no chart shows (`closePrometheus`).
+///   The page context's is not the background's to close (`pageMetrics`),
+///   and what its answers say never stops the context (`metricsProblem`).
 /// - **Read-only follows the context**: a context that stops (or starts)
 ///   being writable gets a new proxy with the other flags. A production
 ///   context's writes for the session are the proxies' own to know
@@ -194,23 +199,89 @@ actor KubeProxies {
     nonisolated func send(
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data? = nil, headers: [(String, String)] = []
     ) async throws -> HTTPResponse {
-        let (proxy, holds, id) = try await begin(context, role)
+        try await request(context, role, prometheus: nil, method, path, body: body, headers: headers)
+    }
+
+    /// One Prometheus query through `context`'s metrics proxy (stage 4):
+    /// a second `kubectl proxy`, started for it, whose `--accept-paths`
+    /// names only `service`'s `query` and `query_range` paths, GETs only —
+    /// anything else is refused here before any socket, and by its flags.
+    /// It counts towards `maxProxies` as any proxy does (its own entry,
+    /// never the page's kept slot), and is closed by `closePrometheus`
+    /// when no chart shows, or idle.
+    nonisolated func sendPrometheus(
+        _ context: KubeContext, _ service: KubePrometheusService, role: Role = .page, _ path: String
+    ) async throws -> HTTPResponse {
+        guard service.allows(path) else { throw KubePrometheusRefused(path: path) }
+        return try await request(context, role, prometheus: service, .GET, path, body: nil, headers: [("Accept", "application/json")])
+    }
+
+    private nonisolated func request(
+        _ context: KubeContext, _ role: Role, prometheus: KubePrometheusService?, _ method: HTTPMethod, _ path: String, body: Data?,
+        headers: [(String, String)]
+    ) async throws -> HTTPResponse {
+        let key = Self.key(context.name, prometheus)
+        // A chart hidden meanwhile: its metrics proxy isn't opened again.
+        if prometheus != nil { try Task.checkCancellation() }
+        let (proxy, holds, id) = try await begin(context, role, prometheus: prometheus)
         let watch = role.unasked
         let response: HTTPResponse
         do {
             response = try await proxy.transport.send(method, path, body: body, headers: headers)
         } catch {
-            await finish(context.name, id, watch: watch, holds: holds, problem: nil, answered: false)
+            await finish(context.name, key, id, watch: watch, holds: holds, problem: nil, answered: false)
             throw error
         }
-        let problem = KubeProxyProblem.classify(
-            status: response.status, contentType: response.header("Content-Type"), text: String(decoding: response.body.prefix(4096), as: UTF8.self),
-            stderr: proxy.stderr, signIn: proxy.signIn)
-        let minor = path == "/version" && response.status == 200 ? KubeVersion.minor(response.body) : nil
-        await finish(context.name, id, watch: watch, holds: holds, problem: problem, answered: true, serverMinor: minor)
+        let problem =
+            prometheus == nil
+            ? KubeProxyProblem.classify(
+                status: response.status, contentType: response.header("Content-Type"), text: String(decoding: response.body.prefix(4096), as: UTF8.self),
+                stderr: proxy.stderr, signIn: proxy.signIn)
+            : Self.metricsProblem(status: response.status, stderr: proxy.stderr, signIn: proxy.signIn)
+        let minor = prometheus == nil && path == "/version" && response.status == 200 ? KubeVersion.minor(response.body) : nil
+        await finish(context.name, key, id, watch: watch, holds: holds, problem: problem, answered: true, serverMinor: minor)
         if let problem { throw problem }
         return response
     }
+
+    /// A metrics proxy's answer comes from a process in the cluster: its
+    /// body never says what kubectl failed at — a Prometheus (or any
+    /// Service its labels match) answering a plain 500 that reads
+    /// "getting credentials" must not stop the context's requests. Only
+    /// kubectl's own stderr can: the credential failure it logged.
+    /// Anything else is the chart's problem (`KubePrometheusReader`).
+    nonisolated static func metricsProblem(status: Int, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+        guard status == 500 else { return nil }
+        let line = stderr.components(separatedBy: .newlines).last {
+            let lower = $0.lowercased()
+            return lower.contains("getting credentials") || lower.contains("exec plugin") || lower.contains("exec:")
+        }
+        guard let line else { return nil }
+        // kubectl logs "… error: getting credentials: exec: …": classified from there.
+        let lower = line.lowercased()
+        let start = ["getting credentials", "exec plugin", "exec:"].compactMap { lower.range(of: $0)?.lowerBound }.min()
+        let said = start.map { String(line[$0...]) } ?? line
+        let problem = KubeProxyProblem.classify(status: 500, contentType: "text/plain", text: said, stderr: stderr, signIn: signIn)
+        return problem?.stopsRequests == true ? problem : nil
+    }
+
+    /// An entry's key: the context's name for its proxy, with a mark for its metrics proxy.
+    private static let metricsMark = "\u{1}prometheus"
+
+    nonisolated static func key(_ name: String, _ prometheus: KubePrometheusService?) -> String {
+        prometheus == nil ? name : name + metricsMark
+    }
+
+    private static func isMetrics(_ key: String) -> Bool { key.hasSuffix(metricsMark) }
+
+    /// The context an entry's key is for.
+    private static func contextName(_ key: String) -> String { isMetrics(key) ? String(key.dropLast(metricsMark.count)) : key }
+
+    /// The page context's metrics proxy: a slot of the page's while its
+    /// charts show — never counted in the background's budget, and never
+    /// closed for a watch or a spare read (closed for one, the next chart
+    /// poll would close a watch for it, and so on every refresh).
+    private var pageMetrics: String? { page.map { Self.key($0, Self.anyService) } }
 
     /// A response read as it arrives — a watch, a followed log — through
     /// `context`'s proxy, which stays in use until the stream ends. Its
@@ -233,7 +304,7 @@ actor KubeProxies {
         let id: UInt64
         let watch = role.unasked
         do {
-            (proxy, holds, id) = try await begin(context, role)
+            (proxy, holds, id) = try await begin(context, role, prometheus: nil)
         } catch {
             continuation.finish(throwing: error)
             return
@@ -247,14 +318,14 @@ actor KubeProxies {
                 }
                 continuation.yield(piece)
             }
-            await finish(context.name, id, watch: watch, holds: holds, problem: nil, answered: true)
+            await finish(context.name, context.name, id, watch: watch, holds: holds, problem: nil, answered: true)
             continuation.finish()
         } catch let error as HTTPError {
             let problem = KubeProxyProblem.classify(error, stderr: proxy.stderr, signIn: proxy.signIn)
-            await finish(context.name, id, watch: watch, holds: holds, problem: problem, answered: error.status != 0)
+            await finish(context.name, context.name, id, watch: watch, holds: holds, problem: problem, answered: error.status != 0)
             continuation.finish(throwing: problem ?? error)
         } catch {
-            await finish(context.name, id, watch: watch, holds: holds, problem: nil, answered: false)
+            await finish(context.name, context.name, id, watch: watch, holds: holds, problem: nil, answered: false)
             continuation.finish(throwing: error)
         }
     }
@@ -268,59 +339,66 @@ actor KubeProxies {
     /// the request checks it still holds the entry it counted itself in;
     /// one closed meanwhile ends the request (`closedWhileOpening`) rather
     /// than going on with a proxy that may be gone, uncounted.
-    private func begin(_ context: KubeContext, _ role: Role) async throws -> (KubeProxy, Bool, UInt64) {
+    private func begin(_ context: KubeContext, _ role: Role, prometheus: KubePrometheusService?) async throws -> (KubeProxy, Bool, UInt64) {
         let context = effective(context)
         let name = context.name
+        // The context's proxy is `name`'s entry; its metrics proxy another
+        // of its own (a slot like any), keyed apart. Credentials — a stop,
+        // a sign-in — are the context's, whichever proxy meets them.
+        let key = Self.key(name, prometheus)
         if let problem = stopped[name] { throw problem }
         let watch = role.unasked
         // A watch never signs in: an oidc context only once someone has.
         if watch, KubeSignIn(context.auth) == .oidc, !signedIn.contains(name) { throw KubeProxyProblem.needsPageSignIn }
         if role == .page { page = name }
-        let readOnly = !context.isWritable
-        if let spec = entries[name]?.spec, spec.readOnly != readOnly { await closeProxy(name) }
-        if entries[name] == nil {
-            try await makeRoom(for: name, role)
-            if entries[name] == nil {
+        let readOnly = prometheus != nil || !context.isWritable
+        if let spec = entries[key]?.spec, spec.readOnly != readOnly || spec.prometheus != prometheus { await closeProxy(key) }
+        if entries[key] == nil {
+            if prometheus != nil { try Task.checkCancellation() }
+            try await makeRoom(for: key, role)
+            if prometheus != nil { try Task.checkCancellation() }
+            if entries[key] == nil {
                 lastID += 1
-                entries[name] = Entry(id: lastID, lastUsed: now())
+                entries[key] = Entry(id: lastID, lastUsed: now())
             }
         }
-        let id = entries[name]!.id
-        entries[name]!.inFlight += 1
-        if watch { entries[name]!.watches += 1 }
-        entries[name]!.lastUsed = now()
-        entries[name]!.background = role != .page && name != page
+        let id = entries[key]!.id
+        entries[key]!.inFlight += 1
+        if watch { entries[key]!.watches += 1 }
+        entries[key]!.lastUsed = now()
+        entries[key]!.background = role != .page && key != page
         let proxy: KubeProxy
         do {
             let spec: KubeProxySpec
-            if let planned = entries[name]?.spec {
+            if let planned = entries[key]?.spec {
                 spec = planned
             } else {
-                let planned = try await plan(context, configuration, serverMinors[name])
-                guard entries[name]?.id == id else { throw KubeProxyProblem.closedWhileOpening }
+                var planned = try await plan(context, configuration, serverMinors[name])
+                if let prometheus { planned = try planned.metrics(prometheus) }
+                guard entries[key]?.id == id else { throw KubeProxyProblem.closedWhileOpening }
                 // Another request planned it meanwhile: the one already there.
-                spec = entries[name]!.spec ?? planned
-                entries[name]!.spec = spec
+                spec = entries[key]!.spec ?? planned
+                entries[key]!.spec = spec
             }
             proxy = try await pool.value(for: spec)
-            guard entries[name]?.id == id else {
+            guard entries[key]?.id == id else {
                 // Closed while it opened: the pool keeps what finished
                 // opening after the close — end it, unless the context's
                 // entry now is another's on the same proxy.
-                if entries[name]?.spec != spec { await pool.close(spec) }
+                if entries[key]?.spec != spec { await pool.close(spec) }
                 throw KubeProxyProblem.closedWhileOpening
             }
         } catch {
             if let problem = error as? KubeProxyProblem, problem.stopsRequests { stopped[name] = problem }
-            end(name, id, watch: watch)
-            if let entry = entries[name], entry.id == id, entry.inFlight == 0 { entries[name] = nil }
+            end(key, id, watch: watch)
+            if let entry = entries[key], entry.id == id, entry.inFlight == 0 { entries[key] = nil }
             throw error
         }
         startSweeping()
         do {
             return (proxy, try await signIn(name, proxy.signIn, interactive: !watch), id)
         } catch {
-            end(name, id, watch: watch)
+            end(key, id, watch: watch)
             throw error
         }
     }
@@ -328,12 +406,12 @@ actor KubeProxies {
     /// One request done: its problem kept when it stops the context, the
     /// sign-in released, the server's minor noted.
     private func finish(
-        _ name: String, _ id: UInt64, watch: Bool, holds: Bool, problem: KubeProxyProblem?, answered: Bool, serverMinor: Int? = nil
+        _ name: String, _ key: String, _ id: UInt64, watch: Bool, holds: Bool, problem: KubeProxyProblem?, answered: Bool, serverMinor: Int? = nil
     ) {
         if let problem, problem.stopsRequests { stopped[name] = problem }
         if let serverMinor { serverMinors[name] = serverMinor }
         if holds { released(name, signedIn: answered && problem == nil) }
-        end(name, id, watch: watch)
+        end(key, id, watch: watch)
     }
 
     /// The request no longer holds entry `id` — nothing, when that entry
@@ -411,14 +489,15 @@ actor KubeProxies {
     ///   background proxy closed for the page is noted (`closedForPage`).
     private func makeRoom(for name: String, _ role: Role) async throws {
         let max = configuration.maxProxies
+        let pageMetrics = self.pageMetrics
         if role == .spare {
             // Only a slot nobody holds: the background's (`maxProxies − 1`), and any.
-            let background = entries.keys.filter { $0 != name && $0 != page }
+            let background = entries.keys.filter { $0 != name && $0 != page && $0 != pageMetrics }
             guard background.count < max - 1, entries.keys.filter({ $0 != name }).count < max else { throw KubeProxyProblem.noSlot(max: max) }
             return
         }
         if role != .page {
-            let background = entries.keys.filter { $0 != name && $0 != page }
+            let background = entries.keys.filter { $0 != name && $0 != page && $0 != pageMetrics }
             if background.count >= max - 1 {
                 var victim = leastRecent(background, idleOnly: true)
                 if victim == nil, role == .background { victim = leastRecent(background.filter(onlyWatched), idleOnly: false) }
@@ -427,16 +506,20 @@ actor KubeProxies {
             }
         }
         while entries.keys.filter({ $0 != name }).count >= max {
-            let others = entries.keys.filter { $0 != name && $0 != page }
+            let others = entries.keys.filter { $0 != name && $0 != page && $0 != pageMetrics }
             let background = others.filter { entries[$0]?.background == true }
+            let charts = pageMetrics.map { [$0] }?.filter { $0 != name } ?? []
             var victim = leastRecent(background, idleOnly: true) ?? leastRecent(others, idleOnly: true)
             switch role {
-            case .page: victim = victim ?? leastRecent(background, idleOnly: false) ?? leastRecent(others, idleOnly: false)
-            case .background: victim = victim ?? leastRecent(others.filter(onlyWatched), idleOnly: false)
+            case .page: victim = victim ?? leastRecent(background, idleOnly: false) ?? leastRecent(others, idleOnly: false) ?? leastRecent(charts, idleOnly: false)
+            // A request someone made, nothing else to close: the charts' proxy between two reads.
+            case .background: victim = victim ?? leastRecent(others.filter(onlyWatched), idleOnly: false) ?? leastRecent(charts, idleOnly: true)
             case .watch, .spare: break
             }
             guard let victim else { throw KubeProxyProblem.noSlot(max: max) }
-            if role == .page, entries[victim]?.background == true { closedForPage = Array(([victim] + closedForPage).prefix(8)) }
+            if role == .page, entries[victim]?.background == true {
+                closedForPage = Array(([Self.label(victim)] + closedForPage).prefix(8))
+            }
             await closeProxy(victim)
         }
     }
@@ -456,7 +539,7 @@ actor KubeProxies {
 
     private func closeProxy(_ name: String) async {
         guard let entry = entries.removeValue(forKey: name) else { return }
-        signedIn.remove(name)
+        if !Self.isMetrics(name) { signedIn.remove(name) }
         if let spec = entry.spec { await pool.close(spec) }
         if entries.isEmpty {
             sweeper?.cancel()
@@ -497,19 +580,39 @@ actor KubeProxies {
         return .closed
     }
 
-    /// The contexts with a proxy (or one opening), for tests and the page.
-    var connected: [String] { entries.keys.sorted() }
+    /// The contexts with a proxy (or one opening) — a metrics proxy's
+    /// context too: names `close` takes.
+    var connected: [String] { Set(entries.keys.map(Self.contextName)).sorted() }
+
+    /// Every proxy open (or opening), a metrics proxy as `<context>
+    /// (prometheus)`: what the tests and the scenario read.
+    var proxyLabels: [String] { entries.keys.map(Self.label).sorted() }
+
+    private static func label(_ key: String) -> String { isMetrics(key) ? contextName(key) + " (prometheus)" : key }
+
+    /// Whether `name`'s metrics proxy is open (or opening).
+    func hasPrometheusProxy(_ name: String) -> Bool { entries[Self.key(name, Self.anyService)] != nil }
+
+    /// Any Service: the key doesn't say which.
+    private static let anyService = KubePrometheusService(namespace: "x", name: "x", port: "1")!
 
     /// After the user signed in again: the context's requests may go, on a
-    /// new proxy.
+    /// new proxy (its metrics proxy too).
     func retry(_ name: String) async {
         stopped[name] = nil
         await closeProxy(name)
+        await closeProxy(Self.key(name, Self.anyService))
     }
 
-    /// Closes the context's proxy.
+    /// Closes the context's proxy, and its metrics proxy.
     func close(_ name: String) async {
         await closeProxy(name)
+        await closeProxy(Self.key(name, Self.anyService))
+    }
+
+    /// Closes the context's metrics proxy: no chart shows (it runs only while one does).
+    func closePrometheus(_ name: String) async {
+        await closeProxy(Self.key(name, Self.anyService))
     }
 
     /// Every proxy, at quit (`ManagedProcess.closeAll` ends them too).

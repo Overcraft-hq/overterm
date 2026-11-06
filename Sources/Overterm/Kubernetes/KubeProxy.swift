@@ -242,9 +242,25 @@ struct KubeProxySpec: Hashable, Sendable {
     /// A cache folder of the run's own (an isolated run, a test).
     var cacheDirectory: String?
     var signIn: KubeSignIn
+    /// The metrics proxy's (stage 4): only this Prometheus Service's query
+    /// paths, GETs only (`KubePrometheusFlags`), on a socket of its own.
+    var prometheus: KubePrometheusService? = nil
 
     var arguments: [String] {
-        KubeProxyFlags.arguments(context: context, socket: socket, readOnly: readOnly, cacheDirectory: cacheDirectory)
+        if let prometheus {
+            return KubePrometheusFlags.arguments(context: context, socket: socket, service: prometheus, cacheDirectory: cacheDirectory)
+        }
+        return KubeProxyFlags.arguments(context: context, socket: socket, readOnly: readOnly, cacheDirectory: cacheDirectory)
+    }
+
+    /// This context's metrics proxy: the same kubectl, environment and
+    /// credentials, its own socket beside the context's, read-only.
+    func metrics(_ service: KubePrometheusService) throws -> KubeProxySpec {
+        var spec = self
+        spec.prometheus = service
+        spec.readOnly = true
+        spec.socket = try KubePrometheusFlags.socket(beside: socket)
+        return spec
     }
 
     /// Ready when kubectl says it serves; its socket removed before (one a

@@ -54,6 +54,7 @@ extension KubernetesPageModel {
     /// The monitor told what this page shows.
     func updateMetricsWanted() {
         model.metrics.want(metricsOnScreen, for: self)
+        updatePrometheusWanted()
     }
 
     /// A row's usage cell.
@@ -64,7 +65,7 @@ extension KubernetesPageModel {
 
     /// What the header says of the usage: why there's none, how old it is.
     var metricsNote: String? {
-        guard let want = metricsWant, showsSection else { return nil }
+        guard let want = metricsWant, showsSection else { return volumeNote }
         return model.metrics.note(want)
     }
 

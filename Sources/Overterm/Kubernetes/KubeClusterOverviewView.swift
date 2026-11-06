@@ -26,6 +26,7 @@ struct KubeClusterOverviewView: View {
                 header
                 attention(overview)
                 usage
+                if page.prometheusOn { KubePrometheusChartView(page: page, monitor: model.prometheus, chart: .cluster, theme: theme) }
                 KubeOverviewHealthView(page: page, session: page.health, theme: theme)
                 counts(overview)
                 applications(overview)
@@ -136,7 +137,8 @@ struct KubeClusterOverviewView: View {
     @ViewBuilder private var usage: some View {
         let note = model.metrics.note(.nodes)
         if let usage = page.clusterUsage {
-            let history = page.clusterHistory
+            // With Prometheus its chart has the history; this is the moment's.
+            let history = page.chartsFromPrometheus ? [] : page.clusterHistory
             VStack(alignment: .leading, spacing: 6) {
                 caption("Usage")
                 HStack(alignment: .top, spacing: 24) {

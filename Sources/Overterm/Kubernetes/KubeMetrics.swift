@@ -155,15 +155,18 @@ enum KubeMetricsFormat {
 
 /// Where a context's usage comes from (`metrics` in its
 /// `kubernetes.contexts` entry): metrics-server when the cluster serves
-/// it (`auto`, the default), metrics-server only, or none — `none` skips
-/// the check entirely: no column, nothing asked. Prometheus is stage 4's.
+/// it (unset, the default), metrics-server only, or none — `none` skips
+/// the check entirely: no column, nothing asked. Prometheus is opt-in
+/// (stage 4): `prometheus`, or `auto` set in the entry, looks for one
+/// besides metrics-server (`KubePrometheusUse`).
 enum KubeMetricsSource: String, CaseIterable, Sendable {
-    case auto, metricsServer, none
+    case auto, metricsServer, prometheus, none
 
     var title: String {
         switch self {
-        case .auto: "metrics-server, when served"
-        case .metricsServer: "metrics-server"
+        case .auto: "Auto: metrics-server when served, and Prometheus when found"
+        case .metricsServer: "metrics-server only"
+        case .prometheus: "Prometheus, with metrics-server's columns when served"
         case .none: "None: no usage columns, nothing asked"
         }
     }
