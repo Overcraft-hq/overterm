@@ -4168,7 +4168,7 @@ to say (`KubeMetricsAvailability`): absent (EKS by default) or down
 (`Stale`, a 503), the columns stand with a dash and why, and nothing is
 asked — no error; the context's `metrics` (`auto`, `metricsServer`,
 `none`; Prometheus is stage 4's) at `none` takes the columns away and
-asks nothing. A read that fails leaves the last sample, aging, until it
+asks nothing; Prometheus is opt-in, below. A read that fails leaves the last sample, aging, until it
 is older than `staleAfter` (three reads): then a dash, never a stale
 number shown as current (each failed read publishes, so the cells look
 at its age again); the header says why there is none, or the sample's
@@ -4211,8 +4211,9 @@ each a link to its detail (`openFromOverview`), under the server's
 version and node count; then the cluster's CPU and memory against its
 nodes' allocatable (the monitor's nodes sample), each with a sparkline of
 the samples taken while it shows. The pods' requests and limits against
-allocatable wait for stage 4 (every pod's spec is a whole-object list,
-which the Overview's rows avoid; Prometheus has them as series);
+allocatable come from Prometheus where the context opts in (every pod's
+spec is a whole-object list, which the Overview's rows avoid; Prometheus
+has them as series — Prometheus, below);
 the counts per kind and pods by phase, each a link to its list; and the
 Applications (`KubeApplications`): workloads grouped by namespace and
 `app.kubernetes.io/instance` (else `name`) into applications, those by
@@ -4817,6 +4818,74 @@ a node refused until `kubernetes.contexts` turns kind-fake's `nodeShell`
 on, then reviewed, asked with the name typed and recorded; a pod's
 resize typed into the sheet's field, confirmed, landing on the fake; with
 the fake no longer serving `pods/resize`, refused with why, nothing sent.
+
+**Prometheus** (stage 4; `KubePrometheus.swift` (pure),
+`KubePrometheusMonitor`, `KubernetesPageModel+Prometheus`,
+`KubePrometheusViews`; analysis 2.1, 2.11, 2.17, Section 4, decision 16):
+opt-in per context (`KubePrometheusUse`) — `metrics: prometheus`, or `auto`
+set in its entry, or a `prometheus` field naming the Service as
+`namespace/service:port` (each part checked as a DNS label, a port a number
+or an IANA name); unset, `metricsServer` or `none`, nothing is looked for.
+The Service is found once for the context — kept while the page hides, by
+the context, its use and its cluster and user; another of either, or
+`retry` after a failure, looks again (`KubePrometheusMonitor.find`,
+one GET each through the context's own proxy, Freelens's order:
+`lens-metrics/prometheus`, then Services labelled
+`app=prometheus,component=server,heritage=Helm`, then
+`operated-prometheus=true` — the first by namespace and name, its first
+port, the operator's `web`); a refusal is said with what to set. Its
+queries go through the apiserver's service proxy on a **second `kubectl
+proxy`** of the context's (`KubeProxies.sendPrometheus`; `KubeProxySpec.
+metrics` — the same kubectl, environment and credentials, its socket
+`<hash>-metrics.sock`): `KubePrometheusFlags` give it `--accept-paths` of
+that one Service's `/api/v1/(query|query_range)$` (namespace, Service and
+port escaped, anchored at both ends — kubectl matches the decoded path, so
+another Service, another path of this one, `..` or `%2F` never matches),
+kubectl's rejected paths and the pods' and nodes' proxies, and every write
+method refused; a path that isn't one of the two is refused in Swift
+before any socket too (`KubePrometheusRefused`). It is its own entry in
+`KubeProxies` (keyed apart, a slot like any within `maxProxies`, never the
+page's kept slot; a sign-in is the context's). The page context's is not
+counted in the background's slots and never closed for a watch or a spare
+read (`pageMetrics`; a request someone made takes it only idle, nothing
+else to close). Its answers come from a process in the cluster, so their
+bodies never stop the context: only kubectl's own stderr saying a
+credential failed does (`KubeProxies.metricsProblem`); anything else is
+the chart's problem. It is closed when no chart shows (`closePrometheus`)
+— once the readings have stopped: a query checks for cancellation before
+and after it goes, a metrics entry isn't opened for a cancelled one, and
+the close waits for the cancelled readings — or idle. `connected` names
+contexts (what `close` takes); `proxyLabels` every proxy, a metrics one as
+`<context> (prometheus)`. The model's
+monitor reads only what a page on screen wants (`prometheusWants`): the
+Overview's `.cluster` chart — CPU and memory from cAdvisor over the range,
+and the cluster's requests and limits against allocatable
+(`kube_pod_container_resource_requests`/`_limits`,
+`kube_node_status_allocatable`, instant `query`s) —, a pod's or a claim's
+chart in its detail's Overview, and the PVC list's Used column
+(`kubelet_volume_stats_used_bytes` against `_capacity_bytes` by claim,
+every minute). A chart's range (`KubeChartRange`: 1 h, 6 h, 24 h, 7 d; the
+app's, the picker's) is `query_range`'s start and end (rounded down to a
+step) and step (120 points, a week's 168), a `rate()` window a step at
+least, asked again a step later (a minute at least). Answers are read
+bounded, off the main thread (`KubePrometheusReader`: 8 MB at most
+parsed, 2,000 series, 2,000 points, `NaN` and
+`Inf` left out; Prometheus's errors and the apiserver's Status said).
+Without Prometheus no picker shows: the metrics-server sparkline says it
+covers the time shown; with it the sparkline gives way to the chart.
+Hidden, every reading ends, what was read goes, the metrics proxy closes.
+`FakeKubeAPI.servePrometheus` answers a Service's two query paths with
+`setPrometheusSeries`' values (`evaluate`: the metric, its `=`/`!=`
+matchers, `sum`/`sum by`) and 403s every other proxy path, as the flags
+would. `KubePrometheusTests` (the regex — other Services, other paths,
+encoded traversal —, the Service checked, finding it, queries and range,
+answers, the budget, the monitor reading only what shows) runs the real
+kubectl, when installed, as the metrics proxy in front of the fake through
+a kubeconfig of its own; the scenario's `kubernetesPrometheus`
+(`E2ERunner+KubernetesPrometheus`) opts `fake-dev` in and checks the
+Overview's chart and its range, requests against allocatable, a pod's and a
+claim's chart, the Used column, nothing read while hidden, and `fake-prod`
+without a picker.
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before

@@ -142,6 +142,10 @@ extension E2ERunner {
             note("no kubectl installed: a stand-in connection to the fake's socket")
             // Writable as the context is (kind-fake; fake-prod with its switch on), or GETs only.
             model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
+            // A metrics proxy's stand-in: still only the Service's two query paths.
+            model.prometheusOverride = { context, service in
+                KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: context.name), service: service)
+            }
             model.statusOverride = { _ in .open }
         }
 
@@ -308,6 +312,7 @@ extension E2ERunner {
         await kubernetesHealth(model, page, fake, kubeconfig: kubeconfig, port: port)
         await kubernetesTabContext(model, page, fake, kubeconfig: kubeconfig)
         await kubernetesNodeShellAndResize(model, page, fake)
+        await kubernetesPrometheus(model, page, fake, realProxy: kubectl != nil)
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -334,6 +339,7 @@ extension E2ERunner {
         KubeSocketFolder.app.remove()
         Settings.shared.set("kubernetes.kubectlPath", nil)
         model.connectOverride = nil
+        model.prometheusOverride = nil
         model.statusOverride = nil
         try? FileManager.default.removeItem(at: kubeconfig)
     }

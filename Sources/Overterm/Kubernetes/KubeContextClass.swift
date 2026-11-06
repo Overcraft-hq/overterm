@@ -105,9 +105,13 @@ struct KubeContextSettings: Equatable, Sendable {
     /// the name typed and never forced (decision 30); unset or off, a
     /// production context only diffs. Ignored on any other class.
     var applyOnProduction: Bool?
-    /// Where usage comes from: metrics-server when served (unset, `auto`),
-    /// or `none` — no usage columns, and metrics.k8s.io never asked.
+    /// Where usage comes from: metrics-server when served (unset), or
+    /// `none` — no usage columns, and metrics.k8s.io never asked;
+    /// `prometheus` (or `auto` set here) looks for Prometheus too (stage 4).
     var metrics: KubeMetricsSource?
+    /// The Prometheus Service, `namespace/service:port`, instead of looking
+    /// for one; it opts the context in unless `metrics` says otherwise.
+    var prometheus: String?
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -142,7 +146,12 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(
             name: "metrics", kind: .choice(KubeMetricsSource.allCases.map { SettingOption(value: $0.rawValue, label: $0.title) }),
             help:
-                "Where CPU and memory come from: auto (metrics-server, when the cluster serves metrics.k8s.io) or metricsServer; none shows no usage and never asks. Prometheus comes later."
+                "Where CPU and memory come from. Unset: metrics-server, when the cluster serves metrics.k8s.io. prometheus (or auto set here): Prometheus too, found as Lens and Freelens find it — charts with a time range, PVC usage, requests and limits — reached only through a second proxy that accepts its query paths alone. metricsServer: never Prometheus. none: no usage, nothing asked."
+        ),
+        SettingField(
+            name: "prometheus", kind: .text(placeholder: "monitoring/prometheus-server:80", monospaced: true),
+            help:
+                "The Prometheus Service as namespace/service:port, instead of looking for one (lens-metrics/prometheus, the Helm chart's, the operator's). Setting it opts the context in, unless metrics is none or metricsServer."
         ),
     ]
 
@@ -150,7 +159,7 @@ struct KubeContextSettings: Equatable, Sendable {
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
         accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil,
         debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil, applyOnProduction: Bool? = nil,
-        metrics: KubeMetricsSource? = nil
+        metrics: KubeMetricsSource? = nil, prometheus: String? = nil
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -165,6 +174,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.nodeShell = nodeShell
         self.applyOnProduction = applyOnProduction
         self.metrics = metrics
+        self.prometheus = prometheus
     }
 
     init(fields: [String: SettingValue]) {
@@ -181,6 +191,7 @@ struct KubeContextSettings: Equatable, Sendable {
         nodeShell = fields["nodeShell"]?.bool
         applyOnProduction = fields["applyOnProduction"]?.bool
         metrics = fields["metrics"]?.string.flatMap(KubeMetricsSource.init(rawValue:))
+        prometheus = fields["prometheus"]?.string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// An image field's value, trimmed; empty, unset.

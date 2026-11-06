@@ -720,7 +720,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.maxProxies", section: .kubernetes, group: "Connections", title: "Contexts connected at once",
             help:
-                "Each context in use has one kubectl proxy, and kubectl keeps its credentials. One is always kept for the page's context; past this many, the least recently used idle one closes.",
+                "Each context in use has one kubectl proxy, and kubectl keeps its credentials; a context whose Prometheus charts show has a second, for them, and it counts here too. One is always kept for the page's context; past this many, the least recently used idle one closes.",
             kind: .integer(1...16, step: 1, unit: "proxies"), defaultValue: .int(4), requires: "kubernetes.enabled"),
         SettingSpec(
             key: "kubernetes.proxyIdleMinutes", section: .kubernetes, group: "Connections", title: "Close a context's proxy after",

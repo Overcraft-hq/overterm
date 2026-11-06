@@ -53,6 +53,10 @@ final class KubernetesModel: ObservableObject {
     /// Usage from metrics.k8s.io, polled only while a page shows it (stage 2d).
     let metrics = KubeMetricsMonitor()
     private var metricsChanges: AnyCancellable?
+    /// Prometheus, where a context opts in, read only while a chart or
+    /// the PVC column shows (stage 4).
+    let prometheus = KubePrometheusMonitor()
+    private var prometheusChanges: AnyCancellable?
 
     /// What the settings say, read once a page shows and on each change.
     struct Configuration: Equatable, Sendable {
@@ -128,6 +132,9 @@ final class KubernetesModel: ObservableObject {
     /// Instead of the context's proxy: a test's transport, the scenario's
     /// stand-in when no kubectl is installed.
     var connectOverride: ((KubeContext) -> any KubeConnection)?
+    /// Instead of the context's metrics proxy: likewise (a connection
+    /// spoken to directly still reaches only the Service's query paths).
+    var prometheusOverride: ((KubeContext, KubePrometheusService) -> any KubePrometheusTransport)?
     /// Instead of asking the proxies how the context stands.
     var statusOverride: ((String) async -> KubeProxies.Status)?
     /// Reads the kubeconfig files; blocking, run on a GCD thread.
@@ -183,6 +190,7 @@ final class KubernetesModel: ObservableObject {
         self.proxies = proxies
         // A sample read is the page's to draw: the list's cells read it.
         metricsChanges = metrics.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        prometheusChanges = prometheus.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         // The kubectl and the environment the context's proxy would get,
         // as the settings say them when asked.
         // Under the proxies' credential rules: a stopped context isn't
@@ -518,6 +526,7 @@ final class KubernetesModel: ObservableObject {
             await proxies.retry(name)
             self?.restartReading()
             self?.metrics.retry()
+            self?.prometheus.retry()
         }
     }
 
@@ -930,9 +939,21 @@ final class KubernetesModel: ObservableObject {
     func updateMetrics() {
         guard isShown, enabled, let context = selected else {
             metrics.update(nil) { nil }
+            prometheus.update(nil, client: { nil }, transport: { _ in nil }, close: { _ in })
             return
         }
         let name = context.name
+        let proxies = self.proxies
+        prometheus.update(
+            KubePrometheusMonitor.Situation(
+                context: name, use: KubePrometheusUse.of(context.settings), scope: scope,
+                cluster: [context.server ?? "", context.cluster, context.user].joined(separator: "\n")),
+            client: { [weak self] in self?.client(for: name) },
+            transport: { [weak self] service in
+                guard let self, self.enabled, let context = self.contexts.context(named: name) else { return nil }
+                return self.prometheusOverride?(context, service) ?? KubePrometheusProxyConnection(proxies: proxies, context: context, service: service)
+            },
+            close: { name in Task { await proxies.closePrometheus(name) } })
         metrics.update(
             KubeMetricsMonitor.Situation(
                 context: name, scope: scope, labels: labelSelector,
