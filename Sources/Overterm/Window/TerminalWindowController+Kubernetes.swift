@@ -539,6 +539,10 @@ extension TerminalWindowController {
                 id: "a.kubernetes.helm", group: .action, title: "Kubernetes Helm Releases",
                 subtitle: "Releases, their history, values and manifest — masked  \(KubeSection.helm.key)", symbol: "shippingbox"
             ) { [weak self] _, _ in self?.showKubernetesHelm() },
+            PaletteItem(
+                id: "a.kubernetes.explain", group: .action, title: "Kubernetes Explain…",
+                subtitle: "A kind's fields as kubectl explain says them, from the cluster's own API docs", symbol: "book"
+            ) { [weak self] _, _ in self?.showKubernetesExplain() },
         ]
         items += kubernetesPage.forwardPaletteItems { [weak self] in self?.showKubernetesPage() }
         items += kubernetesTemplateItems()
@@ -754,6 +758,24 @@ extension TerminalWindowController: KubeManifestHost {
         rightPane.mode = .manifest
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
+    }
+
+    /// `kubectl explain` from the cluster's docs, in the same pane (3.15).
+    func showExplain(_ session: KubeExplainSession) {
+        kubernetesManifest.explain = session
+        kubernetesManifest.shown = .explain
+        rightPane.manifestOpened = true
+        rightPane.mode = .manifest
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
+    /// The explain view on the page's context: nothing read until Explain is pressed.
+    @discardableResult
+    func showKubernetesExplain(_ query: String = "") -> KubeExplainSession {
+        let session = KubeExplainSession(query: query, context: KubernetesModel.shared.selectedName, model: .shared)
+        showExplain(session)
+        return session
     }
 }
 

@@ -57,6 +57,9 @@ final class KubernetesModel: ObservableObject {
     /// the PVC column shows (stage 4).
     let prometheus = KubePrometheusMonitor()
     private var prometheusChanges: AnyCancellable?
+    /// The clusters' own API docs (`/openapi/v3`), read when a manifest's
+    /// hover, completion or the explain view asks, kept in memory (3.15).
+    let apiDocs = KubeAPIDocs()
 
     /// What the settings say, read once a page shows and on each change.
     struct Configuration: Equatable, Sendable {

@@ -36,6 +36,9 @@ struct CompletionState {
     /// A console's tables and columns, from its connection's catalog
     /// (EditorViewController+Database): filtered there, accepted as any.
     var isSQL = false
+    /// A Kubernetes manifest's fields, from its cluster's docs
+    /// (EditorViewController+Kubernetes): filtered there, accepted as any.
+    var isKube = false
 }
 
 extension EditorViewController: CodeTextViewHost {
@@ -287,8 +290,12 @@ extension EditorViewController: CodeTextViewHost {
         return start
     }
 
-    func triggerCompletion(manual: Bool, character: String? = nil) {
+    /// `skipKube`: a manifest's cluster had no fields to offer (its docs
+    /// couldn't be read): the language server's and the buffer's words instead.
+    func triggerCompletion(manual: Bool, character: String? = nil, skipKube: Bool = false) {
         guard let buffer = active, textView.selectedRanges.count == 1, textView.selectedRange().length == 0 else { return }
+        // A manifest's key: its cluster's fields (read on ⌃Space, else as cached).
+        if !skipKube, buffer.kubeManifest != nil, character == nil, updateKubeCompletion(manual: manual) { return }
         let caret = textView.selectedRange().location
         let anchor = wordStart(before: caret)
         // Never reused, not even after a dismissal: an answer to an older
@@ -339,6 +346,10 @@ extension EditorViewController: CodeTextViewHost {
         }
         if state.isSQL {
             if !updateSQLCompletion() { dismissCompletion() }
+            return
+        }
+        if state.isKube {
+            if !updateKubeCompletion(manual: false) { dismissCompletion() }
             return
         }
         let text = textView.string as NSString

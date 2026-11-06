@@ -34,6 +34,11 @@ struct KubeManifestBar: View {
                     .help(session.applyRefusal ?? "Server-side apply (fieldManager=overterm), after a fresh dry run shown in the confirmation")
                     .fixedSize()
                     .accessibilityIdentifier("kubernetes.manifest.apply")
+                Button("Explain") { session.explainAtCaret() }
+                    .disabled(session.contextName == nil)
+                    .help("The field at the caret as kubectl explain says it, from the cluster's own API docs — beside the editor")
+                    .fixedSize()
+                    .accessibilityIdentifier("kubernetes.manifest.explain")
                 if case .fields = session.conflict, context?.isProduction != true {
                     Button("Force…") { session.forceApply() }
                         .disabled(session.state.isWorking)
@@ -47,6 +52,9 @@ struct KubeManifestBar: View {
                         .fixedSize()
                 }
                 Spacer(minLength: 0)
+                if let note = session.docsNote {
+                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.tail).help(note)
+                }
             }
             .font(.system(size: 12))
             .controlSize(.small)
@@ -99,10 +107,12 @@ struct KubeManifestBar: View {
 @MainActor
 final class KubeManifestPane: ObservableObject {
     enum Shown: Equatable {
-        case manifest, helm, change
+        case manifest, helm, change, explain
     }
 
     @Published var session: KubeManifestSession?
+    /// `kubectl explain` from the cluster's docs (3.15).
+    @Published var explain: KubeExplainSession?
     /// A bound release's diff against the checkout's chart (stage 3a).
     @Published var helm: KubeHelmUpgradeSession?
     /// A change of a workload's timeline (stage 3b), and its parts' diffs, parsed.
@@ -133,7 +143,9 @@ struct KubeManifestDiffView: View {
     let onOpen: (URL) -> Void
 
     var body: some View {
-        if pane.shown == .change, let change = pane.change {
+        if pane.shown == .explain, let explain = pane.explain {
+            KubeExplainView(session: explain, theme: theme, onClose: onClose)
+        } else if pane.shown == .change, let change = pane.change {
             KubeChangeDiffContent(pane: pane, change: change, theme: theme, onClose: onClose)
         } else if pane.showsHelm, let helm = pane.helm {
             KubeHelmDiffContent(session: helm, theme: theme, onClose: onClose, onOpen: onOpen)

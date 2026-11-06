@@ -249,6 +249,27 @@ struct KubeClient: Sendable {
         }
     }
 
+    /// One GET's body read as it arrives, at most `maxBytes` of it: past
+    /// that the read stops and the connection is closed — the rest is
+    /// never read, let alone held (`KubeBodyTooLarge`). For an answer the
+    /// server decides the size of: `/openapi/v3`'s documents, which an
+    /// aggregated API server serves as it likes.
+    func get(_ path: String, accept: String = "application/json", maxBytes: Int) async throws -> Data {
+        var body = Data()
+        do {
+            for try await piece in connection.stream(path, headers: [("Accept", accept)]) {
+                body.append(piece)
+                // Thrown here, the stream is dropped: its connection closed.
+                if body.count > maxBytes { throw KubeBodyTooLarge(path: path, limit: maxBytes, read: body.count) }
+            }
+        } catch let error as KubeBodyTooLarge {
+            throw error
+        } catch {
+            throw Self.mapped(error, signIn: connection.signIn)
+        }
+        return body
+    }
+
     /// A stream's failure said as `get` says a response's: from the answer
     /// whole when the transport kept it (its `Content-Type`, its Status,
     /// a 429's `Retry-After`).
@@ -692,5 +713,18 @@ struct KubeClient: Sendable {
         }
         try Task.checkCancellation()
         return .ended
+    }
+}
+
+/// A bounded GET's answer passed its bound: the read stopped there, its
+/// connection closed. `read`: what had come by then, for the tests.
+struct KubeBodyTooLarge: Error, Equatable, LocalizedError {
+    var path: String
+    var limit: Int
+    var read: Int
+
+    var errorDescription: String? {
+        let limit = self.limit >= 1 << 20 ? "\(self.limit >> 20) MB" : "\(self.limit >> 10) KB"
+        return "\(path) answered more than \(limit): too much to read here."
     }
 }

@@ -96,6 +96,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     var pendingSelectionWork: DispatchWorkItem?
     var pendingGitWork: DispatchWorkItem?
     var pendingServerChange: DispatchWorkItem?
+    /// A manifest's unknown fields, marked again once typing pauses.
+    var pendingKubeMarks: DispatchWorkItem?
     /// The innermost symbol around the caret, from the language server.
     var currentSymbols: [EditorSymbol] = []
 
