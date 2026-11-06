@@ -5,7 +5,8 @@ import Foundation
 /// 2.9, 2.15 and 5): a drain, where evictions and what a
 /// PodDisruptionBudget blocks show as they go; a rollback to a revision
 /// picked from the ReplicaSets' history (`rollout undo` is kubectl's own
-/// logic, not copied); a debug container in a pod, and a node debugged.
+/// logic, not copied); a debug container in a pod; a shell on a node
+/// (stage 3b), through a privileged pod kubectl debug makes there.
 /// Each is a writing process (`KubeProcessVerb.writes`): refused on a
 /// read-only context by the process class check, its access reviewed,
 /// confirmed in the window naming the context and namespace — the name
@@ -23,23 +24,26 @@ enum KubeTabWrite: Equatable, Sendable {
     /// `kubectl debug -it POD --image=I --target=C`: an ephemeral container
     /// beside C, sharing its processes, attached.
     case debug(pod: String, namespace: String, container: String?, image: String)
-    /// `kubectl debug node/NODE -it --image=I`: a pod on the node, its
-    /// filesystem at /host, made in `namespace`.
-    case nodeDebug(node: String, namespace: String, image: String)
+    /// A node shell: `kubectl debug node/NODE -it --profile=sysadmin
+    /// --image=I … -- chroot /host sh -c '…'` — a privileged pod on the
+    /// node, in its process, network and IPC namespaces, made in
+    /// `namespace`, its shell rooted in the node's own filesystem (bash
+    /// where the node has it, else sh). kubectl leaves the pod behind.
+    case nodeShell(node: String, namespace: String, image: String)
 
     var verb: KubeProcessVerb {
         switch self {
         case .drain: .drain
         case .rolloutUndo: .rolloutUndo
         case .debug: .debug
-        case .nodeDebug: .nodeShell
+        case .nodeShell: .nodeShell
         }
     }
 
     /// The object's own name — what rule 4 asks to be typed.
     var name: String {
         switch self {
-        case .drain(let node, _), .nodeDebug(let node, _, _): node
+        case .drain(let node, _), .nodeShell(let node, _, _): node
         case .rolloutUndo(let deployment, _, _, _): deployment
         case .debug(let pod, _, _, _): pod
         }
@@ -48,7 +52,7 @@ enum KubeTabWrite: Equatable, Sendable {
     /// The namespace its command names (`-n`, always).
     var namespace: String {
         switch self {
-        case .drain(_, let namespace), .rolloutUndo(_, let namespace, _, _), .debug(_, let namespace, _, _), .nodeDebug(_, let namespace, _): namespace
+        case .drain(_, let namespace), .rolloutUndo(_, let namespace, _, _), .debug(_, let namespace, _, _), .nodeShell(_, let namespace, _): namespace
         }
     }
 
@@ -62,7 +66,7 @@ enum KubeTabWrite: Equatable, Sendable {
     /// `node fake-node-1`, `deployment shop/web`, `pod shop/web-7d9`.
     var spoken: String {
         switch self {
-        case .drain(let node, _), .nodeDebug(let node, _, _): "node \(node)"
+        case .drain(let node, _), .nodeShell(let node, _, _): "node \(node)"
         case .rolloutUndo(let deployment, let namespace, _, _): "deployment \(namespace)/\(deployment)"
         case .debug(let pod, let namespace, _, _): "pod \(namespace)/\(pod)"
         }
@@ -80,10 +84,12 @@ enum KubeTabWrite: Equatable, Sendable {
         case .debug(let pod, _, let container, let image):
             words = ["kubectl", "debug", "-it", q(pod), "--image=" + q(image)]
             if let container, !container.isEmpty { words.append("--target=" + q(container)) }
-        case .nodeDebug(let node, _, let image):
-            words = ["kubectl", "debug", q("node/" + node), "-it", "--image=" + q(image)]
+        case .nodeShell(let node, _, let image):
+            words = ["kubectl", "debug", q("node/" + node), "-it", "--profile=sysadmin", "--image=" + q(image)]
         }
         words += ["--context", q(context), "-n", q(namespace)]
+        // The command in the pod comes after --, last.
+        if case .nodeShell = self { words += ["--", "chroot", "/host", "sh", "-c", q(KubeCommands.shellScript)] }
         return words.joined(separator: " ")
     }
 
@@ -97,7 +103,7 @@ enum KubeTabWrite: Equatable, Sendable {
             [(KubeAccess(verb: "patch", resource: "deployments.apps"), namespace)]
         case .debug(_, let namespace, _, _):
             [(KubeAccess(verb: "patch", resource: "pods/ephemeralcontainers"), namespace), (KubeAccess.attach, namespace)]
-        case .nodeDebug(_, let namespace, _):
+        case .nodeShell(_, let namespace, _):
             [(KubeAccess(verb: "create", resource: "pods"), namespace), (KubeAccess.attach, namespace)]
         }
     }
@@ -108,7 +114,7 @@ enum KubeTabWrite: Equatable, Sendable {
         case .drain: KubeTabWrite.drain(node: "", namespace: namespace ?? "").accesses
         case .rolloutUndo: KubeTabWrite.rolloutUndo(deployment: "", namespace: namespace ?? "", revision: 0, images: []).accesses
         case .debug: KubeTabWrite.debug(pod: "", namespace: namespace ?? "", container: nil, image: "").accesses
-        case .nodeShell: KubeTabWrite.nodeDebug(node: "", namespace: namespace ?? "", image: "").accesses
+        case .nodeShell: KubeTabWrite.nodeShell(node: "", namespace: namespace ?? "", image: "").accesses
         default: []
         }
     }
@@ -132,7 +138,7 @@ enum KubeTabWrite: Equatable, Sendable {
     static func title(_ verb: KubeProcessVerb) -> String {
         switch verb {
         case .debug: "Debug Container in a Tab…"
-        case .nodeShell: "Debug Node in a Tab…"
+        case .nodeShell: "Node Shell in a Tab…"
         case .rolloutUndo: "Roll Back in a Tab…"
         case .drain: "Drain in a Tab…"
         default: verb.title
@@ -141,7 +147,8 @@ enum KubeTabWrite: Equatable, Sendable {
 
     static func label(_ verb: KubeProcessVerb) -> String {
         switch verb {
-        case .debug, .nodeShell: "Debug"
+        case .debug: "Debug"
+        case .nodeShell: "Node Shell"
         case .rolloutUndo: "Roll Back"
         case .drain: "Drain"
         default: verb.title
@@ -150,7 +157,8 @@ enum KubeTabWrite: Equatable, Sendable {
 
     static func symbol(_ verb: KubeProcessVerb) -> String {
         switch verb {
-        case .debug, .nodeShell: "ladybug"
+        case .debug: "ladybug"
+        case .nodeShell: "terminal"
         case .rolloutUndo: "clock.arrow.circlepath"
         case .drain: "arrow.down.to.line"
         default: "terminal"
@@ -189,12 +197,13 @@ enum KubeTabWrite: Equatable, Sendable {
                 + (container.map { ", seeing container \($0)'s processes" } ?? "")
                 + ", and the tab attaches to it. It stays in the pod's spec until the pod goes: it can't be removed."
             button = "Debug in a Tab"
-        case .nodeDebug(let node, let namespace, let image):
-            title = "Debug node \(node)?"
+        case .nodeShell(let node, let namespace, let image):
+            title = "Open a shell on node \(node)?"
             what =
-                "A pod running \(image) is made on the node in namespace \(namespace), with the node's filesystem at /host and its "
-                + "process and network namespaces: what runs in it can change the node. Delete the pod when you are done."
-            button = "Debug Node in a Tab"
+                "A privileged pod running \(image) is made on the node in namespace \(namespace) (kubectl debug's sysadmin profile: the node's "
+                + "process, network and IPC namespaces), and the tab's shell runs as root in the node's own filesystem: what it does changes "
+                + "the node. kubectl leaves the pod (node-debugger-\(node)-…) when the shell ends: delete it after."
+            button = "Open Node Shell"
         }
         var lines = [what, "Runs in a new tab pinned to \(context.displayName): \(command)"]
         let typed = rule.typedName ? name : nil
@@ -211,7 +220,7 @@ enum KubeTabWrite: Equatable, Sendable {
         case .rolloutUndo(let deployment, let namespace, let revision, _):
             "Rolling back deployment \(namespace)/\(deployment) to revision \(revision) in a new tab, in \(context)."
         case .debug(let pod, let namespace, _, _): "A debug container for pod \(namespace)/\(pod) in a new tab, in \(context)."
-        case .nodeDebug(let node, _, _): "Debugging node \(node) in a new tab, in \(context)."
+        case .nodeShell(let node, _, _): "A shell on node \(node) in a new tab, in \(context)."
         }
     }
 }

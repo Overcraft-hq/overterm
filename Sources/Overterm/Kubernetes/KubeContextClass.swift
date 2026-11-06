@@ -97,7 +97,7 @@ struct KubeContextSettings: Equatable, Sendable {
     /// The image a node is debugged with (one with the host's tools, say);
     /// unset, `debugImage`, then `kubernetes.debugImage`.
     var nodeShellImage: String?
-    /// On: a node may be debugged (`kubectl debug node/…`, a node shell) on
+    /// On: a node shell (`kubectl debug node/… --profile=sysadmin`) on
     /// a writable context, its name typed; unset or off, it is refused.
     var nodeShell: Bool?
     /// On: Apply from the editor (and agents' `k8s_apply`) is offered on
@@ -130,10 +130,10 @@ struct KubeContextSettings: Equatable, Sendable {
             help: "The image a debug container (E) runs; else Kubernetes' debug image setting."),
         SettingField(
             name: "nodeShellImage", kind: .text(placeholder: "busybox:1.36", monospaced: true),
-            help: "The image a node is debugged with (E on a node); else this context's debugImage, then Kubernetes' debug image setting."),
+            help: "The image a node shell's privileged pod runs (E on a node; it needs chroot); else this context's debugImage, then Kubernetes' debug image setting."),
         SettingField(
             name: "nodeShell", kind: .toggle,
-            help: "On: a node may be debugged (kubectl debug node/…) on this context when it is writable, the node's name typed. Off by default."),
+            help: "On: a node shell (kubectl debug node/… --profile=sysadmin, chrooted into the node) on this context when it is writable, the node's name typed. Off by default."),
         SettingField(
             name: "applyOnProduction", kind: .toggle,
             help:

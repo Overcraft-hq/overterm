@@ -138,7 +138,7 @@ final class KubeWritesPageTests: XCTestCase {
         defer { page.model.hide() }
         page.selection = ["shop/api-1"]
         let verbs = page.verbs(for: ["shop/api-1"]).filter { KubeWriteVerb.allCases.map(\.title).contains($0.title) }
-        XCTAssertEqual(verbs.count, 5)
+        XCTAssertEqual(verbs.count, 6)
         XCTAssertTrue(verbs.allSatisfy { $0.unavailable == "This context is read-only: Overterm changes nothing here (its writable setting)." })
         XCTAssertTrue(page.press("\u{7F}"))
         XCTAssertEqual(page.writeStatus, .failed("This context is read-only: Overterm changes nothing here (its writable setting)."))

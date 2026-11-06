@@ -2,12 +2,12 @@ import Foundation
 
 // MARK: Writes in a tab (stage 2a, part 3 — docs/design/kubernetes/analysis.md, Sections 2.4, 2.9, 2.15 and 5)
 
-/// Drain, rollback and debug are kubectl processes in a terminal tab, not
+/// Drain, rollback, debug and a node's shell are kubectl processes in a terminal tab, not
 /// requests (`KubeTabWrite`). Each goes one way (`runTabWrite`), as the
 /// page's writes do:
 /// 1. the process class check (`KubeProcessCheck`): refused on a
 ///    read-only context — remote by its `writable` setting, production
-///    without its switch for the session; a node's debug also needs the
+///    without its switch for the session; a node shell also needs the
 ///    context's `nodeShell`;
 /// 2. the access review of what the command does (SelfSubjectAccessReview
 ///    through the context's writable socket, `KubernetesModel.writeAccess`);
@@ -57,7 +57,7 @@ extension KubernetesPageModel {
         return nil
     }
 
-    /// `E`: a debug container in the pod, or the node debugged — the
+    /// `E`: a debug container in the pod, or a shell on the node — the
     /// detail's object while it shows one, else the list's selected row.
     func debugKey() -> Bool {
         guard let ref = writeTarget else { return false }
@@ -117,7 +117,7 @@ extension KubernetesPageModel {
                 self?.confirmTabWrite(.drain(node: ref.name, namespace: namespace), reviewed: context, pin: namespace)
             case .nodeShell:
                 self?.endChecking(token)
-                self?.confirmTabWrite(.nodeDebug(node: ref.name, namespace: namespace, image: nodeImage), reviewed: context, pin: namespace)
+                self?.confirmTabWrite(.nodeShell(node: ref.name, namespace: namespace, image: nodeImage), reviewed: context, pin: namespace)
             case .debug:
                 let pick: KubeContainerPick
                 do {

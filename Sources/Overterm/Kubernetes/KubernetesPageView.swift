@@ -62,6 +62,9 @@ struct KubernetesPageView: View {
             if page.scaleDraft != nil { KubeScaleSheetView(page: page, theme: theme).padding(.top, 70) }
         }
         .overlay(alignment: .top) {
+            if page.resizeDraft != nil { KubeResizeSheetView(page: page, theme: theme).padding(.top, 70) }
+        }
+        .overlay(alignment: .top) {
             if page.namespaceDraft != nil { KubeNamespaceSheetView(page: page, theme: theme).padding(.top, 70) }
         }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
@@ -71,7 +74,7 @@ struct KubernetesPageView: View {
         // list takes it — if nothing else has it.
         .onChange(of: model.rows.columns.isEmpty) { empty in
             guard !empty, focus != .filter, page.picker == nil, page.command == nil, page.scaleDraft == nil, page.namespaceDraft == nil,
-                page.forwardDraft == nil
+                page.forwardDraft == nil, page.resizeDraft == nil
             else { return }
             DispatchQueue.main.async { page.offerListTheKeyboard() }
         }

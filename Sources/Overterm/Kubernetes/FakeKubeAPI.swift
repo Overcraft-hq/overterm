@@ -63,6 +63,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         /// Its `Ready` condition, when one is reported (nil: none, readiness
         /// read off its containers): a readiness probe failing turns it False.
         var readyCondition: Bool?
+        /// Each container's resources by name (`requests`/`limits` → `cpu`/`memory` → a quantity), as its spec says
+        /// them; the `resize` subresource changes them.
+        var resources: [String: [String: [String: String]]] = [:]
 
         /// Its containers' names: `app`, then `sidecar-1`…
         var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
@@ -217,7 +220,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "", version: "v1", resource: "namespaces", kind: "Namespace", namespaced: false, shortNames: ["ns"], subresources: ["finalize", "status"]),
         Kind(
             group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true, shortNames: ["po"], categories: ["all"],
-            subresources: ["attach", "binding", "ephemeralcontainers", "eviction", "exec", "log", "portforward", "proxy", "status"]),
+            subresources: ["attach", "binding", "ephemeralcontainers", "eviction", "exec", "log", "portforward", "proxy", "resize", "status"]),
         Kind(group: "", version: "v1", resource: "services", kind: "Service", namespaced: true, shortNames: ["svc"], categories: ["all"], subresources: ["proxy", "status"]),
         Kind(group: "", version: "v1", resource: "configmaps", kind: "ConfigMap", namespaced: true, shortNames: ["cm"]),
         Kind(group: "", version: "v1", resource: "secrets", kind: "Secret", namespaced: true),
@@ -1549,6 +1552,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             var spec: [String: Any] = [
                 "containers": names.enumerated().map { index, name -> [String: Any] in
                     var container: [String: Any] = ["name": name, "image": pod.image]
+                    if let resources = pod.resources[name], !resources.isEmpty { container["resources"] = resources }
                     if index == 0, !env.isEmpty { container["env"] = env }
                     if index == 0, !pod.ports.isEmpty {
                         container["ports"] = pod.ports.map { port -> [String: Any] in
@@ -1715,6 +1719,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         case (.DELETE, nil): return delete(key, kind, options: (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:])
         case (.PATCH, nil): return patch(key, kind, body, contentType)
         case (.PATCH, "scale") where kind.subresources.contains("scale"): return patchScale(key, kind, body)
+        case (.PATCH, "resize") where kind.fullName == "pods" && kind.subresources.contains("resize"): return patchResize(key, kind, body, contentType)
         case (.POST, "eviction") where kind.fullName == "pods": return evict(key, kind)
         default: return notAllowed
         }
@@ -2039,6 +2044,84 @@ final class FakeKubeAPI: @unchecked Sendable {
             return object
         }
         return answer
+    }
+
+    /// A pod's `resize` subresource's PATCH (a strategic merge patch): each
+    /// container named gets the requests and limits sent, merged into its
+    /// own; only cpu and memory, and only regular containers, as the API
+    /// server allows — anything else 422, and so is a change of the pod's
+    /// QoS class (`ValidatePodResize`). Applied at once (no kubelet).
+    private func patchResize(_ key: String, _ kind: Kind, _ body: Data, _ contentType: String) -> Answer {
+        guard contentType.hasPrefix("application/strategic-merge-patch+json") || contentType.hasPrefix("application/merge-patch+json") else {
+            return .json(415, Self.status(415, "UnsupportedMediaType", "the body of the request was in an unknown format: \(contentType)"))
+        }
+        let patch = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        let spec = patch["spec"] as? [String: Any] ?? [:]
+        let invalid = Answer.json(422, Self.status(422, "Invalid", "Pod \"\" is invalid: spec: Forbidden: only cpu and memory resources are mutable"))
+        guard spec.keys.allSatisfy({ $0 == "containers" }), let containers = spec["containers"] as? [[String: Any]] else { return invalid }
+        var answer = Answer.json(200, Data())
+        var refused: Answer?
+        change("MODIFIED") {
+            guard var object = objects[key], var pod = object.pod else { return nil }
+            let before = KubeResize.qos(Self.resources(pod))
+            for container in containers {
+                guard let name = container["name"] as? String, pod.containerNames.contains(name),
+                    container.keys.allSatisfy({ ["name", "resources"].contains($0) })
+                else {
+                    refused = invalid
+                    return nil
+                }
+                let resources = container["resources"] as? [String: Any] ?? [:]
+                for (group, values) in resources {
+                    guard ["requests", "limits"].contains(group), let values = values as? [String: Any],
+                        values.keys.allSatisfy({ ["cpu", "memory"].contains($0) })
+                    else {
+                        refused = invalid
+                        return nil
+                    }
+                    for (resource, value) in values {
+                        pod.resources[name, default: [:]][group, default: [:]][resource] = "\(value)"
+                    }
+                }
+            }
+            let after = KubeResize.qos(Self.resources(pod))
+            guard after == before else {
+                refused = .json(
+                    422,
+                    Self.status(
+                        422, "Invalid", "Pod \"\(object.name)\" is invalid: spec: Invalid value: \"\(after.rawValue)\": Pod QOS Class may not change as a result of resizing"
+                    ))
+                return nil
+            }
+            object.pod = pod
+            answer = .json(200, Self.encode(Self.full(object, kind)))
+            return object
+        }
+        return refused ?? answer
+    }
+
+    /// A pod's containers' (regular and init) requests and limits, as its
+    /// QoS class reads them.
+    private static func resources(_ pod: Pod) -> [KubeContainerResources] {
+        (pod.containerNames + pod.initContainers).map { name in
+            let values = pod.resources[name] ?? [:]
+            return KubeContainerResources(
+                name: name, cpuRequest: values["requests"]?["cpu"], cpuLimit: values["limits"]?["cpu"], memoryRequest: values["requests"]?["memory"],
+                memoryLimit: values["limits"]?["memory"])
+        }
+    }
+
+    /// Whether pods' `resize` subresource is served (Kubernetes 1.33 and
+    /// later); off, an older server: discovery lists none, its PATCH 404s.
+    var servesResize: Bool {
+        get { locked { kinds.first { $0.group.isEmpty && $0.resource == "pods" }?.subresources.contains("resize") ?? false } }
+        set {
+            locked {
+                guard let index = kinds.firstIndex(where: { $0.group.isEmpty && $0.resource == "pods" }) else { return }
+                kinds[index].subresources.removeAll { $0 == "resize" }
+                if newValue { kinds[index].subresources.append("resize"); kinds[index].subresources.sort() }
+            }
+        }
     }
 
     /// A pod's eviction: refused while `evictionBlock` says a

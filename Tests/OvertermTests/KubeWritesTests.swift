@@ -45,7 +45,7 @@ final class KubeWritesTests: XCTestCase {
     // MARK: The class check
 
     func testWhichKindHasWhichVerb() {
-        XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: .pods) }, [.delete, .recreate, .forceDelete, .removeFinalizers, .evict])
+        XCTAssertEqual(KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: .pods) }, [.delete, .recreate, .forceDelete, .removeFinalizers, .evict, .resize])
         XCTAssertEqual(
             KubeWriteVerb.allCases.filter { KubeWriteCheck.offered($0, on: Self.deployments) }, [.delete, .removeFinalizers, .restart, .scale, .pause, .resume])
         XCTAssertEqual(

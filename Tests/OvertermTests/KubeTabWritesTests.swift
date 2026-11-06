@@ -27,8 +27,31 @@ final class KubeTabWritesTests: XCTestCase {
             KubeTabWrite.debug(pod: "web-7d9", namespace: "shop", container: nil, image: "busybox:1.36").line(context: "kind-fake"),
             "kubectl debug -it web-7d9 --image=busybox:1.36 --context kind-fake -n shop", "no container: kubectl's choice")
         XCTAssertEqual(
-            KubeTabWrite.nodeDebug(node: "fake-node-1", namespace: "default", image: "busybox:1.36").line(context: "kind-fake"),
-            "kubectl debug node/fake-node-1 -it --image=busybox:1.36 --context kind-fake -n default")
+            KubeTabWrite.nodeShell(node: "fake-node-1", namespace: "default", image: "busybox:1.36").line(context: "kind-fake"),
+            "kubectl debug node/fake-node-1 -it --profile=sysadmin --image=busybox:1.36 --context kind-fake -n default -- chroot /host sh -c "
+                + "'command -v bash >/dev/null && exec bash || exec sh'",
+            "a node shell: privileged, rooted in the node's filesystem, the command last")
+    }
+
+    func testANodeShellSaysWhatItIsAndWhatItLeaves() {
+        let shell = KubeTabWrite.nodeShell(node: "fake-node-1", namespace: "default", image: "acme/node-tools:1")
+        XCTAssertEqual(KubeTabWrite.title(.nodeShell), "Node Shell in a Tab…")
+        XCTAssertEqual(shell.name, "fake-node-1", "the node's name is what is typed")
+        let rule = KubeProcessCheck.rule(.nodeShell, for: context("kind-fake", settings: KubeContextSettings(nodeShell: true)))
+        let asked = shell.confirmation(context: context("kind-fake", settings: KubeContextSettings(nodeShell: true)), rule: rule)
+        XCTAssertEqual(asked.title, "Open a shell on node fake-node-1?")
+        XCTAssertEqual(asked.scope, "kind-fake · namespace default")
+        XCTAssertEqual(asked.typedName, "fake-node-1", "typed on a local context too (decision 20)")
+        XCTAssertTrue(asked.detail.contains("A privileged pod running acme/node-tools:1"), asked.detail)
+        XCTAssertTrue(asked.detail.contains("node-debugger-fake-node-1-"), "the pod it leaves is named")
+        XCTAssertTrue(asked.detail.contains(shell.line(context: "kind-fake")), "the command the tab runs")
+        XCTAssertEqual(asked.kubectl, shell.line(context: "kind-fake"))
+        let prod = context("fake-prod", settings: KubeContextSettings(nodeShell: true), session: true)
+        let onProduction = shell.confirmation(context: prod, rule: KubeProcessCheck.rule(.nodeShell, for: prod))
+        XCTAssertTrue(onProduction.production && onProduction.scope.hasPrefix("PRODUCTION · fake-prod"), onProduction.scope)
+        XCTAssertEqual(shell.opened(context: "kind-fake"), "A shell on node fake-node-1 in a new tab, in kind-fake.")
+        XCTAssertThrowsError(
+            try KubeCommands.command(shell, in: context("fake-prod", settings: KubeContextSettings(nodeShell: true))), "production without its switch")
     }
 
     func testEveryWordNotOursIsQuotedForZsh() {
@@ -41,7 +64,7 @@ final class KubeTabWritesTests: XCTestCase {
     func testEachIsRefusedOnEveryReadOnlyContext() {
         let writes: [KubeTabWrite] = [
             .drain(node: "n", namespace: "shop"), .rolloutUndo(deployment: "web", namespace: "shop", revision: 1, images: []),
-            .debug(pod: "p", namespace: "shop", container: nil, image: "busybox:1.36"), .nodeDebug(node: "n", namespace: "shop", image: "busybox:1.36"),
+            .debug(pod: "p", namespace: "shop", container: nil, image: "busybox:1.36"), .nodeShell(node: "n", namespace: "shop", image: "busybox:1.36"),
         ]
         let nodeShell = KubeContextSettings(nodeShell: true)
         for write in writes {
@@ -59,7 +82,7 @@ final class KubeTabWritesTests: XCTestCase {
     }
 
     func testANodesDebugNeedsItsSettingAndAlwaysItsName() {
-        let node = KubeTabWrite.nodeDebug(node: "n", namespace: "shop", image: "busybox:1.36")
+        let node = KubeTabWrite.nodeShell(node: "n", namespace: "shop", image: "busybox:1.36")
         XCTAssertThrowsError(try KubeCommands.command(node, in: context("kind-fake"))) { error in
             XCTAssertEqual((error as? KubeCommands.Refused)?.reason, "Node shells are off until the context's nodeShell setting is on.")
         }
@@ -80,7 +103,7 @@ final class KubeTabWritesTests: XCTestCase {
             let context = context(name, settings: off, session: true)
             for write in [
                 KubeTabWrite.debug(pod: "p", namespace: "shop", container: nil, image: "busybox:1.36"),
-                .nodeDebug(node: "n", namespace: "shop", image: "busybox:1.36"),
+                .nodeShell(node: "n", namespace: "shop", image: "busybox:1.36"),
             ] {
                 XCTAssertEqual(KubeProcessCheck.rule(write.verb, for: context).refused, KubeProcessCheck.shellsOff, "\(write.verb) on \(name)")
                 XCTAssertThrowsError(try KubeCommands.command(write, in: context))
@@ -153,7 +176,7 @@ final class KubeTabWritesTests: XCTestCase {
         XCTAssertEqual(said(.rolloutUndo(deployment: "w", namespace: "shop", revision: 1, images: [])), ["patch deployments.apps @shop"])
         XCTAssertEqual(
             said(.debug(pod: "p", namespace: "shop", container: nil, image: "i")), ["patch pods/ephemeralcontainers @shop", "create pods/attach @shop"])
-        XCTAssertEqual(said(.nodeDebug(node: "n", namespace: "default", image: "i")), ["create pods @default", "create pods/attach @default"])
+        XCTAssertEqual(said(.nodeShell(node: "n", namespace: "default", image: "i")), ["create pods @default", "create pods/attach @default"])
     }
 
     func testWhichKindsHaveThem() {
@@ -236,9 +259,10 @@ final class KubeTabWritesPageTests: XCTestCase {
         var commands: [(String, String, String)] = []
     }
 
-    private func page(current: String) async throws -> (KubernetesPageModel, Box) {
+    private func page(current: String, kindFake settings: KubeContextSettings = KubeContextSettings()) async throws -> (KubernetesPageModel, Box) {
         let model = KubernetesModel(proxies: KubeProxies())
-        let list = KubeContextList(contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0) }, current: current)
+        let list = KubeContextList(
+            contexts: ["fake-dev", "fake-prod"].map { KubeWritesTests.context($0) } + [KubeWritesTests.context("kind-fake", settings: settings)], current: current)
         model.load = { _ in list }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
@@ -333,6 +357,56 @@ final class KubeTabWritesPageTests: XCTestCase {
             XCTAssertTrue(box.confirmations.isEmpty && box.commands.isEmpty)
             XCTAssertEqual(api.writes, [], "not even a review on \(current)")
         }
+    }
+
+    /// A node shell (stage 3b): refused until the context's nodeShell is
+    /// on, sending nothing; then reviewed (create pods, pods/attach in the
+    /// tab's namespace), asked with the node's name typed even on a local
+    /// context — a wrong one runs nothing —, then typed into a tab pinned
+    /// to the context: privileged, chrooted into the node.
+    func testANodeShellIsOffUntilItsSettingThenReviewedTypedAndRun() async throws {
+        do {
+            let (page, box) = try await page(current: "kind-fake")
+            defer { page.model.hide() }
+            let off = "Node shells are off until the context's nodeShell setting is on."
+            XCTAssertEqual(page.tabWriteVerbs(for: node("kind-fake")).first { $0.title == "Node Shell in a Tab…" }?.unavailable, off)
+            page.runTabWrite(.nodeShell, on: node("kind-fake"))
+            XCTAssertEqual(page.writeStatus, .failed(off))
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(box.confirmations.isEmpty && box.commands.isEmpty)
+            XCTAssertEqual(reviewed().filter { $0["resource"] == "pods" }, [], "not even its review")
+            XCTAssertTrue(api.writes.allSatisfy(\.isAccessReview))
+        }
+        api.forgetRequests()
+        let (page, box) = try await page(current: "kind-fake", kindFake: KubeContextSettings(nodeShellImage: "acme/node-tools:1", nodeShell: true))
+        defer { page.model.hide() }
+        page.runTabWrite(.nodeShell, on: node("kind-fake"))
+        try await until("asked") { box.confirmations.count == 1 }
+        XCTAssertEqual(
+            reviewed().filter { $0["resource"] == "pods" },
+            [
+                ["verb": "create", "resource": "pods", "group": "", "namespace": "shop"],
+                ["verb": "create", "resource": "pods", "group": "", "subresource": "attach", "namespace": "shop"],
+            ])
+        let line =
+            "kubectl debug node/fake-node-1 -it --profile=sysadmin --image=acme/node-tools:1 --context kind-fake -n shop -- chroot /host sh -c "
+            + "'command -v bash >/dev/null && exec bash || exec sh'"
+        let (confirmation, then) = box.confirmations[0]
+        XCTAssertEqual(confirmation.title, "Open a shell on node fake-node-1?")
+        XCTAssertEqual(confirmation.typedName, "fake-node-1")
+        XCTAssertEqual(confirmation.kubectl, line)
+        then("fake-node-2")
+        XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't fake-node-1: nothing was run."))
+        XCTAssertTrue(box.commands.isEmpty)
+        page.runTabWrite(.nodeShell, on: node("kind-fake"))
+        try await until("asked again") { box.confirmations.count == 2 }
+        box.confirmations[1].1("fake-node-1")
+        XCTAssertEqual(box.commands.count, 1)
+        XCTAssertEqual(box.commands.first?.0, line)
+        XCTAssertEqual(box.commands.first?.1, "kind-fake")
+        XCTAssertEqual(box.commands.first?.2, "shop")
+        XCTAssertEqual(page.writeStatus, .done("A shell on node fake-node-1 in a new tab, in kind-fake."))
+        XCTAssertTrue(api.writes.allSatisfy(\.isAccessReview), "the pod is kubectl's to make: \(api.writes)")
     }
 
     func testARefusedReviewStopsIt() async throws {
