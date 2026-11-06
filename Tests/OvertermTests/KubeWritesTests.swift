@@ -74,7 +74,9 @@ final class KubeWritesTests: XCTestCase {
         let prodFlag = Self.context("fake-prod", settings: KubeContextSettings(writable: true))
         let prodOn = Self.context("fake-prod", session: true)
         for verb in KubeWriteVerb.allCases {
-            let kindOfObject = [.pods, Self.deployments, Self.cronjobs, Self.nodes, .namespaces].first { KubeWriteCheck.offered(verb, on: $0) }!
+            let kindOfObject = [.pods, Self.deployments, Self.cronjobs, Self.nodes, .namespaces, KubeGitOpsTests.kustomizations, KubeGitOpsTests.applications].first {
+                KubeWriteCheck.offered(verb, on: $0)
+            }!
             XCTAssertEqual(
                 KubeWriteCheck.rule(verb, for: dev, kind: kindOfObject).refused, "This context is read-only: Overterm changes nothing here (its writable setting).",
                 "\(verb)")

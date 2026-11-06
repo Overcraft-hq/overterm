@@ -2,7 +2,8 @@ import Foundation
 
 // MARK: Writes in a tab (stage 2a, part 3 — docs/design/kubernetes/analysis.md, Sections 2.4, 2.9, 2.15 and 5)
 
-/// Drain, rollback, debug and a node's shell are kubectl processes in a terminal tab, not
+/// Drain, rollback, debug, a node's shell — and Argo CD's sync and Flux's
+/// reconcile with its source, argocd's and flux's (stage 4) — are processes in a terminal tab, not
 /// requests (`KubeTabWrite`). Each goes one way (`runTabWrite`), as the
 /// page's writes do:
 /// 1. the process class check (`KubeProcessCheck`): refused on a
@@ -12,7 +13,9 @@ import Foundation
 /// 2. the access review of what the command does (SelfSubjectAccessReview
 ///    through the context's writable socket, `KubernetesModel.writeAccess`);
 /// 3. what it needs read: a pod's containers (one picked when several), a
-///    Deployment's ReplicaSets (a revision picked, each with its image);
+///    Deployment's ReplicaSets (a revision picked, each with its image),
+///    the namespace of Argo CD's argocd-cm (a sync's pin), a Flux object's
+///    sources — and what those add reviewed in turn;
 /// 4. the confirmation in the window naming the context and namespace and
 ///    the command; the name typed where rule 4 says, checked here;
 /// 5. the class check again against the context as it is now, then the
@@ -29,7 +32,8 @@ extension KubernetesPageModel {
         return KubeTabWrite.verbs.filter { KubeTabWrite.offered($0, on: ref.kind) }.map { verb in
             ResourceVerb(
                 title: KubeTabWrite.title(verb), label: KubeTabWrite.label(verb), symbol: KubeTabWrite.symbol(verb), place: .more,
-                key: verb == .debug || verb == .nodeShell ? KubernetesKey.debug.key : nil, unavailable: tabWriteUnavailable(verb, context, ref), group: 6
+                key: verb == .debug || verb == .nodeShell ? KubernetesKey.debug.key : verb == .argoSync ? KubernetesKey.trigger.key : nil, unavailable: tabWriteUnavailable(verb, context, ref),
+                group: 6
             ) { [weak self] in self?.runTabWrite(verb, on: ref) }
         }
     }
@@ -48,7 +52,7 @@ extension KubernetesPageModel {
     /// Why `verb` can't be done on the object now; nil when it can.
     func tabWriteUnavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ ref: KubeObjectRef) -> String? {
         if let refused = KubeProcessCheck.rule(verb, for: context).refused { return refused }
-        for (access, namespace) in KubeTabWrite.accesses(verb, namespace: tabNamespace(for: ref, in: context)) {
+        for (access, namespace) in KubeTabWrite.accesses(verb, namespace: tabNamespace(for: ref, in: context), kind: ref.kind) {
             let place = namespace ?? ""
             let state = model.writeAccess.state(context.name, namespace: place, access)
             if state == .unknown { model.writeAccess.check(context, namespace: place, access) }
@@ -103,18 +107,55 @@ extension KubernetesPageModel {
         Task { [weak self] in
             defer { self?.endChecking(token) }
             // The access review first: nothing is read or asked before it says yes.
-            for (access, place) in KubeTabWrite.accesses(verb, namespace: namespace) {
-                let answer = await self?.model.writeAccess.answer(context, namespace: place ?? "", access) ?? .failed("")
-                guard let self else { return }
-                if let why = KubeAccessState.answered(answer).unavailable(access, namespace: place ?? "", review: true) {
-                    self.writeStatus = .failed(why)
-                    return
-                }
-            }
+            guard await self?.reviewTabWrite(KubeTabWrite.accesses(verb, namespace: namespace, kind: ref.kind), in: context) == true else { return }
             switch verb {
             case .drain:
                 self?.endChecking(token)
                 self?.confirmTabWrite(.drain(node: ref.name, namespace: namespace), reviewed: context, pin: namespace)
+            case .argoSync:
+                // Core mode reads Argo CD's settings in the context's namespace: the tab is
+                // pinned to Argo CD's own, found by its argocd-cm, which may not be the
+                // Application's (apps in any namespace).
+                let configMaps = self?.model.knownDiscovery(of: ref.context)?.kind("cm") ?? KubeHelm.configMaps
+                let named = KubeListOptions(fieldSelector: "metadata.name=" + KubeGitOps.argoConfigMap)
+                var installs: [String] = []
+                if let table = try? await client.list(configMaps, in: .all, options: named) {
+                    installs = table.rows.compactMap(\.id.namespace)
+                } else if let table = try? await client.list(configMaps, in: .namespace(namespace), options: named) {
+                    installs = table.rows.isEmpty ? [] : [namespace]
+                }
+                let write = KubeTabWrite.argoSync(
+                    app: ref.name, namespace: namespace, controlPlane: KubeGitOps.argoNamespace(installs: installs, application: namespace))
+                guard case .argoSync(_, _, let controlPlane) = write, await self?.reviewTabWrite(write.accesses, in: context) == true else { return }
+                self?.endChecking(token)
+                self?.confirmTabWrite(write, reviewed: context, pin: controlPlane)
+            case .fluxReconcile:
+                guard let flux = KubeGitOps.flux(ref.kind) else { return }
+                // flux annotates the object's source before the object: read it for which, and review that too.
+                var sources: [KubeGitOps.FluxSource]
+                do {
+                    let json = try await client.object(ref.kind, namespace: namespace, name: ref.name).json
+                    guard let found = KubeGitOps.sources(of: json, resource: ref.kind.fullName) else {
+                        self?.writeStatus = .failed("\(object) names no source flux can fetch: nothing was run.")
+                        return
+                    }
+                    sources = found
+                } catch {
+                    self?.writeStatus = .failed("Couldn't read \(object): \(KubernetesModel.said(error))")
+                    return
+                }
+                // A chart given by chartRef: its own source is the chart's to say.
+                if sources.count == 1, let chart = sources.first, chart.kind == "HelmChart",
+                    let kind = self?.model.knownDiscovery(of: ref.context)?.kinds.first(where: { $0.fullName == chart.resource }),
+                    let json = try? await client.object(kind, namespace: chart.namespace, name: chart.name).json
+                {
+                    sources += KubeGitOps.chartSources(of: json, at: chart.namespace)
+                }
+                let write = KubeTabWrite.fluxReconcile(
+                    words: flux.words, resource: ref.kind.fullName, name: ref.name, namespace: namespace, sources: sources)
+                guard await self?.reviewTabWrite(write.accesses, in: context) == true else { return }
+                self?.endChecking(token)
+                self?.confirmTabWrite(write, reviewed: context, pin: namespace)
             case .nodeShell:
                 self?.endChecking(token)
                 self?.confirmTabWrite(.nodeShell(node: ref.name, namespace: namespace, image: nodeImage), reviewed: context, pin: namespace)
@@ -173,6 +214,19 @@ extension KubernetesPageModel {
                 self?.writeStatus = .failed("\(verb.title) isn't a write Overterm runs in a tab.")
             }
         }
+    }
+
+    /// Each access reviewed in turn (answers kept a minute, so asking one
+    /// again is free); false, with why said, at the first no.
+    private func reviewTabWrite(_ accesses: [(access: KubeAccess, namespace: String?)], in context: KubeContext) async -> Bool {
+        for (access, place) in accesses {
+            let answer = await model.writeAccess.answer(context, namespace: place ?? "", access)
+            if let why = KubeAccessState.answered(answer).unavailable(access, namespace: place ?? "", review: true) {
+                writeStatus = .failed(why)
+                return false
+            }
+        }
+        return true
     }
 
     private func pickContainer(

@@ -309,6 +309,7 @@ extension E2ERunner {
         await kubernetesMergedLogs(model, page, fake)
         await kubernetesTimeline(model, page, fake)
         await kubernetesTree(model, page, fake)
+        await kubernetesGitOpsVerbs(model, page, fake)
         await kubernetesHealth(model, page, fake, kubeconfig: kubeconfig, port: port)
         await kubernetesTabContext(model, page, fake, kubeconfig: kubeconfig)
         await kubernetesNodeShellAndResize(model, page, fake)

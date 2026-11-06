@@ -4805,6 +4805,55 @@ Overview's chart and its range, requests against allocatable, a pod's and a
 claim's chart, the Used column, nothing read while hidden, and `fake-prod`
 without a picker.
 
+**Flux and Argo CD verbs** (stage 4; `KubeGitOps.swift` (pure); analysis
+2.23, decision 24): what their CLIs set, as writes of the page's one guard
+path — `KubeWriteVerb`'s `.reconcile`, `.fluxSuspend`, `.fluxResume` on a
+Kustomization, a HelmRelease and every Source kind (`KubeGitOps.fluxKinds`:
+group and resource, and what `flux` calls it), `.refresh` on an
+Application. Each is one merge patch with `fieldManager=overterm` (a
+custom resource takes no strategic one — `FakeKubeAPI` answers 415 as a
+server does): suspend `spec.suspend: true`; resume `false` with
+`reconcile.fluxcd.io/requestedAt` set to now, as `flux resume` does;
+reconcile the annotation alone — refused with why on a suspended object,
+read after its review, since Flux would ignore it; refresh
+`argocd.argoproj.io/refresh: normal`, which Argo CD takes away once done.
+Suspend and resume are a toggle on `KubeWriteToggle.suspended` (`p`, the
+object read decides which); `r` reconciles or refreshes. Reviewed as
+`patch` on the kind, confirmed naming the context and namespace and what
+each equals (`flux suspend kustomization web --context C -n NS`; `kubectl
+annotate … refresh=normal` for Argo), never a typed name (each asks its
+controller for what it does anyway, or is undone by its opposite).
+Argo CD's sync stays argocd's (hooks, waves, pruning): `KubeTabWrite.argoSync`
+(`s`, Sync in a Tab…, `KubeProcessVerb.argoSync`) types `env -u
+ARGOCD_SERVER -u ARGOCD_AUTH_TOKEN -u ARGOCD_OPTS argocd app sync APP
+--app-namespace NS --core --kube-context C` into a tab pinned to the
+context in Argo CD's own namespace — core mode, so it reaches the
+context's cluster and not an Argo CD server argocd is logged in to, and
+it reads Argo CD's settings (argocd-cm, argocd-secret, the repositories'
+and clusters' secrets) in the context's namespace, which with apps in any
+namespace is not the Application's. That namespace is the one holding
+`argocd-cm` (a Table list by field selector, cluster-wide, else in the
+Application's namespace; `KubeGitOps.argoNamespace`: the Application's
+own install first, else the one found, else `argocd`). Reviewed as
+`patch applications.argoproj.io` in the Application's namespace and
+`get configmaps`, `list secrets` in Argo CD's; the name typed on
+production. `KubeTabWrite.fluxReconcile` (Reconcile with Source in a
+Tab…) is `flux reconcile kustomization|helmrelease NAME --with-source
+--context C -n NS`; flux annotates the object's source first, so the
+object is read after its review and its sources resolved
+(`KubeGitOps.sources`/`FluxSource`: a Kustomization's `spec.sourceRef`;
+a HelmRelease's `chartRef`, a HelmChart's own `sourceRef` read from it,
+or the `<ns>-<name>` HelmChart its chart template makes and that
+template's source; `sourceRef.namespace` honoured) and `patch` on each
+reviewed where it is before the confirmation, which names them. One
+naming no source flux knows is refused. Both are writing processes, refused on a read-only
+context by the process class check. The verbs are `ResourceVerb`s like
+every write, so the list's menu, the detail's buttons and the GitOps
+trees' nodes (a Kustomization's source, its `dependsOn`) all have them.
+`KubeGitOpsTests` (pure, and the page against the fake: the order, the
+patches applied, read-only and production refusing, the tab lines) and
+`kubernetesGitOpsVerbs` (`E2ERunner+KubernetesGitOps`) check them.
+
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
@@ -4914,6 +4963,13 @@ landing — and writes off again, fake-prod's proxy refusing a POST once
 more; on `fake-dev` every write greyed with why and nothing reaching the
 fake, not even a review; and Kubernetes off stopping every
 forward, its kubectl ended;
+Flux's and Argo CD's verbs (`E2ERunner+KubernetesGitOps`, Flux and Argo
+CD verbs, above): on fake-dev greyed and refused with nothing sent; on
+kind-fake a Kustomization suspended, resumed and reconciled by `p`, `p`,
+`r` as the window takes them, each asked in the sheet with its flux
+command and landing as one merge patch, its tree's GitRepository
+reconciled from the node's verbs, an Application refreshed by `r` and its
+sync by `s` recorded in a pinned tab, nothing else written;
 a manifest in the editor (`E2ERunner+KubernetesApply`, Manifests in the
 editor, above);
 usage and the Overview (`E2ERunner+KubernetesMetrics`): the Pods list's

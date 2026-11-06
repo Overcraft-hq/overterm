@@ -122,8 +122,10 @@ final class KubeWriteVerbsTests: XCTestCase {
             XCTAssertEqual(verb.opposite?.toggle?.0, verb.toggle?.0)
             XCTAssertEqual(verb.opposite?.toggle?.1, verb.toggle.map { !$0.1 })
             XCTAssertEqual(
-                KubeWriteCheck.access(verb, on: [KubeWritesTests.deployments, KubeWritesTests.cronjobs, KubeWritesTests.nodes].first { KubeWriteCheck.offered(verb, on: $0) }!),
-                KubeWriteCheck.access(verb.opposite!, on: [KubeWritesTests.deployments, KubeWritesTests.cronjobs, KubeWritesTests.nodes].first { KubeWriteCheck.offered(verb, on: $0) }!),
+                KubeWriteCheck.access(
+                    verb, on: [KubeWritesTests.deployments, KubeWritesTests.cronjobs, KubeWritesTests.nodes, KubeGitOpsTests.kustomizations].first { KubeWriteCheck.offered(verb, on: $0) }!),
+                KubeWriteCheck.access(
+                    verb.opposite!, on: [KubeWritesTests.deployments, KubeWritesTests.cronjobs, KubeWritesTests.nodes, KubeGitOpsTests.kustomizations].first { KubeWriteCheck.offered(verb, on: $0) }!),
                 "a toggle turned round keeps its review")
         }
         let prod = KubeWritesTests.context("fake-prod", session: true)

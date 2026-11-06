@@ -22,6 +22,8 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
     case helmRollback, helmUpgrade, helmUninstall
     /// `kubectl debug node/…`.
     case nodeShell
+    /// `argocd app sync` (core mode), `flux reconcile … --with-source` (stage 4).
+    case argoSync, fluxReconcile
     /// What changes nothing: `auth can-i`, `auth whoami`, `version`, `kustomize`; `helm template`.
     case canI, whoami, version, kustomize, helmTemplate
     /// Terminal in this context: the user's own kubectl, nothing enforced inside it.
@@ -40,6 +42,8 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
         case .helmUpgrade: "Helm Upgrade"
         case .helmUninstall: "Helm Uninstall"
         case .nodeShell: "Node Shell"
+        case .argoSync: "Argo CD Sync"
+        case .fluxReconcile: "Flux Reconcile with Source"
         case .canI: "kubectl auth can-i"
         case .whoami: "kubectl auth whoami"
         case .version: "kubectl version"
@@ -52,7 +56,7 @@ enum KubeProcessVerb: String, CaseIterable, Sendable {
     /// Whether it changes objects in the cluster: refused on a read-only context.
     var writes: Bool {
         switch self {
-        case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .nodeShell: true
+        case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .nodeShell, .argoSync, .fluxReconcile: true
         default: false
         }
     }
@@ -122,7 +126,7 @@ enum KubeProcessCheck {
         case .shell, .attach:
             if settings.shells == false { return KubeProcessRule(refused: shellsOff) }
             return KubeProcessRule(access: verb.access, confirm: production)
-        case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall:
+        case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .argoSync, .fluxReconcile:
             guard writable else { return KubeProcessRule(refused: readOnly(kind)) }
             // A debug container is attached to: an interactive shell in the
             // pod, which a context's shells setting turned off promises not to open.
@@ -133,6 +137,8 @@ enum KubeProcessCheck {
                 // Rule 4; a debug container too, which stays in the pod's spec.
                 // An upgrade from the checkout's chart too (stage 3a): it changes what the release runs.
                 case .drain, .rolloutUndo, .debug, .helmRollback, .helmUpgrade: production
+                // A sync applies what Git says now, pruning what it says to: as an upgrade does.
+                case .argoSync: production
                 default: false
                 }
             return KubeProcessRule(confirm: true, typedName: typed)

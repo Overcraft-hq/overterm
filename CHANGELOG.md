@@ -44,6 +44,7 @@ version is tagged `v<version>`.
 - kubernetes: the pane header's warning also reads a relative `--kubeconfig`, `$HOME/…`, a command behind `sudo -u` or `env -u`, and a pinned tab's own kubeconfigs; it notices a kubeconfig written after the first kubectl; a Secret made from a template closes its copy once applied
 - kubernetes: a shell on a node (a privileged pod, the context's nodeShell on, the node's name typed), and a running pod's cpu and memory resized in place where the cluster serves it
 - kubernetes: Prometheus per context, opt-in (`metrics: prometheus`, or a `prometheus` Service named): charts over 1 h, 6 h, 24 h or 7 d on the Overview and in a pod's and a claim's detail, the cluster's requests and limits against allocatable, and a Used column on PVCs — through a second proxy that reaches only that Service's queries
+- kubernetes: Flux and Argo CD verbs — suspend, resume and reconcile a Kustomization, HelmRelease or Source, refresh an Argo CD Application, each asked first on a writable context; Argo CD's sync and Flux's reconcile with its source run as argocd and flux in a pinned tab
 
 ## 1.5.4 — 2026-11-09
 
