@@ -4584,7 +4584,108 @@ read, no watch, `x` and a node's verbs) and the scenario's `kubernetesTree`
 its crashing pod, the missing ConfigMap red, the Secret from its Table,
 the Service and its Ingress, read once in its namespace, a node's verbs,
 a Service selecting nothing red; then an Application's, a Kustomization's
-and a HelmRelease's trees.
+and a HelmRelease's trees; health checks, the pinned contexts' cards and
+Compare with… (`E2ERunner+KubernetesHealth`, Health checks, above).
+
+**Health checks** (stage 3b; `KubeHealth.swift` (pure), `KubeHealthSession`,
+`KubeHealthView`, `KubernetesPageModel+Health`; analysis 3.9, Popeye's lint,
+Argo's health): rules over objects, each finding a code, a severity and a
+plain sentence about one object (`KubeHealth.Finding`, its `Subject` a link):
+containers without a readiness or liveness probe (not for what ends — a
+Job's, a pod whose restartPolicy isn't Always), without requests, without
+limits, on `:latest` or untagged (K101–K105), checked where they are
+written — a workload's template, a CronJob's — and left to an owner only
+when that owner's checks cover them (`KubeHealth.covers`; in the Overview's
+report, only an owner read and checked there: a ReplicaSet to its
+Deployment, a Job to its CronJob, a pod to its ReplicaSet, StatefulSet,
+DaemonSet or Job), so fifty pods are one finding and a standalone Job's, a
+Rollout's ReplicaSet's or an operator's pod is never silent; a Service selecting no pod (K201, not an
+ExternalName), an Ingress to a Service that isn't there or a port it hasn't
+(K301, K302), each said only from a list read whole; a PodDisruptionBudget
+allowing no disruption of the pods it covers (K401), an HPA at its maximum
+(K402); a container restarted in the last hour (its last termination's
+`finishedAt`, else when it ran again; K501), a pod Pending past a minute
+with the scheduler's word (K502); a custom resource — any group Kubernetes
+doesn't serve itself — whose `Ready` is False (K601: Flux, cert-manager…),
+an Argo CD Application Degraded or Missing, or OutOfSync (K602, K603). Two
+places, read-only:
+
+- **The Overview** (`1`): read once while it shows, in the context and
+  namespace shown (every namespace too), the lists `KubeHealth.reads` names
+  that the context serves and lets be listed — pods (200), the workloads,
+  ReplicaSets, Jobs, CronJobs, Services, Ingresses, PDBs, HPAs, Argo's
+  Applications, Flux's Kustomizations, HelmReleases and GitRepositories,
+  cert-manager's Certificates (500 each) —, one bounded GET each as whole
+  objects (the checks read specs: decision 33, a stated addition to 3.9's
+  "nothing extra is read"), never a Secret or a ConfigMap, no watch;
+  decoded and checked off the main thread (`KubeBlocking`), what may carry
+  a secret dropped as each list is decoded (`KubeHealth.kept`: env values,
+  Helm values, the last-applied copy, managedFields); a list cut or refused said
+  (`Report.notes`), and a Service's selection not judged from a cut pod
+  list. Refresh reads again; hidden, what was read goes. The count sits by
+  the header (`KubeHealthCount`), the findings by check under the usage,
+  each row opening its object (`openFinding`).
+- **A detail**: what its object says of itself (`KubeDetailSession.health`,
+  from the one GET it made), and — where its tree read the lists — a
+  Service's pods, an Ingress's Services (`KubeTreeSession.findings`,
+  `KubeHealth.related`); nothing more is read.
+
+**The pinned contexts** (decision 17; `KubePinnedHealth.swift` — the card,
+pure, and `KubePinnedHealthSession`): `kubernetes.pinnedContexts`, a card
+each across the Overview's top — its pods failing, its Deployments,
+StatefulSets and DaemonSets not ready, its nodes not ready (`summary`, from
+Table rows as the lists read them: `KubePodSummary`, `KubeWorkloadState`),
+the first five named, a cut list said — in the namespace the page would
+show it in (`agentDefaultScope`). One session for the app
+(`KubernetesModel.pinnedHealth`, each window's page a viewer), read only
+while an Overview shows on a page on screen — and again when the setting
+changes there (`pinnedContexts` is published) —, one context after
+another, again every 30 s: one page of rows a list (500,
+`includeObject=None`, Metadata across namespaces), never a watch, through
+each context's proxy in a spare slot (`spareClient`, `KubeProxies.Role.spare`:
+never a browser sign-in, and a proxy opened only in a slot free as it
+stands — nothing is closed for a card, so no kubectl or credential plugin
+is started again every cycle, and the agents', the rail's and the
+attention watches' proxies stay; no slot, a credential, Kubernetes off or
+a context the kubeconfig lacks is the card's "Not read: …"). A press shows
+its context on the page (`showPinned`). Hidden everywhere, nothing is read
+and the cards go.
+
+**Compare with…** (stage 3b; `KubeCompare.swift` (pure),
+`KubernetesPageModel+Compare`; analysis 3.10, Aptakube's diff): on any
+object — the detail's ⋯ and the row's menu (`compareVerb`) — a picker of
+the other side (`KubePicker.compare`: every other context in the object's
+namespace, then its context's other namespaces; `namespace` or
+`namespace@context` typed), then one GET a side through each context's own
+connection (the detail's answer reused for its side; the other in a
+background slot; a 404 is a side that has none, said), both made
+comparable off the main thread — stripped (`KubeManifestDiff.stripped`:
+status, managedFields, the last-applied annotation) and without what names
+each copy (uid, resourceVersion, creation time, generation, namespace, its
+owners' uids) —, masked together (`KubeManifestDiff.masked`: a secret
+env value `*** (before)` / `*** (after)` where it differs), as a
+`KubeChangeDiff` in the right-hand pane where a timeline's change shows
+(`showChange`; production on either side said). A Secret: its keys, each
+value an HMAC-SHA256 under a key made for that one comparison and dropped
+with it (`hashingSecret`: the same value the same hash, no hash comparable
+with any other or looked up), replaced as the answer is read; on production
+its GET is asked first, once a context and session (`secretConsent`), as
+Show is. How it stands (`KubeCompareStatus`, the object's) shows in that
+object's detail, or on the list's bar with none open; it ends — the read
+cancelled, the words gone — with the detail, another object, context or
+namespace, or the page hidden (`endCompare`). Reads only. Checked: `KubeHealthTests` (every rule, what needs a
+whole list, the report's notes; the Overview's reads against the fake —
+bounded, once, no Secret or ConfigMap, no watch —; a detail's and its
+tree's findings; the pinned cards from rows, read while shown and not
+after, a gone context said; Compare's two sides stripped and masked, a
+Secret by keyed hashes, the picker, the page across two fakes with
+production's ask) and the scenario's `kubernetesHealth`
+(`E2ERunner+KubernetesHealth`): fake-dev's findings on `1` (the count
+drawn) and one's detail saying its own (drawn); `fake-stage`, a fake of its
+own, and fake-prod pinned, their cards read through their proxies as rows
+(drawn) and nothing asked once hidden; a Deployment against fake-stage's in
+the changes pane, its secret env value masked (drawn), and a Secret against
+fake-prod asked first, compared by hashes.
 
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before

@@ -9,11 +9,15 @@ import Foundation
 struct KubePicker: Equatable {
     enum Kind: Equatable, Sendable {
         case namespace, context
+        /// "Compare with…" (3.10): an object's other side — another
+        /// context, or another namespace of the object's.
+        case compare(context: String, namespace: String?)
 
         var title: String {
             switch self {
             case .namespace: "Namespace"
             case .context: "Context"
+            case .compare: "Compare with"
             }
         }
     }
@@ -22,6 +26,8 @@ struct KubePicker: Equatable {
     enum Choice: Hashable, Sendable {
         case scope(KubeScope)
         case context(String)
+        /// The other side of a comparison.
+        case compare(context: String, namespace: String?)
     }
 
     struct Item: Equatable, Identifiable, Sendable {
@@ -38,6 +44,7 @@ struct KubePicker: Equatable {
             case .scope(.all): "*all"
             case .scope(.namespace(let name)): (typed ? "+" : "ns:") + name
             case .context(let name): "ctx:" + name
+            case .compare(let context, let namespace): (typed ? "+cmp:" : "cmp:") + context + "\u{0}" + (namespace ?? "")
             }
         }
     }
@@ -69,6 +76,11 @@ struct KubePicker: Equatable {
         }
         .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
         .map(\.0)
+        if case .compare(let context, let namespace) = kind {
+            guard namespace != nil, let typed = Self.typedComparison(query, context: context), !items.contains(where: { $0.choice == typed.choice })
+            else { return ranked }
+            return ranked + [typed]
+        }
         guard kind == .namespace, let typed = Self.typedNamespace(query),
             !items.contains(where: { $0.choice == .scope(.namespace(typed)) })
         else { return ranked }
@@ -104,7 +116,19 @@ struct KubePicker: Equatable {
         return name
     }
 
-    // MARK: The two lists
+    /// What is typed, as a comparison's other side: `namespace` (the
+    /// object's context), or `namespace@context`.
+    static func typedComparison(_ text: String, context: String) -> Item? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        let parts = trimmed.split(separator: "@", maxSplits: 1).map(String.init)
+        guard let first = parts.first, let namespace = typedNamespace(first) else { return nil }
+        let other = parts.count == 2 ? parts[1].trimmingCharacters(in: .whitespaces) : context
+        guard !other.isEmpty else { return nil }
+        return Item(
+            choice: .compare(context: other, namespace: namespace), title: namespace, detail: "Compare with namespace \(namespace) in \(other)", typed: true)
+    }
+
+    // MARK: The lists
 
     /// All namespaces first (`0`), then the context's favourites, its own
     /// namespace and the one showing, then the server's list (or the
@@ -135,5 +159,24 @@ struct KubePicker: Equatable {
             return Item(choice: .context(context.name), title: context.displayName, detail: detail.joined(separator: " · "), production: context.isProduction)
         }
         return KubePicker(kind: .context, items: items, current: selected.map { .context($0) })
+    }
+
+    /// "Compare with…" on an object of `context` (in `namespace`): every
+    /// other context, in the same namespace; then the context's other
+    /// namespaces. Another one, or one in another context, is typed
+    /// (`namespace@context`).
+    static func compare(context: String, namespace: String?, contexts list: KubeContextList, namespaces: [String]) -> KubePicker {
+        var items = list.contexts.filter { $0.name != context }.map { other in
+            Item(
+                choice: .compare(context: other.name, namespace: namespace), title: other.displayName,
+                detail: [namespace.map { "namespace \($0)" } ?? "cluster-wide", other.contextClass.title].joined(separator: " · "), production: other.isProduction)
+        }
+        if let namespace {
+            let production = list.context(named: context)?.isProduction ?? false
+            items += namespaces.filter { $0 != namespace }.map { other in
+                Item(choice: .compare(context: context, namespace: other), title: other, detail: "namespace in \(context)", production: production)
+            }
+        }
+        return KubePicker(kind: .compare(context: context, namespace: namespace), items: items)
     }
 }

@@ -201,6 +201,12 @@ final class KubernetesModel: ObservableObject {
 
     private func reviewClient(for name: String) -> KubeClient? { client(for: name) }
 
+    /// `kubernetes.pinnedContexts`, as the settings said them last:
+    /// published, so an Overview showing reads the new list's cards.
+    @Published private(set) var pinnedContexts: [String] = []
+    /// The pinned contexts' cards: the app's, whichever windows show them.
+    let pinnedHealth = KubePinnedHealthSession()
+
     /// What the proxies are started with: which kubectl, the extra kubeconfigs.
     var proxyConfiguration: KubeProxies.Configuration { configuration.proxies }
 
@@ -270,6 +276,7 @@ final class KubernetesModel: ObservableObject {
     private func apply(_ new: Configuration) {
         configuration = new
         if enabled != new.enabled { enabled = new.enabled }
+        if pinnedContexts != new.pinned { pinnedContexts = new.pinned }
         let proxies = self.proxies
         Task { await proxies.configure(new.proxies) }
     }
@@ -594,6 +601,13 @@ final class KubernetesModel: ObservableObject {
     /// its proxy is given up for a request someone made (`KubeProxies.Role.watch`).
     func watchClient(for context: KubeContext) -> KubeClient {
         KubeClient(connection(for: context, role: .watch))
+    }
+
+    /// What the Overview's pinned cards read through: the context's proxy
+    /// in a slot free as it stands — none is closed for it, no browser
+    /// sign-in is opened (`KubeProxies.Role.spare`).
+    func spareClient(for context: KubeContext) -> KubeClient {
+        KubeClient(connection(for: context, role: .spare))
     }
 
     /// What the rail's panel reads through while it shows a bound

@@ -855,6 +855,7 @@ enum KubeWriteStatus: Equatable {
     }
 
     var isFailure: Bool { if case .failed = self { true } else { false } }
+    var isWorking: Bool { if case .working = self { true } else { false } }
 }
 
 /// The production contexts whose writes are on for this session (rule 2,

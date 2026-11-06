@@ -183,9 +183,14 @@ final class KubeKindsTests: XCTestCase {
     func testTheSectionsOfferWhatCanBeListedAndWatched() async throws {
         addWidgets()
         let catalog = KubeKindCatalog(try await discover())
-        XCTAssertEqual(catalog.kinds(in: .workloads).map(\.fullName), ["pods", "deployments.apps", "statefulsets.apps", "daemonsets.apps", "replicasets.apps", "jobs.batch", "cronjobs.batch"])
+        XCTAssertEqual(
+            catalog.kinds(in: .workloads).map(\.fullName),
+            [
+                "pods", "deployments.apps", "statefulsets.apps", "daemonsets.apps", "replicasets.apps", "jobs.batch", "cronjobs.batch",
+                "horizontalpodautoscalers.autoscaling",
+            ])
         XCTAssertEqual(catalog.kinds(in: .network).map(\.fullName), ["services", "endpointslices.discovery.k8s.io", "ingresses.networking.k8s.io"])
-        XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets"])
+        XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets", "poddisruptionbudgets.policy"])
         XCTAssertEqual(catalog.kinds(in: .storage).map(\.fullName), ["persistentvolumeclaims"])
         XCTAssertEqual(catalog.kinds(in: .overview), [], "the Overview lists no kind")
         XCTAssertEqual(

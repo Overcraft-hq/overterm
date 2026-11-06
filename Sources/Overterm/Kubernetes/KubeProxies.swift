@@ -40,8 +40,16 @@ actor KubeProxies {
     /// has signed in, `needsPageSignIn`), and a proxy only watches hold is
     /// given up for another background request (the watch says "not
     /// watched" and tries again), so watches never fill the background's
-    /// slots for good.
-    enum Role: Sendable { case page, background, watch }
+    /// slots for good. A spare read (the Overview's pinned cards) is a
+    /// watch's kind too, and more: it opens a proxy only in a slot free as
+    /// it stands — nothing is closed for it (`noSlot` otherwise).
+    enum Role: Sendable {
+        case page, background, watch, spare
+
+        /// Nobody asked for it: never a browser sign-in, given up for a
+        /// request someone made.
+        var unasked: Bool { self == .watch || self == .spare }
+    }
 
     enum Status: Equatable, Sendable {
         case closed
@@ -187,7 +195,7 @@ actor KubeProxies {
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data? = nil, headers: [(String, String)] = []
     ) async throws -> HTTPResponse {
         let (proxy, holds, id) = try await begin(context, role)
-        let watch = role == .watch
+        let watch = role.unasked
         let response: HTTPResponse
         do {
             response = try await proxy.transport.send(method, path, body: body, headers: headers)
@@ -223,7 +231,7 @@ actor KubeProxies {
         let proxy: KubeProxy
         var holds: Bool
         let id: UInt64
-        let watch = role == .watch
+        let watch = role.unasked
         do {
             (proxy, holds, id) = try await begin(context, role)
         } catch {
@@ -264,7 +272,7 @@ actor KubeProxies {
         let context = effective(context)
         let name = context.name
         if let problem = stopped[name] { throw problem }
-        let watch = role == .watch
+        let watch = role.unasked
         // A watch never signs in: an oidc context only once someone has.
         if watch, KubeSignIn(context.auth) == .oidc, !signedIn.contains(name) { throw KubeProxyProblem.needsPageSignIn }
         if role == .page { page = name }
@@ -403,6 +411,12 @@ actor KubeProxies {
     ///   background proxy closed for the page is noted (`closedForPage`).
     private func makeRoom(for name: String, _ role: Role) async throws {
         let max = configuration.maxProxies
+        if role == .spare {
+            // Only a slot nobody holds: the background's (`maxProxies − 1`), and any.
+            let background = entries.keys.filter { $0 != name && $0 != page }
+            guard background.count < max - 1, entries.keys.filter({ $0 != name }).count < max else { throw KubeProxyProblem.noSlot(max: max) }
+            return
+        }
         if role != .page {
             let background = entries.keys.filter { $0 != name && $0 != page }
             if background.count >= max - 1 {
@@ -419,7 +433,7 @@ actor KubeProxies {
             switch role {
             case .page: victim = victim ?? leastRecent(background, idleOnly: false) ?? leastRecent(others, idleOnly: false)
             case .background: victim = victim ?? leastRecent(others.filter(onlyWatched), idleOnly: false)
-            case .watch: break
+            case .watch, .spare: break
             }
             guard let victim else { throw KubeProxyProblem.noSlot(max: max) }
             if role == .page, entries[victim]?.background == true { closedForPage = Array(([victim] + closedForPage).prefix(8)) }

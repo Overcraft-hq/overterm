@@ -243,6 +243,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "rbac.authorization.k8s.io", version: "v1", resource: "roles", kind: "Role", namespaced: true),
         Kind(group: "discovery.k8s.io", version: "v1", resource: "endpointslices", kind: "EndpointSlice", namespaced: true),
         Kind(group: "networking.k8s.io", version: "v1", resource: "ingresses", kind: "Ingress", namespaced: true, shortNames: ["ing"], subresources: ["status"]),
+        Kind(group: "policy", version: "v1", resource: "poddisruptionbudgets", kind: "PodDisruptionBudget", namespaced: true, shortNames: ["pdb"], subresources: ["status"]),
+        Kind(
+            group: "autoscaling", version: "v2", resource: "horizontalpodautoscalers", kind: "HorizontalPodAutoscaler", namespaced: true, shortNames: ["hpa"],
+            categories: ["all"], subresources: ["status"]),
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "pods", kind: "PodMetrics", namespaced: true, verbs: ["get", "list"]),
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "nodes", kind: "NodeMetrics", namespaced: false, verbs: ["get", "list"]),
     ]

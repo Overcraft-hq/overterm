@@ -228,6 +228,7 @@ final class KubernetesPageModel: ObservableObject {
                 model.releaseSelectors(for: self)
                 // A Secret's values never outlive the page on screen.
                 detail?.secret?.drop(.pageHidden)
+                endCompare()
             }
             updateLogsReading()
             updateHelmReading()
@@ -238,7 +239,10 @@ final class KubernetesPageModel: ObservableObject {
     /// Whether its window is on screen at all.
     @Published var windowVisible = true {
         didSet {
-            if !windowVisible { detail?.secret?.drop(.pageHidden) }
+            if !windowVisible {
+                detail?.secret?.drop(.pageHidden)
+                endCompare()
+            }
             updateLogsReading()
             if windowVisible != oldValue {
                 updateHelmReading()
@@ -264,6 +268,17 @@ final class KubernetesPageModel: ObservableObject {
     private var helmWatch: AnyCancellable?
     /// The Overview section's reading: this window's, while it shows.
     let clusterOverview = KubeClusterOverviewSession()
+    /// The Overview's health checks (3.9): read once while it shows.
+    let health = KubeHealthSession()
+    /// The pinned contexts' cards on the Overview, read only while one shows:
+    /// the app's, every window's Overview the same.
+    var pinnedHealth: KubePinnedHealthSession { model.pinnedHealth }
+    /// "Compare with…": the object its picker is for, and the comparison being read.
+    var compareRef: KubeObjectRef?
+    var comparing: Task<Void, Never>?
+    /// How the last comparison stands, said for the object it is of —
+    /// in its detail, or on the list's bar with no detail open.
+    @Published var compareStatus: KubeCompareStatus?
     private var overviewWatch: AnyCancellable?
     private var metricsKindWatch: AnyCancellable?
     /// How long the typing must stop before `label:` or `field:` asks the server again.
@@ -354,6 +369,7 @@ final class KubernetesPageModel: ObservableObject {
             .sink { [weak self] in
                 self?.commandProblem = nil
                 self?.writeStatus = nil
+                self?.endCompare()
             }
         // Helm's list is of the context and namespace shown: read again
         // with them while it shows (the emitted values: after the change).
@@ -363,7 +379,10 @@ final class KubernetesPageModel: ObservableObject {
         // The Overview reads the context and namespace shown, as the
         // cluster serves them: again with each (after the change).
         overviewWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
-            .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () }, model.$discovery.removeDuplicates().dropFirst().map { _ in () })
+            .merge(
+                with: model.$scope.removeDuplicates().dropFirst().map { _ in () }, model.$discovery.removeDuplicates().dropFirst().map { _ in () },
+                model.$contexts.removeDuplicates().dropFirst().map { _ in () }, model.$pinnedContexts.removeDuplicates().dropFirst().map { _ in () }
+            )
             .sink { [weak self] in DispatchQueue.main.async { self?.updateOverviewReading() } }
         // Usage is wanted for the kind shown: pods' or nodes'.
         metricsKindWatch = model.$kind.removeDuplicates().dropFirst()
@@ -674,6 +693,7 @@ final class KubernetesPageModel: ObservableObject {
         detail?.cancel()
         detail = nil
         linkProblem = nil
+        endCompare()
         history.leave()
         giveListTheKeyboard()
     }
@@ -682,6 +702,8 @@ final class KubernetesPageModel: ObservableObject {
         linkProblem = nil
         guard detail?.ref != ref else { return }
         commandProblem = nil
+        // Another object: a comparison of the one before is ended.
+        if let status = compareStatus, status.ref != ref { endCompare() }
         detail?.cancel()
         let client = model.client(for: ref.context)
         let session = KubeDetailSession(
@@ -873,6 +895,10 @@ final class KubernetesPageModel: ObservableObject {
         switch choice {
         case .scope(let scope): model.setScope(scope)
         case .context(let name): model.select(name)
+        case .compare(let context, let namespace):
+            guard let ref = compareRef else { break }
+            compareRef = nil
+            compare(ref, with: context, namespace: namespace)
         }
         giveListTheKeyboard()
     }
@@ -888,6 +914,9 @@ final class KubernetesPageModel: ObservableObject {
         case .context:
             guard !model.contexts.contexts.isEmpty else { return nil }
             return KubePicker.contexts(model.contexts, selected: model.selectedName)
+        case .compare:
+            guard let ref = compareRef else { return nil }
+            return comparePicker(ref)
         }
     }
 
@@ -1118,7 +1147,7 @@ final class KubernetesPageModel: ObservableObject {
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
         ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + forwardVerbs(for: picked)
-            + editVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked)
+            + editVerbs(for: picked) + compareVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked)
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

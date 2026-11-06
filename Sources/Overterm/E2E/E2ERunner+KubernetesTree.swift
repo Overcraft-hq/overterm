@@ -125,9 +125,13 @@ extension E2ERunner {
             "its own namespace only, bounded, GETs",
             !treeReads.isEmpty && treeReads.allSatisfy { $0.method == "GET" && $0.path.contains("/namespaces/shop/") && $0.query["limit"] != nil },
             "\(treeReads.map { "\($0.method) \($0.path) \($0.query)" })")
+        // The list's own watch and the page's CRD watch (discovery's,
+        // followed again whenever the fake ends it) aren't the tree's.
         check(
             "no watch of its own",
-            fake.requests.filter { $0.query["watch"] != nil }.allSatisfy { $0.path == "/apis/apps/v1/namespaces/shop/deployments" },
+            fake.requests.filter { $0.query["watch"] != nil }.allSatisfy {
+                $0.path == "/apis/apps/v1/namespaces/shop/deployments" || $0.path == "/apis/apiextensions.k8s.io/v1/customresourcedefinitions"
+            },
             "\(fake.requests.filter { $0.query["watch"] != nil }.map(\.path))")
         check("drawn", await shownText(15) { $0.contains("tree-env") } != nil)
         fake.forgetRequests()
