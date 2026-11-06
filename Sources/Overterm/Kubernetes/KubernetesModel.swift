@@ -149,6 +149,9 @@ final class KubernetesModel: ObservableObject {
     var rediscoveryDelay: Duration = .milliseconds(300)
 
     private var viewers = 0
+    /// True when a page starts to show it, false when the last one hides:
+    /// what reads on its own (a forward's pod check) stops at once.
+    let visibility = PassthroughSubject<Bool, Never>()
     private var configuration = Configuration()
     /// Each context's namespace, as last picked.
     private var scopes: [String: KubeScope] = [:]
@@ -223,6 +226,7 @@ final class KubernetesModel: ObservableObject {
     func show() {
         viewers += 1
         guard viewers == 1 else { return }
+        visibility.send(true)
         watchSettings()
         apply(readConfiguration())
         startPolling()
@@ -236,6 +240,7 @@ final class KubernetesModel: ObservableObject {
         selectorOwner = nil
         selectors = KubeListSelectors()
         stopReading()
+        visibility.send(false)
     }
 
     private func stopReading() {

@@ -110,8 +110,11 @@ struct KubeForward: Identifiable, Equatable, Sendable {
 ///   its `targetPort`; a Deployment one of its selector's ready pods; a
 ///   pod itself. kubectl is given only that pod, so the pill names it.
 /// - **Started again** when kubectl exits or its pod goes (a GET every
-///   `podCheckInterval` while it forwards: gone, no longer running — for
-///   a Service or a Deployment, no longer ready) —
+///   `podCheckInterval` while it forwards and the page shows — hidden,
+///   nothing is read (a check in flight is cancelled, a start again waits
+///   for the page to resolve), and kubectl exiting is what says the pod went;
+///   shown again, the pod is looked at at once: gone, no longer running —
+///   for a Service or a Deployment, no longer ready) —
 ///   resolved again first, the pod pinned before kept while it is still
 ///   ready, backing off (`KubeForwardBackoff`), and stopped, saying why,
 ///   after too many tries, when the target itself is gone, or on a
@@ -142,6 +145,9 @@ final class KubeForwards: ObservableObject {
     var launch: Launch
     /// How often the pinned pod is looked at while it forwards.
     var podCheckInterval: Duration = .seconds(5)
+    /// Whether the pinned pod may be looked at now: the app's, only while
+    /// the Kubernetes page shows (it reads nothing hidden; Section 10).
+    var checksPods: () -> Bool = { true }
     /// How often kubectl is looked at.
     var processCheckInterval: Duration = .milliseconds(250)
     /// The backoff's waits, times this: a test's are short.
@@ -159,6 +165,8 @@ final class KubeForwards: ObservableObject {
     private var contexts: [UUID: KubeContext] = [:]
     private var watches: [AnyCancellable] = []
     private var probing: [UUID: Task<Void, Never>] = [:]
+    /// Each forward's pod check in flight: cancelled when the page hides.
+    private var podChecks: [UUID: Task<String?, Never>] = [:]
     /// The local port each forward was probed on.
     private var probed: [UUID: Int] = [:]
 
@@ -179,6 +187,7 @@ final class KubeForwards: ObservableObject {
                 await model?.access.answer(context, namespace: namespace, .portForward) ?? .failed("Kubernetes is off.")
             },
             launch: Self.kubectl(model))
+        checksPods = { [weak model] in model?.isShown == true }
         probe = { url in await APIDiscovery.probe(url) }
         probes = { Settings.shared.apiEnabled && Settings.shared.apiDiscoverServers }
         // Turned on while forwards run: those are asked now, not at their next start.
@@ -186,6 +195,10 @@ final class KubeForwards: ObservableObject {
             Settings.shared.changes.filter { $0.contains("api.enabled") || $0.contains("api.discoverServers") }
                 .sink { [weak self] _ in self?.probeForwarding() })
         // The emitted values: the model's properties aren't set yet.
+        watches.append(
+            model.visibility.sink { [weak self] shown in
+                if !shown { self?.cancelPodChecks() }
+            })
         watches.append(model.$contexts.dropFirst().sink { [weak self] list in self?.contextsChanged(list) })
         watches.append(
             model.$enabled.dropFirst().removeDuplicates().sink { [weak self] enabled in
@@ -372,7 +385,19 @@ final class KubeForwards: ObservableObject {
             return finish(id, why)
         }
         var backoff = KubeForwardBackoff()
+        var again: String?
         while !Task.isCancelled {
+            // Started again while the page is hidden (kubectl exited, a
+            // backoff's wait ended): resolved only once it shows — hidden,
+            // nothing is read (Section 10). The first start is the user's
+            // or an agent's own request, and resolves at once.
+            if let why = again {
+                while !Task.isCancelled, !checksPods() {
+                    update(id) { $0.state = .restarting(why) }
+                    try? await Task.sleep(for: processCheckInterval)
+                }
+                guard !Task.isCancelled else { return }
+            }
             guard let forward = forward(id), let context = contexts[id] else { return }
             guard let client = client(context) else { return finish(id, "Kubernetes is off, or \(context.name) is gone.") }
             update(id) { $0.state = .resolving }
@@ -419,7 +444,7 @@ final class KubeForwards: ObservableObject {
                 update(id) { $0.state = .forwarding(pod: pinned.pod, pid: process.pid) }
                 probeOnce(id)
                 let started = now()
-                why = await watch(process, pod: pinned.pod, namespace: forward.spec.namespace, client: client, ready: forward.spec.target.followsEndpoints)
+                why = await watch(id, process, pod: pinned.pod, namespace: forward.spec.namespace, client: client, ready: forward.spec.target.followsEndpoints)
                 ran = now().timeIntervalSince(started)
                 if processes[id] === process { processes[id] = nil }
                 process.close()
@@ -432,6 +457,7 @@ final class KubeForwards: ObservableObject {
                 $0.state = .restarting(why)
                 $0.restarts += 1
             }
+            again = why
             try? await Task.sleep(for: .milliseconds(Int(delay * backoffScale * 1000)))
         }
     }
@@ -451,25 +477,74 @@ final class KubeForwards: ObservableObject {
     /// Until kubectl exits or its pod goes — for a Service or a Deployment,
     /// until it is no longer ready too: a pod failing readiness leaves the
     /// Service's endpoints, and the forward follows it to one that is ready.
-    /// Why it ended.
-    private func watch(_ process: any KubeForwardProcess, pod: String, namespace: String, client: KubeClient, ready: Bool) async -> String {
+    /// The pod is read only while `checksPods` says so, and a read in
+    /// flight when the page hides is cancelled (`podCheck`); the clock isn't
+    /// reset meanwhile, so the first look after is at once. Why it ended.
+    private func watch(_ id: UUID, _ process: any KubeForwardProcess, pod: String, namespace: String, client: KubeClient, ready: Bool) async -> String {
         var lastCheck = ContinuousClock.now
         while !Task.isCancelled {
             if !process.isRunning {
                 return KubeProxyProblem.lastLine(of: process.said).map { "kubectl exited: \($0)" } ?? "kubectl port-forward exited"
             }
-            if ContinuousClock.now - lastCheck >= podCheckInterval {
-                lastCheck = ContinuousClock.now
-                // A failed read (the network, the proxy) says nothing of the pod.
-                do {
-                    guard let json = try await Self.objectJSON(client, .pods, namespace, pod) else { return "pod \(pod) went" }
-                    if !(ready ? KubeForwardResolve.isReady(json) : KubeForwardResolve.isRunning(json)) { return KubeForwardResolve.notReady(json) }
-                } catch {}
+            if ContinuousClock.now - lastCheck >= podCheckInterval, checksPods() {
+                switch await podCheck(id, pod: pod, namespace: namespace, client: client, ready: ready) {
+                case .ended(let why): return why
+                case .fine: lastCheck = ContinuousClock.now
+                case .abandoned: break  // looked at again at once when shown
+                }
                 continue
             }
             try? await Task.sleep(for: processCheckInterval)
         }
         return "stopped"
+    }
+
+    private enum PodCheck {
+        case fine
+        case ended(String)
+        case abandoned
+    }
+
+    /// One look at the pinned pod, as a task of its own: cancelled — its
+    /// request closed — when the page hides (the model says so at once;
+    /// `checksPods` is asked too, every `processCheckInterval`), or when
+    /// the forward's run is.
+    private func podCheck(_ id: UUID, pod: String, namespace: String, client: KubeClient, ready: Bool) async -> PodCheck {
+        let check = Task { () -> String? in
+            // A failed read (the network, the proxy) says nothing of the pod.
+            do {
+                guard let json = try await Self.objectJSON(client, .pods, namespace, pod) else { return "pod \(pod) went" }
+                if !(ready ? KubeForwardResolve.isReady(json) : KubeForwardResolve.isRunning(json)) { return KubeForwardResolve.notReady(json) }
+            } catch {}
+            return nil
+        }
+        podChecks[id] = check
+        let interval = processCheckInterval
+        let watching = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard let self, !Task.isCancelled else { return }
+                if !self.checksPods() {
+                    check.cancel()
+                    return
+                }
+            }
+        }
+        let why = await withTaskCancellationHandler {
+            await check.value
+        } onCancel: {
+            check.cancel()
+        }
+        watching.cancel()
+        if podChecks[id] == check { podChecks[id] = nil }
+        if check.isCancelled { return .abandoned }
+        return why.map(PodCheck.ended) ?? .fine
+    }
+
+    /// The page hid: every pod check in flight cancelled now.
+    func cancelPodChecks() {
+        for check in podChecks.values { check.cancel() }
+        podChecks = [:]
     }
 
     // MARK: Resolving

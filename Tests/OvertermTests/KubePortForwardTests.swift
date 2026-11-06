@@ -421,6 +421,93 @@ final class KubeForwardsTests: XCTestCase {
         XCTAssertTrue(launches.played.first { $0.pod == "web-b" }?.closed == true)
     }
 
+    /// The page hidden, a forward reads nothing: its pod isn't looked at
+    /// (kubectl exiting is what says it went), and is at once when the page
+    /// shows again. The E2E's "and nothing is asked" caught a forward's
+    /// pod check landing in its hidden window.
+    func testAForwardReadsNothingWhileThePageIsHidden() async throws {
+        let launches = Launches()
+        let forwards = forwards(launches: launches)
+        defer { forwards.stopAll() }
+        var shown = true
+        forwards.checksPods = { shown }
+        var pod = spec(.pod("web-a"), 8080)
+        pod.localPort = 31236
+        let id = forwards.start(pod, in: Self.dev)
+        try await until("forwarding") { forwards.forward(id)?.isForwarding == true }
+        try await until("its pod looked at while shown") { self.api.requests.contains { $0.path == "/api/v1/namespaces/shop/pods/web-a" } }
+
+        shown = false
+        try await Task.sleep(for: .milliseconds(100))
+        api.forgetRequests()
+        api.deletePod("web-a", namespace: "shop")
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(api.requests.map(\.path), [], "hidden, nothing is asked")
+        XCTAssertTrue(forwards.forward(id)?.isForwarding == true, "kubectl still runs: nothing said it went")
+
+        shown = true
+        try await until("stopped once looked at") { forwards.forward(id)?.state.isStopped == true }
+        XCTAssertEqual(forwards.forward(id)?.state, .stopped("pod/web-a is gone"))
+        XCTAssertTrue(launches.played.first?.closed == true)
+    }
+
+    /// kubectl exiting while the page is hidden: started again only once
+    /// it shows — resolving reads the target, so nothing is asked hidden.
+    func testAForwardStartedAgainWhileHiddenWaitsForThePage() async throws {
+        let launches = Launches()
+        let forwards = forwards(launches: launches)
+        defer { forwards.stopAll() }
+        var shown = true
+        forwards.checksPods = { shown }
+        let id = forwards.start(spec(.service("web"), 80), in: Self.dev)
+        try await until("forwarding") { forwards.forward(id)?.isForwarding == true }
+
+        shown = false
+        try await Task.sleep(for: .milliseconds(100))
+        api.forgetRequests()
+        launches.played[0].end("error: lost connection to pod")
+        try await until("waiting to start again") { forwards.forward(id)?.state == .restarting("kubectl exited: error: lost connection to pod") }
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(api.requests.map(\.path), [], "hidden, nothing is asked: not the Service, its endpoints or its pods")
+        XCTAssertEqual(launches.played.count, 1, "nor kubectl started again")
+        XCTAssertEqual(forwards.forward(id)?.state, .restarting("kubectl exited: error: lost connection to pod"))
+
+        shown = true
+        try await until("started again once shown") { launches.played.count == 2 && forwards.forward(id)?.isForwarding == true }
+        XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/namespaces/shop/services/web" }, "resolved again: \(api.requests.map(\.path))")
+        XCTAssertEqual(launches.played.last?.pod, "web-a")
+    }
+
+    /// A pod check in flight when the page hides is cancelled — its
+    /// request closed before its answer — and looked at again once shown.
+    func testAPodCheckInFlightIsCancelledWhenThePageHides() async throws {
+        let launches = Launches()
+        let forwards = forwards(launches: launches)
+        defer { forwards.stopAll() }
+        var shown = true
+        forwards.checksPods = { shown }
+        var pod = spec(.pod("web-a"), 8080)
+        pod.localPort = 31237
+        let id = forwards.start(pod, in: Self.dev)
+        try await until("forwarding") { forwards.forward(id)?.isForwarding == true }
+        let path = "/api/v1/namespaces/shop/pods/web-a"
+        api.answerSlowly(path, milliseconds: 3000)
+        try await until("a pod check held by the server") { self.api.heldAnswers == 1 }
+
+        shown = false
+        try await until("cancelled, its request closed", 2) { self.api.droppedAnswers == [path] }
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(api.requests.map(\.path), [], "hidden, nothing more is asked")
+        XCTAssertTrue(forwards.forward(id)?.isForwarding == true)
+
+        api.answerSlowly(path, milliseconds: nil)
+        api.deletePod("web-a", namespace: "shop")
+        shown = true
+        try await until("looked at again once shown") { forwards.forward(id)?.state.isStopped == true }
+        XCTAssertEqual(forwards.forward(id)?.state, .stopped("pod/web-a is gone"))
+    }
+
     func testCanISaysNoAndNothingStarts() async throws {
         let launches = Launches()
         let forwards = forwards(canI: .no("RBAC: forbidden"), launches: launches)
