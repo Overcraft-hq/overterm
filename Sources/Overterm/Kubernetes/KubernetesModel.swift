@@ -589,6 +589,13 @@ final class KubernetesModel: ObservableObject {
         KubeClient(connection(for: context, role: .background))
     }
 
+    /// What the attention watches read through: the context's proxy in a
+    /// background slot, as a watch — it never opens a browser sign-in, and
+    /// its proxy is given up for a request someone made (`KubeProxies.Role.watch`).
+    func watchClient(for context: KubeContext) -> KubeClient {
+        KubeClient(connection(for: context, role: .watch))
+    }
+
     /// What the rail's panel reads through while it shows a bound
     /// checkout: the context's proxy in a background slot, as an agent's
     /// tools — never the page's slot — or a test's connection.

@@ -278,24 +278,33 @@ enum KubeProcessRun {
         }
     }
 
+    /// `input`, when given, is its stdin — written through a pipe, never a
+    /// file (a release's values for `helm template --values -`); else stdin
+    /// is /dev/null.
     static func run(
-        _ executable: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval, outputLimit: Int = 64 * 1024
+        _ executable: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval, outputLimit: Int = 64 * 1024,
+        input: Data? = nil
     ) -> Result? {
         let out = Pipe()
         let err = Pipe()
+        let stdin = input.map { _ in Pipe() }
         let outReader = PipeReader(out, limit: outputLimit)
         let errReader = PipeReader(err, limit: 64 * 1024)
         let pid = lock.withLock { () -> pid_t? in
             guard
                 let pid = spawn(
                     executable, arguments, environment, stdout: out.fileHandleForWriting.fileDescriptor,
-                    stderr: err.fileHandleForWriting.fileDescriptor)
+                    stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor)
             else { return nil }
             running.insert(pid)
             return pid
         }
         try? out.fileHandleForWriting.close()
         try? err.fileHandleForWriting.close()
+        if let stdin {
+            try? stdin.fileHandleForReading.close()
+            if pid != nil, let input { feed(input, to: stdin.fileHandleForWriting) } else { try? stdin.fileHandleForWriting.close() }
+        }
         guard let pid else {
             outReader.finish(waitingUntil: .now())
             errReader.finish(waitingUntil: .now())
@@ -325,6 +334,31 @@ enum KubeProcessRun {
             truncated: outReader.reachedLimit)
     }
 
+    /// `data` written to a child's stdin and the pipe closed, on a thread of
+    /// its own (a pipe holds 64 KB: the child reads as it is written). A
+    /// child that exits first only ends the write (EPIPE: SIGPIPE is
+    /// ignored for writes to a pipe here, `F_SETNOSIGPIPE`).
+    private static func feed(_ data: Data, to handle: FileHandle) {
+        _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
+        let block: @Sendable () -> Void = {
+            data.withUnsafeBytes { buffer in
+                guard var base = buffer.baseAddress else { return }
+                var left = buffer.count
+                while left > 0 {
+                    let wrote = write(handle.fileDescriptor, base, left)
+                    if wrote < 0 {
+                        if errno == EINTR { continue }
+                        break
+                    }
+                    left -= wrote
+                    base = base.advanced(by: wrote)
+                }
+            }
+            try? handle.close()
+        }
+        DispatchQueue.global(qos: .userInitiated).async(execute: block)
+    }
+
     /// The exit code, or 128 + the signal that ended it, as a shell says it.
     static func exitStatus(_ status: Int32) -> Int32 {
         let signal = status & 0x7f
@@ -344,11 +378,17 @@ enum KubeProcessRun {
     /// posix_spawn into a new process group: stdin /dev/null, the two
     /// pipes for stdout and stderr, no other descriptor of the app's, the
     /// signals as a new process has them.
-    private static func spawn(_ executable: URL, _ arguments: [String], _ environment: [String: String], stdout: Int32, stderr: Int32) -> pid_t? {
+    private static func spawn(
+        _ executable: URL, _ arguments: [String], _ environment: [String: String], stdout: Int32, stderr: Int32, stdin: Int32? = nil
+    ) -> pid_t? {
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
         defer { posix_spawn_file_actions_destroy(&actions) }
-        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+        if let stdin {
+            posix_spawn_file_actions_adddup2(&actions, stdin, 0)
+        } else {
+            posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+        }
         posix_spawn_file_actions_adddup2(&actions, stdout, 1)
         posix_spawn_file_actions_adddup2(&actions, stderr, 2)
         var attributes: posix_spawnattr_t?

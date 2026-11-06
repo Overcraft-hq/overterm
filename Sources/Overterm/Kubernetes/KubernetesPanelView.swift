@@ -90,6 +90,7 @@ struct KubernetesPanelView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 scope(binding)
+                if let release = binding.release { helmLine(release) }
                 switch panel.state {
                 case .failed(let reason):
                     Text(verbatim: reason).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(4)
@@ -148,6 +149,26 @@ struct KubernetesPanelView: View {
         .padding(.horizontal, 12)
         .padding(.top, 6)
         .accessibilityIdentifier("kubernetes.panel.scope")
+    }
+
+    /// The bound release and the checkout's chart: its diff, its upgrade.
+    private func helmLine(_ release: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 10) {
+                Button("Diff Chart") { panel.diffChart() }
+                    .help("Diff Chart with Release: helm template of the checkout's chart with \(release)'s values — no cluster asked — against what the release has, masked, in the changes pane")
+                    .accessibilityIdentifier("kubernetes.panel.helmDiff")
+                Button("Upgrade…") { panel.upgradeChart() }
+                    .help("helm upgrade \(release) from the checkout's chart, in a tab pinned to the context — after its diff, an access review and a confirmation")
+                    .accessibilityIdentifier("kubernetes.panel.helmUpgrade")
+            }
+            .buttonStyle(.link)
+            .font(.system(size: 11))
+            .disabled(panel.helmUpgrade?.state.isWorking == true)
+            if let session = panel.helmUpgrade { KubeHelmUpgradeStatus(session: session, theme: theme) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
     }
 
     /// The last deploy against the checkout's commit.

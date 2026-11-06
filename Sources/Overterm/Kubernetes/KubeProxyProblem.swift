@@ -42,13 +42,16 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// The context's proxy was closed (for another's slot, a retry, a
     /// change of class) while this request waited for it: try again.
     case closedWhileOpening
+    /// An attention watch on a context that signs in in the browser, before
+    /// anyone has: it never opens a sign-in nobody asked for.
+    case needsPageSignIn
 
     /// Whether the context's requests stop until the user signs in again:
     /// each one would run the failing plugin again.
     var stopsRequests: Bool {
         switch self {
         case .awsSignIn, .signInTimedOut, .signInFailed, .pluginMissing, .needsTerminal, .credentials: true
-        case .unreachable, .transport, .noKubectl, .noKubeconfig, .socket, .noSlot, .proxyFailed, .closedWhileOpening: false
+        case .unreachable, .transport, .noKubectl, .noKubeconfig, .socket, .noSlot, .proxyFailed, .closedWhileOpening, .needsPageSignIn: false
         }
     }
 
@@ -77,6 +80,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
         case .noSlot(let max): "\(max) contexts are connected and busy; close one, or allow more in Settings ▸ Kubernetes."
         case .proxyFailed(let detail): detail
         case .closedWhileOpening: "The connection to the cluster was closed while it opened. Try again."
+        case .needsPageSignIn: "Sign in on the page first: this context signs in in the browser, and the background never opens a sign-in."
         }
     }
 

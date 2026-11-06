@@ -91,6 +91,11 @@ final class KubernetesPanelModel: ObservableObject {
     @Published private(set) var picked: KubeRowID?
     @Published private(set) var session: KubeDetailSession?
     @Published var slotTab: SlotTab = .logs
+    /// The bound release against the checkout's chart: Diff Chart with
+    /// Release, Upgrade… (made when first asked; it goes with the binding).
+    @Published private(set) var helmUpgrade: KubeHelmUpgradeSession?
+    /// Asked of the window for the upgrade's sheet, its tab and its diff.
+    weak var helmHost: KubeHelmUpgradeHost?
 
     enum SlotTab: String, CaseIterable, Identifiable {
         case logs = "Logs"
@@ -166,6 +171,7 @@ final class KubernetesPanelModel: ObservableObject {
         let now = panelVisible || force ? store.binding(for: checkout) : binding
         guard force || now != binding else { return }
         binding = now
+        if let session = helmUpgrade, session.binding != now || session.checkout != checkout { helmUpgrade = nil }
         // The pod picked stays while the namespace it is in is still the bound one.
         if let session, session.ref.context != now?.context || (session.ref.namespace != now?.namespace) { closeSlot() }
         restart()
@@ -605,6 +611,26 @@ final class KubernetesPanelModel: ObservableObject {
             self.guess = read
         }
     }
+
+    // MARK: The release and the checkout's chart (stage 3a)
+
+    /// The bound release's session, made when first asked.
+    func helmSession() -> KubeHelmUpgradeSession? {
+        guard let binding, binding.release != nil, let checkout else { return nil }
+        if let helmUpgrade, helmUpgrade.binding == binding, helmUpgrade.checkout == checkout { return helmUpgrade }
+        let session = KubeHelmUpgradeSession(binding: binding, checkout: checkout, model: kubernetes)
+        if let clientFor { session.client = clientFor }
+        session.host = helmHost
+        helmUpgrade = session
+        return session
+    }
+
+    /// Diff Chart with Release: the checkout's chart rendered with the
+    /// release's values, against what it has — in the changes pane.
+    func diffChart() { helmSession()?.diff() }
+
+    /// Upgrade…: `helm upgrade` from the checkout's chart, asked first.
+    func upgradeChart() { helmSession()?.upgrade() }
 
     /// The forwards in the bound namespace.
     func forwards(_ all: [KubeForward]) -> [KubeForward] {

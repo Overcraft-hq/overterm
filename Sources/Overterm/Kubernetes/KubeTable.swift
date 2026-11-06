@@ -136,10 +136,30 @@ struct KubeRow: Equatable, Sendable, Identifiable {
     /// the embedded metadata — only where the rows carry it. The others
     /// aren't kept: they are the Applications grouping's, nothing else's.
     var labels: [String: String] = [:]
+    /// Its `status.conditions` — only where the rows carry the whole object
+    /// (`includeObject=Object`, the attention watches' Deployments: a
+    /// stuck rollout is in its `Progressing` condition, which no cell says).
+    /// Nothing else of the object is kept.
+    var conditions: [KubeRowCondition] = []
 
     func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
         return cells[index]
+    }
+}
+
+/// One of an object's `status.conditions`, as a row embedding the object
+/// says it: its type, status and reason — never its message.
+struct KubeRowCondition: Equatable, Hashable, Sendable {
+    var type: String
+    var status: String
+    var reason: String?
+
+    static func read(_ conditions: Any?) -> [KubeRowCondition] {
+        (conditions as? [[String: Any]] ?? []).compactMap { condition in
+            guard let type = condition["type"] as? String, let status = condition["status"] as? String else { return nil }
+            return KubeRowCondition(type: type, status: status, reason: condition["reason"] as? String)
+        }
     }
 }
 
@@ -221,7 +241,8 @@ enum KubeTableReader {
             rowNamespace = embedded
         }
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
-        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels)
+        let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
+        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
     }
 }
 

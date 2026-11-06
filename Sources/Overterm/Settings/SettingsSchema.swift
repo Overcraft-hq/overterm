@@ -731,10 +731,25 @@ enum SettingsSchema {
                 "A Deployment's, StatefulSet's, DaemonSet's, Job's or Service's Logs tab follows each of its pods' containers, one stream each, merged by time. Past this many, the rest are left out — the tab says how many — until a followed pod goes.",
             kind: .integer(1...50, step: 1, unit: "streams"), defaultValue: .int(10), requires: "kubernetes.enabled"),
         SettingSpec(
+            key: "kubernetes.helmPath", section: .kubernetes, group: "Connections", title: "helm",
+            help:
+                "Empty: /usr/local/bin's, /opt/homebrew/bin's, else your shell's PATH. Overterm runs only helm template itself — a chart rendered from its files, KUBECONFIG=/dev/null, no cluster asked; an upgrade is typed into a tab. Never downloaded.",
+            kind: .text(placeholder: "/opt/homebrew/bin/helm", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled"),
+        SettingSpec(
             key: "kubernetes.kubectlPath", section: .kubernetes, group: "Connections", title: "kubectl",
             help:
                 "Empty: the installed kubectl closest to the cluster's version — /usr/local/bin, /opt/homebrew/bin, Docker Desktop's, your shell's PATH. Overterm never downloads one.",
             kind: .text(placeholder: "/usr/local/bin/kubectl", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.notifyOnFailure", section: .kubernetes, group: "Attention", title: "Mark a bound checkout's tab when what it deploys fails",
+            help:
+                "While a checkout bound to a namespace has a tab open, its Pods and Deployments there are watched in the background — two watches, the binding's selector sent to the server, nothing else read: a pod going into CrashLoopBackOff, OOMKilled or ImagePullBackOff, or a rollout past its progress deadline, marks that tab (and notifies, as Settings ▸ Notifications says), with Ask Why on the mark.",
+            kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.backgroundWatches", section: .kubernetes, group: "Attention", title: "Bound namespaces watched at once",
+            help:
+                "The most recently used checkouts' first. They share Contexts connected at once with the page, never its slot: when the page needs one, a background proxy closes first, and its checkout's tab says \"not watched\" until a slot is free again.",
+            kind: .integer(1...16, step: 1, unit: "namespaces"), defaultValue: .int(4), requires: "kubernetes.notifyOnFailure"),
         SettingSpec(
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:

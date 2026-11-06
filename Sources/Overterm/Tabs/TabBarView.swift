@@ -406,6 +406,17 @@ struct TabItemView: View {
                     .layoutPriority(1)
                     .accessibilityIdentifier("tab.kubeContext")
             }
+            // Its checkout's failures won't mark it now (3.13): said, so a
+            // quiet tab isn't read as a healthy deploy.
+            if let why = tab.kubeNotWatched {
+                Text(verbatim: "⎈ not watched")
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .lineLimit(1)
+                    .foregroundStyle(theme.text3)
+                    .help(why)
+                    .layoutPriority(1)
+                    .accessibilityIdentifier("tab.kubeNotWatched")
+            }
             // The branch only on the selected tab: it is what you need while
             // you are in it, and on the others it would crowd out the title.
             if isSelected, let branch {

@@ -61,6 +61,13 @@ final class Tab: ObservableObject, Identifiable {
 
     @Published var activity = TabActivity()
 
+    /// What its checkout deploys has failed (attention marks, 3.13): the
+    /// newest first — Ask Why on the mark asks about the first.
+    @Published var kubeAlerts: [KubeAttentionAlert] = []
+    /// Why its checkout's failures won't mark it now ("not watched");
+    /// nil while they will, or nothing is bound.
+    @Published var kubeNotWatched: String?
+
     /// The island this tab belongs to, if any. The group is looked up in
     /// `TabStore.groups`; the store keeps a group's tabs contiguous.
     @Published var groupID: TabGroup.ID?

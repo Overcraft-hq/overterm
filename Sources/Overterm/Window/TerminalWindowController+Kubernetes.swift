@@ -318,11 +318,17 @@ extension TerminalWindowController {
     /// tab's — the one under the page — then the window's others, or a new
     /// one in the bound checkout (else the selected tab's folder). No git
     /// diff is offered: the sheet shows the whole of what is sent.
-    func presentKubernetesBrief(_ brief: KubeAgentBrief) {
+    func presentKubernetesBrief(_ brief: KubeAgentBrief, preferring marked: Tab? = nil) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         let folder = brief.checkout ?? store.selected?.workingDirectory
+        // A mark's Ask Why: that tab's own agent before the checkout's others.
+        var targets = kubernetesBriefTargets(brief)
+        if let marked, marked.agent != nil {
+            targets.removeAll { $0 === marked }
+            targets.insert(marked, at: 0)
+        }
         presentAskAgent(
-            text: brief.text, command: nil, folder: folder, targets: kubernetesBriefTargets(brief), message: brief.message, subject: brief.subject,
+            text: brief.text, command: nil, folder: folder, targets: targets, message: brief.message, subject: brief.subject,
             parts: brief.parts, diff: false, showsBrief: true)
     }
 
@@ -701,6 +707,7 @@ extension TerminalWindowController: KubeManifestHost {
     /// steps aside as it does for the changes pane.
     func showManifestDiff(_ session: KubeManifestSession) {
         kubernetesManifest.session = session
+        kubernetesManifest.showsHelm = false
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
         if diffItem?.isCollapsed == true { toggleDiff(nil) }

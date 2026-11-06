@@ -82,10 +82,28 @@ enum KubeHelmWrite: Equatable, Sendable, KubeTabCommand {
         }
     }
 
-    /// `HELM_DRIVER=configmap helm rollback 'web' 1 --kube-context C -n NS`.
+    /// helm's settings from the shell that would send a write elsewhere than
+    /// the context the confirmation named — another server, token, user or
+    /// group, another CA — taken off for the one command: the user's rc
+    /// files run after a pinned tab's environment is set, so only the line
+    /// itself can be sure.
+    static let unsetForWrites = [
+        "HELM_KUBEAPISERVER", "HELM_KUBETOKEN", "HELM_KUBEASUSER", "HELM_KUBEASGROUPS", "HELM_KUBECAFILE", "HELM_KUBEINSECURE_SKIP_TLS_VERIFY",
+        "HELM_KUBETLS_SERVER_NAME",
+    ]
+
+    /// What goes before `helm` in every write's line: those settings
+    /// unset, and the driver always said — the store the diff read and the
+    /// review checked, whatever `HELM_DRIVER` the shell exports.
+    /// `env -u HELM_KUBEAPISERVER … HELM_DRIVER=secret`.
+    static func prefix(_ storage: KubeHelmStorage) -> [String] {
+        ["env"] + unsetForWrites.flatMap { ["-u", $0] } + ["HELM_DRIVER=" + (storage == .configMap ? "configmap" : "secret")]
+    }
+
+    /// `env -u HELM_KUBEAPISERVER … HELM_DRIVER=secret helm rollback 'web' 1 --kube-context C -n NS`.
     func line(context: String) -> String {
         let q = KubeCommands.quoted
-        var words: [String] = storage == .configMap ? ["HELM_DRIVER=configmap"] : []
+        var words = Self.prefix(storage)
         switch self {
         case .rollback(let release, _, _, let revision, _): words += ["helm", "rollback", q(release), String(revision)]
         case .uninstall(let release, _, _, _): words += ["helm", "uninstall", q(release)]

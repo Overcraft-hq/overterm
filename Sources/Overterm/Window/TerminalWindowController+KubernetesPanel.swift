@@ -8,6 +8,7 @@ extension TerminalWindowController {
     /// it is the panel on screen; a pod picked takes the right slot.
     func wireKubernetesPanel() {
         kubernetesPanel.openReview = { [weak self] source, root in self?.openReview(source, in: root) }
+        kubernetesPanel.helmHost = self
         kubernetesPanel.showSlot = { [weak self] in self?.showKubernetesSlot() }
         diff.$root
             .combineLatest(store.$selectedID)
@@ -78,6 +79,9 @@ extension TerminalWindowController {
         // The rail lists its icons from the setting: drawn again.
         sidebarPanel.objectWillChange.send()
         updateKubernetesPanelVisibility()
+        // The attention watches follow kubernetes.notifyOnFailure and backgroundWatches.
+        reportKubernetesCheckouts()
+        KubeAttentionWatches.shared.refresh()
     }
 
     /// The agents Ask Why's brief is offered to, in order: the agents in a

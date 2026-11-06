@@ -99,6 +99,10 @@ struct KubeManifestBar: View {
 @MainActor
 final class KubeManifestPane: ObservableObject {
     @Published var session: KubeManifestSession?
+    /// A bound release's diff against the checkout's chart (stage 3a).
+    @Published var helm: KubeHelmUpgradeSession?
+    /// Which of the two shows: the one asked for last.
+    @Published var showsHelm = false
 }
 
 struct KubeManifestDiffView: View {
@@ -109,7 +113,9 @@ struct KubeManifestDiffView: View {
     let onOpen: (URL) -> Void
 
     var body: some View {
-        if let session = pane.session {
+        if pane.showsHelm, let helm = pane.helm {
+            KubeHelmDiffContent(session: helm, theme: theme, onClose: onClose, onOpen: onOpen)
+        } else if let session = pane.session {
             KubeManifestDiffContent(session: session, theme: theme, onClose: onClose, onOpen: onOpen)
         } else {
             Text("Diff with Cluster, from a Kubernetes manifest in the editor, shows here.")

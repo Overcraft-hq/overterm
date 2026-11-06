@@ -131,7 +131,8 @@ enum KubeProcessCheck {
                 switch verb {
                 case .helmUninstall: true
                 // Rule 4; a debug container too, which stays in the pod's spec.
-                case .drain, .rolloutUndo, .debug, .helmRollback: production
+                // An upgrade from the checkout's chart too (stage 3a): it changes what the release runs.
+                case .drain, .rolloutUndo, .debug, .helmRollback, .helmUpgrade: production
                 default: false
                 }
             return KubeProcessRule(confirm: true, typedName: typed)

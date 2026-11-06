@@ -17,21 +17,36 @@ final class KubeHelmWritesTests: XCTestCase {
     private let rollback = KubeHelmWrite.rollback(release: "web", namespace: "shop", storage: .secret, revision: 1, from: 2)
     private let uninstall = KubeHelmWrite.uninstall(release: "web", namespace: "shop", storage: .secret, revisions: 2)
 
+    /// What every Helm write's line starts with, spelled out once.
+    static let env = "env -u HELM_KUBEAPISERVER -u HELM_KUBETOKEN -u HELM_KUBEASUSER -u HELM_KUBEASGROUPS -u HELM_KUBECAFILE -u HELM_KUBEINSECURE_SKIP_TLS_VERIFY -u HELM_KUBETLS_SERVER_NAME"
+
+    /// The shell's helm settings that would point the write at another
+    /// server or identity are unset for it, and the driver is always said —
+    /// HELM_DRIVER=sql or a server exported in an rc file changes nothing.
+    func testEveryLineUnsetsTheShellsHelmKubeSettingsAndSaysItsDriver() {
+        XCTAssertEqual(KubeHelmWrite.prefix(.secret).joined(separator: " "), Self.env + " HELM_DRIVER=secret")
+        XCTAssertEqual(KubeHelmWrite.prefix(.configMap).last, "HELM_DRIVER=configmap")
+        for line in [rollback.line(context: "c"), uninstall.line(context: "c")] {
+            XCTAssertTrue(line.hasPrefix("env -u HELM_KUBEAPISERVER -u HELM_KUBETOKEN -u HELM_KUBEASUSER"), line)
+            XCTAssertTrue(line.contains(" HELM_DRIVER=secret helm "), line)
+        }
+    }
+
     func testTheLinesNameTheContextAndNamespaceAlways() {
-        XCTAssertEqual(rollback.line(context: "kind-fake"), "helm rollback web 1 --kube-context kind-fake -n shop")
-        XCTAssertEqual(uninstall.line(context: "kind-fake"), "helm uninstall web --kube-context kind-fake -n shop")
+        XCTAssertEqual(rollback.line(context: "kind-fake"), "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback web 1 --kube-context kind-fake -n shop")
+        XCTAssertEqual(uninstall.line(context: "kind-fake"), "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm uninstall web --kube-context kind-fake -n shop")
         XCTAssertEqual(
             KubeHelmWrite.uninstall(release: "cache", namespace: "shop", storage: .configMap, revisions: 1).line(context: "kind-fake"),
-            "HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop", "a ConfigMap-stored release: helm told so")
+            "\(KubeHelmWritesTests.env) HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop", "a ConfigMap-stored release: helm told so")
         XCTAssertEqual(rollback.verb, .helmRollback)
         XCTAssertEqual(uninstall.verb, .helmUninstall)
     }
 
     func testEveryWordNotOursIsQuotedForZsh() {
         let line = KubeHelmWrite.rollback(release: "web;rm -rf", namespace: "a b", storage: .secret, revision: 3, from: 4).line(context: "kind fake")
-        XCTAssertEqual(line, "helm rollback 'web;rm -rf' 3 --kube-context 'kind fake' -n 'a b'")
+        XCTAssertEqual(line, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback 'web;rm -rf' 3 --kube-context 'kind fake' -n 'a b'")
         let flag = KubeHelmWrite.uninstall(release: "-x", namespace: "$(id)", storage: .secret, revisions: 1)
-        XCTAssertEqual(flag.line(context: "c"), "helm uninstall '-x' --kube-context c -n '$(id)'", "never expanded by zsh")
+        XCTAssertEqual(flag.line(context: "c"), "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm uninstall '-x' --kube-context c -n '$(id)'", "never expanded by zsh")
         // The quotes don't keep helm from reading `-x` as a flag: a name
         // helm wouldn't give a release is refused before a line is built.
         XCTAssertEqual(flag.refused, KubeHelmWrite.refusal(name: "-x", storage: .secret))
@@ -100,9 +115,9 @@ final class KubeHelmWritesTests: XCTestCase {
         let asked = rollback.confirmation(context: local, rule: KubeProcessCheck.rule(.helmRollback, for: local))
         XCTAssertEqual(asked.title, "Roll back Helm release shop/web to revision 1?")
         XCTAssertEqual(asked.scope, "kind-fake · namespace shop")
-        XCTAssertEqual(asked.kubectl, "helm rollback web 1 --kube-context kind-fake -n shop")
+        XCTAssertEqual(asked.kubectl, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback web 1 --kube-context kind-fake -n shop")
         XCTAssertTrue(asked.detail.contains("helm makes revision 3 from revision 1's chart and values"), asked.detail)
-        XCTAssertTrue(asked.detail.contains("Runs in a new tab pinned to kind-fake: helm rollback web 1"), asked.detail)
+        XCTAssertTrue(asked.detail.contains("Runs in a new tab pinned to kind-fake: \(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback web 1"), asked.detail)
         XCTAssertNil(asked.verb, "no request: a tab's")
         XCTAssertFalse(asked.production)
         let prod = context("fake-prod", session: true)
@@ -316,7 +331,7 @@ final class KubeHelmWritesPageTests: XCTestCase {
         XCTAssertNil(confirmation.typedName, "not production: no name typed")
         XCTAssertTrue(box.commands.isEmpty, "nothing typed before the button")
         then("")
-        XCTAssertEqual(box.commands.first?.0, "helm rollback web 1 --kube-context kind-fake -n shop")
+        XCTAssertEqual(box.commands.first?.0, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback web 1 --kube-context kind-fake -n shop")
         XCTAssertEqual(box.commands.first?.1, "kind-fake")
         XCTAssertEqual(box.commands.first?.2, "shop", "its tab pinned to the release's namespace")
         XCTAssertEqual(page.writeStatus, .done("Rolling back Helm release shop/web to revision 1 in a new tab, in kind-fake."))
@@ -345,14 +360,14 @@ final class KubeHelmWritesPageTests: XCTestCase {
         try await until("asked") { box.confirmations.count == 1 }
         XCTAssertTrue(reviewed().contains(["verb": "delete", "resource": "configmaps", "group": "", "namespace": "shop"]), "\(reviewed())")
         XCTAssertEqual(box.confirmations[0].0.typedName, "cache")
-        XCTAssertEqual(box.confirmations[0].0.kubectl, "HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop")
+        XCTAssertEqual(box.confirmations[0].0.kubectl, "\(KubeHelmWritesTests.env) HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop")
         box.confirmations[0].1("cach")
         XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't cache: nothing was run."))
         XCTAssertTrue(box.commands.isEmpty)
         XCTAssertTrue(page.helmPress("\u{7F}") == true)
         try await until("asked again") { box.confirmations.count == 2 }
         box.confirmations[1].1("cache")
-        XCTAssertEqual(box.commands.map(\.0), ["HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop"])
+        XCTAssertEqual(box.commands.map(\.0), ["\(KubeHelmWritesTests.env) HELM_DRIVER=configmap helm uninstall cache --kube-context kind-fake -n shop"])
     }
 
     func testARollbackFromTheOldestKeptRevisionsRowIsAsked() async throws {
@@ -371,7 +386,7 @@ final class KubeHelmWritesPageTests: XCTestCase {
         XCTAssertNotEqual(page.writeStatus?.isFailure, true, page.writeStatus?.text ?? "")
         XCTAssertEqual(box.confirmations.first?.0.title, "Roll back Helm release shop/api to revision 1?")
         box.confirmations.first?.1("")
-        XCTAssertEqual(box.commands.map(\.0), ["helm rollback api 1 --kube-context kind-fake -n shop"])
+        XCTAssertEqual(box.commands.map(\.0), ["\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback api 1 --kube-context kind-fake -n shop"])
         // The sheet offers every one of the nine.
         page.runHelmWrite(.helmRollback, on: big)
         try await until("picked") { box.choices.count == 1 }
