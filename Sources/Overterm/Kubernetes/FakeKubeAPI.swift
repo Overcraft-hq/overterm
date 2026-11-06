@@ -230,6 +230,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "apps", version: "v1", resource: "replicasets", kind: "ReplicaSet", namespaced: true, shortNames: ["rs"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", namespaced: true, shortNames: ["sts"], categories: ["all"], subresources: ["scale", "status"]),
         Kind(group: "apps", version: "v1", resource: "daemonsets", kind: "DaemonSet", namespaced: true, shortNames: ["ds"], categories: ["all"], subresources: ["status"]),
+        Kind(group: "apps", version: "v1", resource: "controllerrevisions", kind: "ControllerRevision", namespaced: true),
         Kind(group: "batch", version: "v1", resource: "jobs", kind: "Job", namespaced: true, categories: ["all"], subresources: ["status"]),
         Kind(group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", namespaced: true, shortNames: ["cj"], categories: ["all"], subresources: ["status"]),
         Kind(group: "events.k8s.io", version: "v1", resource: "events", kind: "Event", namespaced: true, shortNames: ["ev"]),
@@ -712,6 +713,46 @@ final class FakeKubeAPI: @unchecked Sendable {
                 "secrets", object, namespace: namespace, values: ["Type": .text(KubeHelm.secretType)], labels: labels,
                 data: ["release": KubeHelm.encode(release)], created: modified)
         }
+    }
+
+    /// One revision of a workload's pod template, as its controller keeps
+    /// it: a Deployment's ReplicaSet (`deployment.kubernetes.io/revision`,
+    /// the template's `pod-template-hash`), or with `controllerRevision` a
+    /// StatefulSet's or DaemonSet's ControllerRevision (`revision`, the
+    /// template in `data`) — owned by the workload (`owner`, its resource),
+    /// labelled `labels`, its one container `image` with `env`.
+    func addRevision(
+        of owner: String, _ ownerResource: String = "deployments.apps", namespace: String, name: String, revision: Int, image: String,
+        env: [String: String] = [:], restartedAt: String? = nil, history: [Int] = [], labels: [String: String], replicas: Int = 1, created: Date = Date(),
+        controllerRevision: Bool = false
+    ) {
+        let kind = locked { kinds.first { $0.fullName == ownerResource } }
+        let reference: [String: Any] = [
+            "apiVersion": kind?.groupVersion ?? "apps/v1", "kind": kind?.kind ?? "Deployment", "name": owner,
+            "uid": uid(ownerResource, owner, namespace: namespace) ?? "", "controller": true,
+        ]
+        var container: [String: Any] = ["name": "app", "image": image]
+        if !env.isEmpty { container["env"] = env.keys.sorted().map { ["name": $0, "value": env[$0]!] } }
+        var templateLabels: [String: Any] = labels
+        if !controllerRevision { templateLabels["pod-template-hash"] = name.split(separator: "-").last.map(String.init) ?? name }
+        var templateMetadata: [String: Any] = ["labels": templateLabels]
+        if let restartedAt { templateMetadata["annotations"] = ["kubectl.kubernetes.io/restartedAt": restartedAt] }
+        let template: [String: Any] = ["metadata": templateMetadata, "spec": ["containers": [container]]]
+        if controllerRevision {
+            add(
+                "controllerrevisions.apps", name, namespace: namespace, labels: labels, created: created,
+                fields: [
+                    "metadata": ["ownerReferences": [reference]], "revision": revision,
+                    "data": ["spec": ["template": template.merging(["$patch": "replace"]) { $1 }]],
+                ])
+            return
+        }
+        var annotations = ["deployment.kubernetes.io/revision": String(revision)]
+        if !history.isEmpty { annotations["deployment.kubernetes.io/revision-history"] = history.map(String.init).joined(separator: ",") }
+        add(
+            "replicasets.apps", name, namespace: namespace, values: ["Desired": .integer(replicas), "Current": .integer(replicas)], labels: labels,
+            annotations: annotations, created: created,
+            fields: ["metadata": ["ownerReferences": [reference]], "spec": ["replicas": replicas, "template": template]])
     }
 
     /// The names of the objects of a kind it holds.

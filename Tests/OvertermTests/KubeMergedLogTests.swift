@@ -166,7 +166,8 @@ final class KubeMergedLogTests: XCTestCase {
         }
         for (group, resource) in [("apps", "deployments"), ("apps", "statefulsets"), ("apps", "daemonsets"), ("apps", "replicasets"), ("batch", "jobs"), ("", "services")] {
             XCTAssertTrue(ref(group, resource).selectsPods, resource)
-            XCTAssertEqual(KubeDetailTab.tabs(for: ref(group, resource)), [.overview, .logs, .yaml, .events], resource)
+            let history: [KubeDetailTab] = group == "apps" && resource != "replicasets" ? [.history] : []
+            XCTAssertEqual(KubeDetailTab.tabs(for: ref(group, resource)), [.overview, .logs, .yaml, .events] + history, resource)
         }
         XCTAssertFalse(ref("", "configmaps").hasLogs)
         XCTAssertFalse(ref("batch", "cronjobs").hasLogs)

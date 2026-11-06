@@ -401,6 +401,20 @@ struct KubeClient: Sendable {
         return try KubeEvent.list(try await get(KubePath.query(base, [("fieldSelector", selector)])).body)
     }
 
+    /// A namespace's Warning events about objects of one Kind (a
+    /// workload's ReplicaSets, its pods), at most `limit` — picked by the
+    /// server (`type=Warning,involvedObject.kind=…`), newest first, and
+    /// whether there were more than were read.
+    func warningEvents(about kind: String, namespace: String, limit: Int) async throws -> (events: [KubeEvent], more: Bool) {
+        let base = "/api/v1/namespaces/\(KubePath.segment(namespace))/events"
+        let selector = "type=Warning,involvedObject.kind=\(kind)"
+        let body = try await get(KubePath.query(base, [("fieldSelector", selector), ("limit", String(limit))])).body
+        let more =
+            ((try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["metadata"] as? [String: Any]).flatMap { $0["continue"] as? String }
+            .map { !$0.isEmpty } ?? false
+        return (try KubeEvent.list(body), more)
+    }
+
     // MARK: Logs
 
     /// A pod's log, once (`follow` off): its lines, parsed here, off the

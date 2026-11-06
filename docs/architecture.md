@@ -4462,6 +4462,63 @@ rail's panel, Diff Chart and Upgrade….
   refused review and a Cancel running nothing, production's values asked
   once and its name typed).
 
+**A workload's change timeline** (stage 3b; `KubeTimeline.swift` (pure),
+`KubeTimelineSession`, `KubeTimelineView`, `KubernetesPageModel+Timeline`;
+analysis 3.6, 2.9's revision history, 2.12's revision diffs): a
+Deployment's, StatefulSet's or DaemonSet's detail has a History tab (`h` on
+its row opens it), Komodor's "what changed at 14:00?" from what the API
+already keeps — one timeline, newest first, at most 100 entries (`entries`,
+the rest counted and said):
+
+- **Template revisions** (`KubeTemplateRevision`): one list of its
+  ReplicaSets (`deployment.kubernetes.io/revision`) or ControllerRevisions
+  (`revision`, the template in `data`, `$patch` dropped) by its selector,
+  `limit=50` and said when cut, owned by its uid; the controller's
+  `pod-template-hash` / `controller-revision-hash` labels left out. Each
+  against the one before (`summary`, never a value): its images changed
+  (`app: nginx:1.25 → nginx:1.27`), only `restartedAt` changed — a rollout
+  restart —, `revision-history` set — a rollback, its time "after" the one
+  before, since its object is the old one —, else the template's paths that
+  differ, by name (`spec.containers[web].env[LOG_LEVEL].value`).
+- **Helm revisions**: when the workload's `meta.helm.sh/release-name` names
+  a release, its records' metadata alone (`helmRecords(…, release:)`,
+  `owner=helm,name=…`; Secrets, else ConfigMaps — a refused list said);
+  no record read for the timeline.
+- **Its events**, as the Events tab asks them, and the warnings of what it
+  owns — where a real cluster records what broke: the namespace's
+  `type=Warning,involvedObject.kind=ReplicaSet` (a Deployment's; FailedCreate,
+  quota and admission) and `…kind=Pod` (BackOff, FailedScheduling…), each
+  `limit=500` and said when cut, kept for its own (`owns`: its ReplicaSets'
+  names, its pods' `<rs>-xxxxx`, `<name>-<ordinal>`, `<name>-xxxxx`), named
+  in the entry (`replicaset/web-7d9f8c: …`). Scaling as each controller says
+  it: a Deployment's `ScalingReplicaSet`, a rollout's own told apart
+  ("Rollout step": an older ReplicaSet scaled, or the newest while another
+  is within ten minutes — `isRolloutStep`); a StatefulSet's pods created and
+  deleted (`SuccessfulCreate`/`SuccessfulDelete`). The HPA's
+  `SuccessfulRescale` is on the HPA, never read here.
+
+Read once the tab shows (Refresh again; asked for once the object is read,
+by its uid), dropped with the detail. **Diff** on a change, or two
+revisions picked in Compare, opens in the right-hand pane where a
+manifest's diff shows (`KubeManifestPane.change`, `KubeChangeDiffContent`;
+the page steps aside, `showKubernetesChange`): two templates already read,
+stripped and masked together (`templateDiff`, `KubeHelmUpgrade.sides`: a
+secret-looking env value `*** (before)` / `*** (after)` where it changed,
+credentials in text out), or two Helm revisions, their two records read
+then — on production asked first, once a context and session
+(`secretConsent`) — and decoded off the main thread (`KubeHelm.upgradeInputs`):
+the user's values masked together by key (`helmValues`), then each object of
+the manifests (`KubeHelmUpgrade.diff(…, from:, to:)`: a Secret's data
+masked). The diff is the session's task (`startDiff`): navigating away
+cancels it, so no further record is read nor anything shown. Only the
+masked `KubeChangeDiff` is kept; GETs only. Checked:
+`KubeTimelineTests` (fixture ReplicaSets and ControllerRevisions, the
+summaries, the order and the bound, both diffs masked, the reads against
+the fake, `h` and production's ask) and the scenario's `kubernetesTimeline`
+(`E2ERunner+KubernetesTimeline`): `h` on fake-dev, the bounded list and the
+metadata-only records, the timeline drawn, a revision's diff in the changes
+pane masked, a Helm revision's two records read for its diff.
+
 **The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket

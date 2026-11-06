@@ -40,6 +40,8 @@ struct KubeDetailView: View {
                     }
                 case .yaml: yaml
                 case .events: events
+                case .history:
+                    if let timeline = session.timeline { KubeTimelineView(page: page, timeline: timeline, theme: theme) } else { overview }
                 }
             }
         }

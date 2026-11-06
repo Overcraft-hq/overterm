@@ -40,7 +40,19 @@ extension TerminalWindowController {
             askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) },
             selectedBinding: { [weak self] in KubeBindingStore.shared.binding(for: self?.kubernetesCheckout) },
             confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) },
-            openEditor: { [weak self] url in self?.openKubernetesEdit(url) })
+            openEditor: { [weak self] url in self?.openKubernetesEdit(url) },
+            showChange: { [weak self] change in self?.showKubernetesChange(change) })
+    }
+
+    /// A workload's change, its diff masked, in the right-hand pane where a
+    /// manifest's diff shows — the page steps aside so it can be read.
+    func showKubernetesChange(_ change: KubeChangeDiff) {
+        kubernetesManifest.show(change)
+        rightPane.manifestOpened = true
+        rightPane.mode = .manifest
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
     }
 
     /// `y`: an object's copy in the editor, the page stepping aside.

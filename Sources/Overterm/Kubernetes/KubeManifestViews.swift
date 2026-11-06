@@ -98,11 +98,31 @@ struct KubeManifestBar: View {
 /// The right-hand pane's diff with the cluster: the session shown last.
 @MainActor
 final class KubeManifestPane: ObservableObject {
+    enum Shown: Equatable {
+        case manifest, helm, change
+    }
+
     @Published var session: KubeManifestSession?
     /// A bound release's diff against the checkout's chart (stage 3a).
     @Published var helm: KubeHelmUpgradeSession?
-    /// Which of the two shows: the one asked for last.
-    @Published var showsHelm = false
+    /// A change of a workload's timeline (stage 3b), and its parts' diffs, parsed.
+    @Published private(set) var change: KubeChangeDiff?
+    private(set) var changeFiles: [String: DiffModel.FileDiff] = [:]
+    /// Which shows: the one asked for last.
+    @Published var shown: Shown = .manifest
+
+    var showsHelm: Bool {
+        get { shown == .helm }
+        set { shown = newValue ? .helm : .manifest }
+    }
+
+    /// A timeline's change, shown.
+    func show(_ change: KubeChangeDiff) {
+        changeFiles = Dictionary(
+            change.diff.items.filter { !$0.diff.isEmpty }.map { ($0.id, DiffModel.FileDiff(parsing: $0.diff, path: $0.file)) }, uniquingKeysWith: { a, _ in a })
+        self.change = change
+        shown = .change
+    }
 }
 
 struct KubeManifestDiffView: View {
@@ -113,7 +133,9 @@ struct KubeManifestDiffView: View {
     let onOpen: (URL) -> Void
 
     var body: some View {
-        if pane.showsHelm, let helm = pane.helm {
+        if pane.shown == .change, let change = pane.change {
+            KubeChangeDiffContent(pane: pane, change: change, theme: theme, onClose: onClose)
+        } else if pane.showsHelm, let helm = pane.helm {
             KubeHelmDiffContent(session: helm, theme: theme, onClose: onClose, onOpen: onOpen)
         } else if let session = pane.session {
             KubeManifestDiffContent(session: session, theme: theme, onClose: onClose, onOpen: onOpen)
