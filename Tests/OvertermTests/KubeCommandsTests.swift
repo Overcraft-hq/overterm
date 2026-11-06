@@ -104,7 +104,7 @@ final class KubeCommandsTests: XCTestCase {
                         XCTAssertEqual(rule, KubeProcessRule(access: .exec, confirm: kind == .production), label)
                     case .attach:
                         XCTAssertEqual(rule, KubeProcessRule(access: .attach, confirm: kind == .production), label)
-                    case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall:
+                    case .debug, .drain, .rolloutUndo, .helmRollback, .helmUpgrade, .helmUninstall, .argoSync, .fluxReconcile:
                         if writable {
                             XCTAssertNil(rule.refused, label)
                             XCTAssertTrue(rule.confirm, label)
@@ -130,6 +130,9 @@ final class KubeCommandsTests: XCTestCase {
         XCTAssertFalse(KubeProcessCheck.rule(.helmUpgrade, class: .local, writable: true, settings: settings).typedName)
         XCTAssertTrue(KubeProcessCheck.rule(.helmUninstall, class: .local, writable: true, settings: settings).typedName, "every class")
         XCTAssertFalse(KubeProcessCheck.rule(.drain, class: .local, writable: true, settings: settings).typedName)
+        XCTAssertTrue(KubeProcessCheck.rule(.argoSync, class: .production, writable: true, settings: settings).typedName, "a sync on production")
+        XCTAssertFalse(KubeProcessCheck.rule(.argoSync, class: .local, writable: true, settings: settings).typedName)
+        XCTAssertFalse(KubeProcessCheck.rule(.fluxReconcile, class: .production, writable: true, settings: settings).typedName, "a reconcile: asked, not typed")
     }
 
     func testAContextCanTurnShellsOff() {

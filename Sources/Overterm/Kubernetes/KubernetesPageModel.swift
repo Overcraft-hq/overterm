@@ -142,12 +142,13 @@ enum KubernetesKey: String, ResourceKey {
             return "Database client: a database pod (\(KubeDatabase.spoken)) forwarded, its connection form filled in"
         case .askWhy:
             return "Ask an agent why: a failing pod (CrashLoopBackOff, OOMKilled, ImagePullBackOff, Pending…) or a stuck rollout — its brief, scrubbed, shown before it is sent (⌘L too)"
-        case .restart: return "Rollout restart a Deployment, StatefulSet or DaemonSet; on a pod, delete it so its controller makes it again — asked first"
+        case .restart:
+            return "Rollout restart a Deployment, StatefulSet or DaemonSet; on a pod, delete it so its controller makes it again; reconcile a Flux object, refresh an Argo CD Application — asked first"
         case .scaleUp: return "Scale up by one — asked first"
         case .scaleDown: return "Scale down by one — asked first; to 0 on production, the name typed"
         case .scaleTo: return "Scale to a number — asked first"
-        case .pause: return "Pause or resume a Deployment's rollout; suspend or resume a CronJob — asked first"
-        case .trigger: return "Trigger a CronJob now: a Job made from its template, as kubectl create job --from — asked first"
+        case .pause: return "Pause or resume a Deployment's rollout; suspend or resume a CronJob, or Flux's reconciliation of an object — asked first"
+        case .trigger: return "Trigger a CronJob now: a Job made from its template, as kubectl create job --from; sync an Argo CD Application with argocd in a tab — asked first"
         case .cordon: return "Cordon or uncordon a node — asked first"
         case .newNamespace: return "New namespace — its name, then asked first; on a writable context"
         case .debug:

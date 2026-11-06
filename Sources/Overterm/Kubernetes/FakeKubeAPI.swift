@@ -212,6 +212,8 @@ final class FakeKubeAPI: @unchecked Sendable {
         var verbs = ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
         /// A CRD's printer columns; nil: the built-in kind's own.
         var columns: [Column]? = nil
+        /// A CRD's kind: it takes no strategic merge patch, as the server's don't.
+        var custom = false
 
         var groupVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
         var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
@@ -817,7 +819,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     ) {
         let served = Kind(
             group: group, version: version, resource: plural, kind: kind, namespaced: namespaced, shortNames: shortNames, categories: [],
-            subresources: ["status"], columns: columns)
+            subresources: ["status"], columns: columns, custom: true)
         locked { kinds.append(served) }
         add("customresourcedefinitions.apiextensions.k8s.io", "\(plural).\(group)", values: [:], labels: [:])
     }
@@ -1949,6 +1951,14 @@ final class FakeKubeAPI: @unchecked Sendable {
             return .json(400, Self.status(400, "BadRequest", "the body of the request was in an unknown format"))
         }
         guard let object = locked({ objects[key] }) else { return .json(404, Self.status(404, "NotFound", "not found")) }
+        if kind.custom, contentType.hasPrefix("application/strategic-merge-patch+json") {
+            return .json(
+                415,
+                Self.status(
+                    415, "UnsupportedMediaType",
+                    "the body of the request was in an unknown format - accepted media types include: application/json-patch+json, "
+                        + "application/merge-patch+json, application/apply-patch+yaml"))
+        }
         let full = Self.full(object, kind)
         let result: [String: Any]?
         if contentType.hasPrefix("application/json-patch+json") {

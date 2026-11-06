@@ -51,6 +51,14 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
     case uncordon
     /// A namespace made: the page's, not a row's (`N`, its sheet).
     case createNamespace
+    /// Flux asked to reconcile now: `reconcile.fluxcd.io/requestedAt` (stage 4, `KubeGitOps`).
+    case reconcile
+    /// Flux's reconciliation suspended: `spec.suspend`, as `flux suspend` sets it.
+    case fluxSuspend
+    /// …and resumed, a reconcile asked at once, as `flux resume` does.
+    case fluxResume
+    /// An Argo CD Application compared with its source again: `argocd.argoproj.io/refresh`.
+    case refresh
 
     var title: String {
         switch self {
@@ -70,6 +78,10 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .cordon: "Cordon…"
         case .uncordon: "Uncordon…"
         case .createNamespace: "New Namespace…"
+        case .reconcile: "Reconcile…"
+        case .fluxSuspend: "Suspend Reconciliation…"
+        case .fluxResume: "Resume Reconciliation…"
+        case .refresh: "Refresh…"
         }
     }
 
@@ -90,6 +102,10 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .cordon: "Cordon"
         case .uncordon: "Uncordon"
         case .createNamespace: "Create"
+        case .reconcile: "Reconcile"
+        case .fluxSuspend: "Suspend"
+        case .fluxResume: "Resume"
+        case .refresh: "Refresh"
         }
     }
 
@@ -107,6 +123,9 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .cordon: "nosign"
         case .uncordon: "checkmark.circle"
         case .createNamespace: "plus.square.dashed"
+        case .reconcile, .refresh: "arrow.triangle.2.circlepath"
+        case .fluxSuspend: "pause.circle"
+        case .fluxResume: "play.circle"
         }
     }
 
@@ -118,6 +137,8 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .resume: (.paused, false)
         case .suspend: (.suspended, true)
         case .unsuspend: (.suspended, false)
+        case .fluxSuspend: (.suspended, true)
+        case .fluxResume: (.suspended, false)
         case .cordon: (.unschedulable, true)
         case .uncordon: (.unschedulable, false)
         default: nil
@@ -131,6 +152,8 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         case .resume: .pause
         case .suspend: .unsuspend
         case .unsuspend: .suspend
+        case .fluxSuspend: .fluxResume
+        case .fluxResume: .fluxSuspend
         case .cordon: .uncordon
         case .uncordon: .cordon
         default: nil
@@ -219,6 +242,8 @@ enum KubeWriteCheck {
         case .suspend, .unsuspend: return isCronJob(kind) && kind.verbs.contains("patch")
         case .cordon, .uncordon: return kind.group.isEmpty && kind.resource == "nodes" && kind.verbs.contains("patch")
         case .createNamespace: return isNamespace(kind) && kind.verbs.contains("create")
+        case .reconcile, .fluxSuspend, .fluxResume: return KubeGitOps.flux(kind) != nil && kind.verbs.contains("patch")
+        case .refresh: return KubeGitOps.isArgoApplication(kind) && kind.verbs.contains("patch")
         }
     }
 
@@ -229,7 +254,8 @@ enum KubeWriteCheck {
     static func access(_ verb: KubeWriteVerb, on kind: KubeResourceKind) -> KubeAccess {
         switch verb {
         case .delete, .recreate, .forceDelete: KubeAccess(verb: "delete", resource: kind.fullName)
-        case .removeFinalizers, .restart, .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon: KubeAccess(verb: "patch", resource: kind.fullName)
+        case .removeFinalizers, .restart, .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon, .reconcile, .fluxSuspend, .fluxResume, .refresh:
+            KubeAccess(verb: "patch", resource: kind.fullName)
         case .evict: KubeAccess(verb: "create", resource: "pods/eviction")
         case .scale: KubeAccess(verb: "patch", resource: kind.fullName + "/scale")
         case .resize: KubeAccess(verb: "patch", resource: "pods/resize")
@@ -258,6 +284,8 @@ enum KubeWriteCheck {
             // Not in rule 4's list: each is undone by its opposite (a
             // triggered Job by deleting it), and asked all the same.
             case .evict, .restart, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .createNamespace: false
+            // GitOps' own verbs: each asks its controller for what it does anyway, or is undone by its opposite.
+            case .reconcile, .fluxSuspend, .fluxResume, .refresh: false
             }
         return KubeWriteRule(access: access(verb, on: kind), typedName: typed, warning: warning(verb, kind: kind))
     }
@@ -272,6 +300,8 @@ enum KubeWriteCheck {
                 + "Removed, that cleanup may never happen, and an object already being deleted goes at once."
         case .delete where kind.group.isEmpty && kind.resource == "namespaces":
             "Everything in the namespace is deleted with it."
+        case .fluxSuspend:
+            "While it is suspended Flux applies nothing from its source, and puts back nothing changed by hand."
         case .resize:
             "A pod its controller made gets its template's values back when it is made again: change the template to keep them. "
                 + "The kubelet may not apply it at once (the pod's PodResizePending condition says why)."
@@ -418,7 +448,7 @@ enum KubeWrites {
 
     static func path(_ ref: KubeObjectRef) -> String { ref.kind.path(namespace: ref.namespace, name: ref.name) }
 
-    private static func managed(_ path: String) -> String { KubePath.query(path, [("fieldManager", fieldManager)]) }
+    static func managed(_ path: String) -> String { KubePath.query(path, [("fieldManager", fieldManager)]) }
 
     /// RFC 3339, as kubectl writes `restartedAt`.
     static func stamp(_ date: Date) -> String { date.formatted(.iso8601) }
@@ -456,6 +486,11 @@ enum KubeWrites {
         case .cordon: words = ["kubectl", "cordon", name]
         case .uncordon: words = ["kubectl", "uncordon", name]
         case .createNamespace: words = ["kubectl", "create", "namespace", name]
+        // Flux's CLI sets the same fields; Argo CD's refresh is the annotation.
+        case .reconcile: return KubeGitOps.fluxLine("reconcile", ref)
+        case .fluxSuspend: return KubeGitOps.fluxLine("suspend", ref)
+        case .fluxResume: return KubeGitOps.fluxLine("resume", ref)
+        case .refresh: return KubeGitOps.refreshLine(ref, discovery: discovery)
         }
         words += ["--context", KubectlLine.quoted(ref.context)]
         if let namespace = ref.namespace { words += ["-n", KubectlLine.quoted(namespace)] }
@@ -706,6 +741,10 @@ enum KubeWriteOutcome {
         case .cordon: return "Cordoned \(object) in \(ref.context): no new pod is scheduled on it."
         case .uncordon: return "Uncordoned \(object) in \(ref.context)."
         case .createNamespace: return "Made namespace \(ref.name) in \(ref.context)."
+        case .reconcile: return "Asked Flux to reconcile \(object) in \(ref.context): its status.lastHandledReconcileAt says when it has."
+        case .fluxSuspend: return "Suspended Flux's reconciliation of \(object) in \(ref.context)."
+        case .fluxResume: return "Resumed Flux's reconciliation of \(object) in \(ref.context): a reconcile is asked at once."
+        case .refresh: return "Asked Argo CD to refresh \(object) in \(ref.context): it compares it with its source again."
         case .delete: return "Deleted \(object) in \(ref.context)."
         case .recreate: return "Deleted \(object) in \(ref.context): its controller makes it again."
         case .forceDelete: return "Force deleted \(object) in \(ref.context)."
@@ -852,6 +891,34 @@ struct KubeWriteConfirmation: Equatable, Sendable {
             title = "Resize \(object) in place?"
             what = "Its containers' resources change without the pod being made again:\n" + KubeResize.said(resize)
             button = "Resize"
+        case .reconcile:
+            title = "Reconcile \(object) now?"
+            what =
+                "Flux's controller is asked to reconcile it at once rather than at its next interval — the \(KubeGitOps.requestedAt) "
+                + "annotation set to now, as flux reconcile sets it"
+                + (KubeGitOps.flux(ref.kind)?.isSource == true
+                    ? ": its source is fetched again." : ". Its source isn't fetched first: Reconcile with Source in a Tab does that.")
+            button = "Reconcile"
+        case .fluxSuspend:
+            title = "Suspend Flux's reconciliation of \(object)?"
+            what =
+                (KubeGitOps.flux(ref.kind)?.isSource == true
+                    ? "Flux fetches nothing more from it until it is resumed; what it feeds keeps the revision it has."
+                    : "Flux applies nothing more to it until it is resumed; what it made keeps running.")
+                + " spec.suspend set true, as flux suspend sets it."
+            button = "Suspend"
+        case .fluxResume:
+            title = "Resume Flux's reconciliation of \(object)?"
+            what =
+                "spec.suspend set false and a reconcile asked at once (\(KubeGitOps.requestedAt)), as flux resume does: "
+                + "what changed in its source meanwhile is applied now."
+            button = "Resume"
+        case .refresh:
+            title = "Refresh \(object)?"
+            what =
+                "Argo CD compares it with its source again now rather than at its next poll — the \(KubeGitOps.refresh)=normal annotation, "
+                + "which Argo CD takes away once done. Nothing is synced: Sync in a Tab does that."
+            button = "Refresh"
         }
         var lines = [what]
         if let warning = rule.warning { lines.append("⚠︎ " + warning) }

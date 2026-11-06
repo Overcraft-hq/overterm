@@ -50,7 +50,8 @@ enum KubeScaleChange: Equatable {
 extension KubernetesPageModel {
     /// The verbs in the order a menu shows them.
     static let writeVerbOrder: [KubeWriteVerb] = [
-        .restart, .scale, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .recreate, .evict, .removeFinalizers, .forceDelete, .delete,
+        .restart, .scale, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .reconcile, .fluxSuspend, .fluxResume, .refresh,
+        .recreate, .evict, .removeFinalizers, .forceDelete, .delete,
     ]
 
     /// What a write key means: the object the detail shows, while it
@@ -76,9 +77,9 @@ extension KubernetesPageModel {
             let key: String? =
                 switch verb {
                 case .delete: KubernetesKey.delete.key
-                case .restart, .recreate: KubernetesKey.restart.key
+                case .restart, .recreate, .reconcile, .refresh: KubernetesKey.restart.key
                 case .scale: KubernetesKey.scaleTo.key
-                case .pause, .resume, .suspend, .unsuspend: KubernetesKey.pause.key
+                case .pause, .resume, .suspend, .unsuspend, .fluxSuspend, .fluxResume: KubernetesKey.pause.key
                 case .trigger: KubernetesKey.trigger.key
                 case .cordon, .uncordon: KubernetesKey.cordon.key
                 default: nil
@@ -86,7 +87,8 @@ extension KubernetesPageModel {
             let place: ResourceVerb.Place =
                 switch verb {
                 case .delete: .remove
-                case .restart, .scale, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon: .button
+                case .restart, .scale, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .reconcile, .fluxSuspend, .fluxResume, .refresh:
+                    .button
                 default: .more
                 }
             return ResourceVerb(
@@ -140,13 +142,12 @@ extension KubernetesPageModel {
         return true
     }
 
-    /// `r`: a rollout restarted; a pod deleted so its controller makes it again.
+    /// `r`: a rollout restarted; a pod deleted so its controller makes it
+    /// again; a Flux object reconciled, an Argo CD Application refreshed.
     func restartKey() -> Bool {
         guard let ref = writeTarget else { return false }
-        if KubeWriteCheck.offered(.recreate, on: ref.kind) {
-            write(.recreate, on: ref)
-        } else if KubeWriteCheck.offered(.restart, on: ref.kind) {
-            write(.restart, on: ref)
+        if let verb = [KubeWriteVerb.recreate, .restart, .reconcile, .refresh].first(where: { KubeWriteCheck.offered($0, on: ref.kind) }) {
+            write(verb, on: ref)
         } else {
             return false
         }
@@ -161,26 +162,29 @@ extension KubernetesPageModel {
     }
 
     /// `p`: a Deployment's rollout paused or resumed, a CronJob suspended
-    /// or resumed — whichever it isn't, as far as is known now (a CronJob's
-    /// row says; a Deployment's is read after its access review).
+    /// or resumed, Flux's reconciliation of one suspended or resumed —
+    /// whichever it isn't, as far as is known now (a CronJob's row says; a
+    /// Deployment's or a Flux object's is read after its access review).
     func pauseKey() -> Bool {
         guard let ref = writeTarget else { return false }
-        let pair: KubeWriteVerb
-        if KubeWriteCheck.offered(.pause, on: ref.kind) {
-            pair = .pause
-        } else if KubeWriteCheck.offered(.suspend, on: ref.kind) {
-            pair = .suspend
-        } else {
+        guard let pair = [KubeWriteVerb.pause, .suspend, .fluxSuspend].first(where: { KubeWriteCheck.offered($0, on: ref.kind) }) else {
             return false
         }
         toggleWrite(pair, on: ref)
         return true
     }
 
-    /// `s`: a CronJob run now — a Job made from its template.
+    /// `s`: a CronJob run now — a Job made from its template; an Argo CD
+    /// Application synced, by argocd in a tab.
     func triggerKey() -> Bool {
-        guard let ref = writeTarget, KubeWriteCheck.offered(.trigger, on: ref.kind) else { return false }
-        write(.trigger, on: ref)
+        guard let ref = writeTarget else { return false }
+        if KubeWriteCheck.offered(.trigger, on: ref.kind) {
+            write(.trigger, on: ref)
+        } else if KubeTabWrite.offered(.argoSync, on: ref.kind) {
+            runTabWrite(.argoSync, on: ref)
+        } else {
+            return false
+        }
         return true
     }
 
@@ -407,7 +411,7 @@ extension KubernetesPageModel {
                     case .to(let count): facts.to = count
                     case nil: facts.to = current
                     }
-                case .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon:
+                case .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon, .fluxSuspend, .fluxResume:
                     guard let (toggle, on) = verb.toggle else { break }
                     if toggle.state(of: try await client.spec(ref)) == on {
                         // Its access review is the opposite's too.
@@ -448,6 +452,12 @@ extension KubernetesPageModel {
                     facts.resize = changes
                 case .delete where KubeWriteCheck.isNamespace(ref.kind):
                     facts.contents = await client.contents(of: ref.name, discovery: discovery)
+                case .reconcile:
+                    // flux reconcile refuses a suspended one: its controller would ignore the ask.
+                    if KubeWriteToggle.suspended.state(of: try await client.spec(ref)) {
+                        self?.writeStatus = .failed(KubeGitOps.suspended(object))
+                        return
+                    }
                 default: break
                 }
             } catch {
@@ -526,6 +536,10 @@ extension KubernetesPageModel {
             guard let made = facts.request else { return }
             request = made
         case .createNamespace: request = KubeWrites.createNamespace(ref)
+        case .reconcile: request = KubeGitOps.reconcile(ref, at: clock())
+        case .fluxSuspend: request = KubeGitOps.suspend(ref)
+        case .fluxResume: request = KubeGitOps.resume(ref, at: clock())
+        case .refresh: request = KubeGitOps.refresh(ref)
         }
         writeStatus = .working("\(verb.label)… \(KubeWriteOutcome.spoken(ref))")
         Task { [weak self] in

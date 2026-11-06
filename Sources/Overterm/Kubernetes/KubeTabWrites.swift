@@ -30,6 +30,18 @@ enum KubeTabWrite: Equatable, Sendable {
     /// `namespace`, its shell rooted in the node's own filesystem (bash
     /// where the node has it, else sh). kubectl leaves the pod behind.
     case nodeShell(node: String, namespace: String, image: String)
+    /// `argocd app sync APP --app-namespace NS --core --kube-context C`
+    /// (stage 4): Argo CD's own sync — its hooks, waves and pruning are
+    /// argocd's, never copied —, in core mode so it reaches the context's
+    /// cluster, not whichever Argo CD server argocd is logged in to.
+    /// `controlPlane`: Argo CD's own namespace, which core mode takes from
+    /// the context's — the tab's pin (`KubeGitOps.argoNamespace`).
+    case argoSync(app: String, namespace: String, controlPlane: String)
+    /// `flux reconcile kustomization NAME --with-source`: its source
+    /// fetched first, flux waiting for each; `words`, what flux calls the
+    /// kind; `sources`, what flux annotates before it, read off the object
+    /// (`KubeGitOps.sources`) — each reviewed too.
+    case fluxReconcile(words: [String], resource: String, name: String, namespace: String, sources: [KubeGitOps.FluxSource])
 
     var verb: KubeProcessVerb {
         switch self {
@@ -37,6 +49,8 @@ enum KubeTabWrite: Equatable, Sendable {
         case .rolloutUndo: .rolloutUndo
         case .debug: .debug
         case .nodeShell: .nodeShell
+        case .argoSync: .argoSync
+        case .fluxReconcile: .fluxReconcile
         }
     }
 
@@ -46,13 +60,17 @@ enum KubeTabWrite: Equatable, Sendable {
         case .drain(let node, _), .nodeShell(let node, _, _): node
         case .rolloutUndo(let deployment, _, _, _): deployment
         case .debug(let pod, _, _, _): pod
+        case .argoSync(let app, _, _): app
+        case .fluxReconcile(_, _, let name, _, _): name
         }
     }
 
     /// The namespace its command names (`-n`, always).
     var namespace: String {
         switch self {
-        case .drain(_, let namespace), .rolloutUndo(_, let namespace, _, _), .debug(_, let namespace, _, _), .nodeShell(_, let namespace, _): namespace
+        case .drain(_, let namespace), .rolloutUndo(_, let namespace, _, _), .debug(_, let namespace, _, _), .nodeShell(_, let namespace, _),
+            .argoSync(_, let namespace, _), .fluxReconcile(_, _, _, let namespace, _):
+            namespace
         }
     }
 
@@ -69,6 +87,8 @@ enum KubeTabWrite: Equatable, Sendable {
         case .drain(let node, _), .nodeShell(let node, _, _): "node \(node)"
         case .rolloutUndo(let deployment, let namespace, _, _): "deployment \(namespace)/\(deployment)"
         case .debug(let pod, let namespace, _, _): "pod \(namespace)/\(pod)"
+        case .argoSync(let app, let namespace, _): "application \(namespace)/\(app)"
+        case .fluxReconcile(let words, _, let name, let namespace, _): "\(words.last ?? "object") \(namespace)/\(name)"
         }
     }
 
@@ -77,6 +97,10 @@ enum KubeTabWrite: Equatable, Sendable {
         let q = KubeCommands.quoted
         var words: [String]
         switch self {
+        // Not kubectl's: each says its context its own way.
+        case .argoSync(let app, let namespace, _): return KubeGitOps.argoSyncLine(app: app, namespace: namespace, context: context)
+        case .fluxReconcile(let kind, _, let name, let namespace, _):
+            return KubeGitOps.fluxReconcileLine(words: kind, name: name, namespace: namespace, context: context)
         case .drain(let node, _):
             words = ["kubectl", "drain", q(node), "--ignore-daemonsets"]
         case .rolloutUndo(let deployment, _, let revision, _):
@@ -105,12 +129,30 @@ enum KubeTabWrite: Equatable, Sendable {
             [(KubeAccess(verb: "patch", resource: "pods/ephemeralcontainers"), namespace), (KubeAccess.attach, namespace)]
         case .nodeShell(_, let namespace, _):
             [(KubeAccess(verb: "create", resource: "pods"), namespace), (KubeAccess.attach, namespace)]
+        // argocd's core mode sets the Application's operation, reading Argo CD's settings and its
+        // repositories' and clusters' secrets in its own namespace; flux annotates the object's
+        // sources first, then the object.
+        case .argoSync(_, let namespace, let controlPlane):
+            [(Self.argoPatch, namespace), (KubeAccess(verb: "get", resource: "configmaps"), controlPlane), (KubeAccess(verb: "list", resource: "secrets"), controlPlane)]
+        case .fluxReconcile(_, let resource, _, let namespace, let sources):
+            [(KubeAccess(verb: "patch", resource: resource), namespace)] + sources.map { (KubeAccess(verb: "patch", resource: $0.resource), $0.namespace) }
         }
     }
 
-    /// The same, for a verb before its object is read.
-    static func accesses(_ verb: KubeProcessVerb, namespace: String?) -> [(access: KubeAccess, namespace: String?)] {
+    static let argoPatch = KubeAccess(verb: "patch", resource: "applications.argoproj.io")
+
+    /// The same, for a verb before its object is read; `kind`, the object's.
+    /// A sync's Argo CD namespace and a reconcile's sources are known only
+    /// once it is read: what they add is asked then (`runTabWrite`).
+    static func accesses(_ verb: KubeProcessVerb, namespace: String?, kind: KubeResourceKind? = nil) -> [(access: KubeAccess, namespace: String?)] {
         switch verb {
+        case .argoSync: return [(argoPatch, namespace)]
+        case .fluxReconcile:
+            guard let kind else { return [] }
+            return KubeTabWrite.fluxReconcile(words: [], resource: kind.fullName, name: "", namespace: namespace ?? "", sources: []).accesses
+        default: break
+        }
+        return switch verb {
         case .drain: KubeTabWrite.drain(node: "", namespace: namespace ?? "").accesses
         case .rolloutUndo: KubeTabWrite.rolloutUndo(deployment: "", namespace: namespace ?? "", revision: 0, images: []).accesses
         case .debug: KubeTabWrite.debug(pod: "", namespace: namespace ?? "", container: nil, image: "").accesses
@@ -128,12 +170,14 @@ enum KubeTabWrite: Equatable, Sendable {
         case .drain, .nodeShell: return core && kind.resource == "nodes"
         case .rolloutUndo: return kind.group == "apps" && kind.resource == "deployments" && kind.verbs.contains("patch")
         case .debug: return core && kind.resource == "pods" && kind.subresources.contains("ephemeralcontainers")
+        case .argoSync: return KubeGitOps.isArgoApplication(kind) && kind.verbs.contains("patch")
+        case .fluxReconcile: return KubeGitOps.flux(kind)?.withSource == true && kind.verbs.contains("patch")
         default: return false
         }
     }
 
     /// The verbs in a menu's order.
-    static let verbs: [KubeProcessVerb] = [.debug, .nodeShell, .rolloutUndo, .drain]
+    static let verbs: [KubeProcessVerb] = [.debug, .nodeShell, .rolloutUndo, .drain, .argoSync, .fluxReconcile]
 
     static func title(_ verb: KubeProcessVerb) -> String {
         switch verb {
@@ -141,6 +185,8 @@ enum KubeTabWrite: Equatable, Sendable {
         case .nodeShell: "Node Shell in a Tab…"
         case .rolloutUndo: "Roll Back in a Tab…"
         case .drain: "Drain in a Tab…"
+        case .argoSync: "Sync in a Tab…"
+        case .fluxReconcile: "Reconcile with Source in a Tab…"
         default: verb.title
         }
     }
@@ -151,6 +197,8 @@ enum KubeTabWrite: Equatable, Sendable {
         case .nodeShell: "Node Shell"
         case .rolloutUndo: "Roll Back"
         case .drain: "Drain"
+        case .argoSync: "Sync"
+        case .fluxReconcile: "Reconcile with Source"
         default: verb.title
         }
     }
@@ -161,6 +209,8 @@ enum KubeTabWrite: Equatable, Sendable {
         case .nodeShell: "terminal"
         case .rolloutUndo: "clock.arrow.circlepath"
         case .drain: "arrow.down.to.line"
+        case .argoSync: "arrow.triangle.2.circlepath.circle"
+        case .fluxReconcile: "arrow.triangle.2.circlepath"
         default: "terminal"
         }
     }
@@ -204,6 +254,20 @@ enum KubeTabWrite: Equatable, Sendable {
                 + "process, network and IPC namespaces), and the tab's shell runs as root in the node's own filesystem: what it does changes "
                 + "the node. kubectl leaves the pod (node-debugger-\(node)-…) when the shell ends: delete it after."
             button = "Open Node Shell"
+        case .argoSync(let app, let namespace, let controlPlane):
+            title = "Sync application \(namespace)/\(app)?"
+            what =
+                "argocd applies what its source says now — pruning what it is set to prune, running its hooks — and the tab shows it as it goes. "
+                + "In core mode it reaches \(context.displayName) by the context, not an Argo CD server it may be logged in to, "
+                + "and reads Argo CD's settings in namespace \(controlPlane), the tab's."
+            button = "Sync in a Tab"
+        case .fluxReconcile(let words, _, let name, let namespace, let sources):
+            title = "Reconcile \(words.last ?? "object") \(namespace)/\(name) with its source?"
+            what =
+                "flux fetches its source again"
+                + (sources.isEmpty ? "" : " (" + sources.map(\.spoken).joined(separator: ", then ") + ")")
+                + ", then reconciles it, and the tab shows each as flux waits for it."
+            button = "Reconcile in a Tab"
         }
         var lines = [what, "Runs in a new tab pinned to \(context.displayName): \(command)"]
         let typed = rule.typedName ? name : nil
@@ -221,6 +285,9 @@ enum KubeTabWrite: Equatable, Sendable {
             "Rolling back deployment \(namespace)/\(deployment) to revision \(revision) in a new tab, in \(context)."
         case .debug(let pod, let namespace, _, _): "A debug container for pod \(namespace)/\(pod) in a new tab, in \(context)."
         case .nodeShell(let node, _, _): "A shell on node \(node) in a new tab, in \(context)."
+        case .argoSync(let app, let namespace, _): "Syncing application \(namespace)/\(app) in a new tab, in \(context)."
+        case .fluxReconcile(let words, _, let name, let namespace, _):
+            "Reconciling \(words.last ?? "object") \(namespace)/\(name) with its source in a new tab, in \(context)."
         }
     }
 }
