@@ -55,6 +55,7 @@ version is tagged `v<version>`.
 - security: a word with a control character (a chart folder's name, a pod's env value) is never typed raw into a tab — said as an escape, so ^U can't erase its quote and run the rest; a chart folder with one is refused
 - kubernetes: a manifest whose apiVersion has an empty half (`apps/`, `/v1`) is refused as it is read — Diff with Cluster and an agent's `k8s_apply` took the app down on one
 - kubernetes: an agent's `k8s_` call with a number past any integer's range (`limit: 1e300`) is clamped — it crashed the app
+- kubernetes: a FIFO or a device named by `--kubeconfig` in any pane's title is never opened to be watched — one with no writer froze the whole app
 
 ## 1.5.4 — 2026-11-09
 
