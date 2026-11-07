@@ -14,8 +14,12 @@ import Foundation
 ///   the cluster. `--reject-paths` replaces kubectl's defaults, so the
 ///   list repeats them;
 /// - a **read-only** context's (remote and production, by default) also
-///   refuses every write method, POST included: a path can't tell a
-///   permission review from a create;
+///   refuses every method but `GET`, POST included: a path can't tell a
+///   permission review from a create. kubectl matches the method as sent,
+///   case and all, and an HTTP method is any token: kind's 1.37 handed
+///   `post`, `Delete` and `PROPFIND` to the apiserver, which said 405 —
+///   an aggregated API server needn't — so the pattern names the one
+///   method let through rather than the ones refused;
 /// - only `Host: localhost` is answered — what `UnixHTTPTransport.kubernetes`
 ///   sends.
 ///
@@ -35,7 +39,9 @@ enum KubeProxyFlags {
         #"^/api/.*/nodes/.*/proxy"#,
         #"^/apis/subresources\.kubevirt\.io/"#,
     ]
-    static let rejectedMethods = #"^(POST|PUT|PATCH|DELETE|CONNECT)$"#
+    /// Every method but `GET`, exactly (RE2 has no lookahead): one whose
+    /// first letter isn't `G`, or `G`, `GE`, or one that goes on past `GET`.
+    static let rejectedMethods = #"^(?:[^G]|G$|G[^E]|GE$|GE[^T]|GET.)"#
     static let acceptedHosts = #"^localhost$"#
 
     /// kubectl's arguments: the context named explicitly (Overterm never

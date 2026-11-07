@@ -115,7 +115,7 @@ final class KubePrometheusTests: XCTestCase {
         let arguments = KubePrometheusFlags.arguments(context: "fake-dev", socket: "/tmp/x-metrics.sock", service: service, cacheDirectory: "/tmp/c")
         XCTAssertEqual(arguments.prefix(3), ["--context=fake-dev", "--cache-dir=/tmp/c", "proxy"])
         XCTAssertTrue(arguments.contains("--accept-paths=\(accepted)"))
-        XCTAssertTrue(arguments.contains("--reject-methods=^(POST|PUT|PATCH|DELETE|CONNECT)$"))
+        XCTAssertTrue(arguments.contains("--reject-methods=\(KubeProxyFlags.rejectedMethods)"), "every method but GET")
         XCTAssertTrue(arguments.contains("--disable-filter=false"))
         XCTAssertTrue(arguments.contains("--accept-hosts=^localhost$"))
         let rejected = try XCTUnwrap(arguments.first { $0.hasPrefix("--reject-paths=") })
