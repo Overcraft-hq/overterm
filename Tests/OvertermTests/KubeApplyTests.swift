@@ -51,6 +51,25 @@ final class KubeApplyTests: XCTestCase {
         XCTAssertThrowsError(try KubeManifest.parse("- a\n- b\n")) { XCTAssertEqual(($0 as? KubeManifestProblem)?.message, "Document 1 isn't an object.") }
     }
 
+    /// An apiVersion with an empty half took the app down at its version
+    /// (`k8s_apply`, Diff with Cluster): refused as the file is read.
+    func testAnApiVersionWithAnEmptyHalfIsRefused() throws {
+        for apiVersion in ["apps/", "/v1", "/", "a/b/c", "v1/"] {
+            let text = "apiVersion: \"\(apiVersion)\"\nkind: Deployment\nmetadata:\n  name: web\n"
+            XCTAssertThrowsError(try KubeManifest.parse(text), apiVersion) {
+                XCTAssertTrue(($0 as? KubeManifestProblem)?.message.contains("isn't group/version") == true, "\($0)")
+            }
+            let object = KubeManifestObject(object: [:], apiVersion: apiVersion, kind: "Deployment", name: "web")
+            _ = (object.group, object.version, object.isSecret)
+            XCTAssertNil(KubeApply.kind(of: object, in: KubeDiscovery(kinds: [.deployments])))
+        }
+        let apps = try KubeManifest.parse("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n")[0]
+        XCTAssertEqual([apps.group, apps.version], ["apps", "v1"])
+        let core = try KubeManifest.parse("apiVersion: v1\nkind: Secret\nmetadata:\n  name: db\n")[0]
+        XCTAssertEqual([core.group, core.version], ["", "v1"])
+        XCTAssertTrue(core.isSecret)
+    }
+
     func testWhichFilesAreManifests() {
         XCTAssertTrue(KubeManifest.looksLikeManifest(Self.deployment))
         XCTAssertFalse(KubeManifest.looksLikeManifest("name: CI\non: push\njobs: {}\n"), "a workflow file isn't one")

@@ -53,6 +53,7 @@ version is tagged `v<version>`.
 - kubernetes: a streaming list on a real cluster is the list as soon as it ends — the end's bookmark was looked for where a real server doesn't put it on a Table, so every list waited 5 s, then listed and watched for the rest of the run
 - kubernetes: a context whose credential plugin's token the cluster refuses (401) stops until Retry, as a failing plugin does, instead of running the plugin (`aws`, kubelogin) again for every request
 - security: a word with a control character (a chart folder's name, a pod's env value) is never typed raw into a tab — said as an escape, so ^U can't erase its quote and run the rest; a chart folder with one is refused
+- kubernetes: a manifest whose apiVersion has an empty half (`apps/`, `/v1`) is refused as it is read — Diff with Cluster and an agent's `k8s_apply` took the app down on one
 
 ## 1.5.6 — 2026-11-13
 
