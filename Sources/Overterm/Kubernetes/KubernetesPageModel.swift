@@ -337,6 +337,8 @@ final class KubernetesPageModel: ObservableObject {
     @Published var namespaceDraft: KubeNamespaceDraft?
     /// What a write is stamped with (a rollout restart's `restartedAt`).
     var clock: () -> Date = { Date() }
+    /// Whether Docker is on (`docker.enabled`): a test's own answer instead of the user's settings.
+    var dockerEnabled: () -> Bool = { Settings.shared.dockerEnabled }
     /// A triggered Job's name's last five characters.
     var jobSuffix: () -> String = { KubeWrites.randomSuffix() }
     /// The write between its key and its confirmation (the access review,

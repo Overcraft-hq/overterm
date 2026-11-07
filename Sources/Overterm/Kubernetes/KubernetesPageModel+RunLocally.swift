@@ -18,7 +18,7 @@ extension KubernetesPageModel {
     /// Docker is off.
     func dockerVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard ref.namespace != nil, KubeRunLocally.offers(ref.kind) else { return [] }
-        let off = Settings.shared.dockerEnabled ? nil : "Docker is off — Settings ▸ Docker"
+        let off = dockerEnabled() ? nil : "Docker is off — Settings ▸ Docker"
         return [
             ResourceVerb(title: Self.runLocallyTitle, label: "Run Locally", symbol: "shippingbox", place: .more, unavailable: off, group: 4) {
                 [weak self] in self?.toDocker(.run, ref)
@@ -49,7 +49,7 @@ extension KubernetesPageModel {
             writeStatus = .failed("Only a pod or a workload runs a container.")
             return
         }
-        guard Settings.shared.dockerEnabled else {
+        guard dockerEnabled() else {
             writeStatus = .failed("Docker is off — Settings ▸ Docker.")
             return
         }
