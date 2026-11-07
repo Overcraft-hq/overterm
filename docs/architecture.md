@@ -4690,9 +4690,10 @@ Read once when the Overview shows (`KubeDetailSession.showTree`, asked for
 once the object is read; Refresh again), each list in the object's
 namespace, bounded (`limit`, pods 200, others 500), by a selector where
 there is one, only the kinds it uses and the context serves
-(`KubeTreeSession.kind(_:in:)`), each answer decoded and the tree built
-off the main thread (`KubeBlocking`); no watch, GETs only, dropped with
-the detail. A node's name opens its detail; its right-click menu is its
+(`KubeTreeSession.kind(_:in:)`) — the root's lists asked at once, then
+those they lead to (`KubeClient.getAll`, four in flight) —, each answer
+decoded and the tree built off the main thread (`KubeBlocking`); no
+watch, GETs only, dropped with the detail. A node's name opens its detail; its right-click menu is its
 object's verbs (`treeVerbs`: Open, the detail's own buttons with their
 guards, Copy as kubectl), made only as it opens (`ResourceVerbMenuArea`,
 an AppKit menu over the row): a guard asks can-i and access reviews, and
@@ -4737,7 +4738,9 @@ places, read-only:
   ReplicaSets, Jobs, CronJobs, Services, Ingresses, PDBs, HPAs, Argo's
   Applications, Flux's Kustomizations, HelmReleases and GitRepositories,
   cert-manager's Certificates (500 each) —, one bounded GET each as whole
-  objects (the checks read specs: decision 33, a stated addition to 3.9's
+  objects, four asked at once (`KubeClient.getAll`: with 100 ms a list,
+  one after the other took 1.5 s, at once 0.84; answers decoded in their
+  order) (the checks read specs: decision 33, a stated addition to 3.9's
   "nothing extra is read"), never a Secret or a ConfigMap, no watch;
   decoded and checked off the main thread (`KubeBlocking`), what may carry
   a secret dropped as each list is decoded (`KubeHealth.kept`: env values,

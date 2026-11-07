@@ -112,6 +112,30 @@ final class KubeClientTests: XCTestCase {
         XCTAssertEqual(discovery.kind("events")?.group, "")
     }
 
+    /// Several reads at once, at most `width` in flight: each answer at its
+    /// request's place, a failure where it failed — one slow answer holds
+    /// back none of the others.
+    func testReadsAtOnceAnswerInTheirOrder() async throws {
+        api.answerSlowly("/api/v1/namespaces/shop/pods", milliseconds: 600)
+        let started = Date()
+        let answers = await client().getAll(
+            [
+                ("/api/v1/namespaces/shop/pods", "application/json"), ("/api/v1/namespaces/default/pods", "application/json"),
+                ("/apis/example.com/v1/namespaces/shop/widgets", "application/json"), ("/api/v1/namespaces", "application/json"),
+                ("/version", "application/json"),
+            ], width: 4)
+        let names = answers.map { answer -> [String] in
+            guard case .success(let body) = answer, let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return [] }
+            return (list["items"] as? [[String: Any]] ?? []).compactMap { ($0["metadata"] as? [String: Any])?["name"] as? String }
+        }
+        XCTAssertEqual(names[0].sorted(), ["api-1", "web-1", "web-2"])
+        XCTAssertEqual(names[1], ["other"])
+        guard case .failure = answers[2] else { return XCTFail("a kind the server doesn't serve fails, where it was asked") }
+        XCTAssertEqual(names[3].sorted(), ["default", "shop"])
+        guard case .success = answers[4] else { return XCTFail("the fifth, once a slot was free") }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.1, "the slow one held back nothing")
+    }
+
     func testAListIsTableRowsOnly() async throws {
         let table = try await client().list(.pods, in: .namespace("shop"))
         let request = try XCTUnwrap(api.requests.last)

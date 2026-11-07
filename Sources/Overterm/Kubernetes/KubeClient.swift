@@ -269,6 +269,36 @@ struct KubeClient: Sendable {
         }
     }
 
+    /// Several GETs at once, at most `width` in flight, each answer (or its
+    /// error) at its request's place. For the reads that don't depend on
+    /// each other — the Overview's health lists, a tree's: one after the
+    /// other, each waited out the cluster's round trip in turn. Cancelled,
+    /// what wasn't asked is a `CancellationError` in its place.
+    func getAll(_ requests: [(path: String, accept: String)], width: Int = 4) async -> [Result<Data, Error>] {
+        var answers = [Result<Data, Error>](repeating: .failure(CancellationError()), count: requests.count)
+        let client = self
+        await withTaskGroup(of: (Int, Result<Data, Error>).self) { group in
+            var next = 0
+            while next < min(max(1, width), requests.count) {
+                let index = next
+                group.addTask { await client.answer(index, requests[index]) }
+                next += 1
+            }
+            while let (index, answer) = await group.next() {
+                answers[index] = answer
+                guard next < requests.count, !Task.isCancelled else { continue }
+                let index = next
+                group.addTask { await client.answer(index, requests[index]) }
+                next += 1
+            }
+        }
+        return answers
+    }
+
+    private func answer(_ index: Int, _ request: (path: String, accept: String)) async -> (Int, Result<Data, Error>) {
+        do { return (index, .success(try await get(request.path, accept: request.accept).body)) } catch { return (index, .failure(error)) }
+    }
+
     /// One GET's body read as it arrives, at most `maxBytes` of it: past
     /// that the read stops and the connection is closed — the rest is
     /// never read, let alone held (`KubeBodyTooLarge`). For an answer the

@@ -30,6 +30,9 @@ final class KubeTreeSession: ObservableObject {
     /// Where each kind is served; nil: the built-in kinds' own places.
     private let discovery: KubeDiscovery?
     private var task: Task<Void, Never>?
+    /// How many of its lists are asked at once (the scale scenario's 1 is
+    /// the one-after-the-other it was).
+    static var readWidth = 4
 
     init(ref: KubeObjectRef, root: KubeTree.Root, client: KubeClient?, discovery: KubeDiscovery?) {
         self.ref = ref
@@ -54,16 +57,13 @@ final class KubeTreeSession: ObservableObject {
         let reads = KubeTree.reads(root, object: json)
         let data = object.data
         let discovery = self.discovery
+        let width = Self.readWidth
         task?.cancel()
         task = Task { [weak self] in
             var read = KubeTreeRead(root: data)
-            for wanted in reads {
-                guard await Self.read(wanted, into: &read, client: client, discovery: discovery) else { return }
-            }
+            guard await Self.read(reads, into: &read, client: client, discovery: discovery, width: width) else { return }
             let followUps = KubeTree.followUps(root, object: json, read: read)
-            for wanted in followUps {
-                guard await Self.read(wanted, into: &read, client: client, discovery: discovery) else { return }
-            }
+            guard await Self.read(followUps, into: &read, client: client, discovery: discovery, width: width) else { return }
             let done = read
             let (tree, findings) = await KubeBlocking.run { (KubeTree.build(root, read: done), KubeHealth.related(root, read: done)) }
             guard let self, !Task.isCancelled else { return }
@@ -97,26 +97,30 @@ final class KubeTreeSession: ObservableObject {
         read.table ? KubeClient.tableOnlyAccept : "application/json"
     }
 
-    /// One list read into `read`; false when cancelled.
-    private static func read(_ wanted: KubeTree.Read, into read: inout KubeTreeRead, client: KubeClient, discovery: KubeDiscovery?) async -> Bool {
+    /// Lists read into `read`, at once (bounded) — none waits for
+    /// another's answer —, then added in their order; false when cancelled.
+    private static func read(
+        _ wanted: [KubeTree.Read], into read: inout KubeTreeRead, client: KubeClient, discovery: KubeDiscovery?, width: Int
+    ) async -> Bool {
         guard !Task.isCancelled else { return false }
         // A kind the context doesn't serve (Gateway API's routes, often) is no list.
-        guard let kind = kind(wanted, in: discovery), kind.canList else { return true }
-        do {
-            let body = try await client.get(path(wanted, kind: kind), accept: accept(wanted)).body
-            guard !Task.isCancelled else { return false }
-            // A busy namespace's pods are megabytes of JSON: decoded on a
-            // global queue, never the main thread.
-            let before = read
-            read = await KubeBlocking.run {
-                var next = before
-                next.add(wanted, body: body)
-                return next
+        let served = wanted.compactMap { wanted in kind(wanted, in: discovery).flatMap { $0.canList ? (wanted, $0) : nil } }
+        guard !served.isEmpty else { return true }
+        let answers = await client.getAll(served.map { wanted, kind in (path(wanted, kind: kind), accept(wanted)) }, width: width)
+        guard !Task.isCancelled else { return false }
+        for answer in answers { if case .failure(let error) = answer, error is CancellationError { return false } }
+        // A busy namespace's pods are megabytes of JSON: decoded on a
+        // global queue, never the main thread.
+        let before = read
+        read = await KubeBlocking.run {
+            var next = before
+            for ((wanted, _), answer) in zip(served, answers) {
+                switch answer {
+                case .success(let body): next.add(wanted, body: body)
+                case .failure(let error): next.failed(wanted, KubernetesModel.said(error))
+                }
             }
-        } catch is CancellationError {
-            return false
-        } catch {
-            read.failed(wanted, KubernetesModel.said(error))
+            return next
         }
         return !Task.isCancelled
     }
