@@ -499,15 +499,25 @@ final class KubeTabWritesPageTests: XCTestCase {
         XCTAssertTrue(page.press("E"))
         try await until("which container") { box.choices.count == 1 }
         box.choices[0].1(0)
+        let edited = "kubectl debug -it api-1 --image=ghcr.io/acme/tools:2.1 --target=app --context kind-fake -n shop"
+        XCTAssertFalse(box.confirmations[0].0.kubectl?.contains("tools:2.1") ?? true, "the first line was the setting's")
         box.confirmations[0].1(KubeWriteAnswer(typed: "", image: " ghcr.io/acme/tools:2.1 "))
-        XCTAssertEqual(box.commands.first?.0, "kubectl debug -it api-1 --image=ghcr.io/acme/tools:2.1 --target=app --context kind-fake -n shop")
+        XCTAssertTrue(box.commands.isEmpty, "another image than the line showed runs nothing yet")
+        XCTAssertEqual(box.confirmations.count, 2, "asked again")
+        XCTAssertEqual(box.confirmations[1].0.kubectl, edited, "with the line that will run")
+        XCTAssertTrue(box.confirmations[1].0.detail.contains(edited))
+        XCTAssertEqual(box.confirmations[1].0.image, "ghcr.io/acme/tools:2.1")
+        box.confirmations[1].1(KubeWriteAnswer(typed: "", image: "ghcr.io/acme/tools:2.1"))
+        XCTAssertEqual(box.commands.first?.0, edited)
+        XCTAssertEqual(box.commands.first?.0, box.confirmations[1].0.kubectl, "the line confirmed is the line run")
         XCTAssertEqual(page.model.debugImage(for: KubeWritesTests.context("kind-fake")), "busybox:1.36", "the setting stays the default")
 
         XCTAssertTrue(page.press("E"))
         try await until("which container again") { box.choices.count == 2 }
         box.choices[1].1(0)
-        box.confirmations[1].1(KubeWriteAnswer(typed: "", image: "busybox:1.36 --privileged"))
+        box.confirmations[2].1(KubeWriteAnswer(typed: "", image: "busybox:1.36 --privileged"))
         XCTAssertEqual(box.commands.count, 1, "nothing typed")
+        XCTAssertEqual(box.confirmations.count, 3, "not asked again either")
         guard case .failed(let why) = page.writeStatus else { return XCTFail("\(String(describing: page.writeStatus))") }
         XCTAssertTrue(why.contains("isn't an image reference"), why)
     }

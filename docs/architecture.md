@@ -2420,7 +2420,33 @@ line and edited in place there, its fields checked one by one
 (`SettingSpec.fitted`) — a field that doesn't fit is reported and left
 out, the rest of the entry kept, so a typo never takes a hand-set
 production class with it. The page lists the entries and sends you to
-settings.json to edit them. `kubernetes.proxyIdleMinutes` (10) and
+settings.json to edit them; one written there over several lines by hand
+is still edited where it stands (`SettingsJSON.endOfValueOverLines`), the
+file's other lines and comments kept, and written over several lines
+again (`SettingsJSON.overLines`): an entry (or a list's item) a line, each
+with its comments — above it, after it on its line, and those inside it
+moved above it —; an entry taken out takes its comments with it, and
+those before the closing bracket stay. A context's settings are also in
+one place on the Kubernetes page: Context Settings… on the context card
+and the sidebar context row's menu (not the `c` picker) opens a sheet (`KubeContextSettingsDraft`,
+pure, + `KubeContextSettingsSheetView`, `KubernetesPageModel+ContextSettings`)
+with its class (unset: by name, said), writes (its class's default, said),
+`metrics` and `prometheus`, `nodeShell` and `nodeShellImage`,
+`defaultNamespace`, whether `kubernetes.agentWrites` names it and — on
+production — `applyOnProduction`. Save reads both settings again as the
+file has them (`Settings.fileValue`, not fitted: a field this build
+doesn't know, or can't use, in any entry is written back as it was),
+changes only those fields of that entry (its other fields and every other
+entry kept; an entry left empty taken out), checks the values (an image as a
+reference, the Service as `namespace/service:port`, the namespace's
+name) and then the fields it writes by `SettingsSchema` (`problem`,
+`fitted`), and writes through `Settings.set` — refused, the sheet says why
+and nothing is written. A production context — by its name or its
+entry's class — saved as remote or local is asked first, in red in the
+sheet (`lessStrict`, `lessStrictSaid`: writable by a setting every day if
+so, the band gone, agents if ticked), its name typed (`typedName`), as
+rule 4 asks for what can't be taken back by a session ending. Production's write switch for the session is only said: it
+is never a setting, and a production entry gets no `writable` from the sheet. `kubernetes.proxyIdleMinutes` (10) and
 `kubernetes.kubectlPath` (empty: found) are the proxies'
 (`Settings.kubernetesProxyConfiguration`). `kubernetes.agentAccess` (on)
 gives agents the `k8s_` tools (Agents' tools, below);
@@ -3947,8 +3973,11 @@ image field (`KubeWriteConfirmation.image`, `WriteConfirmation.imageField`):
 what it says when the button is pressed comes back with the typed name
 (`KubeWriteAnswer`), is checked as the docker CLI reads a name
 (`KubeTabWrite.image(from:)`, `DockerImageReference` — no space, no
-leading `-`) and runs instead (`KubeTabCommand.with(image:)`), quoted in
-the line; one that isn't an image runs nothing. The setting stays the default.
+leading `-`); one that isn't an image runs nothing. Another image than
+the one shown is asked again — a new confirmation with that image's exact
+line, its name typed again on production — so the line confirmed is
+always the line that runs (`KubeTabCommand.with(image:)`, quoted). The
+setting stays the default.
 One path (`runTabWrite`), as the page's writes: the process class check
 (`KubeProcessCheck`: refused on every read-only context — each is
 `KubeProcessVerb.writes` —, a node's debug also needs the context's

@@ -159,6 +159,13 @@ extension E2ERunner {
             imageField()?.stringValue = "ghcr.io/acme/tools:2.1"
             if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
             let edited = "kubectl debug -it debug-me-0 --image=ghcr.io/acme/tools:2.1 --target=app --context kind-fake -n shop"
+            // Asked again with that image's own line: the line confirmed is the line run.
+            check(
+                "another image is asked again with its line",
+                await eventually(10) { self.window.attachedSheet != nil && self.sheetTexts().contains { $0.contains(edited) } }
+                    && recorded.count == 3, "\(sheetTexts())")
+            check("its field the new image", imageField()?.stringValue == "ghcr.io/acme/tools:2.1", imageField()?.stringValue ?? "no field")
+            if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
             check("the field's image runs", await eventually(10) { recorded.count == 4 } && recorded.last?.command == edited, recorded.last?.command ?? "")
             check("and the setting is unchanged", model.debugImage(for: model.contexts.context(named: "kind-fake")!) == "busybox:1.36")
             // Not an image: refused, nothing typed.

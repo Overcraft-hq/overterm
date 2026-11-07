@@ -242,9 +242,13 @@ extension E2ERunner {
                 "Deployment tree-web bad", "ConfigMap tree-env missing",
             ], "\(argo?.root.children.map(\.name) ?? [])")
         check("its own sync and health", argo?.root.status == "OutOfSync · Degraded" && argo?.root.health == .bad, argo?.root.status ?? "none")
+        // A port-forward the forwards scenario left running looks at its pod now and then: not the tree's.
+        let forwarded = Set(KubeForwards.shared.forwards.compactMap(\.pod).map { "/pods/" + $0 })
         check(
-            "from its object alone", fake.requests.filter { $0.query["watch"] == nil }.map(\.path) == ["/apis/argoproj.io/v1alpha1/namespaces/shop/applications/tree-shop"],
-            "\(fake.requests.map(\.path))")
+            "from its object alone",
+            fake.requests.filter { $0.query["watch"] == nil }.map(\.path).filter { path in !forwarded.contains { path.hasSuffix($0) } } == [
+                "/apis/argoproj.io/v1alpha1/namespaces/shop/applications/tree-shop"
+            ], "\(fake.requests.map(\.path))")
         if let managed = argo?.root.children.first(where: { $0.kind == "Deployment" }) {
             check("a managed object opens", page.treeVerbs(for: managed).first?.title == "Open")
         }

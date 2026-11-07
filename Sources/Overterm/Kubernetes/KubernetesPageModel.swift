@@ -340,6 +340,10 @@ final class KubernetesPageModel: ObservableObject {
     @Published var resizeDraft: KubeResizeDraft?
     /// `N`: the new namespace's sheet, over the page.
     @Published var namespaceDraft: KubeNamespaceDraft?
+    /// A context's settings, over the page (`openContextSettings`).
+    @Published var contextSettingsDraft: KubeContextSettingsDraft?
+    /// Where they are written: settings.json — a test's own file instead.
+    var settingsStore: Settings = .shared
     /// What a write is stamped with (a rollout restart's `restartedAt`).
     var clock: () -> Date = { Date() }
     /// Whether Docker is on (`docker.enabled`): a test's own answer instead of the user's settings.
@@ -529,6 +533,12 @@ final class KubernetesPageModel: ObservableObject {
         if resizeDraft != nil {
             guard characters == "\u{1B}" else { return false }
             closeResizeSheet()
+            return true
+        }
+        // And a context's settings'.
+        if contextSettingsDraft != nil {
+            guard characters == "\u{1B}" else { return false }
+            closeContextSettings()
             return true
         }
         // And the new namespace's.

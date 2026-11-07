@@ -131,7 +131,8 @@ extension E2ERunner {
         check(
             "the claim's usage against its capacity",
             await eventually(15) { page.rows.first { $0.row.id == claim }.map { page.volumeUsage(of: $0).text } == "2.0Gi of 10Gi (20%)" })
-        let cellDrawn = await shownText(15) { $0.contains("2.0Gi of 10Gi") } != nil
+        // OCR reads that 0 as an O now and then: the digit isn't what is checked here, the cell drawn is.
+        let cellDrawn = await shownText(15) { $0.replacingOccurrences(of: "O", with: "0").contains("2.0Gi of 10Gi") } != nil
         let cellShown = cellDrawn ? "" : (await readWindow()).map(\.text).joined(separator: " | ")
         check("the Used cell drawn", cellDrawn, cellShown)
         if let kind = model.discovery?.kind("pvc") {
