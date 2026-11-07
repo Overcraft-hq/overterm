@@ -3335,7 +3335,12 @@ namespace as Terminal in this context pins one.
 - **The tab** (`runKubernetesCommand`, the window's): the pin written and
   the environment made as `startKubernetesTerminal` makes them, then
   `newTab(in:environment:kubePin:running:)` through `addTab` — the
-  command typed as the shell starts. A shell or attach tab is a pod's
+  command typed as the shell starts, the pin's `KUBECONFIG` exported on
+  its line first (`KubeTerminalLaunch.pinnedLine`): the user's startup
+  files run after the tab's environment and may export another, and
+  `--context C` means whatever C is in the files it names — a context
+  of the same name in another file is another cluster than the one
+  reviewed. A shell or attach tab is a pod's
   (`TabKind.pod`, `shippingbox.circle`: `kubectl exec`/`attach`/`debug`
   with stdin, read off the title ahead of the pin). A scenario sets
   `kubernetesCommandRecorder`: the tab opens pinned and the command is

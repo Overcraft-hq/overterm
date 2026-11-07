@@ -153,6 +153,30 @@ final class KubeTerminalTests: XCTestCase {
         XCTAssertNil(KubeTerminalEnvironment.make(pinFile: pinFile, kubeconfigs: [], guarded: false, home: home))
     }
 
+    /// Overterm's own command in a pinned tab carries the pin's KUBECONFIG
+    /// on its line: a startup file's `export KUBECONFIG=…` ran after the
+    /// tab's environment, and `--context C` then meant another file's C.
+    func testATypedLineCarriesExactlyThePinnedKubeconfig() throws {
+        let files = KubeTerminalFiles(folder: dir.appendingPathComponent("Contexts"))
+        let own = [dir.appendingPathComponent("acme config.yaml"), dir.appendingPathComponent("extra.yaml")]
+        let ready = try KubeTerminalLaunch.prepare(pin(), kubeconfigs: own, files: files, guarded: true, home: home)
+        let pinned = try XCTUnwrap(ready.environment["KUBECONFIG"])
+        let command = "kubectl drain node-1 --context fake-dev"
+        let line = try XCTUnwrap(KubeTerminalLaunch.pinnedLine(command, environment: ready.environment))
+        XCTAssertEqual(line, "export KUBECONFIG=" + KubectlLine.quoted(pinned) + "; " + command)
+        XCTAssertNil(KubeTerminalLaunch.pinnedLine(command, environment: [:]))
+        // The shell's rc exported another: the line puts the pin's back.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-f", "-c", "export KUBECONFIG=/elsewhere/config; " + line.replacingOccurrences(of: command, with: "print -rn -- $KUBECONFIG")]
+        let out = Pipe()
+        process.standardOutput = out
+        try process.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), pinned)
+    }
+
     func testGuardedNothingOfTheUsersIsWrittenOrHandedOn() {
         let files = KubeTerminalFiles(folder: dir.appendingPathComponent("Contexts"))
         let users = home.appendingPathComponent(".kube/config")

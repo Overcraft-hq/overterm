@@ -278,7 +278,10 @@ extension TerminalWindowController {
                 self.kubernetesPage.terminalProblem = nil
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }
                 let recorder = command == nil ? nil : self.kubernetesCommandRecorder
-                let tab = self.newTab(in: directory, environment: ready.environment, kubePin: ready.pin, running: recorder == nil ? command : nil)
+                // The pin's KUBECONFIG on the line itself: the shell's startup
+                // files may export another, and `--context` means what it names.
+                let typed = command.map { KubeTerminalLaunch.pinnedLine($0, environment: ready.environment) ?? $0 }
+                let tab = self.newTab(in: directory, environment: ready.environment, kubePin: ready.pin, running: recorder == nil ? typed : nil)
                 if let recorder, let command, let tab { recorder(command, tab) }
             } catch {
                 self.kubernetesPage.terminalProblem = "\(error)"
