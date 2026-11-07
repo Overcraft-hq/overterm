@@ -59,6 +59,7 @@ version is tagged `v<version>`.
 - kubernetes, docker: env names with PASS, PWD, PASSPHRASE or PIN as a word (`RABBITMQ_DEFAULT_PASS`, `MYSQL_PWD`, Helm's `rootPwd`) look secret — their values were shown, handed to agents and copied onto Run Locally's line
 - kubernetes: every command Overterm types into a pinned tab (a write, a shell, helm, argocd) exports the pin's KUBECONFIG on its line first — one your shell's startup files export could make `--context` another cluster than the one reviewed
 - kubernetes: Helm upgrade from the checkout runs only on the chart that was diffed — a template, values.yaml or dependency changed since (an agent editing the checkout), or the release upgraded meanwhile, and nothing is run: diff again
+- kubernetes: ⌘L on a selection in a pod's tab (shell, attach, a followed log) or a tab pinned to a context hands it to the agent scrubbed, as the page's Logs tab does — a bearer token or password went in the clear
 
 ## 1.5.6 — 2026-11-13
 

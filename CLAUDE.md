@@ -58,7 +58,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Overterm/Themes/` | Settings ▸ Themes: `TerminalTheme` (a Ghostty theme file, parsed), `ThemeCatalog` (the bundled ones and the user's), `ThemePreview` (a theme drawn as a little window), the gallery |
 | `Sources/Overterm/Settings/` | ⌘, — a tab over settings.json + keybindings.json (VS Code's files): `SettingsSchema` (every setting), `Settings` (the store, Ghostty overrides), `SettingsJSON` (JSON5, edited in place), `Keybindings` (`KeyCombo`, `KeyCommands`, menus + Ghostty keybinds), `SettingsPage` (the tab), `Updates` |
 | `Sources/Overterm/Peek/` | Tab Peek: `TabPeek` (pure card geometry and the layer transform), `TabPeekGesture` (the three-finger state machine), `TabPeekController`, the chrome over the hosts |
-| `Sources/Overterm/AskAgent/` | ⌘L: the strip over a selection, and the sheet that hands it to an agent with the command it came from |
+| `Sources/Overterm/AskAgent/` | ⌘L: the strip over a selection, and the sheet that hands it to an agent with the command it came from (`AskSelection`: a pod's or a pinned tab's selection scrubbed first) |
 | `Sources/Overterm/Inbox/` | ⌘I: `AgentPrompt` (pure — reads an agent's question and its choices off the screen), `InboxModel`, `InboxView` |
 | `Sources/Overterm/Blocks/` | what a pane has run: `CommandLedger` (pure — the title, `COMMAND_FINISHED` and the scrollbar assembled into commands), `ScrollMapView`, `BlockFrameView` |
 | `Sources/Overterm/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |

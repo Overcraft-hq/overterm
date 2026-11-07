@@ -116,3 +116,15 @@ final class AskAgentModel: ObservableObject {
         return sections.joined(separator: "\n\n")
     }
 }
+
+/// A terminal selection as ⌘L hands it to an agent. A pod's tab (`kubectl
+/// exec`, `attach`, `logs -f`) or one pinned to a Kubernetes context
+/// prints what the cluster holds: scrubbed as the page's own Logs tab
+/// scrubs the same lines (every URL's password, then what looks like a
+/// credential — rule 9), never handed on in the clear. Pure.
+enum AskSelection {
+    static func text(_ selection: String, kind: TabKind, pinned: Bool) -> String {
+        guard pinned || kind == .pod || kind == .kubernetes else { return selection }
+        return Secrets.scrubCredentials(Secrets.maskURLs(in: selection))
+    }
+}
