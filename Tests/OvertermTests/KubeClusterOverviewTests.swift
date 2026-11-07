@@ -174,6 +174,8 @@ final class KubeClusterOverviewTests: XCTestCase {
         XCTAssertFalse(page.press("r"), "a verb on a kind not on screen")
         XCTAssertTrue(page.press("?"))
         _ = page.press("x")
+        XCTAssertTrue(page.cheatSheet, "only Esc or ? closes the keys")
+        XCTAssertTrue(page.press("\u{1B}"))
 
         // Another section: every follow ends, nothing kept.
         XCTAssertTrue(page.press("2"))
