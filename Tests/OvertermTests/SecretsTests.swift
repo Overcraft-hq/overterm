@@ -64,4 +64,23 @@ final class SecretsTests: XCTestCase {
         XCTAssertFalse(run.line().contains("s3cret-bunny!"))
         XCTAssertFalse(run.line().contains("hunter2-mysql"))
     }
+
+    /// A quoted value is masked whole: the bare form stopped at its first
+    /// space and handed the rest of a passphrase to the agent.
+    func testAQuotedValueIsMaskedWhole() {
+        let cases: [(String, String)] = [
+            (#"password: "correct horse battery""#, #"password: "••••••""#),
+            (#"{"password":"p@ss w0rd","user":"jane"}"#, #"{"password":"••••••","user":"jane"}"#),
+            (#"{"client_secret": "a \"quoted\" word", "n": 1}"#, #"{"client_secret": "••••••", "n": 1}"#),
+            ("passphrase='two words here' next", "passphrase='••••••' next"),
+            ("DB_PASS=\"x y z\"", "DB_PASS=\"••••••\""),
+            ("password=hunter2 rest", "password=•••••• rest"),
+        ]
+        for (text, scrubbed) in cases {
+            XCTAssertEqual(Secrets.scrubCredentials(text), scrubbed, text)
+        }
+        for leftover in ["horse", "battery", "w0rd", "quoted", "words", "y z"] {
+            XCTAssertFalse(cases.map { Secrets.scrubCredentials($0.0) }.joined().contains(leftover), leftover)
+        }
+    }
 }

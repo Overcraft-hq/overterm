@@ -217,11 +217,17 @@ extension Secrets {
         (#"\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]+"#, credentialMask),
         (#"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[A-Z0-9]{16}\b"#, credentialMask),
         (#"(?<![A-Za-z0-9])(gh[pousr]_|github_pat_|xox[abeprs]-|glpat-|[rs]k_(?:live|test)_)[A-Za-z0-9_-]{8,}"#, "$1\(credentialMask)"),
-        (
-            #"(?i)((?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_.-]*[_.-])?(?:client-key-data|client-certificate-data|certificate-authority-data|idp-certificate-authority-data|token|id-token|refresh-token|access[_-]?token|client[_-]?secret|api[_-]?key|apikey|secret|secret[_-]?key|private[_-]?key|aws_secret_access_key|aws_session_token|password|passwd|passphrase|pass|pwd)["']?[ \t]*[:=][ \t]*["']?)[^\s"',;&]+"#,
-            "$1\(credentialMask)"
-        ),
+        // A quoted value whole — `password: "correct horse battery"`, JSON's
+        // `"password":"p@ss w0rd"` — escapes in it included: the bare form
+        // below stops at the first space and left the rest.
+        (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*)"(?:[^"\\\n]|\\.)*""#, "$1\"\(credentialMask)\""),
+        (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*)'(?:[^'\\\n]|\\.)*'"#, "$1'\(credentialMask)'"),
+        (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*["']?)[^\s"',;&]+"#, "$1\(credentialMask)"),
     ]
+
+    /// A credential field's name, as `credentialPatterns` finds it before its value.
+    private static let credentialKey =
+        #"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_.-]*[_.-])?(?:client-key-data|client-certificate-data|certificate-authority-data|idp-certificate-authority-data|token|id-token|refresh-token|access[_-]?token|client[_-]?secret|api[_-]?key|apikey|secret|secret[_-]?key|private[_-]?key|aws_secret_access_key|aws_session_token|password|passwd|passphrase|pass|pwd)"#
 
     /// `text` with every credential `credentialPatterns` finds masked, then
     /// every base64-looking blob.
