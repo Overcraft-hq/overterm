@@ -629,6 +629,35 @@ final class KubePodCommandsPageTests: XCTestCase {
         XCTAssertFalse(page.press("e"), "nothing selected")
     }
 
+    /// The context changes while the picker (or can-i, behind a browser
+    /// sign-in) waits: made production, the shell isn't opened unasked —
+    /// it is refused as another context; `shells: false`, refused.
+    func testAContextChangedWhileItWaitedIsCheckedAgain() async throws {
+        let (page, box) = try await page("fake-dev")
+        defer { page.model.hide() }
+        for (settings, said) in [
+            (KubeContextSettings(contextClass: .production), KubernetesPageModel.contextChanged),
+            (KubeContextSettings(shells: false), nil),
+        ] {
+            let plain = KubeContextList(contexts: [Self.context("fake-dev")], current: "fake-dev")
+            page.model.load = { _ in plain }
+            page.model.reloadContexts()
+            try await until("as it was") { page.model.contexts.context(named: "fake-dev")?.settings == KubeContextSettings() }
+            let choices = box.recorded.choices.count
+            page.selection = ["shop/api-1"]
+            XCTAssertTrue(page.press("e"))
+            try await until("the picker") { box.recorded.choices.count == choices + 1 }
+            let changed = KubeContextList(contexts: [Self.context("fake-dev", settings: settings)], current: "fake-dev")
+            page.model.load = { _ in changed }
+            page.model.reloadContexts()
+            try await until("read again") { page.model.contexts.context(named: "fake-dev")?.settings == settings }
+            box.recorded.choices.last?.1(1)
+            XCTAssertTrue(box.recorded.commands.isEmpty, "nothing opened")
+            XCTAssertTrue(box.recorded.confirms.isEmpty)
+            if let said { XCTAssertEqual(page.commandProblem, said) } else { XCTAssertNotNil(page.commandProblem) }
+        }
+    }
+
     func testARefusedVerbIsGreyedWithTheReasonAndDoesNothing() async throws {
         let (page, box) = try await page("fake-dev")
         defer { page.model.hide() }
