@@ -64,6 +64,7 @@ version is tagged `v<version>`.
 - kubernetes: `?` on the page lists every key it answers, grouped — navigation, the list, a resource's verbs, writes, sections and the window's shortcuts as bound now; Esc closes it, `:` and `/` still reach the bar and the filter
 - kubernetes: Context Settings… (the context card, a context's right-click menu) shows and edits a context's class, writes, usage source and Prometheus Service, node shell and its image, default namespace, whether agents may change it and Apply on production — saved to settings.json in place, comments kept with their entries, the fields this build doesn't know kept too, checked first; a production context made remote or local asks for its name first; production's write switch stays a session's, never a setting
 - docker: the containers list scrolls in half the time — a container's port pills are no longer made again for every row scrolled into view, nor a project's row's cell used for a container's
+- kubernetes: the Overview's health checks and a dependency tree ask for their lists four at once — on a cluster 100 ms away the health checks took 1.5 s, now 0.84
 
 ## 1.5.4 — 2026-11-09
 

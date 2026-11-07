@@ -23,6 +23,9 @@ final class KubeHealthSession: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var generation = 0
+    /// How many of its lists are asked at once (the scale scenario's 1 is
+    /// the one-after-the-other it was).
+    static var readWidth = 4
     /// What it read for, to read again only when that changes.
     private struct Key: Equatable {
         var context: String
@@ -44,30 +47,25 @@ final class KubeHealthSession: ObservableObject {
         self.scope = scope
         state = .loading
         let generation = self.generation
+        let width = Self.readWidth
         task = Task { [weak self] in
             let place = scope.namespace(for: .pods).map { "namespace \($0)" } ?? "every namespace"
-            var lists = KubeHealth.Lists()
-            for (read, kind) in kinds {
-                guard !Task.isCancelled else { return }
-                do {
-                    let body = try await client.get(Self.path(read, kind: kind, scope: scope)).body
-                    guard !Task.isCancelled else { return }
-                    // A namespace's pods are megabytes of JSON: decoded
-                    // off the main thread.
-                    let before = lists
-                    lists = await KubeBlocking.run {
-                        var next = before
-                        next.add(read, kind: kind.kind, apiVersion: kind.groupVersion, body: body, place: place)
-                        return next
+            // The lists at once (bounded), then decoded in their order:
+            // a namespace's pods are megabytes of JSON, decoded off the
+            // main thread.
+            let answers = await client.getAll(kinds.map { read, kind in (Self.path(read, kind: kind, scope: scope), "application/json") }, width: width)
+            guard !Task.isCancelled else { return }
+            if answers.contains(where: { if case .failure(let error) = $0 { error is CancellationError } else { false } }) { return }
+            let report = await KubeBlocking.run {
+                var lists = KubeHealth.Lists()
+                for ((read, kind), answer) in zip(kinds, answers) {
+                    switch answer {
+                    case .success(let body): lists.add(read, kind: kind.kind, apiVersion: kind.groupVersion, body: body, place: place)
+                    case .failure(let error): lists.failed(read, KubernetesModel.said(error), place: place)
                     }
-                } catch is CancellationError {
-                    return
-                } catch {
-                    lists.failed(read, KubernetesModel.said(error), place: place)
                 }
+                return KubeHealth.report(lists)
             }
-            let read = lists
-            let report = await KubeBlocking.run { KubeHealth.report(read) }
             guard let self, self.generation == generation, !Task.isCancelled else { return }
             self.report = report
             self.state = .loaded
