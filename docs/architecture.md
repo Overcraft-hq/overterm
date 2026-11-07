@@ -2367,8 +2367,11 @@ the socket (`UnixHTTPTransport.kubernetes`: `Host: localhost`, readiness
   replaces kubectl's defaults, so the list repeats them — and answers only
   `Host: localhost` (`--accept-hosts=^localhost$`); a read-only context's
   (`!KubeContext.isWritable`: production and remote by default) also
-  `--reject-methods` every write method, POST included, since a path
-  can't tell a permission review from a create. A context that becomes
+  `--reject-methods` every method but `GET`, POST included, since a path
+  can't tell a permission review from a create — named as the one let
+  through, because kubectl matches the method as sent: against kind's
+  1.37, `post`, `Delete` and `PROPFIND` passed a list of write methods and
+  reached the apiserver (which said 405; an aggregated server needn't). A context that becomes
   writable, or stops being, gets a new proxy with the other flags. No
   kuberc can switch the filters off: kubectl (1.33+) reads `~/.kube/kuberc`,
   whose `defaults` set any flag the command line leaves out, so every
@@ -2501,7 +2504,11 @@ the connection's context is writable (Writes, below).
   watch with `sendInitialEvents=true&resourceVersionMatch=NotOlderThan`,
   bookmarks, as a Table — its ADDED events the list until the bookmark
   annotated `k8s.io/initial-events-end` (another bookmark before it only
-  moves the version on). Which servers do is `KubeStreamingLists` (the
+  moves the version on). On a Table the end is a Table too, as kind's
+  1.37 sends it: its own metadata only the version, the annotation on its
+  one row's object (whatever `includeObject` asked), its cells empty —
+  `KubeWatchDecoder` reads it there, and the columns an empty list's end
+  carries. Which servers do is `KubeStreamingLists` (the
   model's, one for the app; every client it makes carries it with its
   context, `KubeClient.streaming`): a context's `/version` says (1.32,
   1.34+: `servesStreamingLists`; read when a context is picked or retried;
@@ -2517,9 +2524,9 @@ the connection's context is writable (Writes, below).
   bookmarks lose the annotation) makes the context list and watch for the
   run, until a version read says another minor. The quiet is decided by
   the consumer after every piece before it, so an end still buffered at
-  the deadline stands. An empty streaming list carries no Table columns:
-  it takes the kind's from the context's last list (`KubeStreamingLists`
-  keeps them), else a plain list says them. Once whole, the list's own
+  the deadline stands. An empty streaming list's end carries the columns
+  on a real server; one that doesn't takes the kind's from the context's
+  last list (`KubeStreamingLists` keeps them), else a plain list says them. Once whole, the list's own
   rules apply: resumed from its bookmark, a 410 listed (streamed) again.
   A list without a resourceVersion (metrics.k8s.io's, which has no watch)
   is listed again every `unversionedPoll` (30 s), never watched from "".
@@ -2530,7 +2537,9 @@ the connection's context is writable (Writes, below).
 - **Errors**: a proxy's own 500 in plain text is `KubeProxyProblem`
   (`classify`, with the connection's `KubeSignIn`: an expired AWS session
   is "aws sso login --profile p"), and a follow ends at it — no retry runs
-  the plugin again; the server's own Status is `KubeAPIError` (status,
+  the plugin again; so is a 401 on a context whose user signs in with a
+  plugin (kubectl throws a refused token away and runs the plugin again
+  for the next request — five runs for four against kind); the server's own Status is `KubeAPIError` (status,
   reason, message); a 429 is retried after its `Retry-After`, three times.
   A stream's error keeps its answer whole (`HTTPError.response`: the
   `Content-Type`, the Status, the `Retry-After`), so a watch's JSON 500 is
@@ -2565,7 +2574,9 @@ as the answer with `goneAsAnswer`), `expireWatches` (an in-stream 410),
 `endWatches` (the server's timeout), `sendInitialEvents` (refused with a
 422 without `streamingLists`; `interimBookmarks` puts a plain bookmark
 among the initial events; without `streamingTables` a Table's end isn't
-annotated), and `minor` the version it says (34; 33 serves none). `unversionedLists` answers lists without a
+annotated; its bookmarks are shaped as kind's 1.37 sends them — a Table's
+end on its row's object, the columns on an empty list's, unless
+`bookmarkColumns` is off), and `minor` the version it says (34; 33 serves none). `unversionedLists` answers lists without a
 resourceVersion. A pod's log (`appendLog`, `setLog`; `previous` for the
 last terminated instance's) is served at `pods/{p}/log` as the API serves
 it — `container` (a 400 without one when the pod has several, or for one
@@ -2590,6 +2601,17 @@ the real kubectl (when installed) as a read-only context's proxy in
 front of it through a kubeconfig of its own: discovery, a list, a followed
 change and a 410 pass through. A unit test also shows the app's own
 proxies reach nothing from a unit test: no kubeconfig, so no kubectl.
+
+**Against a real cluster** (`KubeRealClusterTests`, opt-in with
+`OVERTERM_KUBE_TESTS=1`; docs/testing.md, Kubernetes): the app's own
+`KubeProxies`, `KubeClient`, `KubeCanIRunner`, `KubeDetailSession`'s tree
+and `KubeHealthSession` against a kind cluster made only for it
+(`Scripts/kube-test-cluster.sh`: cluster `fake`, context `kind-fake`, a
+kubeconfig file of its own, the node container labelled
+`overterm.test`), in a namespace of its own deleted after. It answered
+analysis.md Section 12's questions about the proxy (Kubernetes v1.37.0),
+and three fixes came of it: the read-only filter's methods, a Table's
+streaming-list end, a plugin context's 401.
 
 **The model** (`KubernetesModel`, one for the app, as `DockerModel` is):
 the contexts, the one the page shows and its namespace, that context's

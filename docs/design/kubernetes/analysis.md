@@ -735,9 +735,9 @@ None of the path-covered subresources is used by Overterm through the socket: sh
 # every context: no exec, attach, port-forward or proxy subresources on the socket
 PATHS='^/api/.*/pods/.*/(exec|attach|portforward|proxy),^/api/.*/services/.*/proxy,^/api/.*/nodes/.*/proxy,^/apis/subresources\.kubevirt\.io/'
 
-# read-only context (remote and production by default)
+# read-only context (remote and production by default): every method but GET
 kubectl proxy --context C --unix-socket <0700 dir>/<hash>.sock \
-  --reject-methods='^(POST|PUT|PATCH|DELETE|CONNECT)$' \
+  --reject-methods='^(?:[^G]|G$|G[^E]|GE$|GE[^T]|GET.)' \
   --reject-paths="$PATHS"
 
 # writable context: the same paths, no method filter
@@ -746,7 +746,7 @@ kubectl proxy --context C --unix-socket <0700 dir>/<hash>.sock \
 
 # Prometheus (stage 4, opt-in): a second proxy that reaches only the query paths
 kubectl proxy --context C --unix-socket <0700 dir>/<hash>-metrics.sock \
-  --reject-methods='^(POST|PUT|PATCH|DELETE|CONNECT)$' \
+  --reject-methods='^(?:[^G]|G$|G[^E]|GE$|GE[^T]|GET.)' \
   --accept-paths='^/api/v1/namespaces/<ns>/services/<svc>:<port>/proxy/api/v1/(query|query_range)$'
 ```
 
@@ -761,12 +761,12 @@ How this works:
 - **No socket reaches the proxy subresources.** A GET on a service, pod or node proxy reaches a process inside the cluster, which may act on it. Prometheus (stage 4) gets its own proxy whose `--accept-paths` names only the detected or configured service's `query` and `query_range` paths (namespace, service and port regex-escaped). Every other path, other services' proxies included, gets 403 there. It counts towards `maxProxies` and runs only while a chart shows.
 - **The guarantee is the socket's.** Overterm's own requests and the MCP tools cannot write on a read-only context, whoever sends them. The kubectl and helm processes Overterm starts do not use the socket. For them, read-only is Overterm refusing to start the writing ones (Section 5).
 
-To check in the spike:
-- that `--reject-methods` also applies to upgrade requests (they are GETs, so it should not matter);
-- the exact response the filter gives;
-- that path variants (`//api/…`, `/api/v1/./…`, `%2F` in a name) cannot slip past the reject list; the real-proxy test sends them (Section 11);
-- which aggregated APIs the dev clusters serve, and whether any has connect subresources the list does not name;
-- that client-go keeps no negative cache for failed exec calls, so every request may run `aws` again. Overterm stops sending requests after the first auth failure and backs off.
+Checked against a real cluster (kind, Kubernetes v1.37.0, kubectl v1.36.1; 2026-11-07; `KubeRealClusterTests`, Section 11 and Section 12):
+- **The method filter matches the method as sent, case and all.** `post`, `Delete`, `OPTIONS`, `PROPFIND` and `TRACE` passed `^(POST|PUT|PATCH|DELETE|CONNECT)$` and reached the apiserver, which answered 405 and changed nothing — an aggregated API server needn't. So the read-only pattern now names the one method let through: everything but `GET` is refused (`KubeProxyFlags.rejectedMethods`). An upgrade is a GET, so the paths stop it (a WebSocket exec gets 403).
+- **The filter's answer** is kubectl's own: `403`, `Content-Type: text/plain; charset=utf-8`, body `Forbidden\n`, the server never asked. The server's 403 is Status JSON, so the two can be told apart.
+- **Path variants don't slip past.** `%2F` anywhere (`pods%2Fp%2Fexec`, `api%2Fv1…%2Fproxy%2F`), `%65xec` and `exec%3F…` are decoded before the match and refused; `//`, `/./`, `..` get kubectl's mux's `307` to the clean path, which is refused in turn; a changed case (`EXEC`, `/API`, `Proxy`) is a 404 from the server, which serves no such path; trailing segments (`exec/`, `exec/extra`, `exec;x`, `exec.json`) and a query are still refused, `pods/p?/exec` is the pod.
+- **Connect subresources:** kind's discovery lists exactly `pods/attach`, `pods/exec`, `pods/portforward`, `pods/proxy`, `nodes/proxy` and `services/proxy` with `get` (besides the reads: status, scale, log, ephemeralcontainers, resize, approval), all six refused on either socket, and no API is aggregated. The suite fails naming any new one. The dev clusters' aggregated APIs (metrics-server's on EKS) are still to be listed there.
+- **Failed exec calls are not cached:** a plugin that fails ran once per request (four requests, four runs; `/version` too), each a 500 `text/plain` "getting credentials: exec: executable … failed with exit code 1", its own words ("Token has expired") on kubectl's stderr. A token the server refuses (401) is thrown away and asked for again: five runs for four requests. A token it takes is kept until its expiry: one run for many. So a credential failure stops the context (as before), and **a 401 on a context whose user signs in with a plugin now does too** (`KubeProxyProblem.classify`).
 
 ### Environment and credentials
 
@@ -818,7 +818,7 @@ To check in the spike:
   - beta and on in 1.32, off by default in 1.33, on again from 1.34;
   - client-go's own gate is on by default only from 1.35.
 
-  They sit behind detecting the version, with list plus watch as the baseline. Whether they combine with `as=Table` is to be tested in the spike; until it is, a streaming list whose events go quiet for 5 s without the `k8s.io/initial-events-end` bookmark is given up for list plus watch and the context isn't asked again in the run, so a server where they don't combine costs a few seconds once per context, not the watch's timeout.
+  They sit behind detecting the version, with list plus watch as the baseline. **They combine with `as=Table`** (kind's 1.37): every object ADDED as a one-row Table, the columns on the first, then a `BOOKMARK` that is a Table too — its own metadata only the resourceVersion, its one row's object (whatever `includeObject` asked) carrying `k8s.io/initial-events-end: "true"`, its cells empty. An empty list's end is the stream's first Table, so it carries the columns. Overterm read the annotation only from the Table's own metadata, so on a real server every streaming list went quiet for 5 s and the context fell back to list plus watch for the run; `KubeWatchDecoder` now reads it from the row, and the columns from the bookmark. A streaming list whose events go quiet for 5 s without its end is still given up for list plus watch, for a server that doesn't combine them.
 
 **Single objects**
 - Fetched as JSON and shown as YAML, with managedFields and status folded away.
@@ -907,7 +907,7 @@ To check in the spike:
 **Shells and forwards**
 - `kubectl exec -it`, `attach`, `debug`, `logs -f`, `port-forward` and `drain` run as processes, with the captured environment and the user's credentials. None of them uses the socket. Which start on a read-only context is in Section 5.
 - kubectl uses WebSocket for exec by default since 1.30 and for port-forward since 1.31.
-- `kubectl port-forward` to a Service or Deployment picks one pod at start and does not follow it. So Overterm resolves the pod itself and forwards to `pod/<name>`. Recent versions exit when the stream to the pod is lost; Overterm then resolves again and restarts (exit behaviour to verify in the spike).
+- `kubectl port-forward` to a Service or Deployment picks one pod at start and does not follow it. So Overterm resolves the pod itself and forwards to `pod/<name>`. It does not exit when its pod is deleted while nothing connects: kubectl 1.36 against 1.37 kept listening for a minute and more, then exited (1, "error: lost connection to pod") at the next connection, which failed. So Overterm's pod check (every 5 s while the page shows) is what notices a pod gone; kubectl exiting says so only once the forward was used. Hidden, nothing is read, and a forward to a deleted pod stays up until it is used or the page shows again.
 - In-process exec over WebSocket (`v5.channel.k8s.io`, a one-byte channel prefix, resize on channel 4) is feasible. It is not needed: Overterm's terminal tabs give a TTY, resize and auth for free.
 
 ### Connections
@@ -1383,24 +1383,25 @@ The scenario starts a forward to a Service, deletes the pod in the fake, and end
 - `kubernetesPerf`: 5,000 pods.
 - Layout checks through `OVERTERM_DUMP_LAYOUT`.
 
-**Optional live tests** (`OVERTERM_K8S_TESTS=1`):
-- Only against a context that is local by name **and** whose server is 127.0.0.1 or `::1`; any other context refuses.
+**Optional live tests** (`OVERTERM_KUBE_TESTS=1`, `KubeRealClusterTests`; docs/testing.md, Kubernetes):
+- The fixture is a kind cluster started only for them: `Scripts/kube-test-cluster.sh create|delete|kubeconfig` (decision 8) — cluster `fake`, context `kind-fake`, its kubeconfig a file of its own (`--kubeconfig` on every kind command: kind writes into `~/.kube/config` otherwise), its node container labelled `overterm.test`.
+- Only that file: a kubeconfig under `~/.kube`, or one whose one context isn't `kind-fake` on 127.0.0.1 or `::1`, is refused. A second file of the suite's own adds `fake-dev` (read-only) and plugin users over the same cluster; their tokens (ServiceAccounts', ten minutes) are in the plugin's environment, never on disk.
 - They work in their own namespace (`overterm-test-<random>`, labelled `overterm.test`), which is deleted afterwards.
-- They are where a real `kubectl port-forward` and a real shell are exercised.
-- This Mac has no local cluster. A kind or k3d cluster, started only for these tests, is the fixture (decision 8).
+- What they check is Section 12's list: the method filter's answer, path variants, connect subresources, exec plugins' caching, a real `kubectl port-forward` whose pod is deleted, streaming lists with Tables, the metrics proxy against a real Service proxy path, a write on a writable socket, `can-i`, `KubeTree` and `KubeHealth` on real objects.
 
 ## 12. Risks
 
 - **The socket is a credential.** Any process running as the user can reach it. The flags limit what it can do: no socket reaches exec, attach, port-forward or the proxy subresources, and a read-only one cannot write. A writable context's socket can still write whatever the user's RBAC allows. An agent's own kubectl is stronger still, which 3.11 only mitigates.
 - **Process enforcement is Overterm's code, not the cluster's.** A writing kubectl or helm command on a read-only context is refused by `KubeCommands` and `ManagedProcess`. A bug there would run it with the user's full rights. The class-by-verb unit test is the lock.
 - **"Terminal in this context" is the user's own kubectl.** It goes to the pinned context, but read-only does not apply inside it. The red band and the confirmation on production say so.
-- **Unknowns in the proxy, for the spike:**
-  - the response the method filter gives;
-  - whether path variants can slip past the reject list;
-  - whether an aggregated API on the dev clusters has connect subresources the list doesn't name;
-  - whether failed exec calls are cached;
-  - whether a forward exits when its pod goes;
-  - whether streaming lists combine with Tables (not yet run on kind or EKS 1.32/1.34+; meanwhile a quiet streaming list falls back after 5 s, Section 4).
+- **The proxy's unknowns, answered** against a real cluster — kind, Kubernetes **v1.37.0**, kubectl v1.36.1, 2026-11-07 (`KubeRealClusterTests`, `OVERTERM_KUBE_TESTS=1`; Section 4 has the detail):
+  - *The method filter's answer:* kubectl's own 403, `text/plain; charset=utf-8`, `Forbidden\n`. It matches the method as sent: a lowercase or unknown method (`post`, `Delete`, `PROPFIND`) passed it to the apiserver, which said 405. **Fixed:** the read-only and metrics proxies now refuse every method but `GET`.
+  - *Path variants:* none slips past. Encoded slashes and letters are decoded before the match; `//`, `/./` and `..` are redirected (307) to a path that is refused; a changed case is a path the server doesn't serve (404); trailing segments and queries are still the subresource.
+  - *Connect subresources:* kind serves exactly the six the list names, and no aggregated API. The dev clusters' aggregated APIs are still to be listed; the suite fails on any new one where it runs.
+  - *Failed exec calls:* not cached — the plugin runs again for every request, and a refused token (401) is asked for again too. A credential failure already stopped the context; **fixed:** a 401 on a plugin's context stops it as well.
+  - *A forward whose pod goes:* kubectl doesn't exit while nothing connects; it exits (1, "lost connection to pod") at the next connection, which fails. Overterm's pod check while the page shows is what notices; hidden, the forward waits for a connection or the page.
+  - *Streaming lists with Tables:* they combine, and end with the `k8s.io/initial-events-end` bookmark — on the Table's one row's object, which Overterm didn't read, so every streaming list fell back after 5 s. **Fixed** (`KubeWatchDecoder`); an empty list's end carries the columns. Not yet run on EKS 1.32/1.34+.
+  - Also checked: the metrics proxy's `--accept-paths` against a real Service proxy path (only its query and query_range reach the Service), a write on a writable socket, `can-i` (yes for the admin, no with the server's reason for a ServiceAccount with no role; a short-lived kubectl runs the credential plugin for every question), and `KubeTree`/`KubeHealth` on a Deployment, its ReplicaSet and pod, a ConfigMap, a PVC (kind's `standard` class) and Services.
 - **oidc-login's browser flow** from a background process. Logins are serialized, so a second context waits for the first.
 - **EKS access entries** may make the rules review incomplete. Verbs are enabled only after an access review, and a 403 at write time is reported plainly.
 - **Version spread:** EKS 1.2x–1.3x. Version-dependent features (streaming lists, the WebSocket permission change) sit behind detection.

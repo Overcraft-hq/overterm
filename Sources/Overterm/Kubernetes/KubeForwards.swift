@@ -112,8 +112,11 @@ struct KubeForward: Identifiable, Equatable, Sendable {
 /// - **Started again** when kubectl exits or its pod goes (a GET every
 ///   `podCheckInterval` while it forwards and the page shows — hidden,
 ///   nothing is read (a check in flight is cancelled, a start again waits
-///   for the page to resolve), and kubectl exiting is what says the pod went;
-///   shown again, the pod is looked at at once: gone, no longer running —
+///   for the page to resolve), and kubectl exiting is what says the pod went
+///   — which it does only at the next connection: a pod deleted while
+///   nothing connects leaves kubectl listening (kind's 1.37, a minute and
+///   more; `KubeRealClusterTests`), so hidden, such a forward stays up until
+///   it is used, and its first connection fails; shown again, the pod is looked at at once: gone, no longer running —
 ///   for a Service or a Deployment, no longer ready) —
 ///   resolved again first, the pod pinned before kept while it is still
 ///   ready, backing off (`KubeForwardBackoff`), and stopped, saying why,

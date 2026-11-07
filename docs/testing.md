@@ -131,6 +131,71 @@ anywhere (`drawn([…])`), never on one line. A check that something is
 to (`notDrawn(_:besides:)`) — an empty read proves nothing. Look for a
 part of a value Vision reads as written: it read `acme` as Cyrillic.
 
+### Kubernetes
+
+The unit tests and the `kubernetes` scenarios talk to `FakeKubeAPI`
+(`Sources/Overterm/Kubernetes/`), with the real kubectl as its proxy where
+one is installed, through kubeconfigs of their own. This Mac's
+`~/.kube/config` has real clusters and its current context is production:
+no test reads it, and an isolated run sees no kubeconfig but
+`OVERTERM_KUBECONFIG`'s.
+
+`KubeRealClusterTests` runs Overterm's own proxies, client, `can-i`, tree
+and health checks against a real cluster — a kind cluster made only for
+it:
+
+```
+Scripts/kube-test-cluster.sh create       # kind cluster "fake", context kind-fake (~1 min; pulls kindest/node once)
+OVERTERM_KUBE_TESTS=1 OVERTERM_KUBE_TEST_KUBECONFIG="$(Scripts/kube-test-cluster.sh kubeconfig)" \
+  swift test --filter KubeRealClusterTests
+Scripts/kube-test-cluster.sh delete       # the cluster, its node container, the file
+```
+
+Without `OVERTERM_KUBE_TESTS=1` it is skipped, so `make test` and CI need
+no cluster. The script's kubeconfig is a file of its own (a folder given
+as its second argument, else `$TMPDIR/overterm-kind`; never under
+`~/.kube`, never one `KUBECONFIG` names): kind writes into `~/.kube/config`
+unless told otherwise, so every kind command gets `--kubeconfig`. The node
+container is kind's node image with one label added (`overterm.test`).
+The suite refuses a kubeconfig under `~/.kube` or one whose one context
+isn't `kind-fake` on 127.0.0.1; every kubectl it starts gets that file as
+`KUBECONFIG`, `--context` and a HOME of its own; a second file of its own
+adds `fake-dev` (remote: read-only) and credential plugins over the same
+cluster, whose tokens (two ServiceAccounts', ten minutes) are in the
+plugin's environment, never on disk. It works in a namespace of its own
+(`overterm-test-…`, labelled `overterm.test`), deleted when it ends. It
+needs `registry.k8s.io/e2e-test-images/agnhost`, pulled by the node.
+
+What it checks — analysis.md Section 12's questions about the proxy, as
+kind's Kubernetes v1.37.0 answers them (2026-11-07, kubectl v1.36.1):
+
+- a read-only socket answers every method but GET — a lowercase or unknown
+  one too — with kubectl's own `403 text/plain` "Forbidden", and nothing is
+  made;
+- no path variant reaches exec, attach, port-forward or a pod's, Service's
+  or node's proxy on either socket: encoded slashes and letters, `//`,
+  `/./` and `..` (a 307 to a path refused in turn), a changed case (the
+  server's 404), trailing segments, a query, a WebSocket upgrade;
+- every subresource the server lists with `get` that isn't a read is
+  refused — exactly the six the list names on kind, and no API is
+  aggregated (a new one fails, named);
+- a failing credential plugin runs again for every request kubectl gets,
+  and a refused token (401) is asked for again: Overterm stops the context
+  at the first of either and runs the plugin again only on Retry; a token
+  the server takes is run for once;
+- a real `kubectl port-forward` whose pod is deleted goes on listening
+  until a connection, which fails, then exits 1 ("lost connection to pod");
+- a streaming list with Tables ends at its `k8s.io/initial-events-end`
+  bookmark (on the Table's row), well before the 5 s that would give it up,
+  an empty one with its columns, and the context goes on streaming;
+- the metrics proxy reaches the Service's query and query_range paths and
+  nothing else;
+- a write on a writable socket, none on a read-only one;
+- `kubectl auth can-i`: yes for kind's admin, no for a ServiceAccount with
+  no role;
+- a Deployment's tree (ReplicaSet, pod, ConfigMap, PVC, Service) and the
+  namespace's health findings on real objects.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

@@ -64,7 +64,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Overterm/Splits/` | a tab's panes: `SplitTree` (pure layout logic), `SplitHostView` (frames, dividers, dim) and `PaneHeaderView` (every pane's 38 pt bar) |
 | `Sources/Overterm/Search/` | ⌘F overlay: terminal + file names + contents (`SpotlightModel`, `CheckoutSearch`); the terminal half is `Ghostty/TerminalSearch` |
 | `Sources/Overterm/Snippets/`, `Palette/`, `Session/` | snippets store + sheets, ⌘K palette (`CommandHistory`: what this machine has run), session save/restore |
-| `Scripts/` | GhosttyKit build, app bundling (with the build metadata About shows), icon, `bump-version.sh` |
+| `Scripts/` | GhosttyKit build, app bundling (with the build metadata About shows), icon, `bump-version.sh`; the opt-in suites' servers: `database-test-servers.sh`, `kube-test-cluster.sh` (a kind cluster `fake`, its kubeconfig a file of its own — never `~/.kube` — for `KubeRealClusterTests`, `OVERTERM_KUBE_TESTS=1`; docs/testing.md, Kubernetes) |
 | `VERSION`, `CHANGELOG.md`, `.githooks/` | the app's version, what each version changed, the hooks that keep them in step (Commits) |
 
 More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugging.md`.
