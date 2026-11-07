@@ -173,6 +173,12 @@ final class KubernetesModel: ObservableObject {
     private var polling: Task<Void, Never>?
     private var reading: Task<Void, Never>?
     private var side: Task<Void, Never>?
+    /// The selected context's `/version`, being read: the list waits for
+    /// it, as it says whether the server takes a streaming list.
+    private var versionRead: Task<KubeServerVersion?, Never>?
+    /// Which contexts' servers take a streaming list — their version, a
+    /// refusal — for every client the model makes.
+    let streamingLists = KubeStreamingLists()
     private var settingsWatch: AnyCancellable?
     /// Each context's discovery, and when it was read.
     private var discoveries: [String: (discovery: KubeDiscovery, read: ContinuousClock.Instant)] = [:]
@@ -266,6 +272,8 @@ final class KubernetesModel: ObservableObject {
         polling = nil
         side?.cancel()
         side = nil
+        versionRead?.cancel()
+        versionRead = nil
         endDiscoveryWatch()
         reading?.cancel()
         reading = nil
@@ -351,6 +359,11 @@ final class KubernetesModel: ObservableObject {
         discoveries = discoveries.filter { name, _ in
             guard let old = contexts.context(named: name), let new = list.context(named: name) else { return false }
             return Self.sameCluster(old, new)
+        }
+        // So is what its server's version said of streaming lists (and its
+        // kinds' columns): until it is read again, list and watch.
+        for old in contexts.contexts where list.context(named: old.name).map({ !Self.sameCluster(old, $0) }) ?? true {
+            streamingLists.forget(old.name)
         }
         if let before, let now = list.context(named: before.name), !Self.sameCluster(before, now) {
             discovery = nil
@@ -527,7 +540,9 @@ final class KubernetesModel: ObservableObject {
         let proxies = self.proxies
         Task { [weak self] in
             await proxies.retry(name)
-            self?.restartReading()
+            // Its version read again first: the cluster may have been
+            // upgraded or put back, which says how to list.
+            self?.restartReading(waitingForVersion: true)
             self?.metrics.retry()
             self?.prometheus.retry()
         }
@@ -548,12 +563,21 @@ final class KubernetesModel: ObservableObject {
         connectOverride?(context) ?? KubeProxyConnection(proxies: proxies, context: context, role: role)
     }
 
+    /// A client for `context` through its proxy in `role`'s slot: its
+    /// follows stream their first list where the context's server is
+    /// known to serve them (`streamingLists`), list and watch otherwise.
+    private func makeClient(_ context: KubeContext, role: KubeProxies.Role = .page) -> KubeClient {
+        var client = KubeClient(connection(for: context, role: role))
+        client.streaming = (streamingLists, context.name)
+        return client
+    }
+
     /// What a page's detail reads through: the context's proxy (the page's
     /// slot; a forward's reads `.background`), or a test's connection. Nil
     /// with Kubernetes off, or for a context the kubeconfig no longer has.
     func client(for name: String, role: KubeProxies.Role = .page) -> KubeClient? {
         guard enabled, let context = contexts.context(named: name) else { return nil }
-        return KubeClient(connection(for: context, role: role))
+        return makeClient(context, role: role)
     }
 
     // MARK: Agents (KubeMCP)
@@ -605,28 +629,28 @@ final class KubernetesModel: ObservableObject {
     /// What a tool reads through: the context's proxy in a background slot
     /// — never the page's — or a test's connection. GETs only.
     func agentClient(for context: KubeContext) -> KubeClient {
-        KubeClient(connection(for: context, role: .background))
+        makeClient(context, role: .background)
     }
 
     /// What the attention watches read through: the context's proxy in a
     /// background slot, as a watch — it never opens a browser sign-in, and
     /// its proxy is given up for a request someone made (`KubeProxies.Role.watch`).
     func watchClient(for context: KubeContext) -> KubeClient {
-        KubeClient(connection(for: context, role: .watch))
+        makeClient(context, role: .watch)
     }
 
     /// What the Overview's pinned cards read through: the context's proxy
     /// in a slot free as it stands — none is closed for it, no browser
     /// sign-in is opened (`KubeProxies.Role.spare`).
     func spareClient(for context: KubeContext) -> KubeClient {
-        KubeClient(connection(for: context, role: .spare))
+        makeClient(context, role: .spare)
     }
 
     /// What the rail's panel reads through while it shows a bound
     /// checkout: the context's proxy in a background slot, as an agent's
     /// tools — never the page's slot — or a test's connection.
     func panelClient(for context: KubeContext) -> KubeClient {
-        KubeClient(connection(for: context, role: .background))
+        makeClient(context, role: .background)
     }
 
     /// The contexts where agents get write tools while Overterm may write
@@ -640,7 +664,7 @@ final class KubernetesModel: ObservableObject {
         return await proxies.status(of: name)
     }
 
-    private func restartReading(side readSide: Bool = true) {
+    private func restartReading(side readSide: Bool = true, waitingForVersion: Bool = false) {
         endFollow()
         rows = KubeRows()
         anchors = [:]
@@ -650,13 +674,13 @@ final class KubernetesModel: ObservableObject {
             updateMetrics()
             return
         }
-        let client = KubeClient(connection(for: context))
+        let client = makeClient(context)
         // Shown again, a kind picked before the kubeconfig was read back
         // (`show` reads it off the main thread) starts the list alone: the
         // side — the version, discovery, the CRD watch — goes with it, or
         // a CRD applied then never shows.
         if readSide || side == nil { self.readSide(context, client) }
-        follow(kind, client)
+        follow(kind, client, waitingForVersion: waitingForVersion)
         updateMetrics()
     }
 
@@ -666,15 +690,23 @@ final class KubernetesModel: ObservableObject {
         endFollow()
         rows = KubeRows()
         anchors = [:]
-        follow(kind, KubeClient(connection(for: context)))
+        follow(kind, makeClient(context))
     }
 
-    private func follow(_ kind: KubeResourceKind, _ client: KubeClient) {
+    private func follow(_ kind: KubeResourceKind, _ client: KubeClient, waitingForVersion: Bool = false) {
         listState = .loading
         let scope = self.scope
         let options = selectors.options
         let generation = self.generation
+        // The version being read says how to list: a streaming list or
+        // list and watch. Read once a context is picked or retried; waited
+        // for on a retry and while the context's isn't known — a kind or a
+        // namespace changed, a context picked again, doesn't wait.
+        let unknown = selected.map { streamingLists.state(of: $0.name) == .unknown } ?? false
+        let versionRead = waitingForVersion || unknown ? self.versionRead : nil
         following = Task { [weak self] in
+            if let versionRead { _ = await versionRead.value }
+            guard !Task.isCancelled else { return }
             do {
                 for try await update in client.follow(kind, in: scope, options: options) {
                     guard let self, self.generation == generation else { return }
@@ -700,12 +732,20 @@ final class KubernetesModel: ObservableObject {
     /// context is picked; its CRDs watched.
     private func readSide(_ context: KubeContext, _ client: KubeClient) {
         side?.cancel()
+        versionRead?.cancel()
         endDiscoveryWatch()
         let accessible = context.settings.accessibleNamespaces
         let name = context.name
         let fresh = discoveries[name].map { ContinuousClock.now - $0.read < rediscoveryInterval } ?? false
+        let lists = streamingLists
+        let read = Task { () -> KubeServerVersion? in
+            let version = try? await client.version()
+            if let version { lists.learn(name, minor: version.minorNumber) }
+            return version
+        }
+        versionRead = read
         side = Task { [weak self] in
-            if let version = try? await client.version() {
+            if let version = await read.value {
                 guard let self, self.selectedName == name else { return }
                 self.version = version
             }
@@ -912,7 +952,7 @@ final class KubernetesModel: ObservableObject {
         if !now, rediscovering != nil { return }
         rediscovering?.cancel()
         let delay = now ? Duration.zero : rediscoveryDelay
-        let client = KubeClient(connection(for: context))
+        let client = makeClient(context)
         let name = context.name
         rediscovering = Task { [weak self] in
             if delay > .zero { try? await Task.sleep(for: delay) }

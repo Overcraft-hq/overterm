@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import os
 
 @testable import Overterm
 
@@ -116,6 +117,88 @@ final class KubernetesPageTests: XCTestCase {
         api.forgetRequests()
         try await Task.sleep(for: .milliseconds(200))
         XCTAssertEqual(api.requests, [], "nothing asked while nobody looks")
+    }
+
+    /// The page's list is a streaming list where the context's server
+    /// serves them (its version read first, 1.34), list and watch where it
+    /// doesn't (1.33, read again on a retry) — the same rows either way —
+    /// and on a refusal (the gate off), which the context remembers.
+    func testThePageStreamsItsListWhereTheServerServesThem() async throws {
+        let model = model([Self.context("fake-dev", namespace: "shop")], current: "fake-dev")
+        model.show()
+        defer { model.hide() }
+        try await until(5, "streamed") { model.rows.count == 2 && model.listState == .live }
+        let pods = api.requests.filter { $0.path == "/api/v1/namespaces/shop/pods" }
+        XCTAssertEqual(pods.filter { !$0.isWatch }.count, 0, "no list")
+        XCTAssertEqual(pods.filter { $0.query["sendInitialEvents"] == "true" && $0.query["resourceVersionMatch"] == "NotOlderThan" }.count, 1)
+        XCTAssertEqual(model.streamingLists.state(of: "fake-dev"), .served)
+        let streamed = model.rows.ageless
+        api.addPod("cache-0", namespace: "shop")
+        try await until(5, "by its watch") { model.rows.count == 3 }
+        api.deletePod("cache-0", namespace: "shop")
+        try await until(5, "gone") { model.rows.count == 2 }
+
+        api.minor = "33"
+        api.streamingLists = false
+        api.forgetRequests()
+        model.retry()
+        try await until(5, "1.33 read") { model.version?.minorNumber == 33 && model.listState == .live && model.rows.count == 2 }
+        try await until(5, "watched") { self.api.openWatches >= 1 }
+        let again = api.requests.filter { $0.path == "/api/v1/namespaces/shop/pods" }
+        XCTAssertEqual(again.filter { $0.query["sendInitialEvents"] != nil }.count, 0, "not asked of a 1.33")
+        XCTAssertEqual(again.filter { !$0.isWatch }.count, 1, "listed")
+        XCTAssertEqual(model.streamingLists.state(of: "fake-dev"), .notServed)
+        XCTAssertEqual(model.rows.ageless, streamed, "the same rows")
+
+        // 1.34 with its gate off: refused once, then listed for the run.
+        api.minor = "34"
+        api.forgetRequests()
+        model.retry()
+        try await until(5, "refused, listed") { model.streamingLists.state(of: "fake-dev") == .refused && model.listState == .live && model.rows.count == 2 }
+        model.setKind(.deployments)
+        model.setKind(.pods)
+        try await until(5, "listed again") { model.listState == .live && model.rows.count == 2 }
+        let refused = api.requests.filter { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["sendInitialEvents"] != nil }
+        XCTAssertEqual(refused.count, 1, "asked once")
+    }
+
+    /// A kubeconfig read again where a context's name now reaches another
+    /// cluster, or is gone: what its old server's version said of
+    /// streaming lists (and its kinds' columns) is forgotten; a context
+    /// unchanged keeps it.
+    func testAReloadForgetsStreamingListsOfAContextThatChangedCluster() async throws {
+        let model = KubernetesModel(proxies: KubeProxies())
+        let prod = Self.context("fake-prod")
+        let moved = KubeContext(
+            name: prod.name, cluster: prod.cluster, server: "http://127.0.0.1:2", namespace: nil, user: prod.user, auth: prod.auth, file: nil,
+            contextClass: prod.contextClass, settings: prod.settings)
+        let first = KubeContextList(contexts: [Self.context("fake-dev", namespace: "shop"), prod, Self.context("kind-fake")], current: "fake-dev")
+        let second = KubeContextList(contexts: [Self.context("fake-dev", namespace: "shop"), moved], current: "fake-dev")
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        model.load = { _ in
+            reads.withLock { reads in
+                reads += 1
+                return reads == 1 ? first : second
+            }
+        }
+        model.readConfiguration = { KubernetesModel.Configuration() }
+        model.watchesSettings = false
+        model.remembersSelection = false
+        let socket = self.socket!
+        model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name) }
+        model.statusOverride = { _ in .open }
+        model.show()
+        defer { model.hide() }
+        try await until(5, "streamed") { model.listState == .live && model.streamingLists.state(of: "fake-dev") == .served }
+        model.streamingLists.learn("fake-prod", minor: 34)
+        model.streamingLists.remember([KubeColumn(name: "Name", type: "string")], of: .pods, on: "fake-prod")
+        model.streamingLists.learn("kind-fake", minor: 34)
+        model.reloadContexts()
+        try await until(5, "read again") { model.contexts.context(named: "kind-fake") == nil }
+        XCTAssertEqual(model.streamingLists.state(of: "fake-prod"), .unknown, "another server")
+        XCTAssertNil(model.streamingLists.columns(of: .pods, on: "fake-prod"))
+        XCTAssertEqual(model.streamingLists.state(of: "kind-fake"), .unknown, "gone")
+        XCTAssertEqual(model.streamingLists.state(of: "fake-dev"), .served, "the same cluster")
     }
 
     func testAFailedListSaysWhyAndStops() async throws {

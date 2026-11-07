@@ -818,7 +818,7 @@ To check in the spike:
   - beta and on in 1.32, off by default in 1.33, on again from 1.34;
   - client-go's own gate is on by default only from 1.35.
 
-  They sit behind detecting the version, with list plus watch as the baseline. Whether they combine with `as=Table` is to be tested in the spike.
+  They sit behind detecting the version, with list plus watch as the baseline. Whether they combine with `as=Table` is to be tested in the spike; until it is, a streaming list whose events go quiet for 5 s without the `k8s.io/initial-events-end` bookmark is given up for list plus watch and the context isn't asked again in the run, so a server where they don't combine costs a few seconds once per context, not the watch's timeout.
 
 **Single objects**
 - Fetched as JSON and shown as YAML, with managedFields and status folded away.
@@ -1400,7 +1400,7 @@ The scenario starts a forward to a Service, deletes the pod in the fake, and end
   - whether an aggregated API on the dev clusters has connect subresources the list doesn't name;
   - whether failed exec calls are cached;
   - whether a forward exits when its pod goes;
-  - whether streaming lists combine with Tables.
+  - whether streaming lists combine with Tables (not yet run on kind or EKS 1.32/1.34+; meanwhile a quiet streaming list falls back after 5 s, Section 4).
 - **oidc-login's browser flow** from a background process. Logins are serialized, so a second context waits for the first.
 - **EKS access entries** may make the rules review incomplete. Verbs are enabled only after an access review, and a 403 at write time is reported plainly.
 - **Version spread:** EKS 1.2x–1.3x. Version-dependent features (streaming lists, the WebSocket permission change) sit behind detection.

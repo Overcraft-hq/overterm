@@ -193,6 +193,7 @@ extension E2ERunner {
             "by one watch, not lists again", fake.requests.filter { $0.isWatch && $0.path.hasSuffix("/pods") }.count == 1,
             "\(fake.requests.suffix(4))")
         check("what the cluster serves is read once, its CRDs watched", fake.watched.contains(KubernetesModel.crdName), "\(fake.watched)")
+        await kubernetesStreamingLists(model, page, fake)
 
         // Keys, while the list has the keyboard.
         if let event = NSEvent.keyEvent(
@@ -1671,7 +1672,11 @@ extension E2ERunner {
             "\(model.rows.sorted.map(\.id.name))")
         check(
             "as the list's fieldSelector, through the proxy",
-            fake.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && !$0.isWatch && $0.query["fieldSelector"] == "status.phase=Running" },
+            // The list: a streaming list on the fake's 1.34.
+            fake.requests.contains {
+                $0.path == "/api/v1/namespaces/shop/pods" && (!$0.isWatch || $0.query["sendInitialEvents"] == "true")
+                    && $0.query["fieldSelector"] == "status.phase=Running"
+            },
             "\(fake.requests.suffix(3))")
         check("and its watch's", fake.requests.contains { $0.isWatch && $0.query["fieldSelector"] == "status.phase=Running" })
         check("and the page says so", await shownText(15) { $0.contains("Asked of the server: field status.phase=Running") } != nil)
