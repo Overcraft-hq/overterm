@@ -116,8 +116,18 @@ enum KubeMCP {
         func bool(_ key: String) -> Bool { arguments[key] as? Bool ?? false }
 
         func int(_ key: String, default value: Int, in range: ClosedRange<Int>) -> Int {
-            let given = (arguments[key] as? Int) ?? (arguments[key] as? Double).map { Int($0) } ?? (arguments[key] as? String).flatMap { Int($0) }
+            // A Double clamped before it is made an Int: `Int(1e300)` traps,
+            // and an agent's JSON may hold any number.
+            let given =
+                (arguments[key] as? Int) ?? (arguments[key] as? Double).flatMap { Self.clamped($0, to: range) }
+                ?? (arguments[key] as? String).flatMap { Int($0) }
             return min(max(given ?? value, range.lowerBound), range.upperBound)
+        }
+
+        /// `number` towards zero, within `range`: nil when it isn't a number at all (NaN, ±∞).
+        static func clamped(_ number: Double, to range: ClosedRange<Int>) -> Int? {
+            guard number.isFinite else { return nil }
+            return Int(min(max(number.rounded(.towardZero), Double(range.lowerBound)), Double(range.upperBound)))
         }
 
         func required(_ key: String, _ hint: String) throws -> String {
@@ -654,7 +664,7 @@ enum KubeMCP {
             verb = .scale
             kind = try await self.kind(call, target, kubernetes: kubernetes, default: "deployments")
             let given =
-                (call.arguments["replicas"] as? Int) ?? (call.arguments["replicas"] as? Double).flatMap { $0 == $0.rounded() ? Int($0) : nil }
+                (call.arguments["replicas"] as? Int) ?? (call.arguments["replicas"] as? Double).flatMap { Int(exactly: $0) }
                 ?? (call.arguments["replicas"] as? String).flatMap { Int($0) }
             guard let given, (0...10_000).contains(given) else {
                 throw BrowserMCP.ToolError(message: "k8s_scale needs “replicas”: a whole number, 0 to 10000.")

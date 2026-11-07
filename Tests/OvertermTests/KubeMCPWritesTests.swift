@@ -164,6 +164,21 @@ final class KubeMCPWritesTests: XCTestCase {
         XCTAssertTrue(said.text.contains("Scaled deployment shop/web from 1 to 3 in kind-fake."), said.text)
     }
 
+    /// A replica count past Int's range is a wrong argument, never a trap.
+    func testAHugeReplicaCountIsRefusedNeverATrap() async throws {
+        let model = model()
+        agentWrites = ["kind-fake"]
+        answer("")
+        for number in ["1e300", "-1e300", "1.7976931348623157e308", "2.5"] {
+            let json = #"{"name": "web", "context": "kind-fake", "namespace": "shop", "replicas": "# + number + "}"
+            let arguments = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+            let said = await call(model, "k8s_scale", arguments)
+            XCTAssertTrue(said.error && said.text.contains("a whole number"), "\(number): \(said.text)")
+        }
+        XCTAssertEqual(asked.count, 0)
+        XCTAssertEqual(written(), [])
+    }
+
     func testEveryWriteToolAsksFirstAndARefusalSendsNothing() async throws {
         let model = model()
         agentWrites = ["kind-fake"]

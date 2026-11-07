@@ -590,6 +590,21 @@ final class KubeMCPTests: XCTestCase {
 
 /// The tools' words, pure.
 final class KubeMCPTextTests: XCTestCase {
+    /// A number past Int's range, as an agent's JSON arrives through
+    /// JSONSerialization: clamped to the tool's range, never a trap
+    /// (`Int(1e300)` took the whole app down).
+    func testAHugeNumberIsClampedNeverATrap() throws {
+        let json = #"{"limit": 1e300, "tail": -1e300, "most": 1.7976931348623157e308, "half": 2.9}"#
+        let arguments = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let call = KubeMCP.Call(name: "k8s_events", arguments: arguments)
+        XCTAssertEqual(call.int("limit", default: 50, in: 1...500), 500)
+        XCTAssertEqual(call.int("tail", default: 200, in: 1...5000), 1)
+        XCTAssertEqual(call.int("most", default: 50, in: 1...500), 500)
+        XCTAssertEqual(call.int("half", default: 50, in: 1...500), 2)
+        XCTAssertNil(KubeMCP.Call.clamped(.nan, to: 1...5))
+        XCTAssertNil(KubeMCP.Call.clamped(.infinity, to: 1...5))
+    }
+
     func testDurationsAndNames() {
         XCTAssertEqual(KubeMCPText.seconds("30s"), 30)
         XCTAssertEqual(KubeMCPText.seconds("10m"), 600)
