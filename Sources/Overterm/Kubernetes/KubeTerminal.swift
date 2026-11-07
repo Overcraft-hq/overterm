@@ -297,6 +297,19 @@ enum KubeTerminalLaunch {
         }
         return (environment, pin)
     }
+
+    /// The line typed into a pinned tab for Overterm's own command (a
+    /// write, a shell, a log followed, helm, argocd, a snippet): the pin's
+    /// `KUBECONFIG` exported on the line first. The tab is started with it,
+    /// but the user's startup files run after and may export another —
+    /// and `--context C` means whatever C is in the files `KUBECONFIG`
+    /// names: a context of the same name elsewhere is another cluster,
+    /// with the user's credentials, than the one reviewed and confirmed.
+    /// Only the line itself can be sure. Nil without one to export.
+    static func pinnedLine(_ command: String, environment: [String: String]) -> String? {
+        guard let kubeconfig = environment["KUBECONFIG"], !kubeconfig.isEmpty else { return nil }
+        return "export KUBECONFIG=" + KubectlLine.quoted(kubeconfig) + "; " + command
+    }
 }
 
 /// A pane that was pinned and couldn't be pinned again at launch — its
