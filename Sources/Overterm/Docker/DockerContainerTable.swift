@@ -30,6 +30,14 @@ enum DockerTableRow: ResourceTableRow {
         return false
     }
 
+    var reuseKind: String {
+        switch self {
+        case .group: "group"
+        case .container: "container"
+        case .service: "service"
+        }
+    }
+
     /// The list's rows: each group's row, then — unless it is folded — its
     /// containers and its services not yet created. Pure.
     static func rows(_ groups: [DockerListGroup], collapsed: Set<String>) -> [DockerTableRow] {
