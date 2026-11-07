@@ -226,7 +226,7 @@ final class KubeTabWritesPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otktw-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -249,7 +249,7 @@ final class KubeTabWritesPageTests: XCTestCase {
         }
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         api?.stop()
     }
 

@@ -290,7 +290,7 @@ final class KubeForwardsTests: XCTestCase {
         }
     }
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkf-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -306,7 +306,7 @@ final class KubeForwardsTests: XCTestCase {
             fields: ["spec": ["selector": ["matchLabels": ["app": "web"]], "template": ["spec": ["containers": [["name": "app"]]]]]])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertFalse(api.requests.contains { $0.path.contains("portforward") }, "no port-forward through the API: kubectl's own")

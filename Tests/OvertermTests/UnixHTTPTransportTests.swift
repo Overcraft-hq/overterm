@@ -237,7 +237,14 @@ private final class HostCheckingServer: @unchecked Sendable {
             headers.add(name: "Content-Length", value: "\(text.utf8.count)")
             context.write(wrapOutboundOut(.head(HTTPResponseHead(version: .http1_1, status: status, headers: headers))), promise: nil)
             context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(string: text)))), promise: nil)
-            context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in context.close(promise: nil) }
+            end(context)
+        }
+
+        /// The last part, then the connection closed. The context isn't
+        /// Sendable: NIO's callbacks reach it bound to its loop.
+        private func end(_ context: ChannelHandlerContext) {
+            let bound = NIOLoopBound(context, eventLoop: context.eventLoop)
+            context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in bound.value.close(promise: nil) }
         }
 
         /// No length said: NIO sends the body chunked.
@@ -247,18 +254,16 @@ private final class HostCheckingServer: @unchecked Sendable {
             context.writeAndFlush(wrapOutboundOut(.head(HTTPResponseHead(version: .http1_1, status: .ok, headers: headers))), promise: nil)
             guard let interval else {
                 for piece in pieces { context.write(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(string: piece)))), promise: nil) }
-                context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in context.close(promise: nil) }
+                end(context)
                 return
             }
-            func next(_ index: Int) {
-                guard index < pieces.count else {
-                    context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in context.close(promise: nil) }
-                    return
-                }
-                context.writeAndFlush(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(string: pieces[index])))), promise: nil)
-                context.eventLoop.scheduleTask(in: interval) { next(index + 1) }
-            }
-            next(0)
+            send(pieces[...], every: interval, NIOLoopBound(context, eventLoop: context.eventLoop))
+        }
+
+        private func send(_ pieces: ArraySlice<String>, every interval: TimeAmount, _ context: NIOLoopBound<ChannelHandlerContext>) {
+            guard let piece = pieces.first else { return end(context.value) }
+            context.value.writeAndFlush(wrapOutboundOut(.body(.byteBuffer(ByteBuffer(string: piece)))), promise: nil)
+            context.value.eventLoop.scheduleTask(in: interval) { [self] in send(pieces.dropFirst(), every: interval, context) }
         }
     }
 }

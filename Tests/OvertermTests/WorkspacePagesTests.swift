@@ -51,14 +51,15 @@ final class WorkspacePagesTests: XCTestCase {
 
     func testAPageThatCantBeMadeYetIsAskedAgain() {
         let pages = WorkspacePages()
-        var ready = false
+        // A box, not a captured var: the closure is main-actor, so Sendable.
+        let ready = Flag()
         var docker = WorkspacePage(.docker)
-        docker.makeView = { ready ? NSView() : nil }
+        docker.makeView = { ready.value ? NSView() : nil }
         pages.declare(docker)
         let content = content()
         pages.add(.settings, NSView(), in: content, below: content.topAnchor)
         XCTAssertNil(pages.made(.docker))
-        ready = true
+        ready.value = true
         XCTAssertNotNil(pages.made(.docker))
     }
 
@@ -105,4 +106,10 @@ final class WorkspacePagesTests: XCTestCase {
     func testEveryOverlayIsListed() {
         XCTAssertEqual(WorkspaceOverlay.allCases, [.settings, .docker, .kubernetes])
     }
+}
+
+/// A value a main-actor closure reads after the test changes it.
+@MainActor
+private final class Flag {
+    var value = false
 }

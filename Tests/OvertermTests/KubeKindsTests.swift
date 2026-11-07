@@ -16,7 +16,7 @@ final class KubeKindsTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkk-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -29,7 +29,7 @@ final class KubeKindsTests: XCTestCase {
         api.add("nodes", "fake-node-1", values: ["Status": "Ready", "Roles": "control-plane", "Version": "v1.34.1"])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests, [], "no subresource")

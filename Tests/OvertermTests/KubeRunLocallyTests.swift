@@ -291,7 +291,7 @@ final class KubeRunLocallyPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otrl-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -310,7 +310,7 @@ final class KubeRunLocallyPageTests: XCTestCase {
             fields: ["spec": ["template": ["metadata": ["labels": ["app": "web"]], "spec": ["containers": [["name": "web", "image": "acme/web:2"]]]]]])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertFalse(api.requests.contains { $0.path.contains("/secrets") || $0.path.contains("/configmaps") }, "nothing they name read")

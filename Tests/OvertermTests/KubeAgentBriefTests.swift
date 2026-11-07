@@ -416,7 +416,7 @@ final class KubeAgentBriefingTests: XCTestCase {
     static let blob = "QWxhZGRpbjpvcGVuIHNlc2FtZTEyMzQ1Njc4OTBhYmNkZWZn"
     static let secretValue = "never-read-secret-value"
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkb-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -424,7 +424,7 @@ final class KubeAgentBriefingTests: XCTestCase {
         api.add("secrets", "web-db", namespace: "shop", values: ["Type": "Opaque"], data: ["api-key": Self.secretValue])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests.filter { !$0.isLog }, [], "no subresource but a pod's log")
@@ -750,7 +750,7 @@ final class KubeAskWhyPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otka-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -762,7 +762,7 @@ final class KubeAskWhyPageTests: XCTestCase {
         api.setLog("worker-1", namespace: "shop", ["using fake-token-value-123", "panic: boom"], previous: true)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests.filter { !$0.isLog }, [], "no subresource but a pod's log")

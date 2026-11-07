@@ -13,7 +13,7 @@ final class KubeClusterOverviewTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkco-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -42,7 +42,7 @@ final class KubeClusterOverviewTests: XCTestCase {
         api.addEvent(about: "pods", "web-2", namespace: "shop", type: "Warning", reason: "Unhealthy", message: "old", last: Date().addingTimeInterval(-7200))
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests, [], "no subresource")

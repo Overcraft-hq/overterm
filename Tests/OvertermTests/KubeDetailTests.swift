@@ -463,7 +463,7 @@ final class KubeDetailTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests.filter { !$0.isLog }, [], "no subresource but a pod's log")

@@ -235,7 +235,7 @@ final class KubeGitOpsPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkgo-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -254,7 +254,7 @@ final class KubeGitOpsPageTests: XCTestCase {
         api.add("configmaps", KubeGitOps.argoConfigMap, namespace: "argocd", data: ["url": "https://argocd.acme.example"])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         api?.stop()
     }
 
