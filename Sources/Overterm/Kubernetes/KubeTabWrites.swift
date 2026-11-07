@@ -65,6 +65,38 @@ enum KubeTabWrite: Equatable, Sendable {
         }
     }
 
+    /// The image a debug container or a node shell runs: the confirmation's
+    /// field, prefilled with the settings' (`KubernetesModel.debugImage`,
+    /// `nodeShellImage`); nil for the others.
+    var image: String? {
+        switch self {
+        case .debug(_, _, _, let image), .nodeShell(_, _, let image): image
+        default: nil
+        }
+    }
+
+    /// The same write running `image` instead — what the field said; any
+    /// other write is itself.
+    func with(image: String) -> KubeTabWrite {
+        switch self {
+        case .debug(let pod, let namespace, let container, _): .debug(pod: pod, namespace: namespace, container: container, image: image)
+        case .nodeShell(let node, let namespace, _): .nodeShell(node: node, namespace: namespace, image: image)
+        default: self
+        }
+    }
+
+    /// The image the field's text names, trimmed and checked as the docker
+    /// CLI reads a name (`DockerImageReference`) — no space, no leading `-`,
+    /// so nothing but an image reaches `--image=`; else why not.
+    static func image(from text: String?) -> Result<String, KubeCommands.Refused> {
+        let image = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !image.isEmpty else { return .failure(KubeCommands.Refused(reason: "No image was given: nothing was run.")) }
+        guard DockerImageReference(image) != nil else {
+            return .failure(KubeCommands.Refused(reason: "\(image) isn't an image reference (name[:tag][@digest]): nothing was run."))
+        }
+        return .success(image)
+    }
+
     /// The namespace its command names (`-n`, always).
     var namespace: String {
         switch self {
@@ -270,11 +302,12 @@ enum KubeTabWrite: Equatable, Sendable {
             button = "Reconcile in a Tab"
         }
         var lines = [what, "Runs in a new tab pinned to \(context.displayName): \(command)"]
+        if image != nil { lines.append("The image is the field's: another one typed there runs instead, checked as an image reference.") }
         let typed = rule.typedName ? name : nil
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(
             verb: nil, title: title, scope: place, detail: lines.joined(separator: "\n"), button: button, typedName: typed,
-            production: context.isProduction, kubectl: command)
+            production: context.isProduction, kubectl: command, image: image)
     }
 
     /// What the page says once its tab is open.
@@ -300,6 +333,10 @@ enum KubeTabWrite: Equatable, Sendable {
 protocol KubeTabCommand: Sendable {
     var verb: KubeProcessVerb { get }
     var name: String { get }
+    /// The image its confirmation's field holds; nil, no field.
+    var image: String? { get }
+    /// The same command with the image the field said.
+    func with(image: String) -> Self
     /// Why it can't be built whatever the context: nil when it can.
     var refused: String? { get }
     func line(context: String) -> String
@@ -309,6 +346,8 @@ protocol KubeTabCommand: Sendable {
 
 extension KubeTabCommand {
     var refused: String? { nil }
+    var image: String? { nil }
+    func with(image: String) -> Self { self }
 }
 
 extension KubeTabWrite: KubeTabCommand {}

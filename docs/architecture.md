@@ -3935,7 +3935,13 @@ a node shell (`E` on a node; stage 3b, below), `--context` and `-n`
 always (a drain's `-n` is its tab's, harmless for a node), every word not
 ours quoted for zsh. A pod's image is the context's `debugImage`, else
 `kubernetes.debugImage`; a node's the context's `nodeShellImage` first
-(`KubernetesModel.nodeShellImage`).
+(`KubernetesModel.nodeShellImage`). Those only prefill the confirmation's
+image field (`KubeWriteConfirmation.image`, `WriteConfirmation.imageField`):
+what it says when the button is pressed comes back with the typed name
+(`KubeWriteAnswer`), is checked as the docker CLI reads a name
+(`KubeTabWrite.image(from:)`, `DockerImageReference` — no space, no
+leading `-`) and runs instead (`KubeTabCommand.with(image:)`), quoted in
+the line; one that isn't an image runs nothing. The setting stays the default.
 One path (`runTabWrite`), as the page's writes: the process class check
 (`KubeProcessCheck`: refused on every read-only context — each is
 `KubeProcessVerb.writes` —, a node's debug also needs the context's

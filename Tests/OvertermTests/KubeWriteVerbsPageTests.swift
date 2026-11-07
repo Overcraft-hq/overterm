@@ -42,7 +42,7 @@ final class KubeWriteVerbsPageTests: XCTestCase {
     }
 
     private final class Box {
-        var confirmations: [(KubeWriteConfirmation, (String) -> Void)] = []
+        var confirmations: [(KubeWriteConfirmation, (KubeWriteAnswer) -> Void)] = []
         var confirms: [(String, String, () -> Void)] = []
     }
 
@@ -430,7 +430,7 @@ final class KubeWriteVerbsPageTests: XCTestCase {
         try await until("off again") { page.model.selected?.isWritable == false }
         for (index, typed) in [(0, ""), (1, ""), (2, "shop")] {
             page.writeStatus = nil
-            box.confirmations[index].1(typed)
+            box.confirmations[index].1(KubeWriteAnswer(typed: typed))
             XCTAssertEqual(
                 page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."), "checked again at the button")
         }

@@ -237,7 +237,7 @@ final class KubeResizePageTests: XCTestCase {
     }
 
     private final class Box {
-        var confirmations: [(KubeWriteConfirmation, (String) -> Void)] = []
+        var confirmations: [(KubeWriteConfirmation, (KubeWriteAnswer) -> Void)] = []
     }
 
     private func page(current: String) async throws -> (KubernetesPageModel, Box) {

@@ -147,8 +147,32 @@ extension E2ERunner {
             check("the debug container is asked", await eventually(10) { self.window.attachedSheet != nil }, "\(String(describing: page.writeStatus))")
             let debugLine = "kubectl debug -it debug-me-0 --image=busybox:1.36 --target=app --context kind-fake -n shop"
             check("with its image and target", sheetTexts().contains { $0.contains(debugLine) }, "\(sheetTexts())")
+            check("the image in a field, the setting's", imageField()?.stringValue == "busybox:1.36", imageField()?.stringValue ?? "no field")
             if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
             check("confirmed, recorded", await eventually(10) { recorded.count == 3 } && recorded.last?.command == debugLine, recorded.last?.command ?? "")
+            // Another image typed in the field: that one runs, quoted in the line; the setting stays.
+            page.writeStatus = nil
+            back()
+            page.selection = ["shop/debug-me-0"]
+            check("E again", page.debugKey())
+            check("asked again", await eventually(10) { self.window.attachedSheet != nil && self.imageField() != nil })
+            imageField()?.stringValue = "ghcr.io/acme/tools:2.1"
+            if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+            let edited = "kubectl debug -it debug-me-0 --image=ghcr.io/acme/tools:2.1 --target=app --context kind-fake -n shop"
+            check("the field's image runs", await eventually(10) { recorded.count == 4 } && recorded.last?.command == edited, recorded.last?.command ?? "")
+            check("and the setting is unchanged", model.debugImage(for: model.contexts.context(named: "kind-fake")!) == "busybox:1.36")
+            // Not an image: refused, nothing typed.
+            page.writeStatus = nil
+            back()
+            page.selection = ["shop/debug-me-0"]
+            check("E once more", page.debugKey())
+            check("asked once more", await eventually(10) { self.window.attachedSheet != nil && self.imageField() != nil })
+            imageField()?.stringValue = "busybox; rm -rf /"
+            if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+            check(
+                "a field that isn't an image is refused",
+                await eventually(10) { if case .failed(let why) = page.writeStatus { why.contains("isn't an image reference") } else { false } }
+                    && recorded.count == 4, "\(String(describing: page.writeStatus))")
         }
         back()
         check("only access reviews reached the fake", fake.writes.allSatisfy(\.isAccessReview), "\(fake.writes.filter { !$0.isAccessReview })")

@@ -18,6 +18,9 @@ struct WriteConfirmation {
     var cancel = "Cancel"
     /// The name to type, shown as the field's placeholder; nil, no field.
     var typedName: String?
+    /// An image, in a field of its own above the name's: prefilled, and
+    /// what it says when the button is pressed goes back with the name.
+    var image: String? = nil
     /// The critical style: production, or a name asked.
     var critical = false
 
@@ -25,6 +28,8 @@ struct WriteConfirmation {
     static let productionRed = NSColor(srgbRed: 0.86, green: 0.17, blue: 0.17, alpha: 1)
     /// The typed-name field's identifier, for the scenario.
     static let typedNameField = "write.typedName"
+    /// The image field's identifier, for the scenario.
+    static let imageField = "write.image"
     /// A detail longer than this goes in a scroll view, all of it.
     static let shortDetail = 600
 
@@ -41,6 +46,12 @@ struct WriteConfirmation {
 
     /// The alert, and its typed-name field when one is asked.
     func alert() -> (NSAlert, NSTextField?) {
+        let (alert, field, _) = alertWithImage()
+        return (alert, field)
+    }
+
+    /// The alert, its typed-name field and its image field, each when asked.
+    func alertWithImage() -> (NSAlert, NSTextField?, NSTextField?) {
         let alert = NSAlert()
         alert.messageText = title
         alert.alertStyle = critical || production ? .critical : .warning
@@ -75,6 +86,20 @@ struct WriteConfirmation {
         } else {
             alert.informativeText = detail
         }
+        var imageField: NSTextField?
+        if let image {
+            let label = NSTextField(labelWithString: "Image")
+            label.font = .systemFont(ofSize: 11, weight: .medium)
+            label.textColor = .secondaryLabelColor
+            views.append(label)
+            let typed = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+            typed.stringValue = image
+            typed.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+            typed.identifier = NSUserInterfaceItemIdentifier(Self.imageField)
+            typed.setAccessibilityIdentifier(Self.imageField)
+            views.append(typed)
+            imageField = typed
+        }
         var field: NSTextField?
         if let typedName {
             let typed = NSTextField(frame: NSRect(x: 0, y: 0, width: width, height: 24))
@@ -91,25 +116,30 @@ struct WriteConfirmation {
             stack.spacing = 8
             let stackWidth = max(width, views.map { $0 is NSScrollView ? $0.frame.width : 0 }.max() ?? 0)
             for view in views {
-                if let label = view as? NSTextField, label !== field { label.preferredMaxLayoutWidth = stackWidth }
+                if let label = view as? NSTextField, label !== field, label !== imageField { label.preferredMaxLayoutWidth = stackWidth }
                 view.translatesAutoresizingMaskIntoConstraints = false
                 view.widthAnchor.constraint(equalToConstant: view is NSScrollView ? view.frame.width : stackWidth).isActive = true
                 if view is NSScrollView { view.heightAnchor.constraint(equalToConstant: view.frame.height).isActive = true }
             }
             stack.frame = NSRect(origin: .zero, size: NSSize(width: stackWidth, height: stack.fittingSize.height))
             alert.accessoryView = stack
-            if let field { alert.window.initialFirstResponder = field }
+            if let first = field ?? imageField { alert.window.initialFirstResponder = first }
         }
-        return (alert, field)
+        return (alert, field, imageField)
     }
 
     /// Asked on `window` as a sheet: `then` gets what was typed ("" when no
     /// name was asked) once the button is pressed; Cancel calls nothing.
     func present(on window: NSWindow, then: @escaping (String) -> Void) {
-        let (alert, field) = alert()
+        presentAnswer(on: window) { then($0.typed) }
+    }
+
+    /// The same, with the image field's text too (nil when it had none).
+    func presentAnswer(on window: NSWindow, then: @escaping (KubeWriteAnswer) -> Void) {
+        let (alert, field, imageField) = alertWithImage()
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
-            MainActor.assumeIsolated { then(field?.stringValue ?? "") }
+            MainActor.assumeIsolated { then(KubeWriteAnswer(typed: field?.stringValue ?? "", image: imageField?.stringValue)) }
         }
     }
 

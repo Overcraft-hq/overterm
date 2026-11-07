@@ -119,12 +119,13 @@ extension TerminalWindowController {
     /// and namespace — red on production —, its button and Cancel, and —
     /// where rule 4 asks it — a field for the object's name. What was typed
     /// goes back to the page, which checks it; Cancel sends nothing.
-    func confirmKubernetesWrite(_ confirmation: KubeWriteConfirmation, _ then: @escaping (String) -> Void) {
+    func confirmKubernetesWrite(_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) {
         guard let window else { return }
         WriteConfirmation(
             title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
-            button: confirmation.button, typedName: confirmation.typedName, critical: confirmation.production || confirmation.typedName != nil
-        ).present(on: window, then: then)
+            button: confirmation.button, typedName: confirmation.typedName, image: confirmation.image,
+            critical: confirmation.production || confirmation.typedName != nil
+        ).presentAnswer(on: window, then: then)
     }
 
     /// The page's other asks (production's switch, a shell on production):
