@@ -537,6 +537,16 @@ final class KubernetesPageModel: ObservableObject {
             closeNamespaceSheet()
             return true
         }
+        // `?`'s sheet: Esc or `?` closes it; `:` and `/` close it and go on to
+        // the bar and the filter; nothing else does anything under it.
+        if cheatSheet {
+            if KubeKeySheet.closes(characters) {
+                cheatSheet = false
+                return true
+            }
+            guard KubeKeySheet.passesThrough(characters) else { return true }
+            cheatSheet = false
+        }
         if section == .helm, let handled = helmPress(characters) { return handled }
         if section == .overview, let handled = overviewPress(characters) { return handled }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }

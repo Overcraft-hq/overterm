@@ -61,6 +61,7 @@ version is tagged `v<version>`.
 - kubernetes: Helm upgrade from the checkout runs only on the chart that was diffed — a template, values.yaml or dependency changed since (an agent editing the checkout), or the release upgraded meanwhile, and nothing is run: diff again
 - kubernetes: ⌘L on a selection in a pod's tab (shell, attach, a followed log) or a tab pinned to a context hands it to the agent scrubbed, as the page's Logs tab does — a bearer token or password went in the clear
 - kubernetes: a debug container's and a node shell's confirmation has the image in a field, the setting's prefilled — another one typed there runs instead, checked as an image reference first
+- kubernetes: `?` on the page lists every key it answers, grouped — navigation, the list, a resource's verbs, writes, sections and the window's shortcuts as bound now; Esc closes it, `:` and `/` still reach the bar and the filter
 
 ## 1.5.4 — 2026-11-09
 

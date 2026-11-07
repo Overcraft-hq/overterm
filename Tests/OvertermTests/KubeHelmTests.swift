@@ -669,7 +669,7 @@ final class KubeHelmTests: XCTestCase {
         XCTAssertNotNil(helm.opened?.detail, "not the release under it")
         page.cheatSheet = true
         _ = page.press("\u{F701}")
-        XCTAssertFalse(page.cheatSheet)
+        XCTAssertTrue(page.cheatSheet, "only Esc or ? closes it")
         XCTAssertEqual(helm.selection, picked, "↓ moved nothing hidden")
     }
 
