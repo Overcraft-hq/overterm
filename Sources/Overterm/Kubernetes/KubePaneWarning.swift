@@ -323,7 +323,9 @@ final class KubeAmbientContexts: ObservableObject {
                         KubeconfigSources.list(key, home: home), guarded: guarded, permitted: files, pinFolder: KubeTerminalFiles.defaultFolder)
                     guard !urls.isEmpty else { continue }
                     named[key] = KubeContextList.load(files: urls, settings: settings, guarded: guarded)
-                    read += urls
+                    // Watched only when it is a file (or not there yet): a
+                    // FIFO or a device named in a pane's title is never opened.
+                    read += urls.filter { !KubeconfigFileWatcher.isSpecial($0.path) }
                 }
                 return (read, list, named)
             }
@@ -413,11 +415,36 @@ final class KubeconfigFileWatcher {
         { MainActor.assumeIsolated { onChange() } }
     }
 
-    private nonisolated static func source(
+    /// Whether `path` is there and neither a file nor a folder: a FIFO, a
+    /// device, a socket. Opening one runs its open routine even for
+    /// O_EVTONLY — a FIFO with no writer, a serial port waiting for
+    /// carrier blocked the main thread, and a pane's title (any program's
+    /// output) can name one.
+    nonisolated static func isSpecial(_ path: String) -> Bool {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return false }
+        return !watchable(info.st_mode)
+    }
+
+    private nonisolated static func watchable(_ mode: mode_t) -> Bool {
+        let type = mode & S_IFMT
+        return type == S_IFREG || type == S_IFDIR
+    }
+
+    /// A source for a file or a folder, nil for anything else: checked
+    /// before it is opened, opened without blocking (`O_NONBLOCK`, should
+    /// it be swapped in between), and checked again once open.
+    nonisolated static func source(
         _ path: String, mask: DispatchSource.FileSystemEvent, _ handler: @escaping @Sendable () -> Void
     ) -> DispatchSourceFileSystemObject? {
-        let fd = open(path, O_EVTONLY | O_CLOEXEC)
+        var info = stat()
+        guard stat(path, &info) == 0, watchable(info.st_mode) else { return nil }
+        let fd = open(path, O_EVTONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else { return nil }
+        guard fstat(fd, &info) == 0, watchable(info.st_mode) else {
+            close(fd)
+            return nil
+        }
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: mask, queue: .main)
         source.setEventHandler(handler: handler)
         source.setCancelHandler(handler: Self.closing(fd))

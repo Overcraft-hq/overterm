@@ -217,6 +217,41 @@ final class KubeTabContextTests: XCTestCase {
         watcher.stop()
     }
 
+    /// A FIFO with no writer, or a device, named by `--kubeconfig` in any
+    /// pane's title: never opened — opening one blocked the main thread
+    /// for good. Each is asked off the main thread here, with a deadline.
+    func testAFIFOOrADeviceIsNeverOpenedForTheWatch() throws {
+        let fifo = dir.appendingPathComponent("kc.fifo").path
+        XCTAssertEqual(mkfifo(fifo, 0o600), 0)
+        var devices = ["/dev/null"]
+        if FileManager.default.fileExists(atPath: "/dev/tty.Bluetooth-Incoming-Port") { devices.append("/dev/tty.Bluetooth-Incoming-Port") }
+        let file = dir.appendingPathComponent("config")
+        try "current-context: fake-dev\n".write(to: file, atomically: false, encoding: .utf8)
+        for (path, watched) in [(fifo, false), (file.path, true), (dir.path, true)] + devices.map({ ($0, false) }) {
+            XCTAssertEqual(KubeconfigFileWatcher.isSpecial(path), !watched, path)
+            let done = DispatchSemaphore(value: 0)
+            let made = Box()
+            Thread.detachNewThread {
+                let source = KubeconfigFileWatcher.source(path, mask: [.write], {})
+                made.value = source != nil
+                source?.cancel()
+                done.signal()
+            }
+            XCTAssertEqual(done.wait(timeout: .now() + 2), .success, "\(path) blocked")
+            XCTAssertEqual(made.value, watched, path)
+        }
+        XCTAssertFalse(KubeconfigFileWatcher.isSpecial(dir.appendingPathComponent("not-there").path))
+    }
+
+    private final class Box: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored = false
+        var value: Bool {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
+    }
+
     func testThePinSettlesItWithoutAFlag() {
         let prod = KubeTerminalPin(
             context: "fake-prod", cluster: "fake-prod", user: "anonymous", namespace: "payments", displayName: "fake-prod", isProduction: true)
