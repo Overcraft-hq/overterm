@@ -90,7 +90,18 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// own answer (anything but a 500, or a 500 with Status JSON). `text` is
     /// its body; `stderr` kubectl's, where the plugin's own words are
     /// ("Token has expired").
+    ///
+    /// A 401 is the server's own answer, but on a context whose user signs
+    /// in with a plugin it is a credential failure too: client-go throws
+    /// the plugin's token away on a 401 and runs the plugin again for the
+    /// next request — against kind's 1.37, a plugin whose token the server
+    /// refused ran five times for four requests. So it stops the context
+    /// as a failed plugin does; a certificate or a token in the kubeconfig
+    /// runs nothing, and its 401 is left to the request.
     static func classify(status: Int, contentType: String?, text: String, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+        if status == 401, let plugin = signIn.pluginName {
+            return .credentials("the cluster refused the credential \(plugin) gave (401 Unauthorized)")
+        }
         guard status == 500, contentType?.lowercased().contains("json") != true else { return nil }
         let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !said.hasPrefix("{") else { return nil }
