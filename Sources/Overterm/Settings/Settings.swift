@@ -88,6 +88,17 @@ final class Settings: ObservableObject {
         values[key] ?? SettingsSchema.byKey[key]?.defaultValue
     }
 
+    /// The setting as the file has it, not fitted: an entry's fields this
+    /// build doesn't know, or whose value it can't use, are still there —
+    /// for an edit that writes the whole value back and must keep what it
+    /// didn't change. The default when the file doesn't set it; nil when
+    /// the file doesn't parse, or the value isn't one a setting holds.
+    func fileValue(_ key: String) -> SettingValue? {
+        guard let object = try? SettingsJSON.object(from: fileText) else { return nil }
+        guard let raw = object[key] else { return SettingsSchema.byKey[key]?.defaultValue }
+        return SettingValue(json: raw)
+    }
+
     /// Whether the file sets it (Settings shows a reset for those).
     func isSet(_ key: String) -> Bool { values[key] != nil }
 
@@ -124,7 +135,7 @@ final class Settings: ObservableObject {
         var all = values
         all[key] = stored
         // In place when the file's layout allows, else rewritten whole.
-        let text = SettingsJSON.setting(current, key: key, json: stored?.json) ?? SettingsJSON.text(of: all)
+        let text = SettingsJSON.setting(current, key: key, json: stored?.json, members: stored?.members) ?? SettingsJSON.text(of: all)
         write(text)
         apply(text)
     }

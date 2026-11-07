@@ -302,7 +302,7 @@ enum KubeTabWrite: Equatable, Sendable {
             button = "Reconcile in a Tab"
         }
         var lines = [what, "Runs in a new tab pinned to \(context.displayName): \(command)"]
-        if image != nil { lines.append("The image is the field's: another one typed there runs instead, checked as an image reference.") }
+        if image != nil { lines.append("The image is the field's: another one typed there is checked, then asked again with its own line.") }
         let typed = rule.typedName ? name : nil
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(

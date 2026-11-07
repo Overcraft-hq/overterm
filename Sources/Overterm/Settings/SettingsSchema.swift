@@ -60,13 +60,26 @@ enum SettingValue: Equatable, Sendable {
         case .list(let values):
             // On one line, so the file can still be edited in place.
             "[" + values.map { SettingValue.string($0).json }.joined(separator: ", ") + "]"
-        case .entries(let entries):
+        case .entries:
             // On one line too, sorted, so the same entries write the same text.
-            "{"
-                + entries.keys.sorted().map { name in
-                    let fields = entries[name]!.keys.sorted().map { SettingValue.string($0).json + ": " + entries[name]![$0]!.json }
-                    return SettingValue.string(name).json + ": {" + fields.joined(separator: ", ") + "}"
-                }.joined(separator: ", ") + "}"
+            "{" + (members ?? []).map(\.json).joined(separator: ", ") + "}"
+        }
+    }
+
+    /// A list's items or an object's entries, each as its JSON text and
+    /// what tells it from the others (the item, the entry's name) — for a
+    /// value a person wrote over several lines, written back one a line
+    /// with the comments of those still there (`SettingsJSON.setting`).
+    /// Nil for a plain value.
+    var members: [(name: String, json: String)]? {
+        switch self {
+        case .list(let values): return values.map { ($0, SettingValue.string($0).json) }
+        case .entries(let entries):
+            return entries.keys.sorted().map { name in
+                let fields = entries[name]!.keys.sorted().map { SettingValue.string($0).json + ": " + entries[name]![$0]!.json }
+                return (name, SettingValue.string(name).json + ": {" + fields.joined(separator: ", ") + "}")
+            }
+        default: return nil
         }
     }
 

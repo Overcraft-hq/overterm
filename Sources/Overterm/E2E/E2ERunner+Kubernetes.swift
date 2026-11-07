@@ -254,6 +254,7 @@ extension E2ERunner {
         check(": closes them and opens the bar", !page.cheatSheet && page.command != nil)
         page.closeCommand()
         page.giveListTheKeyboard()
+        await kubernetesContextSettings(model, page)
         await namespaceAndContextPickers(model, page)
         await kubernetesKinds(model, page, fake)
         await kubernetesDetail(model, page, fake)
@@ -1509,6 +1510,70 @@ extension E2ERunner {
         }
         guard drawn, window.frame.width > 0 else { return nil }
         return ShownPixels(bytes: bytes, width: width, height: height, scale: CGFloat(width) / window.frame.width, windowHeight: window.frame.height)
+    }
+
+    /// Context Settings…: one context's entry, `agentWrites` and
+    /// `applyOnProduction` in a sheet, saved to the run's own settings.json
+    /// in place and read back by the model; a bad value refused, nothing
+    /// written; production's session switch only said. Put back after.
+    func kubernetesContextSettings(_ model: KubernetesModel, _ page: KubernetesPageModel) async {
+        let settings = Settings.shared
+        let before = (settings.fileValue("kubernetes.contexts"), settings.fileValue("kubernetes.agentWrites"))
+        defer {
+            settings.set("kubernetes.contexts", before.0)
+            settings.set("kubernetes.agentWrites", before.1)
+        }
+        guard let dev = model.contexts.context(named: "fake-dev"), let prod = model.contexts.context(named: "fake-prod") else {
+            return check("the contexts for Context Settings", false)
+        }
+        page.openContextSettings(dev)
+        check("Context Settings… opens its sheet", page.contextSettingsDraft?.context == "fake-dev")
+        check("drawn over the page", await shownText { $0.contains("Context Settings") } != nil)
+        check("a remote context's default said", page.contextSettingsDraft?.writableSaid == "Read-only (a remote context's default).")
+        check("the list's keys stand aside", !page.press("w") && !page.wide)
+        page.contextSettingsDraft?.nodeShellImage = "node tools"
+        page.saveContextSettings()
+        check("a bad image refused, nothing written", page.contextSettingsDraft?.problem != nil && settings.kubernetesContexts["fake-dev"]?.nodeShellImage == nil)
+        page.contextSettingsDraft?.nodeShellImage = "acme/node-tools:1"
+        page.contextSettingsDraft?.defaultNamespace = "shop"
+        page.contextSettingsDraft?.agentWrites = true
+        page.saveContextSettings()
+        check("saved, closed", page.contextSettingsDraft == nil)
+        check(
+            "into settings.json",
+            settings.kubernetesContexts["fake-dev"]?.nodeShellImage == "acme/node-tools:1" && settings.kubernetesContexts["fake-dev"]?.defaultNamespace == "shop"
+                && settings.value("kubernetes.agentWrites")?.list?.contains("fake-dev") == true)
+        check(
+            "and the page reads it back",
+            await eventually(10) { model.contexts.context(named: "fake-dev")?.settings.nodeShellImage == "acme/node-tools:1" })
+        page.openContextSettings(prod)
+        check("production's switch said, not set", page.contextSettingsDraft?.writableSaid.contains("never by a setting") == true)
+        page.contextSettingsDraft?.applyOnProduction = true
+        page.saveContextSettings()
+        check(
+            "production's entry has no write switch",
+            settings.kubernetesContexts["fake-prod"]?.applyOnProduction == true && settings.value("kubernetes.contexts")?.entries?["fake-prod"]?["writable"] == nil
+                && model.contexts.context(named: "fake-prod")?.isWritable == false)
+        // Production made local: asked in red, its name typed, before anything is written.
+        let prodEntry = settings.fileValue("kubernetes.contexts")?.entries?["fake-prod"]
+        page.openContextSettings(prod)
+        page.contextSettingsDraft?.contextClass = .local
+        page.saveContextSettings()
+        check(
+            "production made local is asked first",
+            page.contextSettingsDraft?.confirmingLessStrict == true && settings.fileValue("kubernetes.contexts")?.entries?["fake-prod"] == prodEntry)
+        check("asked in the sheet, its button saying so", await shownText { $0.contains("Make It Local") } != nil)
+        page.contextSettingsDraft?.typedName = "fake-pro"
+        page.saveContextSettings()
+        check(
+            "a wrong name writes nothing",
+            page.contextSettingsDraft?.problem?.contains("needs its name typed") == true
+                && settings.fileValue("kubernetes.contexts")?.entries?["fake-prod"] == prodEntry
+                && model.contexts.context(named: "fake-prod")?.isProduction == true, page.contextSettingsDraft?.problem ?? "")
+        page.closeContextSettings()
+        page.openContextSettings(dev)
+        check("Esc closes it", page.press("\u{1B}") && page.contextSettingsDraft == nil)
+        page.giveListTheKeyboard()
     }
 
     /// For each pane header on screen, left to right: whether its bottom

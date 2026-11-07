@@ -261,6 +261,43 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(text().contains("kubernetes.contexts"))
     }
 
+    /// An object written over several lines by hand is replaced where it
+    /// stands, over several lines again: the file's other lines and the
+    /// comments of the entries still there stay; an entry gone takes its own.
+    func testAnObjectOverSeveralLinesIsEditedWhereItStands() throws {
+        try write(
+            "{\n  // mine\n  \"kubernetes.contexts\": { // all\n    // prod's\n    \"acme-prod\": { \"class\": \"production\" }, /* } */\n"
+                + "    \"b\": {\n      // never make this writable\n      \"writable\": true\n    }\n    // the end\n  }, // after\n  \"general.restoreTabs\": false\n}\n"
+        )
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(settings.kubernetesContexts["acme-prod"]?.contextClass, .production)
+        settings.set("kubernetes.contexts", .entries(["acme-prod": ["class": .string("production")], "b": ["writable": .bool(false)], "c": [:]]))
+        XCTAssertEqual(
+            text(),
+            "{\n  // mine\n  \"kubernetes.contexts\": { // all\n    // prod's\n    \"acme-prod\": {\"class\": \"production\"}, /* } */\n"
+                + "    // never make this writable\n    \"b\": {\"writable\": false},\n    \"c\": {}\n    // the end\n  }, // after\n"
+                + "  \"general.restoreTabs\": false\n}\n")
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesContexts["b"]?.writable, false)
+        settings.set("kubernetes.contexts", .entries(["b": ["writable": .bool(true)]]))
+        XCTAssertEqual(
+            text(),
+            "{\n  // mine\n  \"kubernetes.contexts\": { // all\n    // never make this writable\n    \"b\": {\"writable\": true}\n    // the end\n  }, // after\n"
+                + "  \"general.restoreTabs\": false\n}\n", "acme-prod's comments went with it")
+        XCTAssertEqual(Settings(url: url, watch: false).value("general.restoreTabs"), .bool(false))
+        settings.set("kubernetes.contexts", nil)
+        XCTAssertEqual(text(), "{\n  // mine\n  \"general.restoreTabs\": false\n}\n")
+        XCTAssertNil(SettingsJSON.setting("{\n  \"a\": {\n", key: "a", json: "1"), "never closed: rewritten whole by the caller")
+    }
+
+    /// A list over several lines: an item a line, its comments with it.
+    func testAListOverSeveralLinesKeepsItsItemsComments() throws {
+        let text = "{\n  \"kubernetes.agentWrites\": [\n    \"kind-fake\", // mine\n    // dev's\n    \"fake-dev\"\n  ]\n}\n"
+        let members = SettingValue.list(["fake-dev", "kind-fake", "acme-dev"]).members
+        XCTAssertEqual(
+            SettingsJSON.setting(text, key: "kubernetes.agentWrites", json: "[]", members: members),
+            "{\n  \"kubernetes.agentWrites\": [\n    // dev's\n    \"fake-dev\",\n    \"kind-fake\", // mine\n    \"acme-dev\"\n  ]\n}\n")
+    }
+
     func testChangesNameTheKeys() throws {
         let settings = Settings(url: url, watch: false)
         var seen: [Set<String>] = []

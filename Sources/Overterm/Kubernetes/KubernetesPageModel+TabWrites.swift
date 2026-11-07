@@ -280,10 +280,14 @@ extension KubernetesPageModel {
                 return
             }
             // The image field's, checked as an image reference: the settings' only prefilled it.
-            var write = write
+            // Another one than the line showed is asked again with its own line (rule 3: the
+            // command confirmed is the command run), the name typed again on production.
             if let prefilled = write.image {
                 switch KubeTabWrite.image(from: answer.image ?? prefilled) {
-                case .success(let image): write = write.with(image: image)
+                case .success(let image) where image != prefilled:
+                    self.confirmTabCommand(write.with(image: image), reviewed: reviewed, pin: pin)
+                    return
+                case .success: break
                 case .failure(let refused):
                     self.writeStatus = .failed(refused.reason)
                     return

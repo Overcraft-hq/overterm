@@ -67,6 +67,9 @@ struct KubernetesPageView: View {
         .overlay(alignment: .top) {
             if page.namespaceDraft != nil { KubeNamespaceSheetView(page: page, theme: theme).padding(.top, 70) }
         }
+        .overlay(alignment: .top) {
+            if page.contextSettingsDraft != nil { KubeContextSettingsSheetView(page: page, theme: theme).padding(.top, 70) }
+        }
         .onChange(of: page.focusFilter) { _ in focus = .filter }
         // A table with no columns refuses the keyboard: given it while the
         // pods are asked for (the page opened, a namespace or a context
@@ -74,7 +77,7 @@ struct KubernetesPageView: View {
         // list takes it — if nothing else has it.
         .onChange(of: model.rows.columns.isEmpty) { empty in
             guard !empty, focus != .filter, page.picker == nil, page.command == nil, page.scaleDraft == nil, page.namespaceDraft == nil,
-                page.forwardDraft == nil, page.resizeDraft == nil
+                page.forwardDraft == nil, page.resizeDraft == nil, page.contextSettingsDraft == nil
             else { return }
             DispatchQueue.main.async { page.offerListTheKeyboard() }
         }
@@ -219,6 +222,7 @@ struct KubernetesPageView: View {
         .help("\(context.name) — \(context.contextClass.title)\(context.isWritable ? "" : ", read-only")")
         .contextMenu {
             Button("Terminal in This Context") { page.openTerminal(in: context) }
+            Button("Context Settings…") { page.openContextSettings(context) }
         }
         .accessibilityIdentifier("kubernetes.context.\(context.name)")
     }
@@ -267,6 +271,16 @@ struct KubernetesPageView: View {
             .padding(.top, 4)
             .help("A tab whose plain kubectl, helm or k9s goes to \(context.name) — with your own rights. Your current context is unchanged.")
             .accessibilityIdentifier("kubernetes.terminal")
+            // Its settings, in one place: written to settings.json.
+            Button {
+                page.openContextSettings(context)
+            } label: {
+                Label("Context Settings…", systemImage: "gearshape").font(.system(size: 11))
+            }
+            .buttonStyle(.link)
+            .foregroundStyle(theme.accentText)
+            .help("Its class, writes, usage's source, the node shell, the default namespace and what agents may do — saved to settings.json.")
+            .accessibilityIdentifier("kubernetes.contextSettings.open")
             // Production's writes, for this session only (rule 2).
             if context.isProduction {
                 Button {
