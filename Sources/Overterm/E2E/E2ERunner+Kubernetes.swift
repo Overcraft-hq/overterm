@@ -17,6 +17,22 @@ import SwiftUI
 /// nodes, events, CRDs and a custom resource (widgets.example.com, with
 /// printer columns of its own): the `:` bar and the digits reach them.
 extension E2ERunner {
+    /// A scenario's recorder of the commands opened in a pinned tab: what
+    /// would be typed, checked to export the tab's own KUBECONFIG first —
+    /// the shell's startup files may export another — and handed on
+    /// without that prefix.
+    func recordKubernetesCommands(_ record: @escaping (String, Tab) -> Void) {
+        app.kubernetesCommandRecorder = { [weak self] typed, tab in
+            let kubeconfig = tab.terminal.environment["KUBECONFIG"] ?? ""
+            let prefix = "export KUBECONFIG=" + KubectlLine.quoted(kubeconfig) + "; "
+            let pinned = !kubeconfig.isEmpty && typed.hasPrefix(prefix)
+            if !pinned { self?.check("a pinned tab's line exports its own KUBECONFIG first", false, typed) }
+            record(pinned ? String(typed.dropFirst(prefix.count)) : typed, tab)
+        }
+    }
+}
+
+extension E2ERunner {
     func kubernetesScenario() async {
         await settledPrompt()
         let model = KubernetesModel.shared
@@ -396,6 +412,34 @@ extension E2ERunner {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("ot-e2e-kubeconfig-\(UUID().uuidString.prefix(6))")
         await runAndExpect("printf '%s' \"$KUBECONFIG\" > \(out.path)", file: out, content: value, "the tab's shell has that KUBECONFIG")
         try? FileManager.default.removeItem(at: out)
+
+        // ⌘L on what the pinned tab printed: masked before an agent reads
+        // it, and the command it came from too (rule 9).
+        let pane = tab.terminal
+        let printed = FileManager.default.temporaryDirectory.appendingPathComponent("ot-e2e-bearer-\(UUID().uuidString.prefix(6))")
+        await runAndExpect(
+            "echo Authorization: Bearer acmetok42 | tee \(printed.path)", file: printed, content: "Authorization: Bearer acmetok42",
+            "a pinned tab's command prints a bearer token")
+        try? FileManager.default.removeItem(at: printed)
+        check(
+            "a bearer token printed in the pinned tab", await eventually(12) { (pane.visibleText ?? "").contains("Bearer acmetok42") },
+            String((pane.visibleText ?? "").suffix(60)).debugDescription)
+        _ = await eventually(5) { self.app.blocks(of: pane).ledger.lastFinished?.command.contains("acmetok42") == true }
+        pane.perform(binding: "select_all")
+        check("selected", await eventually(5) { pane.selectionText?.contains("acmetok42") == true })
+        app.askAboutSelection(nil)
+        check("⌘L opens the sheet", await eventually(3) { self.window.attachedSheet != nil })
+        check(
+            "the selection reaches the agent's sheet masked",
+            app.askAgent.selection.contains("Bearer") && !app.askAgent.selection.contains("acmetok42"), app.askAgent.selection.suffix(80).debugDescription)
+        check(
+            "and the command it came from", !(app.askAgent.command?.command.contains("acmetok42") ?? false),
+            app.askAgent.command?.command ?? "no command")
+        let askSheet = (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView
+        askSheet?.cancel()
+        let sheetGone = await eventually(3) { self.window.attachedSheet == nil }
+        check("Cancel puts the sheet away", askSheet != nil && sheetGone && !app.askAgent.isOpen)
+
         check("the pane's header says the context", await shownText(15) { $0.contains("fake-dev") && $0.contains("shop") } != nil)
         let devLabel = await stripLabel("fake-dev")
         check("its tab in the strip says ⎈ fake-dev, not in red", devLabel.found && !devLabel.red, "\(devLabel)")
@@ -1034,7 +1078,7 @@ extension E2ERunner {
     private func kubernetesPodCommands(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, kubeconfig: URL, canI log: URL) async {
         let opened = Set(app.store.tabs.map(\.id))
         var recorded: [(command: String, tab: Tab)] = []
-        app.kubernetesCommandRecorder = { command, tab in recorded.append((command, tab)) }
+        recordKubernetesCommands { recorded.append(($0, $1)) }
         defer { app.kubernetesCommandRecorder = nil }
         // What the pods picked before asked is forgotten: from here, every question counted.
         model.access.forget(context: "fake-dev")

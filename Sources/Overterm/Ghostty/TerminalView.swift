@@ -22,6 +22,9 @@ final class TerminalView: NSView {
     /// A pin that couldn't be restored: the pane's `KUBECONFIG` reaches no
     /// cluster, and its header says so (`KubeTerminalLost`).
     let kubePinLost: KubeTerminalLost?
+    /// A pod's tab (`e`, `A`, `t`): the pod's plain env values, which ⌘L
+    /// on its output scrubs as the page's Logs tab does. In memory only.
+    var kubePodEnv: [(key: String, value: String)] = []
 
     /// Find-in-terminal (⌘F) for this terminal.
     private(set) lazy var search = TerminalSearch(terminal: self)

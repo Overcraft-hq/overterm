@@ -123,8 +123,22 @@ final class AskAgentModel: ObservableObject {
 /// scrubs the same lines (every URL's password, then what looks like a
 /// credential — rule 9), never handed on in the clear. Pure.
 enum AskSelection {
-    static func text(_ selection: String, kind: TabKind, pinned: Bool) -> String {
+    /// `env`: a pod's tab's pod's plain env values, taken out as the
+    /// Logs tab takes them (`KubeLogScrub`) — a `DB_PASSWORD` printed bare.
+    static func text(_ selection: String, kind: TabKind, pinned: Bool, env: [(key: String, value: String)] = []) -> String {
         guard pinned || kind == .pod || kind == .kubernetes else { return selection }
-        return Secrets.scrubCredentials(Secrets.maskURLs(in: selection))
+        return KubeLogScrub.scrub(selection, env: env)
+    }
+
+    /// The command the selection came from, scrubbed the same way: a
+    /// `kubectl --token=… get po` typed in a pinned tab.
+    static func command(_ block: CommandBlock?, kind: TabKind, pinned: Bool, env: [(key: String, value: String)] = []) -> CommandBlock? {
+        guard let block else { return nil }
+        guard pinned || kind == .pod || kind == .kubernetes else { return block }
+        // `--token abc`, not only `--token=abc`: the command's own flags, then as the output.
+        let words = block.command.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let command = text(Secrets.maskArguments(words).joined(separator: " "), kind: kind, pinned: pinned, env: env)
+        guard command != block.command else { return block }
+        return CommandBlock(id: block.id, command: command, startRow: block.startRow, endRow: block.endRow, exit: block.exit, seconds: block.seconds)
     }
 }

@@ -2436,7 +2436,9 @@ release's diff runs (Attention marks and Helm upgrade from the checkout, below).
 cluster goes through the context's own long-lived `kubectl proxy --context
 C --unix-socket S`, started by its first request (`KubeProxy.open`, a
 `ManagedProcess`: ready on kubectl's `Starting to serve on` line, its
-socket removed before and after, closed by its pid and at quit) and kept
+socket removed before and after, spawned in a process group of its own
+(`ProcessGroup`) and closed by it — an exec plugin kubectl started ends
+with it, even one reparented — and at quit) and kept
 in a `ManagedProcessPool` keyed by the whole `KubeProxySpec`, so a dead
 one is opened again on the next use. kubectl keeps the credentials — exec
 plugins, certificates, token refresh — and Overterm speaks plain HTTP on

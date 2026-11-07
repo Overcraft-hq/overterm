@@ -30,7 +30,7 @@ extension E2ERunner {
         defer { if !wasShowing, app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) } }
         let opened = Set(app.store.tabs.map(\.id))
         var recorded: [(command: String, tab: Tab)] = []
-        app.kubernetesCommandRecorder = { command, tab in recorded.append((command, tab)) }
+        recordKubernetesCommands { recorded.append(($0, $1)) }
         defer {
             app.kubernetesCommandRecorder = nil
             app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })

@@ -26,6 +26,10 @@ struct KubernetesActions {
     /// A pod's command — a shell, attach, a log followed (`KubeCommands`) —
     /// typed into a new tab pinned to the context, in the namespace.
     var runInTab: (_ command: String, _ context: KubeContext, _ namespace: String) -> Void = { _, _, _ in }
+    /// The same for a pod's own command, with the pod's plain env values:
+    /// what ⌘L in that tab scrubs, as the page's Logs tab does. Nil:
+    /// `runInTab`.
+    var runPodInTab: ((_ command: String, _ context: KubeContext, _ namespace: String, _ env: [(key: String, value: String)]) -> Void)?
     /// Asked first, with this button and Cancel (a shell on production).
     var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void = { _, _, _, _ in }
     /// A line of text asked for, with OK and Cancel (a path in a container):
@@ -1407,15 +1411,17 @@ final class KubernetesPageModel: ObservableObject {
                 }
             }
             let pick: KubeContainerPick
+            let env: [(key: String, value: String)]
             do {
                 let object = try await client.object(ref.kind, namespace: namespace, name: ref.name)
                 pick = KubeContainerPick.of(object.json, for: verb)
+                env = KubeLogScrub.env(of: object.json)
             } catch {
                 self?.commandProblem = "Couldn't read pod \(namespace)/\(ref.name): \(KubernetesModel.said(error))"
                 return
             }
             self?.choose(pick, verb, context: context, namespace: namespace, pod: ref.name) { container in
-                self?.confirm(verb, rule, context: context, namespace: namespace, pod: ref.name, container: container)
+                self?.confirm(verb, rule, context: context, namespace: namespace, pod: ref.name, container: container, env: env)
             }
         }
     }
@@ -1456,10 +1462,11 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     private func confirm(
-        _ verb: KubeProcessVerb, _: KubeProcessRule, context reading: KubeContext, namespace: String, pod: String, container: String?
+        _ verb: KubeProcessVerb, _: KubeProcessRule, context reading: KubeContext, namespace: String, pod: String, container: String?,
+        env: [(key: String, value: String)]
     ) {
         guard let (context, rule) = recheck(verb, reading) else { return }
-        let open = { [weak self] in self?.open(verb, context: context, namespace: namespace, pod: pod, container: container) }
+        let open = { [weak self] in self?.open(verb, context: context, namespace: namespace, pod: pod, container: container, env: env) }
         // A followed log's tab is a pinned shell once the follow ends: asked
         // once per context, as Terminal in this context would be.
         let consent = verb == .followLogs ? (namespace: "", pod: "") : (namespace: namespace, pod: pod)
@@ -1495,18 +1502,20 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
 
-    private func open(_ verb: KubeProcessVerb, context captured: KubeContext, namespace: String, pod: String, container: String?) {
+    private func open(
+        _ verb: KubeProcessVerb, context captured: KubeContext, namespace: String, pod: String, container: String?, env: [(key: String, value: String)]
+    ) {
         // Again after the confirmation: the context as it is when the tab opens.
         guard let (context, rule) = recheck(verb, captured) else { return }
         let consent = verb == .followLogs ? (namespace: "", pod: "") : (namespace: namespace, pod: pod)
         if rule.confirm, !model.shellConsent.isGranted(verb, context: context.name, namespace: consent.namespace, pod: consent.pod) {
             // It needs asking now and wasn't asked: asked.
-            return confirm(verb, rule, context: context, namespace: namespace, pod: pod, container: container)
+            return confirm(verb, rule, context: context, namespace: namespace, pod: pod, container: container, env: env)
         }
         do {
             let command = try KubeCommands.command(verb, in: context, namespace: namespace, pod: pod, container: container)
             commandProblem = nil
-            actions?.runInTab(command, context, namespace)
+            if let run = actions?.runPodInTab { run(command, context, namespace, env) } else { actions?.runInTab(command, context, namespace) }
         } catch {
             commandProblem = "\(error)"
         }

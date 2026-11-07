@@ -64,6 +64,24 @@ final class ManagedProcessTests: XCTestCase {
         XCTAssertFalse(family.contains(where: Self.alive), "every child ended: \(family.filter(Self.alive))")
     }
 
+    /// It runs in a process group of its own: what it started and no
+    /// longer parents — a plugin reparented once kubectl exited — ends
+    /// with it, though no walk of its children finds it.
+    func testWhatItStartedEndsWithItEvenReparented() async throws {
+        let file = folder.appendingPathComponent("orphan.pid")
+        let process = try await ManagedProcess.start(
+            shell("(/bin/sleep 33 & echo $! > \(file.path)); echo ready; exec /bin/sleep 30", readiness: .line { $0 == "ready" }))
+        try await until { ((try? String(contentsOf: file, encoding: .utf8)) ?? "").hasSuffix("\n") }
+        let orphan = try XCTUnwrap(pid_t(((try? String(contentsOf: file, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)))
+        try await until { ProcessInspector.kinfo(orphan)?.parent != process.pid && !ManagedProcess.descendants(of: process.pid).contains { $0.pid == orphan } }
+        XCTAssertFalse(ManagedProcess.descendants(of: process.pid).contains { $0.pid == orphan }, "not its child any more")
+        XCTAssertEqual(getpgid(orphan), process.pid, "in its group")
+        XCTAssertTrue(Self.alive(orphan))
+        process.close(grace: 0.3)
+        try await until { !Self.alive(orphan) }
+        XCTAssertFalse(Self.alive(orphan), "ended with its group")
+    }
+
     func testASocketThatTakesConnectionsSaysItIsReady() async throws {
         let path = folder.appendingPathComponent("ready.sock").path
         // Something left at the path is removed before it starts.

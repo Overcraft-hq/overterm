@@ -75,11 +75,13 @@ final class SecretsTests: XCTestCase {
             ("passphrase='two words here' next", "passphrase='••••••' next"),
             ("DB_PASS=\"x y z\"", "DB_PASS=\"••••••\""),
             ("password=hunter2 rest", "password=•••••• rest"),
+            // YAML's and SQL's single quote escapes a quote by doubling it.
+            ("password: 'it''s a secret' # db", "password: '••••••' # db"),
         ]
         for (text, scrubbed) in cases {
             XCTAssertEqual(Secrets.scrubCredentials(text), scrubbed, text)
         }
-        for leftover in ["horse", "battery", "w0rd", "quoted", "words", "y z"] {
+        for leftover in ["horse", "battery", "w0rd", "quoted", "words", "y z", "a secret"] {
             XCTAssertFalse(cases.map { Secrets.scrubCredentials($0.0) }.joined().contains(leftover), leftover)
         }
     }
@@ -98,5 +100,18 @@ final class AskSelectionTests: XCTestCase {
             XCTAssertTrue(text.contains("GET /api 200"), text)
         }
         XCTAssertEqual(AskSelection.text(selection, kind: .shell, pinned: false), selection, "another tab's selection as it is")
+    }
+    /// A pod's tab knows its pod's plain env: a value printed bare is
+    /// masked, as the Logs tab masks it. The command the selection came
+    /// from goes scrubbed too.
+    func testAPodsEnvAndTheCommandAreScrubbed() {
+        let env = [(key: "DB_PASSWORD", value: "acme-s3cret-value")]
+        let text = AskSelection.text("connecting with acme-s3cret-value", kind: .pod, pinned: true, env: env)
+        XCTAssertFalse(text.contains("acme-s3cret-value"), text)
+        let block = CommandBlock(id: 1, command: "kubectl --token abc123-acme --context kind-fake get po", startRow: 0, endRow: 1, exit: 0, seconds: 1)
+        let command = AskSelection.command(block, kind: .shell, pinned: true)
+        XCTAssertFalse(command?.command.contains("abc123-acme") ?? true, command?.command ?? "")
+        XCTAssertTrue(command?.command.contains("--context kind-fake get po") ?? false, command?.command ?? "")
+        XCTAssertEqual(AskSelection.command(block, kind: .shell, pinned: false), block, "another tab's command as it is")
     }
 }

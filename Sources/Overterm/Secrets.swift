@@ -221,7 +221,7 @@ extension Secrets {
         // `"password":"p@ss w0rd"` — escapes in it included: the bare form
         // below stops at the first space and left the rest.
         (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*)"(?:[^"\\\n]|\\.)*""#, "$1\"\(credentialMask)\""),
-        (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*)'(?:[^'\\\n]|\\.)*'"#, "$1'\(credentialMask)'"),
+        (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*)'(?:[^'\\\n]|''|\\.)*'"#, "$1'\(credentialMask)'"),
         (#"(?i)("# + credentialKey + #"["']?[ \t]*[:=][ \t]*["']?)[^\s"',;&]+"#, "$1\(credentialMask)"),
     ]
 

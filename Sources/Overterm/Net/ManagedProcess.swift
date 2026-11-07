@@ -5,10 +5,12 @@ import Foundation
 /// remote engine's socket, and later `kubectl proxy` and `kubectl
 /// port-forward`: started, waited for until it is ready (a socket that
 /// takes connections, or a line on its stdout), its stderr kept for the
-/// reason it failed, closed on demand and at quit (`closeAll`). It is only
-/// ever signalled by its own pid, and what it started by theirs (found
-/// before it is closed, by pid and start time) — never by a pattern
-/// (`pkill -f` once killed the shell running the tests).
+/// reason it failed, closed on demand and at quit (`closeAll`). It runs in
+/// a process group of its own (`ProcessGroup`), and is only ever signalled
+/// by that group — whatever it started, even reparented — and what it
+/// started by their own pids (found before it is closed, by pid and start
+/// time: one that left the group); never by a pattern (`pkill -f` once
+/// killed the shell running the tests).
 final class ManagedProcess: @unchecked Sendable {
     /// What says it is ready.
     enum Readiness: Sendable {
@@ -41,39 +43,51 @@ final class ManagedProcess: @unchecked Sendable {
         case timedOut
     }
 
-    private let process: Process
+    private let process: ProcessGroup.Child
+    /// Its start time: its group is signalled after the grace only while
+    /// it, or one of what it started, is still that process.
+    private let started: UInt64?
     private let removing: [String]
+    /// Its stderr's and stdout's pipes, held for as long as it is: a pipe
+    /// let go closes its read end, and what it said after is never read
+    /// (`Process` held them before).
+    private let pipes: [Pipe]
     /// What it said on stderr, and on stdout when a line says it is ready.
     let stderr: Output
     let stdout: Output
 
-    private init(process: Process, removing: [String], stderr: Output, stdout: Output) {
+    private init(process: ProcessGroup.Child, removing: [String], pipes: [Pipe], stderr: Output, stdout: Output) {
         self.process = process
+        self.pipes = pipes
+        self.started = ProcessInspector.kinfo(process.pid)?.start
         self.removing = removing
         self.stderr = stderr
         self.stdout = stdout
     }
 
     var isRunning: Bool { process.isRunning }
-    var pid: pid_t { process.processIdentifier }
+    var pid: pid_t { process.pid }
     var terminationStatus: Int32 { process.terminationStatus }
 
-    /// Ends it — SIGTERM to its own pid, and to what it started (an exec
-    /// plugin kubectl ran: kubelogin waiting for the browser on 127.0.0.1:8000
-    /// would otherwise keep the port and the sign-in for minutes) — then
-    /// SIGKILL to those still there after `grace`, and removes what it made.
-    /// Its children are found before it is signalled (once it exits they
-    /// are launchd's), each by pid and start time: never a pid reused.
+    /// Ends it — SIGTERM to its process group, and to what it started that
+    /// left it (an exec plugin kubectl ran: kubelogin waiting for the
+    /// browser on 127.0.0.1:8000 would otherwise keep the port and the
+    /// sign-in for minutes) — then SIGKILL to those still there after
+    /// `grace`, and removes what it made. The group reaches one reparented
+    /// once kubectl exited, and one started a moment before the signal;
+    /// its children are found before it is signalled, each by pid and
+    /// start time: never a pid reused.
     func close() { close(grace: 2) }
 
     func close(grace: TimeInterval) {
-        if process.isRunning {
-            let family = Self.descendants(of: process.processIdentifier)
-            process.terminate()
-            for child in family { kill(child.pid, SIGTERM) }
-            if !family.isEmpty, grace > 0 {
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + grace, execute: Self.killing(family))
-            }
+        let group = process.pid
+        let leader = started.map { [(pid: group, start: $0)] } ?? []
+        let family = leader + Self.descendants(of: group)
+        // Its group even once it exited: what it started may still be there.
+        if Self.groupIsOurs(process) { killpg(group, SIGTERM) }
+        for child in family.dropFirst(leader.count) { kill(child.pid, SIGTERM) }
+        if grace > 0 {
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + grace, execute: Self.killing(process, family))
         }
         removing.forEach { unlink($0) }
         Self.lock.withLock { Self.live.removeAll { $0 === self } }
@@ -96,11 +110,22 @@ final class ManagedProcess: @unchecked Sendable {
         return found
     }
 
-    /// SIGKILL to each still running as the same process (its start time).
-    private nonisolated static func killing(_ family: [(pid: pid_t, start: UInt64)]) -> @Sendable () -> Void {
+    /// Whether its group's id is still its group's: the leader not yet
+    /// reaped (its pid can't be reused), or no process with that pid — a
+    /// pid isn't given out while a group of that id has a member, so a
+    /// process there now is another's group leader, never signalled.
+    private nonisolated static func groupIsOurs(_ leader: ProcessGroup.Child) -> Bool {
+        leader.isRunning || ProcessInspector.kinfo(leader.pid) == nil
+    }
+
+    /// SIGKILL to each still running as the same process (its start time),
+    /// and to the group while it is still its (`groupIsOurs`).
+    private nonisolated static func killing(_ leader: ProcessGroup.Child, _ family: [(pid: pid_t, start: UInt64)]) -> @Sendable () -> Void {
         let family = family.map { ($0.pid, $0.start) }
         return {
-            for (pid, start) in family where ProcessInspector.kinfo(pid)?.start == start { kill(pid, SIGKILL) }
+            let alive = family.filter { ProcessInspector.kinfo($0.0)?.start == $0.1 }
+            if groupIsOurs(leader) { killpg(leader.pid, SIGKILL) }
+            for (pid, _) in alive { kill(pid, SIGKILL) }
         }
     }
 
@@ -109,36 +134,35 @@ final class ManagedProcess: @unchecked Sendable {
     /// `CancellationError` thrown.
     static func start(_ launch: Launch) async throws -> ManagedProcess {
         launch.removing.forEach { unlink($0) }
-        let process = Process()
-        process.executableURL = launch.executable
-        process.arguments = launch.arguments
-        if let environment = launch.environment { process.environment = environment }
-        if let directory = launch.directory { process.currentDirectoryURL = directory }
-        process.standardInput = FileHandle.nullDevice
         let stderr = Output()
         let stdout = Output()
         let errors = Pipe()
-        process.standardError = errors
         read(errors, into: stderr)
         var output: Pipe?
         if case .line = launch.readiness {
             // Read for as long as it runs: a pipe nobody empties fills, and
             // the process blocks writing to it.
             let pipe = Pipe()
-            process.standardOutput = pipe
             read(pipe, into: stdout)
             output = pipe
-        } else {
-            process.standardOutput = FileHandle.nullDevice
         }
-        do {
-            try process.run()
-        } catch {
+        let null = open("/dev/null", O_WRONLY)
+        defer { if null >= 0 { Darwin.close(null) } }
+        let spawned = ProcessGroup.spawn(
+            launch.executable, launch.arguments, launch.environment ?? ProcessInfo.processInfo.environment, directory: launch.directory,
+            stdout: output?.fileHandleForWriting.fileDescriptor ?? null, stderr: errors.fileHandleForWriting.fileDescriptor)
+        // The child has its own: ours closed, or the readers never see EOF.
+        try? errors.fileHandleForWriting.close()
+        try? output?.fileHandleForWriting.close()
+        let process: ProcessGroup.Child
+        switch spawned {
+        case .success(let pid): process = ProcessGroup.Child(pid: pid)
+        case .failure(let error):
             errors.fileHandleForReading.readabilityHandler = nil
             output?.fileHandleForReading.readabilityHandler = nil
             throw Failure.couldNotStart(error.localizedDescription)
         }
-        let managed = ManagedProcess(process: process, removing: launch.removing, stderr: stderr, stdout: stdout)
+        let managed = ManagedProcess(process: process, removing: launch.removing, pipes: [errors] + (output.map { [$0] } ?? []), stderr: stderr, stdout: stdout)
         lock.withLock { live = live.filter(\.isRunning) + [managed] }
         let deadline = Date().addingTimeInterval(launch.timeout)
         while Date() < deadline {

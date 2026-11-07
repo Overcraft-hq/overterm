@@ -475,26 +475,31 @@ enum KubeChartPrint {
         let root = chart.resolvingSymlinksInPath().standardizedFileURL
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isFolder), isFolder.boolValue else { return nil }
-        let failed = Flag()
-        guard
-            let walk = FileManager.default.enumerator(
-                at: root, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey], options: [],
-                errorHandler: { _, _ in
-                    failed.set()
-                    return false
-                })
-        else { return nil }
+        // Walked by hand, not FileManager's enumerator: that doesn't go
+        // into a symlinked folder, and Helm's loader does (`sympath.Walk`)
+        // — `templates -> ../shared` edited after the diff would deploy
+        // unreviewed. A folder that is its own ancestor (a cycle) is
+        // refused, and so is a walk past the bounds.
         var files: [(String, URL)] = []
-        for case let url as URL in walk {
-            let resolved = url.resolvingSymlinksInPath()
-            let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
-            if values?.isDirectory == true { continue }
-            guard values?.isRegularFile == true else { return nil }
-            let relative = String(url.standardizedFileURL.path.dropFirst(root.path.count))
-            files.append((relative, resolved))
-            if files.count > maxFiles { return nil }
+        var seen = 0
+        var folders: [(relative: String, url: URL, ancestors: Set<String>)] = [("", root, [root.path])]
+        while let folder = folders.popLast() {
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.url.path) else { return nil }
+            for name in names {
+                seen += 1
+                if seen > maxFiles { return nil }
+                let relative = folder.relative + "/" + name
+                let resolved = folder.url.appendingPathComponent(name).resolvingSymlinksInPath().standardizedFileURL
+                let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+                if values?.isDirectory == true {
+                    guard !folder.ancestors.contains(resolved.path) else { return nil }
+                    folders.append((relative, resolved, folder.ancestors.union([resolved.path])))
+                    continue
+                }
+                guard values?.isRegularFile == true else { return nil }
+                files.append((relative, resolved))
+            }
         }
-        guard !failed.value else { return nil }
         var hash = SHA256()
         var total = 0
         for (path, url) in files.sorted(by: { $0.0 < $1.0 }) {
@@ -507,14 +512,6 @@ enum KubeChartPrint {
             hash.update(data: data)
         }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// The walk's error handler is told on whatever thread it runs on.
-    private final class Flag: @unchecked Sendable {
-        private let lock = NSLock()
-        private var stored = false
-        var value: Bool { lock.withLock { stored } }
-        func set() { lock.withLock { stored = true } }
     }
 
     static let changed = "The chart changed since its diff (a template, values.yaml, a dependency): nothing was run — diff again."
