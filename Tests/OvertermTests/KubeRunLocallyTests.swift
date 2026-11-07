@@ -404,9 +404,8 @@ final class KubeRunLocallyPageTests: XCTestCase {
         XCTAssertTrue(box.runs.first?.notes.first?.contains("deployment shop/web") == true, "\(box.runs.first?.notes ?? [])")
         XCTAssertTrue(page.dockerVerbs(for: KubeObjectRef(context: "fake-dev", kind: .services, namespace: "shop", name: "web")).isEmpty)
 
-        let was = Settings.shared.value("docker.enabled")
-        Settings.shared.set("docker.enabled", .bool(false))
-        defer { Settings.shared.set("docker.enabled", was) }
+        // Docker off as the page is told it — never the user's settings.json.
+        page.dockerEnabled = { false }
         XCTAssertEqual(page.dockerVerbs(for: ref).first?.unavailable, "Docker is off — Settings ▸ Docker")
         page.toDocker(.scan, ref)
         XCTAssertEqual(page.writeStatus, .failed("Docker is off — Settings ▸ Docker."))
