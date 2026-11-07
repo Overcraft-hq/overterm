@@ -180,6 +180,34 @@ final class KubeTableTests: XCTestCase {
         XCTAssertThrowsError(try decoder.decode(Data("{}".utf8)))
     }
 
+    /// A streaming list's end as kind's 1.37 sends it for a Table: the
+    /// annotation on the one row's object, not the Table's metadata — and,
+    /// for an empty list, the columns with it (lines as the server wrote
+    /// them, the descriptions cut).
+    func testAStreamingListsEndAsARealServerSendsATable() throws {
+        var decoder = KubeWatchDecoder(columns: [], namespace: "default")
+        let added = Data(
+            #"{"type":"ADDED","object":{"kind":"Table","apiVersion":"meta.k8s.io/v1","metadata":{"resourceVersion":"495"},"columnDefinitions":[{"name":"Name","type":"string","format":"name","description":"","priority":0},{"name":"Ready","type":"string","format":"","description":"","priority":0}],"rows":[{"cells":["coredns-1","1/1"],"object":{"kind":"PartialObjectMetadata","apiVersion":"meta.k8s.io/v1","metadata":{"name":"coredns-1","namespace":"kube-system","resourceVersion":"495"}}}]}}"#
+                .utf8)
+        let end = Data(
+            #"{"type":"BOOKMARK","object":{"kind":"Table","apiVersion":"meta.k8s.io/v1","metadata":{"resourceVersion":"843"},"columnDefinitions":null,"rows":[{"cells":["","0/0"],"object":{"kind":"PartialObjectMetadata","apiVersion":"meta.k8s.io/v1","metadata":{"resourceVersion":"843","annotations":{"k8s.io/initial-events-end":"true"}}}}]}}"#
+                .utf8)
+        XCTAssertEqual(try decoder.decode(added).count, 1)
+        XCTAssertEqual(try decoder.decode(end), [.bookmark(resourceVersion: "843", initialEventsEnd: true)], "its end, not one more row")
+        XCTAssertEqual(decoder.columns.map(\.name), ["Name", "Ready"], "the list's columns kept")
+
+        // includeObject=None: the bookmark's row still has an object, and it says so.
+        var empty = KubeWatchDecoder(columns: [], namespace: "nothing-here")
+        let emptyEnd = Data(
+            #"{"type":"BOOKMARK","object":{"kind":"Table","apiVersion":"meta.k8s.io/v1","metadata":{"resourceVersion":"912"},"columnDefinitions":[{"name":"Name","type":"string","format":"name","description":"","priority":0},{"name":"Age","type":"string","format":"","description":"","priority":0}],"rows":[{"cells":["","<unknown>"],"object":{"kind":"PartialObjectMetadata","apiVersion":"meta.k8s.io/v1","metadata":{"resourceVersion":"912","annotations":{"k8s.io/initial-events-end":"true"}}}}]}}"#
+                .utf8)
+        XCTAssertEqual(try empty.decode(emptyEnd), [.bookmark(resourceVersion: "912", initialEventsEnd: true)])
+        XCTAssertEqual(empty.columns.map(\.name), ["Name", "Age"], "an empty list's columns come with its end")
+        // A Table bookmark that isn't the end.
+        let interim = Data(#"{"type":"BOOKMARK","object":{"kind":"Table","metadata":{"resourceVersion":"900"},"rows":[{"cells":[""],"object":{"metadata":{"resourceVersion":"900"}}}]}}"#.utf8)
+        XCTAssertEqual(try empty.decode(interim), [.bookmark(resourceVersion: "900", initialEventsEnd: false)])
+    }
+
     func testRowsFollowAListAndItsChanges() throws {
         let table = try KubeTableReader.read(json(podTable([["a", "1/1", "Running", 0, "1s"], ["b", "1/1", "Running", 0, "1s"]])), namespace: "ns")
         var rows = KubeRows(table)

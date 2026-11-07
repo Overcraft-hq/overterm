@@ -304,6 +304,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var failingGroups: Set<String> = []
         var interimBookmarks = false
         var streamingTables = true
+        var bookmarkColumns = true
         var unversionedLists = false
         var forbidden: Set<String> = []
         var failingResources: Set<String> = []
@@ -391,6 +392,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     var streamingTables: Bool {
         get { locked { settings.streamingTables } }
         set { locked { settings.streamingTables = newValue } }
+    }
+    /// Whether a Table bookmark that is a stream's first Table carries the
+    /// columns, as kind's 1.37 does: off, an empty streaming list ends
+    /// without them (a server that leaves them out).
+    var bookmarkColumns: Bool {
+        get { locked { settings.bookmarkColumns } }
+        set { locked { settings.bookmarkColumns = newValue } }
     }
     /// Whether metrics-server is there: metrics.k8s.io served (pods and
     /// nodes, `get` and `list`, as metrics-server serves them). Off, a
@@ -918,7 +926,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// A BOOKMARK at the current version, to every watch that allows them.
     func bookmark() {
         let sends = locked { () -> [(Channel, Data)] in
-            watchers.values.filter(\.bookmarks).map { ($0.channel, Self.bookmarkLine(current, table: $0.table, initialEnd: false)) }
+            watchers.filter(\.value.bookmarks).map { id, watcher in (watcher.channel, bookmarkLine(current, table: watcher.table, initialEnd: false, for: id)) }
         }
         for (channel, line) in sends { Self.write(line, to: channel) }
     }
@@ -1475,9 +1483,9 @@ final class FakeKubeAPI: @unchecked Sendable {
                 }
                 if initialEvents && settings.interimBookmarks && bookmarks {
                     // One before the end: it moves the version on, it isn't the list.
-                    lines.insert(Self.bookmarkLine(current, table: table, initialEnd: false), at: min(1, lines.count))
+                    lines.insert(bookmarkLine(current, table: table, initialEnd: false, for: id), at: min(1, lines.count))
                 }
-                if initialEvents { lines.append(Self.bookmarkLine(current, table: table, initialEnd: !table || settings.streamingTables)) }
+                if initialEvents { lines.append(bookmarkLine(current, table: table, initialEnd: !table || settings.streamingTables, for: id)) }
                 return .watch(lines: lines, end: false, timeout: timeout)
             }
             guard let from = Int(version), from >= compacted else {
@@ -1515,12 +1523,26 @@ final class FakeKubeAPI: @unchecked Sendable {
         return Self.line(["type": type, "object": rendered])
     }
 
-    private static func bookmarkLine(_ version: Int, table: Bool, initialEnd: Bool) -> Data {
+    /// A bookmark as kind's 1.37 sends one: a plain object with the
+    /// version (and the end's annotation) in its metadata — or, for a
+    /// Table, a Table whose own metadata has only the version and whose
+    /// one row, its cells empty, carries the annotation on its object,
+    /// whatever `includeObject` asked; the columns when it is the stream's
+    /// first Table (an empty list's end).
+    private func bookmarkLine(_ version: Int, table: Bool, initialEnd: Bool, for id: ObjectIdentifier) -> Data {
         var metadata: [String: Any] = ["resourceVersion": String(version)]
         if initialEnd { metadata["annotations"] = ["k8s.io/initial-events-end": "true"] }
-        let object: [String: Any] =
-            table ? ["kind": "Table", "apiVersion": "meta.k8s.io/v1", "metadata": metadata, "rows": [Any]()] : ["kind": "Pod", "apiVersion": "v1", "metadata": metadata]
-        return line(["type": "BOOKMARK", "object": object])
+        guard table, var watcher = watchers[id] else { return Self.line(["type": "BOOKMARK", "object": ["kind": "Pod", "apiVersion": "v1", "metadata": metadata]]) }
+        var object: [String: Any] = [
+            "kind": "Table", "apiVersion": "meta.k8s.io/v1", "metadata": ["resourceVersion": String(version)],
+            "rows": [["cells": [""], "object": ["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": metadata]]],
+        ]
+        if !watcher.sentColumns, settings.bookmarkColumns, let kind = kinds.first(where: { $0.fullName == watcher.resource }) {
+            object["columnDefinitions"] = Self.tableObject([], kind, includeObject: "None", columns: true)["columnDefinitions"]
+            watcher.sentColumns = true
+            watchers[id] = watcher
+        }
+        return Self.line(["type": "BOOKMARK", "object": object])
     }
 
     private static func goneLine(_ version: String = "", _ oldest: Int = 0) -> Data {

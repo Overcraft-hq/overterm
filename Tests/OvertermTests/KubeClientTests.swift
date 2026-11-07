@@ -522,10 +522,28 @@ final class KubeClientTests: XCTestCase {
         XCTAssertEqual(lists.state(of: "fake-dev"), .served, "a 429 isn't a refusal")
     }
 
-    /// An empty streaming list carries no Table's columns (no event had
-    /// them, the bookmark needn't): a plain list says them, and the page
+    /// An empty streaming list's end is the stream's first Table, and a
+    /// real server (kind's 1.37) puts the columns on it: no list needed.
+    func testAnEmptyStreamingListsEndCarriesItsColumns() async throws {
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let follower = Follower(client.follow(.pods, in: .namespace("nowhere")))
+        defer { follower.stop() }
+        try await until { self.api.openWatches == 1 && follower.updates.contains { if case .listed = $0 { true } else { false } } }
+        guard case .listed(let table) = follower.updates.first(where: { if case .listed = $0 { true } else { false } }) else { return XCTFail() }
+        XCTAssertEqual(table.rows.count, 0)
+        XCTAssertEqual(table.columns.count, 9, "the bookmark's columns")
+        XCTAssertEqual(api.requests.filter { !$0.isWatch && $0.path == "/api/v1/namespaces/nowhere/pods" }.count, 0, "no list")
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served)
+    }
+
+    /// An empty streaming list whose end carries no Table's columns (a
+    /// server that leaves them out): a plain list says them, and the page
     /// isn't left without its headers. The context still streams.
     func testAnEmptyStreamingListIsListedForItsColumns() async throws {
+        api.bookmarkColumns = false
         let lists = KubeStreamingLists()
         lists.learn("fake-dev", minor: 34)
         var client = client()
@@ -543,6 +561,7 @@ final class KubeClientTests: XCTestCase {
     /// The kind's columns from an earlier list on the context: an empty
     /// streaming list takes them, one watch and no list.
     func testAnEmptyStreamingListTakesTheKindsColumnsKnown() async throws {
+        api.bookmarkColumns = false
         let lists = KubeStreamingLists()
         lists.learn("fake-dev", minor: 34)
         var client = client()

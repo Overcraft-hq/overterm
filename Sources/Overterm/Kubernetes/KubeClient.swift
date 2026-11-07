@@ -839,7 +839,8 @@ struct KubeClient: Sendable {
     }
 
     /// The kind's Table columns from an earlier list on this context (the
-    /// model's clients'), for an empty streaming list, which carries none.
+    /// model's clients'), for an empty streaming list whose end carries
+    /// none (kind's 1.37 puts them on it; a server needn't).
     private func knownColumns(_ kind: KubeResourceKind) -> [KubeColumn]? {
         streaming.flatMap { $0.lists.columns(of: kind, on: $0.context) }
     }

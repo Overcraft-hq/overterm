@@ -50,6 +50,7 @@ version is tagged `v<version>`.
 - kubernetes: Run Locally and Scan from a pod or workload — the Docker page's Run window filled in with its image, plain env, ports (on 127.0.0.1) and command, Secret-backed and secret-looking values (in its env or its command's flags) asked in the tab when it runs, never copied; Scan opens the image the pod ran (by its digest) on its Vulnerabilities tab and scans it, an image the engine hasn't asked before it is pulled
 - kubernetes: lists open as streaming lists on clusters that serve them (1.32, 1.34+): one watch instead of a list and a watch, list and watch kept for older clusters and whenever one fails
 - kubernetes: a read-only context's proxy lets nothing but GET through — a lowercase or unknown method (`post`, `PROPFIND`) passed its filter and reached the cluster's API server, which refused it, but an aggregated API server needn't
+- kubernetes: a streaming list on a real cluster is the list as soon as it ends — the end's bookmark was looked for where a real server doesn't put it on a Table, so every list waited 5 s, then listed and watched for the rest of the run
 
 ## 1.5.4 — 2026-11-09
 

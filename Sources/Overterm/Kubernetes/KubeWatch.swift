@@ -114,8 +114,7 @@ struct KubeWatchDecoder: Sendable {
         case "ERROR":
             return [.error(KubeAPIError.status(object))]
         case "BOOKMARK":
-            let annotations = metadata["annotations"] as? [String: Any] ?? [:]
-            return [.bookmark(resourceVersion: version ?? "", initialEventsEnd: annotations["k8s.io/initial-events-end"] as? String == "true")]
+            return [.bookmark(resourceVersion: version ?? "", initialEventsEnd: bookmark(object))]
         case "ADDED", "MODIFIED", "DELETED":
             let table = try KubeTableReader.read(object, namespace: namespace, columns: columns)
             if object["kind"] as? String == "Table", !table.columns.isEmpty { columns = table.columns }
@@ -129,5 +128,29 @@ struct KubeWatchDecoder: Sendable {
         default:
             return []
         }
+    }
+
+    /// Whether a bookmark is a streaming list's end, its Table's columns
+    /// kept. A plain object carries `k8s.io/initial-events-end` in its own
+    /// metadata; a Table — what a real server sends when Tables are asked
+    /// for (kind's 1.37) — carries it on its one row's object, whatever
+    /// `includeObject` said, a row with empty cells that is no object.
+    /// The Table's own metadata has only the version. The first Table of
+    /// a stream has the columns: an empty list's end is that Table.
+    private mutating func bookmark(_ object: [String: Any]) -> Bool {
+        let key = "k8s.io/initial-events-end"
+        func ends(_ metadata: Any?) -> Bool {
+            ((metadata as? [String: Any])?["annotations"] as? [String: Any])?[key] as? String == "true"
+        }
+        if ends(object["metadata"]) { return true }
+        guard object["kind"] as? String == "Table" else { return false }
+        if let definitions = object["columnDefinitions"] as? [[String: Any]], !definitions.isEmpty,
+            let data = try? JSONSerialization.data(withJSONObject: definitions),
+            let read = try? JSONDecoder().decode([KubeColumn].self, from: data)
+        {
+            columns = read
+        }
+        let rows = object["rows"] as? [[String: Any]] ?? []
+        return rows.contains { ends(($0["object"] as? [String: Any])?["metadata"]) }
     }
 }
