@@ -51,6 +51,7 @@ version is tagged `v<version>`.
 - kubernetes: lists open as streaming lists on clusters that serve them (1.32, 1.34+): one watch instead of a list and a watch, list and watch kept for older clusters and whenever one fails
 - kubernetes: a read-only context's proxy lets nothing but GET through — a lowercase or unknown method (`post`, `PROPFIND`) passed its filter and reached the cluster's API server, which refused it, but an aggregated API server needn't
 - kubernetes: a streaming list on a real cluster is the list as soon as it ends — the end's bookmark was looked for where a real server doesn't put it on a Table, so every list waited 5 s, then listed and watched for the rest of the run
+- kubernetes: a context whose credential plugin's token the cluster refuses (401) stops until Retry, as a failing plugin does, instead of running the plugin (`aws`, kubelogin) again for every request
 
 ## 1.5.6 — 2026-11-13
 

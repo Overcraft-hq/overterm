@@ -282,6 +282,16 @@ final class KubeProxyTests: XCTestCase {
         XCTAssertNil(KubeProxyProblem.classify(status: 500, contentType: "application/json", text: status, stderr: "", signIn: .none))
         XCTAssertNil(KubeProxyProblem.classify(status: 500, contentType: nil, text: status, stderr: "", signIn: .none))
         XCTAssertNil(KubeProxyProblem.classify(status: 403, contentType: "text/plain", text: "Forbidden\n", stderr: "", signIn: .none))
+        // A 401 on a plugin's context: each request would run the plugin again.
+        let unauthorized = #"{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}"#
+        let refused = KubeProxyProblem.classify(status: 401, contentType: "application/json", text: unauthorized, stderr: "", signIn: .aws(profile: "dev"))
+        XCTAssertEqual(refused, .credentials("the cluster refused the credential aws gave (401 Unauthorized)"))
+        XCTAssertEqual(refused?.stopsRequests, true)
+        XCTAssertEqual(
+            KubeProxyProblem.classify(status: 401, contentType: "application/json", text: unauthorized, stderr: "", signIn: .oidc)?.stopsRequests, true)
+        XCTAssertNil(
+            KubeProxyProblem.classify(status: 401, contentType: "application/json", text: unauthorized, stderr: "", signIn: .none),
+            "a certificate or a token runs nothing: the request's own answer")
         XCTAssertNil(KubeProxyProblem.classify(status: 200, contentType: "text/plain", text: aws, stderr: "", signIn: .aws(profile: nil)))
 
         XCTAssertEqual(KubeSignIn(.exec(KubeExec(command: "aws", arguments: ["eks", "get-token", "--cluster-name", "c", "--profile=ops"]))), .aws(profile: "ops"))
