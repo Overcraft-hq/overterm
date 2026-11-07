@@ -70,6 +70,7 @@ final class KubeAttentionWatches: ObservableObject {
     private var over: Set<Scope> = []
     private var scheduled = false
     private var bindingChanges: AnyCancellable?
+    private var contextChanges: AnyCancellable?
 
     init(store: KubeBindingStore = .shared, kubernetes: KubernetesModel = .shared) {
         self.store = store
@@ -77,6 +78,22 @@ final class KubeAttentionWatches: ObservableObject {
         bindingChanges = store.$bindings.dropFirst().sink { [weak self] _ in
             // @Published emits before the value lands.
             DispatchQueue.main.async { self?.refresh() }
+        }
+        // The kubeconfig or the settings read again: a watch whose context
+        // now is another cluster, user or class starts again on the
+        // context as it is — never on with the copy it started with.
+        contextChanges = kubernetes.$contexts.dropFirst().sink { [weak self] list in
+            DispatchQueue.main.async { self?.contextsChanged(list) }
+        }
+    }
+
+    /// The watches whose context changed under them, started again.
+    func contextsChanged(_ list: KubeContextList) {
+        for watch in watches.values {
+            guard let context = watch.context else { continue }
+            if let now = list.context(named: context.name), KubernetesModel.sameAccess(context, now), now.isWritable == context.isWritable { continue }
+            watch.stop()
+            watch.start()
         }
     }
 
@@ -249,7 +266,7 @@ final class KubeAttentionWatches: ObservableObject {
         private var pending: [(String, KubeFollowUpdate)] = []
         private var flushing: Task<Void, Never>?
         private var generation = 0
-        private var context: KubeContext?
+        private(set) var context: KubeContext?
 
         static let pods = KubeResourceKind.pods.fullName
         static let deployments = KubeResourceKind.deployments.fullName

@@ -147,6 +147,9 @@ final class KubernetesModel: ObservableObject {
     var readConfiguration: () -> Configuration = { Configuration(Settings.shared) }
     /// Whether it follows `Settings.shared`'s changes itself (a unit test's doesn't).
     var watchesSettings = true
+    /// The proxies were told a list (`tellProxies`): a settings change is
+    /// read again even with the page hidden.
+    private var toldProxies = false
     /// Whether the context picked is remembered for the next launch.
     var remembersSelection = !AppEnvironment.isUnitTest
     var flushInterval: Duration = .milliseconds(120)
@@ -317,12 +320,15 @@ final class KubernetesModel: ObservableObject {
             }
             return
         }
-        guard isShown else { return }
         if !old.enabled {
+            guard isShown else { return }
             startPolling()
             reloadContexts()
         } else if old.extraKubeconfigs != new.extraKubeconfigs || old.contexts != new.contexts {
-            reloadContexts()
+            // Hidden too, once the proxies were told a list: they work out
+            // every socket's flags from it, and a context made read-only
+            // while the page is closed must not keep a writable one.
+            if isShown || toldProxies { reloadContexts() }
         }
     }
 
@@ -337,9 +343,21 @@ final class KubernetesModel: ObservableObject {
         reading = Task { [weak self] in
             let list = await KubeBlocking.run { load(configuration) }
             guard let self, !Task.isCancelled else { return }
+            // The proxies first: from here on no request plans a socket
+            // from a copy read before.
+            await self.tellProxies(list)
+            guard !Task.isCancelled else { return }
             self.reading = nil
             self.loaded(list)
         }
+    }
+
+    /// The proxies told the contexts as they are now (`KubeProxies.update`):
+    /// they decide every proxy's flags and every write from them, and
+    /// close a proxy whose context now reaches another cluster.
+    private func tellProxies(_ list: KubeContextList) async {
+        toldProxies = true
+        await proxies.update(contexts: list)
     }
 
     private func loaded(_ read: KubeContextList) {
@@ -594,6 +612,9 @@ final class KubernetesModel: ObservableObject {
         guard configuration.enabled else { return nil }
         let load = self.load
         var list = await KubeBlocking.run { load(configuration) }
+        await tellProxies(list)
+        // Its settings followed from now on: the proxies keep this list.
+        watchSettings()
         var writes = productionWrites
         _ = writes.apply(to: &list)
         return list

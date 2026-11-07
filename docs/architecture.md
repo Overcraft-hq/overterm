@@ -3794,6 +3794,19 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   the context never flips the flags, and a kubeconfig read again that
   points the name at another cluster, user or class is planned with the
   filter before the model has told them.
+- **The proxies decide for every class** (`KubeProxies.update`): the
+  model tells them the contexts on every read of the kubeconfig and the
+  settings (hidden too, once told, and for the agents' reads), and from
+  then on each proxy's flags and every write are worked out from that
+  list, never the copy a request comes with — a session's stale copy (an
+  attention watch's, a detail's) neither reopens a socket without the
+  method filter nor flaps it, a write's copy must be `sameAccess` with
+  the list's, and a name the list no longer has is read-only. A proxy
+  whose context is gone, now reaches another server, cluster or user
+  (`Entry.reaches`), or has the other flags is closed as the list comes,
+  its metrics proxy too: kubectl read the kubeconfig when it started.
+  Attention watches whose context changed start again on it
+  (`KubeAttentionWatches.contextsChanged`).
 - **Two locks before the socket**: `KubeClient.write` refuses unless the
   connection's context is writable, and `KubeProxies.sendWrite` refuses
   unless the proxies know it so (`KubeWriteRefused`); a read-only

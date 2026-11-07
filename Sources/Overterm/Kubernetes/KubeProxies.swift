@@ -22,6 +22,13 @@ import NIOHTTP1
 ///   Service's query paths; closed when no chart shows (`closePrometheus`).
 ///   The page context's is not the background's to close (`pageMetrics`),
 ///   and what its answers say never stops the context (`metricsProblem`).
+/// - **The proxies decide, not the copy** (`update`): every context as the
+///   kubeconfig and the settings say now is told here on every read, and a
+///   proxy's flags and every write are worked out from that — a session
+///   holding a copy from before (an attention watch, a detail) never
+///   reopens a socket without the method filter, and a name the list no
+///   longer has is read-only. A proxy whose context now reaches another
+///   cluster, or stopped being writable, is closed when the list comes.
 /// - **Read-only follows the context**: a context that stops (or starts)
 ///   being writable gets a new proxy with the other flags. A production
 ///   context's writes for the session are the proxies' own to know
@@ -101,6 +108,9 @@ actor KubeProxies {
         var background = false
         /// Its requests in flight that are attention watches'.
         var watches = 0
+        /// The context it was planned for: one whose name now reaches
+        /// another server, cluster or user is closed, not reused.
+        var reaches: KubeContext?
     }
 
     private var entries: [String: Entry] = [:]
@@ -117,6 +127,9 @@ actor KubeProxies {
     /// as it was read when they were turned on: a copy of the name that
     /// reaches another cluster, user or class has none (`effective`).
     private var sessionWrites: [String: KubeContext] = [:]
+    /// Every context as the kubeconfig and the settings say now, by name
+    /// (`update`); nil until the model has said (a test's proxies).
+    private var current: [String: KubeContext]?
     /// The background proxies closed for the page's slot, the last first
     /// (the last few): what a test and the scenario read.
     private(set) var closedForPage: [String] = []
@@ -162,20 +175,60 @@ actor KubeProxies {
         await closeProxy(name)
     }
 
-    /// `context` as its proxy is planned: a production context's session
-    /// writes as the proxies know them, whatever the copy says — and only
-    /// while it is the cluster, user and class they were turned on for, so
-    /// a kubeconfig read again that points the name elsewhere is read-only
-    /// here before anyone has said so.
-    private func effective(_ context: KubeContext) -> KubeContext {
-        var context = context
+    // MARK: The contexts as they are now
+
+    /// The contexts as the kubeconfig and the settings say now — told on
+    /// every read of them (`KubernetesModel`). From here on they, not the
+    /// copy a request comes with, decide each proxy's flags and every
+    /// write. A proxy whose context is gone, now reaches another cluster or
+    /// user, or now has the other flags, is closed at once: kubectl read
+    /// the kubeconfig when it started, so a running one would go on
+    /// reaching the old cluster, and a writable one would go on taking
+    /// writes for a context that is read-only now.
+    func update(contexts list: KubeContextList) async {
+        var named: [String: KubeContext] = [:]
+        for context in list.contexts where named[context.name] == nil { named[context.name] = context }
+        current = named
+        for key in Array(entries.keys) {
+            guard let entry = entries[key] else { continue }
+            let name = Self.contextName(key)
+            guard let now = named[name] else {
+                await closeProxy(key)
+                continue
+            }
+            let planned = self.planned(now)
+            let readOnly = Self.isMetrics(key) || !planned.isWritable
+            let moved = entry.reaches.map { !KubernetesModel.sameCluster($0, planned) } ?? false
+            if moved || entry.spec.map({ $0.readOnly != readOnly }) == true { await closeProxy(key) }
+        }
+    }
+
+    /// The context a proxy for `copy`'s name is planned with: the context
+    /// as the proxies were last told it — whatever the copy says, so a
+    /// stale copy neither reopens a socket without the method filter nor
+    /// closes a current one — with production's session writes as the
+    /// proxies know them, only while it is the cluster, user and class they
+    /// were turned on for. A name the list no longer has is read-only; the
+    /// copy decides only before any list was told.
+    private func planned(_ copy: KubeContext) -> KubeContext {
+        var context = copy
+        if let current {
+            context = current[copy.name] ?? copy.withoutWrites
+        }
         context.sessionWrites =
             context.isProduction && sessionWrites[context.name].map { KubernetesModel.sameAccess($0, context) } == true
         return context
     }
 
-    /// Whether `context` may be written to now.
-    func isWritable(_ context: KubeContext) -> Bool { effective(context).isWritable }
+    /// Whether `context` may be written to now: the proxies' own context
+    /// writable, and the copy the write comes with the same cluster, user
+    /// and class as it — a write reviewed on another reading is refused.
+    func isWritable(_ context: KubeContext) -> Bool {
+        let planned = self.planned(context)
+        guard planned.isWritable else { return false }
+        guard current != nil else { return true }
+        return KubernetesModel.sameAccess(planned, context)
+    }
 
     /// A write through `context`'s proxy — refused before it reaches any
     /// socket unless the context is writable for this session (its
@@ -340,7 +393,7 @@ actor KubeProxies {
     /// one closed meanwhile ends the request (`closedWhileOpening`) rather
     /// than going on with a proxy that may be gone, uncounted.
     private func begin(_ context: KubeContext, _ role: Role, prometheus: KubePrometheusService?) async throws -> (KubeProxy, Bool, UInt64) {
-        let context = effective(context)
+        let context = planned(context)
         let name = context.name
         // The context's proxy is `name`'s entry; its metrics proxy another
         // of its own (a slot like any), keyed apart. Credentials — a stop,
@@ -352,14 +405,20 @@ actor KubeProxies {
         if watch, KubeSignIn(context.auth) == .oidc, !signedIn.contains(name) { throw KubeProxyProblem.needsPageSignIn }
         if role == .page { page = name }
         let readOnly = prometheus != nil || !context.isWritable
-        if let spec = entries[key]?.spec, spec.readOnly != readOnly || spec.prometheus != prometheus { await closeProxy(key) }
+        if let entry = entries[key], let spec = entry.spec,
+            spec.readOnly != readOnly || spec.prometheus != prometheus || entry.reaches.map({ !KubernetesModel.sameCluster($0, context) }) == true
+        {
+            // Other flags, or the name now reaches another cluster or user:
+            // kubectl read the kubeconfig when it started.
+            await closeProxy(key)
+        }
         if entries[key] == nil {
             if prometheus != nil { try Task.checkCancellation() }
             try await makeRoom(for: key, role)
             if prometheus != nil { try Task.checkCancellation() }
             if entries[key] == nil {
                 lastID += 1
-                entries[key] = Entry(id: lastID, lastUsed: now())
+                entries[key] = Entry(id: lastID, lastUsed: now(), reaches: context)
             }
         }
         let id = entries[key]!.id
@@ -627,5 +686,16 @@ extension Settings {
         KubeProxies.Configuration(
             maxProxies: kubernetesMaxProxies, idleTime: TimeInterval(kubernetesProxyIdleMinutes * 60), kubectlPath: kubernetesKubectlPath,
             extraKubeconfigs: kubernetesKubeconfigs)
+    }
+}
+
+extension KubeContext {
+    /// This context with no writes: a copy whose name the proxies no longer know.
+    fileprivate var withoutWrites: KubeContext {
+        var settings = self.settings
+        settings.writable = false
+        return KubeContext(
+            name: name, cluster: cluster, server: server, namespace: namespace, user: user, auth: auth, file: file,
+            contextClass: contextClass, settings: settings)
     }
 }

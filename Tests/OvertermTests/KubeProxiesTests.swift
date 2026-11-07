@@ -476,6 +476,81 @@ final class KubeProxiesTests: XCTestCase {
         XCTAssertEqual(connected, ["fake-dev"])
     }
 
+    /// The proxies decide, not the copy (rule 1, "the guarantee is the
+    /// socket's"): once told the context is read-only now, a session's
+    /// stale writable copy — an attention watch reconnecting — gets the
+    /// method filter, and its writes are refused.
+    func testAStaleWritableCopyAfterTheListSaysReadOnlyKeepsTheMethodFilter() async throws {
+        let proxies = proxies()
+        let writable = Self.context("acme-dev", writable: true)
+        await proxies.update(contexts: KubeContextList(contexts: [writable]))
+        _ = try await proxies.send(writable, role: .watch, .GET, "/api/v1/pods?watch=1")
+        XCTAssertEqual(opened.values.map(\.readOnly), [false])
+
+        // `writable` removed: the writable proxy is closed as the list comes.
+        let readOnly = Self.context("acme-dev")
+        await proxies.update(contexts: KubeContextList(contexts: [readOnly]))
+        XCTAssertEqual(closed.values, ["acme-dev"], "a writable socket isn't kept for a read-only context")
+        _ = try await proxies.send(readOnly, .GET, "/api/v1/pods")
+        // The watch resumes with the copy it started with.
+        _ = try await proxies.send(writable, role: .watch, .GET, "/api/v1/pods?watch=1")
+        XCTAssertEqual(opened.values.map(\.readOnly), [false, true], "the stale copy neither reopens it writable nor flaps it")
+        XCTAssertEqual(closed.values, ["acme-dev"])
+        let isWritable = await proxies.isWritable(writable)
+        XCTAssertFalse(isWritable)
+        do {
+            _ = try await proxies.sendWrite(writable, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
+            XCTFail("a stale writable copy takes no write")
+        } catch {
+            XCTAssertTrue(error is KubeWriteRefused)
+        }
+
+        // Marked production by hand: the same.
+        let prod = KubeContext(
+            name: "acme-dev", cluster: readOnly.cluster, server: readOnly.server, namespace: nil, user: readOnly.user, auth: readOnly.auth,
+            file: nil, contextClass: .production, settings: KubeContextSettings(contextClass: .production, writable: true))
+        await proxies.update(contexts: KubeContextList(contexts: [prod]))
+        _ = try await proxies.send(writable, role: .watch, .GET, "/api/v1/pods?watch=1")
+        XCTAssertEqual(opened.values.last?.readOnly, true)
+
+        // A name the list no longer has: its proxy closed, a copy of it read-only.
+        await proxies.update(contexts: KubeContextList(contexts: []))
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, [])
+        _ = try await proxies.send(writable, .GET, "/")
+        XCTAssertEqual(opened.values.last?.readOnly, true)
+    }
+
+    /// A kubeconfig that points a name at another cluster with the same
+    /// class: the running kubectl read the old one when it started, so the
+    /// next request plans a new proxy — when the list is told, and when a
+    /// copy alone says so.
+    func testANameRepointedAtAnotherClusterGetsANewProxy() async throws {
+        let proxies = proxies()
+        let dev = Self.context("acme-dev", writable: true)
+        let moved = KubeContext(
+            name: dev.name, cluster: "globex-eks", server: "https://globex.example:443", namespace: nil, user: dev.user, auth: dev.auth,
+            file: nil, contextClass: dev.contextClass, settings: dev.settings)
+        // No list told: the copy says it.
+        _ = try await proxies.send(dev, .GET, "/")
+        _ = try await proxies.send(moved, .GET, "/")
+        XCTAssertEqual(opened.values.count, 2, "a new proxy for the other cluster")
+        XCTAssertEqual(closed.values, ["acme-dev"])
+
+        // Told: closed as the list comes, metrics proxy included.
+        await proxies.update(contexts: KubeContextList(contexts: [moved]))
+        let service = KubePrometheusService(namespace: "monitoring", name: "prometheus", port: "9090")!
+        _ = try await proxies.sendPrometheus(moved, service, service.queryPath + "?query=up")
+        await proxies.update(contexts: KubeContextList(contexts: [dev]))
+        XCTAssertEqual(closed.values, ["acme-dev", "acme-dev", "acme-dev"], "the proxy and the metrics proxy")
+        _ = try await proxies.send(moved, .GET, "/")
+        XCTAssertEqual(opened.values.count, 4, "planned again — for the context as the list has it")
+        let isWritable = await proxies.isWritable(moved)
+        XCTAssertFalse(isWritable, "a write reviewed on the other cluster is refused")
+        let current = await proxies.isWritable(dev)
+        XCTAssertTrue(current)
+    }
+
     func testTheServersVersionIsNotedForTheNextKubectl() async throws {
         let plans = Recorder<Int?>()
         let proxies = proxies(plans: plans)
