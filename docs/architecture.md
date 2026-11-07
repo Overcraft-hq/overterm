@@ -5131,6 +5131,21 @@ third of a screen a step (p95 under 35 ms, as dockerPerf's; ~18 ms), and
 the 5,000 rows sorted by CPU (under 250 ms); closed, no watch and no
 polling are left.
 
+**`kubernetesScale`** (`E2ERunner+KubernetesScale`, testKubernetesScale,
+its own OVERTERM_KUBECONFIG): a large cluster's shape — 5,000 pods across
+50 namespaces, each namespace's ten Deployments with their ReplicaSets and
+a Service each, `acme-00` one Deployment of 200 pods — listed in every
+namespace: the first list to rows by one streaming list (under 5 s; ~0.5
+s here), the list scrolled as dockerPerf scrolls (p95 under 35 ms; ~15),
+500 watch events across 49 namespaces applied by the one watch (under 3
+s; ~0.2 s), the Overview's health checks read, decoded and checked (under
+3 s; ~0.5 s), then with every list answered 100 ms late, one after the
+other against four at once (`KubeHealthSession.readWidth`; 1.5 s, 0.84),
+the 200-pod Deployment's dependency tree (under 2 s; ~0.3 s; its pods one
+bounded read by its selector, 150 counted not drawn), late again (0.71 s,
+0.36), and the footprint after (under 900 MB; ~310, the fake's objects in
+the same process). Reads only.
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a

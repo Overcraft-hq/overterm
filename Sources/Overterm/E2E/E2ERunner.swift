@@ -90,6 +90,7 @@ final class E2ERunner {
         "docker": { await $0.dockerScenario() },
         "kubernetes": { await $0.kubernetesScenario() },
         "kubernetesPerf": { await $0.kubernetesPerfScenario() },
+        "kubernetesScale": { await $0.kubernetesScaleScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 
@@ -4836,7 +4837,7 @@ final class E2ERunner {
     }
 
     /// Memory as Activity Monitor's "Memory" column counts it.
-    private static func footprintMB() -> Double {
+    static func footprintMB() -> Double {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {
