@@ -1,4 +1,5 @@
 import Foundation
+import os
 import NIOHTTP1
 
 /// How a `KubeClient`'s requests reach a cluster: a context's proxy socket
@@ -177,9 +178,12 @@ struct KubeObject: Sendable {
 ///   (its timeout, 30–60 minutes) is watched again from the last
 ///   resourceVersion without listing; a 410, in the stream or as the
 ///   watch's answer, lists again. A streaming list (`sendInitialEvents`)
-///   replaces the first list where it's asked for and the server takes it;
-///   it is the list once the bookmark marked `k8s.io/initial-events-end`
-///   comes, and one cut before that is listed instead. A list without a
+///   replaces the first list where it's asked for (`streaming`: the
+///   server's version serves them) and the server takes it; it is the list
+///   once the bookmark marked `k8s.io/initial-events-end` comes, and one
+///   that fails before that — refused, an error, cut, nothing said by
+///   `streamingListDeadline` or quiet for `streamingListQuiet` before its
+///   end — is listed and watched instead. A list without a
 ///   resourceVersion (metrics.k8s.io's) can't be watched from: it is
 ///   listed again every `unversionedPoll`.
 /// - **Errors**: a proxy's own failure (a 500 in plain text) is a
@@ -191,9 +195,25 @@ struct KubeClient: Sendable {
     let connection: any KubeConnection
     /// Rows a page.
     var pageSize = 500
-    /// A streaming list in place of the first list (1.32, 1.34+; behind
-    /// the version, decided by the caller). Refused, the follow falls back.
+    /// A streaming list in place of the first list, whatever the server's
+    /// version (the tests'). Refused, the follow falls back.
     var streamingLists = false
+    /// Which servers take a streaming list, and this client's context: a
+    /// follow streams its first list where its version serves them
+    /// (1.32, 1.34+), and says when the server refused one or never ended
+    /// it — that context lists and watches for the run (`KubeStreamingLists`).
+    var streaming: (lists: KubeStreamingLists, context: String)?
+    /// How long a streaming list may take to say anything (a proxy still
+    /// starting, waiting for a slot, an exec plugin) before this follow
+    /// lists and watches instead; the context isn't marked for it.
+    var streamingListDeadline: Duration = .seconds(30)
+    /// How long a streaming list may go quiet, once its events began,
+    /// without its end's bookmark: then it is given up for a list and the
+    /// context lists and watches for the run — a server whose Tables'
+    /// bookmarks lose the `k8s.io/initial-events-end` annotation would
+    /// otherwise hold the page loading until the watch's timeout. A large
+    /// list streaming steadily never goes quiet that long.
+    var streamingListQuiet: Duration = .seconds(5)
     /// The watch's `timeoutSeconds`, client-go's way: 5 to 10 minutes, at
     /// random, so a cluster's watches don't all end at once.
     var watchTimeout: @Sendable () -> Int = { Int.random(in: 300...600) }
@@ -564,6 +584,8 @@ struct KubeClient: Sendable {
         case gone
         /// A streaming list the server refused: list and watch instead.
         case refused
+        /// A streaming list whose events stopped short of its end.
+        case unended
         /// A 429 or the server's 5xx: the same again, after a wait.
         case busy(KubeAPIError)
     }
@@ -578,7 +600,7 @@ struct KubeClient: Sendable {
     private func runFollow(
         _ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, _ yield: @Sendable (KubeFollowUpdate) -> Void
     ) async throws {
-        var streaming = streamingLists
+        var streaming = streamingLists || (self.streaming.map { $0.lists.uses($0.context) } ?? false)
         /// Where to watch from, with the headers; nil: list first.
         var start: (version: String, columns: [KubeColumn])?
         var quickEnds = 0
@@ -597,6 +619,7 @@ struct KubeClient: Sendable {
                 }
                 busyTries = 0
                 yield(.listed(table))
+                remember(table.columns, for: kind)
                 guard let version = table.resourceVersion, !version.isEmpty else {
                     // Nothing to watch from: a watch from "" would be the
                     // objects there now, deletions before it never seen.
@@ -611,10 +634,13 @@ struct KubeClient: Sendable {
             var version = start?.version ?? ""
             // A streaming list's rows until its end's bookmark.
             var initial: [KubeRow]? = start == nil ? [] : nil
+            let ended = OSAllocatedUnfairLock(initialState: false)
             let ending: Ending
             do {
-                ending = try await watchUntilEnd(kind, scope, options, from: start?.version, columns: columns) { event, headers in
-                    columns = headers
+                ending = try await watchUntilEnd(
+                    kind, scope, options, from: start?.version, columns: columns, listEnded: start == nil ? ended : nil
+                ) { event, headers in
+                    if !headers.isEmpty { columns = headers }
                     switch event {
                     case .error(let error):
                         throw error
@@ -625,7 +651,16 @@ struct KubeClient: Sendable {
                             // initial events: what they sent is the list.
                             // Another before it only moves the version on.
                             if initialEventsEnd {
-                                yield(.listed(KubeTable(columns: headers, rows: rows, resourceVersion: version)))
+                                // Nothing listed: no event carried the
+                                // Table's columns (a bookmark needn't) —
+                                // the kind's from an earlier list on the
+                                // context, else a plain list says them.
+                                let known = headers.isEmpty ? self.knownColumns(kind) : headers
+                                guard let known, !known.isEmpty else { throw KubeStreamingListUnended(columnless: true) }
+                                columns = known
+                                ended.withLock { $0 = true }
+                                yield(.listed(KubeTable(columns: known, rows: rows, resourceVersion: version)))
+                                remember(known, for: kind)
                                 initial = nil
                                 progressed = true
                             }
@@ -651,37 +686,59 @@ struct KubeClient: Sendable {
                         if initial != nil { initial!.removeAll { $0.id == row.id } } else { yield(.changed([.deleted(row.id)], resourceVersion: at)) }
                     }
                 }
+            } catch let error as KubeAPIError where initial != nil && [400, 406, 422].contains(error.status) {
+                // The WatchList gate off, or the Table refused with it.
+                ending = .refused
+            } catch let error as KubeStreamingListUnended where initial != nil {
+                // Quiet after its events began: the end never comes. Silent
+                // from the start, or nothing to take the columns from:
+                // this follow lists, the context isn't marked.
+                ending = error.received && !error.columnless ? .unended : .ended
+            } catch is KubeStreamingListUnended {
+                // Its end came while the deadline was being said: the list
+                // is whole, watched on from where it got.
+                ending = .ended
             } catch let error as KubeAPIError where error.isGone {
                 ending = .gone
-            } catch let error as KubeAPIError where start == nil && [400, 422].contains(error.status) {
-                ending = .refused
             } catch let error as KubeAPIError where error.isTransient {
                 ending = .busy(error)
+            } catch let error where initial != nil && (error is KubeAPIError || error is KubeTableReader.Malformed) {
+                // Anything else the server said before the list was whole.
+                ending = .ended
             }
-            switch ending {
-            case .refused:
+            if initial != nil {
+                // A streaming list that didn't reach its end — refused, cut,
+                // a 410 or a 429 in it, never ended: this follow lists and
+                // watches instead, the list's own rules from there. Refused
+                // or never ended, the context does for the run.
+                switch ending {
+                case .refused, .unended: self.streaming.map { $0.lists.refuse($0.context) }
+                case .busy(let error):
+                    // A throttled or failing server isn't asked again at
+                    // once: its Retry-After, or the backoff, first.
+                    yield(.retrying(error))
+                    busyTries += 1
+                    try await Task.sleep(for: wait(after: error, attempt: busyTries))
+                default: break
+                }
                 streaming = false
                 start = nil
                 continue
+            }
+            switch ending {
+            case .refused, .unended:
+                start = nil
             case .gone:
                 start = nil
             case .busy(let error):
-                // From where it got; a streaming list not yet whole starts over.
-                if initial == nil && start != nil { start = (version, columns) }
+                // From where it got (a streaming list's end included).
+                start = (version, columns)
                 yield(.retrying(error))
                 busyTries += 1
                 try await Task.sleep(for: wait(after: error, attempt: busyTries))
                 continue
             case .ended:
-                if initial != nil {
-                    // A streaming list cut before its end: list and watch
-                    // instead (also what a server whose Table bookmarks
-                    // lost the end's annotation comes to).
-                    streaming = false
-                    start = nil
-                } else {
-                    start = (version, columns)
-                }
+                start = (version, columns)
             }
             busyTries = 0
             if progressed || ContinuousClock.now - began > .seconds(2) {
@@ -699,13 +756,26 @@ struct KubeClient: Sendable {
     /// stream is by `handle`.
     private func watchUntilEnd(
         _ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, from version: String?, columns: [KubeColumn],
-        _ handle: (KubeWatchEvent, [KubeColumn]) throws -> Void
+        listEnded: OSAllocatedUnfairLock<Bool>? = nil, _ handle: (KubeWatchEvent, [KubeColumn]) throws -> Void
     ) async throws -> Ending {
         let source = connection.stream(watchPath(kind, scope, options, from: version), headers: [("Accept", Self.tableAccept)])
         var decoder = KubeWatchDecoder(columns: columns, namespace: scope.namespace(for: kind))
         do {
-            for try await piece in source {
-                for event in try decoder.feed(piece) { try handle(event, decoder.columns) }
+            if let listEnded {
+                for try await piece in Self.bounded(source, silent: streamingListDeadline, quiet: streamingListQuiet, unless: listEnded) {
+                    switch piece {
+                    case .data(let data):
+                        for event in try decoder.feed(data) { try handle(event, decoder.columns) }
+                    case .quiet(let received):
+                        // Decided here, after every piece before it: an end
+                        // already handled stands.
+                        if !listEnded.withLock({ $0 }) { throw KubeStreamingListUnended(received: received) }
+                    }
+                }
+            } else {
+                for try await piece in source {
+                    for event in try decoder.feed(piece) { try handle(event, decoder.columns) }
+                }
             }
             for event in try decoder.finish() { try handle(event, decoder.columns) }
         } catch let error as HTTPError {
@@ -714,6 +784,78 @@ struct KubeClient: Sendable {
         try Task.checkCancellation()
         return .ended
     }
+
+    /// A streaming list's stream, its pieces in order and then `.quiet`
+    /// once it said nothing for `silent` from the start, or for `quiet`
+    /// since its last piece — unless its end's bookmark came (`ended`).
+    /// The consumer decides on it after every piece before it, so an end
+    /// still buffered is never overtaken.
+    private static func bounded(
+        _ source: AsyncThrowingStream<Data, Error>, silent: Duration, quiet: Duration, unless ended: OSAllocatedUnfairLock<Bool>
+    ) -> AsyncThrowingStream<BoundedPiece, Error> {
+        AsyncThrowingStream { continuation in
+            let began = ContinuousClock.now
+            // The last piece's time; yielded under the lock, so `.quiet`
+            // is never put before a piece that came first.
+            let last = OSAllocatedUnfairLock<ContinuousClock.Instant?>(initialState: nil)
+            let pump = Task {
+                do {
+                    for try await piece in source {
+                        last.withLock {
+                            $0 = .now
+                            continuation.yield(.data(piece))
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            let timer = Task {
+                while !Task.isCancelled, !ended.withLock({ $0 }) {
+                    let due = last.withLock { last -> ContinuousClock.Instant? in
+                        let due = last.map { $0 + quiet } ?? began + silent
+                        guard ContinuousClock.now >= due else { return due }
+                        continuation.yield(.quiet(received: last != nil))
+                        return nil
+                    }
+                    guard let due else { return }
+                    // A piece coming meanwhile moves the time on: looked at
+                    // again within `quiet`, whichever is first.
+                    try? await Task.sleep(until: min(due, .now + quiet), clock: .continuous)
+                }
+            }
+            continuation.onTermination = { _ in
+                pump.cancel()
+                timer.cancel()
+            }
+        }
+    }
+
+    private enum BoundedPiece: Sendable {
+        case data(Data)
+        /// Nothing for its time: `received`, after pieces had come.
+        case quiet(received: Bool)
+    }
+
+    /// The kind's Table columns from an earlier list on this context (the
+    /// model's clients'), for an empty streaming list, which carries none.
+    private func knownColumns(_ kind: KubeResourceKind) -> [KubeColumn]? {
+        streaming.flatMap { $0.lists.columns(of: kind, on: $0.context) }
+    }
+
+    private func remember(_ columns: [KubeColumn], for kind: KubeResourceKind) {
+        guard !columns.isEmpty, let streaming else { return }
+        streaming.lists.remember(columns, of: kind, on: streaming.context)
+    }
+}
+
+/// A streaming list whose end's bookmark didn't come: nothing said in
+/// time, or quiet after its events began (`received`) — or one that came
+/// with nothing listed and no columns known (`columnless`).
+struct KubeStreamingListUnended: Error {
+    var received = false
+    var columnless = false
 }
 
 /// A bounded GET's answer passed its bound: the read stopped there, its

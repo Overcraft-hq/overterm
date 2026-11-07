@@ -26,7 +26,8 @@ import NIOPosix
 ///   BOOKMARK with `allowWatchBookmarks`, a 410 for one compacted away —
 ///   as an in-stream ERROR event, or as the answer (`goneAsAnswer`) — and
 ///   `timeoutSeconds`; the streaming list (`sendInitialEvents`), refused
-///   as a server with the gate off refuses it (`streamingLists`);
+///   as a server with the gate off refuses it (`streamingLists`), its
+///   end unmarked on a Table where `streamingTables` is off;
 /// - a credential failure: every answer the proxy's 500 in plain text, as
 ///   the spike saw an expired AWS session (`failCredentials`); 429s.
 ///
@@ -302,6 +303,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         var goneAsAnswer = false
         var failingGroups: Set<String> = []
         var interimBookmarks = false
+        var streamingTables = true
         var unversionedLists = false
         var forbidden: Set<String> = []
         var failingResources: Set<String> = []
@@ -382,6 +384,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     var interimBookmarks: Bool {
         get { locked { settings.interimBookmarks } }
         set { locked { settings.interimBookmarks = newValue } }
+    }
+    /// Whether a streaming list asked for as a Table ends as one should:
+    /// off, its end's bookmark carries no `k8s.io/initial-events-end` — a
+    /// server that doesn't combine the two (the spike's open question).
+    var streamingTables: Bool {
+        get { locked { settings.streamingTables } }
+        set { locked { settings.streamingTables = newValue } }
     }
     /// Whether metrics-server is there: metrics.k8s.io served (pods and
     /// nodes, `get` and `list`, as metrics-server serves them). Off, a
@@ -1468,7 +1477,7 @@ final class FakeKubeAPI: @unchecked Sendable {
                     // One before the end: it moves the version on, it isn't the list.
                     lines.insert(Self.bookmarkLine(current, table: table, initialEnd: false), at: min(1, lines.count))
                 }
-                if initialEvents { lines.append(Self.bookmarkLine(current, table: table, initialEnd: true)) }
+                if initialEvents { lines.append(Self.bookmarkLine(current, table: table, initialEnd: !table || settings.streamingTables)) }
                 return .watch(lines: lines, end: false, timeout: timeout)
             }
             guard let from = Int(version), from >= compacted else {

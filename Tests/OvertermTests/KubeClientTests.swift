@@ -342,6 +342,276 @@ final class KubeClientTests: XCTestCase {
         XCTAssertNotNil(api.requests.last?.query["resourceVersion"])
     }
 
+    // MARK: Streaming lists, by the server's version
+
+    private func streamed(_ requests: [FakeKubeAPI.Request]) -> [FakeKubeAPI.Request] {
+        requests.filter { $0.isWatch && $0.query["sendInitialEvents"] == "true" }
+    }
+
+    private func lists(_ requests: [FakeKubeAPI.Request]) -> [FakeKubeAPI.Request] {
+        requests.filter { !$0.isWatch && $0.path == "/api/v1/namespaces/shop/pods" }
+    }
+
+    /// Detection: a context whose server's version serves them (1.34)
+    /// streams its first list — the request client-go's WatchList sends,
+    /// as a Table; one whose doesn't (1.33), or not read yet, lists and
+    /// watches. The same rows either way.
+    func testTheServersVersionSaysWhetherAFollowStreams() async throws {
+        let lists = KubeStreamingLists()
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let version = try await client.version()
+        lists.learn("fake-dev", minor: version.minorNumber)
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served)
+        let streaming = Follower(client.follow(.pods, in: .namespace("shop")))
+        try await streaming.until { $0.count == 3 }
+        streaming.stop()
+        let watch = try XCTUnwrap(streamed(api.requests).first)
+        XCTAssertEqual(watch.query["resourceVersionMatch"], "NotOlderThan")
+        XCTAssertEqual(watch.query["allowWatchBookmarks"], "true")
+        XCTAssertEqual(watch.query["includeObject"], "None")
+        XCTAssertNil(watch.query["resourceVersion"])
+        XCTAssertTrue(watch.accept.contains("as=Table"), watch.accept)
+        XCTAssertEqual(self.lists(api.requests).count, 0, "no list")
+        let rowsStreamed = streaming.rows.ageless
+
+        api.minor = "33"
+        api.forgetRequests()
+        lists.learn("fake-dev", minor: try await client.version().minorNumber)
+        XCTAssertEqual(lists.state(of: "fake-dev"), .notServed)
+        let listing = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { listing.stop() }
+        try await listing.until { $0.count == 3 }
+        try await until { self.api.openWatches == 1 }
+        XCTAssertEqual(streamed(api.requests).count, 0, "1.33: no streaming list")
+        XCTAssertEqual(self.lists(api.requests).count, 1)
+        XCTAssertEqual(listing.rows.ageless, rowsStreamed, "the same rows")
+
+        XCTAssertEqual(KubeStreamingLists().state(of: "fake-dev"), .unknown, "nothing read: list and watch")
+    }
+
+    /// Pure: unknown until a version says; EKS's "30+"; a refusal kept for
+    /// the run until another minor is read; forgotten.
+    func testStreamingListsStates() {
+        let lists = KubeStreamingLists()
+        XCTAssertFalse(lists.uses("acme-dev"))
+        lists.learn("acme-dev", minor: nil)
+        XCTAssertEqual(lists.state(of: "acme-dev"), .unknown)
+        lists.learn("acme-dev", minor: KubeServerVersion(major: "1", minor: "30+", gitVersion: "v1.30.4-eks").minorNumber)
+        XCTAssertEqual(lists.state(of: "acme-dev"), .notServed)
+        lists.learn("acme-dev", minor: 32)
+        XCTAssertTrue(lists.uses("acme-dev"))
+        lists.refuse("acme-dev")
+        XCTAssertEqual(lists.state(of: "acme-dev"), .refused)
+        lists.learn("acme-dev", minor: 32)
+        XCTAssertEqual(lists.state(of: "acme-dev"), .refused, "the same server: still refused")
+        lists.learn("acme-dev", minor: 35)
+        XCTAssertEqual(lists.state(of: "acme-dev"), .served, "upgraded: asked again")
+        XCTAssertEqual(lists.state(of: "globex-prod"), .unknown, "by context")
+        lists.forget("acme-dev")
+        XCTAssertEqual(lists.state(of: "acme-dev"), .unknown)
+    }
+
+    /// A server whose version says it serves them but whose gate is off
+    /// refuses (422): listed and watched, and the context doesn't ask again.
+    func testARefusedStreamingListIsNotAskedAgain() async throws {
+        api.streamingLists = false
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let first = Follower(client.follow(.pods, in: .namespace("shop")))
+        try await first.until { $0.count == 3 }
+        first.stop()
+        XCTAssertEqual(streamed(api.requests).count, 1)
+        XCTAssertEqual(self.lists(api.requests).count, 1, "refused: listed")
+        XCTAssertEqual(lists.state(of: "fake-dev"), .refused)
+        api.forgetRequests()
+        let second = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { second.stop() }
+        try await second.until { $0.count == 3 }
+        XCTAssertEqual(streamed(api.requests).count, 0, "not asked again")
+    }
+
+    /// A server that streams a Table but never marks its end (the open
+    /// question whether the two combine): the list is given up once its
+    /// events go quiet for list and watch, the same rows, and the context
+    /// lists from then on.
+    func testAStreamingListThatNeverEndsFallsBackOnceQuiet() async throws {
+        api.streamingTables = false
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        client.streamingListQuiet = .milliseconds(300)
+        let began = ContinuousClock.now
+        let follower = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await follower.until { $0.count == 3 }
+        try await until { self.api.openWatches == 1 }
+        XCTAssertEqual(streamed(api.requests).count, 1)
+        XCTAssertEqual(self.lists(api.requests).count, 1)
+        let listed = follower.updates.filter { if case .listed = $0 { true } else { false } }
+        XCTAssertEqual(listed.count, 1, "the initial events alone were never the list")
+        XCTAssertEqual(lists.state(of: "fake-dev"), .refused)
+        XCTAssertLessThan(ContinuousClock.now - began, .seconds(5), "not the 30 s of a silent start")
+        api.addPod("web-3", namespace: "shop")
+        try await follower.until { $0.count == 4 }
+    }
+
+    /// A streaming list whose end came, then nothing for longer than the
+    /// quiet: whole, watched on — never failed, never refused, as when the
+    /// deadline fell while its end was still to be read.
+    func testAStreamingListQuietAfterItsEndStands() async throws {
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        client.streamingListQuiet = .milliseconds(30)
+        client.streamingListDeadline = .milliseconds(30)
+        let follower = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await follower.until { $0.count == 3 }
+        try await Task.sleep(for: .milliseconds(300))
+        try await follower.until { $0.count == 3 }
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served)
+        XCTAssertEqual(streamed(api.requests).count, 1, "the one watch, still open")
+        XCTAssertEqual(self.lists(api.requests).count, 0)
+        api.addPod("web-3", namespace: "shop")
+        try await follower.until { $0.count == 4 }
+    }
+
+    /// A streaming list that says nothing at all by its deadline (a proxy
+    /// still starting, waiting for a slot): this follow lists and watches,
+    /// and the context isn't refused for it.
+    func testASilentStreamingListFallsBackWithoutRefusing() async throws {
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = KubeClient(Silent(base: KubeSocketConnection(socket: socket, context: "fake-dev")))
+        client.watchTimeout = { 600 }
+        client.streaming = (lists, "fake-dev")
+        client.streamingListDeadline = .milliseconds(200)
+        client.streamingListQuiet = .milliseconds(20)
+        let follower = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await follower.until { $0.count == 3 }
+        try await until { self.api.openWatches == 1 }
+        XCTAssertEqual(self.lists(api.requests).count, 1, "listed")
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served, "not refused")
+    }
+
+    /// A 429 as the streaming list's answer: said (`.retrying`), its
+    /// Retry-After waited, then listed and watched — never at once.
+    func testA429OnAStreamingListWaitsBeforeListing() async throws {
+        api.failWatches(1, status: 429, retryAfter: 1)
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let began = ContinuousClock.now
+        let follower = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await follower.until { $0.count == 3 }
+        let waited = ContinuousClock.now - began
+        let retries = follower.updates.compactMap { update -> KubeAPIError? in if case .retrying(let error) = update { error } else { nil } }
+        XCTAssertEqual(retries.map(\.status), [429])
+        XCTAssertEqual(retries.first?.retryAfter, 1)
+        XCTAssertGreaterThanOrEqual(waited, .milliseconds(950), "its Retry-After waited")
+        XCTAssertEqual(streamed(api.requests).count, 1)
+        XCTAssertEqual(self.lists(api.requests).count, 1)
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served, "a 429 isn't a refusal")
+    }
+
+    /// An empty streaming list carries no Table's columns (no event had
+    /// them, the bookmark needn't): a plain list says them, and the page
+    /// isn't left without its headers. The context still streams.
+    func testAnEmptyStreamingListIsListedForItsColumns() async throws {
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let follower = Follower(client.follow(.pods, in: .namespace("nowhere")))
+        defer { follower.stop() }
+        try await until { self.api.openWatches == 1 && follower.updates.contains { if case .listed = $0 { true } else { false } } }
+        guard case .listed(let table) = follower.updates.first(where: { if case .listed = $0 { true } else { false } }) else { return XCTFail() }
+        XCTAssertEqual(table.rows.count, 0)
+        XCTAssertEqual(table.columns.count, 9, "the list's columns")
+        XCTAssertEqual(api.requests.filter { !$0.isWatch && $0.path == "/api/v1/namespaces/nowhere/pods" }.count, 1)
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served)
+    }
+
+    /// The kind's columns from an earlier list on the context: an empty
+    /// streaming list takes them, one watch and no list.
+    func testAnEmptyStreamingListTakesTheKindsColumnsKnown() async throws {
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let shop = Follower(client.follow(.pods, in: .namespace("shop")))
+        try await shop.until { $0.count == 3 }
+        shop.stop()
+        XCTAssertEqual(lists.columns(of: .pods, on: "fake-dev")?.count, 9)
+        api.forgetRequests()
+        let follower = Follower(client.follow(.pods, in: .namespace("nowhere")))
+        defer { follower.stop() }
+        try await until { follower.updates.contains { if case .listed = $0 { true } else { false } } }
+        guard case .listed(let table) = follower.updates.first(where: { if case .listed = $0 { true } else { false } }) else { return XCTFail() }
+        XCTAssertEqual(table.rows.count, 0)
+        XCTAssertEqual(table.columns.count, 9, "the kind's columns")
+        let nowhere = api.requests.filter { $0.path == "/api/v1/namespaces/nowhere/pods" }
+        XCTAssertEqual(nowhere.filter { !$0.isWatch }.count, 0, "no list")
+        XCTAssertEqual(streamed(nowhere).count, 1)
+        api.addPod("web-9", namespace: "nowhere")
+        try await follower.until { $0.count == 1 }
+        XCTAssertNil(KubeStreamingLists().columns(of: .pods, on: "fake-dev"), "by model")
+        lists.learn("fake-dev", minor: 35)
+        XCTAssertNil(lists.columns(of: .pods, on: "fake-dev"), "another version: forgotten")
+    }
+
+    /// A 410 in the stream after a streaming list was whole: listed again
+    /// (streamed again), as after any list; the rows current after it.
+    func testA410AfterAStreamingListListsAgain() async throws {
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        let follower = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await follower.until { $0.count == 3 }
+        try await until { self.api.openWatches == 1 }
+        api.expireWatches()
+        api.addPod("web-3", namespace: "shop")
+        try await follower.until { $0.count == 4 }
+        try await until { self.api.openWatches == 1 }
+        let listed = follower.updates.filter { if case .listed = $0 { true } else { false } }
+        XCTAssertEqual(listed.count, 2, "listed again")
+        XCTAssertEqual(streamed(api.requests).count, 2)
+        XCTAssertEqual(self.lists(api.requests).count, 0)
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served, "a 410 isn't a refusal")
+    }
+
+    /// A 410 before the streaming list's end: this follow lists and
+    /// watches instead; the context isn't marked.
+    func testA410BeforeAStreamingListsEndFallsBack() async throws {
+        api.streamingTables = false
+        let lists = KubeStreamingLists()
+        lists.learn("fake-dev", minor: 34)
+        var client = client()
+        client.streaming = (lists, "fake-dev")
+        client.streamingListDeadline = .seconds(60)
+        client.streamingListQuiet = .seconds(60)
+        let follower = Follower(client.follow(.pods, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await until { self.api.openWatches == 1 }
+        XCTAssertEqual(follower.rows.count, 0, "not listed before its end")
+        api.expireWatches()
+        try await follower.until { $0.count == 3 }
+        try await until { self.api.openWatches == 1 }
+        XCTAssertEqual(self.lists(api.requests).count, 1, "listed")
+        XCTAssertNotNil(api.requests.last?.query["resourceVersion"], "and watched from the list")
+        XCTAssertEqual(lists.state(of: "fake-dev"), .served)
+    }
+
     // MARK: Failures
 
     /// The spike: with an expired AWS session every answer was the proxy's
@@ -598,6 +868,20 @@ private final class Once: @unchecked Sendable {
     }
 }
 
+/// A connection whose streaming lists never say anything.
+private struct Silent: KubeConnection {
+    let base: KubeSocketConnection
+
+    var signIn: KubeSignIn { base.signIn }
+
+    func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse { try await base.get(path, headers: headers) }
+
+    func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
+        guard path.contains("sendInitialEvents") else { return base.stream(path, headers: headers) }
+        return AsyncThrowingStream { _ in }
+    }
+}
+
 /// A connection that runs `before` ahead of each GET it passes on.
 private struct Hooked: KubeConnection {
     let base: KubeSocketConnection
@@ -611,4 +895,12 @@ private struct Hooked: KubeConnection {
     }
 
     func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> { base.stream(path, headers: headers) }
+}
+
+extension KubeRows {
+    /// The rows and their cells but Age, which the fake counts as time goes on.
+    var ageless: [String] {
+        let age = columns.firstIndex { $0.name == "Age" }
+        return sorted.map { row in "\(row.id) \(row.cells.indices.filter { $0 != age }.map { row.cells[$0] })" }
+    }
 }

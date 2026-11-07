@@ -120,7 +120,11 @@ final class KubeFindTests: XCTestCase {
         XCTAssertEqual(model.fieldSelector, "status.phase=Running")
         XCTAssertNil(model.labelSelector)
         XCTAssertTrue(
-            api.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && !$0.isWatch && $0.query["fieldSelector"] == "status.phase=Running" },
+            // The list: a streaming list on this 1.34.
+            api.requests.contains {
+                $0.path == "/api/v1/namespaces/shop/pods" && (!$0.isWatch || $0.query["sendInitialEvents"] == "true")
+                    && $0.query["fieldSelector"] == "status.phase=Running"
+            },
             "\(api.requests)")
         XCTAssertTrue(api.requests.contains { $0.isWatch && $0.query["fieldSelector"] == "status.phase=Running" }, "the watch is asked with it too")
         XCTAssertEqual(page.rows.map(\.id), ["shop/db-0", "shop/web-1"], "not filtered again on the rows")

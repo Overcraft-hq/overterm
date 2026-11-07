@@ -3,7 +3,7 @@ import Foundation
 
 /// The Kubernetes page with 5,000 pods in one namespace on FakeKubeAPI
 /// (docs/design/kubernetes/analysis.md, Section 10): the first draw — the
-/// page opened until the table has every row —, a burst of 500 watch
+/// page opened until the table has every row, by a streaming list —, a burst of 500 watch
 /// events applied (in the model's 120 ms batches), and the list scrolled
 /// top to bottom, timed by the page's own views (no system events). The
 /// run's kubeconfig is OVERTERM_KUBECONFIG's file, written here, whose
@@ -81,6 +81,10 @@ extension E2ERunner {
         check("the table has every row", drawn, "\(table?.numberOfRows ?? -1) rows")
         note("kubernetes first draw of \(count) pods: \(Int(firstDraw)) ms")
         check("first drawn in under 5 s", firstDraw < 5000, "\(Int(firstDraw)) ms")
+        check(
+            "listed by a streaming list (the fake says 1.34)",
+            fake.requests.contains { $0.isWatch && $0.path == "/api/v1/namespaces/shop/pods" && $0.query["sendInitialEvents"] == "true" }
+                && !fake.requests.contains { !$0.isWatch && $0.path == "/api/v1/namespaces/shop/pods" })
         check("with usage", await eventually(15) { model.metrics.reading(.pods)?.sample?.pods.count == count }, "\(String(describing: model.metrics.reading(.pods)?.sample?.pods.count))")
 
         // A burst of 500 events: every 10th pod starts failing.

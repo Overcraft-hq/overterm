@@ -2497,11 +2497,30 @@ the connection's context is writable (Writes, below).
   `KubeWatchDecoder` keeps the list's headers for the rest. A watch the
   server ends is watched again from the last resourceVersion, not listed;
   a 410 — an in-stream `ERROR` event or the watch's answer — lists again.
-  With `streamingLists` (1.32, 1.34+: `servesStreamingLists`) the first
-  list is a watch with `sendInitialEvents`, its ADDED events the list until
-  the bookmark annotated `k8s.io/initial-events-end` (another bookmark
-  before it only moves the version on); one cut before that end is listed
-  and watched instead, as is a server that refuses it (422, the gate off).
+  Where the server takes them the first list is a streaming list — a
+  watch with `sendInitialEvents=true&resourceVersionMatch=NotOlderThan`,
+  bookmarks, as a Table — its ADDED events the list until the bookmark
+  annotated `k8s.io/initial-events-end` (another bookmark before it only
+  moves the version on). Which servers do is `KubeStreamingLists` (the
+  model's, one for the app; every client it makes carries it with its
+  context, `KubeClient.streaming`): a context's `/version` says (1.32,
+  1.34+: `servesStreamingLists`; read when a context is picked or retried;
+  the page's list waits for it on a retry and while the context's is
+  unknown), unknown is list and watch; a name that stops naming the same
+  cluster on a kubeconfig read is forgotten. A streaming list that doesn't
+  reach its end — any error in it, a 410, cut, nothing said within
+  `streamingListDeadline` (30 s: a proxy still starting or waiting for a
+  slot) — is listed and watched instead for that follow; a 429 or 5xx in
+  it first says `.retrying` and waits its Retry-After or the backoff. One
+  refused (400, 406, 422: the gate off) or whose events go quiet for
+  `streamingListQuiet` (5 s) without its end (a server whose Tables'
+  bookmarks lose the annotation) makes the context list and watch for the
+  run, until a version read says another minor. The quiet is decided by
+  the consumer after every piece before it, so an end still buffered at
+  the deadline stands. An empty streaming list carries no Table columns:
+  it takes the kind's from the context's last list (`KubeStreamingLists`
+  keeps them), else a plain list says them. Once whole, the list's own
+  rules apply: resumed from its bookmark, a 410 listed (streamed) again.
   A list without a resourceVersion (metrics.k8s.io's, which has no watch)
   is listed again every `unversionedPoll` (30 s), never watched from "".
   A 429 or the server's 5xx — on the list, as the watch's answer or in
@@ -2545,7 +2564,8 @@ version, sent as `addPod`/`updatePod`/`deletePod` change things,
 as the answer with `goneAsAnswer`), `expireWatches` (an in-stream 410),
 `endWatches` (the server's timeout), `sendInitialEvents` (refused with a
 422 without `streamingLists`; `interimBookmarks` puts a plain bookmark
-among the initial events). `unversionedLists` answers lists without a
+among the initial events; without `streamingTables` a Table's end isn't
+annotated), and `minor` the version it says (34; 33 serves none). `unversionedLists` answers lists without a
 resourceVersion. A pod's log (`appendLog`, `setLog`; `previous` for the
 last terminated instance's) is served at `pods/{p}/log` as the API serves
 it — `container` (a 400 without one when the pod has several, or for one

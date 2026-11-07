@@ -232,7 +232,8 @@ final class KubeSecretTests: XCTestCase {
         try await until(5, "discovery") { model.discovery != nil }
         page.showKind(try XCTUnwrap(model.discovery?.kind("secrets")))
         try await until(5, "secrets listed") { model.rows.count == 2 && model.kind.fullName == "secrets" }
-        let lists = api.requests.filter { $0.path == "/api/v1/namespaces/shop/secrets" && !$0.isWatch }
+        // The list: a streaming list on this 1.34.
+        let lists = api.requests.filter { $0.path == "/api/v1/namespaces/shop/secrets" && (!$0.isWatch || $0.query["sendInitialEvents"] == "true") }
         XCTAssertFalse(lists.isEmpty)
         for request in api.requests where request.path.hasSuffix("/secrets") {
             XCTAssertTrue(request.accept.hasPrefix("application/json;as=Table"), "\(request) \(request.accept)")
