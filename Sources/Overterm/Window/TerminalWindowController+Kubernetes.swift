@@ -548,7 +548,7 @@ extension TerminalWindowController {
     /// runs on rather than starting again.
     func releaseKubernetesSwitcher(now: Bool = false) {
         guard kubernetesSwitcherHeld else { return }
-        let release = { [weak self] in
+        let release: @MainActor @Sendable () -> Void = { [weak self] in
             guard let self, self.kubernetesSwitcherHeld, self.paletteView?.isHidden != false else { return }
             self.kubernetesSwitcherHeld = false
             KubernetesModel.shared.hide()

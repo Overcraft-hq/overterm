@@ -154,7 +154,7 @@ final class KubeSecretTests: XCTestCase {
     private var copied: [String] = []
     private var copiedSecrets: [String] = []
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests, [], "no subresource")

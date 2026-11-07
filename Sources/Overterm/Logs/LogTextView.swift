@@ -344,7 +344,7 @@ final class LogLinesTextView: NSTextView {
     }
 
     /// A selection widened to the whole lines it touches. Pure.
-    static func wholeLines(of text: String, _ range: NSRange) -> String {
+    nonisolated static func wholeLines(of text: String, _ range: NSRange) -> String {
         let string = text as NSString
         let clamped = NSIntersectionRange(range, NSRange(location: 0, length: string.length))
         return string.substring(with: string.lineRange(for: clamped)).trimmingCharacters(in: .newlines)

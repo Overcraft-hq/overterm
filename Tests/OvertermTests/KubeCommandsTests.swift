@@ -534,7 +534,7 @@ final class KubePodCommandsPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkc-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -547,7 +547,7 @@ final class KubePodCommandsPageTests: XCTestCase {
         api.addPod("api-1", namespace: "shop", two, annotations: [KubePodContainers.defaultAnnotation: "sidecar-1"])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests, [], "no exec, attach or log through the API")

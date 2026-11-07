@@ -21,7 +21,7 @@ final class KubePrometheusTests: XCTestCase {
     private var dir: URL!
     private let service = KubePrometheusService(namespace: "monitoring", name: "prometheus-server", port: "80")!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkpm-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -44,7 +44,7 @@ final class KubePrometheusTests: XCTestCase {
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             XCTAssertEqual(api.subresourceRequests.filter { !$0.isPrometheusQuery }, [], "no subresource but Prometheus's query paths")

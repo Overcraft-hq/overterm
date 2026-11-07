@@ -13,12 +13,12 @@ import XCTest
 final class KubeTabContextTests: XCTestCase {
     private var dir: URL!
 
-    override func setUp() {
+    override func setUp() async throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("ot-kube-tab-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: dir)
     }
 

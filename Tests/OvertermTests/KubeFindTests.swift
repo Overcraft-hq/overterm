@@ -14,7 +14,7 @@ final class KubeFindTests: XCTestCase {
     private var copied: [String] = []
     private var saved: [(String, String)] = []
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkf-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -28,7 +28,7 @@ final class KubeFindTests: XCTestCase {
         api.addPod("db-0", namespace: "shop", labels: ["app": "db"])
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         if let api {
             XCTAssertEqual(api.writes, [], "only GETs")
             api.stop()
