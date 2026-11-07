@@ -34,6 +34,15 @@ extension KubeMCP {
                 message: "k8s_apply takes no Secret (\(secret.spoken)): there is no tool for Secrets, and nothing of one was read. "
                     + "The user can apply it from Overterm's editor.")
         }
+        // Nor a secret-looking env value in the clear: its dry run's "No
+        // change" would confirm a guess of the value the tools mask.
+        for object in objects {
+            if let name = secretLookingEnv(object.object) {
+                throw BrowserMCP.ToolError(
+                    message: "k8s_apply takes no secret-looking env value (\(name) in \(object.spoken)): leave it masked as k8s_get shows it, "
+                        + "or use valueFrom.secretKeyRef. Nothing was read.")
+            }
+        }
         let client = target.client
         let namespace = call.string("namespace") ?? target.namespace
         // The access review first: nothing is read or asked before it says yes.
@@ -102,6 +111,33 @@ extension KubeMCP {
                     "Conflict: \(conflict.said). \(before). An agent never forces an apply: tell the user, who can look at it in Overterm's editor."))
         case .failed(let said, let done):
             throw BrowserMCP.ToolError(message: KubeMCPText.scrubbed(said + (done.isEmpty ? "" : " (\(done.count) object(s) before it were applied)")))
+        }
+    }
+}
+
+extension KubeMCP {
+    /// The first env entry anywhere in `value` whose name looks secret
+    /// (`Secrets.isSecret`) and whose literal `value` is given and isn't the
+    /// mask: its name. Pure.
+    static func secretLookingEnv(_ value: Any) -> String? {
+        switch value {
+        case let map as [String: Any]:
+            for (key, inner) in map.sorted(by: { $0.key < $1.key }) {
+                if key == "env", let entries = inner as? [Any] {
+                    for case let entry as [String: Any] in entries {
+                        guard let name = entry["name"] as? String, Secrets.isSecret(name), let text = entry["value"] as? String else { continue }
+                        if !text.isEmpty, text != Secrets.mask(text) { return name }
+                    }
+                } else if let found = secretLookingEnv(inner) {
+                    return found
+                }
+            }
+            return nil
+        case let list as [Any]:
+            for item in list { if let found = secretLookingEnv(item) { return found } }
+            return nil
+        default:
+            return nil
         }
     }
 }

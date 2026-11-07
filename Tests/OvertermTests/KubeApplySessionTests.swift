@@ -444,6 +444,31 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertTrue(api.writes.isEmpty)
     }
 
+    /// A Deployment's secret-looking env value in the clear: refused before
+    /// the dry run — its "No change" would confirm a guess of the value
+    /// k8s_get and k8s_describe mask. Left masked, it goes on.
+    func testAgentsApplyNoSecretLookingEnvValue() async throws {
+        let model = model()
+        agentWrites = ["kind-fake"]
+        var asked = 0
+        KubeMCP.askOverride = { _ in
+            MainActor.assumeIsolated { asked += 1 }
+            return ""
+        }
+        api.forgetRequests()
+        let manifest = { (value: String) in
+            "apiVersion: apps/v1\nkind: Deployment\nmetadata: {name: web, namespace: shop}\nspec:\n  template:\n    spec:\n      containers:\n"
+                + "      - name: app\n        env:\n        - name: DB_PASSWORD\n          value: \"\(value)\"\n"
+        }
+        let refused = await call(model, ["manifest": manifest("guess-123"), "context": "kind-fake"])
+        XCTAssertTrue(refused.error && refused.text.contains("takes no secret-looking env value (DB_PASSWORD"), refused.text)
+        XCTAssertFalse(refused.text.contains("No change"))
+        XCTAssertEqual(asked, 0)
+        XCTAssertTrue(api.writes.isEmpty, "no dry run either")
+        XCTAssertEqual(KubeMCP.secretLookingEnv(["spec": ["env": [["name": "DB_PASSWORD", "value": "••••••"], ["name": "MODE", "value": "x"]]]]), nil)
+        XCTAssertEqual(KubeMCP.secretLookingEnv([["env": [["name": "REDIS_PASS", "value": "x"]]]]), "REDIS_PASS")
+    }
+
     // MARK: What is applied is what was diffed
 
     /// The buffer edited while the review and the dry run are in flight:
