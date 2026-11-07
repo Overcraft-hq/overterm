@@ -2828,7 +2828,14 @@ if nothing else has it (`offerListTheKeyboard`). The keys
 keyboard): `1` the Overview, `2`–`7` the sections of kinds (Workloads,
 Network, Config, Storage, Cluster, Custom Resources), `8` Helm (below), ↩ the detail, `[` `]` back and forward,
 Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, `l` a pod's logs (↩ on a pod is them too), `f` and `o` a forward,
-`9` the Forwards section. The right-click menu
+`9` the Forwards section. `?` shows them all (`KubeKeySheet` +
+`KubeKeySheetView`), grouped — navigation, the list, a resource's verbs,
+writes, sections, and the window's Kubernetes commands with the keys
+they are bound to now — generated from `KubernetesKey`'s `group` (an
+exhaustive switch: a key added without one doesn't build) and
+`KeyCommands`, never a list by hand. Esc or `?` closes it; `:` and `/`
+close it and go on to the bar and the filter; any other key does nothing
+under it. The right-click menu
 only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
 TSV or CSV — and exports the list, and has the object's writes, each
 greyed with why where it can't be done (Writes, below).

@@ -48,7 +48,7 @@ struct KubernetesPageView: View {
         }
         .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
-        .overlay { if page.cheatSheet { ResourceKeySheet<KubernetesKey>(theme: theme, identifier: "kubernetes.keys") { page.cheatSheet = false } } }
+        .overlay { if page.cheatSheet { KubeKeySheetView(page: page, theme: theme) } }
         .overlay(alignment: .top) {
             if page.picker != nil { KubePickerView(page: page, theme: theme).padding(.top, 70) }
         }
