@@ -11,8 +11,9 @@ import os
 /// baseline. A version read again that says another minor clears a
 /// refusal: the cluster was upgraded, or the context now names another.
 /// It keeps each kind's Table columns too, from the last list on the
-/// context: an empty streaming list carries none, and without them it
-/// would be listed again for its headers. Forgotten with the context when
+/// context: an empty streaming list whose end carries none (kind's 1.37
+/// puts them on it; a server needn't) would otherwise be listed again for
+/// its headers. Forgotten with the context when
 /// its name stops naming the same cluster (`KubernetesModel.loaded`).
 /// One for the app's model; every client it makes for a context asks it
 /// when a follow starts.
