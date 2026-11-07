@@ -544,6 +544,27 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         XCTAssertNil(KubeChartPrint.of(checkout.appendingPathComponent("nowhere")))
     }
 
+    /// Helm's loader follows a symlinked folder (`sympath.Walk`), so the
+    /// print does too: an edit under `templates -> ../shared` after the
+    /// diff changes it. A folder that links to its own ancestor is refused.
+    func testTheChartsPrintFollowsASymlinkedFolder() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("acme-chart-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        let chart = root.appendingPathComponent("chart")
+        let shared = root.appendingPathComponent("shared")
+        try fm.createDirectory(at: chart, withIntermediateDirectories: true)
+        try fm.createDirectory(at: shared, withIntermediateDirectories: true)
+        try Data("name: web\nversion: 1.0.0\n".utf8).write(to: chart.appendingPathComponent("Chart.yaml"))
+        try Data("kind: Deployment\n".utf8).write(to: shared.appendingPathComponent("deployment.yaml"))
+        try fm.createSymbolicLink(atPath: chart.appendingPathComponent("templates").path, withDestinationPath: "../shared")
+        let before = try XCTUnwrap(KubeChartPrint.of(chart))
+        try Data("kind: Deployment\nspec: {replicas: 9}\n".utf8).write(to: shared.appendingPathComponent("deployment.yaml"))
+        XCTAssertNotEqual(KubeChartPrint.of(chart), before, "an edit under the symlinked folder is seen")
+        try fm.createSymbolicLink(atPath: shared.appendingPathComponent("loop").path, withDestinationPath: "..")
+        XCTAssertNil(KubeChartPrint.of(chart), "a cycle is refused, not walked for ever")
+    }
+
     func testOnProductionTheValuesAreAskedForAndTheNameTyped() async throws {
         let (session, host) = session("fake-prod")
         // Its writes on for the session, as its card turns them on.

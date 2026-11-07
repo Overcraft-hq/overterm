@@ -27,7 +27,7 @@ final class KubeProxiesTests: XCTestCase {
         closings = CloseGates()
     }
 
-    private func proxies(max: Int = 4, idle: TimeInterval = 600, plans: Recorder<Int?>? = nil) -> KubeProxies {
+    private func proxies(max: Int = 4, idle: TimeInterval = 600, plans: Recorder<Int?>? = nil, planning: Answers? = nil) -> KubeProxies {
         let opened = self.opened!
         let closed = self.closed!
         let answers = self.answers!
@@ -37,6 +37,7 @@ final class KubeProxiesTests: XCTestCase {
         return KubeProxies(
             configuration: KubeProxies.Configuration(maxProxies: max, idleTime: idle), now: { clock.now }, sweepEvery: .seconds(3600),
             plan: { context, _, minor in
+                if let planning { _ = await planning.answer(context.name) }
                 plans?.add(minor)
                 return KubeProxySpec(
                     context: context.name, readOnly: !context.isWritable, kubectl: URL(fileURLWithPath: "/stand-in/kubectl"),
@@ -549,6 +550,50 @@ final class KubeProxiesTests: XCTestCase {
         XCTAssertFalse(isWritable, "a write reviewed on the other cluster is refused")
         let current = await proxies.isWritable(dev)
         XCTAssertTrue(current)
+    }
+
+    /// The list says read-only while a writable proxy is still being
+    /// planned (actor reentrancy: `plan` is an await): the request that
+    /// planned it ends, and no socket without the method filter is opened
+    /// for a context the list now says is read-only.
+    func testAListToldWhileAWritableProxyIsPlannedClosesIt() async throws {
+        let planning = Answers()
+        let proxies = proxies(planning: planning)
+        let writable = Self.context("acme-dev", writable: true)
+        await proxies.update(contexts: KubeContextList(contexts: [writable]))
+        planning.hold("acme-dev")
+        let request = Task { try await proxies.send(writable, role: .background, .GET, "/api/v1/pods") }
+        try await until { planning.isHeld("acme-dev") }
+        await proxies.update(contexts: KubeContextList(contexts: [Self.context("acme-dev")]))
+        planning.release("acme-dev")
+        do {
+            _ = try await request.value
+            XCTFail("planned for a writable context the list no longer has")
+        } catch {
+            XCTAssertEqual(error as? KubeProxyProblem, .closedWhileOpening)
+        }
+        XCTAssertEqual(opened.values.map(\.readOnly), [], "no writable socket opened")
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, [])
+        _ = try await proxies.send(writable, role: .background, .GET, "/api/v1/pods")
+        XCTAssertEqual(opened.values.map(\.readOnly), [true], "the next one has the method filter")
+    }
+
+    /// A name repointed at another cluster: the old server's version isn't
+    /// the new one's kubectl's, nor is a credential failure the old user's.
+    func testANameRepointedForgetsTheOldServersVersionAndStop() async throws {
+        let plans = Recorder<Int?>()
+        let proxies = proxies(plans: plans)
+        let dev = Self.context("fake-dev")
+        await proxies.update(contexts: KubeContextList(contexts: [dev]))
+        answers.set("fake-dev", HTTPResponse(status: 200, headers: [], body: Data(#"{"major":"1","minor":"30+"}"#.utf8)))
+        _ = try await proxies.send(dev, .GET, "/version")
+        let moved = KubeContext(
+            name: dev.name, cluster: "globex-eks", server: "https://globex.example:443", namespace: nil, user: dev.user, auth: dev.auth,
+            file: nil, contextClass: dev.contextClass, settings: dev.settings)
+        await proxies.update(contexts: KubeContextList(contexts: [moved]))
+        _ = try await proxies.send(moved, .GET, "/version")
+        XCTAssertEqual(plans.values, [nil, nil], "planned without the old server's minor")
     }
 
     func testTheServersVersionIsNotedForTheNextKubectl() async throws {

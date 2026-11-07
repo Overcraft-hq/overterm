@@ -292,9 +292,10 @@ enum KubeProcessRun {
         let errReader = PipeReader(err, limit: 64 * 1024)
         let pid = lock.withLock { () -> pid_t? in
             guard
-                let pid = spawn(
+                let pid = try? ProcessGroup.spawn(
                     executable, arguments, environment, stdout: out.fileHandleForWriting.fileDescriptor,
-                    stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor)
+                    stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor
+                ).get()
             else { return nil }
             running.insert(pid)
             return pid
@@ -373,47 +374,5 @@ enum KubeProcessRun {
             if Date() >= deadline { return false }
             usleep(20_000)
         }
-    }
-
-    /// posix_spawn into a new process group: stdin /dev/null, the two
-    /// pipes for stdout and stderr, no other descriptor of the app's, the
-    /// signals as a new process has them.
-    private static func spawn(
-        _ executable: URL, _ arguments: [String], _ environment: [String: String], stdout: Int32, stderr: Int32, stdin: Int32? = nil
-    ) -> pid_t? {
-        var actions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&actions)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-        if let stdin {
-            posix_spawn_file_actions_adddup2(&actions, stdin, 0)
-        } else {
-            posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
-        }
-        posix_spawn_file_actions_adddup2(&actions, stdout, 1)
-        posix_spawn_file_actions_adddup2(&actions, stderr, 2)
-        var attributes: posix_spawnattr_t?
-        posix_spawnattr_init(&attributes)
-        defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(
-            &attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
-        posix_spawnattr_setpgroup(&attributes, 0)
-        var defaults = sigset_t()
-        sigemptyset(&defaults)
-        for signal in [SIGPIPE, SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOU, SIGCHLD, SIGALRM, SIGUSR1, SIGUSR2] {
-            sigaddset(&defaults, signal)
-        }
-        posix_spawnattr_setsigdefault(&attributes, &defaults)
-        var unblocked = sigset_t()
-        sigemptyset(&unblocked)
-        posix_spawnattr_setsigmask(&attributes, &unblocked)
-        let argv = ([executable.path] + arguments).map { strdup($0) } + [nil]
-        let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
-        defer {
-            argv.forEach { free($0) }
-            envp.forEach { free($0) }
-        }
-        var pid: pid_t = 0
-        let failed = posix_spawn(&pid, executable.path, &actions, &attributes, argv, envp)
-        return failed == 0 ? pid : nil
     }
 }

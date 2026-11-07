@@ -175,7 +175,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var kubePinWatcher: DirectoryWatcher?
     var kubePinContexts: AnyCancellable?
     /// A scenario's: a pod's command (a shell, a log followed) isn't typed
-    /// — its tab opens pinned, and the command is handed here with it.
+    /// — its tab opens pinned, and the line that would be typed (the pin's
+    /// `export KUBECONFIG=…; ` first) is handed here with it.
     var kubernetesCommandRecorder: ((String, Tab) -> Void)?
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
@@ -2827,8 +2828,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let folder = pane.workingDirectory ?? tab.workingDirectory
         // A pod's or a pinned tab's output is the cluster's: scrubbed as the page's Logs tab is.
         let pinned = pane.kubePin != nil || pane.kubePinLost != nil
+        let env = pane.kubePodEnv
         presentAskAgent(
-            text: AskSelection.text(text, kind: tab.kind, pinned: pinned), command: blocks(of: pane).ledger.lastFinished, folder: folder,
+            text: AskSelection.text(text, kind: tab.kind, pinned: pinned, env: env),
+            command: AskSelection.command(blocks(of: pane).ledger.lastFinished, kind: tab.kind, pinned: pinned, env: env), folder: folder,
             targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
     }
 

@@ -30,6 +30,9 @@ extension TerminalWindowController {
             askAgent: { [weak self] text, about in self?.askAgent(aboutKubernetes: text, about) },
             openTerminal: { [weak self] context, namespace in self?.openKubernetesTerminal(context, namespace: namespace) },
             runInTab: { [weak self] command, context, namespace in self?.runKubernetesCommand(command, in: context, namespace: namespace) },
+            runPodInTab: { [weak self] command, context, namespace, env in
+                self?.runKubernetesCommand(command, in: context, namespace: namespace, podEnv: env)
+            },
             confirm: { [weak self] title, detail, button, then in self?.confirmKubernetes(title, detail, button, then) },
             askText: { [weak self] title, detail, initial, then in
                 self?.askForName(title: title, detail: detail, initial: initial, action: "OK") { text in
@@ -257,11 +260,15 @@ extension TerminalWindowController {
     /// too. Whatever confirming it needed (on production a shell, an
     /// attach, a log followed) was asked before. A scenario's recorder gets the command and the tab instead
     /// of the command being typed.
-    func runKubernetesCommand(_ command: String, in context: KubeContext, namespace: String) {
-        startKubernetesTerminal(context, KubeTerminalPin(context, namespace: namespace), running: command)
+    /// `podEnv`: the pod's plain env values, when the command is a pod's
+    /// own (a shell, attach, a log followed) — what ⌘L in its tab scrubs.
+    func runKubernetesCommand(_ command: String, in context: KubeContext, namespace: String, podEnv: [(key: String, value: String)] = []) {
+        startKubernetesTerminal(context, KubeTerminalPin(context, namespace: namespace), running: command, podEnv: podEnv)
     }
 
-    private func startKubernetesTerminal(_ context: KubeContext, _ pin: KubeTerminalPin, running command: String? = nil) {
+    private func startKubernetesTerminal(
+        _ context: KubeContext, _ pin: KubeTerminalPin, running command: String? = nil, podEnv: [(key: String, value: String)] = []
+    ) {
         let extra = Settings.shared.kubernetesKubeconfigs
         let home = FileManager.default.homeDirectoryForCurrentUser
         // The checkout bound to the context (3.11): the selected tab's when it is, else the first.
@@ -282,7 +289,8 @@ extension TerminalWindowController {
                 // files may export another, and `--context` means what it names.
                 let typed = command.map { KubeTerminalLaunch.pinnedLine($0, environment: ready.environment) ?? $0 }
                 let tab = self.newTab(in: directory, environment: ready.environment, kubePin: ready.pin, running: recorder == nil ? typed : nil)
-                if let recorder, let command, let tab { recorder(command, tab) }
+                tab?.terminal.kubePodEnv = podEnv
+                if let recorder, let typed, let tab { recorder(typed, tab) }
             } catch {
                 self.kubernetesPage.terminalProblem = "\(error)"
                 guard !AppEnvironment.isIsolated, let window = self.window else { return }

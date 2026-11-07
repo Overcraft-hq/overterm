@@ -539,7 +539,9 @@ final class KubePodCommandsPageTests: XCTestCase {
         api = FakeKubeAPI(socket: socket)
         try api.start()
         api.addNamespace("shop")
-        api.addPod("web-1", namespace: "shop")
+        var web = FakeKubeAPI.Pod()
+        web.env = ["DB_PASSWORD": "acme-s3cret-value"]
+        api.addPod("web-1", namespace: "shop", web)
         var two = FakeKubeAPI.Pod()
         two.containers = 2
         api.addPod("api-1", namespace: "shop", two, annotations: [KubePodContainers.defaultAnnotation: "sidecar-1"])
@@ -561,6 +563,7 @@ final class KubePodCommandsPageTests: XCTestCase {
 
     private struct Recorded {
         var commands: [(String, String, String)] = []
+        var envs: [[String: String]] = []
         var confirms: [(String, String, () -> Void)] = []
         var choices: [([String], (Int) -> Void)] = []
     }
@@ -584,6 +587,10 @@ final class KubePodCommandsPageTests: XCTestCase {
         let box = Box()
         var actions = KubernetesActions(run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in })
         actions.runInTab = { command, context, namespace in box.recorded.commands.append((command, context.name, namespace)) }
+        actions.runPodInTab = { command, context, namespace, env in
+            box.recorded.commands.append((command, context.name, namespace))
+            box.recorded.envs.append(Dictionary(env.map { ($0.key, $0.value) }, uniquingKeysWith: { first, _ in first }))
+        }
         actions.confirm = { _, detail, button, then in box.recorded.confirms.append((detail, button, then)) }
         actions.choose = { _, _, buttons, then in box.recorded.choices.append((buttons, then)) }
         page.actions = actions
@@ -610,6 +617,7 @@ final class KubePodCommandsPageTests: XCTestCase {
         XCTAssertEqual(box.recorded.commands.first?.1, "fake-dev")
         XCTAssertEqual(box.recorded.commands.first?.2, "shop", "the tab pinned to the pod's namespace")
         XCTAssertTrue(box.recorded.confirms.isEmpty, "not production: not asked")
+        XCTAssertEqual(box.recorded.envs.first?["DB_PASSWORD"], "acme-s3cret-value", "the pod's env, for ⌘L in its tab to scrub")
         XCTAssertTrue(page.press("t"))
         try await until("the log") { box.recorded.commands.count == 2 }
         XCTAssertEqual(box.recorded.commands.last?.0, "kubectl logs -f --tail=200 web-1 -c app --context fake-dev -n shop")

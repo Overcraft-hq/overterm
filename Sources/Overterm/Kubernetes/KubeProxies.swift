@@ -108,9 +108,15 @@ actor KubeProxies {
         var background = false
         /// Its requests in flight that are attention watches'.
         var watches = 0
-        /// The context it was planned for: one whose name now reaches
-        /// another server, cluster or user is closed, not reused.
-        var reaches: KubeContext?
+        /// The context it is planned for, as the proxies had it when the
+        /// entry was made: one whose name now reaches another server,
+        /// cluster or user is closed, not reused. `plan` is given this,
+        /// never a request's copy.
+        var reaches: KubeContext
+        /// The flags decided when it was made — before its spec is planned,
+        /// so a list told while `plan` runs closes it all the same (and
+        /// the request planning it ends, `closedWhileOpening`).
+        var readOnly: Bool
     }
 
     private var entries: [String: Entry] = [:]
@@ -188,6 +194,12 @@ actor KubeProxies {
     func update(contexts list: KubeContextList) async {
         var named: [String: KubeContext] = [:]
         for context in list.contexts where named[context.name] == nil { named[context.name] = context }
+        // A name gone, or now another cluster or user: what was learnt
+        // about the old one — its server's version, a credential failure —
+        // isn't the new one's.
+        for (name, was) in current ?? [:] where named[name].map({ !KubernetesModel.sameCluster(was, $0) }) ?? true {
+            forget(name)
+        }
         current = named
         for key in Array(entries.keys) {
             guard let entry = entries[key] else { continue }
@@ -198,9 +210,18 @@ actor KubeProxies {
             }
             let planned = self.planned(now)
             let readOnly = Self.isMetrics(key) || !planned.isWritable
-            let moved = entry.reaches.map { !KubernetesModel.sameCluster($0, planned) } ?? false
-            if moved || entry.spec.map({ $0.readOnly != readOnly }) == true { await closeProxy(key) }
+            let moved = !KubernetesModel.sameCluster(entry.reaches, planned)
+            if moved { forget(name) }
+            // Compared with what the entry was made for, planned or not yet.
+            if moved || entry.readOnly != readOnly { await closeProxy(key) }
         }
+    }
+
+    /// What the proxies learnt about a name's old cluster and user: the
+    /// server's version (which kubectl, streaming lists) and a stop.
+    private func forget(_ name: String) {
+        serverMinors[name] = nil
+        stopped[name] = nil
     }
 
     /// The context a proxy for `copy`'s name is planned with: the context
@@ -392,8 +413,8 @@ actor KubeProxies {
     /// the request checks it still holds the entry it counted itself in;
     /// one closed meanwhile ends the request (`closedWhileOpening`) rather
     /// than going on with a proxy that may be gone, uncounted.
-    private func begin(_ context: KubeContext, _ role: Role, prometheus: KubePrometheusService?) async throws -> (KubeProxy, Bool, UInt64) {
-        let context = planned(context)
+    private func begin(_ copy: KubeContext, _ role: Role, prometheus: KubePrometheusService?) async throws -> (KubeProxy, Bool, UInt64) {
+        var context = planned(copy)
         let name = context.name
         // The context's proxy is `name`'s entry; its metrics proxy another
         // of its own (a slot like any), keyed apart. Credentials — a stop,
@@ -404,9 +425,9 @@ actor KubeProxies {
         // A watch never signs in: an oidc context only once someone has.
         if watch, KubeSignIn(context.auth) == .oidc, !signedIn.contains(name) { throw KubeProxyProblem.needsPageSignIn }
         if role == .page { page = name }
-        let readOnly = prometheus != nil || !context.isWritable
+        var readOnly = prometheus != nil || !context.isWritable
         if let entry = entries[key], let spec = entry.spec,
-            spec.readOnly != readOnly || spec.prometheus != prometheus || entry.reaches.map({ !KubernetesModel.sameCluster($0, context) }) == true
+            entry.readOnly != readOnly || spec.prometheus != prometheus || !KubernetesModel.sameCluster(entry.reaches, context)
         {
             // Other flags, or the name now reaches another cluster or user:
             // kubectl read the kubeconfig when it started.
@@ -417,8 +438,11 @@ actor KubeProxies {
             try await makeRoom(for: key, role)
             if prometheus != nil { try Task.checkCancellation() }
             if entries[key] == nil {
+                // The list may have been told while room was made.
+                context = planned(copy)
+                readOnly = prometheus != nil || !context.isWritable
                 lastID += 1
-                entries[key] = Entry(id: lastID, lastUsed: now(), reaches: context)
+                entries[key] = Entry(id: lastID, lastUsed: now(), reaches: context, readOnly: readOnly)
             }
         }
         let id = entries[key]!.id
@@ -432,7 +456,9 @@ actor KubeProxies {
             if let planned = entries[key]?.spec {
                 spec = planned
             } else {
-                var planned = try await plan(context, configuration, serverMinors[name])
+                // The entry's context, not this request's: the two differ
+                // when another request made the entry.
+                var planned = try await plan(entries[key]!.reaches, configuration, serverMinors[name])
                 if let prometheus { planned = try planned.metrics(prometheus) }
                 guard entries[key]?.id == id else { throw KubeProxyProblem.closedWhileOpening }
                 // Another request planned it meanwhile: the one already there.

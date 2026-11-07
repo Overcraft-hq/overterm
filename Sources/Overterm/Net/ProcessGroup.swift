@@ -1,0 +1,99 @@
+import Darwin
+import Foundation
+
+/// A child started into a process group of its own (posix_spawn with
+/// `POSIX_SPAWN_SETPGROUP`): signalled as a group (`killpg`), so what it
+/// started — an exec plugin kubectl ran, even one reparented once kubectl
+/// exited, or one started a moment before the signal — ends with it. Stdin
+/// /dev/null unless given, stdout and stderr the descriptors given, no other
+/// descriptor of the app's, the signals as a new process has them.
+enum ProcessGroup {
+    /// The child's pid (its group's id too), or the errno posix_spawn gave.
+    static func spawn(
+        _ executable: URL, _ arguments: [String], _ environment: [String: String], directory: URL? = nil, stdout: Int32, stderr: Int32,
+        stdin: Int32? = nil
+    ) -> Result<pid_t, POSIXError> {
+        var actions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        if let stdin {
+            posix_spawn_file_actions_adddup2(&actions, stdin, 0)
+        } else {
+            posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+        }
+        posix_spawn_file_actions_adddup2(&actions, stdout, 1)
+        posix_spawn_file_actions_adddup2(&actions, stderr, 2)
+        if let directory { posix_spawn_file_actions_addchdir_np(&actions, directory.path) }
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(
+            &attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
+        posix_spawnattr_setpgroup(&attributes, 0)
+        var defaults = sigset_t()
+        sigemptyset(&defaults)
+        for signal in [SIGPIPE, SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOU, SIGCHLD, SIGALRM, SIGUSR1, SIGUSR2] {
+            sigaddset(&defaults, signal)
+        }
+        posix_spawnattr_setsigdefault(&attributes, &defaults)
+        var unblocked = sigset_t()
+        sigemptyset(&unblocked)
+        posix_spawnattr_setsigmask(&attributes, &unblocked)
+        let argv = ([executable.path] + arguments).map { strdup($0) } + [nil]
+        let envp = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer {
+            argv.forEach { free($0) }
+            envp.forEach { free($0) }
+        }
+        var pid: pid_t = 0
+        let failed = posix_spawn(&pid, executable.path, &actions, &attributes, argv, envp)
+        guard failed == 0 else { return .failure(POSIXError(POSIXErrorCode(rawValue: failed) ?? .EIO)) }
+        return .success(pid)
+    }
+
+    /// One spawned child, reaped when it exits (a dispatch source, and
+    /// whenever it is asked about): its status as `Process` says it — the
+    /// exit code, or the signal that ended it.
+    final class Child: @unchecked Sendable {
+        let pid: pid_t
+        private let lock = NSLock()
+        private var status: Int32?
+        private var source: DispatchSourceProcess?
+
+        init(pid: pid_t) {
+            self.pid = pid
+            let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
+            // Strong until it exits: a zombie nobody reaps otherwise.
+            source.setEventHandler { self.reap() }
+            lock.withLock { self.source = source }
+            source.resume()
+            // Exited before the source was there: reaped now.
+            reap()
+        }
+
+        var isRunning: Bool {
+            reap()
+            return lock.withLock { status == nil }
+        }
+
+        var terminationStatus: Int32 { lock.withLock { status ?? 0 } }
+
+        private func reap() {
+            let done: DispatchSourceProcess? = lock.withLock {
+                guard status == nil else { return nil }
+                var raw: Int32 = 0
+                let answer = waitpid(pid, &raw, WNOHANG)
+                if answer == pid {
+                    status = raw & 0x7f == 0 ? (raw >> 8) & 0xff : raw & 0x7f
+                } else if answer == -1, errno == ECHILD {
+                    status = -1
+                } else {
+                    return nil
+                }
+                defer { source = nil }
+                return source
+            }
+            done?.cancel()
+        }
+    }
+}
