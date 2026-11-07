@@ -67,6 +67,8 @@ extension TerminalWindowController {
             currentTab: { [weak self] in self?.store.selected?.id },
             openExternal: { [weak self] url in self?.openKubernetesExternally(url) },
             openDatabase: { [weak self] guess in self?.newDatabaseConnection(from: guess) },
+            runLocally: { [weak self] spec in self?.runOnDockerPage(spec) },
+            scanImage: { [weak self] image, origin in self?.scanOnDockerPage(image, from: origin) },
             importAPI: { [weak self] source in self?.importForwardAPI(source) },
             askWhy: { [weak self] brief in self?.presentKubernetesBrief(brief) },
             selectedBinding: { [weak self] in KubeBindingStore.shared.binding(for: self?.kubernetesCheckout) },
@@ -131,6 +133,23 @@ extension TerminalWindowController {
 
     /// The typed-name field's identifier, for the scenario.
     static let kubernetesTypedNameField = WriteConfirmation.typedNameField
+
+    /// Run Locally (3.12): the Docker page over the body, its Run window
+    /// filled in from the pod — Run in a Tab is the user's press.
+    func runOnDockerPage(_ spec: DockerRunSpec) {
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
+        if store.showingOverlay != .docker { showOverlay(.docker) }
+        dockerPage.runSpec = spec
+    }
+
+    /// Scan (3.12): the Docker page's Images, the image's Vulnerabilities
+    /// tab, scanned — asked first when the engine hasn't got it.
+    func scanOnDockerPage(_ image: KubeRunLocally.Image, from origin: String) {
+        guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
+        if store.showingOverlay != .docker { showOverlay(.docker) }
+        dockerPage.scanImage(named: image.name, digest: image.digest, from: origin)
+        focusDockerList()
+    }
 
     /// An Ingress's host, in the default browser. An isolated run opens
     /// nothing of the user's: it records what it would have opened.
@@ -689,6 +708,18 @@ extension TerminalWindowController {
             let tabWrites = page.tabWriteVerbs(for: target).map { ($0, ($0.label ?? $0.title) + " " + object + " in a Tab") }
             // Copy Out, Copy In: `Copy In pod shop/web-7d9 in a Tab`.
             let copies = page.podFileVerbs(for: target).map { ($0, ($0.label ?? $0.title) + " " + object + " in a Tab") }
+            // Run Locally, Scan: `Scan pod shop/web-7d9 on Docker`.
+            for verb in page.dockerVerbs(for: target) where verb.unavailable == nil {
+                let name = (verb.label ?? verb.title) + " " + object + " on Docker"
+                items.append(
+                    PaletteItem(
+                        id: "k.d.\(name).\(target)", group: .action, title: "Kubernetes: \(name)…",
+                        subtitle: "The Docker page — nothing runs or is scanned until you say", symbol: verb.symbol
+                    ) { [weak self] _, _ in
+                        self?.showKubernetesPage()
+                        verb.perform()
+                    })
+            }
             for (verb, name) in writes + tabWrites + copies where verb.unavailable == nil {
                 items.append(
                     PaletteItem(

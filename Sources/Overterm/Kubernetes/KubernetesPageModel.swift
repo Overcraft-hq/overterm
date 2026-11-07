@@ -49,6 +49,12 @@ struct KubernetesActions {
     /// client's form, filled in: nothing is saved or connected until the
     /// user does (a password given goes to the keychain only then).
     var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
+    /// Run Locally (3.12): the Docker page's Run window, filled in from a
+    /// pod's container — its Secret-backed values asked in the tab, not here.
+    var runLocally: (DockerRunSpec) -> Void = { _ in }
+    /// Scan (3.12): the image on the Docker page's Vulnerabilities tab,
+    /// scanned there; what runs it, for the question when it isn't pulled.
+    var scanImage: (_ image: KubeRunLocally.Image, _ origin: String) -> Void = { _, _ in }
     /// A forward's OpenAPI document, imported into the API client on a press.
     var importAPI: (APIDiscovery.Source) -> Void = { _ in }
     /// Ask Why: a failing pod's or a stuck rollout's brief, scrubbed, in
@@ -1180,7 +1186,8 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + podFileVerbs(for: picked) + forwardVerbs(for: picked)
+        ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + podFileVerbs(for: picked) + dockerVerbs(for: picked)
+            + forwardVerbs(for: picked)
             + editVerbs(for: picked) + compareVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked) + snippetVerbs(for: picked)
     }
 

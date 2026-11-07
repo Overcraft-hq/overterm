@@ -5256,3 +5256,54 @@ save panel, cancelled then recorded quoted in a tab pinned to fake-dev;
 fake-dev made writable by its entry, Copy In recorded the same way; on
 fake-prod Copy In refused and Copy Out asked with PRODUCTION; only GETs and
 access reviews on the fake (the stand-in kubectl answers can-i).
+
+**The Docker page** (stage 4; `KubeRunLocally.swift` (pure),
+`KubernetesPageModel+RunLocally`; analysis 3.12): a pod's or a workload's
+(Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob — the pod
+template, `KubeRunLocally.podLike`) Run Locally on Docker… and Scan Image
+on Docker (its menu, its detail's More, ⌘K; no letter). Both are reads —
+one GET of the object, never of a Secret or a ConfigMap it names — so they
+are offered on every class, greyed while Docker is off; the container is
+picked as a shell's. Run Locally hands `KubernetesActions.runLocally` a
+`DockerRunSpec` (`KubeRunLocally.plan`) and the window opens the Docker
+page's Run window on it: the image; a value given copied, `$(VAR)`
+expanded as the kubelet does, unless its name or value looks secret
+(`Secrets.isSecret`, `maskURL`, `scrubCredentials` — a `ghp_…`, a JWT, a
+`password=` pair under a harmless name); a Secret's key, a secret-looking
+value and a ConfigMap's key (named, not read) as `DockerRunSpec.Ask`s — a
+name the wrapper shell or docker itself reads (`PATH`, `IFS`, `LD_*`,
+`DOCKER_*`: `Ask.reserved`) left out and said; the pod's own fields filled
+(name, namespace, node, service account), the rest left out and said;
+`envFrom` named; each port on 127.0.0.1; `command` as `--entrypoint` and
+its first words, `args` after, `$(VAR)` expanded in them too (an asked one
+as `"$VAR"`, `KubeRunLocally.Part`) and a secret flag's value
+(`Secrets.maskArguments`: `--requirepass x`, `-px`) an ask of its own,
+`OVERTERM_ARG_n`, read but not passed to the container (`Ask.env`) — a
+word with two secrets leaves the command out, said; volumes said, not
+mounted. An ask is never
+a value in Overterm: with asks, `DockerRunSpec.line` is a `sh -c` that
+reads each from the tab (`stty -echo` for a secret; ^C or ^D runs nothing)
+and passes it by name, `-e KEY` — so it reaches neither the command line,
+the shell's history nor a file. Nothing runs until Run in a Tab. Scan hands
+`KubernetesActions.scanImage` the spec's image and the digest the kubelet
+ran (`status.containerStatuses[].imageID`); `DockerPageModel.scanImage`
+opens Images, finds the engine's copy — by that
+digest when known, only an image whose `RepoDigests` record it (a local
+tag of the same name is another image), else by any name it goes by
+(`localImage`, pure) — and scans it as `repository@digest` (`pinnedName`) and scans it on its Vulnerabilities tab through
+the existing path (`scanVulnerabilities`); an image the engine hasn't is
+asked first, then pulled — by digest when known — for the engine's
+platform and scanned when it is listed (`pullThenScan`; a pull that can't
+start said). Local contexts (`docker-desktop`, `kind-*`,
+`k3d-*`…) are local by name (Section 5); Overterm never turns a local
+cluster on. `KubeRunLocallyTests` checks the plan from fixture pods and a
+workload's template, the asked command, the image matching, the handoffs
+against `FakeKubeAPI` (only GETs, no Secret or ConfigMap read) and
+`FakeDockerEngine` (here, scanned; not here, asked, nothing pulled; Pull
+and Scan pulling the digest beside a stale tag, then scanning it); the
+scenario's `kubernetesDocker` (`E2ERunner+KubernetesDocker`): from a
+fake-dev pod, Run Locally lands on the Docker page's Run window with the
+image, the plain env, the port, the Secret's key and the secret-looking
+value asked (read off the sheet, no value drawn), Run in a Tab recorded as
+the asking `sh -c`; Scan lands on the image's Vulnerabilities tab, scanned;
+an image not on the engine asked and Cancel pulls nothing.

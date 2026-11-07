@@ -23,7 +23,8 @@ extension KubernetesPageModel {
     /// what opens through one (a database pod's Database client), and an
     /// Ingress's Open.
     func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
-        [askWhyVerb(for: ref)].compactMap { $0 } + podVerbs(for: ref) + podFileVerbs(for: ref) + forwardVerbs(for: ref) + [editVerb(for: ref), compareVerb(for: ref)] + writeVerbs(for: ref)
+        [askWhyVerb(for: ref)].compactMap { $0 } + podVerbs(for: ref) + podFileVerbs(for: ref) + dockerVerbs(for: ref) + forwardVerbs(for: ref) + [editVerb(for: ref), compareVerb(for: ref)]
+            + writeVerbs(for: ref)
             + tabWriteVerbs(for: ref)
             + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 } + snippetVerbs(for: ref)
     }

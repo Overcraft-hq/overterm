@@ -798,6 +798,8 @@ struct DockerRunSheet: View {
     @State private var ports = ""
     @State private var env = ""
     @State private var volumes = ""
+    /// Shown when the spec came with one: kept while it is edited, even empty.
+    @State private var showsEntrypoint = false
 
     private var built: DockerRunSpec {
         var spec = spec
@@ -810,12 +812,18 @@ struct DockerRunSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Run").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
+            ForEach(Array(spec.notes.enumerated()), id: \.offset) { _, note in
+                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityIdentifier("docker.run.notes")
             Form {
                 TextField("Image", text: $spec.image, prompt: Text("postgres:16"))
                 TextField("Name", text: $spec.name, prompt: Text("optional"))
                 field("Ports", $ports, "8080:80 — one a line")
                 field("Environment", $env, "KEY=value — one a line; a KEY alone takes its value from the tab's shell")
+                if !spec.asked.isEmpty { askedList }
                 field("Volumes", $volumes, "name:/data or /host/path:/in — one a line")
+                if showsEntrypoint { TextField("Entrypoint", text: $spec.entrypoint, prompt: Text("the image's own")) }
                 TextField("Command", text: $spec.command, prompt: Text("the image's own"))
                 Picker("Restart", selection: $spec.restart) {
                     Text("No").tag("")
@@ -843,7 +851,36 @@ struct DockerRunSheet: View {
             ports = spec.ports.joined(separator: "\n")
             env = spec.env.joined(separator: "\n")
             volumes = spec.volumes.joined(separator: "\n")
+            showsEntrypoint = !spec.entrypoint.isEmpty
         }
+    }
+
+    /// The env asked for in the tab as it runs: named, where it comes
+    /// from, never a value here; one can be left out.
+    private var askedList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Asked in the tab when it runs").font(.system(size: 12))
+            ForEach(spec.asked) { ask in
+                HStack(spacing: 6) {
+                    Image(systemName: ask.secret ? "key.fill" : "questionmark.circle").font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(verbatim: ask.key).font(.system(size: 12, design: .monospaced))
+                    Text(verbatim: ask.from).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    // A command's value stays: its Command names it.
+                    if ask.env {
+                        Button {
+                            spec.asked.removeAll { $0.key == ask.key }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.tertiary).help("Leave \(ask.key) out")
+                    }
+                }
+            }
+            Text("Typed into the tab, hidden for a secret — never kept here, on the command line or in the shell's history.")
+                .font(.system(size: 11)).foregroundStyle(.tertiary)
+        }
+        .accessibilityIdentifier("docker.run.asked")
     }
 
     private func field(_ title: String, _ text: Binding<String>, _ hint: String) -> some View {

@@ -20,22 +20,88 @@ struct DockerRunSpec: Equatable, Sendable {
     /// `no` (unset), `always`, `unless-stopped`, `on-failure`.
     var restart = ""
     var network = ""
+    /// What runs instead of the image's entrypoint: one program, as
+    /// `--entrypoint` takes it (its other words lead `command`).
+    var entrypoint = ""
+    /// Env asked for in the tab as it runs, never filled in here: a value
+    /// a Secret holds, one that looks secret, a ConfigMap's that isn't read
+    /// (a pod's Run Locally — docs/design/kubernetes/analysis.md, 3.12).
+    var asked: [Ask] = []
+    /// What the window says about where this came from and what was left out.
+    var notes: [String] = []
+
+    /// One env value asked for when the command runs: its name, where the
+    /// cluster takes it from, and whether what is typed is hidden.
+    struct Ask: Equatable, Sendable, Identifiable {
+        var key: String
+        /// `Secret db-auth, key password`.
+        var from: String
+        var secret: Bool
+        /// Passed to the container by name (`-e KEY`); false for a value
+        /// its command takes (`"$KEY"` among Command's words), not its env.
+        var env = true
+
+        var id: String { key }
+
+        /// A name a POSIX shell can read into, and one neither the shell
+        /// running `docker` nor `docker` itself reads: the value is read
+        /// into a variable of that name and exported before `exec docker`,
+        /// so an asked `PATH`, `HOME`, `IFS`, `LD_PRELOAD` or `DOCKER_HOST`
+        /// would change which docker runs, or what it reaches.
+        static func askable(_ key: String) -> Bool {
+            guard let first = key.unicodeScalars.first, first == "_" || (first.isASCII && CharacterSet.letters.contains(first)) else { return false }
+            return key.unicodeScalars.allSatisfy { $0 == "_" || ($0.isASCII && CharacterSet.alphanumerics.contains($0)) } && !reserved(key)
+        }
+
+        /// What the wrapper shell or the docker CLI reads from its env.
+        static func reserved(_ key: String) -> Bool {
+            let upper = key.uppercased()
+            let names: Set<String> = [
+                "PATH", "HOME", "IFS", "ENV", "BASH_ENV", "CDPATH", "PS1", "PS2", "PS4", "OPTIND", "OPTARG", "PWD", "OLDPWD", "PPID", "SHELL",
+                "TMPDIR", "USER", "LOGNAME", "TERM", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "SSH_AUTH_SOCK", "XDG_CONFIG_HOME",
+            ]
+            return names.contains(upper) || ["LD_", "DYLD_", "DOCKER_", "BUILDX_", "COMPOSE_"].contains { upper.hasPrefix($0) }
+        }
+    }
 
     /// The command, each word quoted as the shell needs; `command` goes
-    /// last as typed.
+    /// last as typed. With env asked for, the run is a `sh -c` that reads
+    /// each value from the tab first — hidden for a secret — and passes it
+    /// by name (`-e KEY`): typed into the tab, it never reaches Overterm,
+    /// the command line, the shell's history or a file.
     func line(prefix: String = "") -> String {
         var words = ["docker", "run", detached ? "-d" : "-it"]
         if removeWhenStopped { words.append("--rm") }
         if !name.isEmpty { words += ["--name", DockerCommands.quote(name)] }
         if !restart.isEmpty, restart != "no" { words += ["--restart", restart] }
         if !network.isEmpty { words += ["--network", DockerCommands.quote(network)] }
+        let program = entrypoint.trimmingCharacters(in: .whitespaces)
+        if !program.isEmpty { words += ["--entrypoint", DockerCommands.quote(program)] }
         for port in ports where !port.isEmpty { words += ["-p", DockerCommands.quote(port)] }
         for entry in env where !entry.isEmpty { words += ["-e", DockerCommands.quote(entry)] }
+        let reads = asked.filter { Ask.askable($0.key) }
+        for ask in reads where ask.env { words += ["-e", ask.key] }
         for volume in volumes where !volume.isEmpty { words += ["-v", DockerCommands.quote(volume)] }
         words.append(DockerCommands.quote(image))
         let trimmed = command.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty { words.append(trimmed) }
-        return prefix + words.joined(separator: " ")
+        guard !reads.isEmpty else { return prefix + words.joined(separator: " ") }
+        // `DOCKER_HOST=… ` before `exec` is no assignment: exported first.
+        let trimmedPrefix = prefix.trimmingCharacters(in: .whitespaces)
+        // Interrupted or ended (^C, ^D), nothing runs and the echo is back.
+        var script = ["trap 'stty echo 2>/dev/null' EXIT", "trap 'stty echo 2>/dev/null; exit 130' INT TERM"]
+        if !trimmedPrefix.isEmpty { script.append("export \(trimmedPrefix)") }
+        for ask in reads {
+            let prompt = DockerCommands.quote("\(ask.key) (\(ask.from)): ")
+            script.append(
+                "printf '%s' \(prompt); "
+                    + (ask.secret
+                        ? "stty -echo 2>/dev/null; IFS= read -r \(ask.key) || exit 1; stty echo 2>/dev/null; echo"
+                        : "IFS= read -r \(ask.key) || exit 1")
+                    + "; if [ -n \"$\(ask.key)\" ]; then export \(ask.key); else unset \(ask.key); fi")
+        }
+        script.append("exec " + words.joined(separator: " "))
+        return "sh -c " + DockerCommands.quote(script.joined(separator: "; "))
     }
 
     /// A secret's entry as its name alone: `-e POSTGRES_PASSWORD` passes the
