@@ -2767,7 +2767,13 @@ group's by its short name or plural where no other kind served claims it
 (`deploy`), else `plural.group` (`events.events.k8s.io`, every CRD's).
 Every word not ours is quoted for zsh: bare only for letters, digits and
 `_ . / : @ + , - =` (no `=` or `-` in front), else single-quoted, where zsh
-expands nothing — `'app!=web'`. A command never holds a Secret's value: a
+expands nothing — `'app!=web'`. A word with a control or format character
+(^U, ^C, a newline, ESC, a bidi override — a chart folder's name, a pod's
+env value, someone else's) is said in ANSI-C quotes instead, each such
+character an escape (`ShellWord`, shared with `DockerCommands.quote` and
+`shellQuoted`): the line goes to the pty as typed, where ^U erases the
+opening quote and the rest would run in the open; no raw control byte is
+ever on a typed line, and a chart folder holding one is refused. A command never holds a Secret's value: a
 Secret's is `kubectl describe secrets NAME`, which prints its keys' sizes
 as the masked detail does, never `-o yaml`.
 
