@@ -17,13 +17,43 @@ import Foundation
 ///   pairs, and base64-looking blobs (`maskBase64Blobs`).
 enum Secrets {
     static let words = ["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY", "CREDENTIAL", "PRIVATE", "AUTH", "SESSION", "SALT", "DSN"]
-    /// Keys that carry those words and aren't secrets.
-    static let harmless: Set<String> = ["KEYBOARD", "PUBLIC_KEY_PATH", "AUTH_ENABLED", "MONKEY"]
+    /// Words that are secret only as a whole word of the name — `_`, `-`,
+    /// `.` or a camelCase hump around them: `RABBITMQ_DEFAULT_PASS`,
+    /// `MYSQL_PWD`, `GPG_PASSPHRASE`, Helm's `rootPwd`, a `CERT_PIN` — never
+    /// `BYPASS_CACHE`, `COMPASS_URL` or `PASSENGER_COUNT`.
+    static let tokenWords: Set<String> = ["PASS", "PWD", "PASSPHRASE", "PIN"]
+    /// Keys that carry those words and aren't secrets: the shell's working
+    /// directory is `PWD`.
+    static let harmless: Set<String> = ["KEYBOARD", "PUBLIC_KEY_PATH", "AUTH_ENABLED", "MONKEY", "PWD", "OLDPWD"]
 
     static func isSecret(_ key: String) -> Bool {
         let upper = key.uppercased()
         guard !harmless.contains(upper) else { return false }
-        return words.contains { upper.contains($0) }
+        return words.contains { upper.contains($0) } || !tokenWords.isDisjoint(with: tokens(key))
+    }
+
+    /// A name's words: split on anything not a letter or digit, and where a
+    /// lowercase letter or digit meets an uppercase one; uppercased.
+    static func tokens(_ key: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var afterLower = false
+        func flush() {
+            if !current.isEmpty { tokens.append(current.uppercased()) }
+            current = ""
+        }
+        for character in key {
+            guard character.isLetter || character.isNumber else {
+                flush()
+                afterLower = false
+                continue
+            }
+            if character.isUppercase, afterLower { flush() }
+            current.append(character)
+            afterLower = character.isLowercase || character.isNumber
+        }
+        flush()
+        return tokens
     }
 
     static func mask(_ value: String) -> String { value.isEmpty ? "" : "••••••" }

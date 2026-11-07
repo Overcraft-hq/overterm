@@ -56,6 +56,7 @@ version is tagged `v<version>`.
 - kubernetes: a manifest whose apiVersion has an empty half (`apps/`, `/v1`) is refused as it is read — Diff with Cluster and an agent's `k8s_apply` took the app down on one
 - kubernetes: an agent's `k8s_` call with a number past any integer's range (`limit: 1e300`) is clamped — it crashed the app
 - kubernetes: a FIFO or a device named by `--kubeconfig` in any pane's title is never opened to be watched — one with no writer froze the whole app
+- kubernetes, docker: env names with PASS, PWD, PASSPHRASE or PIN as a word (`RABBITMQ_DEFAULT_PASS`, `MYSQL_PWD`, Helm's `rootPwd`) look secret — their values were shown, handed to agents and copied onto Run Locally's line
 
 ## 1.5.6 — 2026-11-13
 
