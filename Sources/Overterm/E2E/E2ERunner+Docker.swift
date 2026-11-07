@@ -3227,6 +3227,40 @@ extension E2ERunner {
         check("and the local engine is back", await eventually(5) { docker.connection.isRunning && docker.publishedHost == nil })
     }
 
+    /// A container's port pill in the list, clicked where a person would:
+    /// a tapped label in a reused row (not a Button), it still opens its
+    /// URL — handed to the window's recorder, not the browser — and the
+    /// row it is on is selected.
+    private func portPillChecks(_ page: DockerPageModel, web: String, db: String) async {
+        var opened: [URL] = []
+        app.dockerLinkRecorder = { opened.append($0) }
+        defer {
+            app.dockerLinkRecorder = nil
+            page.selection = [web]
+        }
+        page.selection = [db]
+        await pause(0.3)
+        // Where the row is, then the pill's words read off the window in it
+        // (SwiftUI's own elements aren't there until an assistive app asks).
+        func row() -> CGRect? {
+            guard let view = app.dockerView, let cell = Self.find(ResourceHostingCell.self, in: view, where: { $0.accessibilityIdentifier() == web })
+            else { return nil }
+            return cell.convert(cell.bounds, to: nil)
+        }
+        var frame: CGRect?
+        if await eventually(5, { row() != nil }), let row = row() {
+            // The one 58080 on screen: the detail is db's, which has none.
+            frame = await wordFrame("58080").flatMap { $0.intersects(row) ? $0 : nil }
+        }
+        check("the list's row shows its port pill", frame != nil)
+        guard let frame else { return }
+        await click(at: CGPoint(x: frame.midX, y: frame.midY))
+        check(
+            "a click on a list row's pill opens its URL", await eventually(3) { opened.map(\.absoluteString) == ["http://localhost:58080"] },
+            "\(opened)")
+        check("and selects its row", await eventually(3) { page.selection == [web] }, "\(page.selection)")
+    }
+
     func dockerScenario() async {
         await settledPrompt()
         let socket = "/tmp/ot-e2e-docker-\(UUID().uuidString.prefix(6)).sock"
@@ -3274,6 +3308,7 @@ extension E2ERunner {
             "and the list keeps the keyboard as the detail comes in", app.dockerListHasKeyboard(), "\(String(describing: window.firstResponder))")
         check("its inspect data is read", await eventually(5) { page.session?.detail?.name == "ot-shop-web-1" })
         check("a port listed once, not per address family", PublishedPort.of(page.detailed?.Ports ?? []).map(\.label) == ["58080→80"])
+        await portPillChecks(page, web: web, db: db)
 
         // Logs: the last lines, then what comes, levels read.
         fake.log(web, "booting nginx")

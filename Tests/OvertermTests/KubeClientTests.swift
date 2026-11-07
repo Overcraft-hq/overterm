@@ -113,17 +113,20 @@ final class KubeClientTests: XCTestCase {
     }
 
     /// Several reads at once, at most `width` in flight: each answer at its
-    /// request's place, a failure where it failed — one slow answer holds
-    /// back none of the others.
+    /// request's place, a failure where it failed — slow answers hold back
+    /// none of the others.
     func testReadsAtOnceAnswerInTheirOrder() async throws {
-        api.answerSlowly("/api/v1/namespaces/shop/pods", milliseconds: 600)
-        let started = Date()
-        let answers = await client().getAll(
-            [
-                ("/api/v1/namespaces/shop/pods", "application/json"), ("/api/v1/namespaces/default/pods", "application/json"),
-                ("/apis/example.com/v1/namespaces/shop/widgets", "application/json"), ("/api/v1/namespaces", "application/json"),
-                ("/version", "application/json"),
-            ], width: 4)
+        let slow = ["/api/v1/namespaces/shop/pods", "/api/v1/namespaces/default/pods", "/api/v1/namespaces"]
+        for path in slow { api.answerSlowly(path, milliseconds: 600) }
+        let requests: [(path: String, accept: String)] = [
+            ("/api/v1/namespaces/shop/pods", "application/json"), ("/api/v1/namespaces/default/pods", "application/json"),
+            ("/apis/example.com/v1/namespaces/shop/widgets", "application/json"), ("/api/v1/namespaces", "application/json"),
+            ("/version", "application/json"),
+        ]
+        var started = Date()
+        let answers = await client().getAll(requests, width: 4)
+        // One at a time, the three slow ones alone take 1.8 s.
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.9, "the slow ones were asked together")
         let names = answers.map { answer -> [String] in
             guard case .success(let body) = answer, let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return [] }
             return (list["items"] as? [[String: Any]] ?? []).compactMap { ($0["metadata"] as? [String: Any])?["name"] as? String }
@@ -133,7 +136,15 @@ final class KubeClientTests: XCTestCase {
         guard case .failure = answers[2] else { return XCTFail("a kind the server doesn't serve fails, where it was asked") }
         XCTAssertEqual(names[3].sorted(), ["default", "shop"])
         guard case .success = answers[4] else { return XCTFail("the fifth, once a slot was free") }
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1.1, "the slow one held back nothing")
+
+        // Two in flight: two slow ones together, then the third — 1.2 s,
+        // never the 0.6 s of all three at once.
+        started = Date()
+        let narrow = await client().getAll(requests, width: 2)
+        let took = Date().timeIntervalSince(started)
+        XCTAssertGreaterThanOrEqual(took, 1.15, "at most two in flight")
+        XCTAssertLessThan(took, 1.7, "but two at a time")
+        XCTAssertEqual(narrow.map { if case .success = $0 { true } else { false } }, [true, true, false, true, true])
     }
 
     func testAListIsTableRowsOnly() async throws {

@@ -178,6 +178,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// — its tab opens pinned, and the line that would be typed (the pin's
     /// `export KUBECONFIG=…; ` first) is handed here with it.
     var kubernetesCommandRecorder: ((String, Tab) -> Void)?
+    /// A scenario's: a Docker link (a port pill's) handed here instead of
+    /// the browser.
+    var dockerLinkRecorder: ((URL) -> Void)?
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
     var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?

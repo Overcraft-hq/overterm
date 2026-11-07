@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 @testable import Overterm
@@ -100,14 +101,91 @@ final class ResourceTableTests: XCTestCase {
 
     /// A cell is reused for a row of its kind in its column only: a
     /// project's row and a container's are other SwiftUI views, and so are
-    /// two columns' cells.
+    /// two columns' cells. The table's own cells, scrolled through, each
+    /// handed out again only for its kind and its column.
     @MainActor
-    func testACellIsReusedOnlyForItsKindInItsColumn() {
-        let container = ResourceHostingCell.identifier(column: nil, kind: "container")
-        XCTAssertEqual(container, ResourceHostingCell.identifier(column: nil, kind: "container"))
-        XCTAssertNotEqual(container, ResourceHostingCell.identifier(column: nil, kind: "group"))
-        XCTAssertNotEqual(ResourceHostingCell.identifier(column: "name", kind: "row"), ResourceHostingCell.identifier(column: "age", kind: "row"))
-        XCTAssertEqual(Fruit.basket("a").reuseKind, "row", "a row that says nothing is of the one kind")
+    func testACellIsReusedOnlyForItsKindInItsColumn() throws {
+        func container(_ name: String, project: String) -> ContainerSummary {
+            let labels = [
+                "com.docker.compose.project": project, "com.docker.compose.service": name,
+                "com.docker.compose.project.config_files": "/w/\(project)/compose.yaml", "com.docker.compose.project.working_dir": "/w/\(project)",
+            ]
+            return ContainerSummary(
+                Id: "\(project)-\(name)-id", Names: ["/\(project)-\(name)"], Image: "nginx", Created: 1, Labels: labels, State: "running", Status: "Up")
+        }
+        let summaries = (0..<40).flatMap { index in ["web", "db"].map { container($0, project: "acme-\(index)") } }
+        let (projects, loose) = ComposeProjects.group(summaries)
+        let groups = DockerPageModel.groups(projects: projects, loose: loose, filter: DockerFilter(""), runningOnly: false)
+        let docker = DockerTableRow.rows(groups, collapsed: [])
+        XCTAssertGreaterThan(docker.count, 100)
+        let list = ResourceTable<DockerTableRow>(
+            rows: docker, selection: .constant([]), cell: { _ in AnyView(Text(verbatim: "row")) }, verbs: { _ in [] }, copy: {})
+        let handedOut = try scrolledThrough(list, rows: docker)
+        XCTAssertEqual(Set(handedOut.values.map(\.kind)), ["group", "container"])
+        XCTAssertTrue(handedOut.values.allSatisfy { $0.column == "-" }, "one column, no header")
+
+        // Columns under a header: a basket spans them, its fruit's cells are
+        // each their column's.
+        let fruit: [Fruit] = (0..<60).flatMap { index in [Fruit.basket("b\(index)"), .fruit("f\(index)", weight: index)] }
+        let columns = ["name", "weight"].map { ResourceColumn(id: $0, title: $0) }
+        let table = ResourceTable<Fruit>(
+            rows: fruit, selection: .constant([]), columns: columns, sort: .constant(nil), cell: { _, _ in AnyView(Text(verbatim: "cell")) },
+            verbs: { _ in [] }, copy: {})
+        let cells = try scrolledThrough(table, rows: fruit)
+        XCTAssertEqual(Set(cells.values.map(\.column)), ["-", "name", "weight"])
+        XCTAssertTrue(cells.values.filter { $0.column == "-" }.allSatisfy { $0.kind == "row" })
+    }
+
+    /// Every cell the table shows while `list` is scrolled top to bottom,
+    /// by the cell, with the column and kind it was first handed out for;
+    /// fails if one is shown again for another, or carries another's
+    /// identifier.
+    @MainActor
+    private func scrolledThrough<Row: ResourceTableRow>(_ list: ResourceTable<Row>, rows: [Row]) throws -> [ObjectIdentifier: (column: String, kind: String)] {
+        let coordinator = list.makeCoordinator()
+        let table = ResourceTableView()
+        table.dataSource = coordinator
+        table.delegate = coordinator
+        table.intercellSpacing = .zero
+        coordinator.table = table
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scroll.documentView = table
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = scroll
+        coordinator.update(list)
+        table.sizeLastColumnToFit()
+
+        var seen: [ObjectIdentifier: (column: String, kind: String)] = [:]
+        var offset: CGFloat = 0
+        var reused = false
+        repeat {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: offset))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            window.layoutIfNeeded()
+            table.layoutSubtreeIfNeeded()
+            let visible = table.rows(in: table.visibleRect)
+            XCTAssertGreaterThan(visible.length, 0)
+            for index in visible.location..<min(visible.location + visible.length, rows.count) {
+                for at in 0..<table.numberOfColumns {
+                    guard let cell = table.view(atColumn: at, row: index, makeIfNecessary: false) as? ResourceHostingCell else { continue }
+                    let spans = table.numberOfColumns > 1 && rows[index].spansColumns
+                    let column = table.numberOfColumns > 1 && !spans ? table.tableColumns[at].identifier.rawValue : "-"
+                    let wanted = (column: column, kind: rows[index].reuseKind)
+                    XCTAssertEqual(cell.identifier, ResourceHostingCell.identifier(column: column == "-" ? nil : column, kind: wanted.kind))
+                    if let first = seen[ObjectIdentifier(cell)] {
+                        reused = true
+                        XCTAssertTrue(first == wanted, "a \(first) cell handed out for a \(wanted) row")
+                    } else {
+                        seen[ObjectIdentifier(cell)] = wanted
+                    }
+                }
+            }
+            offset += 90
+        } while offset < table.bounds.height
+        XCTAssertTrue(reused, "the table reused cells as it scrolled")
+        return seen
     }
 
     /// A refresh finds each column where the table shows it: after a header

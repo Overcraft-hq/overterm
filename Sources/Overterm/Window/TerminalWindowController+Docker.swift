@@ -658,6 +658,7 @@ extension TerminalWindowController {
     /// A container's port: the browser column when links open inside
     /// (the page steps aside for it), else the default browser.
     func openDockerLink(_ url: URL) {
+        if let dockerLinkRecorder { return dockerLinkRecorder(url) }
         guard BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks), Settings.shared.browserEnabled else {
             NSWorkspace.shared.open(url)
             return
