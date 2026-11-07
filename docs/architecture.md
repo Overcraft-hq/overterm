@@ -4518,9 +4518,13 @@ rail's panel, Diff Chart and Upgrade….
   `delete` for a removed one — without the server's kinds only the
   records, and the confirmation says so), the confirmation naming the context,
   namespace, what changes and the command — the release's name typed on
-  production —, the context checked again, then typed into a tab pinned
-  to the context (`KubeHelmUpgradeHost.runHelmUpgrade`), recorded in a
-  scenario.
+  production —, the context checked again, the chart's folder and the
+  release checked to be what was diffed (`KubeChartPrint`: every file's
+  path and bytes hashed before and after the render and again after the
+  button — helm reads the folder again, often one an agent is editing —
+  and the release still at the revision diffed; otherwise "diff again"),
+  then typed into a tab pinned to the context
+  (`KubeHelmUpgradeHost.runHelmUpgrade`), recorded in a scenario.
 - **Checked**: `KubeHelmUpgradeTests` (the chart found, the template's
   arguments and environment, a stand-in helm given the values through a
   pipe and nothing written, its failure scrubbed, the diff masked on both

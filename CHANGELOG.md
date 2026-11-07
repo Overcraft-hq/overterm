@@ -58,6 +58,7 @@ version is tagged `v<version>`.
 - kubernetes: a FIFO or a device named by `--kubeconfig` in any pane's title is never opened to be watched — one with no writer froze the whole app
 - kubernetes, docker: env names with PASS, PWD, PASSPHRASE or PIN as a word (`RABBITMQ_DEFAULT_PASS`, `MYSQL_PWD`, Helm's `rootPwd`) look secret — their values were shown, handed to agents and copied onto Run Locally's line
 - kubernetes: every command Overterm types into a pinned tab (a write, a shell, helm, argocd) exports the pin's KUBECONFIG on its line first — one your shell's startup files export could make `--context` another cluster than the one reviewed
+- kubernetes: Helm upgrade from the checkout runs only on the chart that was diffed — a template, values.yaml or dependency changed since (an agent editing the checkout), or the release upgraded meanwhile, and nothing is run: diff again
 
 ## 1.5.6 — 2026-11-13
 

@@ -388,8 +388,16 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
     private let password = "acme-unit-helm-pw-Lp3c"
+    /// A checkout of the test's own with a chart in it: the upgrade hashes its folder.
+    private var checkout: URL!
 
     override func setUp() async throws {
+        checkout = URL(fileURLWithPath: "/tmp/ot-unit-checkout-\(UInt32.random(in: 0...UInt32.max))")
+        let templates = checkout.appendingPathComponent("chart/templates", isDirectory: true)
+        try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
+        try "apiVersion: v2\nname: web\nversion: 1.5.0\n".write(to: checkout.appendingPathComponent("chart/Chart.yaml"), atomically: true, encoding: .utf8)
+        try "replicaCount: 3\n".write(to: checkout.appendingPathComponent("chart/values.yaml"), atomically: true, encoding: .utf8)
+        try "kind: Deployment\n".write(to: templates.appendingPathComponent("deployment.yaml"), atomically: true, encoding: .utf8)
         socket = "/tmp/otkhu-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -400,6 +408,7 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        if let checkout { try? FileManager.default.removeItem(at: checkout) }
         if let api {
             XCTAssertTrue(api.writes.allSatisfy(\.isAccessReview), "only reviews: \(api.writes)")
             api.stop()
@@ -414,8 +423,11 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         var consent = true
         var consents = 0
         var capabilities: [KubeHelmCapabilities] = []
+        /// What happens while the confirmation shows (an agent editing the chart).
+        var whileAsked: (() -> Void)?
         func askHelmUpgrade(_ confirmation: KubeWriteConfirmation) async -> String? {
             asked.append(confirmation)
+            whileAsked?()
             return typed
         }
         func askHelmUpgrade(_ title: String, _ detail: String, _ button: String) async -> Bool {
@@ -436,7 +448,7 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         model.remembersSelection = false
         let socket = self.socket!
         model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
-        let checkout = URL(fileURLWithPath: "/tmp/ot-unit-checkout")
+        let checkout = self.checkout!
         let host = Host()
         let session = KubeHelmUpgradeSession(
             binding: KubeBinding(checkout: checkout.path, context: context, namespace: "shop", release: "web"), checkout: checkout, model: model)
@@ -482,7 +494,7 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         await session.runUpgrade()
         XCTAssertEqual(host.asked.count, 1)
         XCTAssertEqual(host.asked.first?.scope, "kind-fake · namespace shop")
-        XCTAssertEqual(host.ran.first?.0, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm upgrade web /tmp/ot-unit-checkout/chart --reset-then-reuse-values --kube-context kind-fake -n shop")
+        XCTAssertEqual(host.ran.first?.0, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm upgrade web \(checkout.path)/chart --reset-then-reuse-values --kube-context kind-fake -n shop")
         XCTAssertEqual(host.ran.first?.2, "shop")
         XCTAssertEqual(session.state, .done("Upgrading Helm release shop/web from the checkout's chart in a new tab, in kind-fake."))
         let reviewed = api.requests.filter(\.isAccessReview).compactMap {
@@ -501,6 +513,35 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         await session.runUpgrade()
         XCTAssertTrue(host.ran.isEmpty)
         XCTAssertEqual(session.state, .done("Cancelled: nothing was run."))
+    }
+
+    /// helm upgrade reads the chart's folder again: changed after its diff
+    /// (an agent editing the checkout while the confirmation shows), or
+    /// while it rendered, nothing is run.
+    func testAChartChangedSinceItsDiffIsNotUpgraded() async throws {
+        let (session, host) = session("kind-fake")
+        let values = checkout.appendingPathComponent("chart/values.yaml")
+        host.whileAsked = { try? "replicaCount: 30\n".write(to: values, atomically: true, encoding: .utf8) }
+        await session.runUpgrade()
+        XCTAssertEqual(host.asked.count, 1)
+        XCTAssertTrue(host.ran.isEmpty, "nothing typed")
+        XCTAssertEqual(session.state, .failed(KubeChartPrint.changed))
+        // A template added while it rendered: the diff itself is refused.
+        session.render = { [checkout] _, _, _, _, _, _ in
+            try "kind: Secret\n".write(to: checkout!.appendingPathComponent("chart/templates/secret.yaml"), atomically: true, encoding: .utf8)
+            return "---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 3\n"
+        }
+        let diffed = await session.runDiff()
+        XCTAssertNil(diffed)
+        XCTAssertEqual(session.state, .failed(KubeChartPrint.changed))
+        // Unchanged, it goes on.
+        host.whileAsked = nil
+        session.render = { _, _, _, _, _, _ in "---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\nspec:\n  replicas: 3\n" }
+        await session.runUpgrade()
+        XCTAssertEqual(host.ran.count, 1)
+        let print = try XCTUnwrap(KubeChartPrint.of(checkout.appendingPathComponent("chart")))
+        XCTAssertEqual(KubeChartPrint.of(checkout.appendingPathComponent("chart")), print, "the same folder, the same print")
+        XCTAssertNil(KubeChartPrint.of(checkout.appendingPathComponent("nowhere")))
     }
 
     func testOnProductionTheValuesAreAskedForAndTheNameTyped() async throws {
@@ -525,6 +566,6 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         host.typed = "web"
         await session.runUpgrade()
         XCTAssertEqual(host.consents, 2, "asked once a session")
-        XCTAssertEqual(host.ran.first?.0, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm upgrade web /tmp/ot-unit-checkout/chart --reset-then-reuse-values --kube-context fake-prod -n shop")
+        XCTAssertEqual(host.ran.first?.0, "\(KubeHelmWritesTests.env) HELM_DRIVER=secret helm upgrade web \(checkout.path)/chart --reset-then-reuse-values --kube-context fake-prod -n shop")
     }
 }

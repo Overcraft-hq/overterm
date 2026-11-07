@@ -42,6 +42,9 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
         /// What the server serves (the page's, else read for the diff): the
         /// render's `--api-versions`, and the kinds its access review asks about.
         var discovery: KubeDiscovery?
+        /// The chart folder as it was rendered (`KubeChartPrint`): the
+        /// upgrade runs only while it is still so.
+        var chartPrint: String = ""
     }
 
     let id = UUID()
@@ -124,7 +127,15 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
             var discovery = model.knownDiscovery(of: context)
             if discovery == nil { discovery = try? await client.discover() }
             let capabilities = KubeHelmCapabilities(version: version, discovery: discovery)
+            // The folder as it is rendered: hashed before and after, so the
+            // render is of one state of it, which the upgrade checks again.
+            let before = await KubeBlocking.run { KubeChartPrint.of(chart) }
             let rendered = try await render(chart, release, binding.namespace, inputs.values, context, capabilities)
+            let after = await KubeBlocking.run { KubeChartPrint.of(chart) }
+            guard let before, before == after else {
+                fail(before == nil ? "The chart's folder couldn't be read whole (too big, or unreadable): nothing to compare." : KubeChartPrint.changed)
+                return nil
+            }
             let current = inputs.manifest
             let namespace = binding.namespace
             let revision = inputs.revision
@@ -132,7 +143,8 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
             let chartText = (try? String(contentsOf: chart.appendingPathComponent("Chart.yaml"), encoding: .utf8)) ?? ""
             let result = Diffed(
                 context: context.name, production: context.isProduction, release: release, namespace: namespace, storage: storage,
-                revision: revision, chart: chart, chartSaid: KubeHelmUpgrade.chartInfo(chartText).said, diff: diff, discovery: discovery)
+                revision: revision, chart: chart, chartSaid: KubeHelmUpgrade.chartInfo(chartText).said, diff: diff, discovery: discovery,
+                chartPrint: before)
             self.result = result
             fileDiffs = Dictionary(uniqueKeysWithValues: diff.items.filter { !$0.diff.isEmpty }.map { ($0.id, DiffModel.FileDiff(parsing: $0.diff, path: $0.file)) })
             state = .done(diff.said)
@@ -228,6 +240,20 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
         // 5. The context as it is now: writes turned off, or the name now another cluster or user, stop it here.
         guard let now = await model.contextsForAgents()?.context(named: context.name), KubernetesModel.sameAccess(context, now) else {
             return state = .failed(KubernetesPageModel.contextChanged)
+        }
+        // 6. What was reviewed is what helm reads: the chart's folder as it
+        // was rendered, the release at the revision diffed against.
+        let chart = result.chart
+        guard await KubeBlocking.run({ KubeChartPrint.of(chart) }) == result.chartPrint else {
+            return state = .failed(KubeChartPrint.changed)
+        }
+        do {
+            let found = try await Self.release(release, namespace: result.namespace, client: self.client(now))
+            guard found.revision == result.revision else {
+                return state = .failed("The release changed since its diff (revision \(found.revision) now): nothing was run — diff again.")
+            }
+        } catch {
+            return state = .failed(Self.said(error))
         }
         do {
             let command = try KubeCommands.command(write, in: now)
