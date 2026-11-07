@@ -1413,8 +1413,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   a SwiftUI `List`, 160 containers took 39 ms a scroll step). A cell is
   reused only for a row of its kind in its column (`reuseKind`: a
   project's, a container's, a planned service's), never another SwiftUI
-  view under the `AnyView`; a container's port pills are tapped labels
-  (accessibility buttons), not `Button`s, identified by place — as
+  view under the `AnyView`; a container's port pills in the list are
+  tapped labels (`DockerPortPill(inList:)`, accessibility buttons), not
+  `Button`s, identified by place — the detail's stay `Button`s, reached
+  with Tab and Full Keyboard Access — as
   `Button`s identified by port, every reused row made its pills again
   (`dockerPerf`: 18.5 ms a step, now ~9). A press goes
   to the row's view whole — a project's chevron is its button — and
