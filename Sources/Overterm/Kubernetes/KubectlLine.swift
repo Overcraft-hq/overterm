@@ -106,6 +106,8 @@ enum KubectlLine {
         guard !word.isEmpty else { return "''" }
         let bare = word.unicodeScalars.allSatisfy { safe.contains($0) } && !word.hasPrefix("=") && !word.hasPrefix("-")
         if bare { return word }
+        // A control character is never on the line raw (`ShellWord`).
+        if ShellWord.hasControl(word) { return ShellWord.ansiC(word) }
         return "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 

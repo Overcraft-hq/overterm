@@ -145,6 +145,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     static func shellQuoted(_ text: String) -> String {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:@=+,"))
         if !text.isEmpty, text.unicodeScalars.allSatisfy(plain.contains) { return text }
+        if ShellWord.hasControl(text) { return ShellWord.ansiC(text) }
         return "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

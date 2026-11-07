@@ -303,7 +303,10 @@ struct KubeHelmUpgradeWrite: Equatable, Sendable, KubeTabCommand {
 
     var refused: String? {
         if let refused = KubeHelmWrite.refusal(name: release, storage: storage) { return refused }
-        return chart.hasPrefix("/") ? nil : "The chart's folder isn't a path helm can be given: Overterm types nothing for it."
+        guard chart.hasPrefix("/"), !ShellWord.hasControl(chart) else {
+            return "The chart's folder isn't a path helm can be given: Overterm types nothing for it."
+        }
+        return nil
     }
 
     /// `env -u HELM_KUBEAPISERVER … HELM_DRIVER=secret helm upgrade 'web' '/repo/chart' --reset-then-reuse-values --kube-context C -n NS`

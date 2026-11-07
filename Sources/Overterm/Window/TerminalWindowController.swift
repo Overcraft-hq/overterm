@@ -3374,6 +3374,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     nonisolated static func shellQuoted(_ path: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,:@%"))
         if path.unicodeScalars.allSatisfy(safe.contains) { return path }
+        if ShellWord.hasControl(path) { return ShellWord.ansiC(path) }
         return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
