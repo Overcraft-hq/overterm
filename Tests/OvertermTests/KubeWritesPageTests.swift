@@ -217,6 +217,32 @@ final class KubeWritesPageTests: XCTestCase {
         XCTAssertEqual(written(), [])
     }
 
+    /// The kubeconfig read again while the confirmation shows points a
+    /// writable context's name at another cluster: the review and the
+    /// reads were the old one's, so the button sends nothing.
+    func testAContextRepointedMeanwhileStopsAtTheButton() async throws {
+        let (page, box) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        page.selection = ["shop/api-1"]
+        XCTAssertTrue(page.press("\u{7F}"), "⌫")
+        try await until("asked") { box.confirmations.count == 1 }
+        let old = try XCTUnwrap(page.model.contexts.context(named: "kind-fake"))
+        let moved = KubeContext(
+            name: old.name, cluster: "globex-eks", server: "https://globex.example:443", namespace: old.namespace, user: old.user, auth: old.auth,
+            file: nil, contextClass: old.contextClass, settings: old.settings)
+        XCTAssertTrue(moved.isWritable, "still writable by its class")
+        let list = KubeContextList(
+            contexts: ["fake-dev", "fake-prod"].map { KubeWritesTests.context($0) } + [moved], current: "kind-fake")
+        page.model.load = { _ in list }
+        page.model.reloadContexts()
+        try await until("read again") { page.model.contexts.context(named: "kind-fake")?.server == moved.server }
+        box.confirmations[0].1("")
+        XCTAssertEqual(page.writeStatus, .failed(KubernetesPageModel.writeContextChanged))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(written(), [])
+        XCTAssertNotNil(api.pod("api-1", namespace: "shop"))
+    }
+
     /// `r` on a pod (its controller named), scale (`+`, the sheet's number),
     /// a rollout restart, an eviction a PDB refuses, finalizers, force
     /// delete — each request exactly, after its review and confirmation.
