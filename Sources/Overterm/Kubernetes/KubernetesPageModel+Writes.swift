@@ -24,6 +24,10 @@ struct KubeWriteFacts {
     var contents: KubeNamespaceContents?
     /// A resize's changes, against the pod as read after the review.
     var resize: [KubeResize.Change] = []
+    /// The context the access review and the reads were made on: the
+    /// confirmation and the request go only to the same cluster, user and
+    /// class (`KubernetesModel.sameAccess`).
+    var reviewed: KubeContext?
 }
 
 /// How a scale changes the replicas.
@@ -400,6 +404,7 @@ extension KubernetesPageModel {
             // values), the replicas, a state's spec field, a CronJob's
             // template, a namespace's counts.
             var facts = KubeWriteFacts(verb: verb)
+            facts.reviewed = context
             do {
                 switch verb {
                 case .recreate, .removeFinalizers: facts.meta = try await client.metadata(ref)
@@ -478,6 +483,13 @@ extension KubernetesPageModel {
         }
     }
 
+    static let writeContextChanged = "The context changed while it was asked (another cluster, user or class): nothing was changed."
+
+    /// Whether `now` is the cluster, user and class the facts were read on.
+    static func sameAsReviewed(_ facts: KubeWriteFacts, _ now: KubeContext) -> Bool {
+        facts.reviewed.map { KubernetesModel.sameAccess($0, now) } ?? false
+    }
+
     func endChecking(_ token: Int) {
         if writeChecking == token { writeChecking = nil }
     }
@@ -487,6 +499,10 @@ extension KubernetesPageModel {
     private func confirm(_ ref: KubeObjectRef, _ facts: KubeWriteFacts) {
         guard let context = model.contexts.context(named: ref.context) else {
             writeStatus = .failed("The context is gone: nothing was changed.")
+            return
+        }
+        guard Self.sameAsReviewed(facts, context) else {
+            writeStatus = .failed(Self.writeContextChanged)
             return
         }
         let rule = KubeWriteCheck.rule(facts.verb, for: context, kind: ref.kind, replicas: facts.to)
@@ -514,6 +530,12 @@ extension KubernetesPageModel {
         let verb = facts.verb
         guard let context = model.contexts.context(named: ref.context), let client = model.client(for: ref.context) else {
             writeStatus = .failed("The context is gone: nothing was changed.")
+            return
+        }
+        // The kubeconfig read again while the confirmation showed may point
+        // the name at another cluster or user: the review was for this one.
+        guard Self.sameAsReviewed(facts, context) else {
+            writeStatus = .failed(Self.writeContextChanged)
             return
         }
         if let refused = KubeWriteCheck.rule(verb, for: context, kind: ref.kind, replicas: facts.to).refused {
