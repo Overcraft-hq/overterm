@@ -259,7 +259,7 @@ final class KubeGitOpsPageTests: XCTestCase {
     }
 
     private final class Box {
-        var confirmations: [(KubeWriteConfirmation, (String) -> Void)] = []
+        var confirmations: [(KubeWriteConfirmation, (KubeWriteAnswer) -> Void)] = []
         var confirms: [(String, String, () -> Void)] = []
         var commands: [(String, String, String)] = []
     }

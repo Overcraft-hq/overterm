@@ -273,11 +273,21 @@ extension KubernetesPageModel {
             return
         }
         let confirmation = write.confirmation(context: context, rule: rule)
-        actions?.confirmWrite(confirmation) { [weak self] typed in
+        actions?.confirmWrite(confirmation) { [weak self] answer in
             guard let self else { return }
-            guard confirmation.accepts(typed) else {
+            guard confirmation.accepts(answer.typed) else {
                 self.writeStatus = .failed("The name typed wasn't \(confirmation.typedName ?? write.name): nothing was run.")
                 return
+            }
+            // The image field's, checked as an image reference: the settings' only prefilled it.
+            var write = write
+            if let prefilled = write.image {
+                switch KubeTabWrite.image(from: answer.image ?? prefilled) {
+                case .success(let image): write = write.with(image: image)
+                case .failure(let refused):
+                    self.writeStatus = .failed(refused.reason)
+                    return
+                }
             }
             // Writes turned off, or the name now another cluster or user, while it asked stop it here.
             guard let now = self.model.contexts.context(named: name) else {

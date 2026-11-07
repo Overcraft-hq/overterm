@@ -254,7 +254,7 @@ final class KubeTabWritesPageTests: XCTestCase {
     }
 
     private final class Box {
-        var confirmations: [(KubeWriteConfirmation, (String) -> Void)] = []
+        var confirmations: [(KubeWriteConfirmation, (KubeWriteAnswer) -> Void)] = []
         var choices: [([String], (Int) -> Void)] = []
         var commands: [(String, String, String)] = []
     }
@@ -468,5 +468,47 @@ final class KubeTabWritesPageTests: XCTestCase {
         box.confirmations[1].1("fake-node-1")
         XCTAssertEqual(page.writeStatus, .failed(KubeProcessCheck.readOnly(.production)))
         XCTAssertTrue(box.commands.isEmpty)
+    }
+
+    // MARK: The image field (E, a node shell)
+
+    func testTheImageIsAFieldPrefilledAndCheckedAsAReference() {
+        let local = KubeWritesTests.context("kind-fake")
+        let debug = KubeTabWrite.debug(pod: "web-7d9", namespace: "shop", container: "app", image: "busybox:1.36")
+        let asked = debug.confirmation(context: local, rule: KubeProcessCheck.rule(.debug, for: local))
+        XCTAssertEqual(asked.image, "busybox:1.36", "prefilled from the settings")
+        XCTAssertNil(KubeTabWrite.drain(node: "n", namespace: "shop").confirmation(context: local, rule: KubeProcessCheck.rule(.drain, for: local)).image)
+        XCTAssertEqual(
+            KubeTabWrite.nodeShell(node: "n", namespace: "shop", image: "acme/node-tools:1").confirmation(
+                context: local, rule: KubeProcessCheck.rule(.nodeShell, for: local)
+            ).image, "acme/node-tools:1")
+        XCTAssertEqual(
+            debug.with(image: "ghcr.io/acme/tools:2.1"), .debug(pod: "web-7d9", namespace: "shop", container: "app", image: "ghcr.io/acme/tools:2.1"))
+        XCTAssertEqual(KubeTabWrite.drain(node: "n", namespace: "shop").with(image: "x"), .drain(node: "n", namespace: "shop"))
+        XCTAssertEqual(try KubeTabWrite.image(from: " alpine:3.20 ").get(), "alpine:3.20", "trimmed")
+        XCTAssertEqual(try KubeTabWrite.image(from: "localhost:5000/acme/debug@sha256:" + String(repeating: "a", count: 64)).get().prefix(15), "localhost:5000/")
+        for bad in ["", "  ", "busybox; rm -rf /", "--privileged", "Busy Box", "a:b:c:d", "$(id)"] {
+            if case .success(let image) = KubeTabWrite.image(from: bad) { XCTFail("\(bad) taken as \(image)") }
+        }
+    }
+
+    func testTheFieldsImageRunsAndABadOneRunsNothing() async throws {
+        let (page, box) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        page.selection = ["shop/api-1"]
+        XCTAssertTrue(page.press("E"))
+        try await until("which container") { box.choices.count == 1 }
+        box.choices[0].1(0)
+        box.confirmations[0].1(KubeWriteAnswer(typed: "", image: " ghcr.io/acme/tools:2.1 "))
+        XCTAssertEqual(box.commands.first?.0, "kubectl debug -it api-1 --image=ghcr.io/acme/tools:2.1 --target=app --context kind-fake -n shop")
+        XCTAssertEqual(page.model.debugImage(for: KubeWritesTests.context("kind-fake")), "busybox:1.36", "the setting stays the default")
+
+        XCTAssertTrue(page.press("E"))
+        try await until("which container again") { box.choices.count == 2 }
+        box.choices[1].1(0)
+        box.confirmations[1].1(KubeWriteAnswer(typed: "", image: "busybox:1.36 --privileged"))
+        XCTAssertEqual(box.commands.count, 1, "nothing typed")
+        guard case .failed(let why) = page.writeStatus else { return XCTFail("\(String(describing: page.writeStatus))") }
+        XCTAssertTrue(why.contains("isn't an image reference"), why)
     }
 }

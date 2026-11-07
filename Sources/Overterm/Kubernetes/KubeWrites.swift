@@ -778,6 +778,21 @@ enum KubeWriteOutcome {
     }
 }
 
+/// What a write's confirmation answered, once its button was pressed: the
+/// name typed ("" when none was asked), and the image field's text where
+/// it had one. A string literal is a typed name alone.
+struct KubeWriteAnswer: Equatable, Sendable, ExpressibleByStringLiteral {
+    var typed: String
+    var image: String?
+
+    init(typed: String, image: String? = nil) {
+        self.typed = typed
+        self.image = image
+    }
+
+    init(stringLiteral value: String) { self.init(typed: value) }
+}
+
 /// What the confirmation says (rule 3): the context and namespace —
 /// production in capitals —, the object, what will happen, the kubectl
 /// command it equals, what it warns of, and the name to type where rule 4
@@ -795,6 +810,11 @@ struct KubeWriteConfirmation: Equatable, Sendable {
     var typedName: String?
     var production: Bool
     var kubectl: String?
+    /// The image a debug container or a node shell runs, prefilled in a
+    /// field of its own — the settings' — and editable; nil, no field.
+    /// What comes back is checked as an image reference before anything
+    /// runs (`KubeTabWrite.image(from:)`).
+    var image: String? = nil
 
     /// How a production scope begins, wherever one is asked.
     static let productionMark = "PRODUCTION · "

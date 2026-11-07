@@ -514,9 +514,9 @@ extension KubernetesPageModel {
         let confirmation = KubeWriteConfirmation.make(
             facts.verb, ref, context: context, rule: rule, from: facts.from, to: facts.to, meta: facts.meta, job: facts.job, contents: facts.contents,
             resize: facts.resize, discovery: model.knownDiscovery(of: ref.context))
-        actions?.confirmWrite(confirmation) { [weak self] typed in
+        actions?.confirmWrite(confirmation) { [weak self] answer in
             guard let self else { return }
-            guard confirmation.accepts(typed) else {
+            guard confirmation.accepts(answer.typed) else {
                 self.writeStatus = .failed("The name typed wasn't \(confirmation.typedName ?? ref.name): nothing was changed.")
                 return
             }

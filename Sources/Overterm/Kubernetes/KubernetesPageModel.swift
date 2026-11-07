@@ -70,9 +70,10 @@ struct KubernetesActions {
     var selectedBinding: () -> KubeBinding? = { nil }
     /// A write asked first (rule 3), in the window: the context and
     /// namespace, the object, the kubectl it equals, a field for the name
-    /// where rule 4 asks one; `then` gets what was typed, only when the
-    /// button was pressed — the page checks it.
-    var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (String) -> Void) -> Void = { _, _ in }
+    /// where rule 4 asks one, the image where a debug container or a node
+    /// shell runs one; `then` gets what was typed, only when the button was
+    /// pressed — the page checks it.
+    var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) -> Void = { _, _ in }
     /// An object's YAML, Overterm's copy of it, in the editor (`y`): the
     /// page steps aside.
     var openEditor: (URL) -> Void = { _ in }

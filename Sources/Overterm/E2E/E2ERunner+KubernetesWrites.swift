@@ -202,10 +202,15 @@ extension E2ERunner {
     }
 
     /// The typed-name field of the confirmation showing.
-    func typedNameField() -> NSTextField? {
+    func typedNameField() -> NSTextField? { confirmationField(TerminalWindowController.kubernetesTypedNameField) }
+
+    /// The image field of the confirmation showing (a debug container's, a node shell's).
+    func imageField() -> NSTextField? { confirmationField(WriteConfirmation.imageField) }
+
+    func confirmationField(_ identifier: String) -> NSTextField? {
         guard let root = window.attachedSheet?.contentView else { return nil }
         func find(_ view: NSView) -> NSTextField? {
-            if let field = view as? NSTextField, field.identifier?.rawValue == TerminalWindowController.kubernetesTypedNameField { return field }
+            if let field = view as? NSTextField, field.identifier?.rawValue == identifier { return field }
             for sub in view.subviews { if let found = find(sub) { return found } }
             return nil
         }
