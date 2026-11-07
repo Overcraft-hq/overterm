@@ -54,6 +54,7 @@ version is tagged `v<version>`.
 - kubernetes: a context whose credential plugin's token the cluster refuses (401) stops until Retry, as a failing plugin does, instead of running the plugin (`aws`, kubelogin) again for every request
 - security: a word with a control character (a chart folder's name, a pod's env value) is never typed raw into a tab — said as an escape, so ^U can't erase its quote and run the rest; a chart folder with one is refused
 - kubernetes: a manifest whose apiVersion has an empty half (`apps/`, `/v1`) is refused as it is read — Diff with Cluster and an agent's `k8s_apply` took the app down on one
+- kubernetes: an agent's `k8s_` call with a number past any integer's range (`limit: 1e300`) is clamped — it crashed the app
 
 ## 1.5.6 — 2026-11-13
 
