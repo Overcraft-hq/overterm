@@ -20,6 +20,8 @@ This document covers:
 
 The implementation plan comes after the decisions.
 
+**Status: built.** Every stage below is built and ships as Overterm 1.6.0. Section 15 says where the build departs from this design; `docs/architecture.md`, Kubernetes, describes what exists.
+
 It replaces `docs/design/kubernetes/analysis.md`. That version is in Turkish, dated 2026-10-28, and was written against the `docker` branch at `910919b`. Code paths here are against `main` at `d62c5c4`, where Docker is merged.
 
 The versions compared are Lens K8S IDE 2026.10.261408 and Freelens v2.0.0, both from 2026-10-28. Sources are in Section 14.
@@ -1253,7 +1255,7 @@ Never read from UserDefaults. State that is not a setting lives under `AppEnviro
 
 ## 9. Stages
 
-Each stage is usable on its own and has its own E2E check. Security comes first: the proxy flags are in 1a, before any verb exists. Every write ships with its permission check and confirmation, and every writing process with its class check.
+All of them are built; Section 15 says where the build departs from this plan. Each stage is usable on its own and has its own E2E check. Security comes first: the proxy flags are in 1a, before any verb exists. Every write ships with its permission check and confirmation, and every writing process with its class check.
 
 | Stage | Scope | Useful alone because | Check | Bump |
 |---|---|---|---|---|
@@ -1429,9 +1431,9 @@ The first analysis's 11, updated, then new ones. Each has a recommended option.
 9. **Background watches for attention marks:** a stated exception with a budget. Pod and Deployment watches per bound namespace, only while that checkout has a tab, at most `backgroundWatches` namespaces. They use at most `maxProxies − 1` proxies and are evicted first when the page needs one (**recommended**) / no background marks; marks only while the page or rail shows.
 10. **Letters:** Docker's letters, with `f` meaning port-forward on Kubernetes (pod files are rare and go to stage 4), plus k9s's `:`, `/`, `[` and `]` (**recommended**) / `⇧F` for forwards, keeping `f` for files / k9s's letters throughout.
 11. **Applying from the editor:** server-side apply with `fieldManager=overterm`, carrying the opened `resourceVersion`, after a dry-run diff. Conflicts are shown with their owners, never forced by default and never forced on production (**recommended**) / `kubectl apply` in a tab / PUT with `resourceVersion`.
-12. **The proxy's flags:** read-only contexts reject every write method, POST included. Every context rejects exec, attach, port-forward and the pod, service and node proxy subresources, since Overterm never uses them through the socket. Who-am-I and the shell and forward checks on read-only contexts come from short-lived `kubectl auth` processes; access reviews go through the socket only on writable contexts (**recommended**) / allow POST so the reviews work everywhere / enforce read-only only in the app.
+12. **The proxy's flags:** read-only contexts reject every write method, POST included. Every context rejects exec, attach, port-forward and the pod, service and node proxy subresources, since Overterm never uses them through the socket. Who-am-I and the shell and forward checks on read-only contexts come from short-lived `kubectl auth` processes; access reviews go through the socket only on writable contexts (**recommended**) / allow POST so the reviews work everywhere / enforce read-only only in the app. *Built differently: Section 15, Where the build departs.*
 13. **Stage 0 refactors first**, each a PATCH commit (**recommended**) / copy Docker's pieces and unify later.
-14. **Where checkout bindings live:** `AppEnvironment.supportDirectory`, keyed by repository root (**recommended**) / a file in the repository.
+14. **Where checkout bindings live:** `AppEnvironment.supportDirectory`, keyed by repository root (**recommended**) / a file in the repository. *Built differently: Section 15, Where the build departs.*
 15. **Helm writes:** reading in stage 2c. Rollback and uninstall in a tab in stage 2f, refused on read-only contexts, with typed names (rollback on production, uninstall everywhere). Upgrade from the checkout's chart in stage 3a. No chart browser or repo management (**recommended**) / a full Helm UI.
 16. **Metrics:** metrics.k8s.io in stage 2d, polled only while shown. Prometheus opt-in per context in stage 4, through its own proxy that reaches only the detected service's query paths; charts get a time range and PVCs a usage column there. Nothing installed (**recommended**) / leave Prometheus out for good.
 17. **Several contexts at once:** one context on the page, several proxies alive, a health view across pinned contexts in stage 3b (**recommended**) / Aptakube-style merged lists (later at the earliest).
@@ -1439,7 +1441,7 @@ The first analysis's 11, updated, then new ones. Each has a recommended option.
 19. **The tab's own context:** "Terminal in this context" in stage 1d, after the merge order is checked at the start of that stage; the pane-header warning and New Task pinning in stage 3b (**recommended**) / the warning only.
 20. **Node shell:** stage 3b, a tab running `kubectl debug node/…` with the context's image. Writable contexts only, off until the context's `nodeShell` is on, typed name (**recommended**) / left out.
 21. **Secret values:** one GET when the user asks to see a Secret, which returns every value at once. Values masked until revealed one by one, dropped on navigation, never cached, logged or written. On production the first Show per context and session asks once. Copy is explicit (**recommended**) / no Show on production at all.
-22. **Which kubectl:** the installed copy closest to the server's minor, within ±1, with a setting (global and per context) to override; never downloaded (**recommended**) / always the first on PATH.
+22. **Which kubectl:** the installed copy closest to the server's minor, within ±1, with a setting (global and per context) to override; never downloaded (**recommended**) / always the first on PATH. *Built differently: Section 15, Where the build departs.*
 23. **Cloud sign-in and discovery (EKS, AKS, GKE without a kubeconfig):** left out, kubectl's job; help on errors only (**recommended**) / built-in sign-in.
 24. **GitOps:** generic tables of Argo and Flux resources in stage 1b, trees in stage 3b, verbs in stage 4; sync left to their own CLIs in a tab (**recommended**) / dedicated dashboards.
 25. **New: the production classifier:** the default pattern matches `prod`, `prd`, `production` and `live` as a separated word, which covers `…/acme-prod` and `globex-eu-west-1-prod`; overrides in `kubernetes.contexts` (**recommended**) / any substring `prod` / every remote context treated as production.
@@ -1449,7 +1451,7 @@ The first analysis's 11, updated, then new ones. Each has a recommended option.
 29. **New: `kubernetes.enabled` and the rail:** on by default, with nothing running until the page or the panel opens; the rail panel placed after Docker's (**recommended**) / off until turned on in Settings.
 30. **New: apply on production:** server-side apply from the editor (and `k8s_apply`) is not offered on a production context, even with writes on for the session. The context's `applyOnProduction` opts in; even then each apply asks for the typed name and is never forced. The diff with the cluster works everywhere (**recommended**) / apply on production whenever writes are on.
 31. **New: class precedence:** a class set by hand, then production by name, then local by name, then remote. A loopback server never makes a context local (**recommended**) / a loopback server counts as local.
-32. **New: per-context settings:** one `kubernetes.contexts` object per context, with Lens's and Freelens's cluster settings except the icon and the OpenShift Prometheus token, which stay out (**recommended**) / separate top-level settings per field.
+32. **New: per-context settings:** one `kubernetes.contexts` object per context, with Lens's and Freelens's cluster settings except the icon and the OpenShift Prometheus token, which stay out (**recommended**) / separate top-level settings per field. *Built differently: Section 15, Where the build departs.*
 33. **New: what the Overview's health checks read (3.9):** the Overview's count reads more than the lists already hold, because list rows are Table rows with no object, and the template checks need specs. While the Overview shows on screen it makes one GET a list of whole objects, with no watch, in the context and namespace shown (all namespaces too). Each list is bounded: pods 200, and 500 each for Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, Services, Ingresses, PDBs, HPAs, and the Argo CD, Flux and cert-manager kinds the context serves. A cut list is said. Production is read the same way, since the page already reads it when shown. Never a Secret or a ConfigMap. What may carry a secret is dropped as each list is decoded: env values (names kept), Helm values, the last-applied annotation, managedFields. Nothing is kept once the Overview hides. The findings show on the Overview and in each object's detail, not as a list column, because a column would need the same reads on every list (**recommended**) / Table rows only, with only the status checks (restarts, Pending, PDB, HPA, Ready) and no template checks / a findings column on every list, read with each list.
 
 ## 14. Sources
@@ -1541,3 +1543,26 @@ Overterm:
 - `Sources/Overterm/API/APIDiscovery.swift`
 - `Sources/Overterm/AppEnvironment.swift`
 - the source files listed in Section 8
+
+## 15. What was built
+
+Every stage in Section 9 is built, 0 to 4, and ships as Overterm 1.6.0. Each decision in Section 13 was taken as recommended, except where the list below says otherwise (decisions 12, 14, 22 and 32). `docs/architecture.md`, Kubernetes, describes what exists and names every type; this section says where the build departs from the design above, and what the design left open that the build settled.
+
+### Where the build departs
+
+- **The read-only filter (Section 4, decision 12).** The design rejects every write method. The build names the one method it lets through, `--reject-methods` for everything but `GET`. kubectl matches the method as it is sent: against kind's 1.37, `post`, `Delete` and `PROPFIND` passed a list of write methods and reached the API server. The API server refused them with 405, but an aggregated API server need not.
+- **Bindings (3.1, decision 14).** A binding is keyed by the checkout's own root, its real path, not by the repository's root. Each worktree of a repository has a binding of its own. The brief and the agents' tools prefer the selected tab's checkout when several are bound to one namespace.
+- **Which kubectl (decision 22).** The installed copy closest to the server's minor is used, and `kubernetes.kubectlPath` overrides it for every context. There is no per-context kubectl setting.
+- **Per-context settings (decision 32).** `kubernetes.contexts` is a list of entries, one per context name, edited in settings.json or with Context Settings… on the context card. It holds the fields Overterm reads: `class`, `writable`, `displayName`, `defaultNamespace`, `accessibleNamespaces`, `favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`, `applyOnProduction`, `metrics` and `prometheus`. A field this build doesn't know is kept when the sheet saves.
+- **Namespaces (2.2).** A list shows one namespace or all of them (`0`). The `n` picker has the favourites and takes a typed name; it does not pick several at once.
+- **The filter (Section 7).** Text, `ns:`, `status:`, `label:` and `field:` (the last two sent to the server as selectors) and `-` are built. `node:`, `owner:` and `restarts:>3` are not: a row is Table cells only, and `field:spec.nodeName=…` covers the node.
+- **Keys (Section 7).** Space's quick look and `i` for YAML are not built: ↩ opens the detail, whose YAML is a tab. Several rows can be selected and copied as names, TSV or CSV, but every verb acts on one object. The switcher's ⌥↩, ⌘↩ and ⌘O are not built: ↩ shows the object on the page, where its verbs are.
+- **Streaming lists (Section 4, stage 4).** A context lists with `sendInitialEvents` only where its `/version` is 1.32 or 1.34 and later, and falls back to a list and a watch on any failure of one. A Table's end bookmark carries its annotation on its one row's object, as kind's 1.37 sends it, not in the list's metadata.
+- **Credential plugins (Section 12).** A 401 on a context whose user signs in with an exec plugin stops that context until Retry, as a failing plugin does. kubectl throws a refused token away and runs the plugin again for the next request, so retrying ran `aws` or kubelogin for every request.
+
+### What the design left open
+
+- **The real-cluster suite (decision 8, Section 11).** `KubeRealClusterTests`, opt-in with `OVERTERM_KUBE_TESTS=1`, runs the app's own proxies, client, `kubectl auth can-i`, the dependency tree and the health checks against a kind cluster made for it (`Scripts/kube-test-cluster.sh`, a kubeconfig of its own, the node container labelled `overterm.test`) and removed after. It answered Section 12's questions about the proxy on Kubernetes v1.37.0, and three of the departures above came of it: the read-only filter's methods, the streaming list's end and the credential plugins' 401.
+- **Commands typed into a pinned tab** carry the pin's `KUBECONFIG` on their own line, so a shell's startup files that export another one can't send `--context` to a different cluster than the one reviewed. A word with a control character is written as an escape, never typed raw.
+- **Helm upgrade from the checkout** runs only on the chart that was diffed: a template, `values.yaml` or a dependency changed since, or the release upgraded meanwhile, and nothing runs until it is diffed again.
+- **Scale.** `kubernetesPerf` and `kubernetesScale` time the page against the fake API server at a large cluster's size; the Overview's health checks and a tree ask for their lists four at a time.
