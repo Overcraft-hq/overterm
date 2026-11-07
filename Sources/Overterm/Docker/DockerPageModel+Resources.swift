@@ -190,8 +190,8 @@ extension DockerPageModel {
 
     /// Scan for Vulnerabilities, Scan: the image's Vulnerabilities tab, and
     /// Scout asked of it by its name — pressed, never by itself.
-    func scanVulnerabilities(_ image: ImageSummary) {
-        guard let name = image.tags.first else { return }
+    func scanVulnerabilities(_ image: ImageSummary, as given: String? = nil) {
+        guard let name = given ?? image.tags.first else { return }
         imageSelection = [image.Id]
         showDetail = true
         imageTab = .vulnerabilities
@@ -199,6 +199,104 @@ extension DockerPageModel {
     }
 
     func cancelScan(_ image: ImageSummary) { scans.cancel(image.Id) }
+
+    /// The image this engine has by `name` — any of its tags, as the CLI
+    /// reads a name (`nginx:1.27` is `docker.io/library/nginx:1.27`) — or,
+    /// pinned by `digest` (what the kubelet ran, or the name's own), only
+    /// the one whose repository recorded that digest: a tag of the same
+    /// name built or pulled at another time is another image. Pure.
+    nonisolated static func localImage(named name: String, digest: String?, in images: [ImageSummary]) -> ImageSummary? {
+        let wanted = DockerImageReference(name)
+        if let digest = digest ?? wanted?.digest {
+            guard let repository = wanted?.repository else { return nil }
+            return images.first { image in
+                (image.RepoDigests ?? []).contains { DockerImageReference.digested($0).map { $0 == (repository, digest) } ?? false }
+            }
+        }
+        guard let key = wanted?.key else { return nil }
+        return images.first { $0.tags.contains { DockerImageReference($0)?.key == key } }
+    }
+
+    /// What Scan asks for and pulls: `repository@digest` when the digest
+    /// is known — the image itself, not what its tag names now — else the
+    /// name as given. Pure.
+    nonisolated static func pinnedName(_ name: String, digest: String?) -> String {
+        guard var reference = DockerImageReference(name), let digest = digest ?? reference.digest else { return name }
+        reference.tag = nil
+        reference.digest = digest
+        return reference.familiar
+    }
+
+    /// Scan, from elsewhere (a pod's image, 3.12): its Vulnerabilities tab
+    /// on the Images section, scanned — only now, when asked. An image the
+    /// engine hasn't is asked first, then pulled (the engine's platform)
+    /// and scanned once it is here: Scout scans the engine's own copy.
+    func scanImage(named name: String, digest: String? = nil, from origin: String) {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        error = nil
+        filter = ""
+        section = .images
+        Task { [weak self] in
+            // The page may have just opened: its engine reached, its images read now.
+            for _ in 0..<20 where self?.docker.engine == nil { try? await Task.sleep(for: .milliseconds(250)) }
+            guard let self else { return }
+            guard let engine = self.docker.engine else {
+                self.error = "Docker isn't running: \(name) can't be pulled or scanned."
+                return
+            }
+            let images = (try? await engine.images()) ?? self.docker.images
+            self.docker.load(.images)
+            self.scanOrAsk(name, digest: digest, from: origin, images: images)
+        }
+    }
+
+    private func scanOrAsk(_ name: String, digest: String?, from origin: String, images: [ImageSummary]) {
+        let pinned = Self.pinnedName(name, digest: digest)
+        if let image = Self.localImage(named: name, digest: digest, in: images) {
+            // Pinned, it is scanned by its digest: its tag may name another image.
+            let byDigest = (digest ?? DockerImageReference(name)?.digest) != nil
+            scanVulnerabilities(image, as: byDigest ? pinned : image.tags.first ?? name)
+            return
+        }
+        let stale = pinned != name && Self.localImage(named: name, digest: nil, in: images) != nil
+        actions?.confirm(
+            "Pull \(pinned) to scan it?",
+            "\(origin) runs it, and this engine hasn't got it"
+                + (stale ? " — its \(name) here is another image, built or pulled at another time" : "")
+                + ". Scout scans the engine's own copy: it is pulled first, for this engine's platform, "
+                + "then scanned — Scout sends its packages to Docker's service, signed in as you.",
+            "Pull and Scan"
+        ) { [weak self] in self?.pullThenScan(name, digest: digest) }
+    }
+
+    /// `name` pulled — by its digest when known — then scanned once the
+    /// engine lists it.
+    func pullThenScan(_ name: String, digest: String?) {
+        let pinned = Self.pinnedName(name, digest: digest)
+        pull(pinned)
+        guard pulls[pinned] != nil else {
+            error = docker.engine == nil ? "Docker isn't running: \(pinned) can't be pulled." : "\(pinned) couldn't be pulled."
+            return
+        }
+        Task { [weak self] in
+            // A pull takes as long as it takes; the page's own row says how it goes.
+            while self?.pulls[pinned]?.done == false {
+                try? await Task.sleep(for: .milliseconds(250))
+                if Task.isCancelled { return }
+            }
+            guard self?.pulls[pinned]?.error == nil else { return }
+            for _ in 0..<40 {
+                guard let page = self else { return }
+                if let image = Self.localImage(named: pinned, digest: digest, in: page.docker.images) {
+                    if page.section == .images { page.scanVulnerabilities(image, as: pinned) }
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            self?.error = "\(pinned) was pulled, but the engine doesn't list it: scan it from Images."
+        }
+    }
 
     /// `docker login` in a tab: the credentials are the CLI's, in its
     /// config.json, whichever engine.
