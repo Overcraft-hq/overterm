@@ -1438,9 +1438,27 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
 
+    /// The context as it is now, if it is still the cluster, user and class
+    /// `captured` was (the can-i and the pod read may have waited minutes
+    /// behind a browser sign-in), with its rule worked out again — a class
+    /// made production, `shells: false` meanwhile count. Nil, said why.
+    private func recheck(_ verb: KubeProcessVerb, _ captured: KubeContext) -> (KubeContext, KubeProcessRule)? {
+        guard let now = model.contexts.context(named: captured.name), KubernetesModel.sameAccess(captured, now) else {
+            commandProblem = Self.contextChanged
+            return nil
+        }
+        let rule = KubeProcessCheck.rule(verb, for: now)
+        if let refused = rule.refused {
+            commandProblem = refused
+            return nil
+        }
+        return (now, rule)
+    }
+
     private func confirm(
-        _ verb: KubeProcessVerb, _ rule: KubeProcessRule, context: KubeContext, namespace: String, pod: String, container: String?
+        _ verb: KubeProcessVerb, _: KubeProcessRule, context reading: KubeContext, namespace: String, pod: String, container: String?
     ) {
+        guard let (context, rule) = recheck(verb, reading) else { return }
         let open = { [weak self] in self?.open(verb, context: context, namespace: namespace, pod: pod, container: container) }
         // A followed log's tab is a pinned shell once the follow ends: asked
         // once per context, as Terminal in this context would be.
@@ -1477,7 +1495,14 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
 
-    private func open(_ verb: KubeProcessVerb, context: KubeContext, namespace: String, pod: String, container: String?) {
+    private func open(_ verb: KubeProcessVerb, context captured: KubeContext, namespace: String, pod: String, container: String?) {
+        // Again after the confirmation: the context as it is when the tab opens.
+        guard let (context, rule) = recheck(verb, captured) else { return }
+        let consent = verb == .followLogs ? (namespace: "", pod: "") : (namespace: namespace, pod: pod)
+        if rule.confirm, !model.shellConsent.isGranted(verb, context: context.name, namespace: consent.namespace, pod: consent.pod) {
+            // It needs asking now and wasn't asked: asked.
+            return confirm(verb, rule, context: context, namespace: namespace, pod: pod, container: container)
+        }
         do {
             let command = try KubeCommands.command(verb, in: context, namespace: namespace, pod: pod, container: container)
             commandProblem = nil
