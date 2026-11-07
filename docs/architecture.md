@@ -1492,7 +1492,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **The containers list** is a `ResourceTable` (shared in `ResourcePage/`;
   `DockerTableRow`, the rows): an AppKit table whose rows are the page's
   SwiftUI rows, a view only while on screen and reused as they scroll (as
-  a SwiftUI `List`, 160 containers took 39 ms a scroll step). A press goes
+  a SwiftUI `List`, 160 containers took 39 ms a scroll step). A
+  container's port pills are tapped labels (accessibility buttons), not
+  `Button`s, identified by place — as `Button`s identified by port, every
+  reused row made its pills again (`dockerPerf`: 18.5 ms a step, then
+  ~12). A press goes
   to the row's view whole — a project's chevron is its button — and
   selects the row on release (⌘ adds or takes away, ⇧ extends); the
   right-click menu is the clicked rows' verbs. Docker's has one column
