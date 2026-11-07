@@ -50,8 +50,16 @@ final class KubeProxyTests: XCTestCase {
             [
                 "--context=fake-prod", "proxy", "--unix-socket=/tmp/x.sock", "--disable-filter=false", "--accept-hosts=^localhost$",
                 "--reject-paths=^/api/.*/pods/.*/(exec|attach|portforward|proxy),^/api/.*/services/.*/proxy,^/api/.*/nodes/.*/proxy,^/apis/subresources\\.kubevirt\\.io/",
-                "--reject-methods=^(POST|PUT|PATCH|DELETE|CONNECT)$",
+                "--reject-methods=^(?:[^G]|G$|G[^E]|GE$|GE[^T]|GET.)",
             ])
+        // GET and nothing else: kubectl matches the method as sent, and the
+        // apiserver behind it is handed any token the filter lets by.
+        let method = try! NSRegularExpression(pattern: KubeProxyFlags.rejectedMethods)
+        func refusesMethod(_ name: String) -> Bool { method.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil }
+        XCTAssertFalse(refusesMethod("GET"))
+        for name in ["POST", "PUT", "PATCH", "DELETE", "CONNECT", "post", "Delete", "patch", "get", "Get", "GETX", "GE", "G", "HEAD", "OPTIONS", "TRACE", "PROPFIND"] {
+            XCTAssertTrue(refusesMethod(name), name)
+        }
         let writable = KubeProxyFlags.arguments(context: "kind-fake", socket: "/tmp/x.sock", readOnly: false, cacheDirectory: "/tmp/c")
         XCTAssertEqual(writable.prefix(2), ["--context=kind-fake", "--cache-dir=/tmp/c"])
         XCTAssertTrue(writable.contains { $0.hasPrefix("--reject-paths=") }, "a writable context's proxy refuses the paths too")
@@ -407,7 +415,9 @@ final class KubeProxyTests: XCTestCase {
         XCTAssertEqual(version.status, 200)
 
         // A read-only context: no write method, no subresource that reaches inside.
-        for method in [HTTPMethod.POST, .PUT, .PATCH, .DELETE] {
+        // Every method but GET: kubectl matches the method as sent, so a
+        // lowercase or unknown one is refused by name too.
+        for method in [HTTPMethod.POST, .PUT, .PATCH, .DELETE, .OPTIONS, .RAW(value: "post"), .RAW(value: "Delete"), .RAW(value: "PROPFIND")] {
             let refused = try await proxies.send(dev, method, "/api/v1/namespaces/default/pods", body: Data("{}".utf8))
             XCTAssertEqual(refused.status, 403, "\(method)")
         }
