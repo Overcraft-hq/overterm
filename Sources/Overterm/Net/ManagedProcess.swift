@@ -6,8 +6,9 @@ import Foundation
 /// port-forward`: started, waited for until it is ready (a socket that
 /// takes connections, or a line on its stdout), its stderr kept for the
 /// reason it failed, closed on demand and at quit (`closeAll`). It is only
-/// ever signalled by its own pid — never by a pattern (`pkill -f` once
-/// killed the shell running the tests).
+/// ever signalled by its own pid, and what it started by theirs (found
+/// before it is closed, by pid and start time) — never by a pattern
+/// (`pkill -f` once killed the shell running the tests).
 final class ManagedProcess: @unchecked Sendable {
     /// What says it is ready.
     enum Readiness: Sendable {
@@ -57,11 +58,50 @@ final class ManagedProcess: @unchecked Sendable {
     var pid: pid_t { process.processIdentifier }
     var terminationStatus: Int32 { process.terminationStatus }
 
-    /// Ends it — SIGTERM to its own pid — and removes what it made.
-    func close() {
-        if process.isRunning { process.terminate() }
+    /// Ends it — SIGTERM to its own pid, and to what it started (an exec
+    /// plugin kubectl ran: kubelogin waiting for the browser on 127.0.0.1:8000
+    /// would otherwise keep the port and the sign-in for minutes) — then
+    /// SIGKILL to those still there after `grace`, and removes what it made.
+    /// Its children are found before it is signalled (once it exits they
+    /// are launchd's), each by pid and start time: never a pid reused.
+    func close() { close(grace: 2) }
+
+    func close(grace: TimeInterval) {
+        if process.isRunning {
+            let family = Self.descendants(of: process.processIdentifier)
+            process.terminate()
+            for child in family { kill(child.pid, SIGTERM) }
+            if !family.isEmpty, grace > 0 {
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + grace, execute: Self.killing(family))
+            }
+        }
         removing.forEach { unlink($0) }
         Self.lock.withLock { Self.live.removeAll { $0 === self } }
+    }
+
+    /// Every process under `pid` — its children and theirs, bounded —
+    /// each with its start time (µs).
+    static func descendants(of pid: pid_t, limit: Int = 64) -> [(pid: pid_t, start: UInt64)] {
+        var found: [(pid: pid_t, start: UInt64)] = []
+        var queue = [pid]
+        var seen: Set<pid_t> = [pid]
+        while let parent = queue.first, found.count < limit {
+            queue.removeFirst()
+            for child in ProcessInspector.children(of: parent) where seen.insert(child.pid).inserted {
+                found.append((child.pid, child.start))
+                queue.append(child.pid)
+                if found.count >= limit { break }
+            }
+        }
+        return found
+    }
+
+    /// SIGKILL to each still running as the same process (its start time).
+    private nonisolated static func killing(_ family: [(pid: pid_t, start: UInt64)]) -> @Sendable () -> Void {
+        let family = family.map { ($0.pid, $0.start) }
+        return {
+            for (pid, start) in family where ProcessInspector.kinfo(pid)?.start == start { kill(pid, SIGKILL) }
+        }
     }
 
     /// Starts it, and returns once it is ready — or throws why not, having
@@ -179,7 +219,8 @@ final class ManagedProcess: @unchecked Sendable {
             defer { live = [] }
             return live
         }
-        all.forEach { $0.close() }
+        // At quit nothing waits for a grace: SIGTERM to each and its children.
+        all.forEach { $0.close(grace: 0) }
     }
 
     /// The pids of those running, for tests.

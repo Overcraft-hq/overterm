@@ -48,6 +48,22 @@ final class ManagedProcessTests: XCTestCase {
         XCTAssertFalse(ManagedProcess.livePIDs.contains(pid))
     }
 
+    /// What it started (an exec plugin kubectl ran) ends with it: found
+    /// before it is signalled, by pid and start time, SIGKILLed after the
+    /// grace when SIGTERM wasn't enough.
+    func testWhatItStartedEndsWithIt() async throws {
+        let process = try await ManagedProcess.start(
+            shell("trap '' TERM; /bin/sleep 30 & /bin/sh -c \"trap '' TERM; exec /bin/sleep 31\" & echo ready; wait", readiness: .line { $0 == "ready" }))
+        try await until { ManagedProcess.descendants(of: process.pid).count >= 2 }
+        let family = ManagedProcess.descendants(of: process.pid).map(\.pid)
+        XCTAssertGreaterThanOrEqual(family.count, 2, "its children found")
+        XCTAssertTrue(family.allSatisfy(Self.alive))
+        process.close(grace: 0.3)
+        let deadline = Date().addingTimeInterval(5)
+        while family.contains(where: Self.alive), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(family.contains(where: Self.alive), "every child ended: \(family.filter(Self.alive))")
+    }
+
     func testASocketThatTakesConnectionsSaysItIsReady() async throws {
         let path = folder.appendingPathComponent("ready.sock").path
         // Something left at the path is removed before it starts.
