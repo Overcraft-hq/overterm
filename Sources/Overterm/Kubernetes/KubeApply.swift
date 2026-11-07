@@ -25,8 +25,21 @@ struct KubeManifestObject {
     var namespace: String?
 
     /// `apps` of `apps/v1`; the core group is "".
-    var group: String { apiVersion.contains("/") ? String(apiVersion.split(separator: "/", maxSplits: 1)[0]) : "" }
-    var version: String { apiVersion.contains("/") ? String(apiVersion.split(separator: "/", maxSplits: 1)[1]) : apiVersion }
+    var group: String { Self.parts(apiVersion)?.group ?? "" }
+    var version: String { Self.parts(apiVersion)?.version ?? apiVersion }
+
+    /// `apps/v1` as its group and version, `v1` as the core group's: nil
+    /// for anything else — an empty half (`apps/`, `/v1`), three parts.
+    /// `split` alone drops an empty half, and the version read past it
+    /// took the app down (`k8s_apply`, Diff with Cluster).
+    static func parts(_ apiVersion: String) -> (group: String, version: String)? {
+        let pieces = apiVersion.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        switch pieces.count {
+        case 1 where !pieces[0].isEmpty: return ("", pieces[0])
+        case 2 where !pieces[0].isEmpty && !pieces[1].isEmpty: return (pieces[0], pieces[1])
+        default: return nil
+        }
+    }
     var isSecret: Bool { group.isEmpty && kind == "Secret" }
     /// `deployment shop/web`, `namespace payments`.
     var spoken: String { "\(kind.lowercased()) \(namespace.map { "\($0)/" } ?? "")\(name)" }
@@ -65,6 +78,9 @@ enum KubeManifest {
     static func object(_ map: [String: Any], document: Int) throws -> KubeManifestObject {
         guard let apiVersion = map["apiVersion"] as? String, !apiVersion.isEmpty else {
             throw KubeManifestProblem("Document \(document) has no apiVersion.")
+        }
+        guard KubeManifestObject.parts(apiVersion) != nil else {
+            throw KubeManifestProblem("Document \(document)'s apiVersion “\(apiVersion)” isn't group/version (apps/v1) or a version (v1).")
         }
         guard let kind = map["kind"] as? String, !kind.isEmpty else { throw KubeManifestProblem("Document \(document) has no kind.") }
         let metadata = map["metadata"] as? [String: Any] ?? [:]
