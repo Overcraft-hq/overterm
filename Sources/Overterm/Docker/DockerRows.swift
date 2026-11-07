@@ -45,24 +45,35 @@ struct DockerStatusDot: View {
 }
 
 /// A published port, a click from the browser.
+///
+/// A tap on its label, not a `Button`: a button is a control SwiftUI
+/// keeps far more for — its style, its press, its focus (the row's key
+/// view loop worked out again) — and a list's row is handed new values
+/// each time it is reused: the containers list's scroll step took 18.5 ms
+/// with them, 12 without (`dockerPerf`). Still a button to accessibility,
+/// opened by its action.
 struct DockerPortPill: View {
     let port: PublishedPort
     @ObservedObject var theme: ChromeTheme
     let open: (URL) -> Void
 
     var body: some View {
-        Button {
-            if let url = port.url { open(url) }
-        } label: {
-            Text(verbatim: port.label)
-                .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
-                .foregroundStyle(theme.text2)
-                .padding(.horizontal, 5)
-                .frame(height: 17)
-                .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowHover))
-        }
-        .buttonStyle(.plain)
-        .help(port.url.map { "Open \($0.absoluteString)" } ?? port.label)
+        Text(verbatim: port.label)
+            .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
+            .foregroundStyle(theme.text2)
+            .padding(.horizontal, 5)
+            .frame(height: 17)
+            .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowHover))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: press)
+            .help(port.url.map { "Open \($0.absoluteString)" } ?? port.label)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(.default) { press() }
+    }
+
+    private func press() {
+        if let url = port.url { open(url) }
     }
 }
 
@@ -256,8 +267,12 @@ struct DockerContainerRow: View {
             .layoutPriority(1)
             Spacer(minLength: 6)
             if !compact {
-                ForEach(PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost).prefix(3), id: \.self) { port in
-                    DockerPortPill(port: port, theme: theme, open: open)
+                // By place, not by port: a reused row's pills are handed
+                // their new ports, where by value each was torn down and
+                // made again, its transition and all.
+                let ports = Array(PublishedPort.of(container.Ports ?? [], remoteHost: remoteHost).prefix(3))
+                ForEach(ports.indices, id: \.self) { index in
+                    DockerPortPill(port: ports[index], theme: theme, open: open)
                 }
                 Text(verbatim: DockerStatusStyle.status(container))
                     .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
