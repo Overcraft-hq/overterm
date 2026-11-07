@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 // MARK: Helm upgrade from the checkout (stage 3a — docs/design/kubernetes/analysis.md, 2.12, 3.1, 3.3, Section 5, decision 15)
@@ -456,4 +457,65 @@ extension KubeHelm {
             values: values, manifest: release["manifest"] as? String ?? "", revision: (release["version"] as? NSNumber)?.intValue ?? 0,
             chart: KubeHelmChart(chart: metadata["name"] as? String, version: metadata["version"] as? String, appVersion: metadata["appVersion"] as? String))
     }
+}
+
+/// A chart folder's contents as one hash: every file under it, by its
+/// path and bytes, in order (symlinks by their target's bytes, as helm
+/// reads them). Taken as the diff renders and again after the
+/// confirmation: helm upgrade reads the folder again from disk, and the
+/// checkout is often one an agent is editing — a change between the two
+/// would deploy templates, values or a dependency nobody reviewed.
+/// Bounded; nil past the bound or unreadable, and then nothing is run. Pure
+/// but for reading the files.
+enum KubeChartPrint {
+    static let maxFiles = 5_000
+    static let maxBytes = 64 << 20
+
+    static func of(_ chart: URL) -> String? {
+        let root = chart.resolvingSymlinksInPath().standardizedFileURL
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isFolder), isFolder.boolValue else { return nil }
+        let failed = Flag()
+        guard
+            let walk = FileManager.default.enumerator(
+                at: root, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey], options: [],
+                errorHandler: { _, _ in
+                    failed.set()
+                    return false
+                })
+        else { return nil }
+        var files: [(String, URL)] = []
+        for case let url as URL in walk {
+            let resolved = url.resolvingSymlinksInPath()
+            let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            if values?.isDirectory == true { continue }
+            guard values?.isRegularFile == true else { return nil }
+            let relative = String(url.standardizedFileURL.path.dropFirst(root.path.count))
+            files.append((relative, resolved))
+            if files.count > maxFiles { return nil }
+        }
+        guard !failed.value else { return nil }
+        var hash = SHA256()
+        var total = 0
+        for (path, url) in files.sorted(by: { $0.0 < $1.0 }) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            total += data.count
+            if total > maxBytes { return nil }
+            hash.update(data: Data(path.utf8))
+            hash.update(data: Data([0]))
+            hash.update(data: withUnsafeBytes(of: UInt64(data.count).bigEndian) { Data($0) })
+            hash.update(data: data)
+        }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The walk's error handler is told on whatever thread it runs on.
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored = false
+        var value: Bool { lock.withLock { stored } }
+        func set() { lock.withLock { stored = true } }
+    }
+
+    static let changed = "The chart changed since its diff (a template, values.yaml, a dependency): nothing was run — diff again."
 }
