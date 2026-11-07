@@ -9,10 +9,14 @@ protocol ResourceTableRow: Equatable {
     /// A group's row, laid across every column of a table that has more
     /// than one (the server's columns); a lone column's rows span it anyway.
     var spansColumns: Bool { get }
+    /// Which of the list's row views it is (a group's, a container's): a
+    /// cell is reused only for a row of its kind, in its column.
+    var reuseKind: String { get }
 }
 
 extension ResourceTableRow {
     var spansColumns: Bool { false }
+    var reuseKind: String { "row" }
 }
 
 /// A column of a resource table. One column and no header is Docker's
@@ -277,10 +281,11 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard let view else { return nil }
             let column = tableColumn.flatMap { item in columns.first { $0.id == item.identifier.rawValue } }
-            let cell =
-                tableView.makeView(withIdentifier: ResourceHostingCell.identifier, owner: nil) as? ResourceHostingCell ?? ResourceHostingCell()
-            cell.identifier = ResourceHostingCell.identifier
-            cell.show(view.cell(rows[row], view.hasHeader && !spans(rows[row]) ? column : nil))
+            let shown = view.hasHeader && !spans(rows[row]) ? column : nil
+            let identifier = ResourceHostingCell.identifier(column: shown?.id, kind: rows[row].reuseKind)
+            let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourceHostingCell ?? ResourceHostingCell()
+            cell.identifier = identifier
+            cell.show(view.cell(rows[row], shown))
             cell.setAccessibilityIdentifier(rows[row].id)
             return cell
         }
@@ -373,7 +378,13 @@ final class ResourceTableView: NSTableView {
 /// A row's cell: a SwiftUI row in a hosting view kept for the cell's life,
 /// handed new rows as the cell is reused.
 final class ResourceHostingCell: NSTableCellView {
-    static let identifier = NSUserInterfaceItemIdentifier("resource.row")
+    /// A cell's reuse identifier: a column's cells for one kind of row
+    /// hold the same SwiftUI view, handed new values as they are reused.
+    /// One identifier for all, a project's row reused for a container's
+    /// (another type under the `AnyView`) was torn down and built whole.
+    static func identifier(column: String?, kind: String) -> NSUserInterfaceItemIdentifier {
+        NSUserInterfaceItemIdentifier("resource.row.\(column ?? "-").\(kind)")
+    }
     private let hosting = ResourceRowHostingView(rootView: AnyView(EmptyView()))
 
     init() {
