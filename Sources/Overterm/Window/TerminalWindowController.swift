@@ -2825,8 +2825,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         else { return }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
+        // A pod's or a pinned tab's output is the cluster's: scrubbed as the page's Logs tab is.
+        let pinned = pane.kubePin != nil || pane.kubePinLost != nil
         presentAskAgent(
-            text: text, command: blocks(of: pane).ledger.lastFinished, folder: folder,
+            text: AskSelection.text(text, kind: tab.kind, pinned: pinned), command: blocks(of: pane).ledger.lastFinished, folder: folder,
             targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
     }
 

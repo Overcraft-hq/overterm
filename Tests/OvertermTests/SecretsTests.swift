@@ -84,3 +84,19 @@ final class SecretsTests: XCTestCase {
         }
     }
 }
+
+/// ⌘L on a selection in a pod's or a pinned tab (rule 9): what the cluster
+/// printed is scrubbed as the page's Logs tab scrubs it; another tab's is
+/// handed on as selected.
+final class AskSelectionTests: XCTestCase {
+    func testAPodOrPinnedTabsSelectionIsScrubbed() {
+        let token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhY21lIn0.c2lnbmF0dXJlLXZhbHVl"
+        let selection = "GET /api 200 Authorization: Bearer \(token)\nDB_PASSWORD=hunter2-acme postgres://shop:pw-acme@db:5432/shop"
+        for (kind, pinned) in [(TabKind.pod, false), (.kubernetes, false), (.shell, true)] {
+            let text = AskSelection.text(selection, kind: kind, pinned: pinned)
+            for secret in [token, "hunter2-acme", "pw-acme"] { XCTAssertFalse(text.contains(secret), "\(kind): \(text)") }
+            XCTAssertTrue(text.contains("GET /api 200"), text)
+        }
+        XCTAssertEqual(AskSelection.text(selection, kind: .shell, pinned: false), selection, "another tab's selection as it is")
+    }
+}
