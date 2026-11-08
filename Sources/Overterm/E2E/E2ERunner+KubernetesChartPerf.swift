@@ -108,6 +108,82 @@ extension E2ERunner {
         cursor.leave(data.identifier)
         window.contentView = nil
         check("a chart gone from the screen leaves the registry", await eventually(5) { KubeChartRegistry.shared.chart(data.identifier, in: scope) == nil })
+        await metricsTabFirstDraw(theme)
+    }
+
+    /// A pod's Metrics tab, sampled (metrics.md 5.3, stage M3a): its ten
+    /// charts — the pod's two, two for each of four containers — laid out
+    /// and drawn the first time in 50 ms or less on the main thread, the
+    /// plots built off it.
+    private func metricsTabFirstDraw(_ theme: ChromeTheme) async {
+        let names = ["app", "sidecar-1", "sidecar-2", "sidecar-3"]
+        let now = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 15).rounded(.down) * 15)
+        var ring = KubeUsageRing()
+        for sample in 0..<60 {
+            let time = now.addingTimeInterval(Double(sample - 59) * 15)
+            var total = KubeUsage.zero
+            for (index, name) in names.enumerated() {
+                let usage = KubeUsage(cpu: 0.05 * Double(index + 1) + 0.02 * sin(Double(sample) / 5), memory: Double(64 + 16 * index) * 1_048_576)
+                total = total + usage
+                ring.record(.container(namespace: "shop", pod: "perf-1", container: name), usage, at: time, .detail, now: time)
+            }
+            ring.record(.pod(namespace: "shop", name: "perf-1"), total, at: time, .detail, now: time)
+        }
+        let object: [String: Any] = [
+            "metadata": ["name": "perf-1", "namespace": "shop"],
+            "spec": [
+                "containers": names.map {
+                    ["name": $0, "resources": ["requests": ["cpu": "250m", "memory": "128Mi"], "limits": ["cpu": "1", "memory": "256Mi"]]] as [String: Any]
+                }
+            ],
+        ]
+        // As the detail holds it: the GET's bytes, parsed only on a build.
+        var withVersion = object
+        withVersion["metadata"] = ["name": "perf-1", "namespace": "shop", "resourceVersion": "41"]
+        guard let body = try? JSONSerialization.data(withJSONObject: withVersion), let pod = try? KubeObject(data: body) else {
+            return check("the perf pod's object", false)
+        }
+        let ref = KubeObjectRef(context: "kind-fake", kind: .pods, namespace: "shop", name: "perf-1")
+        var samples: [Double] = []
+        var hits: [Double] = []
+        for _ in 0..<5 {
+            let begun = CACurrentMediaTime()
+            // The tab's own path (`KubernetesPageModel.podCharts`): the cache missed, the object parsed, the ring folded.
+            var cache: (key: KubePodChartsKey, charts: KubePodCharts?)?
+            guard
+                let charts = KubePodChartsKey.charts(ref: ref, object: pod, ring: ring, range: .live, now: now, interval: 15, cache: &cache).charts
+            else { return check("the perf pod's charts", false) }
+            // A row event, a list's poll: the body runs again, nothing is built.
+            let hit = CACurrentMediaTime()
+            let again = KubePodChartsKey.charts(ref: ref, object: pod, ring: ring, range: .live, now: now, interval: 15, cache: &cache)
+            hits.append((CACurrentMediaTime() - hit) * 1000)
+            if hits.count == 1 { check("redrawn from the same reading, the charts aren't built again", !again.built && again.charts == charts) }
+            let host = NSHostingView(
+                rootView: KubePodChartsList(charts: charts, cursor: KubeChartCursor(), theme: theme, openMarker: nil, logsFromHere: nil).frame(
+                    width: 760, height: 1900))
+            let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 760, height: 1900), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFront(nil)
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            samples.append((CACurrentMediaTime() - begun) * 1000)
+            if samples.count == 1 {
+                let shown = await eventually(5) {
+                    KubeChartRegistry.shared.chart("kubernetes.chart.container.shop.perf-1.sidecar-3.memory", in: ObjectIdentifier(theme))?.plot != nil
+                }
+                check("the ten charts on screen, the last one plotted", (charts.pod + charts.sections.flatMap(\.charts)).count == 10 && shown)
+            }
+            window.orderOut(nil)
+            window.contentView = nil
+            await pause(0.2)
+        }
+        let first = Self.summary(samples)
+        note("kubernetes Metrics tab first draw, 10 charts sampled: \(first)")
+        check("the Metrics tab's first draw in 50 ms or less on the main thread (median)", first.median <= 50, "\(first)")
+        let cached = Self.summary(hits)
+        note("kubernetes Metrics tab body again, same reading: \(cached)")
+        check("and its body again in 1 ms or less (median)", cached.median <= 1, "\(cached)")
     }
 }
 

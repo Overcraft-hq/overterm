@@ -43,6 +43,11 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     /// (its change timeline, 3.6).
     var hasHistory: Bool { KubeTimeline.Source.of(self) != nil }
 
+    /// Its detail has a Metrics tab (docs/design/kubernetes/metrics.md,
+    /// 2.1): a pod's, sampled from metrics-server (M3a). Workloads, HPAs,
+    /// namespaces and nodes come with M3b.
+    var hasMetrics: Bool { isPod }
+
     static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
         lhs.context == rhs.context && lhs.kind.fullName == rhs.kind.fullName && lhs.namespace == rhs.namespace && lhs.name == rhs.name
     }
@@ -168,7 +173,7 @@ struct KubeHistory: Equatable, Sendable {
 
 /// The detail's tabs.
 enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
-    case overview, logs, yaml, events, history
+    case overview, logs, yaml, events, history, metrics
 
     var id: String { rawValue }
     var title: String {
@@ -178,16 +183,19 @@ enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
         case .yaml: "YAML"
         case .events: "Events"
         case .history: "History"
+        case .metrics: "Metrics"
         }
     }
 
     /// The tabs an object's detail has: Logs a pod's, and a workload's
-    /// (its pods', merged); History a Deployment's, StatefulSet's or DaemonSet's.
+    /// (its pods', merged); History a Deployment's, StatefulSet's or
+    /// DaemonSet's; Metrics a pod's.
     static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
         allCases.filter { tab in
             switch tab {
             case .logs: ref.hasLogs
             case .history: ref.hasHistory
+            case .metrics: ref.hasMetrics
             default: true
             }
         }

@@ -5164,6 +5164,53 @@ read it. A Prometheus reading becomes a chart through `KubeChartData.of`:
 the cluster's CPU and memory with active requests, limits and allocatable
 as flat lines, a pod's CPU and memory, a claim's used against its
 capacity (stepped).
+**A pod's Metrics tab** (`m`; `KubePodCharts` (pure), `KubeMetricsTabView`,
+`KubernetesPageModel+Charts`; metrics.md 2.2–2.4, stage M3a) is the
+detail's last tab where `KubeObjectRef.hasMetrics` (a pod, for now). It
+reads nothing of its own: showing it wants the pod's PodMetrics as its
+Overview's usage block does (`metricsDetailsOnScreen`), and draws the
+ring — Live its raw tier (15 minutes, the ring's breaks kept as
+`KubeChartSeries.breaks` with `breaksMarked`, its step the samples' own
+spacing: metrics-server at `--metric-resolution=60s` samples a minute
+apart however often it is asked, and the ring's break rule counts its
+`window` — `KubeMetricsSample.resolution`), 6h its minute buckets
+(CPU the minute's mean, memory its peak, so the spike before an OOM
+survives), the window ending at the last poll so it stands still between
+polls. `KubeMetricsRange` is the page's (`metricsRange`, in memory);
+`,` and `.` step through the ones that can be picked — Live and 6h; 1h,
+24h and 7d greyed, needing Prometheus (its chart stays on the Overview
+tab until M6; without metrics-server and with Prometheus on, the tab
+says so and offers the Overview). `KubePodCharts.build` makes the pod's
+CPU and memory stacked by container — its native sidecars (init
+containers with `restartPolicy: Always`) among them, as the pod's total
+counts them — then a section a container — kubectl's default
+container first, a picker past four — with the spec's request and limit
+as reference lines (a pod's only when every container has one: a
+partial sum misleads), chips (`KubeChartChip`: `48% of request`, `12% of
+limit`, `no limit`, `working set 93% of limit · OOM risk` red past nine
+tenths) and the caption ("Sampled from metrics-server while shown since
+14:02, every 15 s"). A container's `lastState.terminated` with its
+`finishedAt` is a `KubeChartMarker` on the memory charts (an OOMKill
+red, another end orange; drawn by `KubePlot.markers` as a faint line and
+a tick, `markers=` in the dump): its click (`openMarker`) is the Logs
+tab on that container with Previous on, saying when only the last of
+several instances is kept. The charts' context menu's Logs from Here
+(`logsFromHere`) is the container's log from a minute before the
+crosshair (`KubePodLogSession.read(from:)` → `sinceTime`, never with
+`sinceSeconds`; read once, not followed, its head kept — no `tailLines`,
+which kubelet applies after `sinceTime`, but `limitBytes` and the feed's
+5,000 lines, `fromCut` saying more came since; no older lines asked;
+Whole Log goes back), saying when its first line kept is well after it.
+The charts are built only when what they come from changes
+(`KubePodChartsKey`: the reading's time, the object's resourceVersion,
+the range): the tab's body runs on every row event and list poll. The charts sit in a `LazyVStack`
+(`KubePodChartsList`, page-free, what `kubernetesPerf` hosts: ten charts
+first drawn in ≤ 50 ms); they share one cursor in the tab's `@State`, its
+body counted (`kubernetes.detail.metrics`). Copy as kubectl there is
+`kubectl top pod … --containers`. `kubernetesCharts` (in `kubernetes`)
+checks the references, the marker, the caption, the ranges, a held
+crosshair's tooltip with no series or tab body drawn again, the marker's
+previous log and Logs from Here's `sinceTime`; `KubePodChartsTests`.
 Hidden, every reading ends, what was read goes, the metrics proxy closes.
 `FakeKubeAPI.servePrometheus` answers a Service's two query paths with
 `setPrometheusSeries`' values (`FakePromQL`: selectors with `=`, `!=`,
