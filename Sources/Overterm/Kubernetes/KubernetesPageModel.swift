@@ -157,7 +157,8 @@ enum KubernetesKey: String, ResourceKey {
             return
                 "Dependency tree: what it owns down to containers, what it uses (ConfigMaps, Secrets by name, PVCs), the Services and routes to it — a missing one red; Argo CD's and Flux's, what they manage"
         case .metrics:
-            return "Metrics: a pod's CPU and memory by container against its requests and limits, sampled from metrics-server while shown; restarts and OOMKills marked"
+            return
+                "Metrics: a pod's CPU and memory by container against its requests and limits, restarts and OOMKills marked; a workload's by pod and revision with its replicas; an HPA's replicas and metrics; a node's against its pods' requests and allocatable; a namespace's by workload — sampled while shown"
         case .earlierRange: return "The charts' range: the one before (Live, 6h…)"
         case .laterRange: return "The charts' range: the one after"
         case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
@@ -379,6 +380,19 @@ final class KubernetesPageModel: ObservableObject {
     var podChartsCache: (key: KubePodChartsKey, charts: KubePodCharts?)?
     /// How many times they were built, for the tests.
     var podChartsBuilds = 0
+    /// A workload's, an HPA's, a node's or a namespace's charts, as last
+    /// built (`objectCharts`), and how many times they were.
+    var objectChartsCache: (key: KubeObjectChartsKey, charts: KubeObjectCharts?)?
+    var objectChartsBuilds = 0
+    /// What the tab looked up once as it opened: a workload's HPA, a namespace's quota.
+    @Published var chartLookups = KubeChartLookups()
+    /// A workload's charts: Total or Per pod, picked for the page (nil: by its pods' count).
+    @Published var workloadChartView: KubeWorkloadView?
+    /// A node's "Sample top pods", while on (and after, stopped).
+    @Published var topPodsSampling: KubeTopPodsSampling?
+    var topPodsStop: Task<Void, Never>?
+    /// How long "Sample top pods" reads (15 minutes; a scenario's shorter).
+    var topPodsDuration: Duration = .seconds(900)
     /// Bumped for `x`: the Overview scrolls its dependency tree into view.
     @Published var revealTree = 0
     /// Where the detail has been, back and forward: this page's, across
@@ -447,7 +461,13 @@ final class KubernetesPageModel: ObservableObject {
         // list's column — where the context shown opts in; and a pod's
         // detail reads its own usage.
         prometheusWatch = $detail.map { _ in () }.merge(
-            with: $detailTab.map { _ in () }, model.$selectedName.map { _ in () }, model.$contexts.map { _ in () }, model.$kind.map { _ in () }
+            with: $detailTab.map { _ in () }, model.$selectedName.map { _ in () }, model.$contexts.map { _ in () }, model.$kind.map { _ in () },
+            // A workload's selector is known once its object is read: its pods are wanted then.
+            $detail.map { $0?.$overview.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher() }.switchToLatest(),
+            // A node's pods read: "Sample top pods" knows their namespaces.
+            model.metrics.$readings.map { _ in () }.filter { [weak self] in self?.topPodsSampling?.stopped == false },
+            // metrics-server found serving (discovery read): a tab other than a pod's reads, and looks up, only then.
+            model.metrics.$availability.removeDuplicates().dropFirst().map { _ in () }
         )
         .sink { [weak self] in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
@@ -817,6 +837,10 @@ final class KubernetesPageModel: ObservableObject {
         if detailTab == .logs && !ref.hasLogs { detailTab = .overview }
         if detailTab == .history && !ref.hasHistory { detailTab = .overview }
         if detailTab == .metrics && !ref.hasMetrics { detailTab = .overview }
+        if topPodsSampling?.node != ref.name || ref.metricsSubject != .node {
+            topPodsStop?.cancel()
+            topPodsSampling = nil
+        }
         session.load()
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
@@ -1315,6 +1339,7 @@ final class KubernetesPageModel: ObservableObject {
         if detailTab == .metrics, ref.isPod, let namespace = ref.namespace {
             return KubectlLine.top(context: ref.context, namespace: namespace, pod: ref.name)
         }
+        if detailTab == .metrics, let line = KubectlLine.top(ref, selector: detail?.overview?.pods?.selector) { return line }
         return detailTab == .events ? KubectlLine.events(for: ref, discovery: discovery) : KubectlLine.object(ref, discovery: discovery)
     }
 

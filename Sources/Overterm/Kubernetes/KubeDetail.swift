@@ -43,10 +43,13 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     /// (its change timeline, 3.6).
     var hasHistory: Bool { KubeTimeline.Source.of(self) != nil }
 
-    /// Its detail has a Metrics tab (docs/design/kubernetes/metrics.md,
-    /// 2.1): a pod's, sampled from metrics-server (M3a). Workloads, HPAs,
-    /// namespaces and nodes come with M3b.
-    var hasMetrics: Bool { isPod }
+    /// What its Metrics tab charts (docs/design/kubernetes/metrics.md,
+    /// 2.1): a pod (M3a), a workload, an HPA, a node, a namespace (M3b);
+    /// nil, it has no such tab.
+    var metricsSubject: KubeMetricsSubject? { KubeMetricsSubject.of(self) }
+
+    /// Its detail has a Metrics tab.
+    var hasMetrics: Bool { metricsSubject != nil }
 
     static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
         lhs.context == rhs.context && lhs.kind.fullName == rhs.kind.fullName && lhs.namespace == rhs.namespace && lhs.name == rhs.name
@@ -57,6 +60,30 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
         hasher.combine(kind.fullName)
         hasher.combine(namespace)
         hasher.combine(name)
+    }
+}
+
+/// What a detail's Metrics tab charts, by its object's kind.
+enum KubeMetricsSubject: Equatable, Sendable {
+    case pod
+    /// A Deployment, StatefulSet, DaemonSet, ReplicaSet or Job: its Kind.
+    case workload(String)
+    case hpa
+    case node
+    case namespace
+
+    static let workloadKinds: [String: String] = [
+        "apps/deployments": "Deployment", "apps/statefulsets": "StatefulSet", "apps/daemonsets": "DaemonSet", "apps/replicasets": "ReplicaSet",
+        "batch/jobs": "Job",
+    ]
+
+    static func of(_ ref: KubeObjectRef) -> KubeMetricsSubject? {
+        if ref.isPod { return .pod }
+        if ref.namespace != nil, let kind = workloadKinds["\(ref.kind.group)/\(ref.kind.resource)"] { return .workload(kind) }
+        if ref.namespace != nil, ref.kind.group == "autoscaling", ref.kind.resource == "horizontalpodautoscalers" { return .hpa }
+        if ref.kind.group.isEmpty, ref.kind.resource == "nodes" { return .node }
+        if ref.kind.group.isEmpty, ref.kind.resource == "namespaces" { return .namespace }
+        return nil
     }
 }
 
@@ -189,7 +216,7 @@ enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
 
     /// The tabs an object's detail has: Logs a pod's, and a workload's
     /// (its pods', merged); History a Deployment's, StatefulSet's or
-    /// DaemonSet's; Metrics a pod's.
+    /// DaemonSet's; Metrics a pod's, a workload's, an HPA's, a node's, a namespace's.
     static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
         allCases.filter { tab in
             switch tab {

@@ -61,6 +61,10 @@ struct KubePodMetrics: Equatable, Sendable {
     var timestamp: Date?
     var window: String?
     var containers: [String: KubeUsage]
+    /// Its revision, as its labels say it (metrics-server copies the pod's):
+    /// `pod-template-hash` (a Deployment's), else `controller-revision-hash`
+    /// (a StatefulSet's, a DaemonSet's). No other label is kept.
+    var revision: String? = nil
 
     var total: KubeUsage { containers.values.reduce(.zero, +) }
 }
@@ -143,9 +147,10 @@ enum KubeMetricsReader {
             guard let name = container["name"] as? String, let usage = KubeUsage(container["usage"]) else { continue }
             containers[name] = usage
         }
+        let labels = metadata["labels"] as? [String: Any] ?? [:]
         return KubePodMetrics(
             id: KubeRowID(namespace: metadata["namespace"] as? String, name: name), timestamp: time(item["timestamp"]), window: item["window"] as? String,
-            containers: containers)
+            containers: containers, revision: (labels["pod-template-hash"] as? String) ?? (labels["controller-revision-hash"] as? String))
     }
 
     private static func node(item: [String: Any]) -> KubeNodeMetrics? {
@@ -281,8 +286,31 @@ enum KubeMetricsTarget: Hashable, Sendable {
     case pod(namespace: String, name: String)
     case node(String)
     case hpa(namespace: String, name: String)
+    /// A workload's own object, for its replicas (W4): an apiserver GET.
+    case replicas(namespace: String, kind: String, name: String, path: String)
+    /// A node's pods as objects (`fieldSelector=spec.nodeName`, at most
+    /// `KubeNodePods.limit`), decoded to their requests, limits and phase
+    /// and dropped (K1, K2, K4).
+    case nodePods(String)
+    /// A namespace's pods as Metadata rows, paged: their owners and
+    /// statuses (N1, N2, N4).
+    case namespacePods(String)
+    /// Some namespaces' PodMetrics, for one node's pods ("Sample top pods", K3).
+    case podsOn(node: String, namespaces: [String])
 
     static let base = "/apis/metrics.k8s.io/v1beta1"
+
+    /// How many polls' intervals apart it is read: a workload's replicas
+    /// and a namespace's rows a minute (at 15 s), a node's pods five, a
+    /// node's top pods 30 s; the rest each poll.
+    var every: Int {
+        switch self {
+        case .replicas, .namespacePods: 4
+        case .nodePods: 20
+        case .podsOn: 2
+        case .pods, .nodes, .pod, .node, .hpa: 1
+        }
+    }
 
     /// Its metrics.k8s.io list, or its one object.
     var path: String { paths[0] }
@@ -298,14 +326,25 @@ enum KubeMetricsTarget: Hashable, Sendable {
         case .node(let name): return [Self.base + "/nodes/\(KubePath.segment(name))"]
         case .hpa(let namespace, let name):
             return ["/apis/autoscaling/v2/namespaces/\(KubePath.segment(namespace))/horizontalpodautoscalers/\(KubePath.segment(name))"]
+        case .replicas(_, _, _, let path): return [path]
+        case .nodePods(let node):
+            return [KubePath.query("/api/v1/pods", [("fieldSelector", "spec.nodeName=" + node), ("limit", String(KubeNodePods.limit))])]
+        case .namespacePods(let namespace):
+            return [
+                KubePath.query(
+                    "/api/v1/namespaces/\(KubePath.segment(namespace))/pods", [("includeObject", "Metadata"), ("limit", String(KubeNamespacePods.pageSize))])
+            ]
+        case .podsOn(_, let namespaces): return namespaces.map(podsPath)
         }
     }
 
-    /// Whether it is metrics-server's: an HPA is the apiserver's own,
-    /// read with or without one.
+    /// Whether it is metrics-server's: an HPA, a workload, a node's or a
+    /// namespace's pods are the apiserver's own, read with or without one.
     var needsMetricsServer: Bool {
-        if case .hpa = self { return false }
-        return true
+        switch self {
+        case .hpa, .replicas, .nodePods, .namespacePods: false
+        case .pods, .nodes, .pod, .node, .podsOn: true
+        }
     }
 
     /// A pods target's read of one namespace (nil: across the cluster).
@@ -329,6 +368,10 @@ enum KubeMetricsTarget: Hashable, Sendable {
         case .pod(let namespace, _): return "metrics-server answered 403: you can't get pods.metrics.k8s.io in \(namespace)."
         case .node: return "metrics-server answered 403: you can't get nodes.metrics.k8s.io."
         case .hpa(let namespace, _): return "The apiserver answered 403: you can't get horizontalpodautoscalers.autoscaling in \(namespace)."
+        case .replicas(let namespace, let kind, _, _): return "The apiserver answered 403: you can't get this \(kind) in \(namespace)."
+        case .nodePods: return "The apiserver answered 403: you can't list pods across the cluster, so the node's requests aren't known."
+        case .namespacePods(let namespace): return "The apiserver answered 403: you can't list pods in \(namespace)."
+        case .podsOn(_, let namespaces): return Self.podsRefusal(namespaces)
         }
     }
 
@@ -345,6 +388,21 @@ enum KubeMetricsTarget: Hashable, Sendable {
     /// a list's namespace is (`KubeScopeMerge`): the others' samples stand.
     /// Every read refused: the 403 is thrown.
     func pods(_ client: KubeClient, skipping: Set<String?> = []) async throws -> KubePodsRead {
+        if case .podsOn(_, let namespaces) = self {
+            var read = KubePodsRead()
+            var forbidden: KubeAPIError?
+            let reads = namespaces.filter { !skipping.contains($0) }
+            for namespace in reads {
+                do {
+                    read.pods += try KubeMetricsReader.pods(try await client.get(podsPath(namespace)).body)
+                } catch let error as KubeAPIError where error.isForbidden {
+                    forbidden = error
+                    read.refused.append(namespace)
+                }
+            }
+            if let forbidden, read.refused.count == reads.count { throw forbidden }
+            return read
+        }
         guard case .pods(let scope, _) = self else { return KubePodsRead() }
         var read = KubePodsRead()
         var forbidden: KubeAPIError?
@@ -380,6 +438,14 @@ enum KubeMetricsDetail: Hashable, Sendable {
     /// A workload's pods, by its selector.
     case workload(namespace: String, kind: String, name: String, labels: String)
     case namespace(String)
+    /// A workload's object, for its replicas.
+    case replicas(namespace: String, kind: String, name: String, path: String)
+    /// A node's pods as objects.
+    case nodePods(String)
+    /// A namespace's pods as Metadata rows.
+    case namespacePods(String)
+    /// A node's largest pods' samples, from their namespaces' lists.
+    case nodeTopPods(node: String, namespaces: [String], pods: [String])
 
     var target: KubeMetricsTarget {
         switch self {
@@ -388,6 +454,10 @@ enum KubeMetricsDetail: Hashable, Sendable {
         case .hpa(let namespace, let name): .hpa(namespace: namespace, name: name)
         case .workload(let namespace, _, _, let labels): .pods(.namespace(namespace), labels: labels)
         case .namespace(let namespace): .pods(.namespace(namespace), labels: nil)
+        case .replicas(let namespace, let kind, let name, let path): .replicas(namespace: namespace, kind: kind, name: name, path: path)
+        case .nodePods(let node): .nodePods(node)
+        case .namespacePods(let namespace): .namespacePods(namespace)
+        case .nodeTopPods(let node, let namespaces, _): .podsOn(node: node, namespaces: namespaces)
         }
     }
 
@@ -396,8 +466,26 @@ enum KubeMetricsDetail: Hashable, Sendable {
         switch self {
         case .workload(let namespace, let kind, let name, _): .workload(namespace: namespace, kind: kind, name: name)
         case .namespace(let namespace): .namespace(namespace)
-        case .pod, .node, .hpa: nil
+        case .pod, .node, .hpa, .replicas, .nodePods, .namespacePods, .nodeTopPods: nil
         }
+    }
+
+    /// What its samples are broken into beside the sum.
+    var parts: [KubeUsageParts] {
+        switch self {
+        case .workload(_, let kind, let name, _):
+            let revisions: [KubeUsageParts] = ["Deployment", "StatefulSet", "DaemonSet"].contains(kind) ? [.revisions(whole: kind + "/" + name)] : []
+            return [.pods(only: nil)] + revisions
+        case .namespace: return [.workloads]
+        case .nodeTopPods(_, _, let pods): return [.pods(only: pods)]
+        case .pod, .node, .hpa, .replicas, .nodePods, .namespacePods: return []
+        }
+    }
+
+    /// The namespace whose Metadata rows say its pods' owners (`.workloads`).
+    var ownersFrom: String? {
+        if case .namespace(let namespace) = self { return namespace }
+        return nil
     }
 }
 
@@ -438,6 +526,12 @@ struct KubeMetricsSample: Equatable, Sendable {
     var oldest: Date?
     /// An HPA's (an `.hpa` target's).
     var hpa: KubeHPAStatus?
+    /// A workload's replicas (a `.replicas` target's).
+    var replicas: KubeReplicaStatus?
+    /// A node's pods, decoded (a `.nodePods` target's).
+    var nodePods: KubeNodePods?
+    /// A namespace's pods' owners and statuses (a `.namespacePods` target's).
+    var namespacePods: KubeNamespacePods?
     /// A pods target's reads refused (a 403), their pods left out: the
     /// namespaces (nil, across the cluster).
     var refusedReads: [String?] = []

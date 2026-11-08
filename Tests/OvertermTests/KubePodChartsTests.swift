@@ -208,12 +208,25 @@ final class KubePodChartsTests: XCTestCase {
         XCTAssertEqual(KubectlLine.top(context: "fake-dev", namespace: "shop", pod: "api-1"), "kubectl --context fake-dev -n shop top pod api-1 --containers")
     }
 
-    func testOnlyAPodsDetailHasAMetricsTab() {
+    func testWhichDetailsHaveAMetricsTab() {
         let pod = KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "api-1")
         XCTAssertTrue(KubeDetailTab.tabs(for: pod).contains(.metrics))
         XCTAssertEqual(KubeDetailTab.tabs(for: pod).last, .metrics)
         let namespace = KubeObjectRef(context: "fake-dev", kind: .namespaces, namespace: nil, name: "shop")
-        XCTAssertFalse(KubeDetailTab.tabs(for: namespace).contains(.metrics))
+        XCTAssertEqual(namespace.metricsSubject, .namespace, "M3b: a namespace's too")
+        func kind(_ group: String, _ resource: String, namespaced: Bool = true) -> KubeResourceKind {
+            KubeResourceKind(group: group, version: "v1", resource: resource, kind: "", singular: "", namespaced: namespaced, verbs: [])
+        }
+        func ref(_ group: String, _ resource: String, namespaced: Bool = true) -> KubeObjectRef {
+            KubeObjectRef(context: "fake-dev", kind: kind(group, resource, namespaced: namespaced), namespace: namespaced ? "shop" : nil, name: "x")
+        }
+        XCTAssertEqual(ref("apps", "deployments").metricsSubject, .workload("Deployment"))
+        XCTAssertEqual(ref("batch", "jobs").metricsSubject, .workload("Job"))
+        XCTAssertEqual(ref("autoscaling", "horizontalpodautoscalers").metricsSubject, .hpa)
+        XCTAssertEqual(ref("", "nodes", namespaced: false).metricsSubject, .node)
+        XCTAssertNil(ref("", "services").metricsSubject, "a Service uses nothing of its own")
+        XCTAssertNil(ref("", "configmaps").metricsSubject)
+        XCTAssertNil(ref("batch", "cronjobs").metricsSubject)
         XCTAssertEqual(KubernetesKey.of("m"), .metrics)
         XCTAssertEqual(KubernetesKey.of(","), .earlierRange)
         XCTAssertEqual(KubernetesKey.of("."), .laterRange)

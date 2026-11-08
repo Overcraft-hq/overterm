@@ -61,6 +61,10 @@ final class KubeMetricsMonitor: ObservableObject {
     /// nothing is shown): changed as `readings` is (which publishes), so it
     /// needn't publish itself.
     private(set) var ring = KubeUsageRing() { didSet { ringChanges &+= 1 } }
+    /// The numbers objects' status gave while their tab showed (an HPA's,
+    /// a workload's replicas, a node's pods, a namespace's phases): kept,
+    /// dropped and changed as the ring is.
+    private(set) var statuses = KubeStatusHistory()
     /// Counts the ring's changes: a merge made off the main thread over a
     /// copy is assigned only if nothing changed it meanwhile.
     private var ringChanges = 0
@@ -207,6 +211,7 @@ final class KubeMetricsMonitor: ObservableObject {
     /// The context's samples and refusals: dropped.
     private func forget() {
         if !ring.isEmpty { ring.removeAll() }
+        if !statuses.isEmpty { statuses.removeAll() }
         refused = [:]
         partlyRefused = [:]
     }
@@ -233,6 +238,7 @@ final class KubeMetricsMonitor: ObservableObject {
             }
         }
         ring.prune(now: Date())
+        statuses.prune(now: Date())
         for target in wantedTargets where polls[target] == nil {
             if let why = stopped[target] {
                 // Its sign-in failed: said, not asked again until a retry.
@@ -264,8 +270,12 @@ final class KubeMetricsMonitor: ObservableObject {
     /// forgotten, a context switch), when it is merged again over the new one.
     private func record(_ sample: KubeMetricsSample, for target: KubeMetricsTarget) async {
         let details = self.details.filter { $0.target == target }
+        recordStatus(sample, for: target)
+        // A namespace's workloads: its Metadata rows' owners, when read.
+        let owners = details.compactMap(\.ownersFrom).first.flatMap { readings[.namespacePods($0)]?.sample?.namespacePods?.owners } ?? [:]
         let merge = Merge(
             sample: sample, target: target, asList: listTargets.contains(target), asDetail: !details.isEmpty, sums: details.compactMap(\.sum),
+            parts: Array(Set(details.flatMap(\.parts))), owners: owners,
             // A break is a stretch past 2.5 samples: metrics-server's own spacing, if longer than the poll's.
             interval: max(15, Double(interval.components.seconds), sample.resolution ?? 0))
         for _ in 0..<3 {
@@ -299,13 +309,47 @@ final class KubeMetricsMonitor: ObservableObject {
         var asList: Bool
         var asDetail: Bool
         var sums: [KubeUsageKey]
+        var parts: [KubeUsageParts]
+        var owners: [String: String]
         var interval: TimeInterval
 
         nonisolated func apply(to ring: KubeUsageRing, now: Date) -> KubeUsageRing {
             var ring = ring
             ring.interval = interval
-            ring.record(sample, for: target, asList: asList, asDetail: asDetail, sums: sums, now: now)
+            ring.record(sample, for: target, asList: asList, asDetail: asDetail, sums: sums, parts: parts, owners: owners, now: now)
             return ring
+        }
+    }
+
+    /// An object's numbers, into the status history: an HPA's, a
+    /// workload's replicas, a node's pods, a namespace's phases.
+    private func recordStatus(_ sample: KubeMetricsSample, for target: KubeMetricsTarget) {
+        let expected = Double(interval.components.seconds) * Double(target.every) + Double(interval.components.attoseconds) / 1e18 * Double(target.every)
+        let now = Date()
+        switch target {
+        case .hpa(let namespace, let name):
+            if let hpa = sample.hpa { statuses.record(.hpa(namespace: namespace, name: name), hpa.numbers, at: sample.read, expected: expected, now: now) }
+        case .replicas(let namespace, let kind, let name, _):
+            if let replicas = sample.replicas {
+                statuses.record(.replicas(namespace: namespace, kind: kind, name: name), replicas.numbers, at: sample.read, expected: expected, now: now)
+            }
+        case .nodePods(let node):
+            if let pods = sample.nodePods {
+                var values: [String: Double] = ["pods": Double(pods.active.count)]
+                if !pods.more {
+                    values["cpu"] = pods.requested.cpu
+                    values["memory"] = pods.requested.memory
+                }
+                statuses.record(.nodePods(node), values, at: sample.read, expected: expected, now: now)
+            }
+        case .namespacePods(let namespace):
+            if let pods = sample.namespacePods {
+                var values = pods.phases
+                for phase in KubePodPhase.order where values[phase] == nil { values[phase] = 0 }
+                statuses.record(.phases(namespace), values, at: sample.read, expected: expected, now: now)
+            }
+        case .pods, .nodes, .pod, .node, .podsOn:
+            break
         }
     }
 
@@ -329,7 +373,7 @@ final class KubeMetricsMonitor: ObservableObject {
                 do {
                     let sample: KubeMetricsSample
                     switch target {
-                    case .pods:
+                    case .pods, .podsOn:
                         let read = try await target.pods(client, skipping: self.partlyRefused[target] ?? [])
                         guard !Task.isCancelled, self.polls[target] != nil else { return }
                         // A namespace refused: left out and named, the others' standing.
@@ -343,6 +387,21 @@ final class KubeMetricsMonitor: ObservableObject {
                         sample = KubeMetricsSample(nodes: [try KubeMetricsReader.node(try await client.get(target.path).body)], allocatable: [:], read: Date())
                     case .hpa:
                         sample = KubeMetricsSample(hpa: try KubeMetricsReader.hpa(try await client.get(target.path).body), read: Date())
+                    case .replicas(_, let kind, _, _):
+                        var read = KubeMetricsSample(read: Date())
+                        read.replicas = try KubeReplicaStatus.read(try await client.get(target.path).body, kind: kind)
+                        sample = read
+                    case .nodePods:
+                        let body = try await client.get(target.path).body
+                        // Decoded off the main thread: up to 250 pods' objects, dropped as read.
+                        let pods = try await Task.detached(priority: .utility) { try KubeNodePods.read(body) }.value
+                        var read = KubeMetricsSample(read: Date())
+                        read.nodePods = pods
+                        sample = read
+                    case .namespacePods:
+                        var read = KubeMetricsSample(read: Date())
+                        read.namespacePods = try await Self.namespacePods(client, path: target.path)
+                        sample = read
                     case .nodes:
                         let body = try await client.get(target.path).body
                         if count % max(1, self.allocatableEvery) == 0 || allocatable.isEmpty {
@@ -390,9 +449,24 @@ final class KubeMetricsMonitor: ObservableObject {
                     self.readings[target] = reading
                 }
                 count += 1
-                try? await Task.sleep(for: self.interval)
+                try? await Task.sleep(for: self.interval * target.every)
             }
         }
+    }
+
+    /// A namespace's pods as Metadata rows, paged (`KubeNamespacePods.pages` at most).
+    nonisolated static func namespacePods(_ client: KubeClient, path: String) async throws -> KubeNamespacePods {
+        var pods: [KubeNamespacePods.Pod] = []
+        var token: String?
+        var pages = 0
+        repeat {
+            let page = token.map { path + (path.contains("?") ? "&" : "?") + "continue=" + KubePath.segment($0) } ?? path
+            let read = try KubeNamespacePods.read(try await client.get(page, accept: KubeClient.tableAccept).body)
+            pods += read.pods
+            token = read.continueToken
+            pages += 1
+        } while token != nil && pages < KubeNamespacePods.pages
+        return KubeNamespacePods(pods: pods, more: token != nil)
     }
 
     /// Every node's allocatable: the NodeList, paged, read whole for its

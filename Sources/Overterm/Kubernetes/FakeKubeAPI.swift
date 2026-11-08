@@ -236,6 +236,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "", version: "v1", resource: "events", kind: "Event", namespaced: true, shortNames: ["ev"]),
         Kind(group: "", version: "v1", resource: "nodes", kind: "Node", namespaced: false, shortNames: ["no"], subresources: ["proxy", "status"]),
         Kind(group: "", version: "v1", resource: "serviceaccounts", kind: "ServiceAccount", namespaced: true, shortNames: ["sa"], subresources: ["token"]),
+        Kind(group: "", version: "v1", resource: "resourcequotas", kind: "ResourceQuota", namespaced: true, shortNames: ["quota"], subresources: ["status"]),
         Kind(
             group: "", version: "v1", resource: "persistentvolumeclaims", kind: "PersistentVolumeClaim", namespaced: true, shortNames: ["pvc"],
             subresources: ["status"]),
@@ -424,12 +425,15 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// and memory (`"12m"`, `"48Mi"`, `"1234567n"`), stamped `at` — nil,
     /// stamped as it is served, so the stamp advances as metrics-server's
     /// does (metrics.md 8).
-    func setPodMetrics(_ pod: String, namespace: String, _ containers: [(name: String, cpu: String, memory: String)], at time: Date? = nil) {
+    /// `labels`: the pod's, as metrics-server copies them (a revision's hash, the selector's).
+    func setPodMetrics(
+        _ pod: String, namespace: String, _ containers: [(name: String, cpu: String, memory: String)], at time: Date? = nil, labels: [String: String] = [:]
+    ) {
         var fields: [String: Any] = [
             "window": "15s", "containers": containers.map { ["name": $0.name, "usage": ["cpu": $0.cpu, "memory": $0.memory]] },
         ]
         if let time { fields["timestamp"] = Self.time(time) }
-        add("pods.metrics.k8s.io", pod, namespace: namespace, fields: fields)
+        add("pods.metrics.k8s.io", pod, namespace: namespace, labels: labels, fields: fields)
     }
 
     /// A node's sample, stamped as a pod's is.
@@ -1608,6 +1612,12 @@ final class FakeKubeAPI: @unchecked Sendable {
             ]
         case "configmaps":
             return [name, column("Data", "integer", "Data contains the configuration data."), age]
+        case "horizontalpodautoscalers.autoscaling":
+            return [
+                name, column("Reference", "The scale target."), column("Targets", "The metrics against their targets."),
+                column("MinPods", "integer", "The lower limit for the number of replicas."), column("MaxPods", "integer", "The upper limit for the number of replicas."),
+                column("Replicas", "integer", "The current number of replicas."), age,
+            ]
         case "persistentvolumeclaims":
             return [
                 name, column("Status", "Status is the current state of the claim."), column("Volume", "The volume bound to it."),

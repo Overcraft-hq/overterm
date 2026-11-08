@@ -324,6 +324,7 @@ struct KubeChartView: View {
                 }
                 KubeChartOverlay(cursor: cursor, id: data.identifier, plot: plot, step: data.step, colours: colours, theme: theme)
                 if let plot, !plot.markers.isEmpty { markerTicks(plot) }
+                if let plot, !plot.bands.isEmpty { bandTips(plot) }
             }
             .contentShape(Rectangle())
             .onContinuousHover { phase in
@@ -376,6 +377,19 @@ struct KubeChartView: View {
         }
     }
 
+    /// Each band's name along its top edge, hover saying since when.
+    private func bandTips(_ plot: KubePlot) -> some View {
+        ForEach(plot.bands, id: \.band.id) { placed in
+            Text(verbatim: placed.band.title)
+                .font(.system(size: 9, weight: .medium)).foregroundStyle(Color.orange).lineLimit(1)
+                .frame(width: max(placed.maxX - placed.minX, 1), height: 12, alignment: .leading)
+                .clipped()
+                .help("\(placed.band.title) since \(KubeChartTime.clock(placed.band.start))")
+                .position(x: (placed.minX + placed.maxX) / 2, y: plot.frame.minY + 6)
+                .accessibilityIdentifier(data.identifier + ".band")
+        }
+    }
+
     /// The y ticks in the gutter, the reference lines' names at their right ends.
     private func labels(_ plot: KubePlot) -> some View {
         ZStack(alignment: .topLeading) {
@@ -419,7 +433,7 @@ struct KubeChartView: View {
     /// outside the view's isolation: SwiftUI calls it while drawing.
     nonisolated static func renderer(
         _ id: String, window: ObjectIdentifier, plot: KubePlot?, colours: [Color], references: [KubeChartRole: Color], markers: [KubeChartMarker.Kind: Color] = [:],
-        grid: Color, highlighted: String?
+        grid: Color, highlighted: String?, bandColour: Color = .orange
     ) -> (inout GraphicsContext, CGSize) -> Void {
         { context, _ in
             KubeChartDraws.shared.drew(id, window: window, overlay: false)
@@ -430,6 +444,12 @@ struct KubeChartView: View {
                 path.move(to: CGPoint(x: plot.frame.minX, y: y))
                 path.addLine(to: CGPoint(x: plot.frame.maxX, y: y))
                 context.stroke(path, with: .color(grid), lineWidth: tick == 0 ? 1 : 0.5)
+            }
+            // A band: a faint stretch the plot's height, under the lines.
+            for band in plot.bands {
+                context.fill(
+                    Path(CGRect(x: band.minX, y: plot.frame.minY, width: max(band.maxX - band.minX, 1), height: plot.frame.height)),
+                    with: .color(bandColour.opacity(0.12)))
             }
             for line in plot.lines {
                 let colour = colours[line.colour % colours.count]
