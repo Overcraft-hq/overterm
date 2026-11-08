@@ -271,6 +271,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     private var prometheusSeries: [(metric: String, labels: [String: String], value: Double)] = []
     /// What the fake Prometheus answers instead of its queries (`failPrometheus`).
     private var prometheusFailure: (status: Int, text: String)?
+    /// Fixtures matched by a fragment of the query, newest first (`setPrometheusMatrix`).
+    private var prometheusFixtures: [FakePromFixture] = []
     private var history: [(version: Int, type: String, object: Object)] = []
     private var current = 1000
     /// Events up to this are gone: a watch from a version before it is 410.
@@ -446,12 +448,27 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A series Prometheus holds: its metric's name, labels and value now —
-    /// what a query (`sum`, `sum by`, `rate` taken as the value) adds up.
+    /// what a query (`FakePromQL`: `sum`/`max` by, `rate` taken as the
+    /// value, `== n`, `* on(…) group_left()`) adds up.
     /// A range answers it rising to the value over the range.
     func setPrometheusSeries(_ metric: String, labels: [String: String] = [:], value: Double) {
         locked {
             prometheusSeries.removeAll { $0.metric == metric && $0.labels == labels }
             prometheusSeries.append((metric, labels, value))
+        }
+    }
+
+    /// A query containing `fragment` (whitespace aside) is answered by
+    /// these lines — each a function of t, nil a gap — rather than
+    /// evaluated (metrics.md §8); without lines, `FakePromQL` evaluates it
+    /// and the warnings are added; with a failure, that is the answer. The
+    /// fixture set last for a fragment wins.
+    func setPrometheusMatrix(
+        _ fragment: String, _ lines: [FakePromFixture.Line]? = nil, warnings: [String] = [], failure: FakePromFixture.Failure? = nil
+    ) {
+        locked {
+            prometheusFixtures.removeAll { $0.fragment == fragment }
+            prometheusFixtures.insert(FakePromFixture(fragment: fragment, lines: lines, warnings: warnings, failure: failure), at: 0)
         }
     }
 
@@ -1259,13 +1276,28 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A Service's proxy: the fake Prometheus's two query paths, else 403.
     private func prometheusAnswer(_ route: Route, query: [String: String]) -> Answer {
-        let (served, series, failure) = locked { (prometheus, prometheusSeries, prometheusFailure) }
+        let (served, series, failure, fixtures) = locked { (prometheus, prometheusSeries, prometheusFailure, prometheusFixtures) }
         guard let served, route.namespace == served.namespace, route.name == "\(served.service):\(served.port)",
             let sub = route.subresource, sub == "proxy/api/v1/query" || sub == "proxy/api/v1/query_range"
         else { return .text(403, "Forbidden") }
         if let failure { return .text(failure.status, failure.text) }
         let promql = query["query"] ?? ""
-        let groups = Self.evaluate(promql, series)
+        let fixture = fixtures.first { $0.matches(promql) }
+        if let failure = fixture?.failure {
+            return .json(failure.status, Self.encode(["status": "error", "errorType": failure.errorType, "error": failure.error]))
+        }
+        // A fixture's lines, else what FakePromQL evaluates: (labels, the value at t).
+        let groups: [([String: String], @Sendable (Double) -> Double?)]
+        if let lines = fixture?.lines {
+            groups = lines.map { ($0.labels, $0.value) }
+        } else {
+            guard let evaluated = FakePromQL.evaluate(promql, series) else {
+                return .json(400, Self.encode(["status": "error", "errorType": "bad_data", "error": "1:1: parse error: the fake Prometheus can't read \(promql)"]))
+            }
+            groups = evaluated.map { sample in (sample.labels, { _ in sample.value }) }
+        }
+        var answer: [String: Any] = ["status": "success"]
+        if let warnings = fixture?.warnings, !warnings.isEmpty { answer["warnings"] = warnings }
         let result: [[String: Any]]
         if sub.hasSuffix("query_range") {
             guard let start = Double(query["start"] ?? ""), let end = Double(query["end"] ?? ""), let step = Self.seconds(query["step"] ?? ""), step > 0, end >= start
@@ -1273,18 +1305,23 @@ final class FakeKubeAPI: @unchecked Sendable {
                 return .json(400, Self.encode(["status": "error", "errorType": "bad_data", "error": "invalid parameter: start, end and step are needed"]))
             }
             let count = min(11_000, Int((end - start) / step) + 1)
+            let scripted = fixture?.lines != nil
             result = groups.map { labels, value in
-                let values: [[Any]] = (0..<count).map { index in
-                    let share = count > 1 ? 0.8 + 0.2 * Double(index) / Double(count - 1) : 1
-                    return [start + Double(index) * step, Self.number(value * share)]
+                let values: [[Any]] = (0..<count).compactMap { index in
+                    let time = start + Double(index) * step
+                    // An evaluated series rises to its value over the range; a fixture's line is its own.
+                    let share = scripted || count <= 1 ? 1 : 0.8 + 0.2 * Double(index) / Double(count - 1)
+                    return value(time).map { [time, Self.number($0 * share)] }
                 }
                 return ["metric": labels, "values": values]
             }
-            return .json(200, Self.encode(["status": "success", "data": ["resultType": "matrix", "result": result]]))
+            answer["data"] = ["resultType": "matrix", "result": result]
+            return .json(200, Self.encode(answer))
         }
         let now = Double(query["time"] ?? "") ?? Date().timeIntervalSince1970
-        result = groups.map { labels, value in ["metric": labels, "value": [now, Self.number(value)]] }
-        return .json(200, Self.encode(["status": "success", "data": ["resultType": "vector", "result": result]]))
+        result = groups.compactMap { labels, value in value(now).map { ["metric": labels, "value": [now, Self.number($0)]] } }
+        answer["data"] = ["resultType": "vector", "result": result]
+        return .json(200, Self.encode(answer))
     }
 
     private static func number(_ value: Double) -> String { value == value.rounded() ? String(Int(value)) : String(value) }
@@ -1300,40 +1337,6 @@ final class FakeKubeAPI: @unchecked Sendable {
         case "d": return number * 86400
         default: return nil
         }
-    }
-
-    /// As much PromQL as Overterm's queries need: the first metric named,
-    /// its `a="b"` and `a!="b"` matchers, `sum` or `sum by (…)`; a `rate`
-    /// is the series' value. Each group's labels and summed value.
-    static func evaluate(_ promql: String, _ series: [(metric: String, labels: [String: String], value: Double)]) -> [([String: String], Double)] {
-        let metrics = Set(series.map(\.metric))
-        guard let metric = metrics.compactMap({ name in promql.range(of: name).map { (name, $0.lowerBound) } }).min(by: { $0.1 < $1.1 })?.0,
-            let at = promql.range(of: metric)
-        else { return [] }
-        var equal: [String: String] = [:]
-        var unequal: [String: String] = [:]
-        if promql[at.upperBound...].hasPrefix("{"), let close = promql[at.upperBound...].firstIndex(of: "}") {
-            let body = promql[promql.index(after: at.upperBound)..<close]
-            for part in body.split(separator: ",") {
-                let text = String(part)
-                if let range = text.range(of: "!=") {
-                    unequal[String(text[..<range.lowerBound])] = String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                } else if let range = text.range(of: "=") {
-                    equal[String(text[..<range.lowerBound])] = String(text[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-                }
-            }
-        }
-        var by: [String] = []
-        if let range = promql.range(of: "sum by ("), let close = promql[range.upperBound...].firstIndex(of: ")") {
-            by = promql[range.upperBound..<close].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        }
-        var groups: [[String: String]: Double] = [:]
-        for item in series where item.metric == metric {
-            guard equal.allSatisfy({ item.labels[$0.key] == $0.value }), unequal.allSatisfy({ (item.labels[$0.key] ?? "") != $0.value }) else { continue }
-            let key = Dictionary(uniqueKeysWithValues: by.compactMap { name in item.labels[name].map { (name, $0) } })
-            groups[key, default: 0] += item.value
-        }
-        return groups.map { ($0.key, $0.value) }.sorted { $0.0.description < $1.0.description }
     }
 
     /// `pods/{p}/log`: a container's log (`container` needed with several),

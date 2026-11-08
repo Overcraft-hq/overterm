@@ -24,7 +24,8 @@ struct KubeChartRangePicker: View {
 
 /// A series over a range, drawn as a line under its highest value, with
 /// a dashed line for what it is measured against (a volume's capacity, a
-/// limit); the latest value and the range's ends said in words.
+/// limit); the latest value and the range's ends said in words. A gap of
+/// more than two steps is drawn as a gap (`KubePrometheusReader.segments`).
 struct KubeRangeChart: View {
     var title: String
     var points: [KubeSeriesPoint]
@@ -57,10 +58,12 @@ struct KubeRangeChart: View {
                             .stroke(theme.text3, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         }
                         Path { path in
-                            for (index, point) in points.enumerated() {
-                                let x = geometry.size.width * CGFloat((point.time.timeIntervalSince1970 - first) / span)
-                                let y = geometry.size.height * (1 - CGFloat(point.value / top))
-                                if index == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+                            for run in KubePrometheusReader.segments(points, step: range.step) {
+                                for (index, point) in run.enumerated() {
+                                    let x = geometry.size.width * CGFloat((point.time.timeIntervalSince1970 - first) / span)
+                                    let y = geometry.size.height * (1 - CGFloat(point.value / top))
+                                    if index == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+                                }
                             }
                         }
                         .stroke(theme.accentText, style: StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round))
@@ -106,6 +109,11 @@ struct KubePrometheusChartView: View {
                     if let problem = reading.problem {
                         Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
                     }
+                    ForEach(reading.notes, id: \.self) { note in
+                        Text(verbatim: note).font(.system(size: 10.5)).foregroundStyle(theme.text3).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("kubernetes.chart.note")
+                    }
                 } else {
                     Text(verbatim: "Asking Prometheus \(service)…").font(.system(size: 11)).foregroundStyle(theme.text3)
                 }
@@ -135,6 +143,9 @@ struct KubePrometheusChartView: View {
 
     @ViewBuilder private func content(_ reading: KubeChartReading) -> some View {
         switch chart {
+        case .cluster where reading.refused != nil:
+            refused(reading.refused ?? "")
+            requests(reading)
         case .cluster, .pod:
             HStack(alignment: .top, spacing: 20) {
                 KubeRangeChart(title: "CPU", points: reading.series[.cpu] ?? [], reference: nil, measure: .cpu, range: reading.range, theme: theme)
@@ -148,7 +159,23 @@ struct KubePrometheusChartView: View {
         }
     }
 
-    /// kube-state-metrics' requests and limits against the nodes' allocatable.
+    /// Why the lines aren't asked over this range, and the range they are.
+    private func refused(_ why: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(verbatim: why).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("kubernetes.chart.refused")
+            Button {
+                page.chartRange = KubeChartRange.rawClusterLimit
+            } label: {
+                Text(verbatim: "Show \(KubeChartRange.rawClusterLimit.title)")
+            }
+            .controlSize(.small)
+            .accessibilityIdentifier("kubernetes.chart.showRawLimit")
+        }
+    }
+
+    /// kube-state-metrics' requests and limits of active pods against the nodes' allocatable.
     @ViewBuilder private func requests(_ reading: KubeChartReading) -> some View {
         let lines: [(String, KubeChartMeasure, KubeChartMeasure)] = [
             ("CPU requested", .cpuRequests, .cpuAllocatable), ("CPU limits", .cpuLimits, .cpuAllocatable),
@@ -156,7 +183,7 @@ struct KubePrometheusChartView: View {
         ]
         let shown = lines.compactMap { line in reading.share(line.1, of: line.2).map { (line.0, line.1, $0) } }
         if shown.isEmpty {
-            Text(verbatim: "No requests or limits in Prometheus: kube-state-metrics' kube_pod_container_resource_requests isn't scraped.")
+            Text(verbatim: "No requests or limits in Prometheus: kube-state-metrics' kube_pod_container_resource_requests (and kube_pod_status_phase, which says which pods are active) isn't scraped.")
                 .font(.system(size: 11)).foregroundStyle(theme.text3)
         } else {
             VStack(alignment: .leading, spacing: 3) {
