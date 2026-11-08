@@ -25,7 +25,7 @@ extension KubeMCP {
         // Whether metrics-server is there, as discovery says it: asked
         // nothing at all when the context's metrics are none.
         let discovery = source == .none ? nil : try await discovery(for: target, kubernetes: kubernetes)
-        let header = nodes ? target.header(.all, kind: KubeResourceKind.namespaces) : target.header(kind: .pods)
+        var header = nodes ? target.header(.all, kind: KubeResourceKind.namespaces) : target.header(kind: .pods)
         let availability = KubeMetricsAvailability.of(discovery, source: source)
         guard availability == .served else { return KubeMCPText.finished([header, availability.reason ?? ""].joined(separator: "\n")) }
         let client = target.client
@@ -36,7 +36,11 @@ extension KubeMCP {
             return KubeMCPText.finished(
                 [header, KubeMCPText.topNodes(samples, allocatable: allocatable, sortBy: sortBy, limit: limit, now: now)].joined(separator: "\n"))
         }
-        var samples = try await within { try await KubeMetricsTarget.pods(target.scope, labels: labels).pods(client) }
+        let podsTarget = KubeMetricsTarget.pods(target.scope, labels: labels)
+        let read = try await within { try await podsTarget.pods(client) }
+        var samples = read.pods
+        // A namespace refused is left out, and said.
+        if !read.refused.isEmpty { header += "\n" + KubeMetricsTarget.podsRefusal(read.refused) + " Its pods are left out." }
         if let name = call.string("name") {
             guard KubeMCPText.isName(name) else { throw BrowserMCP.ToolError(message: "“\(name)” isn't a pod's name.") }
             samples = samples.filter { $0.id.name == name }

@@ -429,11 +429,12 @@ final class KubernetesPageModel: ObservableObject {
         metricsKindWatch = model.$kind.removeDuplicates().dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         // Prometheus is wanted for what shows: a detail's chart, the PVC
-        // list's column — where the context shown opts in.
+        // list's column — where the context shown opts in; and a pod's
+        // detail reads its own usage.
         prometheusWatch = $detail.map { _ in () }.merge(
             with: $detailTab.map { _ in () }, model.$selectedName.map { _ in () }, model.$contexts.map { _ in () }, model.$kind.map { _ in () }
         )
-        .sink { [weak self] in DispatchQueue.main.async { self?.updatePrometheusWanted() } }
+        .sink { [weak self] in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }

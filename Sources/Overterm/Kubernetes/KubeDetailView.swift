@@ -564,9 +564,9 @@ struct KubePodLogsView: View {
 
 
 /// A pod's containers' usage against what they request and are limited
-/// to: the detail's object and the pods list's sample (stage 2d) — shown
-/// while the list beside it reads usage, nothing read for it alone — with
-/// a sparkline of the pod's samples taken while shown.
+/// to: the detail's object and the pod's own sample, read every 15 s while
+/// it shows (metrics.md 4.1) — with a sparkline of the pod's samples taken
+/// while shown, kept an hour after it hides.
 struct KubePodUsageView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var metrics: KubeMetricsMonitor
@@ -593,7 +593,7 @@ struct KubePodUsageView: View {
                 }
                 // With Prometheus its chart, below, has the history.
                 let history = page.chartsFromPrometheus ? [] : page.usageHistory(of: session.ref)
-                if let span = KubeUsageHistory.span(history) {
+                if let span = KubeUsageRing.span(history) {
                     HStack(spacing: 16) {
                         sparkline("cpu", history.map(\.usage.cpu))
                         sparkline("memory", history.map(\.usage.memory))
@@ -603,6 +603,17 @@ struct KubePodUsageView: View {
                 }
             }
             .accessibilityIdentifier("kubernetes.detail.usage")
+        } else if let problem = page.podUsageProblem(of: session.ref) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("kubernetes.detail.usage.problem")
+                if page.podUsageRefused(of: session.ref) {
+                    // After an RBAC grant (no new credentials): asked again.
+                    Button("Try Again") { page.model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                        .help("Ask metrics-server again: access may have been granted since")
+                        .accessibilityIdentifier("kubernetes.detail.usage.retry")
+                }
+            }
         }
     }
 

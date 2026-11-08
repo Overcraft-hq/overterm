@@ -51,9 +51,20 @@ extension KubernetesPageModel {
         return section.listsKinds ? metricsWant : nil
     }
 
+    /// What the detail shows now that reads its own usage (metrics.md
+    /// 4.1): a pod's Overview, its usage block — the pod's own PodMetrics,
+    /// whatever the list beside it shows — only while the page is on screen.
+    var metricsDetailsOnScreen: [KubeMetricsDetail] {
+        guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail,
+            detailTab == .overview, detail.ref.isPod, let namespace = detail.ref.namespace
+        else { return [] }
+        return [.pod(namespace: namespace, name: detail.ref.name)]
+    }
+
     /// The monitor told what this page shows.
     func updateMetricsWanted() {
         model.metrics.want(metricsOnScreen, for: self)
+        model.metrics.wantDetail(metricsDetailsOnScreen, for: self)
         updatePrometheusWanted()
     }
 
@@ -69,23 +80,52 @@ extension KubernetesPageModel {
         return model.metrics.note(want)
     }
 
+    /// Whether the header's note is a refusal: Try Again beside it.
+    var metricsNoteIsRefusal: Bool {
+        guard let want = metricsWant, showsSection else { return false }
+        return model.metrics.isRefused(want)
+    }
+
+    /// A pod's current sample: its own read (the detail's), else the
+    /// list's — nil when neither is current.
+    func podSample(of ref: KubeObjectRef, now: Date = Date()) -> KubePodMetrics? {
+        guard ref.isPod, let namespace = ref.namespace, model.metrics.availability == .served else { return nil }
+        let id = KubeRowID(namespace: namespace, name: ref.name)
+        let readings = [model.metrics.reading(.pod(namespace: namespace, name: ref.name)), model.metrics.reading(.pods)]
+        for reading in readings {
+            guard let sample = reading?.sample, now.timeIntervalSince(sample.read) <= model.metrics.staleAfter, let pod = sample.pods[id] else { continue }
+            return pod
+        }
+        return nil
+    }
+
     /// A pod's containers' usage against their requests and limits: the
-    /// detail's object and the list's sample of it. Nil without either.
+    /// detail's object and the pod's sample. Nil without either.
     func containerUsage(of ref: KubeObjectRef, object: [String: Any]?) -> [KubeContainerUsage.Line]? {
-        guard ref.isPod, let object, model.metrics.availability == .served, let reading = model.metrics.reading(.pods),
-            let sample = reading.sample, Date().timeIntervalSince(sample.read) <= model.metrics.staleAfter,
-            let pod = sample.pods[KubeRowID(namespace: ref.namespace, name: ref.name)]
-        else { return nil }
+        guard let object, let pod = podSample(of: ref) else { return nil }
         return KubeContainerUsage.lines(object, pod)
     }
 
-    /// A pod's samples taken while the list showed (its sparkline): only
-    /// while its usage is current, as the numbers are.
+    /// Why a pod's own usage read has nothing: its refusal, its failure.
+    func podUsageProblem(of ref: KubeObjectRef) -> String? {
+        guard ref.isPod, let namespace = ref.namespace, podSample(of: ref) == nil,
+            let reading = model.metrics.reading(.pod(namespace: namespace, name: ref.name))
+        else { return nil }
+        return reading.refused ?? reading.problem.map { "Usage couldn't be read: \($0)" }
+    }
+
+    /// Whether a pod's own usage read was refused: Try Again beside it.
+    func podUsageRefused(of ref: KubeObjectRef) -> Bool {
+        guard ref.isPod, let namespace = ref.namespace, podSample(of: ref) == nil else { return false }
+        return model.metrics.reading(.pod(namespace: namespace, name: ref.name))?.refused != nil
+    }
+
+    /// A pod's samples taken while shown — its detail's, kept an hour, else
+    /// the list's (its sparkline): only while its usage is current, as the
+    /// numbers are.
     func usageHistory(of ref: KubeObjectRef) -> [KubeUsagePoint] {
-        guard ref.isPod, model.metrics.availability == .served, let reading = model.metrics.reading(.pods), let sample = reading.sample,
-            Date().timeIntervalSince(sample.read) <= model.metrics.staleAfter
-        else { return [] }
-        return reading.history.points(KubeRowID(namespace: ref.namespace, name: ref.name))
+        guard podSample(of: ref) != nil else { return [] }
+        return model.metrics.ring.points(.pod(namespace: ref.namespace ?? "", name: ref.name))
     }
 }
 
@@ -139,7 +179,7 @@ extension KubernetesPageModel {
     /// The cluster's samples taken while the Overview showed: only while
     /// its usage is current.
     var clusterHistory: [KubeUsagePoint] {
-        guard clusterUsage != nil, let reading = model.metrics.reading(.nodes) else { return [] }
-        return reading.history.cluster
+        guard clusterUsage != nil else { return [] }
+        return model.metrics.ring.points(.cluster)
     }
 }

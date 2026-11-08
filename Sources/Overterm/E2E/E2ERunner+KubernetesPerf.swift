@@ -89,6 +89,14 @@ extension E2ERunner {
             fake.requests.contains { $0.isWatch && $0.path == "/api/v1/namespaces/shop/pods" && $0.query["sendInitialEvents"] == "true" }
                 && !fake.requests.contains { !$0.isWatch && $0.path == "/api/v1/namespaces/shop/pods" })
         check("with usage", await eventually(15) { model.metrics.reading(.pods)?.sample?.pods.count == count }, "\(String(describing: model.metrics.reading(.pods)?.sample?.pods.count))")
+        // Its 5,000 rows merged into the ring off the main thread, assigned
+        // whole (metrics.md 5.3), every row kept under the 6 MB cap.
+        check(
+            "its rows merged into the ring off the main thread, under the cap",
+            await eventually(15) { model.metrics.merges >= 1 && model.metrics.ring.listKeys == count }
+                && model.metrics.mergesOnMain == 0 && model.metrics.ring.bytes <= KubeUsageRing.defaultByteCap,
+            "\(model.metrics.merges) merges (\(model.metrics.mergesOnMain) on the main thread), \(model.metrics.ring.listKeys) rows, \(model.metrics.ring.bytes) bytes")
+        note("kubernetes usage ring of \(count) rows: \(model.metrics.ring.bytes / 1024) KB")
 
         // A burst of 500 events: every 10th pod starts failing.
         let burst = Array(stride(from: 0, to: count, by: 10)).map { String(format: "perf-%04d", $0) }

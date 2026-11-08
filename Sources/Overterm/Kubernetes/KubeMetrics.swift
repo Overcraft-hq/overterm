@@ -93,27 +93,73 @@ enum KubeMetricsReader {
     }
 
     /// A PodMetricsList.
-    static func pods(_ data: Data) throws -> [KubePodMetrics] {
-        try items(data).compactMap { item in
-            let metadata = item["metadata"] as? [String: Any] ?? [:]
-            guard let name = metadata["name"] as? String else { return nil }
-            var containers: [String: KubeUsage] = [:]
-            for container in item["containers"] as? [[String: Any]] ?? [] {
-                guard let name = container["name"] as? String, let usage = KubeUsage(container["usage"]) else { continue }
-                containers[name] = usage
-            }
-            return KubePodMetrics(
-                id: KubeRowID(namespace: metadata["namespace"] as? String, name: name), timestamp: time(item["timestamp"]), window: item["window"] as? String,
-                containers: containers)
-        }
-    }
+    static func pods(_ data: Data) throws -> [KubePodMetrics] { try items(data).compactMap(pod(item:)) }
 
     /// A NodeMetricsList.
-    static func nodes(_ data: Data) throws -> [KubeNodeMetrics] {
-        try items(data).compactMap { item in
-            guard let name = (item["metadata"] as? [String: Any])?["name"] as? String, let usage = KubeUsage(item["usage"]) else { return nil }
-            return KubeNodeMetrics(name: name, timestamp: time(item["timestamp"]), window: item["window"] as? String, usage: usage)
+    static func nodes(_ data: Data) throws -> [KubeNodeMetrics] { try items(data).compactMap(node(item:)) }
+
+    private static func object(_ data: Data) throws -> [String: Any] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
+        return object
+    }
+
+    /// One PodMetrics (a pod's own GET).
+    static func pod(_ data: Data) throws -> KubePodMetrics {
+        guard let pod = pod(item: try object(data)) else { throw Malformed(detail: "no pod's sample") }
+        return pod
+    }
+
+    /// One NodeMetrics (a node's own GET).
+    static func node(_ data: Data) throws -> KubeNodeMetrics {
+        guard let node = node(item: try object(data)) else { throw Malformed(detail: "no node's sample") }
+        return node
+    }
+
+    private static func pod(item: [String: Any]) -> KubePodMetrics? {
+        let metadata = item["metadata"] as? [String: Any] ?? [:]
+        guard let name = metadata["name"] as? String else { return nil }
+        var containers: [String: KubeUsage] = [:]
+        for container in item["containers"] as? [[String: Any]] ?? [] {
+            guard let name = container["name"] as? String, let usage = KubeUsage(container["usage"]) else { continue }
+            containers[name] = usage
+        }
+        return KubePodMetrics(
+            id: KubeRowID(namespace: metadata["namespace"] as? String, name: name), timestamp: time(item["timestamp"]), window: item["window"] as? String,
+            containers: containers)
+    }
+
+    private static func node(item: [String: Any]) -> KubeNodeMetrics? {
+        guard let name = (item["metadata"] as? [String: Any])?["name"] as? String, let usage = KubeUsage(item["usage"]) else { return nil }
+        return KubeNodeMetrics(name: name, timestamp: time(item["timestamp"]), window: item["window"] as? String, usage: usage)
+    }
+
+    /// A HorizontalPodAutoscaler (autoscaling/v2), as its status says it.
+    static func hpa(_ data: Data) throws -> KubeHPAStatus {
+        let object = try object(data)
+        guard let name = (object["metadata"] as? [String: Any])?["name"] as? String else { throw Malformed(detail: "no HorizontalPodAutoscaler") }
+        let spec = object["spec"] as? [String: Any] ?? [:]
+        let status = object["status"] as? [String: Any] ?? [:]
+        func int(_ value: Any?) -> Int? { (value as? NSNumber)?.intValue }
+        func metric(_ entry: [String: Any], _ side: String) -> (name: String, value: String?)? {
+            guard let type = entry["type"] as? String else { return nil }
+            let key = type.prefix(1).lowercased() + type.dropFirst()
+            guard let body = entry[key] as? [String: Any] else { return nil }
+            let named = (body["name"] as? String) ?? ((body["metric"] as? [String: Any])?["name"] as? String) ?? type
+            guard let values = body[side] as? [String: Any] else { return (named, nil) }
+            if let percent = int(values["averageUtilization"]) { return (named, "\(percent)%") }
+            return (named, (values["averageValue"] as? String) ?? (values["value"] as? String))
+        }
+        let targets = (spec["metrics"] as? [[String: Any]] ?? []).compactMap { metric($0, "target") }
+        let currents = (status["currentMetrics"] as? [[String: Any]] ?? []).compactMap { metric($0, "current") }
+        let metrics = targets.map { target in
+            KubeHPAStatus.Metric(name: target.name, current: currents.first { $0.name == target.name }?.value ?? nil, target: target.value)
+        }
+        let limited = (status["conditions"] as? [[String: Any]] ?? []).contains { $0["type"] as? String == "ScalingLimited" && $0["status"] as? String == "True" }
+        return KubeHPAStatus(
+            name: name, current: int(status["currentReplicas"]) ?? 0, desired: int(status["desiredReplicas"]) ?? 0, min: int(spec["minReplicas"]) ?? 1,
+            max: int(spec["maxReplicas"]) ?? 0, scalingLimited: limited, metrics: metrics)
     }
 
     /// A NodeList's `status.allocatable`, by node, and where the next page starts.
@@ -209,34 +255,150 @@ enum KubeMetricsAvailability: Equatable, Sendable {
 }
 
 /// What usage is read for: a scope's pods (with the list's label
-/// selector), or the nodes — and then their allocatable too.
+/// selector), the nodes — and then their allocatable too — or, for a
+/// detail, one pod, one node, one HorizontalPodAutoscaler.
 enum KubeMetricsTarget: Hashable, Sendable {
     case pods(KubeScope, labels: String?)
     case nodes
+    case pod(namespace: String, name: String)
+    case node(String)
+    case hpa(namespace: String, name: String)
 
-    /// Its metrics.k8s.io list.
+    static let base = "/apis/metrics.k8s.io/v1beta1"
+
+    /// Its metrics.k8s.io list, or its one object.
     var path: String { paths[0] }
 
-    /// Its metrics.k8s.io lists: several namespaces' pods a list each (past
-    /// the cap, across the cluster — `scope` keeps the samples to them).
+    /// Its reads: several namespaces' pods a list each (past the cap,
+    /// across the cluster — `scope` keeps the samples to them).
     var paths: [String] {
         switch self {
-        case .pods(let scope, let labels):
-            return scope.reads(for: .pods).map { namespace in
-                let base = "/apis/metrics.k8s.io/v1beta1" + (namespace.map { "/namespaces/\(KubePath.segment($0))" } ?? "") + "/pods"
-                return KubePath.query(base, [("labelSelector", labels)])
-            }
-        case .nodes: return ["/apis/metrics.k8s.io/v1beta1/nodes"]
+        case .pods(let scope, _):
+            return scope.reads(for: .pods).map(podsPath)
+        case .nodes: return [Self.base + "/nodes"]
+        case .pod(let namespace, let name): return [Self.base + "/namespaces/\(KubePath.segment(namespace))/pods/\(KubePath.segment(name))"]
+        case .node(let name): return [Self.base + "/nodes/\(KubePath.segment(name))"]
+        case .hpa(let namespace, let name):
+            return ["/apis/autoscaling/v2/namespaces/\(KubePath.segment(namespace))/horizontalpodautoscalers/\(KubePath.segment(name))"]
         }
     }
 
-    /// The pods' samples, read over `paths`, kept to the scope.
-    func pods(_ client: KubeClient) async throws -> [KubePodMetrics] {
-        guard case .pods(let scope, _) = self else { return [] }
-        var samples: [KubePodMetrics] = []
-        for path in paths { samples += try KubeMetricsReader.pods(try await client.get(path).body) }
-        return samples.filter { scope.includes($0.id.namespace) }
+    /// Whether it is metrics-server's: an HPA is the apiserver's own,
+    /// read with or without one.
+    var needsMetricsServer: Bool {
+        if case .hpa = self { return false }
+        return true
     }
+
+    /// A pods target's read of one namespace (nil: across the cluster).
+    func podsPath(_ namespace: String?) -> String {
+        let labels: String? = if case .pods(_, let labels) = self { labels } else { nil }
+        let base = Self.base + (namespace.map { "/namespaces/\(KubePath.segment($0))" } ?? "") + "/pods"
+        return KubePath.query(base, [("labelSelector", labels)])
+    }
+
+    /// A pods target's reads: a namespace each, or one across the cluster (nil).
+    var podsReads: [String?] {
+        guard case .pods(let scope, _) = self else { return [] }
+        return scope.reads(for: .pods)
+    }
+
+    /// What a 403 on it says, once (metrics.md 4.7): who refused what, where.
+    var refusal: String {
+        switch self {
+        case .pods: return Self.podsRefusal(podsReads)
+        case .nodes: return "metrics-server answered 403: you can't list nodes.metrics.k8s.io."
+        case .pod(let namespace, _): return "metrics-server answered 403: you can't get pods.metrics.k8s.io in \(namespace)."
+        case .node: return "metrics-server answered 403: you can't get nodes.metrics.k8s.io."
+        case .hpa(let namespace, _): return "The apiserver answered 403: you can't get horizontalpodautoscalers.autoscaling in \(namespace)."
+        }
+    }
+
+    /// What a 403 on some of a pods target's reads says: only those
+    /// (nil, the read across the cluster).
+    static func podsRefusal(_ reads: [String?]) -> String {
+        let names = reads.compactMap { $0 }.sorted()
+        let place = reads.contains(nil) || names.isEmpty ? " across the cluster" : " in " + names.joined(separator: ", ")
+        return "metrics-server answered 403: you can't list pods.metrics.k8s.io\(place)."
+    }
+
+    /// The pods' samples, read over its reads but `skipping`, kept to the
+    /// scope. A read refused (a 403) is left out and named in `refused`, as
+    /// a list's namespace is (`KubeScopeMerge`): the others' samples stand.
+    /// Every read refused: the 403 is thrown.
+    func pods(_ client: KubeClient, skipping: Set<String?> = []) async throws -> KubePodsRead {
+        guard case .pods(let scope, _) = self else { return KubePodsRead() }
+        var read = KubePodsRead()
+        var forbidden: KubeAPIError?
+        let reads = podsReads.filter { !skipping.contains($0) }
+        for namespace in reads {
+            do {
+                read.pods += try KubeMetricsReader.pods(try await client.get(podsPath(namespace)).body)
+            } catch let error as KubeAPIError where error.isForbidden {
+                forbidden = error
+                read.refused.append(namespace)
+            }
+        }
+        if let forbidden, read.refused.count == reads.count { throw forbidden }
+        read.pods = read.pods.filter { scope.includes($0.id.namespace) }
+        return read
+    }
+}
+
+/// A pods target's samples, and the reads refused (nil: the read across
+/// the cluster), left out.
+struct KubePodsRead: Sendable {
+    var pods: [KubePodMetrics] = []
+    var refused: [String?] = []
+}
+
+/// What a detail reads usage for (metrics.md 4.1): the target polled, and
+/// the ring's sum its samples also go to — a workload's pods, a
+/// namespace's.
+enum KubeMetricsDetail: Hashable, Sendable {
+    case pod(namespace: String, name: String)
+    case node(String)
+    case hpa(namespace: String, name: String)
+    /// A workload's pods, by its selector.
+    case workload(namespace: String, kind: String, name: String, labels: String)
+    case namespace(String)
+
+    var target: KubeMetricsTarget {
+        switch self {
+        case .pod(let namespace, let name): .pod(namespace: namespace, name: name)
+        case .node(let name): .node(name)
+        case .hpa(let namespace, let name): .hpa(namespace: namespace, name: name)
+        case .workload(let namespace, _, _, let labels): .pods(.namespace(namespace), labels: labels)
+        case .namespace(let namespace): .pods(.namespace(namespace), labels: nil)
+        }
+    }
+
+    /// The ring's sum for it, if it is one.
+    var sum: KubeUsageKey? {
+        switch self {
+        case .workload(let namespace, let kind, let name, _): .workload(namespace: namespace, kind: kind, name: name)
+        case .namespace(let namespace): .namespace(namespace)
+        case .pod, .node, .hpa: nil
+        }
+    }
+}
+
+/// A HorizontalPodAutoscaler's state: its replicas against its bounds, and
+/// each metric's current value against its target (`status.currentMetrics`).
+struct KubeHPAStatus: Equatable, Sendable {
+    struct Metric: Equatable, Sendable {
+        var name: String
+        var current: String?
+        var target: String?
+    }
+
+    var name: String
+    var current: Int
+    var desired: Int
+    var min: Int
+    var max: Int
+    var scalingLimited: Bool
+    var metrics: [Metric]
 }
 
 /// What a page wants usage for: the pods list, or the nodes (their list,
@@ -256,8 +418,24 @@ struct KubeMetricsSample: Equatable, Sendable {
     var read: Date
     /// The oldest sample in it, as metrics-server stamped it.
     var oldest: Date?
+    /// An HPA's (an `.hpa` target's).
+    var hpa: KubeHPAStatus?
+    /// A pods target's reads refused (a 403), their pods left out: the
+    /// namespaces (nil, across the cluster).
+    var refusedReads: [String?] = []
+
+    /// What the refused reads say, once: nil when none was.
+    var refusal: String? { refusedReads.isEmpty ? nil : KubeMetricsTarget.podsRefusal(refusedReads) }
+
+    /// Whether a pod in `namespace` was left out by a refused read.
+    func refuses(_ namespace: String?) -> Bool { refusedReads.contains(nil) || refusedReads.contains(namespace) }
 
     init(read: Date) { self.read = read }
+
+    init(hpa: KubeHPAStatus, read: Date) {
+        self.read = read
+        self.hpa = hpa
+    }
 
     init(pods: [KubePodMetrics], read: Date) {
         self.read = read
@@ -284,53 +462,9 @@ struct KubeMetricsReading: Equatable, Sendable {
     var sample: KubeMetricsSample?
     /// Why the last read failed (a 403, metrics-server down), nil when it didn't.
     var problem: String?
-    /// The samples taken while it was shown (analysis.md, 2.4 and 2.11):
-    /// in memory only, gone with the reading.
-    var history = KubeUsageHistory()
-}
-
-/// One sample's usage, and when it came.
-struct KubeUsagePoint: Equatable, Sendable {
-    var read: Date
-    var usage: KubeUsage
-}
-
-/// Overterm's own ring of the samples taken while a target is polled — a
-/// pod's total, a node's, the cluster's (every node's) — for the
-/// sparklines: the last `capacity` (ten minutes at 15 s), in memory, a row
-/// no longer sampled forgotten. metrics-server keeps no history; nothing
-/// here outlives the reading (hidden, another context, a credential
-/// failure: gone). Pure.
-struct KubeUsageHistory: Equatable, Sendable {
-    static let capacity = 40
-
-    private(set) var cluster: [KubeUsagePoint] = []
-    private(set) var rows: [KubeRowID: [KubeUsagePoint]] = [:]
-
-    func points(_ id: KubeRowID) -> [KubeUsagePoint] { rows[id] ?? [] }
-
-    mutating func record(_ sample: KubeMetricsSample) {
-        var seen = Set<KubeRowID>()
-        func add(_ id: KubeRowID, _ usage: KubeUsage) {
-            seen.insert(id)
-            Self.append(&rows[id, default: []], KubeUsagePoint(read: sample.read, usage: usage))
-        }
-        for (id, pod) in sample.pods { add(id, pod.total) }
-        for (name, node) in sample.nodes { add(KubeRowID(namespace: nil, name: name), node.usage) }
-        if !sample.nodes.isEmpty { Self.append(&cluster, KubeUsagePoint(read: sample.read, usage: sample.clusterUsage)) }
-        if rows.count != seen.count { rows = rows.filter { seen.contains($0.key) } }
-    }
-
-    private static func append(_ points: inout [KubeUsagePoint], _ point: KubeUsagePoint) {
-        points.append(point)
-        if points.count > capacity { points.removeFirst(points.count - capacity) }
-    }
-
-    /// What a sparkline's caption says of `points`: over how long.
-    static func span(_ points: [KubeUsagePoint]) -> String? {
-        guard let first = points.first, let last = points.last, points.count >= 2 else { return nil }
-        return "the last \(KubeMetricsFormat.age(last.read.timeIntervalSince(first.read))), sampled while shown"
-    }
+    /// The target was refused (a 403): said once, in these words, and not
+    /// asked again until the context's credentials change.
+    var refused: String?
 }
 
 /// A usage cell: a number, or a dash and why. Pure.
@@ -372,7 +506,10 @@ enum KubeUsageCell: Equatable, Sendable {
     ) -> KubeUsageCell {
         if let reason = availability.reason, availability != .unknown { return .dash(reason) }
         guard availability == .served, let reading else { return .waiting }
-        guard let sample = reading.sample else { return reading.problem.map { .dash("Usage couldn't be read: \($0)") } ?? .waiting }
+        guard let sample = reading.sample else {
+            if let refused = reading.refused { return .dash(refused) }
+            return reading.problem.map { .dash("Usage couldn't be read: \($0)") } ?? .waiting
+        }
         let age = now.timeIntervalSince(sample.read)
         if age > staleAfter {
             let why = reading.problem.map { ": \($0)" } ?? ""
@@ -385,7 +522,10 @@ enum KubeUsageCell: Equatable, Sendable {
             usage = node.usage
             total = sample.allocatable[id.name]
         } else {
-            guard let pod = sample.pods[id] else { return .dash("metrics-server has no sample of this pod yet (it samples running pods).") }
+            guard let pod = sample.pods[id] else {
+                if sample.refuses(id.namespace), let refusal = sample.refusal { return .dash(refusal) }
+                return .dash("metrics-server has no sample of this pod yet (it samples running pods).")
+            }
             usage = pod.total
         }
         switch measure {
