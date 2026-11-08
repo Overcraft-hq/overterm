@@ -334,6 +334,7 @@ extension E2ERunner {
         await kubernetesHelmWrites(model, page, fake)
         await kubernetesAttention(model, page, fake, realProxy: kubectl != nil)
         await kubernetesMetrics(model, page, fake)
+        await kubernetesCharts(model, page, fake)
         await kubernetesMergedLogs(model, page, fake)
         await kubernetesTimeline(model, page, fake)
         await kubernetesTree(model, page, fake)

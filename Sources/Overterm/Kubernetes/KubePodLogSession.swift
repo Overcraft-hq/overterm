@@ -16,6 +16,8 @@ final class KubePodLogSource: LogSource {
     let container: String?
     let previous: Bool
     let since: KubeLogSince
+    /// From this time on ("Logs from here"): the first stream's `sinceTime`.
+    let from: Date?
     private let client: KubeClient
     /// The stream's failure, set before its consumer hears of it.
     private let failure = Failure()
@@ -41,24 +43,35 @@ final class KubePodLogSource: LogSource {
     /// Why it isn't followed now (waiting for the container), or ended.
     var onState: (KubePodLogSession.Reading) -> Void = { _ in }
 
-    init(client: KubeClient, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince) {
+    init(client: KubeClient, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, from: Date? = nil) {
         self.client = client
         self.namespace = namespace
         self.pod = pod
         self.container = container
         self.previous = previous
         self.since = since
+        self.from = from
     }
 
     /// The query for the first stream (`after` nil) or a resumed one. A
     /// resumed one is capped at what the feed keeps: a tab hidden for an
     /// hour on a noisy pod would otherwise be sent every line since — the
     /// newest `LogFeed.keep` of them replace the feed whole, so no gap shows.
-    nonisolated static func query(container: String?, previous: Bool, since: KubeLogSince, tail: Int, after: String?) -> KubeLogQuery {
+    /// "Logs from here" (`from`) asks from that second on, read once and
+    /// not followed, its head kept: no `tailLines` — kubelet applies it
+    /// after `sinceTime`, which would bring the newest lines since, not the
+    /// ones from it, and on a pod that logged more than the feed keeps since
+    /// the spike the lines around it would never come — but `limitBytes`,
+    /// which stops the answer after its first `fromReadBytes`.
+    nonisolated static func query(container: String?, previous: Bool, since: KubeLogSince, tail: Int, after: String?, from: Date? = nil) -> KubeLogQuery {
         var query = KubeLogQuery(container: container, previous: previous, follow: !previous)
         if let after, !previous {
             query.sinceTime = KubeLogQuery.sinceTime(after: after)
             query.tailLines = LogFeed.keep
+        } else if let from, !previous {
+            query.sinceTime = KubeLogQuery.sinceTime(from)
+            query.follow = false
+            query.limitBytes = fromReadBytes
         } else {
             query.tailLines = tail
             query.since = since
@@ -66,23 +79,59 @@ final class KubePodLogSource: LogSource {
         return query
     }
 
+    /// What "Logs from here" reads at most: the feed's 5,000 lines at
+    /// well over a kilobyte each — the feed keeps no more lines.
+    nonisolated static let fromReadBytes = 8 << 20
+
+    /// "Logs from here" had more since than it shows: the feed's
+    /// `LogFeed.keep` lines, or `fromReadBytes`, reached first.
+    var onCut: () -> Void = {}
+
+    /// Whether "Logs from here"'s read was cut: more than the feed's worth
+    /// of lines came (the rest dropped, so the head stays), or it stopped at
+    /// its byte limit (`bytes` counts the lines as shown, a little under
+    /// what the server sent: within a tenth of it counts).
+    nonisolated static func cut(lines: Int, bytes: Int) -> Bool { lines > LogFeed.keep || bytes >= fromReadBytes * 9 / 10 }
+
     func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
         guard !Task.isCancelled else { return nil }
         failure.set(nil)
         onState(.following)
-        let query = Self.query(container: container, previous: previous, since: since, tail: tail, after: after)
+        let query = Self.query(container: container, previous: previous, since: since, tail: tail, after: after, from: from)
         opened = .now
-        return Self.recorded(client.logs(namespace: namespace, pod: pod, query: query), into: failure)
+        let stream = client.logs(namespace: namespace, pod: pod, query: query)
+        guard query.limitBytes != nil, from != nil else { return Self.recorded(stream, into: failure) }
+        return Self.recorded(stream, into: failure, head: LogFeed.keep) { [weak self] in self?.onCut() }
     }
 
-    /// The stream, its failure kept where `followsAgain` reads it first.
+    /// The stream, its failure kept where `followsAgain` reads it first;
+    /// with `head`, only its first that many lines (the feed would drop
+    /// the oldest past them), `cut` called when it had more or reached
+    /// its byte limit.
     nonisolated private static func recorded(
-        _ stream: AsyncThrowingStream<[LogLine], Error>, into failure: Failure
+        _ stream: AsyncThrowingStream<[LogLine], Error>, into failure: Failure, head: Int? = nil, cut: @escaping @MainActor @Sendable () -> Void = {}
     ) -> AsyncThrowingStream<[LogLine], any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await lines in stream { continuation.yield(lines) }
+                    var lines = 0
+                    var seen = 0
+                    var bytes = 0
+                    for try await batch in stream {
+                        guard let head else {
+                            continuation.yield(batch)
+                            continue
+                        }
+                        let room = head - lines
+                        let kept = batch.count > room ? Array(batch.prefix(room)) : batch
+                        lines += kept.count
+                        seen += batch.count
+                        // About a line's bytes as the server counted them: the line as shown, its newline.
+                        bytes += batch.reduce(0) { $0 + $1.plain.utf8.count + 1 }
+                        if !kept.isEmpty { continuation.yield(kept) }
+                        if batch.count > room { break }
+                    }
+                    if head != nil, Self.cut(lines: seen, bytes: bytes) { await cut() }
                     continuation.finish()
                 } catch {
                     failure.set(error)
@@ -98,7 +147,8 @@ final class KubePodLogSource: LogSource {
     /// once the pod is gone, the container ended for good, or the server
     /// refused the log; Previous's log, read whole, isn't followed.
     func followsAgain() async -> Bool {
-        if previous {
+        // Previous's whole log, and "Logs from here"'s head, read once.
+        if previous || from != nil {
             if let error = failure.value { onState(.ended(KubernetesModel.said(error))) } else { onState(.ended(nil)) }
             return false
         }
@@ -203,6 +253,11 @@ final class KubePodLogSession: ObservableObject {
     @Published private(set) var container: String?
     @Published private(set) var previous = false
     @Published private(set) var since: KubeLogSince = .all
+    /// "Logs from here" (a chart's menu): the log from this time on, until
+    /// another container, Previous or Since is picked.
+    @Published private(set) var from: Date?
+    /// "Logs from here" had more since than the feed keeps: its first ones shown.
+    @Published private(set) var fromCut = false
     @Published private(set) var reading: Reading = .idle
     @Published private(set) var loadingOlder = false
     /// An older answer had fewer lines than asked: the log starts there.
@@ -263,6 +318,7 @@ final class KubePodLogSession: ObservableObject {
         wanted = true
         if since != self.since {
             self.since = since
+            if from != nil { from = nil }
             if follower != nil { return restart() }
         }
         guard !was, container != nil else { return }
@@ -285,9 +341,26 @@ final class KubePodLogSession: ObservableObject {
         let name = container ?? self.container
         // Previous only where there was one: another container's current log.
         let previous = (previous ?? (name == self.container ? self.previous : false)) && (containers.first { $0.name == name }?.hasPrevious ?? false)
-        guard name != self.container || previous != self.previous else { return }
+        guard name != self.container || previous != self.previous || from != nil else { return }
         self.container = name
         self.previous = previous
+        from = nil
+        restart()
+    }
+
+    /// "Logs from here": `container`'s current log from `time` on — not
+    /// its previous instance's, which ended before.
+    func read(from time: Date, container name: String?) {
+        if let name, containers.contains(where: { $0.name == name }) { container = name }
+        previous = false
+        from = time
+        restart()
+    }
+
+    /// Back to the log as Since says it.
+    func clearFrom() {
+        guard from != nil else { return }
+        from = nil
         restart()
     }
 
@@ -301,6 +374,7 @@ final class KubePodLogSession: ObservableObject {
         reachedStart = false
         olderProblem = nil
         tail = Self.firstTail
+        fromCut = false
         feed.clear()
         reading = .idle
         if wanted { start() }
@@ -311,9 +385,10 @@ final class KubePodLogSession: ObservableObject {
             if client == nil { reading = .ended("Kubernetes is off, or the context is gone.") }
             return
         }
-        let source = KubePodLogSource(client: client, namespace: namespace, pod: pod, container: container, previous: previous, since: since)
+        let source = KubePodLogSource(client: client, namespace: namespace, pod: pod, container: container, previous: previous, since: since, from: from)
         source.onState = { [weak self] state in self?.reading = state }
         source.onPod = { [weak self] pod in self?.podChanged(pod) }
+        source.onCut = { [weak self] in self?.fromCut = true }
         let follower = LogFollower(source: source, feed: feed, merging: false)
         follower.onChange = { [weak self, weak follower] in self?.feed.following = follower?.following ?? false }
         self.source = source
@@ -325,7 +400,8 @@ final class KubePodLogSession: ObservableObject {
     /// tail (up to `maxTail`), and what it has before the first line shown
     /// put in front.
     func loadOlder() {
-        guard let client, let container, !loadingOlder, !reachedStart, tail < Self.maxTail, feed.lines.count < LogFeed.keep else { return }
+        // From a time on, there is nothing older to ask for.
+        guard let client, let container, from == nil, !loadingOlder, !reachedStart, tail < Self.maxTail, feed.lines.count < LogFeed.keep else { return }
         let wanted = min(max(tail, feed.lines.count) * 2, Self.maxTail)
         loadingOlder = true
         olderProblem = nil

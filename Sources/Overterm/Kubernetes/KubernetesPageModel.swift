@@ -97,7 +97,8 @@ struct KubernetesActions {
 /// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
     case overview, workloads, network, config, storage, cluster, custom, helm, forwards
-    case open, back, forward, close, logs, history, tree, followInTab, shell, attach, portForward, openForward, database, askWhy
+    case open, back, forward, close, logs, history, tree, metrics, earlierRange, laterRange, followInTab, shell, attach, portForward, openForward, database,
+        askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
 
@@ -113,6 +114,9 @@ enum KubernetesKey: String, ResourceKey {
         case .logs: return "l"
         case .history: return "h"
         case .tree: return "x"
+        case .metrics: return "m"
+        case .earlierRange: return ","
+        case .laterRange: return "."
         case .followInTab: return "t"
         case .shell: return "e"
         case .attach: return "A"
@@ -152,6 +156,10 @@ enum KubernetesKey: String, ResourceKey {
         case .tree:
             return
                 "Dependency tree: what it owns down to containers, what it uses (ConfigMaps, Secrets by name, PVCs), the Services and routes to it — a missing one red; Argo CD's and Flux's, what they manage"
+        case .metrics:
+            return "Metrics: a pod's CPU and memory by container against its requests and limits, sampled from metrics-server while shown; restarts and OOMKills marked"
+        case .earlierRange: return "The charts' range: the one before (Live, 6h…)"
+        case .laterRange: return "The charts' range: the one after"
         case .followInTab: return "Follow the pod's log in a tab (kubectl logs -f), pinned to the context"
         case .shell: return "Shell in a tab (kubectl exec -it) — after kubectl auth can-i; asked first on production"
         case .attach: return "Attach in a tab (kubectl attach -it) — after kubectl auth can-i; asked first on production"
@@ -364,6 +372,13 @@ final class KubernetesPageModel: ObservableObject {
     var writeChecks = 0
     @Published private(set) var detail: KubeDetailSession?
     @Published var detailTab: KubeDetailTab = .overview
+    /// The Metrics tab's range: one a page, in memory, never saved (metrics.md 3.4).
+    @Published var metricsRange: KubeMetricsRange = .live
+    /// The Metrics tab's charts, as last built, and what they were built
+    /// from (`podCharts`): built again only when that changes.
+    var podChartsCache: (key: KubePodChartsKey, charts: KubePodCharts?)?
+    /// How many times they were built, for the tests.
+    var podChartsBuilds = 0
     /// Bumped for `x`: the Overview scrolls its dependency tree into view.
     @Published var revealTree = 0
     /// Where the detail has been, back and forward: this page's, across
@@ -591,6 +606,9 @@ final class KubernetesPageModel: ObservableObject {
             case .logs: return openLogs()
             case .history: return openHistory()
             case .tree: return openTree()
+            case .metrics: return openMetrics()
+            case .earlierRange: return stepMetricsRange(-1)
+            case .laterRange: return stepMetricsRange(1)
             case .followInTab: return runPodCommand(.followLogs)
             case .shell: return runPodCommand(.shell)
             case .attach: return runPodCommand(.attach)
@@ -798,6 +816,7 @@ final class KubernetesPageModel: ObservableObject {
         // Logs are a pod's or a workload's: another kind's detail opens on its Overview.
         if detailTab == .logs && !ref.hasLogs { detailTab = .overview }
         if detailTab == .history && !ref.hasHistory { detailTab = .overview }
+        if detailTab == .metrics && !ref.hasMetrics { detailTab = .overview }
         session.load()
         // Asked once the object is read, by its uid (the session waits).
         if detailTab == .events { session.loadEvents() }
@@ -1291,7 +1310,10 @@ final class KubernetesPageModel: ObservableObject {
         if detailTab == .logs, let logs = detail?.logs {
             return KubectlLine.logs(
                 context: ref.context, namespace: logs.namespace, pod: logs.pod, container: logs.container, previous: logs.previous, since: logSince,
-                timestamps: logOptions.timestamps)
+                timestamps: logOptions.timestamps, sinceTime: logs.from)
+        }
+        if detailTab == .metrics, ref.isPod, let namespace = ref.namespace {
+            return KubectlLine.top(context: ref.context, namespace: namespace, pod: ref.name)
         }
         return detailTab == .events ? KubectlLine.events(for: ref, discovery: discovery) : KubectlLine.object(ref, discovery: discovery)
     }

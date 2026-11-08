@@ -263,6 +263,34 @@ final class KubePodLogTests: XCTestCase {
 
     // MARK: Against the fake
 
+    /// "Logs from Here" on a pod that logged more than the feed keeps
+    /// since the spike: the lines from that time come — the head, read
+    /// once, not the newest since — and the note says ours was the limit.
+    func testLogsFromHereKeepsTheHeadOfALogLongerThanTheFeed() async throws {
+        api.addPod("web-7d9", namespace: "shop")
+        let end = Date().addingTimeInterval(-5)
+        api.setLog("web-7d9", namespace: "shop", (0..<6000).map { "line \($0)" }, until: end)
+        let session = try await session("web-7d9")
+        session.show(since: .all)
+        // From the 100th line's second.
+        let from = end.addingTimeInterval(Double(100 - 5999))
+        session.read(from: from, container: "app")
+        let read = await eventually(10) { session.feed.lines.count == LogFeed.keep && session.fromCut }
+        XCTAssertTrue(read, "\(session.feed.lines.count) lines, cut \(session.fromCut), \(session.reading)")
+        XCTAssertEqual(session.feed.lines.first?.message, "line 100", "the lines from that time, not the newest since")
+        XCTAssertEqual(session.feed.lines.last?.message, "line 5099")
+        let ended = await eventually { session.reading == .ended(nil) }
+        XCTAssertTrue(ended, "read once, not followed: \(session.reading)")
+        let asked = try XCTUnwrap(logRequests.last)
+        XCTAssertNil(asked.query["tailLines"], "\(asked.query)")
+        XCTAssertNil(asked.query["follow"], "\(asked.query)")
+        XCTAssertEqual(asked.query["limitBytes"], String(KubePodLogSource.fromReadBytes))
+        XCTAssertEqual(api.openLogStreams, 0, "nothing left open")
+        session.clearFrom()
+        XCTAssertFalse(session.fromCut, "the whole log again: nothing cut")
+        session.cancel()
+    }
+
     /// The stream dropped (the connection closed with no end): resumed
     /// from the last line's second, the lines that second said again
     /// dropped — but one of the same time and other text, written while it

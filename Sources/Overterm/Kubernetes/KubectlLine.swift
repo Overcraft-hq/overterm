@@ -67,15 +67,26 @@ enum KubectlLine {
 
     /// A pod's log, as its Logs tab shows it:
     /// `kubectl --context C -n NS logs POD -c CONTAINER --previous --since=1h --timestamps`.
-    static func logs(context: String, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, timestamps: Bool)
-        -> String
-    {
+    /// From a time on (`sinceTime`, "Logs from here"): `--since-time=` in place of `--since`.
+    static func logs(
+        context: String, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, timestamps: Bool, sinceTime: Date? = nil
+    ) -> String {
         var words = ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "logs", quoted(pod)]
         if let container { words += ["-c", quoted(container)] }
         if previous { words.append("--previous") }
-        if since != .all { words.append("--since=\(since.rawValue)") }
+        if let sinceTime {
+            words.append("--since-time=\(KubeLogQuery.sinceTime(sinceTime))")
+        } else if since != .all {
+            words.append("--since=\(since.rawValue)")
+        }
         if timestamps { words.append("--timestamps") }
         return words.joined(separator: " ")
+    }
+
+    /// A pod's usage as its Metrics tab samples it:
+    /// `kubectl --context C -n NS top pod POD --containers`.
+    static func top(context: String, namespace: String, pod: String) -> String {
+        ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "top", "pod", quoted(pod), "--containers"].joined(separator: " ")
     }
 
     /// A merged log as kubectl reads it: the pods a selector picks, every

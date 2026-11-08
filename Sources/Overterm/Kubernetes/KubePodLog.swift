@@ -162,6 +162,11 @@ struct KubeLogQuery: Equatable, Sendable {
     static func sinceTime(after stamp: String) -> String {
         stamp.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
     }
+
+    /// A time as `sinceTime` takes it: RFC 3339 in UTC, whole seconds.
+    static func sinceTime(_ date: Date) -> String {
+        Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)).formatted(.iso8601)
+    }
 }
 
 /// Whether a follow that ended is followed again: the container runs —

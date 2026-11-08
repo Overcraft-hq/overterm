@@ -67,6 +67,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         /// Each container's resources by name (`requests`/`limits` → `cpu`/`memory` → a quantity), as its spec says
         /// them; the `resize` subresource changes them.
         var resources: [String: [String: [String: String]]] = [:]
+        /// With restarts, how the first container last ended (`lastState.terminated`): its reason, exit code and when.
+        var lastReason = "Error"
+        var lastExitCode = 1
+        var lastFinished: Date?
 
         /// Its containers' names: `app`, then `sidecar-1`…
         var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
@@ -1775,7 +1779,14 @@ final class FakeKubeAPI: @unchecked Sendable {
                         item["state"] = ["terminated": ["reason": reason, "exitCode": pod.exitCode]]
                         item["ready"] = false
                     }
-                    if index == 0, pod.restarts > 0 { item["lastState"] = ["terminated": ["reason": "Error", "exitCode": 1]] }
+                    if index == 0, pod.restarts > 0 {
+                        var terminated: [String: Any] = ["reason": pod.lastReason, "exitCode": pod.lastExitCode]
+                        if let finished = pod.lastFinished {
+                            terminated["finishedAt"] = time(finished)
+                            terminated["startedAt"] = time(finished.addingTimeInterval(-600))
+                        }
+                        item["lastState"] = ["terminated": terminated]
+                    }
                     return item
                 },
             ]

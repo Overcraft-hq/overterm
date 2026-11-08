@@ -92,6 +92,24 @@ enum KubeMetricsReader {
         return try? Date(text, strategy: .iso8601)
     }
 
+    /// A Go duration as the API writes one (a sample's `window`: `15.012s`,
+    /// `1m0.5s`, `500ms`), in seconds; nil for anything else.
+    static func seconds(_ value: Any?) -> TimeInterval? {
+        guard let text = value as? String, !text.isEmpty else { return nil }
+        let units: [(String, Double)] = [("ns", 1e-9), ("us", 1e-6), ("µs", 1e-6), ("μs", 1e-6), ("ms", 1e-3), ("h", 3600), ("m", 60), ("s", 1)]
+        var rest = Substring(text)
+        var total = 0.0
+        while !rest.isEmpty {
+            let number = rest.prefix { $0.isNumber || $0 == "." }
+            guard !number.isEmpty, let value = Double(number) else { return nil }
+            rest = rest.dropFirst(number.count)
+            guard let (unit, scale) = units.first(where: { rest.hasPrefix($0.0) }) else { return nil }
+            rest = rest.dropFirst(unit.count)
+            total += value * scale
+        }
+        return total
+    }
+
     /// A PodMetricsList.
     static func pods(_ data: Data) throws -> [KubePodMetrics] { try items(data).compactMap(pod(item:)) }
 
@@ -448,6 +466,13 @@ struct KubeMetricsSample: Equatable, Sendable {
         self.nodes = Dictionary(nodes.map { ($0.name, $0) }, uniquingKeysWith: { $1 })
         self.allocatable = allocatable
         oldest = nodes.compactMap(\.timestamp).min()
+    }
+
+    /// The longest window a sample in it was taken over: metrics-server's
+    /// resolution (`--metric-resolution`, 15 s by default, often 60 s) —
+    /// how far apart its samples come, however often it is asked.
+    var resolution: TimeInterval? {
+        (pods.values.map(\.window) + nodes.values.map(\.window)).compactMap(KubeMetricsReader.seconds).max()
     }
 
     /// Every node's usage and allocatable added up: the cluster's.

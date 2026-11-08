@@ -52,11 +52,12 @@ extension KubernetesPageModel {
     }
 
     /// What the detail shows now that reads its own usage (metrics.md
-    /// 4.1): a pod's Overview, its usage block — the pod's own PodMetrics,
-    /// whatever the list beside it shows — only while the page is on screen.
+    /// 4.1): a pod's Overview (its usage block) or its Metrics tab — the
+    /// pod's own PodMetrics, whatever the list beside it shows — only while
+    /// the page is on screen.
     var metricsDetailsOnScreen: [KubeMetricsDetail] {
         guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail,
-            detailTab == .overview, detail.ref.isPod, let namespace = detail.ref.namespace
+            detailTab == .overview || detailTab == .metrics, detail.ref.isPod, let namespace = detail.ref.namespace
         else { return [] }
         return [.pod(namespace: namespace, name: detail.ref.name)]
     }

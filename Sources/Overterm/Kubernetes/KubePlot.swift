@@ -75,6 +75,28 @@ enum KubeChartUnit: String, Sendable {
     }
 }
 
+/// A moment marked on a time chart: a tick on the plot's bottom edge with
+/// a faint line the whole height, its colour by kind, hover saying what it
+/// was, a click opening it (metrics.md, 3.2). A container's restart and an
+/// OOMKill come from its `lastState` (M3a); rollouts, Helm revisions,
+/// scaling and warnings join them with `KubeChartMarkers` (M4).
+struct KubeChartMarker: Equatable, Sendable, Identifiable {
+    enum Kind: String, Sendable, CaseIterable {
+        /// A container ended and was started again: orange.
+        case restart
+        /// It was OOMKilled: red.
+        case oom
+    }
+
+    var id: String
+    var kind: Kind
+    var time: Date
+    /// What hover says: "OOMKilled at 14:11 (exit 137)".
+    var title: String
+    /// The container it is of, where it is one's: a click opens its previous log.
+    var container: String?
+}
+
 /// One series: its points in time order, broken where they are more than
 /// two steps apart.
 struct KubeChartSeries: Equatable, Sendable, Identifiable {
@@ -82,6 +104,9 @@ struct KubeChartSeries: Equatable, Sendable, Identifiable {
     var name: String
     var role: KubeChartRole = .usage
     var points: [KubeSeriesPoint]
+    /// The points that start again after a break their source recorded
+    /// (`KubeUsageRing`'s): a run ends before each, whatever the step.
+    var breaks: Set<Date> = []
 }
 
 /// What one chart shows: its series over a window, in one unit.
@@ -103,8 +128,15 @@ struct KubeChartData: Equatable, Sendable {
     var tier: String?
     /// Changed by whoever makes the data whenever it changes: what the plot cache is keyed by.
     var version = 0
+    /// The moments marked on it, oldest first.
+    var markers: [KubeChartMarker] = []
+    /// Its series' breaks are marked (`breaks`): the step only spaces
+    /// the points, it splits no run — the source's rule is the one.
+    var breaksMarked = false
 
     var identifier: String { "kubernetes.chart." + id }
+    /// The markers inside the window: the ones drawn.
+    var shownMarkers: [KubeChartMarker] { markers.filter { $0.time >= start && $0.time <= end } }
     var usage: [KubeChartSeries] { series.filter { !$0.role.isReference } }
     var references: [KubeChartSeries] { series.filter(\.role.isReference) }
 }
@@ -147,6 +179,12 @@ struct KubePlot: Sendable {
         var labelAt: CGPoint
     }
 
+    /// A marker where it is drawn.
+    struct Marker: Sendable {
+        var marker: KubeChartMarker
+        var x: CGFloat
+    }
+
     /// One series' values as hover reads them, in time order.
     struct Track: Sendable {
         var id: String
@@ -174,6 +212,7 @@ struct KubePlot: Sendable {
     var lines: [Line]
     var references: [Reference]
     var tracks: [Track]
+    var markers: [Marker]
     var stacked: Bool
 
     var pointCount: Int { lines.reduce(0) { $0 + $1.points } }
@@ -232,7 +271,7 @@ struct KubePlot: Sendable {
             let stroke = CGMutablePath()
             let fill = CGMutablePath()
             var count = 0
-            let runs = Self.runs(upper, lower: lower, step: data.step)
+            let runs = Self.runs(upper, lower: lower, step: data.breaksMarked ? 0 : data.step, breaks: series.breaks)
             for run in runs {
                 let points = Self.decimate(run.upper, columns: columns, start: startTime, span: span)
                 count += points.count
@@ -283,6 +322,8 @@ struct KubePlot: Sendable {
                 labelAt: CGPoint(x: frame.maxX, y: endY))
         }
 
+        markers = data.shownMarkers.map { Marker(marker: $0, x: x($0.time.timeIntervalSince1970)) }
+
         tracks =
             drawn.map { series, _, _ in
                 Track(
@@ -296,12 +337,15 @@ struct KubePlot: Sendable {
             }
     }
 
-    /// A series' runs, broken where two points are more than two steps apart, with the band's base beside each.
-    private static func runs(_ upper: [KubeSeriesPoint], lower: [Double]?, step: TimeInterval) -> [(upper: [KubeSeriesPoint], lower: [KubeSeriesPoint]?)] {
+    /// A series' runs, broken where two points are more than two steps
+    /// apart (no step: never) and before each of `breaks`, with the band's base beside each.
+    static func runs(
+        _ upper: [KubeSeriesPoint], lower: [Double]?, step: TimeInterval, breaks: Set<Date> = []
+    ) -> [(upper: [KubeSeriesPoint], lower: [KubeSeriesPoint]?)] {
         var out: [(upper: [KubeSeriesPoint], lower: [KubeSeriesPoint]?)] = []
         for (index, point) in upper.enumerated() {
             let base = lower.map { KubeSeriesPoint(time: point.time, value: $0[index]) }
-            if let last = out.last?.upper.last, step <= 0 || point.time.timeIntervalSince(last.time) <= 2 * step {
+            if let last = out.last?.upper.last, !breaks.contains(point.time), step <= 0 || point.time.timeIntervalSince(last.time) <= 2 * step {
                 out[out.count - 1].upper.append(point)
                 if let base { out[out.count - 1].lower?.append(base) }
             } else {
@@ -555,7 +599,7 @@ enum KubeChartSummary {
         let references = data.references.map { "\($0.role.label)=\(data.unit.format($0.points.last?.value ?? 0))" }
         let points = data.usage.reduce(0) { $0 + $1.points.count }
         return "chart \(data.identifier) series=\(data.usage.count) points=\(points)"
-            + " drawn=\(plot?.pointCount ?? 0) ymax=\(plot.map { data.unit.format($0.top) } ?? "-") refs=[\(references.joined(separator: " "))] markers=0"
+            + " drawn=\(plot?.pointCount ?? 0) ymax=\(plot.map { data.unit.format($0.top) } ?? "-") refs=[\(references.joined(separator: " "))] markers=\(data.shownMarkers.count)"
             + " source=\(data.source.isEmpty ? "-" : data.source) tier=\(data.tier ?? "-")"
     }
 }
@@ -590,6 +634,14 @@ enum KubeChartPalette {
 
     static let light: [RGB] = [0x2167C9, 0xC2570C, 0x0E8A7E, 0xB8327A, 0x6B4FD0, 0x8C5A2B, 0x6F7F12, 0x0F7FA8, 0xC23B4E, 0x59657A].map(RGB.init)
     static let dark: [RGB] = [0x5AA3FF, 0xFF9A4D, 0x3DD6C3, 0xFF79C1, 0xA893FF, 0xD9A066, 0xB8CC4A, 0x4FC7EE, 0xFF7A8A, 0xA3B1C7].map(RGB.init)
+
+    /// A marker's colour by kind: an OOMKill red, as a limit is; a restart orange.
+    static func marker(_ kind: KubeChartMarker.Kind, dark: Bool) -> RGB {
+        switch kind {
+        case .oom: reference(.limit, dark: dark)
+        case .restart: RGB(dark ? 0xFF9A4D : 0xC2570C)
+        }
+    }
 
     /// A reference line's colour by meaning: request green, limit red, allocatable and capacity grey, quota purple.
     static func reference(_ role: KubeChartRole, dark: Bool) -> RGB {

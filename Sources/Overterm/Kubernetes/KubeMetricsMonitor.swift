@@ -266,7 +266,8 @@ final class KubeMetricsMonitor: ObservableObject {
         let details = self.details.filter { $0.target == target }
         let merge = Merge(
             sample: sample, target: target, asList: listTargets.contains(target), asDetail: !details.isEmpty, sums: details.compactMap(\.sum),
-            interval: max(15, Double(interval.components.seconds)))
+            // A break is a stretch past 2.5 samples: metrics-server's own spacing, if longer than the poll's.
+            interval: max(15, Double(interval.components.seconds), sample.resolution ?? 0))
         for _ in 0..<3 {
             let seen = ringChanges
             let (merged, onMain) = await Task.detached(priority: .utility) { [ring = self.ring] in

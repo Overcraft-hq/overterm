@@ -42,6 +42,8 @@ struct KubeDetailView: View {
                 case .events: events
                 case .history:
                     if let timeline = session.timeline { KubeTimelineView(page: page, timeline: timeline, theme: theme) } else { overview }
+                case .metrics:
+                    if session.ref.hasMetrics { KubeMetricsTabView(page: page, metrics: page.model.metrics, session: session, theme: theme) } else { overview }
                 }
             }
         }
@@ -499,7 +501,7 @@ struct KubePodLogsView: View {
             LogsPane(
                 feed: logs.feed, theme: theme, identifier: "kubernetes.logs", runInTerminal: { page.actions?.run($0) },
                 ask: { [weak page] in page?.askAboutLogLines($0) }, options: $page.logOptions, save: { [weak page] in page?.saveLogs($0) },
-                older: logs.reachedStart ? nil : { [weak logs] in logs?.loadOlder() },
+                older: logs.reachedStart || logs.from != nil ? nil : { [weak logs] in logs?.loadOlder() },
                 stoppedHelp: "Not followed now: shown again, it is read from its last line", focusFilter: page.focusLogFilter)
         }
         .accessibilityIdentifier("kubernetes.logs")
@@ -535,8 +537,19 @@ struct KubePodLogsView: View {
             .fixedSize()
             .help("How far back the log goes")
             .accessibilityIdentifier("kubernetes.logs.since")
+            if let from = logs.from {
+                KubeLogsFromNote(feed: logs.feed, from: from, cut: logs.fromCut, theme: theme)
+                Button("Whole Log") { logs.clearFrom() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                    .help("Back to the log as Since says it")
+                    .accessibilityIdentifier("kubernetes.logs.clearFrom")
+            }
             Spacer(minLength: 4)
             if logs.loadingOlder { ProgressView().controlSize(.mini) }
+            // kubelet keeps one terminated instance: of several restarts, the last.
+            if logs.previous, (logs.shown?.restarts ?? 0) > 1 {
+                Text(verbatim: "Only the last previous instance's log is kept.").font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize()
+                    .accessibilityIdentifier("kubernetes.logs.previousKept")
+            }
             if let note { Text(verbatim: note).font(.system(size: 11)).foregroundStyle(noteColor).lineLimit(1).truncationMode(.tail) }
         }
         .padding(.horizontal, 12)
@@ -549,7 +562,8 @@ struct KubePodLogsView: View {
         case .idle, .following: return logs.reachedStart ? "From the start of its log" : nil
         case .resuming: return "Reconnecting…"
         case .waiting(let reason): return reason
-        case .ended(let reason): return reason ?? (logs.previous ? "The previous instance's whole log" : "Ended")
+        case .ended(let reason):
+            return reason ?? (logs.previous ? "The previous instance's whole log." : logs.from != nil ? "Read once, not followed: Whole Log follows it" : "Ended")
         }
     }
 
@@ -622,5 +636,40 @@ struct KubePodUsageView: View {
             Text(verbatim: title).font(.system(size: 10.5)).foregroundStyle(theme.text3)
             KubeSparkline(values: values, color: theme.accentText).frame(width: 120, height: 18)
         }
+    }
+}
+
+/// "Logs from Here"'s note: the time it reads from, and why what shows
+/// isn't all of it (`text`).
+struct KubeLogsFromNote: View {
+    @ObservedObject var feed: LogFeed
+    let from: Date
+    /// More was logged since than the feed keeps: its first lines shown.
+    let cut: Bool
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        let first = feed.lines.first?.timestamp.flatMap { KubeMetricsReader.time($0.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) }
+        let said = Self.text(from: from, first: first, lines: feed.lines.count, cut: cut)
+        Text(verbatim: said.text)
+            .font(.system(size: 11)).foregroundStyle(said.warns ? TabStatusStyle.waiting : theme.text2).lineLimit(1).truncationMode(.tail)
+            .help(said.text)
+            .accessibilityIdentifier("kubernetes.logs.from")
+    }
+
+    /// The note: cut, our own limit says so — not rotation; else when the
+    /// first line kept is well after `from`, nothing was logged between, or
+    /// kubelet rotated it away. Pure.
+    static func text(from: Date, first: Date?, lines: Int, cut: Bool) -> (text: String, warns: Bool) {
+        let clock = "From \(KubeChartTime.clock(from))"
+        if cut {
+            let count = { (n: Int) in n.formatted(.number.locale(Locale(identifier: "en_US"))) }
+            let more = lines >= LogFeed.keep ? "more than \(count(LogFeed.keep)) lines since" : "more logged since than one read brings"
+            return (clock + ": \(more) — the first \(count(lines)) shown", true)
+        }
+        if let first, first.timeIntervalSince(from) > 90 {
+            return (clock + ": its first line kept is at \(KubeChartTime.clock(first)) — nothing was logged between, or kubelet has rotated it away", true)
+        }
+        return (clock, false)
     }
 }

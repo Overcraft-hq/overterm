@@ -174,8 +174,17 @@ struct KubeChartView: View {
     /// "last 1h", for its accessibility summary.
     var span: String
     var height: CGFloat = 120
+    /// What the header says beside the value: `48% of request`, red when it warns.
+    var chips: [KubeChartChip] = []
+    /// A marker clicked: what it opens (a restart's previous log); nil, markers only say what they are.
+    var openMarker: ((KubeChartMarker) -> Void)? = nil
+    /// The context menu's "Logs from here", at the crosshair's time; nil, no such item.
+    var logsFromHere: ((Date) -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
     @StateObject private var state = KubeChartState()
+    /// Where the mouse last was over the plot: the context menu's time —
+    /// the hover has ended by the time its item is picked. Held, not observed.
+    @State private var lastHover = KubeChartHoverMemo()
     @State private var hidden: Set<String> = []
     @State private var hideReferences = false
     @State private var highlighted: String?
@@ -223,6 +232,14 @@ struct KubeChartView: View {
                 Text(verbatim: data.title).font(.system(size: 11)).foregroundStyle(theme.text3)
                 if let value = headline ?? KubeChartSummary.totals(data).last.map({ data.unit.format($0.value) }) {
                     Text(verbatim: value).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
+                }
+                ForEach(chips, id: \.text) { chip in
+                    Text(verbatim: chip.text).font(.system(size: 10.5, weight: chip.alert ? .semibold : .regular))
+                        .foregroundStyle(chip.alert ? TabStatusStyle.failed : theme.text2)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 4).fill((chip.alert ? TabStatusStyle.failed : theme.text3).opacity(0.12)))
+                        .fixedSize()
+                        .accessibilityIdentifier(data.identifier + ".chip")
                 }
                 Spacer(minLength: 8)
                 if !wraps { legend }
@@ -300,19 +317,29 @@ struct KubeChartView: View {
                 Canvas(
                     renderer: Self.renderer(
                         data.identifier, window: window, plot: plot, colours: colours, references: Dictionary(uniqueKeysWithValues: KubeChartRole.allCases.map { ($0, referenceColour($0)) }),
+                        markers: Dictionary(uniqueKeysWithValues: KubeChartMarker.Kind.allCases.map { ($0, KubeChartPalette.marker($0, dark: theme.isDark).color) }),
                         grid: theme.border, highlighted: highlighted))
                 if let plot {
                     labels(plot)
                 }
                 KubeChartOverlay(cursor: cursor, id: data.identifier, plot: plot, step: data.step, colours: colours, theme: theme)
+                if let plot, !plot.markers.isEmpty { markerTicks(plot) }
             }
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
-                    cursor.move(to: state.plot?.nearestTime(toX: location.x), owner: data.identifier)
+                    let time = state.plot?.nearestTime(toX: location.x)
+                    lastHover.time = time
+                    cursor.move(to: time, owner: data.identifier)
                 case .ended:
                     cursor.leave(data.identifier)
+                }
+            }
+            .contextMenu {
+                if let logsFromHere {
+                    Button("Logs from Here") { logsFromHere(lastHover.time ?? state.plot?.end ?? data.end) }
+                        .help("The Logs tab from a minute before the crosshair's time")
                 }
             }
             .onAppear {
@@ -330,6 +357,23 @@ struct KubeChartView: View {
         .accessibilityLabel(Text(verbatim: KubeChartSummary.of(data, span: span)))
         .accessibilityIdentifier(data.identifier)
         .accessibilityChartDescriptor(KubeChartDescriptor(data: data))
+    }
+
+    /// Each marker's tick, hit where it sits on the bottom edge: hover says
+    /// what it was, a click opens it.
+    private func markerTicks(_ plot: KubePlot) -> some View {
+        ForEach(plot.markers, id: \.marker.id) { placed in
+            let marker = placed.marker
+            Button {
+                openMarker?(marker)
+            } label: {
+                Color.clear.frame(width: 12, height: 14).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(marker.title + (openMarker != nil && marker.container != nil ? " — click for its previous log" : ""))
+            .position(x: placed.x, y: plot.frame.maxY - 7)
+            .accessibilityIdentifier(data.identifier + ".marker." + marker.kind.rawValue)
+        }
     }
 
     /// The y ticks in the gutter, the reference lines' names at their right ends.
@@ -374,7 +418,8 @@ struct KubeChartView: View {
     /// The series layer: grid, bands, lines, references — one pass. Made
     /// outside the view's isolation: SwiftUI calls it while drawing.
     nonisolated static func renderer(
-        _ id: String, window: ObjectIdentifier, plot: KubePlot?, colours: [Color], references: [KubeChartRole: Color], grid: Color, highlighted: String?
+        _ id: String, window: ObjectIdentifier, plot: KubePlot?, colours: [Color], references: [KubeChartRole: Color], markers: [KubeChartMarker.Kind: Color] = [:],
+        grid: Color, highlighted: String?
     ) -> (inout GraphicsContext, CGSize) -> Void {
         { context, _ in
             KubeChartDraws.shared.drew(id, window: window, overlay: false)
@@ -397,8 +442,30 @@ struct KubeChartView: View {
                 context.stroke(
                     Path(reference.stroke.cgPath), with: .color(references[reference.role] ?? .gray), style: StrokeStyle(lineWidth: 1, dash: reference.role.dash))
             }
+            // A marker: a faint line the plot's height, a tick on its bottom edge.
+            for placed in plot.markers {
+                let colour = markers[placed.marker.kind] ?? .orange
+                var line = Path()
+                line.move(to: CGPoint(x: placed.x, y: plot.frame.minY))
+                line.addLine(to: CGPoint(x: placed.x, y: plot.frame.maxY))
+                context.stroke(line, with: .color(colour.opacity(0.35)), lineWidth: 1)
+                context.fill(Path(CGRect(x: placed.x - 1.5, y: plot.frame.maxY - 7, width: 3, height: 7)), with: .color(colour))
+            }
         }
     }
+}
+
+/// The time the mouse was last over a chart at: a class held in `@State`,
+/// so writing it on every move redraws nothing.
+final class KubeChartHoverMemo {
+    var time: Date?
+}
+
+/// A number a chart's header says beside its value — `48% of request`,
+/// `working set 93% of limit · OOM risk` — red when it warns.
+struct KubeChartChip: Equatable, Sendable {
+    var text: String
+    var alert = false
 }
 
 /// Over a chart: the crosshair at the cursor's time, the hovered points,

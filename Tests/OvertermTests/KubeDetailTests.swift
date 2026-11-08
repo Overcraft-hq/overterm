@@ -705,7 +705,7 @@ final class KubeDetailTests: XCTestCase {
         XCTAssertTrue(page.press("l"), "l: the pod's logs")
         let pod = try XCTUnwrap(page.detail)
         XCTAssertEqual(page.detailTab, .logs)
-        XCTAssertEqual(KubeDetailTab.tabs(for: pod.ref), [.overview, .logs, .yaml, .events])
+        XCTAssertEqual(KubeDetailTab.tabs(for: pod.ref), [.overview, .logs, .yaml, .events, .metrics])
         let session = try XCTUnwrap(pod.logs)
         try await until(5, "the pod read") { pod.state == .loaded && session.container == "app" }
         try await Task.sleep(for: .milliseconds(100))
@@ -763,6 +763,22 @@ final class KubeDetailTests: XCTestCase {
         XCTAssertEqual(page.detailTab, .logs, "↩ on a pod opens its logs")
         let other = try XCTUnwrap(page.detail?.logs)
         try await until(5, "the other pod's log follows") { other.feed.following && self.api.openLogStreams == 1 }
+        // `m`: its Metrics tab, its own usage polled; `,` and `.` its range — Live and 6h without Prometheus.
+        XCTAssertFalse(page.press("."), "no range to step off the Metrics tab")
+        XCTAssertTrue(page.press("m"), "m: the pod's Metrics tab")
+        XCTAssertEqual(page.detailTab, .metrics)
+        try await until(5, "its log closed with the tab") { self.api.openLogStreams == 0 }
+        XCTAssertEqual(page.metricsDetailsOnScreen, [.pod(namespace: "shop", name: "other")], "the pod's own sample, while the tab shows")
+        XCTAssertTrue(page.press("."))
+        XCTAssertEqual(page.metricsRange, .sixHours, "1h needs Prometheus: stepped over")
+        XCTAssertTrue(page.press("."))
+        XCTAssertEqual(page.metricsRange, .sixHours, "the last one that can be picked")
+        XCTAssertTrue(page.press(","))
+        XCTAssertEqual(page.metricsRange, .live)
+        XCTAssertEqual(page.detailKubectl, "kubectl --context fake-dev -n shop top pod other --containers")
+        page.showTab(.logs)
+        XCTAssertTrue(page.metricsDetailsOnScreen.isEmpty, "the Logs tab reads no usage")
+        try await until(5, "followed again on its tab") { other.feed.following && self.api.openLogStreams == 1 }
         // Another context: the detail goes, and its stream with it.
         let beforeSwitch = logs().count
         model.select("fake-prod")
