@@ -274,10 +274,10 @@ final class KubePrometheusTests: XCTestCase {
         XCTAssertEqual(KubePrometheusReader.value(try KubePrometheusReader.read(vector)), 1.5)
         XCTAssertNil(KubePrometheusReader.value(try KubePrometheusReader.read(Data(#"{"status":"success","data":{"resultType":"vector","result":[]}}"#.utf8))))
         XCTAssertThrowsError(try KubePrometheusReader.read(Data(#"{"status":"error","errorType":"bad_data","error":"parse error"}"#.utf8), status: 400)) {
-            XCTAssertEqual(($0 as? KubePrometheusReader.Failure)?.message, "Prometheus: bad_data: parse error")
+            XCTAssertEqual(($0 as? KubePrometheusReader.Failure)?.message, "Prometheus refused the query: parse error.")
         }
         XCTAssertThrowsError(try KubePrometheusReader.read(Data("Forbidden".utf8), status: 403)) {
-            XCTAssertEqual(($0 as? KubePrometheusReader.Failure)?.message, "Prometheus answered 403: Forbidden")
+            XCTAssertEqual(($0 as? KubePrometheusReader.Failure)?.message, "Overterm's metrics proxy refused this path.", "the metrics proxy's own filter")
         }
         XCTAssertThrowsError(
             try KubePrometheusReader.read(Data(#"{"kind":"Status","message":"no endpoints available for service \"prometheus-server\""}"#.utf8), status: 503)
@@ -543,7 +543,9 @@ final class KubePrometheusTests: XCTestCase {
             transport: { KubePrometheusProxyConnection(proxies: proxies, context: dev, service: $0) },
             close: { name in Task { await proxies.closePrometheus(name) } })
         monitor.want([.chart(.cluster)], for: owner)
-        try await until(5, "a query on its way") { self.prometheusRequests.count >= 1 }
+        // The probe answers at once; the chart's range query is the slow one.
+        func ranges() -> Int { self.prometheusRequests.filter { $0.path == self.service.rangePath }.count }
+        try await until(5, "a query on its way") { ranges() >= 1 }
         monitor.want([], for: owner)
         XCTAssertFalse(monitor.isPolling)
         let deadline = Date().addingTimeInterval(5)
@@ -551,7 +553,7 @@ final class KubePrometheusTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(800))
         let left = await proxies.hasPrometheusProxy("fake-dev")
         XCTAssertFalse(left, "the metrics proxy closed, and not opened again")
-        XCTAssertEqual(prometheusRequests.count, 1, "no query after the chart hid")
+        XCTAssertEqual(ranges(), 1, "no query after the chart hid")
         XCTAssertEqual(monitor.closing, 0)
     }
 
@@ -714,7 +716,7 @@ final class KubePrometheusTests: XCTestCase {
         let unread = try await direct.query(KubePromQL.rangePath(service, peak, .hour, now: now))
         XCTAssertEqual(unread.status, 400, "FakePromQL doesn't read subqueries")
         XCTAssertThrowsError(try KubePrometheusReader.read(unread.body, status: unread.status)) {
-            XCTAssertTrue(($0 as? KubePrometheusReader.Failure)?.message.hasPrefix("Prometheus: bad_data:") == true)
+            XCTAssertTrue(($0 as? KubePrometheusReader.Failure)?.message.hasPrefix("Prometheus refused the query:") == true)
         }
 
         // Every other step missing: a gap where the line has none.

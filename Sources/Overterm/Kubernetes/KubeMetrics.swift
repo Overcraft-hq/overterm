@@ -364,9 +364,9 @@ enum KubeMetricsTarget: Hashable, Sendable {
     var refusal: String {
         switch self {
         case .pods: return Self.podsRefusal(podsReads)
-        case .nodes: return "metrics-server answered 403: you can't list nodes.metrics.k8s.io."
-        case .pod(let namespace, _): return "metrics-server answered 403: you can't get pods.metrics.k8s.io in \(namespace)."
-        case .node: return "metrics-server answered 403: you can't get nodes.metrics.k8s.io."
+        case .nodes: return KubeChartEmpty.metricsServerForbidden(verb: "list", resource: "nodes.metrics.k8s.io", place: "").sentence
+        case .pod(let namespace, _): return KubeChartEmpty.metricsServerForbidden(verb: "get", resource: "pods.metrics.k8s.io", place: " in \(namespace)").sentence
+        case .node: return KubeChartEmpty.metricsServerForbidden(verb: "get", resource: "nodes.metrics.k8s.io", place: "").sentence
         case .hpa(let namespace, _): return "The apiserver answered 403: you can't get horizontalpodautoscalers.autoscaling in \(namespace)."
         case .replicas(let namespace, let kind, _, _): return "The apiserver answered 403: you can't get this \(kind) in \(namespace)."
         case .nodePods: return "The apiserver answered 403: you can't list pods across the cluster, so the node's requests aren't known."
@@ -380,7 +380,7 @@ enum KubeMetricsTarget: Hashable, Sendable {
     static func podsRefusal(_ reads: [String?]) -> String {
         let names = reads.compactMap { $0 }.sorted()
         let place = reads.contains(nil) || names.isEmpty ? " across the cluster" : " in " + names.joined(separator: ", ")
-        return "metrics-server answered 403: you can't list pods.metrics.k8s.io\(place)."
+        return KubeChartEmpty.metricsServerForbidden(verb: "list", resource: "pods.metrics.k8s.io", place: place).sentence
     }
 
     /// The pods' samples, read over its reads but `skipping`, kept to the

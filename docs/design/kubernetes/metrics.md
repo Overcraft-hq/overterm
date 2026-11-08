@@ -606,7 +606,7 @@ Data is merged off the main thread and published in one assignment. `@Published`
     3. peak and projection series;
     4. sizing.
   - (review) The page's charts and an agent's `k8s_metrics` share the one queue per context. An agent's queries rank below every visible chart and hold at most 2 of the 4 places, so an agent in a loop can't starve the page.
-  - (review) A 429 or 503 from the apiserver's proxy honours `Retry-After`, and the queue pauses for that context rather than per query. A credential failure or a 403 on `services/proxy` empties the queue and stops it (§4.7). Nothing is retried in a loop.
+  - (review) A 429, or a 503 with a `Retry-After`, from the apiserver's proxy honours `Retry-After`, and the queue pauses for that context rather than per query. The pause is capped at 5 minutes (`KubePromQueue.maxPause`): a longer one is read as 5 minutes, and the chart's sentence says the pause taken, never the raw header. Only a whole, non-negative number of seconds is read; an HTTP-date or anything else is no `Retry-After` (asked again at the next refresh). A 503 without one is a Prometheus down or not ready (the apiserver's "no endpoints available"), said in its own words, not as busy. A credential failure or a 403 on `services/proxy` empties the queue and stops it (§4.7). Nothing is retried in a loop.
 - **`KubeQueryCost`** is pure. It decides before sending, from the profile:
   - Raw cAdvisor across the cluster: spans of 6h or less only.
   - Raw across a namespace: only below 2,000 series (§4.4).
