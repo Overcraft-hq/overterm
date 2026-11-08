@@ -25,6 +25,7 @@ struct KubeMetricsTabView: View {
                 if let charts, charts.hasSamples {
                     KubePodChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
+                        showAround: { [weak page] in page?.showAround($0) },
                         logsFromHere: { [weak page] container, time in page?.logsFromHere(container: container, at: time) })
                 } else {
                     problem(charts)
@@ -37,7 +38,9 @@ struct KubeMetricsTabView: View {
                 controls(caption: charts?.caption, workloadView: charts?.view)
                 Rectangle().fill(theme.border).frame(height: 1)
                 if let charts, charts.charts.contains(where: { chart in chart.data.usage.contains { !$0.points.isEmpty } }) {
-                    KubeObjectChartsList(charts: charts, cursor: cursor, theme: theme)
+                    KubeObjectChartsList(
+                        charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
+                        showAround: { [weak page] in page?.showAround($0) })
                 } else {
                     objectProblem(charts)
                 }
@@ -91,21 +94,36 @@ struct KubeMetricsTabView: View {
             HStack(spacing: 4) {
                 ForEach(KubeMetricsRange.allCases) { range in
                     let enabled = page.metricsRanges.contains(range)
+                    let picked = page.metricsRange == range && page.metricsWindow == nil
                     Button {
                         page.pickMetricsRange(range)
                     } label: {
                         Text(verbatim: range.title)
-                            .font(.system(size: 11.5, weight: page.metricsRange == range ? .semibold : .regular))
-                            .foregroundStyle(!enabled ? theme.text3.opacity(0.5) : page.metricsRange == range ? theme.text : theme.text2)
+                            .font(.system(size: 11.5, weight: picked ? .semibold : .regular))
+                            .foregroundStyle(!enabled ? theme.text3.opacity(0.5) : picked ? theme.text : theme.text2)
                             .padding(.horizontal, 8)
                             .frame(height: 22)
-                            .background(RoundedRectangle(cornerRadius: 5).fill(page.metricsRange == range ? theme.selected : .clear))
+                            .background(RoundedRectangle(cornerRadius: 5).fill(picked ? theme.selected : .clear))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(!enabled)
                     .help(page.metricsRangeHelp(range) + (enabled ? "  ,  ." : ""))
                     .accessibilityIdentifier("kubernetes.metrics.range.\(range.rawValue)")
+                }
+                if let window = page.metricsWindow {
+                    Text(verbatim: "Custom \(window.title)")
+                        .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.text)
+                        .fixedSize()
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(theme.selected))
+                        .help("A marker's time ± 30 minutes: what was sampled then, narrowed — nothing is asked")
+                        .accessibilityIdentifier("kubernetes.metrics.range.custom")
+                    Button("Reset") { page.resetMetricsWindow() }
+                        .controlSize(.small)
+                        .help("The range again  Esc")
+                        .accessibilityIdentifier("kubernetes.metrics.reset")
                 }
                 Spacer(minLength: 0)
                 objectControls(workloadView)
@@ -154,6 +172,7 @@ struct KubePodChartsList: View {
     let cursor: KubeChartCursor
     @ObservedObject var theme: ChromeTheme
     var openMarker: ((KubeChartMarker) -> Void)?
+    var showAround: ((KubeChartMarker) -> Void)?
     var logsFromHere: ((String?, Date) -> Void)?
     @State private var picked: String?
 
@@ -194,7 +213,7 @@ struct KubePodChartsList: View {
     private func view(_ chart: KubePodCharts.Chart, container: String?) -> some View {
         KubeChartView(
             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: Self.height, chips: chart.chips, openMarker: openMarker,
-            logsFromHere: logsFromHere.map { logs in { logs(container, $0) } }, theme: theme
+            showAround: showAround, logsFromHere: logsFromHere.map { logs in { logs(container, $0) } }, theme: theme
         )
         .frame(maxWidth: .infinity)
     }
@@ -207,6 +226,8 @@ struct KubeObjectChartsList: View {
     var charts: KubeObjectCharts
     let cursor: KubeChartCursor
     @ObservedObject var theme: ChromeTheme
+    var openMarker: ((KubeChartMarker) -> Void)?
+    var showAround: ((KubeChartMarker) -> Void)?
 
     var body: some View {
         ScrollView {
@@ -216,7 +237,7 @@ struct KubeObjectChartsList: View {
                     ForEach(group.charts) { chart in
                         KubeChartView(
                             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: KubePodChartsList.height, chips: chart.chips,
-                            theme: theme
+                            openMarker: openMarker, showAround: showAround, theme: theme
                         )
                         .frame(maxWidth: .infinity)
                     }

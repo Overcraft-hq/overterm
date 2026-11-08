@@ -174,11 +174,14 @@ enum KubeWorkloadCharts {
         var revisions: [String: String] = [:]
         /// The HPA that targets it, and what it said last.
         var hpa: (name: String, status: KubeHPAStatus?)?
+        /// What its markers are joined from: its History, its pods' states.
+        var changes = KubeChartChanges()
+        var window: KubeChartWindow?
 
         init(
             namespace: String, kind: String, name: String, object: [String: Any], ring: KubeUsageRing, statuses: KubeStatusHistory, pods: [KubePodMetrics],
             range: KubeMetricsRange, now: Date, interval: TimeInterval, view: KubeWorkloadView? = nil, revisions: [String: String] = [:],
-            hpa: (name: String, status: KubeHPAStatus?)? = nil
+            hpa: (name: String, status: KubeHPAStatus?)? = nil, changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil
         ) {
             self.namespace = namespace
             self.kind = kind
@@ -193,6 +196,8 @@ enum KubeWorkloadCharts {
             self.view = view
             self.revisions = revisions
             self.hpa = hpa
+            self.changes = changes
+            self.window = window
         }
     }
 
@@ -229,11 +234,10 @@ enum KubeWorkloadCharts {
         revisions[workload + "-" + hash] ?? revisions[hash] ?? "rev \(hash)"
     }
 
-    /// W2's OOM and restart markers for every pod (metrics.md 2.5) wait for
-    /// M4's markers and M6's Prometheus ones: the workload's pods aren't read
-    /// as objects, so their `lastState` isn't known here.
+    /// Its charts marked with its History; W1 and W2 with every pod's
+    /// OOMKills and restarts too, from the bounded read of its pods' states.
     static func build(_ input: Input) -> KubeObjectCharts {
-        let range = input.range.isSampled ? input.range : .live
+        let range = input.window?.tier ?? (input.range.isSampled ? input.range : .live)
         let now = input.now
         let start = now.addingTimeInterval(-range.span)
         let whole = KubeUsageKey.workload(namespace: input.namespace, kind: input.kind, name: input.name)
@@ -355,9 +359,10 @@ enum KubeWorkloadCharts {
         if replicas > 0, perPod.cpuRequest == nil || perPod.memoryRequest == nil {
             notes.append("A container of the template sets no request: the request line is left out where it would be a partial sum.")
         }
-        return KubeObjectCharts(
+        let built = KubeObjectCharts(
             range: range, groups: groups, caption: KubeChartBuild.caption(first: first, range: range, interval: step, of: "its pods"),
             span: KubeChartBuild.span(range), hasSamples: first != nil, notes: notes, view: view)
+        return KubeChartMarkers.mark(built, changes: input.changes, window: input.window, now: now)
     }
 }
 
@@ -371,18 +376,20 @@ enum KubeHPACharts {
     static let flapping = 4
 
     static func build(
-        namespace: String, name: String, status: KubeHPAStatus?, statuses: KubeStatusHistory, range: KubeMetricsRange, now: Date, interval: TimeInterval
+        namespace: String, name: String, status: KubeHPAStatus?, statuses: KubeStatusHistory, range: KubeMetricsRange, now: Date, interval: TimeInterval,
+        changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil
     ) -> KubeObjectCharts {
-        let range = range.isSampled ? range : .live
+        let range = window?.tier ?? (range.isSampled ? range : .live)
         let start = now.addingTimeInterval(-range.span)
         let charts = charts(namespace: namespace, name: name, status: status, statuses: statuses, start: start, now: now, step: max(15, interval))
         let first = statuses.of(.hpa(namespace: namespace, name: name), now: now)?.points.first?.time
         let caption =
             first.map { "Read from the HPA's status while shown since \(KubeChartTime.clock($0)), every \(KubePodCharts.seconds(max(15, interval)))" }
             ?? "Waiting for the HPA's first reading…"
-        return KubeObjectCharts(
+        let built = KubeObjectCharts(
             range: range, groups: [KubeObjectCharts.Group(title: "HorizontalPodAutoscaler", charts: charts)], caption: caption, span: KubeChartBuild.span(range),
             hasSamples: first != nil)
+        return KubeChartMarkers.mark(built, changes: changes, window: window, now: now)
     }
 
     /// How many times its current replicas changed in the hour before `now`.
@@ -479,10 +486,13 @@ enum KubeNodeCharts {
         var range: KubeMetricsRange
         var now: Date
         var interval: TimeInterval
+        /// Its events: its warnings marked.
+        var changes = KubeChartChanges()
+        var window: KubeChartWindow?
     }
 
     static func build(_ input: Input) -> KubeObjectCharts {
-        let range = input.range.isSampled ? input.range : .live
+        let range = input.window?.tier ?? (input.range.isSampled ? input.range : .live)
         let now = input.now
         let start = now.addingTimeInterval(-range.span)
         let usage = KubeChartBuild.usage(input.ring, .node(input.node), range: range, start: start, now: now)
@@ -561,9 +571,10 @@ enum KubeNodeCharts {
             groups.append(KubeObjectCharts.Group(title: "Top pods (by request)", charts: [stack(true), stack(false)]))
         }
         let first = usage.cpu.first?.time
-        return KubeObjectCharts(
+        let built = KubeObjectCharts(
             range: range, groups: groups, caption: KubeChartBuild.caption(first: first, range: range, interval: step, of: "this node"),
             span: KubeChartBuild.span(range), hasSamples: first != nil, notes: notes)
+        return KubeChartMarkers.mark(built, changes: input.changes, window: input.window, now: now)
     }
 }
 
@@ -586,10 +597,13 @@ enum KubeNamespaceCharts {
         var range: KubeMetricsRange
         var now: Date
         var interval: TimeInterval
+        /// Its own events: its warnings marked.
+        var changes = KubeChartChanges()
+        var window: KubeChartWindow?
     }
 
     static func build(_ input: Input) -> KubeObjectCharts {
-        let range = input.range.isSampled ? input.range : .live
+        let range = input.window?.tier ?? (input.range.isSampled ? input.range : .live)
         let now = input.now
         let start = now.addingTimeInterval(-range.span)
         let total = KubeChartBuild.usage(input.ring, .namespace(input.namespace), range: range, start: start, now: now)
@@ -654,9 +668,10 @@ enum KubeNamespaceCharts {
         if !input.byOwner, !workloads.isEmpty { notes.append("Grouped by the pods' names: the namespace's rows weren't read yet.") }
         if input.quota?.isEmpty ?? true { notes.append("No ResourceQuota on requests here: no quota line.") }
         let first = total.cpu.first?.time
-        return KubeObjectCharts(
+        let built = KubeObjectCharts(
             range: range, groups: [KubeObjectCharts.Group(title: "Namespace", charts: charts)],
             caption: KubeChartBuild.caption(first: first, range: range, interval: step, of: "its pods"), span: KubeChartBuild.span(range),
             hasSamples: first != nil, notes: notes)
+        return KubeChartMarkers.mark(built, changes: input.changes, window: input.window, now: now)
     }
 }

@@ -42,6 +42,8 @@ struct KubeObjectChartsKey: Equatable, Sendable {
     var revisions: Int
     var topPods: KubeTopPodsSampling?
     var reads: [Date]
+    var changes: Int
+    var window: KubeChartWindow?
 }
 
 /// The Metrics tab beyond pods (stage M3b): a workload's CPU and memory as
@@ -203,9 +205,11 @@ extension KubernetesPageModel {
         let now = reads.filter { $0 != .distantPast }.max() ?? Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 15).rounded(.down) * 15)
         let range = metricsRanges.contains(metricsRange) ? metricsRange : .live
         let templates = session.timeline?.templates ?? []
+        let changes = chartChanges(of: session)
+        let window = metricsWindow
         let key = KubeObjectChartsKey(
             ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: now, range: range, view: workloadChartView,
-            lookups: chartLookups.version, revisions: templates.count, topPods: topPodsSampling, reads: reads)
+            lookups: chartLookups.version, revisions: templates.count, topPods: topPodsSampling, reads: reads, changes: changes.version, window: window)
         if let cached = objectChartsCache, cached.key == key { return cached.charts }
         let poll = Double(model.metrics.interval.components.seconds) + Double(model.metrics.interval.components.attoseconds) / 1e18
         let resolution = details.compactMap { model.metrics.reading($0)?.sample?.resolution }.max() ?? 0
@@ -225,12 +229,12 @@ extension KubernetesPageModel {
             charts = KubeWorkloadCharts.build(
                 KubeWorkloadCharts.Input(
                     namespace: namespace, kind: kind, name: ref.name, object: object.json, ring: metrics.ring, statuses: metrics.statuses, pods: pods, range: range,
-                    now: now, interval: interval, view: workloadChartView, revisions: revisions, hpa: hpa))
+                    now: now, interval: interval, view: workloadChartView, revisions: revisions, hpa: hpa, changes: changes, window: window))
         case .hpa:
             guard let namespace = ref.namespace else { return nil }
             charts = KubeHPACharts.build(
                 namespace: namespace, name: ref.name, status: metrics.reading(.hpa(namespace: namespace, name: ref.name))?.sample?.hpa, statuses: metrics.statuses,
-                range: range, now: now, interval: interval)
+                range: range, now: now, interval: interval, changes: changes, window: window)
         case .node:
             let pods = metrics.reading(.nodePods(ref.name))?.sample?.nodePods
             let sampling = topPodsSampling?.node == ref.name ? topPodsSampling : nil
@@ -238,12 +242,13 @@ extension KubernetesPageModel {
                 KubeNodeCharts.Input(
                     node: ref.name, facts: KubeNodeFacts.of(object.json), ring: metrics.ring, statuses: metrics.statuses, pods: pods,
                     top: sampling == nil ? nil : pods.map { topPodsFromList ? $0.largest(KubeNodeCharts.topPods).map(\.id) : Self.topPodsPicked($0) },
-                    range: range, now: now, interval: interval))
+                    range: range, now: now, interval: interval, changes: changes, window: window))
         case .namespace:
             charts = KubeNamespaceCharts.build(
                 KubeNamespaceCharts.Input(
                     namespace: ref.name, ring: metrics.ring, statuses: metrics.statuses, quota: chartLookups.quotas[ref],
-                    byOwner: metrics.reading(.namespacePods(ref.name))?.sample?.namespacePods != nil, range: range, now: now, interval: interval))
+                    byOwner: metrics.reading(.namespacePods(ref.name))?.sample?.namespacePods != nil, range: range, now: now, interval: interval,
+                    changes: changes, window: window))
         case .pod:
             charts = nil
         }

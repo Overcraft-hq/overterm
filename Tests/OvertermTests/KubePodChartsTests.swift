@@ -85,7 +85,7 @@ final class KubePodChartsTests: XCTestCase {
         XCTAssertEqual(KubePodCharts.memoryChips(nil, request: nil, limit: 512 * mi), [], "nothing sampled, nothing said")
     }
 
-    func testTheLastTerminationIsMarkedOnTheMemoryCharts() {
+    func testTheLastTerminationIsMarkedOnItsContainersCharts() {
         let object = pod(lastState: ["reason": "OOMKilled", "exitCode": 137, "finishedAt": "2023-11-14T22:13:20Z"], restarts: 2)
         let finished = Date(timeIntervalSince1970: 1_700_000_000)
         let charts = KubePodCharts.build(
@@ -99,7 +99,8 @@ final class KubePodChartsTests: XCTestCase {
         XCTAssertTrue(marker?.title.contains("OOMKilled (exit 137)") == true, marker?.title ?? "")
         XCTAssertTrue(marker?.title.contains("only the last previous instance's log is kept") == true, "two restarts: one log kept")
         XCTAssertEqual(charts.pod[1].data.markers.count, 1, "the pod's memory too")
-        XCTAssertTrue(charts.sections[0].charts[0].data.markers.isEmpty, "not its CPU")
+        XCTAssertEqual(charts.sections[0].charts[0].data.markers.count, 1, "its CPU too: every chart is marked (M4)")
+        XCTAssertTrue(charts.sections[1].charts[1].data.markers.isEmpty, "not another container's")
         XCTAssertEqual(memory.shownMarkers.count, 1)
         XCTAssertTrue(KubeChartSummary.dump(memory, plot: nil).contains("markers=1"))
 

@@ -375,6 +375,20 @@ final class KubernetesPageModel: ObservableObject {
     @Published var detailTab: KubeDetailTab = .overview
     /// The Metrics tab's range: one a page, in memory, never saved (metrics.md 3.4).
     @Published var metricsRange: KubeMetricsRange = .live
+    /// A custom window over it — a marker's ± 30 min (metrics.md 3.2) —
+    /// until a range is picked, Reset or Esc, or another object shows.
+    @Published var metricsWindow: KubeChartWindow?
+    /// The pods' states read for the Metrics tab's markers (the pod's,
+    /// a workload's pods'), and the restarts seen between reads: the
+    /// detail shown's, dropped with it.
+    @Published var podStates: KubePodStatesReading?
+    var podStatesTask: Task<Void, Never>?
+    /// How often they are read while the tab shows (a scenario's shorter).
+    var podStatesInterval: Duration = .seconds(60)
+    /// The most of their answer read (a test's smaller).
+    var podStatesMaxBytes = KubePodStates.maxBytes
+    /// The History entry or the event a marker opened: marked where it is listed.
+    @Published var markedEntry: String?
     /// The Metrics tab's charts, as last built, and what they were built
     /// from (`podCharts`): built again only when that changes.
     var podChartsCache: (key: KubePodChartsKey, charts: KubePodCharts?)?
@@ -616,6 +630,8 @@ final class KubernetesPageModel: ObservableObject {
             case .forward: goForward()
             case .close:
                 guard detail != nil else { return false }
+                // A custom window over the charts goes first.
+                if resetMetricsWindow() { return true }
                 closeDetail()
             case .command: openCommand()
             case .namespace: openPicker(.namespace)
@@ -803,6 +819,10 @@ final class KubernetesPageModel: ObservableObject {
         sayKeptEdits()
         detail?.cancel()
         detail = nil
+        podStatesTask?.cancel()
+        podStatesTask = nil
+        podStates = nil
+        metricsWindow = nil
         linkProblem = nil
         endCompare()
         history.leave()
@@ -837,6 +857,13 @@ final class KubernetesPageModel: ObservableObject {
         if detailTab == .logs && !ref.hasLogs { detailTab = .overview }
         if detailTab == .history && !ref.hasHistory { detailTab = .overview }
         if detailTab == .metrics && !ref.hasMetrics { detailTab = .overview }
+        metricsWindow = nil
+        markedEntry = nil
+        if podStates?.ref != ref {
+            podStatesTask?.cancel()
+            podStatesTask = nil
+            podStates = nil
+        }
         if topPodsSampling?.node != ref.name || ref.metricsSubject != .node {
             topPodsStop?.cancel()
             topPodsSampling = nil

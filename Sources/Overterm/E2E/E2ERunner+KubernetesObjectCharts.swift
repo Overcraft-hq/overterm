@@ -19,6 +19,9 @@ extension E2ERunner {
         let interval = model.metrics.interval
         model.metrics.interval = .milliseconds(500)
         defer { model.metrics.interval = interval }
+        let statesInterval = page.podStatesInterval
+        page.podStatesInterval = .milliseconds(500)
+        defer { page.podStatesInterval = statesInterval }
         let scope = app.theme.map(ObjectIdentifier.init)
         let charts = KubeChartRegistry.shared
         let namespace = "charts"
@@ -124,6 +127,56 @@ extension E2ERunner {
                 return cpu.data.stacked && cpu.data.references.first?.points.last?.value == 0.2
             })
         page.pickWorkloadView(.perPod)
+
+        // M4: change markers. Its ReplicaSet's revision a rollout on every chart, from its History;
+        // a pod's OOMKill, seen between two reads of its pods' states, on its CPU and memory.
+        check(
+            "its rollout marked on every chart, from its History",
+            await eventually(15) {
+                [".cpu", ".memory", ".revisions", ".replicas"].allSatisfy { id in
+                    charts.chart(subject + id, in: scope)?.data.shownMarkers.contains { $0.kind == .rollout && $0.title.hasPrefix("Revision 3") } == true
+                }
+            }, charts.lines(in: scope).filter { $0.contains(subject) }.joined(separator: "; "))
+        fake.updatePod(pods[0], namespace: namespace) {
+            $0.restarts = 1
+            $0.lastReason = "OOMKilled"
+            $0.lastExitCode = 137
+            $0.lastFinished = Date().addingTimeInterval(-20)
+        }
+        check(
+            "a pod's OOMKill marked on its memory, named by its pod",
+            await eventually(15) {
+                charts.chart(subject + ".memory", in: scope)?.data.shownMarkers.contains { $0.kind == .oom && $0.title.hasPrefix(pods[0] + "/app: OOMKilled") } == true
+            }, charts.lines(in: scope).first { $0.contains(subject + ".memory") } ?? "none")
+        check(
+            "from its pods' states, read by its selector, bounded",
+            fake.requests.contains { $0.path == "/api/v1/namespaces/\(namespace)/pods" && $0.query["labelSelector"] == "app=api" && $0.query["limit"] == "250" })
+        let markedDump = charts.lines(in: scope).first { $0.contains(subject + ".memory") } ?? ""
+        note("kubernetes markers dump: \(markedDump)")
+        check(
+            "the dump names them", markedDump.contains("markers=2[rollout,oom]") || markedDump.contains("markers=2[oom,rollout]"), markedDump)
+        if let rollout = charts.chart(subject + ".cpu", in: scope)?.data.shownMarkers.first(where: { $0.kind == .rollout }) {
+            // Show ±30 min: every chart narrowed to it, nothing asked for it.
+            page.showAround(rollout)
+            let window = page.metricsWindow
+            check(
+                "Show ±30 min: every chart narrowed to the marker's half hour either side",
+                await eventually(10) { window != nil && charts.chart(subject + ".memory", in: scope)?.data.start == window?.start },
+                "\(window.map(\.title) ?? "no window")")
+            check("the picker says Custom", await shownText(10) { $0.contains("Custom") } != nil, window?.title ?? "-")
+            check("Esc resets it, the detail stays", page.press("\u{1B}") && page.metricsWindow == nil && page.detail?.ref.name == "api")
+            // Its click: the History entry, marked, and its diff in the changes pane.
+            page.openMarker(rollout)
+            check("the rollout opens its History entry, marked", page.detailTab == .history && page.markedEntry == "revision/3")
+            check(
+                "and its diff in the changes pane",
+                await eventually(10) { app.kubernetesManifest.shown == .change && app.kubernetesManifest.change?.title.hasSuffix("→ 3") == true },
+                app.kubernetesManifest.change?.title ?? "none")
+            if app.store.showingOverlay != .kubernetes { app.toggleKubernetesPage(nil) }
+            page.showTab(.metrics)
+        } else {
+            check("the rollout's marker, to open", false)
+        }
 
         // A node's tab: against its pods' requests and its allocatable, its pressure a band; its top pods on request.
         guard let nodes = model.discovery?.kind("nodes") else { return check("nodes served", false) }

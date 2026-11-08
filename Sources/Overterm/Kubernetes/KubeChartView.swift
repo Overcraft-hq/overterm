@@ -176,8 +176,11 @@ struct KubeChartView: View {
     var height: CGFloat = 120
     /// What the header says beside the value: `48% of request`, red when it warns.
     var chips: [KubeChartChip] = []
-    /// A marker clicked: what it opens (a restart's previous log); nil, markers only say what they are.
+    /// A marker's popover's button: what it opens (a restart's previous log,
+    /// a change's diff, an event); nil, its popover only says what it is.
     var openMarker: ((KubeChartMarker) -> Void)? = nil
+    /// ⌥-click, or the popover's "Show ±30 min": the tab's window around it; nil, not offered.
+    var showAround: ((KubeChartMarker) -> Void)? = nil
     /// The context menu's "Logs from here", at the crosshair's time; nil, no such item.
     var logsFromHere: ((Date) -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
@@ -189,6 +192,8 @@ struct KubeChartView: View {
     @State private var hideReferences = false
     @State private var highlighted: String?
     @State private var size: CGSize = .zero
+    /// The marker whose popover is open.
+    @State private var popover: String?
     /// Its own entry in `KubeChartRegistry`.
     @State private var token = UUID()
 
@@ -255,6 +260,11 @@ struct KubeChartView: View {
                 ForEach(Array(usage.enumerated()), id: \.element.id) { index, series in
                     legendItem(series, colour: colours[index % colours.count])
                 }
+            }
+            if let note = data.markerNote {
+                Text(verbatim: note).font(.system(size: 10.5)).foregroundStyle(theme.text3).fixedSize()
+                    .help("The cluster keeps events about an hour: older warnings and scaling are marked only where a History has them")
+                    .accessibilityIdentifier(data.identifier + ".markerNote")
             }
             if !data.references.isEmpty {
                 Button {
@@ -324,6 +334,7 @@ struct KubeChartView: View {
                 }
                 KubeChartOverlay(cursor: cursor, id: data.identifier, plot: plot, step: data.step, colours: colours, theme: theme)
                 if let plot, !plot.markers.isEmpty { markerTicks(plot) }
+                if let plot, data.earlierMarkers > 0 { earlier(plot) }
                 if let plot, !plot.bands.isEmpty { bandTips(plot) }
             }
             .contentShape(Rectangle())
@@ -361,20 +372,79 @@ struct KubeChartView: View {
     }
 
     /// Each marker's tick, hit where it sits on the bottom edge: hover says
-    /// what it was, a click opens it.
+    /// what it was, a click opens its popover, ⌥-click the window around it.
     private func markerTicks(_ plot: KubePlot) -> some View {
         ForEach(plot.markers, id: \.marker.id) { placed in
             let marker = placed.marker
             Button {
-                openMarker?(marker)
+                if NSEvent.modifierFlags.contains(.option), let showAround {
+                    showAround(marker)
+                } else {
+                    popover = marker.id
+                }
             } label: {
                 Color.clear.frame(width: 12, height: 14).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(marker.title + (openMarker != nil && marker.container != nil ? " — click for its previous log" : ""))
+            .help(marker.title + (showAround != nil ? " — click for more, ⌥-click for ±30 min around it" : ""))
+            .popover(isPresented: Binding(get: { popover == marker.id }, set: { if !$0, popover == marker.id { popover = nil } }), arrowEdge: .bottom) {
+                markerPopover(marker)
+            }
             .position(x: placed.x, y: plot.frame.maxY - 7)
             .accessibilityIdentifier(data.identifier + ".marker." + marker.kind.rawValue)
         }
+    }
+
+    /// What a marker was, when, what it opens, and the window around it.
+    private func markerPopover(_ marker: KubeChartMarker) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2).fill(KubeChartPalette.marker(marker.kind, dark: theme.isDark).color).frame(width: 8, height: 8)
+                Text(verbatim: marker.kind.label).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                Spacer(minLength: 8)
+                Text(verbatim: KubeChartTime.full(marker.time)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+            }
+            Text(verbatim: marker.title).font(.system(size: 12)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if let detail = marker.detail {
+                Text(verbatim: detail).font(.system(size: 11)).foregroundStyle(theme.text2).lineLimit(6).fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            HStack(spacing: 8) {
+                if let opens = marker.opens, let openMarker {
+                    Button(opens.title) {
+                        popover = nil
+                        openMarker(marker)
+                    }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("kubernetes.chart.marker.open")
+                }
+                if let showAround {
+                    Button("Show ±30 min") {
+                        popover = nil
+                        showAround(marker)
+                    }
+                    .controlSize(.small)
+                    .help("Every chart of the tab from 30 minutes before to 30 minutes after it (⌥-click)")
+                    .accessibilityIdentifier("kubernetes.chart.marker.around")
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 320, alignment: .leading)
+        .accessibilityIdentifier("kubernetes.chart.marker.popover")
+    }
+
+    /// The markers past the cap, the oldest, folded at the left edge.
+    private func earlier(_ plot: KubePlot) -> some View {
+        Text(verbatim: "+\(data.earlierMarkers) earlier")
+            .font(.system(size: 9, weight: .medium)).foregroundStyle(theme.text3)
+            .fixedSize()
+            .padding(.horizontal, 3)
+            .background(RoundedRectangle(cornerRadius: 3).fill(theme.border.opacity(0.6)))
+            .position(x: plot.frame.minX + 30, y: plot.frame.maxY - 20)
+            .help("\(data.earlierMarkers) older change\(data.earlierMarkers == 1 ? "" : "s") in this window aren't marked: only the newest \(KubeChartMarkers.cap) are")
+            .accessibilityIdentifier(data.identifier + ".earlier")
     }
 
     /// Each band's name along its top edge, hover saying since when.

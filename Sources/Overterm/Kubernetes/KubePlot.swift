@@ -77,15 +77,55 @@ enum KubeChartUnit: String, Sendable {
 
 /// A moment marked on a time chart: a tick on the plot's bottom edge with
 /// a faint line the whole height, its colour by kind, hover saying what it
-/// was, a click opening it (metrics.md, 3.2). A container's restart and an
-/// OOMKill come from its `lastState` (M3a); rollouts, Helm revisions,
-/// scaling and warnings join them with `KubeChartMarkers` (M4).
+/// was, a click its popover — what opens it, "Show ±30 min" — and ⌥-click
+/// the window around it (metrics.md, 3.2). `KubeChartMarkers` joins them
+/// from what the detail already holds: a workload's History, the detail's
+/// events, its pods' `lastState` and the restarts seen between reads.
 struct KubeChartMarker: Equatable, Sendable, Identifiable {
     enum Kind: String, Sendable, CaseIterable {
+        /// A new pod template, a rollout restart, a rollback: blue.
+        case rollout
+        /// A Helm revision: blue.
+        case helm
+        /// Replicas changed: grey.
+        case scale
         /// A container ended and was started again: orange.
         case restart
         /// It was OOMKilled: red.
         case oom
+        /// A Warning event: yellow.
+        case warning
+
+        /// What the popover calls it.
+        var label: String {
+            switch self {
+            case .rollout: "Rollout"
+            case .helm: "Helm revision"
+            case .scale: "Scaled"
+            case .restart: "Restart"
+            case .oom: "OOMKilled"
+            case .warning: "Warning"
+            }
+        }
+    }
+
+    /// What a click on it opens.
+    enum Opens: Equatable, Sendable {
+        /// A container's previous instance's log: the pod shown's (`pod` nil), or a workload's pod's.
+        case previousLog(pod: String?, container: String)
+        /// A History entry, and the diff it has.
+        case history(entry: String, change: KubeTimelineChange?)
+        /// One of the detail's events, in its Events tab.
+        case event(String)
+
+        /// What the popover's button says.
+        var title: String {
+            switch self {
+            case .previousLog(let pod, _): pod == nil ? "Previous Log" : "Open Pod's Previous Log"
+            case .history(_, let change): change == nil ? "Show in History" : "Show Diff"
+            case .event: "Show in Events"
+            }
+        }
     }
 
     var id: String
@@ -95,8 +135,10 @@ struct KubeChartMarker: Equatable, Sendable, Identifiable {
     var title: String
     /// The container it is of, where it is one's: a click opens its previous log.
     var container: String?
+    /// The popover's second line: what changed, the event's message.
+    var detail: String?
+    var opens: Opens?
 }
-
 /// A stretch marked across a chart's plot — a node's pressure or its
 /// cordon (K5), an HPA's ScalingLimited (H1): a faint band, hover saying it.
 struct KubeChartBand: Equatable, Sendable, Identifiable {
@@ -146,6 +188,10 @@ struct KubeChartData: Equatable, Sendable {
     var bands: [KubeChartBand] = []
     /// Its usage lines are counts that hold until the next reading (replicas, pods): drawn stepped.
     var stepped = false
+    /// Markers in the window past `KubeChartMarkers.cap`, the oldest: "+N earlier" at the left edge.
+    var earlierMarkers = 0
+    /// What the legend says of the markers: "events: last hour".
+    var markerNote: String?
 
     var identifier: String { "kubernetes.chart." + id }
     /// The markers inside the window: the ones drawn.
@@ -649,6 +695,8 @@ enum KubeChartSummary {
         let points = data.usage.reduce(0) { $0 + $1.points.count }
         return "chart \(data.identifier) series=\(data.usage.count) points=\(points)"
             + " drawn=\(plot?.pointCount ?? 0) ymax=\(plot.map { data.unit.format($0.top) } ?? "-") refs=[\(references.joined(separator: " "))] markers=\(data.shownMarkers.count)"
+            + (data.shownMarkers.isEmpty ? "" : "[\(data.shownMarkers.map(\.kind.rawValue).joined(separator: ","))]")
+            + (data.earlierMarkers > 0 ? " earlier=\(data.earlierMarkers)" : "")
             + (data.bands.isEmpty ? "" : " bands=[\(data.bands.map(\.title).joined(separator: ","))]")
             + " source=\(data.source.isEmpty ? "-" : data.source) tier=\(data.tier ?? "-")"
     }
@@ -686,10 +734,14 @@ enum KubeChartPalette {
     static let dark: [RGB] = [0x5AA3FF, 0xFF9A4D, 0x3DD6C3, 0xFF79C1, 0xA893FF, 0xD9A066, 0xB8CC4A, 0x4FC7EE, 0xFF7A8A, 0xA3B1C7].map(RGB.init)
 
     /// A marker's colour by kind: an OOMKill red, as a limit is; a restart orange.
+    /// A rollout and a Helm revision blue, a scale grey, a warning yellow.
     static func marker(_ kind: KubeChartMarker.Kind, dark: Bool) -> RGB {
         switch kind {
         case .oom: reference(.limit, dark: dark)
         case .restart: RGB(dark ? 0xFF9A4D : 0xC2570C)
+        case .rollout, .helm: RGB(dark ? 0x5AA3FF : 0x2167C9)
+        case .scale: reference(.allocatable, dark: dark)
+        case .warning: RGB(dark ? 0xF2C94C : 0x9A7400)
         }
     }
 

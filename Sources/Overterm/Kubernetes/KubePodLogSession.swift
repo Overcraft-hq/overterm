@@ -271,6 +271,8 @@ final class KubePodLogSession: ObservableObject {
     private var follower: LogFollower?
     private(set) var source: KubePodLogSource?
     private var wanted = false
+    /// A container picked before the pod was read, and whether its previous instance's log.
+    private var pendingPick: (String, Bool)?
     private var olderTask: Task<Void, Never>?
     /// The tail asked for: the first one, then larger for older lines.
     private(set) var tail = KubePodLogSession.firstTail
@@ -289,6 +291,12 @@ final class KubePodLogSession: ObservableObject {
     func podRead(_ object: [String: Any]) {
         containers = KubePodContainers.of(object)
         env = KubeLogScrub.env(of: object)
+        // Picked before the pod was read (a workload's marker): applied now, Previous only where there was one.
+        if let (name, previous) = pendingPick, containers.contains(where: { $0.name == name }) {
+            container = name
+            self.previous = previous && (containers.first { $0.name == name }?.hasPrevious ?? false)
+        }
+        pendingPick = nil
         if container == nil || !containers.contains(where: { $0.name == container }) {
             container = KubePodContainers.defaultContainer(object)
         }
@@ -338,6 +346,11 @@ final class KubePodLogSession: ObservableObject {
 
     /// Another container, Previous on or off: its log from the start.
     func pick(container: String? = nil, previous: Bool? = nil) {
+        // Not read yet: what it has is known once it is.
+        if containers.isEmpty, let container {
+            pendingPick = (container, previous ?? false)
+            return
+        }
         let name = container ?? self.container
         // Previous only where there was one: another container's current log.
         let previous = (previous ?? (name == self.container ? self.previous : false)) && (containers.first { $0.name == name }?.hasPrevious ?? false)

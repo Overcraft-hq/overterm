@@ -5194,11 +5194,12 @@ partial sum misleads), chips (`KubeChartChip`: `48% of request`, `12% of
 limit`, `no limit`, `working set 93% of limit · OOM risk` red past nine
 tenths) and the caption ("Sampled from metrics-server while shown since
 14:02, every 15 s"). A container's `lastState.terminated` with its
-`finishedAt` is a `KubeChartMarker` on the memory charts (an OOMKill
-red, another end orange; drawn by `KubePlot.markers` as a faint line and
-a tick, `markers=` in the dump): its click (`openMarker`) is the Logs
-tab on that container with Previous on, saying when only the last of
-several instances is kept. The charts' context menu's Logs from Here
+`finishedAt` is a `KubeChartMarker` on its charts and the pod's (an
+OOMKill red, another end orange; drawn by `KubePlot.markers` as a faint
+line and a tick, `markers=N[kinds]` in the dump): its popover's Previous
+Log (`openMarker`) is the Logs tab on that container with Previous on,
+saying when only the last of several instances is kept (see Change
+markers below). The charts' context menu's Logs from Here
 (`logsFromHere`) is the container's log from a minute before the
 crosshair (`KubePodLogSession.read(from:)` → `sinceTime`, never with
 `sinceSeconds`; read once, not followed, its head kept — no `tailLines`,
@@ -5279,10 +5280,52 @@ read give way to the owners' ids once they are (one series each); a pod
 the rows say has no owner is `Pod/<name>`. A node's top pods are those
 Sample Top Pods reads (`topPodsPicked`: the first four namespaces'),
 never a pod it doesn't. A stepped chart's fill steps with its line.
-W2's per-pod OOM and restart markers wait for M4's markers (a bounded
-read of the workload's pods' `lastState`) and M6's Prometheus ones: a
-workload's Memory chart has none yet.
 Hidden, every reading ends, what was read goes, the metrics proxy closes.
+**Change markers on every chart** (`KubeChartMarkers`, pure, and
+`KubernetesPageModel+ChartChanges`; metrics.md 3.2, stage M4). The join
+reads nothing of its own: `KubeChartChanges` is what the detail holds —
+a workload's History (`KubeTimeline`'s entries, read once as the tab
+opens: revisions, restarts and rollbacks blue as rollouts, Helm
+revisions blue, scaling grey, warnings yellow), else the detail's own
+events (asked once: its warnings, an HPA's `SuccessfulRescale`), and its
+pods' states (`KubePodStates`: each container's restarts and last
+termination, decoded off the main thread from one bounded read, env and
+all dropped) — a pod's own GET, a workload's pods by its selector with
+`limit=250` (past it, said) and its answer read only up to
+`KubePodStates.maxBytes` (16 MB, `KubeClient.get(_:maxBytes:)`: past it
+the read stops, the connection closes, and it is said), every
+`podStatesInterval` (60 s) while the tab shows on a page on screen,
+stopped by a 403, a failed sign-in or an answer past the bound and said
+(not a `KubeMetricsMonitor` target: a workload's tab already takes the
+three a context polls); never without metrics-server (nothing would be drawn) or with the
+context's metrics off. `KubeRestartLog` keeps the restarts seen between
+two reads (200 at most, dropped with the detail): one whose termination
+changed meanwhile is that termination, at its exact `finishedAt` (kept,
+since the status keeps only the last); another is "restarted between
+14:02 and 14:03". A pod's charts carry its terminations, restarts and
+events, a container's its own; a workload's every chart its History and
+its CPU and memory (W1, W2) every pod's, named by pod. Each chart keeps
+the newest 50 in its window (`KubeChartMarkers.cap`), the older folded
+into "+N earlier" at its left edge (`KubeChartData.earlierMarkers`), and
+says "events: last hour" (`markerNote`) when its window reaches past the
+hour events are kept and its tab joins events (`eventsJoined`: a
+History once read, which reads them, or the object's events once loaded
+— whether or not any came back, since a quiet 6h chart is when it
+matters). A marker's click opens its popover (`KubeChartView`:
+kind, time, what changed, the button `KubeChartMarker.Opens` says —
+Previous Log, a workload's pod's on that pod's Logs tab (`KubePodLogSession`
+keeps a pick made before the pod is read), Show Diff on its History
+entry, marked (`markedEntry`), with the diff in the changes pane, Show
+in Events — and Show ±30 min); ⌥-click is Show ±30 min:
+`KubeChartWindow.around`, the page's `metricsWindow`, every chart of the
+tab narrowed to it from 6h's minute buckets (`tier`: a window starts at
+least 30 minutes back, past the raw 15, so always that tier; then
+`narrow`), nothing asked; the picker says Custom with Reset; a range
+picked, `,`/`.`, Esc (before it closes the detail) or another object
+ends it, and a window with nothing sampled says so. `KubeChartMarkersTests`;
+`kubernetesCharts`'s M4 part checks a Deployment's rollout on every chart,
+a pod's OOMKill on W2 from the states' read, the window, Esc and the
+History entry with its diff.
 
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and

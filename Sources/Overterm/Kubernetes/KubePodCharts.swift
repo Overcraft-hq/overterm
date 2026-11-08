@@ -154,14 +154,7 @@ struct KubePodCharts: Equatable, Sendable {
 
     /// A container's last termination as a marker, where its time is known.
     static func marker(_ container: Container) -> KubeChartMarker? {
-        guard let last = container.lastTerminated, let time = last.finishedAt else { return nil }
-        let oom = last.reason == "OOMKilled"
-        let exit = last.exitCode.map { " (exit \($0))" } ?? ""
-        let what = oom ? "OOMKilled\(exit)" : "Restarted after \(last.reason)\(exit)"
-        let kept = container.restarts > 1 ? " · only the last previous instance's log is kept" : ""
-        return KubeChartMarker(
-            id: "\(container.name).\(Int(time.timeIntervalSince1970))", kind: oom ? .oom : .restart, time: time,
-            title: "\(container.name): \(what) at \(KubeChartTime.clock(time))\(kept)", container: container.name)
+        KubeChartMarkers.termination(KubePodStates.Container(name: container.name, restarts: container.restarts, last: container.lastTerminated))
     }
 
     // MARK: Building
@@ -184,10 +177,14 @@ struct KubePodCharts: Equatable, Sendable {
     /// Live keeps the ring's breaks (`breaksMarked`), its step what the
     /// samples' spacing was — metrics-server at `--metric-resolution=60s`
     /// samples a minute apart however often it is asked.
+    /// Every chart is marked (`KubeChartMarkers.mark`): the pod's
+    /// terminations and restarts — `changes`' read of its states, else its
+    /// object's —, its events; `window`, narrowed to it from the tier that holds it.
     static func build(
-        namespace: String, pod name: String, object: [String: Any], ring: KubeUsageRing, range: KubeMetricsRange, now: Date, interval: TimeInterval
+        namespace: String, pod name: String, object: [String: Any], ring: KubeUsageRing, range: KubeMetricsRange, now: Date, interval: TimeInterval,
+        changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil
     ) -> KubePodCharts {
-        let range = range.isSampled ? range : .live
+        let range = window?.tier ?? (range.isSampled ? range : .live)
         let start = now.addingTimeInterval(-range.span)
         let containers = containers(of: object)
         let podKey = KubeUsageKey.pod(namespace: namespace, name: name)
@@ -258,7 +255,6 @@ struct KubePodCharts: Equatable, Sendable {
 
         let own = points(podKey)
         let perContainer = containers.map { points(.container(namespace: namespace, pod: name, container: $0.name)) }
-        let markers = containers.compactMap(marker)
 
         // P1, P2: stacked by container.
         let cpuRequest = total(\.cpuRequest)
@@ -275,7 +271,7 @@ struct KubePodCharts: Equatable, Sendable {
             id: "pod.\(subject).memory", title: "Memory", unit: .bytes,
             series: (memoryStack.isEmpty ? [KubeChartSeries(id: "memory", name: "Memory", points: own.memory, breaks: own.breaks)] : memoryStack)
                 + references(memoryRequest, memoryLimit),
-            stacked: memoryStack.count > 1, markers: markers)
+            stacked: memoryStack.count > 1, markers: [])
         let podLatest = own.cpu.last.map(\.value)
         let podMemoryLatest = own.memory.last.map(\.value)
         let pod = [
@@ -295,7 +291,7 @@ struct KubePodCharts: Equatable, Sendable {
             let memory = chart(
                 id: id + ".memory", title: "Memory", unit: .bytes,
                 series: [KubeChartSeries(id: "memory", name: "Working set", points: series.memory, breaks: series.breaks)]
-                    + references(container.memoryRequest, container.memoryLimit), stacked: false, markers: marker(container).map { [$0] } ?? [])
+                    + references(container.memoryRequest, container.memoryLimit), stacked: false, markers: [])
             let cpuNow = series.cpu.last.map(\.value)
             let memoryNow = series.memory.last.map(\.value)
             return Section(
@@ -319,8 +315,14 @@ struct KubePodCharts: Equatable, Sendable {
         } else {
             caption = "Waiting for metrics-server's first sample of this pod…"
         }
-        return KubePodCharts(
+        let charts = KubePodCharts(
             range: range, pod: pod, sections: sections, caption: caption, span: range == .live ? "last 15 min" : "last 6h", hasSamples: first != nil)
+        var changes = changes
+        if changes.restarts.states == nil {
+            let states = containers.map { KubePodStates.Container(name: $0.name, restarts: $0.restarts, last: $0.lastTerminated) }
+            changes.restarts = KubeRestartLog(KubePodStates(pods: [KubePodStates.Pod(name: name, containers: states)], read: now))
+        }
+        return KubeChartMarkers.mark(charts, pod: name, changes: changes, window: window, now: now)
     }
 
     /// `15 s`, `0.5 s`.
