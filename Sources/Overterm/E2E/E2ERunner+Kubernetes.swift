@@ -2110,7 +2110,8 @@ extension E2ERunner {
                 guard let scroll = text()?.enclosingScrollView, let document = scroll.documentView else { return false }
                 return scroll.contentView.bounds.maxY >= document.frame.height - 24
             })
-        let lastDrawn = await drawn(["timed out", "on :8080"])
+        // Vision reads ":8080" as "•8080" now and then: the port alone.
+        let lastDrawn = await drawn(["timed out", "8080"])
         let read = lastDrawn ? [] : await readWindow().map(\.text).filter { $0.contains("timed") || $0.contains("8080") || $0.contains("health") }
         check("its last lines drawn", lastDrawn, "\(read.suffix(6))")
         let first = fake.requests.filter(\.isLog).first

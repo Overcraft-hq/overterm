@@ -46,10 +46,84 @@ extension KubeMCP {
             samples = samples.filter { $0.id.name == name }
             guard !samples.isEmpty else { return KubeMCPText.finished([header, "metrics-server has no sample of pod \(name) (it samples running pods)."].joined(separator: "\n")) }
         }
+        let (specs, said) = await shareSpecs(for: samples, named: call.string("name") != nil, target, kubernetes: kubernetes)
         let text = KubeMCPText.topPods(
             samples, allNamespaces: target.namespace == nil, containers: call.bool("containers") || call.string("name") != nil, sortBy: sortBy, limit: limit,
-            now: now)
-        return KubeMCPText.finished([header, text].joined(separator: "\n"))
+            now: now, specs: specs)
+        return KubeMCPText.finished([header, text, said].compactMap { $0 }.joined(separator: "\n"))
+    }
+
+    /// At most this many named pods are read for their specs.
+    static let maxShareReads = 10
+
+    /// The pods' requests and limits, for their shares (metrics.md 7): a
+    /// named pod's own object, one GET each (at most `maxShareReads`),
+    /// decoded to its containers' resources and dropped. A namespace's —
+    /// one, or up to `KubeScope.watchCap`, none across every one — from
+    /// kube-state-metrics where the context's Prometheus is opted in: the
+    /// list's query, asked for the call (`KubePrometheusMonitor.agentShares`);
+    /// where that fails, what the Pods list last read whole for those
+    /// namespaces. Nothing else is read for them; without either, the raw
+    /// usage only, and why.
+    static func shareSpecs(
+        for samples: [KubePodMetrics], named: Bool, _ target: Target, kubernetes: KubernetesModel
+    ) async -> (specs: [KubeRowID: KubePodShares.Spec], said: String?) {
+        guard !samples.isEmpty else { return ([:], nil) }
+        if named {
+            var specs: [KubeRowID: KubePodShares.Spec] = [:]
+            var failures: [String] = []
+            let client = target.client
+            for sample in samples.prefix(maxShareReads) {
+                guard let namespace = sample.id.namespace else { continue }
+                let name = sample.id.name
+                do {
+                    let body = try await within { try await client.object(.pods, namespace: namespace, name: name).data }
+                    guard let object = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+                        failures.append("\(name) (not a pod's object)")
+                        continue
+                    }
+                    specs[sample.id] = KubePodShares.spec(ofPod: object)
+                } catch {
+                    failures.append("\(name) (\(said(error)))")
+                }
+            }
+            guard !failures.isEmpty else { return (specs, nil) }
+            return (specs, "Shares of request and limit need the pod's own object, which couldn't be read for " + failures.joined(separator: "; ") + ".")
+        }
+        let namespaces = Set(samples.compactMap(\.id.namespace))
+        let cached = kubernetes.prometheus.shares(for: target.context.name).flatMap { reading -> KubeShareReading? in
+            reading.unavailable == nil && namespaces.isSubset(of: reading.whole) ? reading : nil
+        }
+        let fallback = "Shares from kube-state-metrics (Prometheus), as the Pods list last read them."
+        guard KubePrometheusUse.of(target.context.settings).isOn else {
+            if let cached { return (cached.pods, fallback) }
+            return ([:], KubeChartEmpty.topSharesNeedSpecs.sentence)
+        }
+        guard let names = target.scope.names, names.count <= KubeScope.watchCap else {
+            return ([:], KubeChartEmpty.topSharesNeedNamespaces.sentence)
+        }
+        let context = target.context
+        let answer = await kubernetes.prometheus.agentShares(
+            context, namespaces: names.filter(namespaces.contains).sorted(), client: target.client,
+            transport: { kubernetes.agentPrometheusTransport(for: context, $0) })
+        let why: String
+        switch answer {
+        case .off:
+            why = KubeChartEmpty.topSharesNeedSpecs.sentence
+        case .unavailable(let reason):
+            why = "Shares couldn't be read from kube-state-metrics: \(reason)"
+        case .read(let reading):
+            var notes = reading.cut.sorted().map { KubeChartEmpty.sharesCut($0).sentence }
+            notes += reading.problems.sorted { $0.key < $1.key }.map { "\($0.key)'s shares couldn't be read: \($0.value)" }
+            let whole = reading.whole
+            if !whole.isEmpty {
+                let pods = reading.pods.filter { whole.contains($0.key.namespace ?? "") }
+                return (pods, (["Shares from kube-state-metrics (Prometheus), read now."] + notes).joined(separator: " "))
+            }
+            why = notes.isEmpty ? KubeChartEmpty.topSharesNeedSpecs.sentence : notes.joined(separator: " ")
+        }
+        if let cached { return (cached.pods, why + " " + fallback) }
+        return ([:], why)
     }
 }
 
@@ -72,21 +146,40 @@ extension KubeMCPText {
         return "Sampled by metrics-server \(KubeMetricsFormat.age(now.timeIntervalSince(oldest))) ago" + (window.map { " over \($0)" } ?? "") + "."
     }
 
-    static func topPods(_ samples: [KubePodMetrics], allNamespaces: Bool, containers: Bool, sortBy: String, limit: Int, now: Date) -> String {
+    static func topPods(
+        _ samples: [KubePodMetrics], allNamespaces: Bool, containers: Bool, sortBy: String, limit: Int, now: Date,
+        specs: [KubeRowID: KubePodShares.Spec] = [:]
+    ) -> String {
         guard !samples.isEmpty else { return "No pod samples: metrics-server samples running pods only." }
         let key: (KubeUsage) -> Double = sortBy == "memory" ? { $0.memory } : { $0.cpu }
         let sorted = samples.sorted { (key($0.total), $1.id) > (key($1.total), $0.id) }
         var header = ["NAME"]
         if containers { header.append("CONTAINER") }
         header += ["CPU(cores)", "MEMORY(bytes)"]
+        let shares = !specs.isEmpty
+        if shares { header += KubePodShares.Column.allCases.map(\.title) }
         if allNamespaces { header.insert("NAMESPACE", at: 0) }
         var rows: [[String]] = []
         for pod in sorted.prefix(limit) {
-            let lines: [(String?, KubeUsage)] = containers ? pod.containers.keys.sorted().map { ($0, pod.containers[$0]!) } : [(nil, pod.total)]
+            let spec = specs[pod.id]
+            let names = pod.containers.keys.sorted()
+            // Containers listed: the pod's own line first where its shares are in hand and it has more than one.
+            var lines: [(String?, KubeUsage)] = containers ? names.map { ($0, pod.containers[$0]!) } : [(nil, pod.total)]
+            if containers, shares, spec != nil, names.count > 1 { lines.insert(("(pod)", pod.total), at: 0) }
             for (container, usage) in lines {
                 var row = [cut(pod.id.name)]
                 if containers { row.append(cut(container ?? "")) }
                 row += [KubeMetricsFormat.cpu(usage.cpu), KubeMetricsFormat.memory(usage.memory)]
+                if shares {
+                    // The pod's line its shares; a container's its own where its spec is in hand (a lone container's, the pod's).
+                    let whole = container == nil || container == "(pod)" || (spec?.containers == 1 && names.count == 1 && spec?.byContainer.isEmpty == true)
+                    let own = whole ? spec : container.flatMap { spec?.containers(named: $0) }
+                    row += KubePodShares.Column.allCases.map { column in
+                        guard let own, case .value(let text, _, _) = KubePodShares.cell(column, used: usage, spec: own, sampled: whole ? names.count : nil)
+                        else { return "-" }
+                        return text
+                    }
+                }
                 if allNamespaces { row.insert(cut(pod.id.namespace ?? ""), at: 0) }
                 rows.append(row)
             }

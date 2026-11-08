@@ -680,6 +680,45 @@ final class KubePrometheusTests: XCTestCase {
         monitor.want([], for: owner)
     }
 
+    /// The Pods list's shares (metrics.md 2.1, M5b): one instant query of
+    /// kube-state-metrics a namespace picked — none across every namespace,
+    /// which is said instead — read into each pod's requests and limits;
+    /// gone with the want.
+    func testThePodsSharesAskKubeStateMetricsOnceANamespace() async throws {
+        // kube-state-metrics' raw series, evaluated by the fake: the query's own semantics, not a fixture's answer.
+        for namespace in ["shop", "billing"] {
+            let pod = ["namespace": namespace, "pod": "web-1", "container": "app"]
+            api.setPrometheusSeries("kube_pod_container_info", labels: pod, value: 1)
+            api.setPrometheusSeries("kube_pod_container_resource_requests", labels: pod.merging(["resource": "cpu"]) { $1 }, value: 0.5)
+            api.setPrometheusSeries("kube_pod_container_resource_limits", labels: pod.merging(["resource": "memory"]) { $1 }, value: 128 * 1_048_576)
+        }
+        let monitor = configuredMonitor(scope: KubeScope.of(["shop", "billing"]))
+        let owner = NSObject()
+        monitor.want([.shares], for: owner)
+        try await until(5, "shares") { monitor.shares?.read != nil }
+        let asked = prometheusRequests.filter { $0.query["query"]?.contains("kube_pod_container_info") == true }
+        XCTAssertEqual(asked.count, 2, "one a namespace: \(asked.map(\.query))")
+        XCTAssertTrue(asked.allSatisfy { $0.path == service.queryPath && $0.query["timeout"] == "20s" }, "instant, with its timeout")
+        XCTAssertEqual(Set(asked.compactMap { $0.query["query"]?.contains(#"namespace="shop""#) }), [true, false])
+        let used = KubeUsage(cpu: 0.25, memory: 96 * 1_048_576)
+        XCTAssertEqual(monitor.shareCell(.cpuRequest, KubeRowID(namespace: "billing", name: "web-1"), used: used).text, "50%")
+        XCTAssertEqual(monitor.shareCell(.memoryLimit, KubeRowID(namespace: "shop", name: "web-1"), used: used).text, "75%")
+        XCTAssertEqual(
+            monitor.shareCell(.cpuLimit, KubeRowID(namespace: "shop", name: "web-1"), used: used).help,
+            "Not every container of this pod has a CPU limit: the pod has none as a whole.")
+        monitor.want([], for: owner)
+        XCTAssertNil(monitor.shares)
+
+        // Every namespace: none asked, why said.
+        api.forgetRequests()
+        let across = configuredMonitor(scope: .all)
+        across.want([.shares], for: owner)
+        try await until(5, "said") { across.shares?.unavailable != nil }
+        XCTAssertEqual(across.shareCell(.cpuRequest, KubeRowID(namespace: "shop", name: "web-1"), used: used).help, KubeChartEmpty.sharesNeedNamespaces.sentence)
+        XCTAssertFalse(prometheusRequests.contains { $0.query["query"]?.contains("kube_pod_container_info") == true }, "\(prometheusRequests)")
+        across.want([], for: owner)
+    }
+
     /// Every query of a chart may come back partial (Thanos, federation),
     /// each with its own warning: the chart keeps three notes in all, not
     /// three a query, and a read that fails doesn't leave the last good

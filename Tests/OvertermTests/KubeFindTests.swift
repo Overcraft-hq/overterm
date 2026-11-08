@@ -339,7 +339,7 @@ final class KubeFindTests: XCTestCase {
         XCTAssertEqual(lines.dropFirst().map { $0.split(separator: ",").first.map(String.init) ?? "" }, ["api-1", "migrate-1", "web-1"])
         XCTAssertTrue(lines.contains { $0.hasPrefix("api-1,0/1,CrashLoopBackOff,") }, "\(lines)")
         page.wide = true
-        XCTAssertTrue(page.csv().hasPrefix("Name,Ready,Status,Restarts,CPU,Memory,Age,IP,Node"), page.csv())
+        XCTAssertTrue(page.csv().hasPrefix("Name,Ready,Status,Restarts,CPU,Memory,%CPU/R,%CPU/L,%MEM/R,%MEM/L,Age,IP,Node"), page.csv())
         XCTAssertEqual(page.csvFileName, "fake-dev-shop-pods.csv")
         XCTAssertTrue(page.canExport)
         page.exportCSV()

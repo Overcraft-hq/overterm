@@ -241,6 +241,10 @@ extension E2ERunner {
             "shown again, read again", await eventually(15) { model.prometheus.volumes?.read != nil || model.prometheus.charts.values.contains { $0.read != nil } })
         check("without looking for Prometheus again", model.prometheus.detections == detections && servicesAsked().isEmpty, "\(servicesAsked())")
         await prometheusAgentMode(model, page, fake)
+        // Part 13: the Pods list's shares — Prometheus off for a moment there, so found again after.
+        await prometheusShares(model, page, fake, service: service)
+        _ = await showKubernetesKind(model, page, "pvc", row: claim)
+        check("Prometheus found again", await eventually(15) { model.prometheus.state == .found(service, .helm) }, "\(model.prometheus.state)")
 
         // A context without Prometheus: no picker.
         model.select("fake-prod")

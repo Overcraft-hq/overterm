@@ -65,13 +65,14 @@ final class KubeMCPTests: XCTestCase {
 
     /// fake-dev and fake-prod; `cluster` renames fake-dev's cluster (the
     /// kubeconfig changed: the same name, another cluster).
-    nonisolated static func list(current: String, cluster: String? = nil) -> KubeContextList {
+    nonisolated static func list(current: String, cluster: String? = nil, devSettings: KubeContextSettings = KubeContextSettings()) -> KubeContextList {
         let contexts = ["fake-dev", "fake-prod"].map { name in
             let clusterName = name == "fake-dev" ? cluster ?? name : name
             return KubeContext(
                 name: name, cluster: clusterName, server: "http://127.0.0.1:1", namespace: name == "fake-dev" ? "shop" : "payments",
                 user: "fake-user-\(name)", auth: KubeAuth.none, file: nil,
-                contextClass: KubeClassifier.classify(context: name, cluster: clusterName, set: nil), settings: KubeContextSettings())
+                contextClass: KubeClassifier.classify(context: name, cluster: clusterName, set: nil),
+                settings: name == "fake-dev" ? devSettings : KubeContextSettings())
         }
         return KubeContextList(contexts: contexts, current: current)
     }
@@ -411,6 +412,8 @@ final class KubeMCPTests: XCTestCase {
         XCTAssertTrue(lines[2].hasPrefix("worker-1") && lines[2].contains("1500m") && lines[3].hasPrefix("web-1"), "by cpu, the most first:\n\(pods)")
         XCTAssertTrue(pods.contains("Sampled by metrics-server 20s ago over 15s."), pods)
         XCTAssertFalse(pods.contains("api-0"), "the page's namespace only")
+        XCTAssertTrue(pods.contains(KubeChartEmpty.topSharesNeedSpecs.sentence), "a namespace's shares need the specs:\n\(pods)")
+        XCTAssertFalse(pods.contains("%CPU/R"), pods)
         let byMemory = try await text("k8s_top", ["sort_by": "memory", "limit": 1])
         XCTAssertTrue(byMemory.contains("web-1") && !byMemory.contains("worker-1 ") && byMemory.contains("… 1 more pods"), byMemory)
         let all = try await text("k8s_top", ["namespace": "all", "containers": true])
@@ -420,6 +423,16 @@ final class KubeMCPTests: XCTestCase {
         XCTAssertTrue(api.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods" })
         let wrong = await refused("k8s_top", ["kind": "deployments"])
         XCTAssertTrue(wrong?.contains("pods or nodes") == true, wrong ?? "answered")
+        // A named pod: its own object read once, its containers' shares.
+        api.addPod(
+            "sized-1", namespace: "shop",
+            FakeKubeAPI.Pod(resources: ["app": ["requests": ["cpu": "500m", "memory": "64Mi"], "limits": ["cpu": "1", "memory": "128Mi"]]]))
+        api.setPodMetrics("sized-1", namespace: "shop", [("app", "250m", "96Mi")])
+        api.forgetRequests()
+        let named = try await text("k8s_top", ["name": "sized-1"])
+        XCTAssertTrue(named.contains("%CPU/R   %CPU/L   %MEM/R   %MEM/L"), named)
+        XCTAssertTrue(named.contains("50%      25%      150%     75%"), named)
+        XCTAssertEqual(api.requests.filter { $0.path == "/api/v1/namespaces/shop/pods/sized-1" }.count, 1, "\(api.requests)")
 
         // No metrics-server: said, and nothing asked of metrics.k8s.io.
         api.metricsServer = false
@@ -428,6 +441,69 @@ final class KubeMCPTests: XCTestCase {
         let absent = try await text("k8s_top", ["context": "fake-prod"])
         XCTAssertTrue(absent.contains("No metrics-server"), absent)
         XCTAssertFalse(api.requests.contains { $0.path.hasPrefix("/apis/metrics.k8s.io") }, "\(api.requests)")
+    }
+
+    /// `k8s_top` across a namespace where the context opts in to
+    /// Prometheus, the page not showing its Pods list: kube-state-metrics
+    /// asked for the call (its raw series, evaluated by the fake), once
+    /// for the namespace, as an agent — the pods' shares, a two-container
+    /// pod's on its own line; across every namespace none asked, said. A
+    /// named pod whose object can't be read says why rather than "name a pod".
+    func testTopAsksKubeStateMetricsForANamespaceWhereThePageDoesnt() async throws {
+        api.addNamespace("monitoring")
+        api.servePrometheus(namespace: "monitoring", service: "prometheus-server", port: "80")
+        let mi = 1_048_576.0
+        func ksm(_ pod: String, _ containers: [(String, cpu: Double, memory: Double)]) {
+            for (container, cpu, memory) in containers {
+                let labels = ["namespace": "shop", "pod": pod, "container": container]
+                api.setPrometheusSeries("kube_pod_container_info", labels: labels, value: 1)
+                api.setPrometheusSeries("kube_pod_container_resource_requests", labels: labels.merging(["resource": "cpu"]) { $1 }, value: cpu)
+                api.setPrometheusSeries("kube_pod_container_resource_requests", labels: labels.merging(["resource": "memory"]) { $1 }, value: memory)
+                api.setPrometheusSeries("kube_pod_container_resource_limits", labels: labels.merging(["resource": "cpu"]) { $1 }, value: cpu * 2)
+            }
+        }
+        ksm("web-1", [("app", 0.5, 128 * mi)])
+        ksm("worker-1", [("app", 0.25, 64 * mi), ("log", 0.05, 16 * mi)])
+        api.setPodMetrics("web-1", namespace: "shop", [("app", "250m", "64Mi")])
+        api.setPodMetrics("worker-1", namespace: "shop", [("app", "150m", "32Mi"), ("log", "30m", "8Mi")])
+        let socket = self.socket!
+        model = makeModel()
+        model.load = { _ in Self.list(current: "fake-dev", devSettings: KubeContextSettings(prometheus: "monitoring/prometheus-server:80")) }
+        model.prometheusOverride = { context, service in
+            KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: context.name), service: service)
+        }
+        func ksmAsked() -> [FakeKubeAPI.Request] {
+            api.requests.filter { $0.isPrometheusQuery && $0.query["query"]?.contains("kube_pod_container_info") == true }
+        }
+
+        let pods = try await text("k8s_top")
+        XCTAssertTrue(pods.contains("%CPU/R   %CPU/L   %MEM/R   %MEM/L"), pods)
+        XCTAssertTrue(pods.contains("web-1      250m         64Mi            50%      25%      50%      -"), pods)
+        XCTAssertTrue(pods.contains("Shares from kube-state-metrics (Prometheus), read now."), pods)
+        XCTAssertFalse(pods.contains(KubeChartEmpty.topSharesNeedSpecs.sentence), pods)
+        XCTAssertEqual(ksmAsked().count, 1, "one query for shop: \(ksmAsked().map(\.query))")
+        XCTAssertTrue(ksmAsked().allSatisfy { $0.query["query"]?.contains(#"namespace="shop""#) == true })
+        XCTAssertNil(model.prometheus.shares, "nothing kept as the page's")
+        XCTAssertFalse(api.requests.contains { $0.path.hasPrefix("/api/v1/namespaces/shop/pods/") }, "no pod object read for a namespace's shares")
+
+        let withContainers = try await text("k8s_top", ["containers": true])
+        let lines = withContainers.components(separatedBy: "\n")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("worker-1   (pod)") && $0.hasSuffix("60%      30%      50%      -") }, "the pod's line:\n\(withContainers)")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("worker-1   log") && $0.hasSuffix("-        -        -        -") }, withContainers)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("web-1      app") && $0.hasSuffix("50%      25%      50%      -") }, "a lone container's, the pod's:\n\(withContainers)")
+
+        api.forgetRequests()
+        let across = try await text("k8s_top", ["namespace": "all"])
+        XCTAssertTrue(across.contains(KubeChartEmpty.topSharesNeedNamespaces.sentence), across)
+        XCTAssertFalse(across.contains("%CPU/R"), across)
+        XCTAssertTrue(ksmAsked().isEmpty, "none across every namespace")
+
+        // A named pod sampled but its object gone: why, not "name a pod".
+        api.setPodMetrics("ghost-1", namespace: "shop", [("app", "10m", "8Mi")])
+        let ghost = try await text("k8s_top", ["name": "ghost-1"])
+        XCTAssertTrue(ghost.contains("Shares of request and limit need the pod's own object, which couldn't be read for ghost-1 ("), ghost)
+        XCTAssertFalse(ghost.contains(KubeChartEmpty.topSharesNeedSpecs.sentence), ghost)
+        XCTAssertFalse(ghost.contains("%CPU/R"), ghost)
     }
 
     // MARK: Failures

@@ -483,6 +483,8 @@ final class KubernetesPageModel: ObservableObject {
             // metrics-server found serving (discovery read): a tab other than a pod's reads, and looks up, only then.
             model.metrics.$availability.removeDuplicates().dropFirst().map { _ in () }
         )
+        // Wide: the Pods list's shares, read only while they show.
+        .merge(with: $wide.removeDuplicates().map { _ in () })
         .sink { [weak self] in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
@@ -1183,7 +1185,7 @@ final class KubernetesPageModel: ObservableObject {
         if let want = metricsWant, !columns.isEmpty {
             // Before Age, as the Status hint is.
             let age = columns.firstIndex { $0.title.caseInsensitiveCompare("Age") == .orderedSame } ?? columns.count
-            columns.insert(contentsOf: Self.metricsColumns(want), at: age)
+            columns.insert(contentsOf: Self.metricsColumns(want) + (showsShareColumns ? Self.shareColumns : []), at: age)
         }
         if showsVolumeColumn, !columns.isEmpty {
             let age = columns.firstIndex { $0.title.caseInsensitiveCompare("Age") == .orderedSame } ?? columns.count
@@ -1274,6 +1276,7 @@ final class KubernetesPageModel: ObservableObject {
         if id == Self.namespaceColumn { return row.row.id.namespace.map { .text($0) } }
         if id == KubeDeploymentHint.column { return row.hint.map { .text($0.text.lowercased()) } }
         if let measure = Self.measure(of: id) { return usage(measure, of: row, now: now).sort.map { .number($0) } }
+        if let share = KubePodShares.Column(rawValue: id) { return self.share(share, of: row, now: now).sort.map { .number($0) } }
         if id == Self.volumeColumn { return volumeUsage(of: row).sort.map { .number($0) } }
         guard let (index, column) = column(id), index < row.row.cells.count else { return nil }
         switch column.name.lowercased() {
@@ -1423,6 +1426,7 @@ final class KubernetesPageModel: ObservableObject {
         if column.id == Self.namespaceColumn { return row.row.id.namespace ?? "" }
         if column.id == KubeDeploymentHint.column { return row.hint?.text ?? "" }
         if let measure = Self.measure(of: column.id) { return usage(measure, of: row, now: now).text }
+        if let share = KubePodShares.Column(rawValue: column.id) { return self.share(share, of: row, now: now).text }
         if column.id == Self.volumeColumn { return volumeUsage(of: row).text }
         guard let (index, server) = self.column(column.id), index < row.row.cells.count else { return "" }
         let text = row.row.cells[index].text

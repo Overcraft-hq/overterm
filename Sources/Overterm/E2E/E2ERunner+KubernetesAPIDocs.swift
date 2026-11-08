@@ -67,7 +67,17 @@ extension E2ERunner {
         // A hover: the field's docs, from fake-dev's own /openapi/v3.
         let replicas = (text as NSString).range(of: "replicas").location + 2
         editor.textView.setSelectedRange(NSRange(location: replicas, length: 0))
-        check("the editor's window has the keyboard", editor.view.window?.isKeyWindow == true)
+        // The editor's window takes the keyboard as it opens the file, not
+        // at once: waited for, and what had it instead said.
+        let keyed = await eventually(5) { editor.view.window?.isKeyWindow == true }
+        check(
+            "the editor's window has the keyboard", keyed,
+            "active \(NSApp.isActive), key \(NSApp.keyWindow.map { "\(type(of: $0)) \($0.title)" } ?? "none"), the editor's \(editor.view.window.map { "\(type(of: $0))" } ?? "none")")
+        if !keyed, let window = editor.view.window {
+            // The rest of the part is about the docs, not the focus: given it, as a person's click would.
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
         editor.showHover(at: replicas, fromKeyboard: true)
         check("a hover shows replicas' docs", await eventually(15) { Self.hoverText(editor).contains("Number of desired pods") }, Self.hoverText(editor))
         let hover = Self.hoverText(editor)

@@ -268,7 +268,10 @@ final class KubernetesPageTests: XCTestCase {
 
         XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "Age"], "the server's, priority 0, and usage")
         page.wide = true
-        XCTAssertEqual(page.columns.map(\.title), ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "Age", "IP", "Node", "Nominated Node", "Readiness Gates"])
+        XCTAssertEqual(
+            page.columns.map(\.title),
+            ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "%CPU/R", "%CPU/L", "%MEM/R", "%MEM/L", "Age", "IP", "Node", "Nominated Node", "Readiness Gates"],
+            "wide: the shares too")
         page.wide = false
 
         XCTAssertEqual(page.failing.map(\.id.name), ["api-1"])

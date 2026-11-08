@@ -297,7 +297,7 @@ enum KubeMCP {
     }
 
     /// A read's failure, said scrubbed.
-    private static func said(_ error: Error) -> String {
+    static func said(_ error: Error) -> String {
         if let tool = error as? BrowserMCP.ToolError { return tool.message }
         return KubeMCPText.scrubbed(KubernetesModel.said(error))
     }
@@ -904,7 +904,7 @@ enum KubeMCP {
                 ], required: ["name"]),
             tool(
                 "k8s_top",
-                "CPU and memory used now, as `kubectl top` says it, from metrics-server (metrics.k8s.io): a namespace's pods (or all), one pod's containers, or the nodes with their share of allocatable. Sorted, bounded. Says so when the cluster has no metrics-server.",
+                "CPU and memory used now, as `kubectl top` says it, from metrics-server (metrics.k8s.io): a namespace's pods (or all), one pod's containers, or the nodes with their share of allocatable. Sorted, bounded. Says so when the cluster has no metrics-server. Pods get %CPU/R %CPU/L %MEM/R %MEM/L (shares of their containers' requests and limits) where their specs are in hand: a named pod's own (one read each), or for a namespace (up to 10) kube-state-metrics' through Prometheus, where the context opts in to it.",
                 [
                     "kind": ["type": "string", "enum": ["pods", "nodes"], "description": "pods (default) or nodes."],
                     "name": ["type": "string", "description": "Only this pod (its containers)."],

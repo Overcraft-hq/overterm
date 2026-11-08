@@ -44,6 +44,18 @@ enum KubeChartEmpty: Equatable, Sendable {
     case busy(status: Int, retryAfter: Int?)
     /// Prometheus keeps data from this time: the chart hatches before it (a footnote).
     case retention(Date)
+    /// The Pods list's shares, without Prometheus: the rows carry no spec (decision 10).
+    case sharesNeedPrometheus
+    /// The Pods list's shares across every namespace: read a namespace at a time.
+    case sharesNeedNamespaces
+    /// kube-state-metrics' answer for the namespace's shares cut at the reader's cap.
+    case sharesCut(String)
+    /// kube-state-metrics isn't scraped: no requests or limits to share against.
+    case sharesNeedKSM
+    /// `k8s_top` across a namespace without the specs in hand.
+    case topSharesNeedSpecs
+    /// `k8s_top`'s shares across every namespace (or more than a page reads): none asked.
+    case topSharesNeedNamespaces
 
     var sentence: String {
         switch self {
@@ -85,6 +97,18 @@ enum KubeChartEmpty: Equatable, Sendable {
             return "Prometheus is busy (HTTP \(status))" + (retryAfter.map { "; asked again in \($0) s." } ?? "; asked again at the next refresh.")
         case .retention(let date):
             return "Prometheus keeps data from \(KubeChartEmpty.day(date))"
+        case .sharesNeedPrometheus:
+            return "Shares of request and limit need each pod's spec, which the list's rows don't carry: turn Prometheus on for this context (its kube-state-metrics has them)."
+        case .sharesNeedNamespaces:
+            return "Shares of request and limit are read a namespace at a time: pick one, or up to \(KubeScope.watchCap) (n)."
+        case .sharesCut(let namespace):
+            return "\(namespace) has more than \(KubePodShares.maxPods) pods: kube-state-metrics' answer for their shares is cut, so none is shown."
+        case .topSharesNeedSpecs:
+            return "Shares of request and limit need the pods' specs: name a pod, or turn Prometheus on for this context (its kube-state-metrics has them)."
+        case .topSharesNeedNamespaces:
+            return "Shares of request and limit are read a namespace at a time: name one, or up to \(KubeScope.watchCap) (or a pod)."
+        case .sharesNeedKSM:
+            return "kube-state-metrics isn't scraped: there are no requests or limits to share against."
         }
     }
 
