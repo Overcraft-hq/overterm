@@ -631,16 +631,16 @@ Data is merged off the main thread and published in one assignment. `@Published`
 
 | Shown | apiserver GETs per minute | Prometheus queries |
 |---|---|---|
-| a pod's Metrics tab, Live | 4 (the pod's metrics) | 0 without Prometheus; with it, the on-screen Prometheus-only charts (C3, P3, P4), each 1 per step (30–60 s) |
-| a pod's tab, 1h, 3 charts on screen | 0 | 3 on open, 3 per minute (incremental) |
-| a workload's tab, Live | 4 (its pods' metrics) + 1 (status) + 1 once (the HPA Table) | 0 |
+| a pod's Metrics tab, Live | 4 (the pod's metrics) + 1 (the pod's object, for its markers, M4) | 0 without Prometheus; with it, the on-screen Prometheus-only charts (C3, P3, P4), each 1 per step (30–60 s) |
+| a pod's tab, 1h, 3 charts on screen | 1 (the pod's object, for its markers, M4; with metrics-server) | 3 on open, 3 per minute (incremental) |
+| a workload's tab, Live | 4 (its pods' metrics) + 1 (status) + 1 once (the HPA Table) + 1 (its pods by selector as objects, ≤ 250 and ≤ 16 MB, restarts and last terminations kept, for its markers, M4; stopped on a 403 or a failed sign-in) | 0 |
 | an HPA's tab | 4 (the HPA) + 4 (its target's pods) | 0 Live |
 | a node's tab, Live | 4 (the node's metrics) + 0.2 (its pods as objects, every 5 min); after "Sample top pods", + 8 at most (4 namespaces × 2), or 0 when the page's all-namespaces list is already polled, for at most 15 min | 0 |
 | a namespace's tab, Live | 4 (its pods' metrics) + 1 (the Metadata Table, paged) | 0 |
 | Overview, 24h | 4 (`/nodes`, as built) | (review) about 6 on open (X1 and X2 one union each, X3 ranking and range, X4 CPU and memory by node), then 6 per 5 min |
 | page hidden | 0 | 0 |
 
-Per context there are at most 3 metrics targets for a detail, plus the page's own (the Nodes and Pods columns, the Overview). A fourth detail target replaces the oldest.
+Per context there are at most 3 metrics targets for a detail, plus the page's own (the Nodes and Pods columns, the Overview). A fourth detail target replaces the oldest. The markers' read of a pod's or a workload's pods' states (M4) is not one of them: a workload's tab already takes the three (its pods, its replicas, its HPA), so it is read by the tab itself, a minute apart, by the same rules — only while shown, bounded, stopped on a 403 or a failed sign-in.
 
 ## 7. Agents
 

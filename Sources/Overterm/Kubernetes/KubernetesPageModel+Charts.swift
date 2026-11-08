@@ -46,6 +46,8 @@ extension KubernetesPageModel {
     @discardableResult
     func stepMetricsRange(_ by: Int) -> Bool {
         guard metricsTabShows else { return false }
+        // From a custom window: the range it was over, then the step.
+        metricsWindow = nil
         let next = metricsRange.stepped(by, among: metricsRanges)
         if next != metricsRange { metricsRange = next }
         return true
@@ -53,8 +55,9 @@ extension KubernetesPageModel {
 
     /// A range picked; one that can't be, ignored.
     func pickMetricsRange(_ range: KubeMetricsRange) {
-        guard metricsRanges.contains(range), range != metricsRange else { return }
-        metricsRange = range
+        guard metricsRanges.contains(range) else { return }
+        if metricsWindow != nil { metricsWindow = nil }
+        if range != metricsRange { metricsRange = range }
     }
 
     /// The pod's charts at the range picked: from the ring, at the last
@@ -72,8 +75,10 @@ extension KubernetesPageModel {
         // How far apart samples come: the poll's, or metrics-server's own window when longer.
         let interval = max(15, poll, reading?.sample?.resolution ?? 0)
         let range = metricsRanges.contains(metricsRange) ? metricsRange : .live
+        let changes = detail.map { chartChanges(of: $0) } ?? KubeChartChanges()
         let (charts, built) = KubePodChartsKey.charts(
-            ref: ref, object: object, ring: model.metrics.ring, range: range, now: now, interval: interval, cache: &podChartsCache)
+            ref: ref, object: object, ring: model.metrics.ring, range: range, now: now, interval: interval, changes: changes, window: metricsWindow,
+            cache: &podChartsCache)
         if built { podChartsBuilds += 1 }
         return charts
     }
@@ -100,14 +105,6 @@ extension KubernetesPageModel {
     /// The tab offers the Overview: metrics-server absent, Prometheus on.
     var metricsTabOffersOverview: Bool { model.metrics.availability == .absent && chartsFromPrometheus }
 
-    /// A marker clicked: a restart's or an OOMKill's container, its
-    /// previous instance's log (the one kubelet keeps).
-    func openMarker(_ marker: KubeChartMarker) {
-        guard let logs = detail?.logs else { return }
-        if let container = marker.container { logs.pick(container: container, previous: true) }
-        showTab(.logs)
-    }
-
     /// "Logs from Here": the container's log from a minute before `time`
     /// (`sinceTime`) — a spike's first question is what it logged then.
     func logsFromHere(container: String?, at time: Date) {
@@ -126,18 +123,24 @@ struct KubePodChartsKey: Equatable, Sendable {
     var now: Date
     var range: KubeMetricsRange
     var interval: TimeInterval
+    /// What its markers were joined from.
+    var changes: Int
+    var window: KubeChartWindow?
 
     /// A pod's charts from `cache` when built from the same, else built —
     /// the object's JSON parsed then, and only then — and kept there.
     @MainActor
     static func charts(
         ref: KubeObjectRef, object: KubeObject, ring: KubeUsageRing, range: KubeMetricsRange, now: Date, interval: TimeInterval,
-        cache: inout (key: KubePodChartsKey, charts: KubePodCharts?)?
+        changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil, cache: inout (key: KubePodChartsKey, charts: KubePodCharts?)?
     ) -> (charts: KubePodCharts?, built: Bool) {
         guard let namespace = ref.namespace else { return (nil, false) }
-        let key = KubePodChartsKey(ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: now, range: range, interval: interval)
+        let key = KubePodChartsKey(
+            ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: now, range: range, interval: interval, changes: changes.version,
+            window: window)
         if let cached = cache, cached.key == key { return (cached.charts, false) }
-        let charts = KubePodCharts.build(namespace: namespace, pod: ref.name, object: object.json, ring: ring, range: range, now: now, interval: interval)
+        let charts = KubePodCharts.build(
+            namespace: namespace, pod: ref.name, object: object.json, ring: ring, range: range, now: now, interval: interval, changes: changes, window: window)
         cache = (key, charts)
         return (charts, true)
     }

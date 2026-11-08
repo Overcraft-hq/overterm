@@ -653,4 +653,128 @@ final class KubeObjectChartsTests: XCTestCase {
         }
         XCTAssertTrue(api.writes.isEmpty)
     }
+
+    // MARK: Markers (M4)
+
+    func testAWorkloadsTabMarksItsPodsRestartsFromABoundedReadWhileItShows() async throws {
+        let (model, page) = try pageOverFake()
+        page.podStatesInterval = .milliseconds(200)
+        model.show()
+        defer { model.hide() }
+        page.visible = true
+        try await until(5, "listed, metrics-server served") { model.discovery != nil && model.metrics.availability == .served }
+        let since = try await openMetricsTab(model, page, kind: "deployments", selection: "shop/web")
+        let statesRead = { (request: FakeKubeAPI.Request) in
+            request.path == "/api/v1/namespaces/shop/pods" && request.query["labelSelector"] == "app=web" && request.query["limit"] == "250"
+        }
+        try await until(5, "its pods' states read by its selector, bounded") { self.api.requests.dropFirst(since).contains(where: statesRead) }
+        try await until(5, "two pods' states") { page.podStates?.log.states?.pods.count == 2 }
+        let finished = Date().addingTimeInterval(-30)
+        api.updatePod("web-7d9f8b6c5d-x2k4q", namespace: "shop") {
+            $0.restarts = 1
+            $0.lastReason = "OOMKilled"
+            $0.lastExitCode = 137
+            $0.lastFinished = finished
+        }
+        try await until(5, "the OOMKill marked on its memory, named by its pod") {
+            guard let detail = page.detail, let charts = page.objectCharts(of: detail),
+                let memory = charts.charts.first(where: { $0.data.id.hasSuffix("deployment.web.memory") })
+            else { return false }
+            return memory.data.shownMarkers.contains { $0.kind == .oom && $0.title.hasPrefix("web-7d9f8b6c5d-x2k4q/app: OOMKilled") }
+        }
+        XCTAssertEqual(page.podStates?.log.restarts.map(\.container), ["app"], "the restart seen between two reads")
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/apps/v1/namespaces/shop/replicasets" }, "its History, as the History tab reads it")
+
+        // The marker opens the pod's previous log.
+        let marker = try XCTUnwrap(
+            page.detail.flatMap { page.objectCharts(of: $0) }?.charts.flatMap(\.data.shownMarkers).first { $0.kind == .oom })
+        page.openMarker(marker)
+        XCTAssertEqual(page.detail?.ref.name, "web-7d9f8b6c5d-x2k4q")
+        XCTAssertEqual(page.detailTab, .logs)
+        try await until(5, "its app container's previous log") { page.detail?.logs?.container == "app" && page.detail?.logs?.previous == true }
+        XCTAssertNil(page.podStates?.log.states?.pods.first { $0.name == "web-7d9f8b6c5d-z4m5r" }, "another detail: the workload's states dropped")
+
+        // Hidden: not read.
+        page.goBack()
+        page.showTab(.metrics)
+        page.visible = false
+        try await Task.sleep(for: .milliseconds(100))
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertFalse(api.requests.contains(where: statesRead), "\(api.requests.map(\.path))")
+        XCTAssertTrue(api.writes.isEmpty)
+    }
+
+    func testThePodsStatesReadStopsAtItsBoundAndAtA403AndSaysSo() async throws {
+        let (model, page) = try pageOverFake()
+        page.podStatesInterval = .milliseconds(200)
+        page.podStatesMaxBytes = 1024
+        model.show()
+        defer { model.hide() }
+        page.visible = true
+        try await until(5, "listed, metrics-server served") { model.discovery != nil && model.metrics.availability == .served }
+        let statesRead = { (request: FakeKubeAPI.Request) in
+            request.path == "/api/v1/namespaces/shop/pods" && request.query["labelSelector"] == "app=web" && request.query["limit"] == "250"
+        }
+        _ = try await openMetricsTab(model, page, kind: "deployments", selection: "shop/web")
+        try await until(5, "past its bound: stopped, said") { page.podStates?.stopped == true }
+        XCTAssertNil(page.podStates?.log.states, "nothing past the bound is decoded")
+        let said = KubePodStates.tooLarge(limit: 1024)
+        XCTAssertTrue(said.contains("1 KB"), said)
+        try await until(5, "said under the charts") {
+            guard let detail = page.detail, let charts = page.objectCharts(of: detail) else { return false }
+            return charts.notes.contains { $0.hasSuffix(said) }
+        }
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertFalse(api.requests.contains(where: statesRead), "not asked again in a loop")
+
+        // Within the bound, then refused: stopped at the 403, said once.
+        page.closeDetail()
+        page.podStatesMaxBytes = KubePodStates.maxBytes
+        _ = try await openMetricsTab(model, page, kind: "deployments", selection: "shop/web")
+        try await until(5, "two pods' states") { page.podStates?.log.states?.pods.count == 2 }
+        api.forbidden = ["pods@shop"]
+        defer { api.forbidden = [] }
+        try await until(5, "refused: stopped") { page.podStates?.stopped == true }
+        XCTAssertTrue(page.podStates?.problem?.hasPrefix("Not allowed") == true, "\(page.podStates?.problem ?? "nil")")
+        XCTAssertEqual(page.podStates?.log.states?.pods.count, 2, "what was read stands")
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(600))
+        XCTAssertFalse(api.requests.contains(where: statesRead), "a 403 isn't asked again")
+        XCTAssertTrue(api.writes.isEmpty)
+    }
+
+    func testAMarkersWindowNarrowsTheChartsUntilReset() async throws {
+        let (model, page) = try pageOverFake()
+        model.show()
+        defer { model.hide() }
+        page.visible = true
+        try await until(5, "listed, metrics-server served") { model.discovery != nil && model.metrics.availability == .served }
+        api.addEvent(
+            about: "horizontalpodautoscalers.autoscaling", "web", namespace: "shop", type: "Normal", reason: "SuccessfulRescale", message: "New size: 3", component: "horizontal-pod-autoscaler")
+        _ = try await openMetricsTab(model, page, kind: "horizontalpodautoscalers", selection: "shop/web")
+        try await until(5, "its events read once, its rescale marked") {
+            guard let detail = page.detail, let charts = page.objectCharts(of: detail) else { return false }
+            return charts.charts.first?.data.shownMarkers.map(\.kind) == [.scale]
+        }
+        XCTAssertEqual(api.requests.filter { $0.path == "/api/v1/namespaces/shop/events" }.count, 1, "asked once")
+        let marker = try XCTUnwrap(page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first?.data.shownMarkers.first)
+        page.showAround(marker)
+        let window = try XCTUnwrap(page.metricsWindow)
+        XCTAssertLessThanOrEqual(window.end.timeIntervalSince(marker.time), 1800)
+        let narrowed = try XCTUnwrap(page.detail.flatMap { page.objectCharts(of: $0) })
+        XCTAssertEqual(narrowed.charts.first?.data.start, window.start)
+        XCTAssertTrue(narrowed.caption.contains("Custom \(window.title)") || !narrowed.hasSamples, narrowed.caption)
+        XCTAssertTrue(page.press("\u{1B}"), "Esc: the window goes first")
+        XCTAssertNil(page.metricsWindow)
+        XCTAssertNotNil(page.detail, "the detail stays")
+        page.showAround(marker)
+        page.pickMetricsRange(.live)
+        XCTAssertNil(page.metricsWindow, "a range picked: the window goes")
+        page.openMarker(marker)
+        XCTAssertEqual(page.detailTab, .events)
+        XCTAssertEqual(page.markedEntry, "event/\(marker.id.dropFirst("event/".count))")
+        XCTAssertTrue(api.writes.isEmpty)
+    }
 }

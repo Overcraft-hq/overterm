@@ -437,19 +437,24 @@ struct KubeDetailView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             Rectangle().fill(theme.border).frame(height: 1)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    switch session.events {
-                    case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
-                    case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
-                    case .loaded(let events) where events.isEmpty:
-                        Text("No events: the cluster keeps them about an hour.").font(.system(size: 12)).foregroundStyle(theme.text3)
-                    case .loaded(let events):
-                        ForEach(events) { event in eventRow(event) }
+            ScrollViewReader { reader in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        switch session.events {
+                        case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+                        case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
+                        case .loaded(let events) where events.isEmpty:
+                            Text("No events: the cluster keeps them about an hour.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                        case .loaded(let events):
+                            ForEach(events) { event in eventRow(event).id("event/\(event.id)") }
+                        }
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // A chart's marker opened it: there.
+                .onAppear { if let marked = page.markedEntry { reader.scrollTo(marked, anchor: .center) } }
+                .onChange(of: session.events) { _ in if let marked = page.markedEntry { reader.scrollTo(marked, anchor: .center) } }
             }
         }
         .onAppear { session.loadEvents() }
@@ -463,7 +468,8 @@ struct KubeDetailView: View {
     }
 
     private func eventRow(_ event: KubeEvent) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        let marked = page.markedEntry == "event/\(event.id)"
+        return HStack(alignment: .top, spacing: 8) {
             Image(systemName: event.isWarning ? "exclamationmark.triangle.fill" : "info.circle")
                 .font(.system(size: 11)).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text3).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
@@ -482,7 +488,9 @@ struct KubeDetailView: View {
                 if !event.source.isEmpty { Text(verbatim: event.source).font(.system(size: 10.5)).foregroundStyle(theme.text3) }
             }
         }
-        .accessibilityIdentifier("kubernetes.detail.event")
+        .padding(marked ? 6 : 0)
+        .background(RoundedRectangle(cornerRadius: 6).fill(marked ? theme.selected : .clear))
+        .accessibilityIdentifier(marked ? "kubernetes.detail.event.marked" : "kubernetes.detail.event")
     }
 }
 

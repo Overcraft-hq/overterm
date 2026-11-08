@@ -23,27 +23,32 @@ struct KubeTimelineView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             Rectangle().fill(theme.border).frame(height: 1)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    switch timeline.state {
-                    case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
-                    case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
-                    case .loaded:
-                        if let problem = timeline.diffProblem {
-                            Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+            ScrollViewReader { reader in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        switch timeline.state {
+                        case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+                        case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
+                        case .loaded:
+                            if let problem = timeline.diffProblem {
+                                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                            }
+                            ForEach(timeline.notes, id: \.self) { note in
+                                Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.waiting).fixedSize(horizontal: false, vertical: true)
+                            }
+                            compare
+                            if timeline.entries.isEmpty {
+                                Text("No changes kept: no revisions, Helm records or recent events.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                            }
+                            ForEach(timeline.entries) { entry in row(entry).id(entry.id) }
                         }
-                        ForEach(timeline.notes, id: \.self) { note in
-                            Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.waiting).fixedSize(horizontal: false, vertical: true)
-                        }
-                        compare
-                        if timeline.entries.isEmpty {
-                            Text("No changes kept: no revisions, Helm records or recent events.").font(.system(size: 12)).foregroundStyle(theme.text3)
-                        }
-                        ForEach(timeline.entries) { entry in row(entry) }
                     }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // A chart's marker opened it: there.
+                .onAppear { if let marked = page.markedEntry { reader.scrollTo(marked, anchor: .center) } }
+                .onChange(of: timeline.entries) { _ in if let marked = page.markedEntry { reader.scrollTo(marked, anchor: .center) } }
             }
         }
         .onAppear { page.detail?.showHistory() }
@@ -109,7 +114,8 @@ struct KubeTimelineView: View {
     // MARK: An entry
 
     private func row(_ entry: KubeTimelineEntry) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        let marked = page.markedEntry == entry.id
+        return HStack(alignment: .top, spacing: 8) {
             Image(systemName: symbol(entry.kind)).font(.system(size: 11)).foregroundStyle(color(entry.kind)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -137,7 +143,9 @@ struct KubeTimelineView: View {
                 }
             }
         }
-        .accessibilityIdentifier("kubernetes.timeline.entry")
+        .padding(marked ? 6 : 0)
+        .background(RoundedRectangle(cornerRadius: 6).fill(marked ? theme.selected : .clear))
+        .accessibilityIdentifier(marked ? "kubernetes.timeline.entry.marked" : "kubernetes.timeline.entry")
     }
 
     private func symbol(_ kind: KubeTimelineEntry.Kind) -> String {

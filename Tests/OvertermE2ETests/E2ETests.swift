@@ -40,6 +40,22 @@ final class E2ETests: XCTestCase {
         } else {
             process.standardError = FileHandle.nullDevice
         }
+        // Drained as it comes: a pipe holds 64 KB, and a scenario printing
+        // more would block on its next line until it timed out.
+        // An empty read is the end: the handler stops itself and says so, so
+        // the last chunk is appended by the handler alone, in order — never
+        // by a second read racing a handler block still running.
+        let collected = Collected()
+        let ended = DispatchSemaphore(value: 0)
+        out.fileHandleForReading.readabilityHandler = { @Sendable handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                ended.signal()
+                return
+            }
+            collected.append(data)
+        }
         try process.run()
 
         let deadline = Date().addingTimeInterval(timeout)
@@ -48,7 +64,10 @@ final class E2ETests: XCTestCase {
             process.terminate()
             XCTFail("\(scenario): timed out after \(Int(timeout)) s")
         }
-        let printed = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        // A child of the app still holding the pipe would keep it open: bounded.
+        if ended.wait(timeout: .now() + 10) == .timedOut { out.fileHandleForReading.readabilityHandler = nil }
+        let printed = String(decoding: collected.data, as: UTF8.self)
         let lines = printed.split(separator: "\n").map(String.init).filter { $0.hasPrefix("E2E ") }
         // Dead before a line, by a signal: launched in quick succession,
         // macOS's LaunchServices connection can trap in NSApplication's
@@ -207,5 +226,23 @@ final class E2ETests: XCTestCase {
             """
         try Data(session.utf8).write(to: support.appendingPathComponent("session.json"))
         try run("session", env: ["OVERTERM_SUPPORT_DIR": support.path, "OVERTERM_E2E_CWD": dir.path])
+    }
+}
+
+/// What a scenario printed, gathered on the pipe's queue.
+private final class Collected: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bytes = Data()
+
+    func append(_ data: Data) {
+        lock.lock()
+        bytes.append(data)
+        lock.unlock()
+    }
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return bytes
     }
 }

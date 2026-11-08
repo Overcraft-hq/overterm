@@ -75,6 +75,7 @@ extension KubernetesPageModel {
         model.metrics.want(metricsOnScreen, for: self)
         model.metrics.wantDetail(metricsDetailsOnScreen, for: self)
         if visible, windowVisible { askChartLookups() }
+        updateChartChanges()
         updatePrometheusWanted()
     }
 
