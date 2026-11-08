@@ -5116,6 +5116,57 @@ line breaks where two points are more than two steps apart
 (`KubePrometheusReader.segments`), never bridged.
 Without Prometheus no picker shows: the metrics-server sparkline says it
 covers the time shown; with it the sparkline gives way to the chart.
+**The probe** (`KubePromProfile`, pure but for `probe`; metrics.md 4.3,
+4.4) asks, once a context and only when a chart that depends on it shows
+(the cluster's, a pod's — a volume's and the PVC column's don't), four
+instant queries one after another: what exists and each metric's series
+count (`count by (__name__)` over the metrics the charts read and the
+mixin's rules), the duplicates (one `or` union, each arm tagged
+`overterm_s`: cAdvisor by job and `metrics_path`, kube-state-metrics'
+jobs, whether cAdvisor's series carry `node`), the cAdvisor job's own
+scrape (`600 / max(count_over_time(up{job=…}[10m]))`, rounded to 15, 30
+or 60 s) and, where Prometheus scrapes itself, its oldest sample. Every
+chart waiting meanwhile shares the one probe (`KubePrometheusMonitor.
+profile`). From it: `metrics_path="/metrics/cadvisor"` pinned where
+kubelet's two paths both carry cAdvisor's counters, the first
+kube-state-metrics job where two answer, the node label (`node` or
+`instance`), the rate window's scrape, kube-state-metrics 1.x's names or
+its absence (said), the retention hatched as a band ("Prometheus keeps
+data from Oct 28"), and agent mode — an agent's `unavailable`, or a 404
+that isn't the apiserver's — said in the chart's place and never asked
+again within the hour. A first query Prometheus refuses leaves the
+profile unknown and the charts read as before it. It is kept in memory
+with the context, its Service, use and cluster, and asked again after an
+hour while charts show, on a 404 or 422, or by `forgetProfile` (the
+scenario's). **Tiers** (`KubePromTier`): the cluster's lines from the
+mixin's node rules, else node-exporter, else raw cAdvisor where
+`KubeQueryCost` allows it (6 h across the cluster; past it the sentence
+says about how many samples it would read); a pod's raw over an hour or
+less (a 5-minute rule smooths a spike away), its rules past it; requests
+from the mixin's active-pod rules where they exist. The caption names the
+tier and the scrape. `KubeQueryCost` (pure) also holds the namespace,
+subquery, name-regex and ranking caps the later charts use. Every empty
+or partial chart says why from one table (`KubeChartEmpty`: the 403s on
+`services/proxy` and metrics.k8s.io, the credential failure, the
+filter's 403, `bad_data`, a timeout, busy…), and the reader says which
+it was (`KubePrometheusReader.Failure.Kind`). **The queue**
+(`KubePromQueue`, an actor, one a context, Service, use and cluster —
+another of any is another queue — the probe's and the charts' queries
+alike): 4 in flight, identical queries joined, one
+nobody waits for dropped or cancelled (cancelled on its way, it keeps its
+place until it ends but is never joined again), visible charts first, then a
+ranking, a peak, sizing, an agent's below every page's and holding at
+most 2 places; a 429's `Retry-After`, or a 503's that has one, pauses the context (whole
+seconds only, at most `maxPause`, the sentence saying the pause taken; a
+503 without one is said in the apiserver's words), a
+credential failure or a `services/proxy` 403 stops it (said once; a
+sign-in, `retry`, makes every queue again). Requests and limits from the
+active-pod rules are `max by` their pod's labels before the sum, as the
+raw tier is: the rule keeps kube-state-metrics' `instance`. The fake's Prometheus kinds
+(`FakePromProfile`: kube-prometheus-stack, the prometheus chart, without
+node-exporter, kube-state-metrics 1.x, containerd, agent mode) answer the
+probe as fixtures; `refusePrometheusProxy` answers as the apiserver
+would (a 403, a 429 with its `Retry-After`).
 **A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5) is
 `KubeChartData` — its series, each with a role (usage, or a reference
 line: request, limit, allocatable, capacity, quota, guide), the window,

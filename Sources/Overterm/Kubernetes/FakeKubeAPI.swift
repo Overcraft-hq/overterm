@@ -276,6 +276,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     private var prometheusSeries: [(metric: String, labels: [String: String], value: Double)] = []
     /// What the fake Prometheus answers instead of its queries (`failPrometheus`).
     private var prometheusFailure: (status: Int, text: String)?
+    /// The apiserver's own answer for the Service's proxy instead (`refusePrometheusProxy`).
+    private var prometheusRefusal: (status: Int, retryAfter: Int?)?
     /// Fixtures matched by a fragment of the query, newest first (`setPrometheusMatrix`).
     private var prometheusFixtures: [FakePromFixture] = []
     private var history: [(version: Int, type: String, object: Object)] = []
@@ -458,6 +460,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         locked { prometheusFailure = status.map { ($0, text) } }
     }
 
+    /// The apiserver answers the Service's proxy itself with a Status of
+    /// `status` — a 403 (`get services/proxy` refused), a 429 or 503 with
+    /// its `Retry-After` — nil, Prometheus answers again.
+    func refusePrometheusProxy(_ status: Int?, retryAfter: Int? = nil) {
+        locked { prometheusRefusal = status.map { ($0, retryAfter) } }
+    }
+
     /// A series Prometheus holds: its metric's name, labels and value now —
     /// what a query (`FakePromQL`: `sum`/`max` by, `rate` taken as the
     /// value, `== n`, `* on(…) group_left()`) adds up.
@@ -481,6 +490,11 @@ final class FakeKubeAPI: @unchecked Sendable {
             prometheusFixtures.removeAll { $0.fragment == fragment }
             prometheusFixtures.insert(FakePromFixture(fragment: fragment, lines: lines, warnings: warnings, failure: failure), at: 0)
         }
+    }
+
+    /// The fixture set for `fragment` removed.
+    func clearPrometheusMatrix(_ fragment: String) {
+        locked { prometheusFixtures.removeAll { $0.fragment == fragment } }
     }
 
     /// Lists answer without a resourceVersion, as metrics.k8s.io's do.
@@ -1291,10 +1305,21 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A Service's proxy: the fake Prometheus's two query paths, else 403.
     private func prometheusAnswer(_ route: Route, query: [String: String]) -> Answer {
-        let (served, series, failure, fixtures) = locked { (prometheus, prometheusSeries, prometheusFailure, prometheusFixtures) }
+        let (served, series, failure, fixtures, refusal) = locked {
+            (prometheus, prometheusSeries, prometheusFailure, prometheusFixtures, prometheusRefusal)
+        }
         guard let served, route.namespace == served.namespace, route.name == "\(served.service):\(served.port)",
             let sub = route.subresource, sub == "proxy/api/v1/query" || sub == "proxy/api/v1/query_range"
         else { return .text(403, "Forbidden") }
+        if let refusal {
+            var headers = [("Content-Type", "application/json")]
+            if let after = refusal.retryAfter { headers.append(("Retry-After", String(after))) }
+            let message =
+                refusal.status == 403
+                ? "services \"\(served.service):\(served.port)\" is forbidden: User \"fake\" cannot get resource \"services/proxy\" in API group \"\" in the namespace \"\(served.namespace)\""
+                : "the server is busy (HTTP \(refusal.status))"
+            return .raw(refusal.status, Self.status(refusal.status, refusal.status == 403 ? "Forbidden" : "TooManyRequests", message), headers)
+        }
         if let failure { return .text(failure.status, failure.text) }
         let promql = query["query"] ?? ""
         let fixture = fixtures.first { $0.matches(promql) }

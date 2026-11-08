@@ -349,40 +349,88 @@ enum KubePromQL {
     /// cgroup without an image.
     static let containers = #"container!="",image!="",container!="POD""#
 
-    /// A container's gauge, one series a container.
-    static func containerGauge(_ metric: String, _ filter: String = "") -> String {
-        "max by (namespace,pod,container)(\(metric){\(containers)\(filter.isEmpty ? "" : "," + filter)})"
+    /// A container's gauge, one series a container — cAdvisor's path and
+    /// job pinned where the profile found two.
+    static func containerGauge(_ metric: String, _ filter: String = "", profile: KubePromProfile = .unknown) -> String {
+        "max by (namespace,pod,container)(\(metric){\(profile.cadvisorMatchers)\(filter.isEmpty ? "" : "," + filter)})"
     }
 
     /// A container's counter's rate, one series a container.
-    static func containerRate(_ metric: String, _ filter: String = "", window: String) -> String {
-        "sum by (namespace,pod,container)(rate(\(metric){\(containers)\(filter.isEmpty ? "" : "," + filter)}[\(window)]))"
+    static func containerRate(_ metric: String, _ filter: String = "", window: String, profile: KubePromProfile = .unknown) -> String {
+        "sum by (namespace,pod,container)(rate(\(metric){\(profile.cadvisorMatchers)\(filter.isEmpty ? "" : "," + filter)}[\(window)]))"
     }
 
     /// The pods kube-state-metrics says are Pending or Running: 1 each.
-    static let activePods = #"max by (namespace,pod)(kube_pod_status_phase{phase=~"Pending|Running"} == 1)"#
+    static let activePods = active(profile: .unknown)
 
-    static func podCPU(namespace: String, pod: String, window: String) -> String {
-        "sum(" + containerRate("container_cpu_usage_seconds_total", matchers([("namespace", namespace), ("pod", pod)]), window: window) + ")"
+    static func active(profile: KubePromProfile) -> String {
+        let job = profile.ksmMatcher
+        return "max by (namespace,pod)(kube_pod_status_phase{\(job.isEmpty ? "" : job + ",")phase=~\"Pending|Running\"} == 1)"
     }
 
-    static func podMemory(namespace: String, pod: String) -> String {
-        "sum(" + containerGauge("container_memory_working_set_bytes", matchers([("namespace", namespace), ("pod", pod)])) + ")"
+    static func podCPU(namespace: String, pod: String, window: String, profile: KubePromProfile = .unknown) -> String {
+        "sum(" + containerRate("container_cpu_usage_seconds_total", matchers([("namespace", namespace), ("pod", pod)]), window: window, profile: profile) + ")"
     }
 
-    static func clusterCPU(window: String) -> String { "sum(" + containerRate("container_cpu_usage_seconds_total", window: window) + ")" }
-    static let clusterMemory = "sum(" + containerGauge("container_memory_working_set_bytes") + ")"
+    static func podMemory(namespace: String, pod: String, profile: KubePromProfile = .unknown) -> String {
+        "sum(" + containerGauge("container_memory_working_set_bytes", matchers([("namespace", namespace), ("pod", pod)]), profile: profile) + ")"
+    }
+
+    /// A pod's CPU and memory from the mixin's per-container rules (`rule` the CPU one the profile found).
+    static func podCPURule(_ rule: String, namespace: String, pod: String) -> String {
+        "sum(max by (container)(\(rule){\(matchers([("namespace", namespace), ("pod", pod)])),container!=\"\",container!=\"POD\"}))"
+    }
+
+    static func podMemoryRule(namespace: String, pod: String) -> String {
+        "sum(max by (container)(\(KubePromProfile.containerMemoryRule){\(matchers([("namespace", namespace), ("pod", pod)])),container!=\"\",container!=\"POD\"}))"
+    }
+
+    static func clusterCPU(window: String, profile: KubePromProfile = .unknown) -> String {
+        "sum(" + containerRate("container_cpu_usage_seconds_total", window: window, profile: profile) + ")"
+    }
+
+    static let clusterMemory = clusterMemory(profile: .unknown)
+
+    static func clusterMemory(profile: KubePromProfile) -> String { "sum(" + containerGauge("container_memory_working_set_bytes", profile: profile) + ")" }
+
+    /// The cluster's CPU and memory from the mixin's node rules: each
+    /// node's utilisation times its CPUs (its memory).
+    static let ruleClusterCPU = "sum(\(KubePromProfile.nodeCPURule) * on(instance) \(KubePromProfile.nodeCPUCountRule))"
+    static let ruleClusterMemory = "sum(\(KubePromProfile.nodeMemoryRule) * on(instance) node_memory_MemTotal_bytes)"
+
+    /// The cluster's CPU and memory from node-exporter: busy CPU time,
+    /// memory not available.
+    static func nodeClusterCPU(window: String) -> String { "sum(rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\"}[\(window)]))" }
+    static let nodeClusterMemory = "sum(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)"
 
     /// kube-state-metrics' requests and limits of active pods, and the
-    /// nodes' allocatable, summed.
-    static func requests(_ resource: String) -> String { active("kube_pod_container_resource_requests", resource) }
-    static func limits(_ resource: String) -> String { active("kube_pod_container_resource_limits", resource) }
-    static func allocatable(_ resource: String) -> String {
-        "sum(max by (node)(kube_node_status_allocatable{resource=\"\(literal(resource))\"}))"
+    /// nodes' allocatable, summed — its 1.x names where that is what it
+    /// is, the mixin's active-pod rules where it has them.
+    static func requests(_ resource: String, profile: KubePromProfile = .unknown) -> String { resourceSum("requests", resource, profile) }
+    static func limits(_ resource: String, profile: KubePromProfile = .unknown) -> String { resourceSum("limits", resource, profile) }
+
+    static func allocatable(_ resource: String, profile: KubePromProfile = .unknown) -> String {
+        if profile.ksmMajor == 1 { return "sum(max by (node)(kube_node_status_allocatable_\(oldSuffix(resource)){\(profile.ksmMatcher)}))" }
+        let job = profile.ksmMatcher
+        return "sum(max by (node)(kube_node_status_allocatable{\(job.isEmpty ? "" : job + ",")resource=\"\(literal(resource))\"}))"
     }
 
-    private static func active(_ metric: String, _ resource: String) -> String {
-        "sum(max by (namespace,pod,container,node)(\(metric){resource=\"\(literal(resource))\"}) * on(namespace,pod) group_left() \(activePods))"
+    /// kube-state-metrics 1.x's suffixes: `cpu_cores`, `memory_bytes`.
+    private static func oldSuffix(_ resource: String) -> String { resource == "cpu" ? "cpu_cores" : resource + "_bytes" }
+
+    private static func resourceSum(_ which: String, _ resource: String, _ profile: KubePromProfile) -> String {
+        if profile.hasActiveRules {
+            // The rule keeps kube-state-metrics' `instance`: two replicas, two of each series.
+            return "sum(max by (namespace,pod,container,node)(cluster:namespace:pod_\(resource == "cpu" ? "cpu" : "memory"):active:kube_pod_container_resource_\(which)))"
+        }
+        let job = profile.ksmMatcher
+        let selector: String
+        if profile.ksmMajor == 1 {
+            selector = "kube_pod_container_resource_\(which)_\(oldSuffix(resource)){\(job)}"
+        } else {
+            selector = "kube_pod_container_resource_\(which){\(job.isEmpty ? "" : job + ",")resource=\"\(literal(resource))\"}"
+        }
+        return "sum(max by (namespace,pod,container,node)(\(selector)) * on(namespace,pod) group_left() \(active(profile: profile)))"
     }
 
     /// kubelet's volume stats, by claim — a namespace's, several, or every one's.
@@ -446,8 +494,38 @@ enum KubePrometheusReader {
     static let maxNoteLength = 253
 
     struct Failure: Error, LocalizedError, Equatable {
+        /// What failed, as the queue and the probe act on it.
+        enum Kind: Equatable, Sendable {
+            /// Prometheus' `timeout`, or the deadline after it.
+            case timeout
+            /// `bad_data`: Prometheus refused the query.
+            case badData
+            /// The server only forwards metrics (agent mode).
+            case agentMode
+            /// A 404 that isn't the apiserver's: the Service answers, its query API doesn't.
+            case notFound
+            /// A 422: the query couldn't be executed (the probe is asked again).
+            case unprocessable
+            /// The apiserver's 404: no such Service, or no endpoints.
+            case serviceMissing
+            /// The apiserver's 403: `get services/proxy` refused.
+            case serviceProxyForbidden
+            /// The metrics proxy's own filter: a path it doesn't accept.
+            case filterRefused
+            /// A 429, or a 503 with a `Retry-After`: that honoured.
+            case busy
+            case other
+        }
+
         var message: String
+        var kind: Kind = .other
+        /// A busy answer's `Retry-After`, in seconds.
+        var retryAfter: TimeInterval?
         var errorDescription: String? { message }
+
+        /// It stops the context's queries: asking again changes nothing
+        /// until its credentials do (a 403), or until the pause ends.
+        var stopsQueries: Bool { kind == .serviceProxyForbidden || kind == .busy }
     }
 
     /// One answer: its series, what Prometheus said beside them, its type.
@@ -458,31 +536,67 @@ enum KubePrometheusReader {
     }
 
     /// Prometheus' own timeout (`timeout=20s`), or Overterm's deadline after it.
-    static let tookTooLong = "Prometheus took longer than \(Int(KubePromQL.timeout)) s. Pick a shorter range."
+    static let tookTooLong = KubeChartEmpty.timeout.sentence
 
     static func read(_ data: Data, status: Int = 200) throws -> [KubeSeries] { try answer(data, status: status).series }
 
-    static func answer(_ data: Data, status: Int = 200) throws -> Answer {
+    /// An HTTP answer read: its body, its status, a busy one's `Retry-After`.
+    static func answer(_ response: HTTPResponse) throws -> Answer {
+        let after = retryAfter(response.header("Retry-After"))
+        do {
+            return try answer(response.body, status: response.status, retryAfter: after)
+        } catch var failure as Failure where failure.kind == .busy {
+            failure.retryAfter = after
+            failure.message = KubeChartEmpty.busy(status: response.status, retryAfter: after.map { Int($0) }).sentence
+            throw failure
+        }
+    }
+
+    /// A `Retry-After` the queue honours: a whole number of seconds, not
+    /// negative, at most `KubePromQueue.maxPause` — the pause the queue
+    /// takes and the one the sentence says are the same. An HTTP-date, a
+    /// fraction, `nan` or `1e300` are read as none (the server's text never
+    /// reaches a conversion that can trap).
+    static func retryAfter(_ header: String?) -> TimeInterval? {
+        guard let text = header?.trimmingCharacters(in: .whitespaces), text.count <= 12, let seconds = Int(text), seconds >= 0 else { return nil }
+        return TimeInterval(min(seconds, Int(KubePromQueue.maxPause)))
+    }
+
+    /// `retryAfter`: the answer's, read by `retryAfter(_:)`. A 429 is busy;
+    /// a 503 only with a `Retry-After` — without one it is a server down or
+    /// not ready (the apiserver's "no endpoints available"), said as it is.
+    static func answer(_ data: Data, status: Int = 200, retryAfter: TimeInterval? = nil) throws -> Answer {
         guard data.count <= maxBytes else {
             throw Failure(message: "Prometheus's answer is too large (\(data.count / 1_048_576) MB, at most \(maxBytes / 1_048_576) MB is read).")
         }
+        let busy = status == 429 || (status == 503 && retryAfter != nil)
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             let text = String(decoding: data.prefix(160), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-            throw Failure(message: status == 200 ? "Prometheus's answer isn't JSON." : "Prometheus answered \(status)\(text.isEmpty ? "" : ": \(text)")")
+            // kubectl proxy's filter answers a plain `Forbidden`.
+            if status == 403, text == "Forbidden" { throw Failure(message: KubeChartEmpty.filterRefused.sentence, kind: .filterRefused) }
+            let kind: Failure.Kind = busy ? .busy : status == 404 ? .notFound : status == 422 ? .unprocessable : .other
+            throw Failure(message: status == 200 ? "Prometheus's answer isn't JSON." : "Prometheus answered \(status)\(text.isEmpty ? "" : ": \(text)")", kind: kind)
         }
         if object["kind"] as? String == "Status" {
             // The apiserver's own answer: the Service isn't there, has no endpoints, is refused.
-            throw Failure(message: "The service proxy answered \(status): " + (object["message"] as? String ?? "no reason given"))
+            let kind: Failure.Kind = status == 403 ? .serviceProxyForbidden : status == 404 ? .serviceMissing : busy ? .busy : .other
+            throw Failure(message: "The service proxy answered \(status): " + (object["message"] as? String ?? "no reason given"), kind: kind)
         }
         if object["status"] as? String != "success" {
             let type = object["errorType"] as? String
-            if type == "timeout" { throw Failure(message: tookTooLong) }
             let error = object["error"] as? String ?? "HTTP \(status)"
-            throw Failure(message: "Prometheus: " + (type.map { "\($0): " } ?? "") + error)
+            if type == "timeout" { throw Failure(message: tookTooLong, kind: .timeout) }
+            if type == "bad_data" { throw Failure(message: KubeChartEmpty.badData(error).sentence, kind: .badData) }
+            // An agent's every query: `unavailable with Prometheus Agent`.
+            if error.range(of: "agent", options: .caseInsensitive) != nil, type == "unavailable" || busy || status == 422 {
+                throw Failure(message: "Prometheus: \(error)", kind: .agentMode)
+            }
+            let kind: Failure.Kind = busy ? .busy : status == 404 ? .notFound : status == 422 ? .unprocessable : .other
+            throw Failure(message: "Prometheus: " + (type.map { "\($0): " } ?? "") + error, kind: kind)
         }
         guard let body = object["data"] as? [String: Any] else { throw Failure(message: "Prometheus's answer has no result.") }
         var answer = Answer(resultType: body["resultType"] as? String ?? "")
-        var notes = (object["warnings"] as? [String] ?? []).map { "Partial answer: " + $0 }
+        var notes = (object["warnings"] as? [String] ?? []).map { KubeChartEmpty.partial($0).sentence }
         notes += (object["infos"] as? [String] ?? []).map { "Prometheus notes: " + $0 }
         if answer.resultType == "scalar" {
             // `[time, "value"]`, no labels.
@@ -567,12 +681,16 @@ enum KubeChartMeasure: String, CaseIterable, Sendable {
 }
 
 /// What a chart asks over a range: range queries (its lines), instant
-/// ones (its totals), and why a line isn't asked, when it isn't.
+/// ones (its totals), and why a line isn't asked, when it isn't; the tier
+/// its lines read and what the profile has it say beside them.
 struct KubeChartQueries {
     var series: [(KubeChartMeasure, String)]
     var totals: [(KubeChartMeasure, String)]
     /// Said in place of the lines it doesn't ask.
     var refused: String?
+    var tier: KubePromTier?
+    /// Footnotes and sentences from the profile (kube-state-metrics old or missing).
+    var notes: [String] = []
 }
 
 extension KubeChart {
@@ -582,24 +700,89 @@ extension KubeChart {
             + "of millions of samples, more than Prometheus answers in time. Pick \(KubeChartRange.rawClusterLimit.title) or less."
     }
 
-    /// The range queries (charts) and the instant ones (totals) this chart asks.
-    func queries(range: KubeChartRange) -> KubeChartQueries {
+    /// Its place among the charts on screen, top first: the queue's order.
+    var order: Int {
+        switch self {
+        case .cluster: 0
+        case .pod: 1
+        case .volume: 2
+        }
+    }
+
+    /// Whether its queries depend on what the context's Prometheus holds
+    /// (the probe runs for it): a volume's don't.
+    var needsProfile: Bool {
+        if case .volume = self { return false }
+        return true
+    }
+
+    /// The cluster's lines' tier over `range`: the mixin's node rules,
+    /// node-exporter, else raw cAdvisor where `KubeQueryCost` allows it;
+    /// nil, none can be read.
+    static func clusterTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier? {
+        if profile.hasNodeRules { return .rules }
+        if profile.hasNodeExporter { return .nodeExporter }
+        return KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).isAllowed ? .raw : nil
+    }
+
+    /// A pod's lines' tier: raw cAdvisor over an hour or less, where one
+    /// pod's series are cheap and a 5-minute rule would smooth a spike
+    /// away; the rules past it, where they exist.
+    static func podTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier {
+        range.seconds > KubeChartRange.hour.seconds && profile.hasContainerRules ? .rules : .raw
+    }
+
+    /// The range queries (charts) and the instant ones (totals) this chart
+    /// asks, read in the tier the profile allows, pinned as it says.
+    func queries(range: KubeChartRange, profile: KubePromProfile = .unknown) -> KubeChartQueries {
+        let window = KubePromQL.duration(KubeRateWindow.of(step: range.step, scrape: profile.scrapeInterval))
         switch self {
         case .cluster:
-            let totals: [(KubeChartMeasure, String)] = [
-                (.cpuRequests, KubePromQL.requests("cpu")), (.cpuLimits, KubePromQL.limits("cpu")), (.cpuAllocatable, KubePromQL.allocatable("cpu")),
-                (.memoryRequests, KubePromQL.requests("memory")), (.memoryLimits, KubePromQL.limits("memory")),
-                (.memoryAllocatable, KubePromQL.allocatable("memory")),
-            ]
-            guard range.allowsRawAcrossCluster else { return KubeChartQueries(series: [], totals: totals, refused: Self.rawRefusal(range)) }
-            return KubeChartQueries(
-                series: [(.cpu, KubePromQL.clusterCPU(window: range.rateWindow)), (.memory, KubePromQL.clusterMemory)], totals: totals)
+            var totals: [(KubeChartMeasure, String)] = []
+            var notes: [String] = []
+            if profile.ksmMissing {
+                notes.append(KubeChartEmpty.ksmMissing.sentence)
+            } else {
+                if profile.ksmMajor == 1 { notes.append(KubeChartEmpty.ksmOld.sentence) }
+                totals = [
+                    (.cpuRequests, KubePromQL.requests("cpu", profile: profile)), (.cpuLimits, KubePromQL.limits("cpu", profile: profile)),
+                    (.cpuAllocatable, KubePromQL.allocatable("cpu", profile: profile)),
+                    (.memoryRequests, KubePromQL.requests("memory", profile: profile)), (.memoryLimits, KubePromQL.limits("memory", profile: profile)),
+                    (.memoryAllocatable, KubePromQL.allocatable("memory", profile: profile)),
+                ]
+            }
+            switch Self.clusterTier(range, profile: profile) {
+            case .rules:
+                return KubeChartQueries(
+                    series: [(.cpu, KubePromQL.ruleClusterCPU), (.memory, KubePromQL.ruleClusterMemory)], totals: totals, tier: .rules, notes: notes)
+            case .nodeExporter:
+                return KubeChartQueries(
+                    series: [(.cpu, KubePromQL.nodeClusterCPU(window: window)), (.memory, KubePromQL.nodeClusterMemory)], totals: totals,
+                    tier: .nodeExporter, notes: notes)
+            case .raw:
+                return KubeChartQueries(
+                    series: [(.cpu, KubePromQL.clusterCPU(window: window, profile: profile)), (.memory, KubePromQL.clusterMemory(profile: profile))],
+                    totals: totals, tier: .raw, notes: notes)
+            case nil:
+                // Known: the samples it would read; unknown: as before the probe.
+                let refused = profile.known ? KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).sentence : nil
+                return KubeChartQueries(series: [], totals: totals, refused: refused ?? Self.rawRefusal(range), notes: notes)
+            }
         case .pod(let namespace, let name):
-            return KubeChartQueries(
-                series: [
-                    (.cpu, KubePromQL.podCPU(namespace: namespace, pod: name, window: range.rateWindow)),
-                    (.memory, KubePromQL.podMemory(namespace: namespace, pod: name)),
-                ], totals: [])
+            switch Self.podTier(range, profile: profile) {
+            case .rules:
+                return KubeChartQueries(
+                    series: [
+                        (.cpu, KubePromQL.podCPURule(profile.containerCPURule ?? KubePromProfile.containerCPURate5m, namespace: namespace, pod: name)),
+                        (.memory, KubePromQL.podMemoryRule(namespace: namespace, pod: name)),
+                    ], totals: [], tier: .rules)
+            default:
+                return KubeChartQueries(
+                    series: [
+                        (.cpu, KubePromQL.podCPU(namespace: namespace, pod: name, window: window, profile: profile)),
+                        (.memory, KubePromQL.podMemory(namespace: namespace, pod: name, profile: profile)),
+                    ], totals: [], tier: .raw)
+            }
         case .volume(let namespace, let claim):
             return KubeChartQueries(
                 series: [
@@ -618,16 +801,35 @@ struct KubeChartReading: Equatable, Sendable {
     var totals: [KubeChartMeasure: Double] = [:]
     var read: Date?
     var problem: String?
-    /// What Prometheus said beside its answers (warnings, infos), said under the chart.
+    /// What Prometheus said beside its answers (warnings, infos), and the
+    /// profile's footnotes, said under the chart.
     var notes: [String] = []
     /// Why its lines weren't asked over this range (`KubeChartQueries.refused`).
     var refused: String?
+    /// The form its lines were read in, and what the caption says of it.
+    var tier: KubePromTier?
+    var caption: String?
+    /// Prometheus keeps data from then: hatched before it.
+    var retention: Date?
+    /// Why nothing is asked at all (agent mode): said in the chart's place.
+    var unavailable: String?
 
     /// `used` against `of`, as the Overview says it: `1.2 of 4 cores · 30%`.
     func share(_ used: KubeChartMeasure, of total: KubeChartMeasure) -> (used: Double, total: Double, percent: Int?)? {
         guard let value = totals[used] else { return nil }
         let whole = totals[total] ?? 0
         return (value, whole, KubeMetricsFormat.percent(value, of: whole > 0 ? whole : nil))
+    }
+
+    /// The caption's tail: the tier, the scrape the profile read —
+    /// `recording rules (5 min averages) · scrape 30s`, `raw cAdvisor (≤ 6h)`.
+    static func caption(_ tier: KubePromTier?, chart: KubeChart, profile: KubePromProfile) -> String? {
+        guard let tier else { return nil }
+        var text = tier.title
+        if tier == .rules { text += " (5 min averages)" }
+        if tier == .raw, chart == .cluster { text += " (≤ \(KubeChartRange.rawClusterLimit.title))" }
+        if let scrape = profile.scrape { text += " · scrape \(KubePromQL.duration(scrape))" }
+        return text
     }
 }
 

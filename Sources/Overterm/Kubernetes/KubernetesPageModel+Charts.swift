@@ -97,9 +97,7 @@ extension KubernetesPageModel {
     /// The tab's words for a cluster without metrics-server: with
     /// Prometheus on, where its chart is instead. Pure.
     nonisolated static func metricsServerAbsent(prometheus: Bool) -> String {
-        prometheus
-            ? "No metrics-server in this cluster: the Metrics tab's sampled charts need it. The pod's Prometheus chart is on the Overview tab."
-            : "No metrics-server in this cluster: there are no usage numbers without it or Prometheus."
+        (prometheus ? KubeChartEmpty.noMetricsServerChartOnOverview : .noMetricsServer).sentence
     }
 
     /// The tab offers the Overview: metrics-server absent, Prometheus on.

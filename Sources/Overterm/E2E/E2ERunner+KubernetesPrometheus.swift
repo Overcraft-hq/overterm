@@ -55,6 +55,8 @@ extension E2ERunner {
             labels: ["app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server", "app.kubernetes.io/managed-by": "Helm"],
             fields: ["spec": ["ports": [["name": "http", "port": 80]]]])
         fake.servePrometheus(namespace: "monitoring", service: "prometheus-server", port: "80")
+        // The prometheus chart without node-exporter: what the probe finds (stage M5).
+        fake.setPrometheusProfile(.noNodeExporter)
         let container = ["container": "app", "image": "nginx:1.27", "namespace": "shop", "pod": "web-8k2"]
         fake.setPrometheusSeries("container_cpu_usage_seconds_total", labels: container, value: 0.75)
         fake.setPrometheusSeries("container_memory_working_set_bytes", labels: container, value: 96 * 1_048_576)
@@ -102,6 +104,13 @@ extension E2ERunner {
             "active pods' requests against allocatable", cluster?.share(.cpuRequests, of: .cpuAllocatable)?.percent == 50,
             "\(String(describing: cluster?.totals))")
         check("drawn, with the range and where it came from", await shownText(15) { $0.contains("The last 1h, from Prometheus monitoring/prometheus-server:80") } != nil)
+        // Probed once for the context: what exists, the duplicates, the scrape — instant queries.
+        let probes = prometheusAsked().filter { $0.query["query"]?.contains("count by (__name__)") == true }
+        check("probed once", probes.count == 1 && model.prometheus.probes == 1, "\(probes.count) \(model.prometheus.probes)")
+        check(
+            "its scrape the cAdvisor job's, a minute",
+            model.prometheus.profile?.scrape == 60 && prometheusAsked().contains { $0.query["query"] == KubePromProfile.scrapeQuery(job: "kubernetes-nodes-cadvisor") })
+        check("the cluster read raw, named", model.prometheus.charts[.cluster]?.caption == "raw cAdvisor (≤ 6h) · scrape 1m", "\(model.prometheus.charts[.cluster]?.caption ?? "")")
         check("the requests and limits drawn", await shownText(15) { $0.contains("2000m of 4000m") } != nil)
         // Each measure one chart, its plot built and drawn in one Canvas, what it is measured against its reference lines.
         let charts = KubeChartRegistry.shared
@@ -164,6 +173,7 @@ extension E2ERunner {
                     && prometheusAsked().contains { $0.path == service.rangePath && $0.query["step"] == "3m" }
             }, "\(prometheusAsked().map(\.query))")
         check("and drawn", await shownText(15) { $0.contains("The last 6h, from Prometheus") } != nil)
+        await prometheusTiers(model, page, fake, service: service)
         page.chartRange = .hour
 
         // A pod's detail.
@@ -230,6 +240,7 @@ extension E2ERunner {
         check(
             "shown again, read again", await eventually(15) { model.prometheus.volumes?.read != nil || model.prometheus.charts.values.contains { $0.read != nil } })
         check("without looking for Prometheus again", model.prometheus.detections == detections && servicesAsked().isEmpty, "\(servicesAsked())")
+        await prometheusAgentMode(model, page, fake)
 
         // A context without Prometheus: no picker.
         model.select("fake-prod")
@@ -302,4 +313,60 @@ extension E2ERunner {
             "cpu \(before.cpu) → \(after.cpu); memory \(before.memory) → \(after.memory)")
         check("the view holding the cursor runs no body", after.container.container == before.container.container, "\(after.container.container - before.container.container) bodies")
     }
+}
+
+extension E2ERunner {
+    /// Stage M5 (metrics.md, 4.3, 4.4): kube-prometheus-stack's profile —
+    /// the mixin's rules, a 30 s scrape, kubelet's cAdvisor at two paths —
+    /// probed again (as an hour passing): the Overview's 24h, refused raw a
+    /// moment ago, is drawn from the recording rules and says so.
+    func prometheusTiers(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, service: KubePrometheusService) async {
+        fake.setPrometheusProfile(.kubePrometheusStack)
+        let node = ["instance": "10.0.0.1:9100"]
+        fake.setPrometheusSeries(KubePromProfile.nodeCPURule, labels: node, value: 0.5)
+        fake.setPrometheusSeries(KubePromProfile.nodeCPUCountRule, labels: node, value: 4)
+        fake.setPrometheusSeries(KubePromProfile.nodeMemoryRule, labels: node, value: 0.25)
+        fake.setPrometheusSeries("node_memory_MemTotal_bytes", labels: node, value: 8_589_934_592)
+        defer {
+            fake.setPrometheusProfile(.noNodeExporter)
+            model.prometheus.forgetProfile()
+        }
+        fake.forgetRequests()
+        model.prometheus.forgetProfile()
+        page.chartRange = .day
+        check(
+            "24h with recording rules: drawn",
+            await eventually(15) {
+                let cluster = model.prometheus.charts[.cluster]
+                return cluster?.range == .day && cluster?.tier == .rules && cluster?.series[.cpu]?.isEmpty == false
+            }, "\(String(describing: model.prometheus.charts[.cluster]?.tier)) \(model.prometheus.charts[.cluster]?.refused ?? "")")
+        check("probed again", model.prometheus.profile?.scrape == 30 && model.prometheus.profile?.cadvisorPath == "/metrics/cadvisor")
+        check("the rules read over the range", prometheusAskedOf(fake).contains { $0.path == service.rangePath && $0.query["query"] == KubePromQL.ruleClusterCPU })
+        check("the caption names them", await shownText(15) { $0.contains("recording rules") } != nil)
+        check("the lines' CPU: half of four cores", model.prometheus.charts[.cluster]?.series[.cpu]?.last?.value == 2)
+        check(
+            "only the Service's two query paths",
+            prometheusAskedOf(fake).allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath })
+    }
+
+    /// Prometheus in agent mode (metrics.md, 8's part 7): the plain
+    /// sentence on the Overview, and nothing retried within the scenario.
+    func prometheusAgentMode(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        let section = page.section
+        check("1 is the Overview", page.press("1") && page.section == .overview)
+        fake.setPrometheusProfile(.agentMode)
+        fake.forgetRequests()
+        model.prometheus.forgetProfile()
+        defer {
+            fake.setPrometheusProfile(.noNodeExporter)
+            model.prometheus.forgetProfile()
+        }
+        check("agent mode said", await eventually(15) { model.prometheus.charts[.cluster]?.unavailable?.contains("agent mode") == true })
+        check("drawn as a sentence", await shownText(15) { $0.contains("only forwards metrics") } != nil)
+        await pause(2)
+        check("asked once, not again", prometheusAskedOf(fake).count == 1, "\(prometheusAskedOf(fake).compactMap { $0.query["query"] })")
+        if section == .workloads { _ = page.press("2") }
+    }
+
+    func prometheusAskedOf(_ fake: FakeKubeAPI) -> [FakeKubeAPI.Request] { fake.requests.filter(\.isPrometheusQuery) }
 }

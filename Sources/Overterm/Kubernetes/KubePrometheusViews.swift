@@ -44,9 +44,13 @@ struct KubePrometheusChartView: View {
                 Spacer(minLength: 0)
             }
             if let service = monitor.service {
-                if let reading = monitor.charts[chart] {
+                if let reading = monitor.charts[chart], let unavailable = reading.unavailable {
+                    Text(verbatim: unavailable).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("kubernetes.chart.unavailable")
+                } else if let reading = monitor.charts[chart] {
                     content(reading)
-                    Text(verbatim: "The last \(reading.range.title), from Prometheus \(service)")
+                    Text(verbatim: "The last \(reading.range.title), from Prometheus \(service)" + (reading.caption.map { " · \($0)" } ?? ""))
                         .font(.system(size: 10.5)).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.chart.caption")
                     if let problem = reading.problem {
@@ -198,8 +202,16 @@ extension KubeChartData {
             }
         default: break
         }
+        // Before the oldest sample Prometheus keeps: hatched, said.
+        var bands: [KubeChartBand] = []
+        if let retention = reading.retention, retention > window.start {
+            bands.append(
+                KubeChartBand(id: "retention", title: KubeChartEmpty.retention(retention).sentence, start: window.start, end: min(retention, window.end)))
+        }
         var hasher = Hasher()
         hasher.combine(id)
+        hasher.combine(reading.tier)
+        hasher.combine(reading.retention)
         hasher.combine(reading.range)
         hasher.combine(reading.read)
         for line in series {
@@ -208,6 +220,7 @@ extension KubeChartData {
         }
         return KubeChartData(
             id: id, title: title, unit: measure.isBytes ? .bytes : .cores, series: series, start: window.start, end: window.end, step: reading.range.step,
-            source: "Prometheus", tier: measure == .volumeUsed ? "kubelet volume stats" : "raw cAdvisor", version: hasher.finalize())
+            source: "Prometheus", tier: measure == .volumeUsed ? "kubelet volume stats" : (reading.tier ?? .raw).title, version: hasher.finalize(),
+            bands: bands)
     }
 }

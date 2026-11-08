@@ -30,7 +30,8 @@ struct FakePromFixture: Sendable {
     var warnings: [String] = []
     var failure: Failure?
 
-    func matches(_ query: String) -> Bool { Self.normalised(query).contains(Self.normalised(fragment)) }
+    /// An empty fragment matches every query (an agent answers none).
+    func matches(_ query: String) -> Bool { fragment.isEmpty || Self.normalised(query).contains(Self.normalised(fragment)) }
 
     static func normalised(_ text: String) -> String { text.filter { !$0.isWhitespace } }
 }
