@@ -5293,6 +5293,73 @@ body counted (`kubernetes.detail.metrics`). Copy as kubectl there is
 checks the references, the marker, the caption, the ranges, a held
 crosshair's tooltip with no series or tab body drawn again, the marker's
 previous log and Logs from Here's `sinceTime`; `KubePodChartsTests`.
+**The Metrics tab of a workload, an HPA, a node, a namespace**
+(`KubeObjectCharts` with `KubeWorkloadCharts`, `KubeHPACharts`,
+`KubeNodeCharts`, `KubeNamespaceCharts`, all pure over `KubeChartBuild`;
+`KubernetesPageModel+ObjectCharts`, `KubeObjectChartsList`; metrics.md
+2.5–2.8, stage M3b). `KubeObjectRef.metricsSubject` (`KubeMetricsSubject`)
+says which; `objectMetricsDetails` is what each tab polls while it
+shows, through the monitor's details (at most three a context):
+a workload its pods' PodMetrics by its selector (`.workload`, once the
+object's read says it), its own object every minute (`.replicas` →
+`KubeReplicaStatus`) and its HPA when one targets it — found with one
+HPA Table read in its namespace as the tab opens, matched on its
+Reference (`KubeChartLookups`, never repeated while it shows); an HPA
+itself (`.hpa`, 15 s); a node its NodeMetrics and its pods as objects
+every 5 minutes (`.nodePods`: `fieldSelector=spec.nodeName`, `limit=250`,
+decoded off the main thread to requests and phase — `KubeNodePods`,
+nothing else kept, env values never), and on "Sample Top Pods" its
+largest-request pods' namespaces (at most four, `.nodeTopPods` →
+`KubeMetricsTarget.podsOn`, every 30 s, stopped after 15 minutes with
+Sample Again; nothing more when the page's list already samples every
+namespace); a namespace its pods' PodMetrics and its pods as Metadata
+rows every minute (`.namespacePods`, paged: `KubeNamespacePods`, each
+pod's owner — a ReplicaSet's Deployment by `pod-template-hash` — and
+its status as a phase, `KubePodPhase`), its ResourceQuota read once
+(`KubeQuota`). `KubeMetricsTarget.every` spaces the slower reads. The
+ring keeps a sum's parts beside it (`KubeUsageParts`): a workload's
+pods each (`.pod`, at most 50, past that the sum alone), its revisions
+(`.part`, from PodMetrics' `pod-template-hash` or
+`controller-revision-hash`, `KubePodMetrics.revision`), a namespace's
+workloads by owner, else by name (`KubeWorkloadName`), the 30 using
+most. The objects' own numbers go to `KubeStatusHistory` (the monitor's
+`statuses`, kept and dropped with the ring: a point only on a change,
+held to the last reading, a break where unread, 6 hours, 50 keys, an
+hour after). The builders: a workload's CPU and memory Per pod (its top
+five by their last 15 minutes as lines, against one pod's template
+request and limit) or Total (`KubeWorkloadView`; the top five stacked
+at the total's times — `KubeChartBuild.align`, pods on different nodes
+are stamped apart — and "other", against the template × replicas;
+Per pod is the default at five pods or fewer, decision 13), CPU by
+revision labelled from the History tab's revisions ("rev 3
+(nginx:1.27.2)"; its reads made once as the tab opens), its replicas
+stepped (`KubeChartData.stepped`) with its HPA's bounds, and its HPA's
+charts beside; an HPA's replicas against min and max with
+ScalingLimited as a band (`KubeChartBand`, drawn by `KubePlot.bands`,
+`bands=` in the dump) and "flapping" past four scales an hour, each
+metric against its target; a node's CPU and memory against what its
+active pods request, its allocatable and capacity, its pressure and
+cordon as bands (`KubeNodeFacts`, since the condition's transition or
+the taint's `timeAdded`), its pods against `allocatable.pods`, its
+top pods stacked; a namespace's by workload — the top eight and
+"other" — against its quota, and its pods by phase, stacked. Each says
+why a part is left out (`notes`). Built only when what they come from
+changes (`KubeObjectChartsKey`); `kubernetesPerf` checks a 50-pod
+Deployment's tab built and drawn in ≤ 50 ms; `kubernetesCharts`'s M3b
+part (`E2ERunner+KubernetesObjectCharts`) checks each tab's charts,
+references, bands, its reads and nothing hidden; `KubeObjectChartsTests`.
+Without metrics-server (or with the context's metrics off) only an HPA's
+tab reads anything: the others' details are empty and their lookups
+(the HPA Table, the History tab's revisions, the quota) wait until
+metrics-server serves, each marked asked only once started. A
+namespace's workloads named from its pods' names before its rows are
+read give way to the owners' ids once they are (one series each); a pod
+the rows say has no owner is `Pod/<name>`. A node's top pods are those
+Sample Top Pods reads (`topPodsPicked`: the first four namespaces'),
+never a pod it doesn't. A stepped chart's fill steps with its line.
+W2's per-pod OOM and restart markers wait for M4's markers (a bounded
+read of the workload's pods' `lastState`) and M6's Prometheus ones: a
+workload's Memory chart has none yet.
 Hidden, every reading ends, what was read goes, the metrics proxy closes.
 `FakeKubeAPI.servePrometheus` answers a Service's two query paths with
 `setPrometheusSeries`' values (`FakePromQL`: selectors with `=`, `!=`,

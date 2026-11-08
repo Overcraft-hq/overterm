@@ -190,7 +190,7 @@ final class KubeKindsTests: XCTestCase {
                 "horizontalpodautoscalers.autoscaling",
             ])
         XCTAssertEqual(catalog.kinds(in: .network).map(\.fullName), ["services", "endpointslices.discovery.k8s.io", "ingresses.networking.k8s.io"])
-        XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets", "poddisruptionbudgets.policy"])
+        XCTAssertEqual(catalog.kinds(in: .config).map(\.fullName), ["configmaps", "secrets", "resourcequotas", "poddisruptionbudgets.policy"])
         XCTAssertEqual(catalog.kinds(in: .storage).map(\.fullName), ["persistentvolumeclaims"])
         XCTAssertEqual(catalog.kinds(in: .overview), [], "the Overview lists no kind")
         XCTAssertEqual(

@@ -109,6 +109,60 @@ extension E2ERunner {
         window.contentView = nil
         check("a chart gone from the screen leaves the registry", await eventually(5) { KubeChartRegistry.shared.chart(data.identifier, in: scope) == nil })
         await metricsTabFirstDraw(theme)
+        await workloadTabFirstDraw(theme)
+    }
+
+    /// A Deployment's Metrics tab, sampled (metrics.md 5.3, stage M3b): 50
+    /// pods' hour in the ring — each its own, by revision, summed —, its
+    /// charts built (ranked, stacked at the total's times) on the main
+    /// thread as the tab's body builds them, laid out and drawn in 50 ms or less.
+    private func workloadTabFirstDraw(_ theme: ChromeTheme) async {
+        let now = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 15).rounded(.down) * 15)
+        let detail = KubeMetricsDetail.workload(namespace: "shop", kind: "Deployment", name: "perf", labels: "app=perf")
+        var ring = KubeUsageRing()
+        var pods: [KubePodMetrics] = []
+        for sample in 0..<60 {
+            let time = now.addingTimeInterval(Double(sample - 59) * 15)
+            pods = (0..<KubeUsageRing.podPartsAtMost).map { index in
+                KubePodMetrics(
+                    id: KubeRowID(namespace: "shop", name: "perf-\(index % 2 == 0 ? "7d9f8b6c5d" : "6c8b5f9d4")-p\(index)"), timestamp: time, window: "15s",
+                    containers: ["app": KubeUsage(cpu: 0.01 * Double(index + 1) + 0.01 * sin(Double(sample) / 4), memory: Double(64 + index) * 1_048_576)],
+                    revision: index % 2 == 0 ? "7d9f8b6c5d" : "6c8b5f9d4")
+            }
+            ring.record(
+                KubeMetricsSample(pods: pods, read: time), for: detail.target, asList: false, asDetail: true, sums: [detail.sum!], parts: detail.parts, now: time)
+        }
+        let object: [String: Any] = [
+            "spec": ["replicas": 50, "template": ["spec": ["containers": [["name": "app", "resources": ["requests": ["cpu": "100m", "memory": "128Mi"]]]]]]],
+            "status": ["replicas": 50],
+        ]
+        var samples: [Double] = []
+        for _ in 0..<5 {
+            let begun = CACurrentMediaTime()
+            let charts = KubeWorkloadCharts.build(
+                KubeWorkloadCharts.Input(
+                    namespace: "shop", kind: "Deployment", name: "perf", object: object, ring: ring, statuses: KubeStatusHistory(), pods: pods, range: .live,
+                    now: now, interval: 15))
+            let host = NSHostingView(rootView: KubeObjectChartsList(charts: charts, cursor: KubeChartCursor(), theme: theme).frame(width: 760, height: 900))
+            let window = NSWindow(contentRect: NSRect(x: 60, y: 60, width: 760, height: 900), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            window.orderFront(nil)
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            samples.append((CACurrentMediaTime() - begun) * 1000)
+            if samples.count == 1 {
+                check(
+                    "a 50-pod Deployment: its top five and other stacked, by its two revisions",
+                    charts.charts.first?.data.usage.count == 6 && charts.charts.first { $0.data.id.hasSuffix(".revisions") }?.data.usage.count == 2)
+            }
+            window.orderOut(nil)
+            window.contentView = nil
+            await pause(0.2)
+        }
+        let first = Self.summary(samples)
+        note("kubernetes Deployment Metrics tab first draw, 50 pods sampled: \(first)")
+        check("a workload's Metrics tab built and drawn in 50 ms or less on the main thread (median)", first.median <= 50, "\(first)")
     }
 
     /// A pod's Metrics tab, sampled (metrics.md 5.3, stage M3a): its ten

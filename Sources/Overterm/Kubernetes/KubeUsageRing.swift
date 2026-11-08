@@ -12,6 +12,10 @@ enum KubeUsageKey: Hashable, Sendable {
     case workload(namespace: String, kind: String, name: String)
     /// A namespace's pods, summed per poll.
     case namespace(String)
+    /// One part of a sum, summed per poll as its whole is: a workload's
+    /// revision (`whole` the workload, `part` `rev:<hash>`), a namespace's
+    /// workload (`whole` empty, `part` `<Kind>/<name>`).
+    case part(namespace: String, whole: String, part: String)
 
     static func pod(_ id: KubeRowID) -> KubeUsageKey { .pod(namespace: id.namespace ?? "", name: id.name) }
 
@@ -24,6 +28,7 @@ enum KubeUsageKey: Hashable, Sendable {
         case .pod(let namespace, let name): return heap(namespace) + heap(name)
         case .container(let namespace, let pod, let container): return heap(namespace) + heap(pod) + heap(container)
         case .workload(let namespace, let kind, let name): return heap(namespace) + heap(kind) + heap(name)
+        case .part(let namespace, let whole, let part): return heap(namespace) + heap(whole) + heap(part)
         }
     }
 
@@ -31,7 +36,7 @@ enum KubeUsageKey: Hashable, Sendable {
     var isListRow: Bool {
         switch self {
         case .cluster, .node, .pod: true
-        case .container, .workload, .namespace: false
+        case .container, .workload, .namespace, .part: false
         }
     }
 }
@@ -397,10 +402,11 @@ extension KubeUsageRing {
     /// of `sums` (a workload's, a namespace's). Then the hour's and the
     /// cap's bounds.
     mutating func record(
-        _ sample: KubeMetricsSample, for target: KubeMetricsTarget, asList: Bool, asDetail: Bool, sums: [KubeUsageKey], now: Date
+        _ sample: KubeMetricsSample, for target: KubeMetricsTarget, asList: Bool, asDetail: Bool, sums: [KubeUsageKey], parts: [KubeUsageParts] = [],
+        owners: [String: String] = [:], now: Date
     ) {
         switch target {
-        case .pods:
+        case .pods, .podsOn:
             if asList {
                 var seen = Set<KubeUsageKey>()
                 for (id, pod) in sample.pods {
@@ -415,6 +421,7 @@ extension KubeUsageRing {
                     sample.pods.map { ($0.key.description, (time: $0.value.timestamp ?? sample.read, usage: $0.value.total)) }, uniquingKeysWith: { $1 })
                 for key in sums { recordSum(key, members, .detail, now: now) }
             }
+            for part in parts { record(part, of: sample, owners: owners, now: now) }
         case .nodes:
             guard asList else { break }
             var seen = Set<KubeUsageKey>()
@@ -436,10 +443,86 @@ extension KubeUsageRing {
         case .node:
             guard asDetail else { break }
             for (name, node) in sample.nodes { record(.node(name), node.usage, at: node.timestamp ?? sample.read, .detail, now: now) }
-        case .hpa:
+        case .hpa, .replicas, .nodePods, .namespacePods:
             break
         }
         prune(now: now)
         enforceCap()
+    }
+}
+
+/// How a pods target's samples are kept beside its sum (metrics.md 2.5,
+/// 2.7, 2.8): what the charts break the sum into.
+enum KubeUsageParts: Hashable, Sendable {
+    /// Each pod its own detail key (`.pod`) — a workload's Per pod view and
+    /// its top five, a node's top pods: at most `KubeUsageRing.podPartsAtMost`
+    /// (past that, the sum alone), or only the pods named.
+    case pods(only: [String]?)
+    /// By revision (`KubePodMetrics.revision`: a Deployment's
+    /// `pod-template-hash`, a StatefulSet's or DaemonSet's
+    /// `controller-revision-hash`), as `.part(ns, whole, "rev:<hash>")`.
+    case revisions(whole: String)
+    /// By workload — the owner the namespace's Metadata rows say, else the
+    /// pod's name read (`KubeWorkloadName`) — as `.part(ns, "", "<Kind>/<name>")`,
+    /// the `workloadPartsAtMost` using the most CPU now.
+    case workloads
+}
+
+extension KubeUsageRing {
+    /// A workload's pods kept each on its own, at most.
+    static let podPartsAtMost = 50
+    /// A namespace's workloads kept each on its own, at most.
+    static let workloadPartsAtMost = 30
+
+    /// One part's samples: each a sum over its members, per poll, as the whole's.
+    fileprivate mutating func record(_ parts: KubeUsageParts, of sample: KubeMetricsSample, owners: [String: String], now: Date) {
+        func member(_ pod: KubePodMetrics) -> (time: Date, usage: KubeUsage) { (pod.timestamp ?? sample.read, pod.total) }
+        switch parts {
+        case .pods(let only):
+            let pods = sample.pods.values.filter { only?.contains($0.id.name) ?? true }
+            guard pods.count <= Self.podPartsAtMost else { return }
+            for pod in pods { record(.pod(pod.id), pod.total, at: pod.timestamp ?? sample.read, .detail, now: now) }
+        case .revisions(let whole):
+            var groups: [String: [String: (time: Date, usage: KubeUsage)]] = [:]
+            var namespace = ""
+            for pod in sample.pods.values {
+                guard let revision = pod.revision else { continue }
+                namespace = pod.id.namespace ?? ""
+                groups["rev:" + revision, default: [:]][pod.id.name] = member(pod)
+            }
+            for (part, members) in groups { recordSum(.part(namespace: namespace, whole: whole, part: part), members, .detail, now: now) }
+        case .workloads:
+            var groups: [String: [String: (time: Date, usage: KubeUsage)]] = [:]
+            var namespace = ""
+            for pod in sample.pods.values {
+                namespace = pod.id.namespace ?? ""
+                let owner = owners[pod.id.name] ?? KubeWorkloadName.of(pod: pod.id.name).id
+                groups[owner, default: [:]][pod.id.name] = member(pod)
+            }
+            let kept = groups.sorted { a, b in
+                let ca = a.value.values.reduce(0) { $0 + $1.usage.cpu }
+                let cb = b.value.values.reduce(0) { $0 + $1.usage.cpu }
+                return ca == cb ? a.key < b.key : ca > cb
+            }.prefix(Self.workloadPartsAtMost)
+            for (part, members) in kept { recordSum(.part(namespace: namespace, whole: "", part: part), members, .detail, now: now) }
+            // Once the rows say the owners, what the names guessed before goes
+            // (a DaemonSet's pods were `web`, now `DaemonSet/web`): one series each.
+            for pod in sample.pods.values {
+                guard let owner = owners[pod.id.name] else { continue }
+                let guessed = KubeWorkloadName.of(pod: pod.id.name).id
+                guard guessed != owner, groups[guessed] == nil else { continue }
+                detail[.part(namespace: namespace, whole: "", part: guessed)] = nil
+            }
+        }
+    }
+
+    /// The parts of a sum kept now: a namespace's workloads, a workload's
+    /// revisions — the names after `whole`'s.
+    func parts(of whole: String, in namespace: String, now: Date = Date()) -> [String] {
+        let cutoff = now.addingTimeInterval(-Self.keepDetail)
+        return detail.compactMap { key, series in
+            guard case .part(let ns, let w, let part) = key, ns == namespace, w == whole, series.fed >= cutoff else { return nil }
+            return part
+        }.sorted()
     }
 }

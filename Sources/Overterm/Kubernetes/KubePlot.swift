@@ -97,6 +97,15 @@ struct KubeChartMarker: Equatable, Sendable, Identifiable {
     var container: String?
 }
 
+/// A stretch marked across a chart's plot — a node's pressure or its
+/// cordon (K5), an HPA's ScalingLimited (H1): a faint band, hover saying it.
+struct KubeChartBand: Equatable, Sendable, Identifiable {
+    var id: String
+    var title: String
+    var start: Date
+    var end: Date
+}
+
 /// One series: its points in time order, broken where they are more than
 /// two steps apart.
 struct KubeChartSeries: Equatable, Sendable, Identifiable {
@@ -133,6 +142,10 @@ struct KubeChartData: Equatable, Sendable {
     /// Its series' breaks are marked (`breaks`): the step only spaces
     /// the points, it splits no run — the source's rule is the one.
     var breaksMarked = false
+    /// Stretches marked across it, oldest first.
+    var bands: [KubeChartBand] = []
+    /// Its usage lines are counts that hold until the next reading (replicas, pods): drawn stepped.
+    var stepped = false
 
     var identifier: String { "kubernetes.chart." + id }
     /// The markers inside the window: the ones drawn.
@@ -179,6 +192,13 @@ struct KubePlot: Sendable {
         var labelAt: CGPoint
     }
 
+    /// A band where it is drawn.
+    struct Band: Sendable {
+        var band: KubeChartBand
+        var minX: CGFloat
+        var maxX: CGFloat
+    }
+
     /// A marker where it is drawn.
     struct Marker: Sendable {
         var marker: KubeChartMarker
@@ -213,6 +233,7 @@ struct KubePlot: Sendable {
     var references: [Reference]
     var tracks: [Track]
     var markers: [Marker]
+    var bands: [Band]
     var stacked: Bool
 
     var pointCount: Int { lines.reduce(0) { $0 + $1.points } }
@@ -277,17 +298,38 @@ struct KubePlot: Sendable {
                 count += points.count
                 for (index, point) in points.enumerated() {
                     let p = CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))
-                    if index == 0 { stroke.move(to: p) } else { stroke.addLine(to: p) }
+                    if index == 0 {
+                        stroke.move(to: p)
+                    } else {
+                        // Stepped: the last value held up to this point's time.
+                        if data.stepped { stroke.addLine(to: CGPoint(x: p.x, y: y(points[index - 1].value))) }
+                        stroke.addLine(to: p)
+                    }
                 }
                 // The area under it (a single series), or the band between it and those below (stacked).
                 guard let first = points.first, let last = points.last, points.count >= 2 else { continue }
                 fill.move(to: CGPoint(x: x(first.time.timeIntervalSince1970), y: y(0)))
+                // Its edges as the stroke draws them: stepped, a value held up to the next point's time.
+                func edge(_ edgePoints: [KubeSeriesPoint], reversed: Bool) {
+                    let ordered = reversed ? Array(edgePoints.reversed()) : edgePoints
+                    for (index, point) in ordered.enumerated() {
+                        let p = CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))
+                        if data.stepped, index > 0 {
+                            let previous = ordered[index - 1]
+                            // Forward, across at the earlier value, then up or down; backward, the other way round.
+                            let corner =
+                                reversed
+                                ? CGPoint(x: x(previous.time.timeIntervalSince1970), y: p.y)
+                                : CGPoint(x: p.x, y: y(previous.value))
+                            fill.addLine(to: corner)
+                        }
+                        fill.addLine(to: p)
+                    }
+                }
+                edge(points, reversed: false)
                 if let base = run.lower {
-                    for point in points { fill.addLine(to: CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))) }
-                    let bottom = Self.decimate(base, columns: columns, start: startTime, span: span)
-                    for point in bottom.reversed() { fill.addLine(to: CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))) }
+                    edge(Self.decimate(base, columns: columns, start: startTime, span: span), reversed: true)
                 } else {
-                    for point in points { fill.addLine(to: CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))) }
                     fill.addLine(to: CGPoint(x: x(last.time.timeIntervalSince1970), y: y(0)))
                 }
                 fill.closeSubpath()
@@ -323,6 +365,13 @@ struct KubePlot: Sendable {
         }
 
         markers = data.shownMarkers.map { Marker(marker: $0, x: x($0.time.timeIntervalSince1970)) }
+        let windowEnd = self.end
+        bands = data.bands.compactMap { band in
+            let from = max(band.start, data.start)
+            let to = min(band.end, windowEnd)
+            guard to > from else { return nil }
+            return Band(band: band, minX: x(from.timeIntervalSince1970), maxX: x(to.timeIntervalSince1970))
+        }
 
         tracks =
             drawn.map { series, _, _ in
@@ -600,6 +649,7 @@ enum KubeChartSummary {
         let points = data.usage.reduce(0) { $0 + $1.points.count }
         return "chart \(data.identifier) series=\(data.usage.count) points=\(points)"
             + " drawn=\(plot?.pointCount ?? 0) ymax=\(plot.map { data.unit.format($0.top) } ?? "-") refs=[\(references.joined(separator: " "))] markers=\(data.shownMarkers.count)"
+            + (data.bands.isEmpty ? "" : " bands=[\(data.bands.map(\.title).joined(separator: ","))]")
             + " source=\(data.source.isEmpty ? "-" : data.source) tier=\(data.tier ?? "-")"
     }
 }

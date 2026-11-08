@@ -55,17 +55,23 @@ extension KubernetesPageModel {
     /// 4.1): a pod's Overview (its usage block) or its Metrics tab — the
     /// pod's own PodMetrics, whatever the list beside it shows — only while
     /// the page is on screen.
+    /// Its Metrics tab, a workload's, an HPA's, a node's or a namespace's:
+    /// what that tab charts (`objectMetricsDetails`).
     var metricsDetailsOnScreen: [KubeMetricsDetail] {
-        guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail,
-            detailTab == .overview || detailTab == .metrics, detail.ref.isPod, let namespace = detail.ref.namespace
-        else { return [] }
-        return [.pod(namespace: namespace, name: detail.ref.name)]
+        guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail else { return [] }
+        if detail.ref.isPod, let namespace = detail.ref.namespace {
+            guard detailTab == .overview || detailTab == .metrics else { return [] }
+            return [.pod(namespace: namespace, name: detail.ref.name)]
+        }
+        guard detailTab == .metrics else { return [] }
+        return objectMetricsDetails(detail)
     }
 
     /// The monitor told what this page shows.
     func updateMetricsWanted() {
         model.metrics.want(metricsOnScreen, for: self)
         model.metrics.wantDetail(metricsDetailsOnScreen, for: self)
+        if visible, windowVisible { askChartLookups() }
         updatePrometheusWanted()
     }
 

@@ -83,6 +83,20 @@ enum KubectlLine {
         return words.joined(separator: " ")
     }
 
+    /// The Metrics tab of a node, a namespace or a workload, as `kubectl top`
+    /// says it: the node; the namespace's pods; the workload's pods by its selector.
+    static func top(_ ref: KubeObjectRef, selector: String?) -> String? {
+        let context = ["kubectl", "--context", quoted(ref.context)]
+        switch ref.metricsSubject {
+        case .node: return (context + ["top", "node", quoted(ref.name)]).joined(separator: " ")
+        case .namespace: return (context + ["-n", quoted(ref.name), "top", "pods"]).joined(separator: " ")
+        case .workload:
+            guard let namespace = ref.namespace, let selector, !selector.isEmpty else { return nil }
+            return (context + ["-n", quoted(namespace), "top", "pods", "-l", quoted(selector)]).joined(separator: " ")
+        case .pod, .hpa, nil: return nil
+        }
+    }
+
     /// A pod's usage as its Metrics tab samples it:
     /// `kubectl --context C -n NS top pod POD --containers`.
     static func top(context: String, namespace: String, pod: String) -> String {

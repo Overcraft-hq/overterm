@@ -795,7 +795,7 @@ final class KubeDetailTests: XCTestCase {
         XCTAssertTrue(page.press("\r"))
         XCTAssertEqual(page.detailTab, .overview, "a deployment's ↩ opens its Overview")
         XCTAssertNil(page.detail?.logs, "no pod's log")
-        XCTAssertEqual(KubeDetailTab.tabs(for: try XCTUnwrap(page.detail?.ref)), [.overview, .logs, .yaml, .events, .history])
+        XCTAssertEqual(KubeDetailTab.tabs(for: try XCTUnwrap(page.detail?.ref)), [.overview, .logs, .yaml, .events, .history, .metrics])
         try await until(5, "nothing open") { self.api.openLogStreams == 0 }
         // `l` on a deployment: its pods' logs, merged.
         XCTAssertTrue(page.press("l"), "l: a deployment's pods' logs")
