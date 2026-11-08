@@ -144,8 +144,7 @@ final class KubeMetricsMonitor: ObservableObject {
                     let sample: KubeMetricsSample
                     switch target {
                     case .pods:
-                        let body = try await client.get(target.path).body
-                        sample = KubeMetricsSample(pods: try KubeMetricsReader.pods(body), read: Date())
+                        sample = KubeMetricsSample(pods: try await target.pods(client), read: Date())
                     case .nodes:
                         let body = try await client.get(target.path).body
                         if count % max(1, self.allocatableEvery) == 0 || allocatable.isEmpty {

@@ -46,6 +46,7 @@ struct KubePinnedHealth: Equatable, Sendable {
             switch scope {
             case .all: "all namespaces"
             case .namespace(let name): name
+            case .namespaces: scope.title
             }
         }
     }
@@ -212,9 +213,17 @@ final class KubePinnedHealthSession: ObservableObject {
         var unread: [String] = []
         func table(_ kind: KubeResourceKind, _ scope: KubeScope) async throws -> KubeTable? {
             do {
-                let body = try await client.get(KubePinnedHealth.path(kind, scope: scope), accept: KubeClient.tableAccept).body
-                let namespace = scope.namespace(for: kind)
-                return try await KubeBlocking.run { Swift.Result { try KubeTableReader.read(body, namespace: namespace) } }.get()
+                // Several namespaces: a page each (past the cap, across the
+                // cluster), kept to them.
+                var whole: KubeTable?
+                for namespace in scope.reads(for: kind) {
+                    let one: KubeScope = namespace.map { .namespace($0) } ?? .all
+                    let body = try await client.get(KubePinnedHealth.path(kind, scope: one), accept: KubeClient.tableAccept).body
+                    var read = try await KubeBlocking.run { Swift.Result { try KubeTableReader.read(body, namespace: namespace) } }.get()
+                    read.rows = read.rows.filter { scope.includes($0.id.namespace) }
+                    if whole == nil { whole = read } else { whole!.rows += read.rows }
+                }
+                return whole
             } catch let error as KubeAPIError {
                 unread.append("\(kind.resource): \(KubernetesModel.said(error))")
                 return nil

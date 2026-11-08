@@ -665,7 +665,7 @@ extension TerminalWindowController {
         items += namespaces.map { name in
             PaletteItem(
                 id: "k.n.\(name)", group: .kubernetes, title: name,
-                subtitle: "Namespace in \(context.displayName)" + (model.scope == .namespace(name) ? " · showing" : ""), symbol: "square.dashed"
+                subtitle: "Namespace in \(context.displayName)" + (model.scope.names?.contains(name) == true ? " · showing" : ""), symbol: "square.dashed"
             ) { [weak self] _, _ in
                 KubernetesModel.shared.setScope(.namespace(name))
                 self?.showKubernetesPage()

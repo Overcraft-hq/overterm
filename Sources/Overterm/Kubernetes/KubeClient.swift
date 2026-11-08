@@ -90,19 +90,6 @@ struct KubeProxyConnection: KubeConnection {
     }
 }
 
-/// Where a list looks: one namespace, or all of them. A cluster-scoped
-/// kind ignores it.
-enum KubeScope: Hashable, Sendable {
-    case all
-    case namespace(String)
-
-    /// The namespace in `kind`'s paths and its rows'.
-    func namespace(for kind: KubeResourceKind) -> String? {
-        guard kind.namespaced, case .namespace(let name) = self else { return nil }
-        return name
-    }
-}
-
 /// Selectors sent to the server (the filter's, later).
 struct KubeListOptions: Hashable, Sendable {
     var labelSelector: String?
@@ -417,6 +404,46 @@ struct KubeClient: Sendable {
     /// The whole list as Table rows, page by page. The collection's
     /// resourceVersion is the first page's (the same on every page).
     func list(_ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions()) async throws -> KubeTable {
+        if case .namespaces = scope, kind.namespaced { return try await listSeveral(kind, in: scope, options: options) }
+        return try await listOne(kind, in: scope, options: options)
+    }
+
+    /// Several namespaces' lists as one: a list each, up to the cap — a
+    /// namespace that refuses (a 403) left out, refused only when every one
+    /// does; past it, the list across the cluster kept to them — refused,
+    /// said so.
+    private func listSeveral(_ kind: KubeResourceKind, in scope: KubeScope, options: KubeListOptions) async throws -> KubeTable {
+        if scope.isFilteredAcross(for: kind) {
+            do {
+                var table = try await listOne(kind, in: .all, options: options)
+                table.rows = table.rows.filter { scope.includes($0.id.namespace) }
+                return table
+            } catch let error as KubeAPIError where error.isForbidden {
+                throw KubeScopeRefused(count: scope.names?.count ?? 0, reason: error.message)
+            }
+        }
+        var whole: KubeTable?
+        var refused: KubeAPIError?
+        for namespace in scope.names ?? [] {
+            let table: KubeTable
+            do {
+                table = try await listOne(kind, in: .namespace(namespace), options: options)
+            } catch let error as KubeAPIError where error.isForbidden {
+                refused = refused ?? error
+                continue
+            }
+            if whole == nil {
+                whole = table
+                whole!.resourceVersion = nil
+            } else {
+                whole!.rows += table.rows
+            }
+        }
+        if whole == nil, let refused { throw refused }
+        return whole ?? KubeTable(columns: [], rows: [])
+    }
+
+    private func listOne(_ kind: KubeResourceKind, in scope: KubeScope, options: KubeListOptions) async throws -> KubeTable {
         let namespace = scope.namespace(for: kind)
         var restarts = 0
         restart: while true {
@@ -588,13 +615,21 @@ struct KubeClient: Sendable {
     /// the rows that change and how far the watch has got. Ends when the
     /// consumer stops, or throws what can't be got past (a credential
     /// failure, a 403, an unreachable cluster).
-    func follow(_ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions()) -> AsyncThrowingStream<
-        KubeFollowUpdate, Error
-    > {
+    ///
+    /// Several namespaces are a follow each up to `cap` (`KubeScope.watchCap`;
+    /// less where a page follows several lists in each, as the Overview
+    /// does), past it one across the cluster kept to them.
+    func follow(
+        _ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions(), cap: Int = KubeScope.watchCap
+    ) -> AsyncThrowingStream<KubeFollowUpdate, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    try await runFollow(kind, scope, options) { continuation.yield($0) }
+                    if case .namespaces = scope, kind.namespaced {
+                        try await runSeveral(kind, scope, options, cap: cap) { continuation.yield($0) }
+                    } else {
+                        try await runFollow(kind, scope, options) { continuation.yield($0) }
+                    }
                     continuation.finish()
                 } catch is CancellationError {
                     continuation.finish()
@@ -625,6 +660,57 @@ struct KubeClient: Sendable {
     private func wait(after error: KubeAPIError, attempt: Int) -> Duration {
         if error.status == 429 { return .seconds(min(max(error.retryAfter ?? 1, 0), 10)) }
         return min(Duration.milliseconds(100) * (1 << min(attempt, 10)), maxBackoff)
+    }
+
+    /// Several namespaces followed as one list: a follow each, merged
+    /// (`KubeScopeMerge`), up to `cap`; past it, the follow across the
+    /// cluster kept to them — refused, said so. A namespace that refuses (a
+    /// 403: a name typed, one of `accessibleNamespaces` whose pods aren't
+    /// the user's) is left out and said (`.unlisted`), the others go on;
+    /// only every one refusing ends it. Anything else that can't be got
+    /// past ends them all.
+    private func runSeveral(
+        _ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, cap: Int, _ yield: @Sendable (KubeFollowUpdate) -> Void
+    ) async throws {
+        let names = scope.names ?? []
+        if scope.isFilteredAcross(for: kind, cap: cap) {
+            do {
+                try await runFollow(kind, .all, options) { update in
+                    if let kept = KubeScopeMerge.filtered(update, to: scope) { yield(kept) }
+                }
+            } catch let error as KubeAPIError where error.isForbidden {
+                throw KubeScopeRefused(count: names.count, reason: error.message, cap: cap)
+            }
+            return
+        }
+        let (updates, continuation) = AsyncThrowingStream<(String, KubeFollowUpdate), Error>.makeStream()
+        let client = self
+        let producer = Task {
+            do {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    for name in names {
+                        group.addTask {
+                            do {
+                                try await client.runFollow(kind, .namespace(name), options) { continuation.yield((name, $0)) }
+                            } catch let error as KubeAPIError where error.isForbidden {
+                                continuation.yield((name, .unlisted(name, error)))
+                            }
+                        }
+                    }
+                    while try await group.next() != nil {}
+                }
+                continuation.finish()
+            } catch {
+                continuation.finish(throwing: error)
+            }
+        }
+        defer { producer.cancel() }
+        var merge = KubeScopeMerge(namespaces: names)
+        for try await (name, update) in updates {
+            try Task.checkCancellation()
+            for merged in merge.take(update, from: name) { yield(merged) }
+            if merge.allRefused, let first = merge.refused.sorted(by: { $0.key < $1.key }).first?.value { throw first }
+        }
     }
 
     private func runFollow(

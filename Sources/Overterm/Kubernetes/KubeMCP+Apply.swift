@@ -44,7 +44,15 @@ extension KubeMCP {
             }
         }
         let client = target.client
-        let namespace = call.string("namespace") ?? target.namespace
+        // Where an object without its own goes: one namespace, never a
+        // guess — named, it is the target's one; of several shown (none
+        // named), the agent names it as every other tool needing one does.
+        let namespace: String?
+        if call.string("namespace") != nil || ((target.scope.names?.count ?? 0) > 1 && objects.contains(where: { $0.namespace == nil })) {
+            namespace = try target.oneNamespace("k8s_apply")
+        } else {
+            namespace = target.namespace
+        }
         // The access review first: nothing is read or asked before it says yes.
         do {
             let refs = try await KubeManifestRun.refs(objects, context: context, client: client, model: kubernetes, namespace: namespace)

@@ -49,18 +49,21 @@ final class KubeHealthSession: ObservableObject {
         let generation = self.generation
         let width = Self.readWidth
         task = Task { [weak self] in
-            let place = scope.namespace(for: .pods).map { "namespace \($0)" } ?? "every namespace"
             // The lists at once (bounded), then decoded in their order:
             // a namespace's pods are megabytes of JSON, decoded off the
-            // main thread.
-            let answers = await client.getAll(kinds.map { read, kind in (Self.path(read, kind: kind, scope: scope), "application/json") }, width: width)
+            // main thread. Several namespaces: a list each (past the cap,
+            // across the cluster, kept to them).
+            let requests = kinds.flatMap { read, kind in scope.reads(for: kind).map { (read, kind, $0) } }
+            let answers = await client.getAll(
+                requests.map { read, kind, namespace in (Self.path(read, kind: kind, namespace: namespace), "application/json") }, width: width)
             guard !Task.isCancelled else { return }
             if answers.contains(where: { if case .failure(let error) = $0 { error is CancellationError } else { false } }) { return }
             let report = await KubeBlocking.run {
                 var lists = KubeHealth.Lists()
-                for ((read, kind), answer) in zip(kinds, answers) {
+                for ((read, kind, namespace), answer) in zip(requests, answers) {
+                    let place = namespace.map { "namespace \($0)" } ?? (kind.namespaced ? scope.said : "every namespace")
                     switch answer {
-                    case .success(let body): lists.add(read, kind: kind.kind, apiVersion: kind.groupVersion, body: body, place: place)
+                    case .success(let body): lists.add(read, kind: kind.kind, apiVersion: kind.groupVersion, body: body, place: place, scope: scope)
                     case .failure(let error): lists.failed(read, KubernetesModel.said(error), place: place)
                     }
                 }
@@ -102,6 +105,10 @@ final class KubeHealthSession: ObservableObject {
 
     /// One bounded list's GET, its objects whole (the checks read their specs).
     nonisolated static func path(_ read: KubeHealth.Read, kind: KubeResourceKind, scope: KubeScope) -> String {
-        KubePath.query(kind.path(namespace: scope.namespace(for: kind)), [("limit", String(read.limit))])
+        path(read, kind: kind, namespace: scope.namespace(for: kind))
+    }
+
+    nonisolated static func path(_ read: KubeHealth.Read, kind: KubeResourceKind, namespace: String?) -> String {
+        KubePath.query(kind.path(namespace: kind.namespaced ? namespace : nil), [("limit", String(read.limit))])
     }
 }

@@ -3,12 +3,13 @@ import Foundation
 // MARK: New from a template (KubeTemplates), and saved filters (KubeSavedFilters)
 
 extension KubernetesPageModel {
-    /// Where a template goes: the namespace shown, else the context's own.
+    /// Where a template goes: the namespace shown — of several, the
+    /// context's own when it is one, else the first — else the context's own.
     var templateNamespace: String {
         if let shown = shownNamespace { return shown }
         guard let context = model.selected else { return "default" }
-        if case .namespace(let name) = KubernetesModel.defaultScope(context) { return name }
-        return "default"
+        let own = KubernetesModel.defaultScope(context).one()
+        return model.scope.one(preferring: own) ?? own ?? "default"
     }
 
     /// A template as Overterm's copy in the editor, its namespace the one
@@ -42,9 +43,7 @@ extension KubernetesPageModel {
     func saveFilter(named name: String? = nil, in store: KubeSavedFilters = .shared) -> KubeSavedFilter? {
         let text = filter.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let context = model.selectedName else { return nil }
-        let saved = KubeSavedFilter(
-            name: name ?? text, context: context, kind: KubeSavedFilter.Kind(model.kind), namespace: model.scope.namespace(for: model.kind),
-            filter: text)
+        let saved = KubeSavedFilter(name: name ?? text, context: context, kind: KubeSavedFilter.Kind(model.kind), scope: model.scope, filter: text)
         guard store.save(saved) else { return nil }
         return store.filters(on: context).first { $0.name == saved.name }
     }
@@ -59,7 +58,7 @@ extension KubernetesPageModel {
         if model.selectedName != saved.context { model.select(saved.context) }
         let kind = model.catalog.kind(fullName: saved.kind.fullName) ?? saved.kind.resourceKind
         if kind.namespaced {
-            model.setScope(saved.namespace.map { .namespace($0) } ?? .all)
+            model.setScope(saved.scope)
         }
         showKind(kind)
         filter = saved.filter

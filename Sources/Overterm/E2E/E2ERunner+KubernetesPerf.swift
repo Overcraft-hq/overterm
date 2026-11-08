@@ -9,6 +9,9 @@ import Foundation
 /// run's kubeconfig is OVERTERM_KUBECONFIG's file, written here, whose
 /// contexts reach only the fake; the page talks to its socket directly,
 /// so kubectl's proxy isn't what is timed. Usage is served for every pod.
+/// Then ten namespaces of 500 pods each at once: ten watches, merged, the
+/// same budgets for the first list and a burst; their Overview a watch a
+/// part, not a part a namespace, and cheap while quiet.
 extension E2ERunner {
     func kubernetesPerfScenario() async {
         await settledPrompt()
@@ -142,10 +145,88 @@ extension E2ERunner {
         check("in under 250 ms", sortTime < 250, "\(Int(sortTime)) ms")
         page.sort = nil
 
+        await tenNamespaces(model, page, fake)
+
         app.closeOverlay(.kubernetes)
         check("closed, its watch ends", await eventually(5) { fake.openWatches == 0 }, "\(fake.openWatches)")
         check("and no usage is polled", await eventually(5) { !model.metrics.isPolling })
         check("it wrote nothing", fake.writes.isEmpty)
         KubeSocketFolder.app.remove()
+    }
+
+    /// Ten namespaces of 500 pods each picked at once (the cap): a watch
+    /// each, merged into one list in under 5 s, a burst of 500 events
+    /// across them applied in under 3 s; then back to shop.
+    private func tenNamespaces(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        let names = (0..<KubeScope.watchCap).map { "team-\($0)" }
+        let each = 500
+        for name in names {
+            fake.addNamespace(name)
+            for index in 0..<each { fake.addPod(String(format: "pod-%03d", index), namespace: name) }
+        }
+        let started = CACurrentMediaTime()
+        model.setScope(.of(names))
+        let listed = await eventually(30) { model.rows.count == names.count * each && model.listState == .live }
+        let listTime = (CACurrentMediaTime() - started) * 1000
+        check("ten namespaces' 5,000 pods in one list", listed, "\(model.rows.count) \(model.listState)")
+        note("kubernetes ten namespaces of \(each) pods listed in \(Int(listTime)) ms")
+        check("in under 5 s", listTime < 5000, "\(Int(listTime)) ms")
+        check(
+            "a watch each, none across the cluster",
+            await eventually(10) { Set(names.map { "/api/v1/namespaces/\($0)/pods" }).isSubset(of: Set(fake.requests.filter(\.isWatch).map(\.path))) }
+                && !fake.requests.contains { $0.isWatch && $0.path == "/api/v1/pods" })
+        check("with a Namespace column first", page.columns.first?.title == "Namespace")
+
+        let burst = names.flatMap { name in stride(from: 0, to: each, by: 10).map { (name, String(format: "pod-%03d", $0)) } }
+        let burstStart = CACurrentMediaTime()
+        let sending = Task.detached {
+            for (namespace, pod) in burst {
+                fake.updatePod(pod, namespace: namespace) {
+                    $0.status = "CrashLoopBackOff"
+                    $0.ready = 0
+                    $0.restarts = 1
+                }
+            }
+        }
+        _ = await sending.value
+        let applied = await eventually(20) { page.failing.count == burst.count }
+        let burstTime = (CACurrentMediaTime() - burstStart) * 1000
+        check("the burst's \(burst.count) events across ten watches applied", applied, "\(page.failing.count) failing")
+        note("kubernetes burst of \(burst.count) events over ten namespaces applied in \(Int(burstTime)) ms")
+        check("in under 3 s", burstTime < 3000, "\(Int(burstTime)) ms")
+
+        await tenNamespacesOverview(model, page, fake, names)
+
+        model.setScope(.namespace("shop"))
+        check("back to shop: one watch", await eventually(10) { model.rows.count == 5000 && fake.openWatches <= 2 }, "\(model.rows.count) \(fake.openWatches)")
+    }
+
+    /// The Overview of the ten: its parts share the page's watch budget —
+    /// each one watch across the cluster kept to them, not ten a part (a
+    /// hundred) — and a quiet cluster costs little CPU while it shows.
+    private func tenNamespacesOverview(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, _ names: [String]) async {
+        let before = fake.openWatches
+        fake.forgetRequests()
+        check("1 is the Overview of the ten", page.press("1") && page.section == .overview)
+        let overview = page.clusterOverview
+        check("it reads them", await eventually(20) { overview.state == .live && overview.overview.pods >= names.count * 500 }, "\(overview.state) \(overview.overview.pods)")
+        let parts = KubeClusterOverviewSession.parts(model.discovery).count
+        _ = await eventually(10) { fake.openWatches - before >= parts }
+        let opened = fake.openWatches - before
+        note("kubernetes Overview of ten namespaces: \(opened) watches for \(parts) parts")
+        check("a watch a part, none a namespace", opened <= parts, "\(opened) watches for \(parts) parts")
+        check(
+            "its pods watched across the cluster, kept to the ten",
+            !fake.requests.contains { $0.isWatch && $0.path.hasPrefix("/api/v1/namespaces/team-") && $0.query["fieldSelector"] != nil }
+                && fake.requests.contains { $0.isWatch && $0.path == "/api/v1/pods" && $0.query["fieldSelector"] == "status.phase=Running" })
+        await pause(2)  // the first lists' work settled
+        let cpu0 = Self.cpuSeconds()
+        let wall0 = Date()
+        await pause(5)
+        let cpu = (Self.cpuSeconds() - cpu0) / Date().timeIntervalSince(wall0) * 100
+        note(String(format: "kubernetes Overview of ten namespaces, quiet: CPU %.2f%%", cpu))
+        check("quiet, it costs little CPU", cpu < 10, String(format: "%.2f%%", cpu))
+        page.showKind(.pods)
+        check("the Overview's watches end", await eventually(10) { fake.openWatches <= before }, "\(fake.openWatches) open, \(before) before")
     }
 }

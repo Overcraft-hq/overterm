@@ -34,6 +34,7 @@ enum KubeListExport {
             case _ where !kind.namespaced: nil
             case .all: "all"
             case .namespace(let name): name
+            case .namespaces(let names): names.count <= 3 ? names.sorted().joined(separator: "-") : "\(names.count)-namespaces"
             }
         let name = [context, place, kind.resource].compactMap { $0 }.joined(separator: "-")
         let safe = name.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || "-_.".unicodeScalars.contains($0) ? Character($0) : "_" }

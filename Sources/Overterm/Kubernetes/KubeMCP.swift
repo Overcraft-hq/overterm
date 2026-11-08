@@ -152,7 +152,7 @@ enum KubeMCP {
         let scope: KubeScope
 
         var brief: KubeBriefContext { KubeBriefContext(name: context.name, production: context.isProduction, writable: context.isWritable) }
-        /// One namespace, or nil for all of them.
+        /// One namespace, or nil for several or all of them.
         var namespace: String? { if case .namespace(let name) = scope { name } else { nil } }
 
         /// The first line of every answer.
@@ -161,10 +161,7 @@ enum KubeMCP {
             var line = said.prefix(1).uppercased() + String(said.dropFirst())
             let shown = scope ?? self.scope
             if kind?.namespaced != false {
-                switch shown {
-                case .all: line += ", all namespaces"
-                case .namespace(let name): line += ", namespace \(name)"
-                }
+                line += ", " + shown.said
             }
             return line + "."
         }
@@ -172,7 +169,7 @@ enum KubeMCP {
         /// The one namespace a namespaced object is in.
         func oneNamespace(_ tool: String) throws -> String {
             guard let namespace else {
-                throw BrowserMCP.ToolError(message: "\(tool) needs “namespace”: the Kubernetes page shows all namespaces of \(context.name).")
+                throw BrowserMCP.ToolError(message: "\(tool) needs “namespace”: the Kubernetes page shows \(scope.said) of \(context.name).")
             }
             return namespace
         }
@@ -228,6 +225,12 @@ enum KubeMCP {
         if let namespace = call.string("namespace") {
             if ["all", "*", "-A", "--all-namespaces"].contains(namespace) {
                 scope = .all
+            } else if namespace.contains(",") {
+                // `a,b`: several, as the page shows them.
+                guard let names = KubePicker.typedNamespaces(namespace), names.allSatisfy(KubeMCPText.isName) else {
+                    throw BrowserMCP.ToolError(message: "“\(namespace)” isn't a list of namespaces' names.")
+                }
+                scope = .of(names)
             } else {
                 guard KubeMCPText.isName(namespace) else { throw BrowserMCP.ToolError(message: "“\(namespace)” isn't a namespace's name.") }
                 scope = .namespace(namespace)
@@ -323,6 +326,7 @@ enum KubeMCP {
                 switch defaultScope(for: context, list: list, kubernetes: kubernetes, pane: pane) {
                 case .all: "all namespaces"
                 case .namespace(let name): name
+                case .namespaces(let names): names.sorted().joined(separator: ", ")
                 }
             rows.append(
                 KubeMCPText.ContextRow(
@@ -347,7 +351,10 @@ enum KubeMCP {
         let labels = call.string("label_selector")
         let client = target.client
         let table: KubeTable
-        if KubeMCPText.isSecret(kind) && namespace == nil {
+        if kind.namespaced, case .namespaces(let names) = scope {
+            // The page's several namespaces: one at a time, up to the limit.
+            table = try await inNamespaces(names.sorted(), target, kind: kind, limit: limit, labels: labels, fields: fields)
+        } else if KubeMCPText.isSecret(kind) && namespace == nil {
             table = try await secretsAcrossNamespaces(target, kind: kind, limit: limit, labels: labels, fields: fields)
         } else {
             let path = KubePath.query(
@@ -391,10 +398,23 @@ enum KubeMCP {
                 message: "Secrets are listed for an agent one namespace at a time, and \(target.context.name) doesn't list its namespaces: name a “namespace”.")
         }
         let names = listed.rows.map(\.id.name).sorted()
+        var table = try await inNamespaces(Array(names.prefix(secretNamespaces)), target, kind: kind, limit: limit, labels: labels, fields: fields)
+        if names.count > secretNamespaces { table.continueToken = "" }
+        return table
+    }
+
+    /// A kind's rows in `names`, one namespace at a time (rows only:
+    /// `includeObject=None`, the namespace the one asked), up to `limit`;
+    /// a namespace that refuses is left out. Cut short, the table says so
+    /// (a `continue`).
+    private static func inNamespaces(
+        _ names: [String], _ target: Target, kind: KubeResourceKind, limit: Int, labels: String?, fields: [String]
+    ) async throws -> KubeTable {
+        let client = target.client
         var columns: [KubeColumn] = []
         var rows: [KubeRow] = []
-        var more = names.count > secretNamespaces
-        for namespace in names.prefix(secretNamespaces) {
+        var more = false
+        for namespace in names {
             guard rows.count < limit else {
                 more = true
                 break
@@ -410,7 +430,7 @@ enum KubeMCP {
                 let body = try await within { try await client.get(path, accept: KubeClient.tableAccept).body }
                 table = try KubeTableReader.read(body, namespace: namespace)
             } catch let error as KubeAPIError where error.isForbidden {
-                continue  // Not this namespace's Secrets: the others' still.
+                continue  // Not this namespace's: the others' still.
             }
             if columns.isEmpty { columns = table.columns }
             rows += table.rows
@@ -532,21 +552,30 @@ enum KubeMCP {
             let text = KubeMCPText.events(events.map { ($0, about) }, limit: limit, now: now, empty: "No \(warnings ? "warnings" : "events") about \(about).")
             return KubeMCPText.finished([target.header(kind: kind), text].joined(separator: "\n"))
         }
-        let base = target.namespace.map { "/api/v1/namespaces/\(KubePath.segment($0))/events" } ?? "/api/v1/events"
+        // Several namespaces: their events a list each.
+        let bases = (target.scope.names.map { $0.map(Optional.some) } ?? [nil]).map { (namespace: String?) in
+            namespace.map { "/api/v1/namespaces/\(KubePath.segment($0))/events" } ?? "/api/v1/events"
+        }
         // The server lists events in its keys' order, not by time: every
         // page (up to a bound) is read before the newest are picked, and a
         // list cut there says so.
         var raw: [[String: Any]] = []
         var token: String?
-        var pages = 0
-        repeat {
-            let path = KubePath.query(
-                base, [("fieldSelector", warnings ? "type=Warning" : nil), ("limit", String(eventsPage)), ("continue", token)])
-            let body = try await within { try await client.get(path).body }
-            raw += KubeAgentBriefing.items(body)
-            token = KubeMCPText.continueToken(body)
-            pages += 1
-        } while token != nil && pages < eventPages
+        var cut = false
+        for base in bases {
+            var pages = 0
+            token = nil
+            repeat {
+                let path = KubePath.query(
+                    base, [("fieldSelector", warnings ? "type=Warning" : nil), ("limit", String(eventsPage)), ("continue", token)])
+                let body = try await within { try await client.get(path).body }
+                raw += KubeAgentBriefing.items(body)
+                token = KubeMCPText.continueToken(body)
+                pages += 1
+            } while token != nil && pages < eventPages
+            if token != nil { cut = true }
+        }
+        token = cut ? "" : nil
         let items = raw.map { item -> (KubeEvent, String) in
             let involved = KubeAgentText.map(item["involvedObject"])
             let kind = (KubeAgentText.string(involved["kind"]) ?? "").lowercased()
@@ -555,7 +584,7 @@ enum KubeMCP {
             return (KubeEvent(item: item), namespace + (kind.isEmpty ? name : "\(kind)/\(name)"))
         }
         let ordered = KubeEvent.newestFirst(items.map(\.0)).compactMap { event in items.first { $0.0.id == event.id } }
-        let place = target.namespace.map { "namespace \($0)" } ?? "any namespace"
+        let place = target.scope.names == nil ? "any namespace" : target.scope.said
         var text = KubeMCPText.events(ordered, limit: limit, now: now, empty: "No \(warnings ? "warnings" : "events") in \(place).")
         if token != nil {
             text +=
@@ -807,7 +836,7 @@ enum KubeMCP {
     static var tools: [[String: Any]] {
         let context: [String: Any] = ["type": "string", "description": "A context's name from k8s_contexts. Default: the one selected on the Kubernetes page; with none, name one."]
         let namespace: [String: Any] = [
-            "type": "string", "description": "A namespace, or all (k8s_get, k8s_events). Default: the page's namespace on that context, else the context's own.",
+            "type": "string", "description": "A namespace, several as a,b, or all (k8s_get, k8s_events, k8s_top). Default: the page's namespaces on that context, else the context's own.",
         ]
         return [
             tool(

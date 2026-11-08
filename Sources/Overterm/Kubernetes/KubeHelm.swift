@@ -518,11 +518,14 @@ enum KubeHelmMask {
 /// (rule 7), quoted for zsh as `KubectlLine`'s are. Pure.
 enum KubeHelmLine {
     /// `helm list --kube-context C -n NS` (`-A` across all namespaces).
+    /// Several namespaces: a command each, a line each.
     static func list(context: String, scope: KubeScope) -> String {
         var words = ["helm", "list", "--kube-context", KubectlLine.quoted(context)]
         switch scope {
         case .all: words.append("-A")
         case .namespace(let name): words += ["-n", KubectlLine.quoted(name)]
+        case .namespaces:
+            return (scope.names ?? []).map { list(context: context, scope: .namespace($0)) }.joined(separator: "\n")
         }
         return words.joined(separator: " ")
     }

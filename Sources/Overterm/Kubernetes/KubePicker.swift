@@ -5,7 +5,13 @@ import Foundation
 /// the palette ranks). The namespace one also takes a name typed in full:
 /// RBAC often refuses listing namespaces — a context that carries one
 /// (`globex-*`'s) often says its user is held to it — and a name the server
-/// won't list may still be one you can read. Pure.
+/// won't list may still be one you can read.
+///
+/// The namespace one picks several: each row has its checkbox (`checked`;
+/// none is All), ticked by a click on it or ⌥↩ and shown at once
+/// (`toggle`), the picker left open; ↩ or a click on a name shows that one
+/// alone and closes it; `a,b` typed is those. Every namespace the server
+/// listed ticked is All — one watch across the cluster. Pure.
 struct KubePicker: Equatable {
     enum Kind: Equatable, Sendable {
         case namespace, context
@@ -43,6 +49,7 @@ struct KubePicker: Equatable {
             switch choice {
             case .scope(.all): "*all"
             case .scope(.namespace(let name)): (typed ? "+" : "ns:") + name
+            case .scope(.namespaces(let names)): "+set:" + names.sorted().joined(separator: ",")
             case .context(let name): "ctx:" + name
             case .compare(let context, let namespace): (typed ? "+cmp:" : "cmp:") + context + "\u{0}" + (namespace ?? "")
             }
@@ -53,6 +60,15 @@ struct KubePicker: Equatable {
     let items: [Item]
     /// Why the list is short, when it is.
     var note: String?
+    /// The namespaces ticked; none: all of them.
+    private(set) var checked: Set<String> = []
+    /// The namespaces the server listed, when it did (not the context's
+    /// `accessibleNamespaces`), and listing across the cluster wasn't
+    /// refused: every one ticked is all of them.
+    var listedAll: [String] = []
+    /// The namespaces the last toggle made All of: shown again if the list
+    /// across the cluster is refused.
+    private(set) var collapsed: KubeScope?
     var query = "" {
         didSet { index = 0 }
     }
@@ -81,6 +97,10 @@ struct KubePicker: Equatable {
             else { return ranked }
             return ranked + [typed]
         }
+        if kind == .namespace, query.contains(","), let names = Self.typedNamespaces(query) {
+            let scope = KubeScope.of(names)
+            return [Item(choice: .scope(scope), title: names.joined(separator: ", "), detail: "Show these namespaces", typed: true)] + ranked
+        }
         guard kind == .namespace, let typed = Self.typedNamespace(query),
             !items.contains(where: { $0.choice == .scope(.namespace(typed)) })
         else { return ranked }
@@ -96,6 +116,38 @@ struct KubePicker: Equatable {
     }
 
     var chosen: Choice? { selected?.choice }
+
+    /// Whether `item`'s box is ticked: All when none is, a namespace when it is.
+    func isChecked(_ item: Item) -> Bool {
+        switch item.choice {
+        case .scope(.all): checked.isEmpty
+        case .scope(.namespace(let name)): checked.contains(name)
+        default: false
+        }
+    }
+
+    /// The scope the ticks make.
+    var checkedScope: KubeScope { KubeScope.of(checked) }
+
+    /// ⌥↩ or a click on its box: the highlighted item ticked or not — All
+    /// clears the others, a namespace ticked with All goes alone; every
+    /// listed namespace ticked is All again. The scope to show; nil when
+    /// nothing is highlighted.
+    mutating func toggle() -> KubeScope? {
+        guard let item = selected else { return nil }
+        switch item.choice {
+        case .scope(.all): checked = []
+        case .scope(.namespace(let name)): if checked.contains(name) { checked.remove(name) } else { checked.insert(name) }
+        case .scope(.namespaces(let names)): checked = names
+        default: return nil
+        }
+        collapsed = nil
+        if !listedAll.isEmpty, checked.count > 1, Set(listedAll).isSubset(of: checked) {
+            collapsed = checkedScope
+            checked = []
+        }
+        return checkedScope
+    }
 
     mutating func move(_ offset: Int) {
         let count = results.count
@@ -116,6 +168,17 @@ struct KubePicker: Equatable {
         return name
     }
 
+    /// What is typed as several namespaces: `a,b` (spaces allowed), each a
+    /// name one can have; nil when any isn't.
+    static func typedNamespaces(_ text: String) -> [String]? {
+        var names: [String] = []
+        for part in text.split(separator: ",", omittingEmptySubsequences: true) {
+            guard let name = typedNamespace(String(part)) else { return nil }
+            if !names.contains(name) { names.append(name) }
+        }
+        return names.isEmpty ? nil : names
+    }
+
     /// What is typed, as a comparison's other side: `namespace` (the
     /// object's context), or `namespace@context`.
     static func typedComparison(_ text: String, context: String) -> Item? {
@@ -131,12 +194,17 @@ struct KubePicker: Equatable {
     // MARK: The lists
 
     /// All namespaces first (`0`), then the context's favourites, its own
-    /// namespace and the one showing, then the server's list (or the
-    /// context's `accessibleNamespaces`); the one showing highlighted.
-    static func namespaces(listed: [String], favourites: [String], own: String?, current: KubeScope, refused: String?) -> KubePicker {
+    /// namespace and the ones showing, then the server's list (or the
+    /// context's `accessibleNamespaces`); the ones showing ticked, the
+    /// first of them highlighted. `listedAll`: whether `listed` is the
+    /// server's whole list, and the kind may be listed across the cluster
+    /// as far as anyone knows.
+    static func namespaces(
+        listed: [String], favourites: [String], own: String?, current: KubeScope, refused: String?, listedAll: Bool = false
+    ) -> KubePicker {
         var names: [String] = []
-        let showing: String? = if case .namespace(let name) = current { name } else { nil }
-        for name in favourites + [own, showing].compactMap({ $0 }) + listed where !names.contains(name) {
+        let showing = current.names ?? []
+        for name in favourites + [own].compactMap({ $0 }) + showing + listed where !names.contains(name) {
             names.append(name)
         }
         let items =
@@ -146,7 +214,11 @@ struct KubePicker: Equatable {
                     choice: .scope(.namespace(name)), title: name,
                     detail: favourites.contains(name) ? "favourite" : name == own ? "the context's" : listed.contains(name) ? nil : "typed")
             }
-        return KubePicker(kind: .namespace, items: items, note: refused, current: .scope(current))
+        let first: KubeScope = current.names.map { .namespace($0[0]) } ?? .all
+        var picker = KubePicker(kind: .namespace, items: items, note: refused, current: .scope(first))
+        picker.checked = Set(showing)
+        if listedAll, refused == nil { picker.listedAll = listed }
+        return picker
     }
 
     /// Every context, as the kubeconfig lists them: its class, read-only or

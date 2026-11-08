@@ -118,7 +118,7 @@ struct KubeHelmSection: View {
         }
     }
 
-    private var showsNamespace: Bool { helm.scope == .all }
+    private var showsNamespace: Bool { helm.scope?.spansNamespaces ?? false }
 
     private var columnsHeader: some View {
         HStack(spacing: 8) {

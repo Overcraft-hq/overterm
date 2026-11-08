@@ -78,10 +78,21 @@ final class KubeClusterOverviewSession: ObservableObject {
         self.scope = scope
         state = .loading
         let generation = self.generation
+        let cap = Self.watchCap(parts.map(\.1))
         for (part, kind) in parts {
             kinds[part] = kind
-            follows[part] = follow(part, kind, scope: scope, client: client, generation: generation)
+            follows[part] = follow(part, kind, scope: scope, cap: cap, client: client, generation: generation)
         }
+    }
+
+    /// How many namespaces each namespaced part may watch one by one: the
+    /// page's budget (`KubeScope.watchCap`) shared by the parts, so ten
+    /// namespaces are never ten watches a part. Past it a part is one
+    /// watch across the cluster kept to the namespaces — refused, said,
+    /// where listing across the cluster isn't allowed. Pure.
+    nonisolated static func watchCap(_ kinds: [KubeResourceKind]) -> Int {
+        let namespaced = kinds.filter(\.namespaced).count
+        return max(1, KubeScope.watchCap / max(1, namespaced))
     }
 
     /// Off screen: nothing followed, nothing kept.
@@ -125,10 +136,10 @@ final class KubeClusterOverviewSession: ObservableObject {
         }
     }
 
-    private func follow(_ part: Part, _ kind: KubeResourceKind, scope: KubeScope, client: KubeClient, generation: Int) -> Task<Void, Never> {
+    private func follow(_ part: Part, _ kind: KubeResourceKind, scope: KubeScope, cap: Int, client: KubeClient, generation: Int) -> Task<Void, Never> {
         Task { [weak self] in
             do {
-                for try await update in client.follow(kind, in: scope, options: Self.options(part)) {
+                for try await update in client.follow(kind, in: scope, options: Self.options(part), cap: cap) {
                     guard let self, self.generation == generation else { return }
                     self.received(update, for: part)
                 }
@@ -144,7 +155,11 @@ final class KubeClusterOverviewSession: ObservableObject {
     }
 
     private func received(_ update: KubeFollowUpdate, for part: Part) {
-        if case .retrying = update { return }
+        // A namespace of several that refuses is left out of the counts.
+        switch update {
+        case .retrying, .unlisted: return
+        case .listed, .changed, .bookmark: break
+        }
         var rows = self.rows[part] ?? KubeRows()
         rows.apply(update)
         self.rows[part] = rows
@@ -160,7 +175,7 @@ final class KubeClusterOverviewSession: ObservableObject {
                     case .deleted(let id): anchors[id] = nil
                     }
                 }
-            case .bookmark, .retrying: break
+            case .bookmark, .retrying, .unlisted: break
             }
         }
         if problems[part] != nil { problems[part] = nil }

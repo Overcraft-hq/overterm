@@ -95,13 +95,20 @@ final class KubernetesModel: ObservableObject {
     /// Whether the kubeconfig has been read once: before, the page waits.
     @Published private(set) var contextsRead = false
     @Published private(set) var selectedName: String?
-    /// The selected context's namespace, or all of them.
+    /// The selected context's namespaces: one, several, or all of them.
     @Published private(set) var scope: KubeScope = .all
     /// The context's namespaces, for the picker: its `accessibleNamespaces`,
     /// else the server's list.
     @Published private(set) var namespaces: [String] = []
     /// Why the namespaces couldn't be listed (RBAC often refuses it): one is typed.
     @Published private(set) var namespacesRefused: String?
+    /// Of several namespaces, those the list may not show (a 403 each),
+    /// and why: the rest are listed.
+    @Published private(set) var unlisted: [String: String] = [:]
+    /// Whether listing the kind across the cluster was refused on the
+    /// selected context: every namespace ticked stays those namespaces
+    /// then, not all of them (`KubePicker.listedAll`).
+    @Published private(set) var clusterListRefused = false
     /// What the selected context serves, once read; nil before.
     @Published private(set) var discovery: KubeDiscovery?
     /// Discovery's kinds that can be listed and watched, by section.
@@ -154,6 +161,9 @@ final class KubernetesModel: ObservableObject {
     private var toldProxies = false
     /// Whether the context picked is remembered for the next launch.
     var remembersSelection = !AppEnvironment.isUnitTest
+    /// Where the context picked and each context's namespaces are kept:
+    /// the app's defaults (an isolated run's own suite); a test's own.
+    var defaults: UserDefaults = AppEnvironment.defaults
     var flushInterval: Duration = .milliseconds(120)
     var statusInterval: Duration = .seconds(1)
     /// How long a context's discovery is kept, and how often it is read
@@ -168,12 +178,21 @@ final class KubernetesModel: ObservableObject {
     /// what reads on its own (a forward's pod check) stops at once.
     let visibility = PassthroughSubject<Bool, Never>()
     private var configuration = Configuration()
-    /// Each context's namespace, as last picked.
-    private var scopes: [String: KubeScope] = [:]
+    /// Each context's namespaces, as last picked — kept for the next
+    /// launch with the context picked (`scopesKey`, the app's defaults:
+    /// an isolated run's own).
+    private lazy var scopes: [String: KubeScope] = rememberedScopes
     private var following: Task<Void, Never>?
     /// Bumped whenever the follow is replaced: a late update of the old one is dropped.
     private var generation = 0
     private var pending: [KubeFollowUpdate] = []
+    /// Why the follow waits for the server again, while it does: a flush
+    /// leaves the list `.retrying` then — of several namespaces, one may
+    /// wait while another's changes come.
+    private var followRetrying: String?
+    /// The namespaces to show instead of All should its list be refused
+    /// (`setScope(_:refusedAcross:)`).
+    private var allFallback: KubeScope?
     private var flushing: Task<Void, Never>?
     private var polling: Task<Void, Never>?
     private var reading: Task<Void, Never>?
@@ -199,6 +218,18 @@ final class KubernetesModel: ObservableObject {
     private(set) var discoveryReads = 0
 
     private static let rememberedKey = "kubernetes.selectedContext"
+    static let scopesKey = "kubernetes.namespaces"
+
+    /// The namespaces picked on each context, as kept: none is all of them.
+    private var rememberedScopes: [String: KubeScope] {
+        guard remembersSelection, let kept = defaults.dictionary(forKey: Self.scopesKey) as? [String: [String]] else { return [:] }
+        return kept.mapValues { KubeScope(persisted: $0) }
+    }
+
+    private func rememberScopes() {
+        guard remembersSelection else { return }
+        defaults.set(scopes.mapValues(\.persisted), forKey: Self.scopesKey)
+    }
 
     init(proxies: KubeProxies = .shared) {
         self.proxies = proxies
@@ -445,7 +476,7 @@ final class KubernetesModel: ObservableObject {
     }
 
     private var remembered: String? {
-        remembersSelection ? AppEnvironment.defaults.string(forKey: Self.rememberedKey) : nil
+        remembersSelection ? defaults.string(forKey: Self.rememberedKey) : nil
     }
 
     /// The page shows `name`: its namespace as last picked (else its own),
@@ -455,11 +486,13 @@ final class KubernetesModel: ObservableObject {
         guard let context = contexts.context(named: name) else { return }
         let changed = name != selectedName
         selectedName = name
-        if remembersSelection { AppEnvironment.defaults.set(name, forKey: Self.rememberedKey) }
+        if remembersSelection { defaults.set(name, forKey: Self.rememberedKey) }
         scope = scopes[name] ?? Self.defaultScope(context)
         if changed {
             namespaces = []
             namespacesRefused = nil
+            clusterListRefused = false
+            allFallback = nil
             version = nil
             proxyStatus = .closed
             endDiscoveryWatch()
@@ -493,10 +526,17 @@ final class KubernetesModel: ObservableObject {
         discovery.kinds.first { $0.fullName == kind.fullName && KubeKindCatalog.isOffered($0) }
     }
 
-    /// One namespace, or all of them (`0`).
-    func setScope(_ scope: KubeScope) {
+    /// One namespace, several (each followed, merged — `KubeClient.follow`),
+    /// or all of them (`0`).
+    ///
+    /// `refusedAcross`: what to show instead should listing across the
+    /// cluster be refused — the namespaces ticked that made All (none
+    /// should be, as far as the picker knew).
+    func setScope(_ scope: KubeScope, refusedAcross fallback: KubeScope? = nil) {
         guard let name = selectedName, scope != self.scope else { return }
+        allFallback = scope == .all ? fallback : nil
         scopes[name] = scope
+        rememberScopes()
         self.scope = scope
         restartReading(side: false)
     }
@@ -576,6 +616,8 @@ final class KubernetesModel: ObservableObject {
         flushing?.cancel()
         flushing = nil
         pending = []
+        followRetrying = nil
+        if !unlisted.isEmpty { unlisted = [:] }
         generation += 1
     }
 
@@ -746,9 +788,36 @@ final class KubernetesModel: ObservableObject {
                     self.rediscover(now: true)
                     return
                 }
+                if Self.refusedAcross(error, kind: kind, scope: scope) {
+                    self.clusterListRefused = true
+                    // Every namespace ticked made All, which is refused: them.
+                    if scope == .all, self.scope == .all, let fallback = self.allFallback {
+                        self.allFallback = nil
+                        self.setScope(fallback)
+                        return
+                    }
+                }
                 self.listState = .failed(Self.said(error), error as? KubeProxyProblem)
             }
         }
+    }
+
+    /// The namespaces of several the list can't show, said: `Can't list
+    /// pods in locked: …` (the first's reason); nil when it shows them all.
+    var unlistedNote: String? {
+        guard !unlisted.isEmpty else { return nil }
+        let names = unlisted.keys.sorted()
+        let what = KubeKindCatalog.title(of: kind).lowercased()
+        let reason = unlisted[names[0]].map { " (\($0))" } ?? ""
+        return "Can't list \(what) in \(names.joined(separator: ", "))\(reason): the rest are shown."
+    }
+
+    /// Whether `error` says `kind` may not be listed across the cluster:
+    /// a 403 to the list of all namespaces, or several past the cap refused. Pure.
+    nonisolated static func refusedAcross(_ error: Error, kind: KubeResourceKind, scope: KubeScope) -> Bool {
+        if error is KubeScopeRefused { return true }
+        guard kind.namespaced, scope == .all, let api = error as? KubeAPIError else { return false }
+        return api.isForbidden
     }
 
     /// The server's version, what it serves and the namespaces, once a
@@ -802,9 +871,16 @@ final class KubernetesModel: ObservableObject {
     private func received(_ update: KubeFollowUpdate) {
         // Listed: a later 404 is looked up again.
         if case .listed = update { lookedUpAfter404 = false }
-        if case .retrying(let error) = update {
+        switch update {
+        case .retrying(let error):
+            followRetrying = error.message
             listState = .retrying(error.message)
             return
+        case .unlisted(let namespace, let error):
+            unlisted[namespace] = error.message
+            return
+        case .listed, .changed, .bookmark:
+            followRetrying = nil
         }
         pending.append(update)
         // The first list at once; changes in batches.
@@ -840,13 +916,15 @@ final class KubernetesModel: ObservableObject {
                     case .deleted(let id): anchors[id] = nil
                     }
                 }
-            case .bookmark, .retrying: break
+            case .bookmark, .retrying, .unlisted: break
             }
         }
         pending = []
         self.rows = rows
         self.anchors = anchors
-        if listState != .live { listState = .live }
+        // Live — unless a namespace of several still waits for the server.
+        let state = followRetrying.map(ListState.retrying) ?? .live
+        if listState != state { listState = state }
     }
 
     // MARK: What the cluster serves
@@ -943,7 +1021,7 @@ final class KubernetesModel: ObservableObject {
                             for change in changes {
                                 if case .deleted(let id) = change { known?.remove(id.name) } else { known?.insert(change.id.name) }
                             }
-                        case .bookmark, .retrying: break
+                        case .bookmark, .retrying, .unlisted: break
                         }
                     }
                     return
