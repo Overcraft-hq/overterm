@@ -22,69 +22,6 @@ struct KubeChartRangePicker: View {
     }
 }
 
-/// A series over a range, drawn as a line under its highest value, with
-/// a dashed line for what it is measured against (a volume's capacity, a
-/// limit); the latest value and the range's ends said in words. A gap of
-/// more than two steps is drawn as a gap (`KubePrometheusReader.segments`).
-struct KubeRangeChart: View {
-    var title: String
-    var points: [KubeSeriesPoint]
-    var reference: Double?
-    var measure: KubeChartMeasure
-    var range: KubeChartRange
-    @ObservedObject var theme: ChromeTheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(verbatim: title).font(.system(size: 11)).foregroundStyle(theme.text3)
-                if let last = points.last {
-                    Text(verbatim: measure.format(last.value) + (reference.map { " of \(measure.format($0))" } ?? ""))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
-                }
-            }
-            if points.count >= 2 {
-                GeometryReader { geometry in
-                    let top = max(points.map(\.value).max() ?? 0, reference ?? 0, .leastNonzeroMagnitude)
-                    let first = points.first!.time.timeIntervalSince1970
-                    let span = max(points.last!.time.timeIntervalSince1970 - first, 1)
-                    ZStack {
-                        if let reference {
-                            Path { path in
-                                let y = geometry.size.height * (1 - CGFloat(reference / top))
-                                path.move(to: CGPoint(x: 0, y: y))
-                                path.addLine(to: CGPoint(x: geometry.size.width, y: y))
-                            }
-                            .stroke(theme.text3, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                        }
-                        Path { path in
-                            for run in KubePrometheusReader.segments(points, step: range.step) {
-                                for (index, point) in run.enumerated() {
-                                    let x = geometry.size.width * CGFloat((point.time.timeIntervalSince1970 - first) / span)
-                                    let y = geometry.size.height * (1 - CGFloat(point.value / top))
-                                    if index == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
-                                }
-                            }
-                        }
-                        .stroke(theme.accentText, style: StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round))
-                    }
-                }
-                .frame(width: 220, height: 40)
-                .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowHover.opacity(0.5)))
-                .accessibilityHidden(true)
-                HStack {
-                    Text(verbatim: "\(range.title) ago").font(.system(size: 9.5)).foregroundStyle(theme.text3)
-                    Spacer(minLength: 0)
-                    Text(verbatim: "now").font(.system(size: 9.5)).foregroundStyle(theme.text3)
-                }
-                .frame(width: 220)
-            } else {
-                Text(verbatim: "Prometheus has no samples of it over the last \(range.title).").font(.system(size: 11)).foregroundStyle(theme.text3)
-            }
-        }
-    }
-}
-
 /// A chart's reading as a detail or the Overview shows it: the picker,
 /// each series, why there is none.
 struct KubePrometheusChartView: View {
@@ -92,8 +29,14 @@ struct KubePrometheusChartView: View {
     @ObservedObject var monitor: KubePrometheusMonitor
     var chart: KubeChart
     @ObservedObject var theme: ChromeTheme
+    /// The crosshair its charts share — held, not observed: a class in
+    /// `@State` subscribes nothing, so a hover redraws the charts'
+    /// overlays and never this body (metrics.md, 5.2).
+    @State private var cursor = KubeChartCursor()
 
     var body: some View {
+        // Counted: `kubernetesPrometheus` checks a hover never runs it.
+        let _ = KubeChartDraws.shared.composed(identifier, window: ObjectIdentifier(theme))
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text(verbatim: title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
@@ -148,14 +91,28 @@ struct KubePrometheusChartView: View {
             requests(reading)
         case .cluster, .pod:
             HStack(alignment: .top, spacing: 20) {
-                KubeRangeChart(title: "CPU", points: reading.series[.cpu] ?? [], reference: nil, measure: .cpu, range: reading.range, theme: theme)
-                KubeRangeChart(title: "Memory", points: reading.series[.memory] ?? [], reference: nil, measure: .memory, range: reading.range, theme: theme)
+                drawn(KubeChartData.of(reading, chart: chart, measure: .cpu), reading)
+                drawn(KubeChartData.of(reading, chart: chart, measure: .memory), reading)
             }
             if chart == .cluster { requests(reading) }
         case .volume:
-            KubeRangeChart(
-                title: "Used", points: reading.series[.volumeUsed] ?? [], reference: reading.series[.volumeCapacity]?.last?.value, measure: .volumeUsed,
-                range: reading.range, theme: theme)
+            let data = KubeChartData.of(reading, chart: chart, measure: .volumeUsed)
+            let capacity = reading.series[.volumeCapacity]?.last?.value
+            drawn(data, reading, headline: reading.series[.volumeUsed]?.last.map { KubeVolumeFormat.bytes($0.value) + (capacity.map { " of \(KubeVolumeFormat.bytes($0))" } ?? "") })
+        }
+    }
+
+    /// A chart, or why there's nothing to draw.
+    @ViewBuilder private func drawn(_ data: KubeChartData, _ reading: KubeChartReading, headline: String? = nil) -> some View {
+        if data.usage.contains(where: { !$0.points.isEmpty }) {
+            KubeChartView(data: data, cursor: cursor, headline: headline, span: "last \(reading.range.title)", theme: theme)
+                .frame(minWidth: 200, maxWidth: .infinity)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: data.title).font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(verbatim: "Prometheus has no samples of it over the last \(reading.range.title).").font(.system(size: 11)).foregroundStyle(theme.text3)
+            }
+            .frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -203,5 +160,54 @@ struct KubePrometheusChartView: View {
             .textSelection(.enabled)
             .accessibilityIdentifier("kubernetes.overview.requests")
         }
+    }
+}
+
+extension KubeChartData {
+    /// A Prometheus reading's chart of one measure: its line over the
+    /// range's window, and what it is measured against as reference lines —
+    /// the cluster's active requests, limits and allocatable (instant
+    /// totals, flat across), a volume's capacity (stepped). Pure.
+    static func of(_ reading: KubeChartReading, chart: KubeChart, measure: KubeChartMeasure) -> KubeChartData {
+        // The subject names its object: two pods' charts are two charts.
+        let (subject, title): (String, String) =
+            switch chart {
+            case .cluster: ("cluster", measure == .cpu ? "CPU" : "Memory")
+            case .pod(let namespace, let name): ("pod.\(namespace).\(name)", measure == .cpu ? "CPU" : "Memory")
+            case .volume(let namespace, let claim): ("volume.\(namespace).\(claim)", "Used")
+            }
+        let id = subject + "." + (measure == .volumeUsed ? "used" : measure.rawValue)
+        let window = reading.range.window(now: reading.read ?? Date())
+        var series = [KubeChartSeries(id: measure.rawValue, name: title, points: reading.series[measure] ?? [])]
+        func flat(_ role: KubeChartRole, _ total: KubeChartMeasure) {
+            guard let value = reading.totals[total] else { return }
+            series.append(KubeChartSeries(id: role.rawValue, name: role.label, role: role, points: [KubeSeriesPoint(time: window.end, value: value)]))
+        }
+        switch (chart, measure) {
+        case (.cluster, .cpu):
+            flat(.request, .cpuRequests)
+            flat(.limit, .cpuLimits)
+            flat(.allocatable, .cpuAllocatable)
+        case (.cluster, .memory):
+            flat(.request, .memoryRequests)
+            flat(.limit, .memoryLimits)
+            flat(.allocatable, .memoryAllocatable)
+        case (.volume, _):
+            if let capacity = reading.series[.volumeCapacity], !capacity.isEmpty {
+                series.append(KubeChartSeries(id: "capacity", name: "capacity", role: .capacity, points: capacity))
+            }
+        default: break
+        }
+        var hasher = Hasher()
+        hasher.combine(id)
+        hasher.combine(reading.range)
+        hasher.combine(reading.read)
+        for line in series {
+            hasher.combine(line.points.count)
+            hasher.combine(line.points.last?.value)
+        }
+        return KubeChartData(
+            id: id, title: title, unit: measure.isBytes ? .bytes : .cores, series: series, start: window.start, end: window.end, step: reading.range.step,
+            source: "Prometheus", tier: measure == .volumeUsed ? "kubelet volume stats" : "raw cAdvisor", version: hasher.finalize())
     }
 }

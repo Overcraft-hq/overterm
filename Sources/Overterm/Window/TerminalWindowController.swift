@@ -2196,6 +2196,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 for (i, item) in self.split.splitViewItems.enumerated() {
                     out += "outer item \(i) collapsed=\(item.isCollapsed) frame=\(item.viewController.view.frame.integral)\n"
                 }
+                // This window's Kubernetes charts on screen: series, points, the axis's top, references, source, tier.
+                if let theme = self.theme { for line in KubeChartRegistry.shared.lines(in: ObjectIdentifier(theme)) { out += line + "\n" } }
                 // The composited window as it is on screen (terminal included).
                 // An app may capture its own windows without Screen Recording
                 // permission; cacheDisplay misses layer-backed content here.

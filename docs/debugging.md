@@ -39,6 +39,12 @@ More switches, combinable:
 | `OVERTERM_DUMP_PEEK=1` | open Tab Peek (making tabs if needed) before the dump, and print where each host's layer actually lands — how the peek's transform was got right |
 | `OVERTERM_DUMP_GROUPS=1` | make an island of two tabs before the dump, and print the strip's islands with the tab and chip frames the context-click monitor needs |
 
+The dump also prints a line for each Kubernetes chart on screen in its
+window (`KubeChartRegistry`, `KubeChartSummary.dump`): `chart
+kubernetes.chart.<subject>.<measure> series=… points=… drawn=… ymax=…
+refs=[request=… limit=…] markers=… source=… tier=…` — what was asked
+for, what the plot drew after decimation, and its reference lines.
+
 Run it from the **bundle** (`Overterm.app/Contents/MacOS/Overterm`): a bare
 `.build/debug/Overterm` crashes in `UNUserNotificationCenter` ("bundleProxy
 ForCurrentProcess is nil") and lacks terminfo/shell integration.

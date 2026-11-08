@@ -145,6 +145,8 @@ extension E2ERunner {
         check("in under 250 ms", sortTime < 250, "\(Int(sortTime)) ms")
         page.sort = nil
 
+        await kubernetesChartPerf()
+
         await tenNamespaces(model, page, fake)
 
         app.closeOverlay(.kubernetes)
