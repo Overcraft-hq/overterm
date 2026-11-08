@@ -379,6 +379,8 @@ struct KubeDetailView: View {
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityIdentifier("kubernetes.detail.yaml")
+        } else if !session.showsHidden, let resource = session.resource, let editor = page.yamlEditor {
+            KubeResourceYAMLView(page: page, detail: session, resource: resource, theme: theme, editor: editor)
         } else {
             objectYAML
         }
@@ -394,7 +396,7 @@ struct KubeDetailView: View {
                 .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 4)
                 if session.hasHidden {
-                    Toggle("Show them", isOn: $session.showsHidden).toggleStyle(.checkbox).font(.system(size: 11.5))
+                    Toggle(page.yamlEditor == nil ? "Show them" : "As served", isOn: $session.showsHidden).toggleStyle(.checkbox).font(.system(size: 11.5))
                         .accessibilityIdentifier("kubernetes.detail.showHidden")
                 }
                 Button("Copy") { page.actions?.copy(session.yaml) }.font(.system(size: 11.5))

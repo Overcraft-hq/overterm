@@ -12,7 +12,8 @@ extension EditorViewController {
     /// The language server for the buffer's file — nil when Settings turns
     /// them off, or the language has none on this machine.
     func server(for buffer: EditorBuffer) -> LanguageServer? {
-        guard Settings.shared.editorLanguageServers, let url = buffer.url, buffer.document.unavailable == nil else { return nil }
+        // A cluster object's YAML is no file: no server hears of it.
+        guard Settings.shared.editorLanguageServers, let url = buffer.url, buffer.document.unavailable == nil, !buffer.document.isVirtual else { return nil }
         if let cached = buffer.server, cached.state == .running || cached.state == .starting { return cached }
         // None yet, or it died: the registry restarts it (once) or gives up.
         Self.routeDiagnostics()

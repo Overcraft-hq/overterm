@@ -24,17 +24,7 @@ extension EditorViewController {
         }
         let session = KubeManifestSession(source: source, file: url, model: .shared)
         session.text = { [weak buffer] in buffer?.storage.string ?? "" }
-        session.caret = { [weak self, weak buffer] in
-            guard let self, let buffer else { return 0 }
-            return buffer === self.active ? self.textView.selectedRange().location : buffer.selection.first?.location ?? 0
-        }
-        session.onDocsRead = { [weak self, weak buffer] in
-            guard let self, let buffer else { return }
-            self.refreshKubeFieldMarks(buffer)
-        }
-        session.unsaved = { [weak self] in
-            self?.buffers.filter { $0.document.isDirty && $0.document.unsaveable == nil }.compactMap(\.url) ?? []
-        }
+        bindManifest(buffer, session)
         // Overterm's copy is never saved: a value retyped in it stays in memory.
         if case .object = source { buffer.document.unsaveable = KubeManifestEdits.unsaved }
         // A template's copy neither: a Secret's value typed into it never reaches a file.
@@ -51,13 +41,33 @@ extension EditorViewController {
         buffer.kubeManifest = session
     }
 
+    /// The manifest's session asks this editor — where its caret is, which
+    /// files are unsaved, the window to ask in: a cluster object's YAML is
+    /// shown by two editors, and the one showing it last answers.
+    func bindManifest(_ buffer: EditorBuffer, _ session: KubeManifestSession) {
+        session.caret = { [weak self, weak buffer] in
+            guard let self, let buffer else { return 0 }
+            return buffer === self.active ? self.textView.selectedRange().location : buffer.selection.first?.location ?? 0
+        }
+        session.onDocsRead = { [weak self, weak buffer] in
+            guard let self, let buffer else { return }
+            self.refreshKubeFieldMarks(buffer)
+        }
+        session.unsaved = { [weak self] in
+            self?.buffers.filter { $0.document.isDirty && $0.document.unsaveable == nil }.compactMap(\.url) ?? []
+        }
+        if let kubernetesHost { session.host = kubernetesHost }
+    }
+
     /// The manifest's bar, under its text.
     func showManifestBar(_ session: KubeManifestSession) {
         session.host = session.host ?? kubernetesHost
         consoleHost.rootView = AnyView(KubeManifestBar(session: session, theme: chrome))
-        consoleObserver = session.$state.map { $0.text != nil }.removeDuplicates().sink { [weak self] status in
-            self?.consoleHeight.constant = status ? KubeManifestBar.statusHeight : KubeManifestBar.height
-        }
+        let banner: AnyPublisher<Bool, Never> = session.resource.map { $0.$clusterChange.map { $0 != nil }.eraseToAnyPublisher() } ?? Just(false).eraseToAnyPublisher()
+        consoleObserver = session.$state.combineLatest(session.$applyRefusal, banner)
+            .map { state, refusal, banner in KubeManifestBar.height(status: state.text != nil || (refusal != nil && session.ref != nil), banner: banner) }
+            .removeDuplicates()
+            .sink { [weak self] height in self?.consoleHeight.constant = height }
     }
 
     /// The buffer of `url`'s manifest, while it is open.

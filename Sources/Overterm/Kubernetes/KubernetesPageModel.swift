@@ -74,9 +74,11 @@ struct KubernetesActions {
     /// shell runs one; `then` gets what was typed, only when the button was
     /// pressed — the page checks it.
     var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) -> Void = { _, _ in }
-    /// An object's YAML, Overterm's copy of it, in the editor (`y`): the
-    /// page steps aside.
+    /// A template's copy in the editor: the page steps aside.
     var openEditor: (URL) -> Void = { _ in }
+    /// An object's YAML — its one buffer, the YAML tab's — in the window's
+    /// editor (`y`): the page steps aside.
+    var openResource: (KubeResourceBuffer) -> Void = { _ in }
     /// A change of a workload's timeline, its diff masked, in the changes
     /// pane: the page steps aside.
     var showChange: (KubeChangeDiff) -> Void = { _ in }
@@ -334,6 +336,10 @@ final class KubernetesPageModel: ObservableObject {
     /// The detail beside the list: one object, read once as it opens.
     /// How the last write stands: asked, sent, done or why not.
     @Published var writeStatus: KubeWriteStatus?
+    /// Makes the YAML tab's editor (the window's: its theme, its opener,
+    /// its confirmations); nil in a test without a window.
+    var makeYAMLEditor: (() -> EditorViewController)?
+    var madeYAMLEditor: EditorViewController?
     /// `=`: the scale sheet, over the page.
     @Published var scaleDraft: KubeScaleDraft?
     /// Resize in Place…: the pod's containers' values, over the page.
@@ -432,6 +438,7 @@ final class KubernetesPageModel: ObservableObject {
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
                 // Said as the context's, before cancel() says navigation.
                 self.detail?.secret?.drop(.contextChanged)
+                self.sayKeptEdits()
                 self.detail?.cancel()
                 self.detail = nil
                 self.linkProblem = nil
@@ -641,6 +648,7 @@ final class KubernetesPageModel: ObservableObject {
     /// The Logs tab reads while it shows — the page on screen, in a window
     /// on screen — and closes its stream otherwise.
     func updateLogsReading() {
+        updateYAMLReading()
         guard let detail, detail.ref.hasLogs else { return }
         if visible && windowVisible && detailTab == .logs { detail.showLogs(since: logSince) } else { detail.hideLogs() }
     }
@@ -752,6 +760,7 @@ final class KubernetesPageModel: ObservableObject {
     /// has the keyboard. Back (`[`) shows it again.
     func closeDetail() {
         guard detail != nil else { return }
+        sayKeptEdits()
         detail?.cancel()
         detail = nil
         linkProblem = nil
@@ -760,12 +769,25 @@ final class KubernetesPageModel: ObservableObject {
         giveListTheKeyboard()
     }
 
+    /// The detail leaves an object whose YAML has edits not applied: they
+    /// are kept (in memory, never on disk — closing the window or quitting
+    /// asks about them), and said, so they aren't lost from sight.
+    private func sayKeptEdits() {
+        guard let detail, detail.keepsEdits else { return }
+        writeStatus = .done(Self.keptEdits(detail.ref))
+    }
+
+    static func keptEdits(_ ref: KubeObjectRef) -> String {
+        "Your edits to \(KubeWriteOutcome.spoken(ref))'s YAML are kept, not applied: open it again to apply or revert them."
+    }
+
     private func show(_ ref: KubeObjectRef) {
         linkProblem = nil
         guard detail?.ref != ref else { return }
         commandProblem = nil
         // Another object: a comparison of the one before is ended.
         if let status = compareStatus, status.ref != ref { endCompare() }
+        sayKeptEdits()
         detail?.cancel()
         let client = model.client(for: ref.context)
         let session = KubeDetailSession(

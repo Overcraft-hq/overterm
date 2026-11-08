@@ -4088,21 +4088,56 @@ names it, then its name asked.
 
 **Manifests in the editor** (`KubeApply.swift` (pure),
 `KubeManifestSession.swift`, `KubeManifestViews.swift`,
+`KubeResourceBuffer.swift`, `KubeResourceYAMLView.swift`,
 `KubernetesPageModel+Edit`, `EditorViewController+Kubernetes`,
 `KubeMCP+Apply`; analysis 2.8, 3.3, decisions 11 and 30):
 
+- **A resource's YAML is one buffer** (`KubeResourceBuffer`, one per
+  object in `KubernetesModel.resourceBuffers`, `KubeResourceBuffers`):
+  the detail's YAML tab *is* the editor — an embedded
+  `EditorViewController` (`embedded: true`: no tabs, no breadcrumb, the
+  page's `yamlEditor`, `KubeEmbeddedEditor`) showing it — and `y` (a row,
+  the detail, its Open in Editor) opens the same `EditorBuffer` in the
+  window's editor (`adopt`), so both show the same edits. Two editors
+  share a buffer's `NSTextStorage`: each moves its own layout manager
+  between storages (`attach`, never `replaceTextStorage`, which would
+  drag the other editor's along), and the storage's delegate is the
+  buffer's `EditorStorageRelay`, which notes an edit once and tells every
+  editor showing it. Its text is `forEditing`'s (managedFields, status,
+  the last-applied annotation, resourceVersion, uid, timestamps stripped;
+  a Secret's values and secret-looking env masked), its resourceVersion
+  kept beside it (`KubeManifestEdits.register`, sent with the apply).
+  Never a file: `EditorDocument.loadVirtual` (no read, no write, no
+  language server, no git gutter, nothing in the session), ⌘S refused
+  (`unsaveable`), and its edits count as unsaved — the tab's dirty dot is
+  the resource's (`setVirtualEdited`: undone back to the cluster's text,
+  no dot in either editor), closing the tab with them asks (Discard
+  Edits), and the window's close and the quit name them wherever they
+  were typed (`unsavedNames(everyWindow:)`: the editor's, the detail's,
+  and — the last window, or quitting — every one `KubeResourceBuffers.edited`
+  keeps). Held while the detail shows it or an editor's tab has it, kept
+  while it has edits (they are nowhere else; the detail leaving them
+  says so, `keptEdits`), dropped otherwise; a closing window lets go of
+  its editors' (`releaseResources`). While it shows (the YAML tab on
+  screen — `updateYAMLReading` — or the active tab of the window's
+  editor while that is on screen: its pane open, no page over it, the
+  window visible — `isOnScreen`, `updateEditorOnScreen`) it follows the
+  object: one watch by `metadata.name`, each change read whole; a follow
+  that ends (the proxy closed, the socket reopened) or couldn't start
+  starts again with a backoff while somebody still shows it. Without edits a change
+  replaces the text quietly; with edits it is held (`clusterChange`) for
+  the bar's banner — Reload, Diff against it — and never written over
+  them (`KubeResourceBuffer.rule`, pure). A Secret is never followed: it
+  is read on Show (the detail's stripped read) or `y` (asked once a
+  session on production), only its masks kept — the buffer goes with
+  Show's values unless it has edits, and after an apply the values typed
+  in clear (a Secret's, a secret-looking env's) are masked again in the
+  buffer and its undo dropped (`KubeResourceBuffer.masked`). On the page the diff
+  shows in the tab, in place of the text (`showsDiff`): the right-hand
+  pane is under it. The bar (`KubeManifestBar`) adds the banner, Revert
+  while it has edits, and why Apply is greyed on a read-only context.
 - **What gets the bar** (`attachManifest`, where a `.sql` file's console
-  sits): `y` on a row or the detail's Edit YAML in Editor — Overterm's
-  copy of the object (`KubeManifestEdits`: one GET, `forEditing` strips
-  managedFields, status, the last-applied annotation, resourceVersion,
-  uid, timestamps, and masks a Secret's values and secret-looking env as
-  the YAML tab does; written 0600 under the support folder's
-  `Kubernetes/Edits/<pid>/<context hash>/<namespace>/`, never a checkout's
-  file; removed when its tab closes and at quit, a gone Overterm's folder
-  swept; the resourceVersion it was read at kept beside it; never saved —
-  `EditorDocument.unsaveable`: ⌘S, `:w` and format-on-save write nothing,
-  closing asks nothing, so a value retyped in it stays in memory). On production
-  a Secret's `y` is asked once a session, as Show is. A YAML file of a
+  sits; over the text in the YAML tab): a resource's YAML (above). A YAML file of a
   checkout's with `apiVersion:` and `kind:` at the top
   (`KubeManifest.looksLikeManifest`), or `kustomization.yaml` — its folder
   rendered by `kubectl kustomize` (`KubeKustomize`: the planner's kubectl,
@@ -4185,8 +4220,19 @@ names it, then its name asked.
   name, `k8s_apply` and its refused Secret, an edit during the review not
   sent, a non-preferred version, `y`'s env mask applied untouched, a
   context picked mid-diff, a kustomization's unsaved file, a webhook
-  without dry run and an admission's denial, the copy never saved); the scenario's `kubernetesApply`
-  (`E2ERunner+KubernetesApply`): `y` on kind-fake, its copy not saved by ⌘S, the dry run and its
+  without dry run and an admission's denial, the copy never saved;
+  `KubeResourceBufferTests`: one buffer for the tab and the editor, the
+  banner rule and the follow over the fake, the follow started again
+  after its stream ends or once there is a client, the window editor's
+  follow only on screen, one dirty state for both editors, read-only
+  greying, a Secret masked, never sent masked and masked again after its
+  apply); the scenario's `kubernetesApply`
+  (`E2ERunner+KubernetesApply`): the YAML tab's editor followed quietly,
+  then the banner over its edits, `y` showing the same buffer (followed by
+  the window's editor only while uncovered), never saved by ⌘S, closing
+  the `y` tab with edits asking (Cancel keeps them, Discard reverts both),
+  edits typed only in the detail's tab said kept and asked about by the
+  window's close, the dry run and its
   diff drawn, Helm named, the 409 shown, Force landing, a checkout's
   Secret diffed masked, a kustomization through the stand-in kubectl,
   fake-dev client-side sending nothing, and no Apply on fake-prod with its

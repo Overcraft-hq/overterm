@@ -7,7 +7,7 @@ import SwiftUI
 /// completions and go-to from language servers, Zed's keys and (if asked)
 /// vim. One text view; each file is an EditorBuffer it swaps in.
 @MainActor
-final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextStorageDelegate {
+final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Asked to hide the pane (after any unsaved-changes question).
     var onClose: (() -> Void)?
     /// Asked to fill the window with the editor, or give the terminal back.
@@ -48,7 +48,15 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private let emptyDocument = EditorDocument()
     /// The file showing — E2E, the window's close questions.
     var document: EditorDocument { active?.document ?? emptyDocument }
-    var unsavedNames: [String] { buffers.filter { $0.document.isDirty && $0.document.unsaveable == nil }.map(\.name) }
+    /// Files with unsaved edits, and cluster objects' YAML with edits not
+    /// applied (never saved: closing loses them).
+    var unsavedNames: [String] {
+        buffers.filter { ($0.document.isDirty && $0.document.unsaveable == nil) || $0.resource?.isEdited == true }.map(\.name)
+    }
+    /// The Kubernetes detail's YAML tab (`KubeResourceYAMLView`): one
+    /// buffer at a time — the resource's, shared with the window's editor —
+    /// no tabs, no breadcrumb, its bar drawn over it by the page.
+    let embedded: Bool
 
     private(set) var textView: CodeTextView!
     private(set) var gutter: EditorGutter!
@@ -72,7 +80,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     private var documentObservers: Set<AnyCancellable> = []
     private var flushScheduled = false
     /// While a buffer is being swapped in, its storage events aren't edits.
-    private var swapping = false
+    private(set) var isSwapping = false
+    /// Held: a storage holds its layout managers, and this one moves from
+    /// storage to storage.
+    private var layout: NSLayoutManager!
 
     // Shared with the extensions.
     var completion: CompletionState?
@@ -101,7 +112,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// The innermost symbol around the caret, from the language server.
     var currentSymbols: [EditorSymbol] = []
 
-    init(theme chrome: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener) {
+    init(theme chrome: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener, embedded: Bool = false) {
+        self.embedded = embedded
         self.chrome = chrome
         self.theme = Self.makeTheme(background: background)
         self.opener = opener
@@ -143,6 +155,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         // with the whole of it laid out first.
         layout.allowsNonContiguousLayout = true
         layout.delegate = lineHeight
+        self.layout = layout
         emptyStorage.addLayoutManager(layout)
         let container = NSTextContainer(size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = false
@@ -232,11 +245,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             header.topAnchor.constraint(equalTo: root.topAnchor),
             header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            header.heightAnchor.constraint(equalToConstant: 34),
+            header.heightAnchor.constraint(equalToConstant: embedded ? 0 : 34),
             breadcrumb.topAnchor.constraint(equalTo: header.bottomAnchor),
             breadcrumb.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             breadcrumb.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            breadcrumb.heightAnchor.constraint(equalToConstant: 26),
+            breadcrumb.heightAnchor.constraint(equalToConstant: embedded ? 0 : 26),
             scrollView.topAnchor.constraint(equalTo: breadcrumb.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -260,6 +273,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             message.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
             message.widthAnchor.constraint(lessThanOrEqualTo: scrollView.widthAnchor, constant: -32),
         ])
+        if embedded {
+            header.isHidden = true
+            breadcrumb.isHidden = true
+        }
         self.textView = textView
         self.gutter = gutter
         self.scrollView = scrollView
@@ -287,6 +304,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// Opens `url` in a tab of its own, or shows the tab it has.
     func open(_ url: URL, then done: @escaping (Bool) -> Void = { _ in }) {
         _ = view
+        // A cluster object's YAML is no file: its buffer, wherever it shows.
+        if let resource = KubernetesModel.shared.resourceBuffers.resource(at: url) {
+            adopt(resource.buffer)
+            return done(true)
+        }
         // Only iCloud's placeholder is here: fetched first, then opened.
         if NoteFiles.isEvicted(url) {
             NoteFiles.whenDownloaded(url) { [weak self] arrived in
@@ -302,7 +324,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             return
         }
         let buffer = EditorBuffer()
-        buffer.storage.delegate = self
+        buffer.relay.editors.add(self)
         buffer.load(url, attributes: baseAttributes)
         attachRequest(buffer)
         attachNote(buffer)
@@ -317,9 +339,134 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         done(true)
     }
 
+    /// Whether this editor is on screen — the window's says: its pane open,
+    /// no page over it, the window not hidden or minimised. A cluster
+    /// object's YAML in the active tab is followed only then (reads only
+    /// while shown); the embedded one's follow is the page's.
+    var isOnScreen = true {
+        didSet { if isOnScreen != oldValue { updateResourceWatch() } }
+    }
+    /// The resource this editor follows now: its active tab's, while on screen.
+    private(set) weak var watching: KubeResourceBuffer?
+
+    private func updateResourceWatch(none: Bool = false) {
+        let wanted = embedded || none || !isOnScreen ? nil : active?.resource
+        guard wanted !== watching else { return }
+        watching?.unwatch(by: self)
+        watching = wanted
+        wanted?.watch(by: self)
+    }
+
+    /// The window closes: every cluster object's YAML let go — nothing
+    /// followed or held for an editor that is gone (edits stay with the
+    /// registry, which the quit asks about).
+    func releaseResources() {
+        updateResourceWatch(none: true)
+        for buffer in buffers {
+            guard let resource = buffer.resource else { continue }
+            buffer.relay.editors.remove(self)
+            if !embedded { resource.release(by: self) }
+        }
+        let count = buffers.count
+        buffers.removeAll { $0.resource != nil }
+        guard buffers.count != count else { return }
+        // The window is going: nothing shows any more.
+        activeIndex = -1
+        attach(emptyStorage)
+    }
+
+    /// A buffer made elsewhere — a cluster object's YAML, which the
+    /// Kubernetes detail shows too — in a tab of its own, or the tab it has.
+    /// The same buffer, not a copy: its edits are the same edits.
+    func adopt(_ buffer: EditorBuffer) {
+        _ = view
+        if let index = buffers.firstIndex(where: { $0 === buffer }) {
+            activate(index)
+            return
+        }
+        buffer.relay.editors.add(self)
+        if !embedded { buffer.resource?.hold(by: self) }
+        let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
+        buffers.insert(buffer, at: index)
+        activate(index, recordHistory: !embedded)
+    }
+
+    /// The embedded editor's one buffer: `buffer`, the one before let go
+    /// (not closed — the resource keeps it).
+    func showOnly(_ buffer: EditorBuffer?) {
+        _ = view
+        if let buffer, buffers.count == 1, buffers[0] === buffer {
+            if activeIndex != 0 { activate(0) }
+            // The window's editor may have answered for it since.
+            if let manifest = buffer.kubeManifest { bindManifest(buffer, manifest) }
+            return
+        }
+        if buffer == nil, buffers.isEmpty { return }
+        if let current = active {
+            vim?.reset()
+            textView.breakUndoCoalescing()
+            current.selection = textView.selectedRanges.map(\.rangeValue)
+            current.scroll = scrollView.contentView.bounds.origin
+        }
+        for old in buffers { old.relay.editors.remove(self) }
+        buffers = []
+        activeIndex = -1
+        guard let buffer else {
+            attach(emptyStorage)
+            hideTransientUI()
+            showConsole(nil)
+            refreshChrome()
+            return
+        }
+        buffer.relay.editors.add(self)
+        buffers = [buffer]
+        activate(0)
+    }
+
+    /// The text view's layout manager on `storage`. Not
+    /// `replaceTextStorage`, which moves every layout manager sharing the
+    /// old storage — another editor showing the same buffer would follow.
+    private func attach(_ storage: NSTextStorage) {
+        guard let layout, layout.textStorage !== storage else { return }
+        isSwapping = true
+        layout.textStorage?.removeLayoutManager(layout)
+        storage.addLayoutManager(layout)
+        isSwapping = false
+    }
+
+    /// The relay's: an edit of `buffer`, from whichever editor made it.
+    func storageEdited(_ buffer: EditorBuffer) {
+        if buffer === active { editedElsewhere = true }
+        scheduleFlush()
+    }
+
+    /// The active buffer was edited, perhaps by another editor showing it:
+    /// the gutter counts its lines again at the flush.
+    private var editedElsewhere = false
+
+    /// A buffer's whole text replaced from outside (a cluster object
+    /// followed): every editor showing it keeps its caret where it can.
+    static func replaceWhole(_ buffer: EditorBuffer, with text: String) {
+        let editors = buffer.relay.editors.allObjects
+        let attributes = editors.first(where: \.isViewLoaded)?.baseAttributes ?? [.font: font]
+        let carets = editors.map { $0.isViewLoaded && $0.active === buffer ? $0.textView.selectedRange() : nil }
+        buffer.setText(text, attributes: attributes)
+        let length = buffer.storage.length
+        buffer.selection = buffer.selection.map { NSRange(location: min($0.location, length), length: 0) }
+        for (editor, caret) in zip(editors, carets) {
+            guard let caret else { continue }
+            editor.settingSelection = true
+            editor.textView.setSelectedRange(NSRange(location: min(caret.location, length), length: 0))
+            editor.settingSelection = false
+            editor.gutter.textDidChange()
+            editor.paintVisible()
+            editor.refreshChrome()
+        }
+    }
+
     /// Shows the buffer at `index`, keeping where you were in the last one.
     func activate(_ index: Int, recordHistory: Bool = false) {
-        guard buffers.indices.contains(index), let layout = textView.layoutManager else { return }
+        guard buffers.indices.contains(index), textView.layoutManager != nil else { return }
         if recordHistory { recordPosition() }
         hideTransientUI()
         // The text view's typing in progress belongs to the file it was in:
@@ -335,9 +482,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         }
         activeIndex = index
         let buffer = buffers[index]
-        swapping = true
-        layout.replaceTextStorage(buffer.storage)
-        swapping = false
+        attach(buffer.storage)
+        updateResourceWatch()
+        if let manifest = buffer.kubeManifest, buffer.resource != nil { bindManifest(buffer, manifest) }
         applyWrap()
         setLiveLayout(buffer.livePreview)
         showConsole(buffer)
@@ -403,6 +550,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
             vim?.reset()
             textView.breakUndoCoalescing()
         }
+        // A cluster object's YAML is the resource's, not this tab's: let go, never closed here.
+        if let resource = buffer.resource {
+            buffer.relay.editors.remove(self)
+            buffers.remove(at: index)
+            if !embedded {
+                if watching === resource { updateResourceWatch(none: true) }
+                resource.release(by: self)
+            }
+            return afterRemoving(at: index)
+        }
         bufferWillClose(buffer)
         closeDrawing(buffer)
         // A cluster object's copy goes with its tab.
@@ -412,13 +569,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         buffer.document.close()
         // A new request closed unsaved is gone, as Postman's tab is.
         if let url = buffer.url { apiWorkspace?.discardDraft(url) }
+        buffer.relay.editors.remove(self)
         buffers.remove(at: index)
         if let closed { onBufferClosed?(closed) }
+        afterRemoving(at: index)
+    }
+
+    private func afterRemoving(at index: Int) {
         if buffers.isEmpty {
             activeIndex = -1
-            swapping = true
-            textView.layoutManager?.replaceTextStorage(emptyStorage)
-            swapping = false
+            attach(emptyStorage)
             hideTransientUI()
             showConsole(nil)
             updatePreview()
@@ -674,23 +834,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         gutter.needsDisplay = true
     }
 
-    nonisolated func textStorage(
-        _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange,
-        changeInLength delta: Int
-    ) {
-        guard editedMask.contains(.editedCharacters) else { return }
-        // Storages are only edited on the main thread: the text view's.
-        nonisolated(unsafe) let storage = textStorage
-        MainActor.assumeIsolated {
-            guard !swapping, let buffer = buffers.first(where: { $0.storage === storage }) else { return }
-            buffer.noteEdit(location: editedRange.location, oldLength: editedRange.length - delta, newLength: editedRange.length)
-            scheduleFlush()
-        }
-    }
-
     /// The parser hears of a burst of edits once, after the run loop pass
     /// that made them, and the screen's colours follow.
-    private func scheduleFlush() {
+    func scheduleFlush() {
         guard !flushScheduled else { return }
         flushScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -698,6 +844,10 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
                 guard let self else { return }
                 self.flushScheduled = false
                 for buffer in self.buffers { buffer.flushEdits() }
+                if self.editedElsewhere {
+                    self.editedElsewhere = false
+                    self.gutter.textDidChange()
+                }
                 self.paintVisible()
             }
         }
@@ -1050,6 +1200,21 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
     /// Unsaved edits: Save, Don't Save, or Cancel. `proceed` is false only
     /// for Cancel (or a failed save).
     private func confirmDiscard(_ buffer: EditorBuffer, _ proceed: @escaping (Bool) -> Void) {
+        if let resource = buffer.resource {
+            guard resource.isEdited, let window = view.window else { return proceed(true) }
+            let alert = NSAlert()
+            alert.messageText = "Discard your edits to \(resource.spoken)?"
+            alert.informativeText =
+                "A cluster object's YAML is never saved: Overterm keeps no copy of it on disk. Apply it first, or discard the edits — the YAML goes back to what \(resource.ref.context) has."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Discard Edits").hasDestructiveAction = true
+            alert.beginSheetModal(for: window) { response in
+                guard response == .alertSecondButtonReturn else { return proceed(false) }
+                resource.revert()
+                proceed(true)
+            }
+            return
+        }
         guard buffer.document.isDirty, buffer.document.unsaveable == nil, let window = view.window else { return proceed(true) }
         let alert = NSAlert()
         alert.messageText = "Save changes to “\(buffer.name)”?"

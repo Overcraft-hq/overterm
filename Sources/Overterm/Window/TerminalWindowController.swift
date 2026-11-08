@@ -3541,7 +3541,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
-                if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
+                if !editorKeys.isEmpty {
+                    self.editor?.applySettings(editorKeys)
+                    self.kubernetesPage.madeYAMLEditor?.applySettings(editorKeys)
+                }
             }
             .store(in: &cancellables)
     }
@@ -3598,6 +3601,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         // The editor is painted from the terminal's colours too, and has
         // its own vocabulary for them (EditorTheme).
         editor?.applyTerminalColors()
+        kubernetesPage.madeYAMLEditor?.applyTerminalColors()
     }
 
     /// The overrides file from both files; Ghostty reloads only when it changed.
@@ -3702,7 +3706,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func closeTabsWithoutAsking(_ tabs: [Tab]) { tabs.forEach { removeTab($0) } }
 
     /// The editor's file, when it has unsaved changes.
-    var unsavedEditorFile: String? { editor?.unsavedNames.first }
+    var unsavedEditorFile: String? { unsavedNames(everyWindow: isLastWindow).first }
 
     func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
         guard let tab = tab(containing: view), let i = store.index(of: tab) else { return }
@@ -4040,15 +4044,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Closing the window closes every tab: always confirmed.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if let editor, let name = editor.unsavedNames.first {
+        let unsaved = unsavedNames(everyWindow: isLastWindow)
+        if let name = unsaved.first {
             let alert = NSAlert()
-            let others = editor.unsavedNames.count - 1
+            let others = unsaved.count - 1
             alert.messageText = others > 0 ? "“\(name)” and \(others) more have unsaved changes." : "“\(name)” has unsaved changes."
-            alert.informativeText = "Save it (⌘S) first, or close the window and lose them."
+            alert.informativeText = "Save it (⌘S) — or apply a cluster object's YAML — first, or close the window and lose them."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Close Anyway")
-            alert.beginSheetModal(for: sender) { response in
+            alert.beginSheetModal(for: sender) { [weak self] response in
                 guard response == .alertSecondButtonReturn else { return }
+                // Asked: the quit that follows the last window asks nothing again.
+                self?.closeConfirmed = true
                 sender.close()
             }
             return false
@@ -4082,6 +4089,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
         for page in pages.all { page.occlusionChanged?() }
+        updateEditorOnScreen()
     }
 
     func windowWillClose(_ notification: Notification) {

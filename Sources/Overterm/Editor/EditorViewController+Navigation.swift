@@ -431,7 +431,7 @@ extension EditorViewController {
 
     /// What the last commit has for the file, then the gutter's marks.
     func refreshGitBase(_ buffer: EditorBuffer) {
-        guard Settings.shared.editorGitGutter, let url = buffer.url else {
+        guard Settings.shared.editorGitGutter, let url = buffer.url, !buffer.document.isVirtual else {
             buffer.gitBase = nil
             buffer.gitMarks = []
             if buffer === active { gutter.gitMarks = [] }

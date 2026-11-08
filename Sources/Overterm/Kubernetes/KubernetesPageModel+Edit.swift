@@ -2,13 +2,12 @@ import Foundation
 
 // MARK: Edit the YAML in the editor (`y`; stage 2b — docs/design/kubernetes/analysis.md, 2.8)
 
-/// `y` opens the object's YAML in the editor as Overterm's own copy
-/// (`KubeManifestEdits`): one GET, stripped as the YAML tab strips it —
-/// managedFields, status, the last-applied annotation, and what names
-/// this one version of it (its resourceVersion is kept beside the copy and
-/// sent with the apply) — a Secret's values and secret-looking env values
-/// masked, so no value is ever written to the file. Offered on every
-/// class: diffing changes nothing. Applying is the editor's own step
+/// `y` opens the object's YAML in the window's editor: the resource's one
+/// buffer (`KubeResourceBuffer`) — the YAML tab's, the same edits — read
+/// once if nobody has yet: stripped as the tab strips it, its
+/// resourceVersion kept beside it and sent with the apply, a Secret's
+/// values and secret-looking env values masked. Never a file. Offered on
+/// every class: diffing changes nothing. Applying is the bar's own step
 /// (`KubeManifestSession`), on writable contexts only.
 extension KubernetesPageModel {
     static let editTitle = "Edit YAML in Editor"
@@ -34,15 +33,24 @@ extension KubernetesPageModel {
 
     func editYAML(_ ref: KubeObjectRef) {
         writeStatus = nil
-        guard let context = model.contexts.context(named: ref.context), let client = model.client(for: ref.context) else {
+        guard let context = model.contexts.context(named: ref.context), model.client(for: ref.context) != nil else {
             writeStatus = .failed("Kubernetes is off, or the context is gone.")
             return
         }
-        // Open already: its tab, with whatever is typed in it.
-        let url = KubeManifestEdits.url(for: ref)
-        if KubeManifestEdits.edit(at: url) != nil {
-            actions?.openEditor(url)
+        let resources = model.resourceBuffers
+        // Read already — the YAML tab's, or `y` before: that buffer, whatever is typed in it.
+        if let open = resources.existing(ref), open.state == .loaded {
+            actions?.openResource(open)
             return
+        }
+        // The detail has the object: its read is the text (a Secret's only after Show).
+        if let detail, detail.ref == ref, let object = detail.object {
+            let resource = detail.openResource(in: resources)
+            if resource.state != .loaded { resource.take(object.json) }
+            if resource.state == .loaded {
+                actions?.openResource(resource)
+                return
+            }
         }
         // A Secret's one GET is every value at once: on production asked
         // once a context and session, as Show is (rule 9).
@@ -60,22 +68,38 @@ extension KubernetesPageModel {
         }
         let spoken = KubeWriteOutcome.spoken(ref)
         writeStatus = .working("Opening \(spoken)…")
+        let resource = resources.buffer(for: ref)
         Task { [weak self] in
             do {
-                let body = try await client.get(KubeWrites.path(ref)).body
+                try await resource.load(secret: ref.isSecret)
                 guard let self else { return }
-                guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
-                    self.writeStatus = .failed("\(spoken)'s answer couldn't be read.")
-                    return
-                }
-                let version = (object["metadata"] as? [String: Any])?["resourceVersion"] as? String
-                let text = KubeManifestEdits.header(ref, production: context.isProduction) + KubeYAML.text(KubeManifestDiff.forEditing(object))
-                let url = try KubeManifestEdits.write(text, for: ref, resourceVersion: version)
                 self.writeStatus = nil
-                self.actions?.openEditor(url)
+                self.actions?.openResource(resource)
             } catch {
+                resources.dropIfUnheld(resource)
                 self?.writeStatus = .failed("Couldn't open \(spoken): \(KubernetesModel.said(error))")
             }
         }
+    }
+
+    /// The YAML tab reads while it shows — the page on screen, in a window
+    /// on screen: the resource's buffer made from the detail's read, and
+    /// the object followed so a change on the cluster reaches it.
+    func updateYAMLReading() {
+        guard let detail else { return }
+        let onScreen = visible && windowVisible && detailTab == .yaml
+        if onScreen {
+            let resource = detail.openResource(in: model.resourceBuffers)
+            resource.watch(by: detail)
+        } else {
+            detail.resource?.unwatch(by: detail)
+        }
+    }
+
+    /// The YAML tab's editor: one for the page, showing the detail's buffer.
+    var yamlEditor: EditorViewController? {
+        if let made = madeYAMLEditor { return made }
+        madeYAMLEditor = makeYAMLEditor?()
+        return madeYAMLEditor
     }
 }

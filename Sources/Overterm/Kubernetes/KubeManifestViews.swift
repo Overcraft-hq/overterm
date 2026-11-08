@@ -8,14 +8,29 @@ import SwiftUI
 struct KubeManifestBar: View {
     @ObservedObject var session: KubeManifestSession
     @ObservedObject var theme: ChromeTheme
+    /// The detail's YAML tab: the same buffer in the window's editor (`y`).
+    var openInEditor: (() -> Void)? = nil
 
     static let height: CGFloat = 56
     static let statusHeight: CGFloat = 74
+    static let bannerHeight: CGFloat = 30
+
+    /// How tall it is under the editor's text: a status line, a banner.
+    static func height(status: Bool, banner: Bool) -> CGFloat {
+        (status ? statusHeight : height) + (banner ? bannerHeight : 0)
+    }
+
+    /// What the line under the buttons says: how the last step went, else
+    /// — for a cluster object's YAML — why Apply is greyed.
+    private var statusText: String? {
+        session.state.text ?? (session.ref != nil ? session.applyRefusal.map { "Apply is off: " + $0 } : nil)
+    }
 
     private var context: KubeContext? { session.contexts.first { $0.name == session.contextName } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            if let resource = session.resource { KubeResourceBanner(resource: resource, theme: theme) }
             HStack(spacing: 6) {
                 Text(verbatim: "⎈").font(.system(size: 13)).foregroundStyle(theme.dimText)
                 Text(verbatim: session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
@@ -51,6 +66,13 @@ struct KubeManifestBar: View {
                         .help("It changed in the cluster since you opened it: apply your copy over it — asked first")
                         .fixedSize()
                 }
+                if let resource = session.resource { KubeResourceRevert(resource: resource) }
+                if let openInEditor {
+                    Button("Open in Editor") { openInEditor() }
+                        .help("The same YAML — the same edits — in the window's editor  y")
+                        .fixedSize()
+                        .accessibilityIdentifier("kubernetes.manifest.openInEditor")
+                }
                 Spacer(minLength: 0)
                 if let note = session.docsNote {
                     Text(verbatim: note).font(.system(size: 10)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.tail).help(note)
@@ -58,7 +80,7 @@ struct KubeManifestBar: View {
             }
             .font(.system(size: 12))
             .controlSize(.small)
-            if let text = session.state.text {
+            if let text = statusText {
                 Text(verbatim: text)
                     .font(.system(size: 11))
                     .foregroundStyle(session.state.isFailure ? KubernetesPageView.production : theme.dimText)
@@ -99,6 +121,62 @@ struct KubeManifestBar: View {
             // Not while a diff or an apply works: its answer is the context's it started with.
             .disabled(session.state.isWorking)
             .help("The context to compare with and apply to — an object without a namespace goes to the page's namespace there")
+        }
+    }
+}
+
+/// A cluster object's YAML whose object changed on the cluster while it
+/// had edits: said, with Reload (the cluster's, the edits dropped) and
+/// Diff against it — never written over the edits.
+struct KubeResourceBanner: View {
+    @ObservedObject var resource: KubeResourceBuffer
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        if let change = resource.clusterChange {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(Self.warning)
+                Text(verbatim: Self.said(change, resource)).font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                if case .changed = change {
+                    Button("Reload") { resource.reload() }
+                        .help("The cluster's newer object in the editor: your edits are dropped")
+                        .accessibilityIdentifier("kubernetes.manifest.reload")
+                }
+                Button("Diff against it") { resource.diffAgainstCluster() }
+                    .help("Your edits against the object as the cluster has it now — a server-side dry run")
+                    .accessibilityIdentifier("kubernetes.manifest.diffAgainst")
+            }
+            .font(.system(size: 11.5))
+            .controlSize(.small)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 5).fill(Self.warning.opacity(0.14)))
+            .accessibilityIdentifier("kubernetes.manifest.banner")
+        }
+    }
+
+    static let warning = Color(red: 0.93, green: 0.6, blue: 0.2)
+
+    static func said(_ change: KubeResourceBuffer.ClusterChange, _ resource: KubeResourceBuffer) -> String {
+        switch change {
+        case .changed: "\(resource.spoken) changed on the cluster — your edits are kept"
+        case .deleted: "\(resource.spoken) was deleted on the cluster — Apply would make it again"
+        }
+    }
+}
+
+/// Revert, while a cluster object's YAML has edits: the cluster's text back.
+struct KubeResourceRevert: View {
+    @ObservedObject var resource: KubeResourceBuffer
+
+    var body: some View {
+        if resource.isEdited {
+            Button("Revert") { resource.revert() }
+                .help("Drop your edits: the YAML as \(resource.ref.context) has it")
+                .fixedSize()
+                .accessibilityIdentifier("kubernetes.manifest.revert")
         }
     }
 }

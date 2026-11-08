@@ -47,6 +47,11 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     @Published private(set) var events: Part<[KubeEvent]> = .idle
     /// The pods the object's selector picks, as rows of the pod list.
     @Published private(set) var pods: Part<[KubeListRow]> = .idle
+    /// Its YAML in the editor (the YAML tab, `y`): the resource's one
+    /// buffer, held while this detail shows it — made the first time the
+    /// tab shows, fed from this detail's reads.
+    @Published private(set) var resource: KubeResourceBuffer?
+    private weak var resources: KubeResourceBuffers?
 
     /// A Secret's Show, masked values and reveal; nil for any other kind.
     let secret: KubeSecretSession?
@@ -92,6 +97,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     private func secretRead(_ stripped: Data) {
         guard let object = try? KubeObject(data: stripped) else { return }
         self.object = object
+        resource?.take(object.json)
         overview = KubeOverview.of(object.json)
         yaml = makeYAML()
         state = .loaded
@@ -104,6 +110,13 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         yaml = ""
         showsHidden = false
         state = .withheld
+        // The YAML made from Show's read goes with it — unless it has edits
+        // (they are nowhere else) or the window's editor shows it too.
+        if let resource, !resource.isEdited {
+            resource.unwatch(by: self)
+            resources?.release(resource, by: self)
+            self.resource = nil
+        }
     }
 
     /// The one GET, once.
@@ -139,6 +152,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         }
         self.object = object
         let json = object.json
+        resource?.take(json)
         overview = KubeOverview.of(json)
         health = KubeHealth.object(json)
         yaml = makeYAML()
@@ -264,9 +278,29 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             })
     }
 
+    /// The YAML tab shows: the resource's buffer, held — its text from
+    /// what this detail read (a Secret's from Show's read, masked).
+    @discardableResult
+    func openResource(in resources: KubeResourceBuffers) -> KubeResourceBuffer {
+        if let resource { return resource }
+        let made = resources.hold(ref, by: self)
+        self.resources = resources
+        resource = made
+        if let object { made.take(object.json) }
+        return made
+    }
+
+    /// Its YAML has edits not applied: leaving keeps them (the registry
+    /// does), and the page says so.
+    var keepsEdits: Bool { resource?.isEdited == true }
+
     /// Navigated away: whatever is still being read is dropped, and a
     /// Secret's values with it.
     func cancel() {
+        if let resource {
+            resource.unwatch(by: self)
+            resources?.release(resource, by: self)
+        }
         for task in tasks { task.cancel() }
         tasks = []
         logs?.cancel()

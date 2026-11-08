@@ -17,6 +17,10 @@ final class EditorDocument: ObservableObject {
     /// memory, never in the file. Nothing writes it, and its edits ask
     /// nothing on close.
     var unsaveable: String?
+    /// Text that lives in memory only, under a name no file has: a cluster
+    /// object's YAML (`KubeResourceBuffer`). Nothing reads or writes the
+    /// disk for it, and `unsaveable` says why a save is refused.
+    private(set) var isVirtual = false
 
     /// Refused: `unsaveable` says why.
     struct Unsaveable: LocalizedError {
@@ -71,9 +75,35 @@ final class EditorDocument: ObservableObject {
         }
     }
 
+    /// `text`, in memory, under `url` — never read from it, never written.
+    func loadVirtual(_ url: URL, text: String) {
+        self.url = url
+        isVirtual = true
+        isDirty = false
+        unavailable = nil
+        self.text = text
+        loadedModification = nil
+    }
+
+    /// A virtual document's text as its source has it now: no edits of its own.
+    func replaceVirtual(_ text: String) {
+        guard isVirtual else { return }
+        self.text = text
+        isDirty = false
+    }
+
     func markEdited() {
-        guard url != nil, unavailable == nil else { return }
+        // A virtual document's edits are its source's to say (`setVirtualEdited`):
+        // undone back to it, it has none, whichever editor typed.
+        guard url != nil, unavailable == nil, !isVirtual else { return }
         isDirty = true
+    }
+
+    /// A virtual document's edits, as its source says: a cluster object's
+    /// text against what the cluster had — the same for every editor showing it.
+    func setVirtualEdited(_ edited: Bool) {
+        guard isVirtual, isDirty != edited else { return }
+        isDirty = edited
     }
 
     /// The file changed on disk while it had unsaved edits here: saving would
@@ -109,6 +139,7 @@ final class EditorDocument: ObservableObject {
     }
 
     func close() {
+        isVirtual = false
         url = nil
         isDirty = false
         unavailable = nil

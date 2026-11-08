@@ -3,9 +3,10 @@ import Foundation
 
 /// Stage 2b against the fake API server, never a real cluster (Section 9's
 /// check: a diff with masked Secret data; a 409 conflict shown; no Apply
-/// on `fake-prod` with writes on): `y` on `kind-fake`'s deployment opens
-/// Overterm's copy in the editor (in the run's support folder, 0600,
-/// stripped); Diff with Cluster sends a dry run and shows its diff in the
+/// on `fake-prod` with writes on): the detail's YAML tab is the editor on
+/// the resource's one buffer — followed quietly without edits, the banner
+/// with them —, `y` opens that buffer in the window's editor (stripped,
+/// in memory, never a file); Diff with Cluster sends a dry run and shows its diff in the
 /// right-hand pane, Helm's field named; Apply is asked in the window's
 /// sheet (ended by the runner) and the fake's 409 shown with its manager,
 /// then Force asked again and landing. A checkout's Secret manifest diffs
@@ -46,37 +47,70 @@ extension E2ERunner {
             "what kind-fake serves is read", await eventually(15) { model.selectedName == "kind-fake" && model.discovery?.kind("deploy") != nil },
             "\(String(describing: model.discoveryProblem))")
         guard await showKubernetesKind(model, page, "deploy", row: KubeRowID(namespace: "shop", name: "shop-api")) else { return }
-        page.selection = ["shop/shop-api"]
-        page.giveListTheKeyboard()
-        check("y is the list's", await pressKubernetesKey("y", keyCode: 16))
         guard let kind = model.discovery?.kind("deploy") else { return check("kind-fake serves deployments", false) }
         let ref = KubeObjectRef(context: "kind-fake", kind: kind, namespace: "shop", name: "shop-api")
-        let copy = KubeManifestEdits.url(for: ref)
-        check("its copy opens in the editor", await eventually(10) { editor.active?.url?.standardizedFileURL == copy.standardizedFileURL }, editor.active?.url?.path ?? "none")
-        check("the page steps aside", app.store.showingOverlay == nil)
+
+        // The detail's YAML tab is the editor: the resource's one buffer.
+        page.selection = ["shop/shop-api"]
+        page.openSelected()
+        page.showTab(.yaml)
+        check("the YAML tab has the resource's buffer", await eventually(10) { page.detail?.resource?.state == .loaded }, "\(String(describing: page.detail?.resource?.state))")
+        guard let resource = page.detail?.resource, let tab = page.yamlEditor else { return check("the YAML tab's editor", false) }
+        check("shown by the app's editor, in the tab", await eventually(5) { tab.active === resource.buffer && tab.view.window === self.window })
+        check("tree-sitter YAML", resource.buffer.language?.id == "yaml")
+        check("drawn", await shownText(15) { $0.contains("replicas: 1") } != nil)
+        check("its bar over it", await shownText(15) { $0.contains("Diff with Cluster") } != nil)
+        check("followed while the tab shows", resource.isFollowing)
+        // No edits: a change on the cluster is taken quietly.
+        func spec(_ ready: Int) -> [String: Any] {
+            [
+                "spec": ["replicas": 1, "selector": ["matchLabels": ["app": "shop-api"]], "minReadySeconds": ready],
+                "status": ["replicas": 1, "readyReplicas": 1],
+            ]
+        }
+        fake.setFields("deployments.apps", "shop-api", namespace: "shop", spec(5))
+        check("followed quietly", await eventually(10) { resource.buffer.storage.string.contains("minReadySeconds: 5") && resource.clusterChange == nil })
+        // Edits: the next change is the banner's, never written over them.
+        tab.replaceText(of: resource.buffer, with: resource.buffer.storage.string.replacingOccurrences(of: "replicas: 1", with: "replicas: 7"))
+        check("edited in the tab", resource.isEdited)
+        fake.setFields("deployments.apps", "shop-api", namespace: "shop", spec(9))
+        check("the banner", await eventually(10) { resource.clusterChange != nil })
+        check("the edits kept", resource.buffer.storage.string.contains("replicas: 7") && !resource.buffer.storage.string.contains("minReadySeconds: 9"))
+        check("the banner drawn", await shownText(15) { $0.contains("changed on the cluster") } != nil)
+        check("with Reload", await shownText(15) { $0 == "Reload" } != nil)
+        resource.reload()
         check(
-            "Overterm's copy, in the run's own support folder — no checkout's file",
-            copy.path.hasPrefix(AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Edits").path), copy.path)
-        check("0600", (try? FileManager.default.attributesOfItem(atPath: copy.path)[.posixPermissions] as? Int) == 0o600)
+            "Reload: the cluster's", resource.buffer.storage.string.contains("minReadySeconds: 9") && !resource.isEdited && resource.clusterChange == nil)
+
+        // y: the same buffer in the window's editor.
+        page.giveListTheKeyboard()
+        check("y is the list's", await pressKubernetesKey("y", keyCode: 16))
+        let copy = resource.url
+        check("its YAML opens in the editor", await eventually(10) { editor.active === resource.buffer }, editor.active?.url?.path ?? "none")
+        check("the page steps aside", app.store.showingOverlay == nil)
+        check("the window's editor follows it while it shows", await eventually(5) { editor.watching === resource && resource.isFollowing })
+        app.toggleKubernetesPage(nil)
+        check("not while the page covers it", await eventually(5) { editor.watching == nil && !editor.isOnScreen })
+        app.toggleKubernetesPage(nil)
+        check("again once uncovered", await eventually(5) { editor.watching === resource && resource.isFollowing })
+        check("never a file", !FileManager.default.fileExists(atPath: copy.path) && resource.buffer.document.isVirtual, copy.path)
         guard let buffer = editor.active, let session = buffer.kubeManifest else { return check("the copy has its manifest bar", false) }
         check("for the object it came from", session.ref == ref && session.contextName == "kind-fake")
         let opened = buffer.storage.string
         check(
             "stripped: no managedFields, status or resourceVersion",
             !opened.contains("managedFields") && !opened.contains("status:") && !opened.contains("resourceVersion") && opened.contains("replicas: 1"), opened)
-        check("its version kept beside it", KubeManifestEdits.edit(at: copy)?.resourceVersion != nil)
+        check("its version kept beside it", resource.resourceVersion != nil && KubeManifestEdits.edit(at: copy)?.resourceVersion == resource.resourceVersion)
         check("the bar under it", await eventually(5) { editor.consoleHeight.constant >= KubeManifestBar.height }, "\(editor.consoleHeight.constant)")
         check("the bar drawn", await shownText(15) { $0.contains("Diff with Cluster") || $0.contains("deployment shop/shop-api") } != nil)
 
         // Diff with Cluster: a dry run, its diff in the right-hand pane, Helm named.
         editor.replaceText(of: buffer, with: opened.replacingOccurrences(of: "replicas: 1", with: "replicas: 2"))
-        // Never saved: a value retyped in it stays in memory (rule 9); closing asks nothing.
+        check("the tab has the same edits", tab.textView.string.contains("replicas: 2"))
+        // Never saved: what is typed stays in memory (rule 9); closing with edits asks.
         editor.save(buffer, overwriting: false)
-        check(
-            "Overterm's copy is never saved", (try? String(contentsOf: copy, encoding: .utf8)) == opened && session.state.text == KubeManifestEdits.unsaved,
-            "\(session.state)")
-        check("still 0600", (try? FileManager.default.attributesOfItem(atPath: copy.path)[.posixPermissions] as? Int) == 0o600)
-        check("not counted as unsaved", !editor.unsavedNames.contains(buffer.name), "\(editor.unsavedNames)")
+        check("never saved", !FileManager.default.fileExists(atPath: copy.path) && session.state.text == KubeManifestEdits.unsaved, "\(session.state)")
+        check("its edits count as unsaved", editor.unsavedNames.contains(buffer.name), "\(editor.unsavedNames)")
         fake.forgetRequests()
         session.diffWithCluster()
         check("the diff comes", await eventually(15) { session.result != nil }, "\(session.state)")
@@ -126,6 +160,7 @@ extension E2ERunner {
             "with force=true", fake.writes.contains { $0.contentType == "application/apply-patch+yaml" && $0.query["dryRun"] == nil && $0.query["force"] == "true" })
         check("the apply said", await eventually(15) { session.state == .done("Applied deployment shop/shop-api to kind-fake.") }, "\(session.state)")
         check("and drawn", await shownText(15) { $0.contains("Applied deployment shop/shop-api") } != nil)
+        await kubernetesYAMLEditsAsk(page, editor: editor, tab: tab, resource: resource)
 
         // A checkout's Secret manifest: the diff masks its values.
         let checkout = scratch.appendingPathComponent("k8s-checkout-\(UUID().uuidString.prefix(6))", isDirectory: true)
@@ -220,10 +255,15 @@ extension E2ERunner {
         check("fake-prod's writes off again", await eventually(5) { model.selected?.isWritable == false })
 
         // The copy goes with its tab; the checkout's files stay.
+        check("applied: no edits left", !resource.isEdited)
         for url in [copy, secretFile, deploy.appendingPathComponent("kustomization.yaml"), prodFile] {
             if let index = editor.buffers.firstIndex(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) { editor.removeBuffer(at: index) }
         }
-        check("the copy is removed with its tab", !FileManager.default.fileExists(atPath: copy.path) && KubeManifestEdits.edit(at: copy) == nil)
+        page.closeDetail()
+        check(
+            "the buffer goes once nothing shows it",
+            model.resourceBuffers.existing(ref) == nil && KubeManifestEdits.edit(at: copy) == nil
+                && !FileManager.default.fileExists(atPath: copy.path))
         check("the checkout's own files stay", FileManager.default.fileExists(atPath: secretFile.path))
         try? FileManager.default.removeItem(at: checkout)
         model.select("fake-dev")
@@ -244,5 +284,47 @@ extension E2ERunner {
 
     private func replicas(_ fake: FakeKubeAPI, _ name: String, namespace: String = "shop") -> Int? {
         ((fake.object("deployments.apps", name, namespace: namespace)?["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue
+    }
+
+    /// Closing with edits asks, wherever they were typed: the `y` tab's
+    /// Discard Edits sheet (Cancel keeps the text, Discard reverts the one
+    /// buffer — the detail's tab with it); edits typed only in the detail's
+    /// tab, the detail moved on, are said kept and asked about by the
+    /// window's close.
+    func kubernetesYAMLEditsAsk(_ page: KubernetesPageModel, editor: EditorViewController, tab: EditorViewController, resource: KubeResourceBuffer) async {
+        guard let index = editor.buffers.firstIndex(where: { $0 === resource.buffer }) else { return check("the y tab is open", false) }
+        let clean = resource.buffer.storage.string
+        editor.replaceText(of: resource.buffer, with: clean.replacingOccurrences(of: "replicas: 2", with: "replicas: 5"))
+        check("edited in the y tab", resource.isEdited && resource.buffer.document.isDirty)
+        editor.closeBuffer(at: index)
+        check("closing it asks", await eventually(10) { self.window.attachedSheet != nil })
+        let asked = sheetWords()
+        check("to discard the edits", asked.contains("Discard your edits to deployment shop/shop-api?"), asked)
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        check("Cancel keeps the text", await eventually(5) { self.window.attachedSheet == nil })
+        check("and the tab", resource.isEdited && resource.buffer.storage.string.contains("replicas: 5") && editor.buffers.contains { $0 === resource.buffer })
+        if let again = editor.buffers.firstIndex(where: { $0 === resource.buffer }) { editor.closeBuffer(at: again) }
+        check("asked again", await eventually(10) { self.window.attachedSheet != nil })
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+        check("Discard reverts the one buffer", await eventually(5) { !resource.isEdited && resource.buffer.storage.string == clean })
+        check("the tab closed", !editor.buffers.contains { $0 === resource.buffer })
+        check("the detail's tab has no edits either", tab.active !== resource.buffer || tab.textView.string == clean)
+
+        // Typed only in the detail's tab, then the detail moves on.
+        tab.replaceText(of: resource.buffer, with: clean.replacingOccurrences(of: "replicas: 2", with: "replicas: 6"))
+        check("edited in the detail's tab only", resource.isEdited && editor.unsavedNames.isEmpty)
+        check("counted by the window's close", app.unsavedNames(everyWindow: false).contains(resource.buffer.name), "\(app.unsavedNames(everyWindow: false))")
+        page.closeDetail()
+        check("leaving says the edits are kept", page.writeStatus == .done(KubernetesPageModel.keptEdits(resource.ref)), "\(String(describing: page.writeStatus))")
+        check("kept by the app", KubernetesModel.shared.resourceBuffers.edited.contains { $0 === resource })
+        check("and still asked about by the last window's close and the quit", app.unsavedNames(everyWindow: true).contains(resource.buffer.name))
+        check("the window's close asks", !app.windowShouldClose(window) && window.attachedSheet != nil)
+        let closing = sheetWords()
+        check("naming them", closing.contains(resource.buffer.name) && closing.contains("unsaved changes"), closing)
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        check("Cancel keeps the window", await eventually(5) { self.window.attachedSheet == nil && self.window.isVisible })
+        resource.revert()
+        check("reverted, held by nobody: gone", KubernetesModel.shared.resourceBuffers.existing(resource.ref) == nil)
+        check("nothing left to ask about", app.unsavedNames(everyWindow: true).isEmpty, "\(app.unsavedNames(everyWindow: true))")
     }
 }
