@@ -22,6 +22,7 @@ version is tagged `v<version>`.
 - build: Xcode 27 builds the app, and an app built with it takes clicks on macOS 27; double-clicking the strip's empty space zooms the window there again
 - usage: an isolated run never runs your own claude for its usage
 - kubernetes: Prometheus charts read the right window and count active pods — a rate over four scrapes (a 1m scrape no longer charts nothing), the prometheus chart's current Service labels found, requests and limits of running and pending pods only, a restarted container no longer counted twice, the cluster's raw lines up to 6h (past it said, with 6h offered), Prometheus's warnings shown under the chart, and a query given up after 20 s
+- kubernetes: Prometheus charts with axes, a legend and a shared crosshair — hover any chart for the time and every value, the same moment marked on the charts beside it; requests, limits, allocatable and capacity as labelled dashed lines; a legend click shows one series alone
 
 ## 1.5.4 — 2026-11-09
 

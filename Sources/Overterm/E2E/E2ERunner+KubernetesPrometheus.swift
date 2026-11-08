@@ -103,6 +103,27 @@ extension E2ERunner {
             "\(String(describing: cluster?.totals))")
         check("drawn, with the range and where it came from", await shownText(15) { $0.contains("The last 1h, from Prometheus monitoring/prometheus-server:80") } != nil)
         check("the requests and limits drawn", await shownText(15) { $0.contains("2000m of 4000m") } != nil)
+        // Each measure one chart, its plot built and drawn in one Canvas, what it is measured against its reference lines.
+        let charts = KubeChartRegistry.shared
+        let scope = app.theme.map(ObjectIdentifier.init)
+        let cpuID = "kubernetes.chart.cluster.cpu"
+        let memoryID = "kubernetes.chart.cluster.memory"
+        check(
+            "the cluster's CPU and memory charts drawn",
+            await eventually(15) { [cpuID, memoryID].allSatisfy { charts.chart($0, in: scope)?.plot != nil } },
+            charts.lines(in: scope).joined(separator: "; "))
+        let cpuChart = charts.chart(cpuID, in: scope)
+        check(
+            "with active requests, limits and allocatable as lines", cpuChart?.data.references.map(\.role) == [.request, .limit, .allocatable],
+            charts.lines(in: scope).joined(separator: "; "))
+        check("the axis reaching the highest line", (cpuChart?.plot?.top ?? 0) >= 4, "\(cpuChart?.plot?.top ?? 0)")
+        check("drawn", KubeChartDraws.shared.of(cpuID, in: scope).series > 0)
+        if let last = cpuChart?.data.usage.first?.points.last {
+            let tip = charts.tooltip(cpuID, in: scope, at: last.time)
+            check("its tooltip at the last point: the line, then the three", tip?.rows.first?.name == "CPU" && tip?.rows.count == 4, "\(tip?.rows ?? [])")
+            check("the lines with the usage's share", tip?.rows.contains { $0.name == "allocatable" && $0.value.hasSuffix("· 19%") } == true, "\(tip?.rows ?? [])")
+        }
+        charts.lines(in: scope).forEach { note("kubernetes \($0)") }
         check("a range picker", await eventually(15) { pickerShown() })
         check("the sampled sparkline gone", await shownText(15) { $0.caseInsensitiveCompare("Usage over time") == .orderedSame } != nil)
         let ranges = prometheusAsked().filter { $0.path == service.rangePath }
@@ -116,6 +137,7 @@ extension E2ERunner {
             let connected = await model.proxies.proxyLabels
             check("through a second proxy of fake-dev's own", connected.contains("fake-dev (prometheus)"), "\(connected)")
         }
+        await sharedCrosshair(model, scope: scope, cpu: cpuID, memory: memoryID)
         // 24h: the cluster's raw lines aren't asked; why is said, and 6h offered.
         fake.forgetRequests()
         page.chartRange = .day
@@ -155,6 +177,11 @@ extension E2ERunner {
         let podDrawn = await shownText(15) { $0.contains("750m") } != nil
         let podShown = podDrawn ? "" : (await readWindow()).map(\.text).joined(separator: " | ")
         check("the pod's chart drawn", podDrawn, podShown)
+        check(
+            "the pod's charts in the registry, none of the Overview's",
+            await eventually(10) {
+                charts.chart("kubernetes.chart.pod.shop.web-8k2.cpu", in: scope)?.plot != nil && charts.chart(cpuID, in: scope) == nil
+            }, charts.lines(in: scope).joined(separator: "; "))
         check("the Overview's chart no longer read", model.prometheus.charts[.cluster] == nil)
         page.closeDetail()
 
@@ -177,6 +204,10 @@ extension E2ERunner {
             let claimDrawn = await shownText(15) { $0.contains("of 10Gi") } != nil
             let claimShown = claimDrawn ? "" : (await readWindow()).map(\.text).joined(separator: " | ")
             check("the claim's chart drawn", claimDrawn, claimShown)
+            check(
+                "its capacity a line",
+                await eventually(10) { charts.chart("kubernetes.chart.volume.shop.data-db-0.used", in: scope)?.data.references.map(\.role) == [.capacity] },
+                charts.lines(in: scope).joined(separator: "; "))
             page.closeDetail()
         }
 
@@ -223,5 +254,52 @@ extension E2ERunner {
         check("2 is Workloads again", page.press("2"))
         model.select("fake-dev")
         check("and nothing written", fake.writes.isEmpty, "\(fake.writes)")
+    }
+}
+
+extension E2ERunner {
+    /// The crosshair shared (metrics.md, 3.1), on the Overview as it is
+    /// drawn: the cursor moved over the CPU chart, as its hover moves it,
+    /// the memory chart beside it draws it too — its overlay again, never
+    /// its series, no tooltip of its own — and the view holding the cursor
+    /// (`KubePrometheusChartView`) runs no body. The readings are held off
+    /// meanwhile, so nothing else redraws them.
+    func sharedCrosshair(_ model: KubernetesModel, scope: ObjectIdentifier?, cpu cpuID: String, memory memoryID: String) async {
+        let charts = KubeChartRegistry.shared
+        guard let scope, let cpu = charts.chart(cpuID, in: scope), let memory = charts.chart(memoryID, in: scope),
+            let first = cpu.data.usage.first?.points.first?.time
+        else { return check("the Overview's two charts, to hover", false, charts.lines(in: scope).joined(separator: "; ")) }
+        check("one cursor for the Overview's charts", memory.cursor === cpu.cursor)
+        let interval = model.prometheus.interval
+        let metricsInterval = model.metrics.interval
+        model.prometheus.interval = .seconds(60)
+        model.metrics.interval = .seconds(60)
+        defer {
+            cpu.cursor.leave(cpuID)
+            model.prometheus.interval = interval
+            model.metrics.interval = metricsInterval
+        }
+        // The poll in flight lands, then the next waits a minute.
+        let read = model.prometheus.charts[.cluster]?.read
+        _ = await eventually(5) { model.prometheus.charts[.cluster]?.read != read }
+        await pause(0.8)
+        let held = model.prometheus.charts[.cluster]?.read
+        let draws = KubeChartDraws.shared
+        let container = "kubernetes.overview.prometheus"
+        let before = (cpu: draws.of(cpuID, in: scope), memory: draws.of(memoryID, in: scope), container: draws.of(container, in: scope))
+        for move in 0..<10 {
+            cpu.cursor.move(to: first.addingTimeInterval(Double(10 + move * 5) * cpu.data.step), owner: cpuID)
+            await pause(0.05)
+        }
+        await pause(0.3)
+        let after = (cpu: draws.of(cpuID, in: scope), memory: draws.of(memoryID, in: scope), container: draws.of(container, in: scope))
+        check("no reading landed meanwhile", model.prometheus.charts[.cluster]?.read == held)
+        check("hovering CPU: its overlay and tooltip drawn", after.cpu.overlay > before.cpu.overlay && after.cpu.tooltip > before.cpu.tooltip, "\(before.cpu) → \(after.cpu)")
+        check("the memory chart draws the crosshair too", after.memory.overlay > before.memory.overlay, "\(before.memory) → \(after.memory)")
+        check("with no tooltip of its own", after.memory.tooltip == before.memory.tooltip, "\(before.memory) → \(after.memory)")
+        check(
+            "neither chart's series drawn again", after.cpu.series == before.cpu.series && after.memory.series == before.memory.series,
+            "cpu \(before.cpu) → \(after.cpu); memory \(before.memory) → \(after.memory)")
+        check("the view holding the cursor runs no body", after.container.container == before.container.container, "\(after.container.container - before.container.container) bodies")
     }
 }

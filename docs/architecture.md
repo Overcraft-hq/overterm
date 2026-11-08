@@ -5073,6 +5073,58 @@ line breaks where two points are more than two steps apart
 (`KubePrometheusReader.segments`), never bridged.
 Without Prometheus no picker shows: the metrics-server sparkline says it
 covers the time shown; with it the sparkline gives way to the chart.
+**A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5) is
+`KubeChartData` — its series, each with a role (usage, or a reference
+line: request, limit, allocatable, capacity, quota, guide), the window,
+the unit, the step, a `version` its maker changes with the data — drawn
+from a `KubePlot`: the y axis rounded to nice values from 0 (bytes in
+binary units) reaching every visible reference line, 3–5 ticks, time
+ticks on whole local minutes, hours or days 70 pt apart, a `CGPath` per
+series run (broken past two steps, never bridged) and per stacked band
+(cumulative in legend order), min/max decimation past a point a pixel
+column (peaks kept), the references stepped and labelled at their right
+ends, and the tracks hover searches. It is built off the main thread
+(`KubeChartState`, `Task.detached`) whenever `(version, size, hidden
+series, Lines)` changes — its `Key` — and published in one assignment.
+`KubeChartView` draws it in one `Canvas` pass (the renderer made
+`nonisolated`); the y labels, the reference names, the time axis, the
+header and the legend are `Text(verbatim:)`. The crosshair is
+`KubeChartCursor`, one per scope (a `KubePrometheusChartView`'s charts
+share one, held in its `@State` — held, not observed, so a hover never
+runs that body): hovering moves it (`onContinuousHover`, snapped to the nearest
+point by binary search), and only `KubeChartOverlay` observes it — the
+crosshair, the hovered points and, on the chart under the mouse, the
+tooltip (`KubeChartTooltip`: the time local with its zone, `Nov 7,
+14:32:15 GMT+3`, the series by value, each line with the usage's share),
+laid in an overlay so the series layer is never laid out or drawn again
+(`KubeChartDraws` counts, by chart and window, both layers' draws, the
+tooltip's and the cursor holder's bodies; `kubernetesPerf` moves the
+crosshair 200 times over 13 series of 300 points beside a second chart,
+both in a parent holding the cursor as the app does: ≤ 2 ms a move, no
+series draw, no parent body, and the plot built in ≤ 5 ms;
+`kubernetesPrometheus` hovers the Overview's CPU chart and checks the
+memory chart beside it draws the crosshair, no tooltip, no series). The legend (more than three
+series wrap under the header, `KubeFlowLayout`) isolates a series with a
+click, adds or removes one with ⌘-click, dims the others to 25% while
+hovered; "Lines" toggles the reference lines together. Colours:
+`ChromeTheme.chartPalette` — `KubeChartPalette`'s ten, each 3:1 at least
+against its card in both appearances — and the lines' fixed by meaning
+(request green, limit red, allocatable and capacity grey, quota purple),
+each with its own dash too. VoiceOver reads `KubeChartSummary` ("CPU, last
+1h: 750m now, peak … at 14:10, request …") and the series through an
+`AXChartDescriptor` (`KubeChartDescriptor`, made `nonisolated`); a chart's
+identifier is `kubernetes.chart.<subject>.<measure>`, the subject naming
+its object (`cluster`, `pod.shop.web-8k2`, `volume.shop.data-db-0`). The
+charts on screen are in `KubeChartRegistry` from appearing to
+disappearing, an entry per view (its token) with its window (its
+`ChromeTheme`) — two windows' Overviews, or a detail's new view shown
+before the old one goes, never take each other's entry:
+`OVERTERM_DUMP_LAYOUT` prints a line for each of its window's (series, points, drawn after
+decimation, the axis's top, references, source, tier), and the scenarios
+read it. A Prometheus reading becomes a chart through `KubeChartData.of`:
+the cluster's CPU and memory with active requests, limits and allocatable
+as flat lines, a pod's CPU and memory, a claim's used against its
+capacity (stepped).
 Hidden, every reading ends, what was read goes, the metrics proxy closes.
 `FakeKubeAPI.servePrometheus` answers a Service's two query paths with
 `setPrometheusSeries`' values (`FakePromQL`: selectors with `=`, `!=`,
