@@ -21,13 +21,16 @@ extension KubernetesPageModel {
     }
 
     static func metricsColumns(_ want: KubeMetricsWant) -> [ResourceColumn] {
-        let of = want == .nodes ? " — with its share of the node's allocatable, as kubectl top nodes says it" : " — its containers', summed"
+        let of =
+            want == .nodes
+            ? " — with its share of the node's allocatable, as kubectl top nodes says it, and the last 15 min of that share as a strip of 15 s cells (taller and warmer as it nears allocatable; blank where nothing was sampled)"
+            : " — its containers', summed"
         return [
             ResourceColumn(
-                id: cpuColumn, title: "CPU", width: want == .nodes ? 110 : 80, minWidth: 40,
+                id: cpuColumn, title: "CPU", width: want == .nodes ? 180 : 80, minWidth: 40,
                 help: "CPU used, in millicores, from metrics.k8s.io (kubectl top)\(of). Read every 15 s while shown."),
             ResourceColumn(
-                id: memoryColumn, title: "Memory", width: want == .nodes ? 120 : 90, minWidth: 40,
+                id: memoryColumn, title: "Memory", width: want == .nodes ? 190 : 90, minWidth: 40,
                 help: "Memory used (working set) from metrics.k8s.io (kubectl top)\(of). Read every 15 s while shown."),
         ]
     }
@@ -79,6 +82,23 @@ extension KubernetesPageModel {
     func usage(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
         guard let want = metricsWant else { return .dash(KubeMetricsAvailability.off.reason ?? "") }
         return model.metrics.cell(measure, row: row.row.id, want: want, now: now)
+    }
+
+    /// A node's row's heat strip (metrics.md 2.1, M3c): its last 15
+    /// minutes as the ring holds them, against the allocatable the nodes'
+    /// read gave — only beside a number, where the cell shows one: a dash
+    /// has no strip. Nothing is read for it.
+    func heatStrip(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeHeatStrip? {
+        guard metricsWant == .nodes, row.row.id.namespace == nil, usage(measure, of: row, now: now).sort != nil,
+            let allocatable = model.metrics.reading(.nodes)?.sample?.allocatable[row.row.id.name]
+        else { return nil }
+        return KubeHeatStrip.of(
+            model.metrics.ring.segments(.node(row.row.id.name), .list, now: now), measure, allocatable: measure == .cpu ? allocatable.cpu : allocatable.memory)
+    }
+
+    /// A strip's identifier: `kubernetes.heat.<node>.cpu`.
+    static func heatStripIdentifier(_ node: String, _ measure: KubeUsageCell.Measure) -> String {
+        "kubernetes.heat.\(node).\(measure == .cpu ? "cpu" : "memory")"
     }
 
     /// What the header says of the usage: why there's none, how old it is.

@@ -69,7 +69,10 @@ struct KubeUsageBucket: Equatable, Sendable {
 ///
 /// Two populations, so the Pods list's 5,000 rows never push out the pod
 /// being looked at: list-fed keys (a list's pods, the nodes, the cluster)
-/// keep the raw tier only, `listPoints` of it, and are forgotten as soon as
+/// keep the raw tier only — a node's row the whole 15 minutes
+/// (`rawPoints`: the Nodes list's heat strip is its 60 cells, and there
+/// are few nodes), a pod's row and the cluster's `listPoints` of it (the
+/// Overview's sparkline its 10 minutes) — and are forgotten as soon as
 /// their row isn't sampled; detail-fed keys (what a detail polls) keep both
 /// tiers, at most `detailKeys`, the least recently fed dropped first, and
 /// each is forgotten `keepDetail` (an hour, decision 1) after it was last
@@ -84,6 +87,15 @@ struct KubeUsageRing: Sendable {
     static let rawSpan: Int32 = 15 * 60
     static let rawPoints = 60
     static let listPoints = 40
+
+    /// How many raw points a key keeps: a detail's key and a node's list
+    /// row the 15 minutes' 60 (the row's heat strip draws them all); every
+    /// other list row — a pod's, the cluster's — 40, as before.
+    static func rawLimit(_ key: KubeUsageKey, _ population: Population) -> Int {
+        if population == .detail { return rawPoints }
+        if case .node = key { return rawPoints }
+        return listPoints
+    }
     static let bucketSeconds: Int32 = 60
     static let foldedSpan: Int32 = 6 * 3600
     static let foldedBuckets = 360
@@ -177,10 +189,10 @@ struct KubeUsageRing: Sendable {
         let t = offset(time)
         switch population {
         case .list:
-            return Self.add(&list[key, default: Series(fed: now)], usage, at: t, fold: false, interval: interval, now: now)
+            return Self.add(&list[key, default: Series(fed: now)], usage, at: t, fold: false, limit: Self.rawLimit(key, .list), interval: interval, now: now)
         case .detail:
             if detail[key] == nil { makeRoomForDetail() }
-            return Self.add(&detail[key, default: Series(fed: now)], usage, at: t, fold: true, interval: interval, now: now)
+            return Self.add(&detail[key, default: Series(fed: now)], usage, at: t, fold: true, limit: Self.rawPoints, interval: interval, now: now)
         }
     }
 
@@ -197,6 +209,7 @@ struct KubeUsageRing: Sendable {
         if population == .detail, detail[key] == nil { makeRoomForDetail() }
         let total = members.values.map(\.usage).reduce(.zero, +)
         let interval = interval
+        let limit = Self.rawLimit(key, population)
         func sum(_ series: inout Series) -> Bool {
             let previous = series.members
             series.members = stamps
@@ -205,7 +218,7 @@ struct KubeUsageRing: Sendable {
             guard moved, var newest = stamps.values.max() else { return false }
             // A member joining with an older stamp still moves the sum on.
             if let last = series.last, newest <= last { newest = last + 1 }
-            return Self.add(&series, total, at: newest, fold: population == .detail, interval: interval, now: now)
+            return Self.add(&series, total, at: newest, fold: population == .detail, limit: limit, interval: interval, now: now)
         }
         switch population {
         case .list: return sum(&list[key, default: Series(fed: now)])
@@ -213,10 +226,9 @@ struct KubeUsageRing: Sendable {
         }
     }
 
-    private static func add(_ series: inout Series, _ usage: KubeUsage, at t: Int32, fold: Bool, interval: TimeInterval, now: Date) -> Bool {
+    private static func add(_ series: inout Series, _ usage: KubeUsage, at t: Int32, fold: Bool, limit: Int, interval: TimeInterval, now: Date) -> Bool {
         series.fed = now
         if let last = series.last, t <= last { return false }
-        let limit = fold ? rawPoints : listPoints
         let gap = series.last.map { Double(t - $0) > interval * 2.5 } ?? false
         grow(&series.raw, adding: gap ? 2 : 1, limit: limit + 2)
         if gap, let last = series.last {
@@ -328,14 +340,21 @@ struct KubeUsageRing: Sendable {
 
     // MARK: Reading
 
-    private func series(_ key: KubeUsageKey, now: Date) -> Series? {
-        if let kept = detail[key], kept.fed >= now.addingTimeInterval(-Self.keepDetail) { return kept }
-        return list[key]
+    /// A key's series: the detail's while kept, else the list's — or only
+    /// `population`'s when one is named (a node's row reads the list's own
+    /// samples, never a closed tab's older ones; its tab, the detail's).
+    private func series(_ key: KubeUsageKey, _ population: Population?, now: Date) -> Series? {
+        let kept = detail[key].flatMap { $0.fed >= now.addingTimeInterval(-Self.keepDetail) ? $0 : nil }
+        switch population {
+        case .list: return list[key]
+        case .detail: return kept
+        case nil: return kept ?? list[key]
+        }
     }
 
     /// The raw tier's segments, oldest first: a break between two.
-    func segments(_ key: KubeUsageKey, now: Date = Date()) -> [[KubeUsagePoint]] {
-        guard let series = series(key, now: now) else { return [] }
+    func segments(_ key: KubeUsageKey, _ population: Population? = nil, now: Date = Date()) -> [[KubeUsagePoint]] {
+        guard let series = series(key, population, now: now) else { return [] }
         var segments: [[KubeUsagePoint]] = []
         var current: [KubeUsagePoint] = []
         for point in series.raw {
@@ -351,7 +370,9 @@ struct KubeUsageRing: Sendable {
     }
 
     /// The raw tier's points, breaks left out (a sparkline's).
-    func points(_ key: KubeUsageKey, now: Date = Date()) -> [KubeUsagePoint] { segments(key, now: now).flatMap { $0 } }
+    func points(_ key: KubeUsageKey, _ population: Population? = nil, now: Date = Date()) -> [KubeUsagePoint] {
+        segments(key, population, now: now).flatMap { $0 }
+    }
 
     /// The folded tier: a detail key's minutes, oldest first.
     func folded(_ key: KubeUsageKey, now: Date = Date()) -> [KubeUsageBucket] {

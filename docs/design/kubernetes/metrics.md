@@ -308,12 +308,12 @@ Memory sizing · app · 7 days · per pod
 - **Sums across pods** (review). Pods on different nodes carry different timestamps, up to one resolution apart. A `.workload` or `.namespace` sum is therefore keyed by the poll and stamped with the newest timestamp in it. It is recorded only when at least one pod's timestamp moved, and a pod that is missing from a poll ends its contribution rather than counting as zero.
 - **Gaps.** A stretch longer than 2.5 × the interval is stored as a break and drawn hatched: "not shown".
 - **Two populations** (review). The Pods list's sparklines feed up to 5,000 rows every 15 s. Sharing one LRU with the details' keys would push out the pod the user is looking at. So:
-  - list-fed keys (`.pod` from a list, `.node`, `.cluster`) keep the raw tier only, as today's 40 points, and are forgotten as soon as their row is no longer sampled, as `KubeUsageHistory` does now;
+  - list-fed keys (`.pod` from a list, `.node`, `.cluster`) keep the raw tier only, and are forgotten as soon as their row is no longer sampled, as `KubeUsageHistory` does now. A pod's row and the cluster's keep 40 points, as today (the Overview's sparkline its 10 minutes); a node's row keeps the whole 15 minutes, 60 points, since the Nodes list's heat strip (2.1, M3c) draws all 60 cells;
   - detail-fed keys (what a Metrics tab or a compact row polls) get both tiers, at most 200 keys, the least recently fed dropped first.
 - **Bounds.**
   - A detail key is forgotten 1 h after it was last fed (open decision 1).
   - The whole ring is dropped on a context switch, on a credential failure, and at quit.
-  - (review) A point is stored as an `Int32` second offset plus `Float32` values: a raw point is 8 B, and a folded point (min, avg, max) is 16 B. A detail key is 2 measures × (60 × 8 + 360 × 16) B ≈ 12.5 KB, so 200 keys is about 2.5 MB. The list's 5,000 × 40 × 8 B × 2 is about 3.2 MB. The hard cap is 6 MB. (The earlier figure of "13 MB at 16 B a point" undercounted the folded tier's three values.)
+  - (review) A point is stored as an `Int32` second offset plus `Float32` values: a raw point is 8 B, and a folded point (min, avg, max) is 16 B. A detail key is 2 measures × (60 × 8 + 360 × 16) B ≈ 12.5 KB, so 200 keys is about 2.5 MB. The list's 5,000 × 40 × 8 B × 2 is about 3.2 MB; its nodes' rows at 60 points are 60 × 8 B × 2 ≈ 1 KB a node, about 0.1 MB for 100 nodes (past the cap, list rows are given up first). The hard cap is 6 MB. (The earlier figure of "13 MB at 16 B a point" undercounted the folded tier's three values.)
 - **Keeping what was already read is not reading.** The time the page was hidden shows as a gap.
 - **The caption** reads "Sampled from metrics-server while shown since 14:02, every 15 s".
 

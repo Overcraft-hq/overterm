@@ -9,6 +9,7 @@ import Foundation
 /// pods' requests (read as objects) and its allocatable, its pressure as a
 /// band, "Sample top pods" reading its largest pods' namespace; a
 /// namespace's tab by workload against its quota, its pods by phase.
+/// The Nodes list's heat strips (M3c) from the list's own read.
 /// Hidden, nothing is read. Reads only.
 extension E2ERunner {
     func kubernetesObjectCharts(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
@@ -128,6 +129,27 @@ extension E2ERunner {
         guard let nodes = model.discovery?.kind("nodes") else { return check("nodes served", false) }
         page.showKind(nodes)
         check("its node listed", await eventually(15) { model.kind.fullName == "nodes" && model.rows[KubeRowID(namespace: nil, name: node)] != nil })
+
+        // The Nodes list's heat strips (M3c): the row's last 15 minutes against allocatable, from the list's own read.
+        fake.forgetRequests()
+        let strips = KubeHeatStripRegistry.shared
+        let cpuStrip = KubernetesPageModel.heatStripIdentifier(node, .cpu)
+        let memoryStrip = KubernetesPageModel.heatStripIdentifier(node, .memory)
+        check(
+            "the node's row draws a CPU and a memory strip, sampled cells filled",
+            await eventually(20) { (strips.strip(cpuStrip, in: scope)?.filled ?? 0) >= 1 && (strips.strip(memoryStrip, in: scope)?.filled ?? 0) >= 1 },
+            strips.lines(in: scope).joined(separator: "; "))
+        note("kubernetes heat strips: \(strips.lines(in: scope).joined(separator: "; "))")
+        check(
+            "CPU's share of allocatable: 900m of 4 cores, calm",
+            strips.strip(cpuStrip, in: scope).map { abs(($0.now ?? 0) - 22.5) < 0.5 && $0.percents.compactMap { $0 }.allSatisfy { KubeHeatStrip.Level($0) == .low } } ?? false,
+            strips.strip(cpuStrip, in: scope)?.dump ?? "none")
+        check("memory's: 6Gi of 16Gi", strips.strip(memoryStrip, in: scope).map { abs(($0.now ?? 0) - 37.5) < 0.5 } ?? false, strips.strip(memoryStrip, in: scope)?.dump ?? "none")
+        check("the unsampled stretch empty, never zero", strips.strip(cpuStrip, in: scope).map { $0.filled < 60 && !$0.percents.contains(0) } ?? false)
+        check(
+            "nothing read for the strips but the list's own nodes sample",
+            !fake.requests.contains { $0.path.hasPrefix("/apis/metrics.k8s.io/v1beta1/nodes/") || $0.path.contains("/proxy") },
+            "\(fake.requests.map(\.path))")
         fake.forgetRequests()
         page.selection = [node]
         check("m opens the node's Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == node)
