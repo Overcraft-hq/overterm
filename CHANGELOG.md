@@ -29,6 +29,7 @@ version is tagged `v<version>`.
 - kubernetes: the Nodes list's heat strips — beside each node's CPU and memory, its last 15 minutes as a strip of 15 s cells, taller and warmer as it nears allocatable, blank where nothing was sampled; from the list's own read, nothing more asked
 - kubernetes: change markers on every chart — rollouts and Helm revisions, scaling, restarts, OOMKills and warnings where they happened, a workload's pods' OOMKills on its CPU and memory; click one for what changed and Show Diff, its previous log or its event, ⌥-click (or Show ±30 min) for the half hour either side; at most 50 a chart, the rest "+N earlier"
 - kubernetes: Prometheus is probed once a context — its recording rules or node-exporter chart the cluster over 24h and 7d where raw container metrics would be too many (said with about how many samples), the rate window follows the cAdvisor job's own scrape, a kubelet scraped twice or two kube-state-metrics jobs no longer double a line, how far back it keeps data is hatched, and an agent-mode Prometheus, a refused `services/proxy` or a busy server is said in one sentence and not asked again in a loop
+- kubernetes: request and limit shares in the Pods list — wide (`w`) adds `%CPU/R %CPU/L %MEM/R %MEM/L`, each pod's usage against its containers' requests and limits from Prometheus' kube-state-metrics, a limit's share orange from 80% and red from 100%, a pod with an unlimited container said so rather than guessed; without Prometheus a dash and why; `k8s_top` gives agents the same shares
 
 ## 1.5.4 — 2026-11-09
 

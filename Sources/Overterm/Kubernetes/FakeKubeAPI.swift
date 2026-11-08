@@ -469,13 +469,19 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A series Prometheus holds: its metric's name, labels and value now —
     /// what a query (`FakePromQL`: `sum`/`max` by, `rate` taken as the
-    /// value, `== n`, `* on(…) group_left()`) adds up.
-    /// A range answers it rising to the value over the range.
+    /// value, `== n`, `* on(…) group_left()`, `or`, `and on(…)`,
+    /// `label_replace`) adds up. A range answers it rising to the value
+    /// over the range.
     func setPrometheusSeries(_ metric: String, labels: [String: String] = [:], value: Double) {
         locked {
             prometheusSeries.removeAll { $0.metric == metric && $0.labels == labels }
             prometheusSeries.append((metric, labels, value))
         }
+    }
+
+    /// The series of `metric` whose labels include `labels` removed.
+    func clearPrometheusSeries(_ metric: String, matching labels: [String: String] = [:]) {
+        locked { prometheusSeries.removeAll { item in item.metric == metric && labels.allSatisfy { item.labels[$0.key] == $0.value } } }
     }
 
     /// A query containing `fragment` (whitespace aside) is answered by

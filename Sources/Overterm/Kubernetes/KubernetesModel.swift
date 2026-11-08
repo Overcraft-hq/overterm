@@ -697,6 +697,14 @@ final class KubernetesModel: ObservableObject {
         makeClient(context, role: .background)
     }
 
+    /// What an agent's Prometheus query goes through (`k8s_top`'s shares):
+    /// the context's metrics proxy in a background slot — never the
+    /// page's — or a test's connection. The Service's query paths, GETs only.
+    func agentPrometheusTransport(for context: KubeContext, _ service: KubePrometheusService) -> (any KubePrometheusTransport)? {
+        guard enabled else { return nil }
+        return prometheusOverride?(context, service) ?? KubePrometheusProxyConnection(proxies: proxies, context: context, service: service, role: .background)
+    }
+
     /// What the attention watches read through: the context's proxy in a
     /// background slot, as a watch — it never opens a browser sign-in, and
     /// its proxy is given up for a request someone made (`KubeProxies.Role.watch`).
@@ -1091,7 +1099,7 @@ final class KubernetesModel: ObservableObject {
         prometheus.update(
             KubePrometheusMonitor.Situation(
                 context: name, use: KubePrometheusUse.of(context.settings), scope: scope,
-                cluster: [context.server ?? "", context.cluster, context.user].joined(separator: "\n")),
+                cluster: KubePrometheusMonitor.cluster(of: context)),
             client: { [weak self] in self?.client(for: name) },
             transport: { [weak self] service in
                 guard let self, self.enabled, let context = self.contexts.context(named: name) else { return nil }

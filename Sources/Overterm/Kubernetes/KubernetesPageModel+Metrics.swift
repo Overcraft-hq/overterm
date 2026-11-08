@@ -35,6 +35,25 @@ extension KubernetesPageModel {
         ]
     }
 
+    /// The Pods list's shares of request and limit (metrics.md 2.1, M5b):
+    /// part of the wide view.
+    var showsShareColumns: Bool { wide && metricsWant == .pods }
+
+    static var shareColumns: [ResourceColumn] {
+        KubePodShares.Column.allCases.map { ResourceColumn(id: $0.rawValue, title: $0.title, width: 70, minWidth: 40, help: $0.help) }
+    }
+
+    /// A pod's share cell: without Prometheus a dash and its sentence (no
+    /// pod object read for it, decision 10); else the usage's own dash
+    /// while there is no number, else kube-state-metrics' answer.
+    func share(_ column: KubePodShares.Column, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
+        guard metricsWant == .pods else { return .dash(KubeMetricsAvailability.off.reason ?? "") }
+        guard prometheusOn else { return .dash(KubeChartEmpty.sharesNeedPrometheus.sentence) }
+        let used = usage(column.measure, of: row, now: now)
+        guard used.sort != nil, let pod = model.metrics.reading(.pods)?.sample?.pods[row.row.id] else { return used }
+        return model.prometheus.shareCell(column, row.row.id, used: pod.total, sampled: pod.containers.count)
+    }
+
     /// The usage the list shows: its pods', its nodes' — nil for another
     /// kind, or with the context's `metrics: none`.
     var metricsWant: KubeMetricsWant? {
@@ -105,7 +124,19 @@ extension KubernetesPageModel {
     /// What the header says of the usage: why there's none, how old it is.
     var metricsNote: String? {
         guard let want = metricsWant, showsSection else { return volumeNote }
-        return model.metrics.note(want)
+        // Both said where both have something to say: neither hides the other.
+        let notes = [model.metrics.note(want), sharesNote].compactMap { $0 }
+        return notes.isEmpty ? nil : notes.joined(separator: "\n")
+    }
+
+    /// Why none of the shares can be shown, said once in the header: the
+    /// sentence each dash says too. Without metrics-server's usage there
+    /// is nothing to share: the usage's own note says why.
+    var sharesNote: String? {
+        guard showsShareColumns, model.metrics.availability == .served || !prometheusOn else { return nil }
+        guard prometheusOn else { return KubeChartEmpty.sharesNeedPrometheus.sentence }
+        if case .unavailable(let why) = model.prometheus.state { return why }
+        return model.prometheus.shares?.unavailable
     }
 
     /// Whether the header's note is a refusal: Try Again beside it.

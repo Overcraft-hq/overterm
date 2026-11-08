@@ -42,8 +42,11 @@ struct FakePromFixture: Sendable {
 /// than golden strings alone: a selector with `=`, `!=`, `=~`, `!~`
 /// matchers; `rate(…[w])` (a series' value taken as its rate); `sum`,
 /// `max`, `min`, `count`, with or without `by (…)`; `== n`;
-/// `a * on(…) group_left() b`. It is not extended past that: a later
-/// query is answered by a `FakePromFixture` (`setPrometheusMatrix`).
+/// `a * on(…) group_left() b`; and, for the Pods list's shares (M5b, so
+/// their union is shown on kube-state-metrics' raw series), `a or b`,
+/// `a and on(…) b`, `a == on(…) group_left() b` and `label_replace`. It
+/// is not extended past that: a later query is answered by a
+/// `FakePromFixture` (`setPrometheusMatrix`).
 /// Anything neither reads is nil — answered `bad_data`, so a query the
 /// fake can't read fails the test that sent it rather than answering
 /// something made up.
@@ -58,7 +61,7 @@ enum FakePromQL {
     static func evaluate(_ promql: String, _ series: [Series]) -> [Sample]? {
         guard let tokens = tokenize(promql) else { return nil }
         var parser = Parser(tokens: tokens, series: series)
-        guard let result = parser.compare(), parser.at == tokens.count else { return nil }
+        guard let result = parser.union(), parser.at == tokens.count else { return nil }
         return result.sorted { $0.labels.description < $1.labels.description }
     }
 
@@ -146,11 +149,64 @@ enum FakePromQL {
             return names
         }
 
+        /// `a or b`: a's samples, and b's whose labels a has none of.
+        mutating func union() -> [Sample]? {
+            guard var left = intersection() else { return nil }
+            while next == .word("or") {
+                at += 1
+                guard let right = intersection() else { return nil }
+                left += right.filter { other in !left.contains { $0.labels == other.labels } }
+            }
+            return left
+        }
+
+        /// `a and on(…) b`: a's samples that b has one of, matched on those labels (all, without `on`).
+        mutating func intersection() -> [Sample]? {
+            guard var left = compare() else { return nil }
+            while next == .word("and") {
+                at += 1
+                guard let on = matching(), let right = compare() else { return nil }
+                left = left.filter { sample in right.contains { Self.same(sample, $0, on: on.on) } }
+            }
+            return left
+        }
+
+        /// How two vectors' samples are matched: `on` nil, by every label.
+        private struct Match {
+            var on: [String]?
+        }
+
+        /// `on(…)` and `group_left(…)`, either or both.
+        private mutating func matching() -> Match? {
+            var on: [String]?
+            if next == .word("on") {
+                at += 1
+                on = labels()
+                guard on != nil else { return nil }
+            }
+            if next == .word("group_left") {
+                at += 1
+                guard labels() != nil else { return nil }
+            }
+            return Match(on: on)
+        }
+
+        private static func same(_ a: Sample, _ b: Sample, on: [String]?) -> Bool {
+            guard let on else { return a.labels == b.labels }
+            return on.allSatisfy { a.labels[$0] == b.labels[$0] }
+        }
+
         mutating func compare() -> [Sample]? {
             guard var left = product() else { return nil }
             while take("==") {
-                guard let text = word(), let number = Double(text) else { return nil }
-                left = left.filter { $0.value == number }
+                if case .word(let text)? = next, let number = Double(text) {
+                    at += 1
+                    left = left.filter { $0.value == number }
+                    continue
+                }
+                // A vector: a's samples equal to their match's value, a's labels kept.
+                guard let on = matching(), let right = product() else { return nil }
+                left = left.filter { sample in right.contains { Self.same(sample, $0, on: on.on) && $0.value == sample.value } }
             }
             return left
         }
@@ -184,10 +240,32 @@ enum FakePromQL {
 
         mutating func unary() -> [Sample]? {
             if take("(") {
-                guard let inner = compare(), take(")") else { return nil }
+                guard let inner = union(), take(")") else { return nil }
                 return inner
             }
             guard let name = word() else { return nil }
+            if name == "label_replace", take("(") {
+                // label_replace(v, dst, replacement, src, regex): dst set where src's value matches.
+                var texts: [String] = []
+                guard let inner = union() else { return nil }
+                while take(",") {
+                    guard case .text(let text)? = next else { return nil }
+                    at += 1
+                    texts.append(text)
+                }
+                guard take(")"), texts.count == 4,
+                    let regex = try? NSRegularExpression(pattern: "^(?:" + texts[3] + ")$")
+                else { return nil }
+                return inner.map { sample in
+                    let source = sample.labels[texts[2]] ?? ""
+                    let range = NSRange(source.startIndex..., in: source)
+                    guard regex.firstMatch(in: source, range: range) != nil else { return sample }
+                    var labels = sample.labels
+                    let value = regex.stringByReplacingMatches(in: source, range: range, withTemplate: texts[1])
+                    labels[texts[0]] = value.isEmpty ? nil : value
+                    return Sample(labels: labels, value: sample.value)
+                }
+            }
             if ["sum", "max", "min", "count"].contains(name), next == .symbol("(") || next == .word("by") {
                 var by: [String]?
                 if next == .word("by") {
@@ -195,7 +273,7 @@ enum FakePromQL {
                     by = labels()
                     guard by != nil else { return nil }
                 }
-                guard take("("), let inner = compare(), take(")") else { return nil }
+                guard take("("), let inner = union(), take(")") else { return nil }
                 return aggregate(name, by: by, inner)
             }
             if name == "rate", take("(") {

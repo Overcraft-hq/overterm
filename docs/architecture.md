@@ -5094,7 +5094,30 @@ chart in its detail's Overview, and the PVC list's Used column
 (`KubeVolumeUsage`: `kubelet_volume_stats_used_bytes` against `_capacity_bytes` by claim,
 every minute; a namespace, the set picked as `namespace=~` through
 `KubePromQL.regexLiteral` — RE2's metacharacters escaped before the
-string's —, or every one). Every sum goes over one series a container
+string's —, or every one), and the Pods list's shares in its wide view
+(`KubePodShares`, pure; metrics.md 2.1, M5b: `%CPU/R %CPU/L %MEM/R
+%MEM/L`, the list's metrics-server sample against each pod's containers'
+requests and limits from kube-state-metrics — one instant query a
+namespace picked, after the probe (its job pin, KSM 1.x's names), read
+with the columns and every 5 min, kept by namespace in
+`KubeShareReading`; each pod's containers counted in the same union —
+a native sidecar too (`kube_pod_init_container_info{restart_policy="Always"}`,
+KSM 2.10), since metrics-server's usage counts it — and a pod's sum kept
+only where every container sets it, so a pod with an unlimited container
+has no limit share, said; a pod sampled with more containers than KSM
+lists (a sidecar older KSM can't tell) has none either; a limit's share
+orange from 80%, red from 100%. Read only while metrics-server serves
+the usage it divides. Across every namespace, or more than ten, none is
+asked and that is said; without Prometheus the cells are a dash and one
+sentence (decision 10) and no pod object is read. `k8s_top` gives the
+same shares: a named pod's from its own GET (a failure said), a
+namespace's from the same query asked for the call where the context
+opts in (`KubePrometheusMonitor.agentShares`: the metrics proxy in a
+background slot, the queue as an agent — the one exception to "only
+while a chart shows", analysis.md §4), else what the list last read
+whole; with containers listed, a pod's shares on its own `(pod)` line).
+`FakePromQL` evaluates the shares' union on raw kube-state-metrics series
+(`or`, `and on`, `== on() group_left()`, `label_replace`). Every sum goes over one series a container
 first — a gauge `max by (namespace,pod,container)`, a counter's rate
 `sum by` — so a restarted container's lingering series isn't counted
 twice, and kube-state-metrics' series `max by` what identifies them (two

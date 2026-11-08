@@ -80,6 +80,9 @@ final class KubePrometheusMonitor: ObservableObject {
         case chart(KubeChart)
         /// The PVC list's column, in the scope shown.
         case volumes
+        /// The Pods list's shares of request and limit (wide), in the scope
+        /// shown: kube-state-metrics a namespace at a time (metrics.md 2.1).
+        case shares
     }
 
     /// The range every chart shows (the picker's): the app's.
@@ -89,9 +92,12 @@ final class KubePrometheusMonitor: ObservableObject {
     @Published private(set) var state: KubePrometheusState = .off
     @Published private(set) var charts: [KubeChart: KubeChartReading] = [:]
     @Published private(set) var volumes: KubeVolumeReading?
+    @Published private(set) var shares: KubeShareReading?
     /// Instead of the range's own refresh (the scenario's, a test's).
     var interval: Duration?
     var volumeInterval: Duration = .seconds(60)
+    /// The shares' requests and limits change only with a rollout: every 5 min.
+    var shareInterval: Duration = .seconds(300)
     /// How many Prometheus queries were made, and lookups for it — the tests'.
     private(set) var requests = 0
     private(set) var detections = 0
@@ -156,10 +162,16 @@ final class KubePrometheusMonitor: ObservableObject {
             stopped = false
             let shown = situation.flatMap { profiles[$0.context] }.flatMap { $0.key.use == situation?.use && $0.key.cluster == situation?.cluster ? $0.profile : nil }
             if profile != shown { profile = shown }
-        } else if situation?.scope != old?.scope, let task = polls.removeValue(forKey: .volumes) {
-            // Another namespace's claims.
-            task.cancel()
-            volumes = nil
+        } else if situation?.scope != old?.scope {
+            // Another namespace's claims, its pods' shares.
+            if let task = polls.removeValue(forKey: .volumes) {
+                task.cancel()
+                volumes = nil
+            }
+            if let task = polls.removeValue(forKey: .shares) {
+                task.cancel()
+                shares = nil
+            }
         }
         self.closeProxy = close
         self.situation = situation
@@ -214,6 +226,7 @@ final class KubePrometheusMonitor: ObservableObject {
             switch want {
             case .chart(let chart): charts[chart] = nil
             case .volumes: volumes = nil
+            case .shares: shares = nil
             }
         }
         for want in wanted where polls[want] == nil {
@@ -233,6 +246,7 @@ final class KubePrometheusMonitor: ObservableObject {
         polls = [:]
         if !charts.isEmpty { charts = [:] }
         if volumes != nil { volumes = nil }
+        if shares != nil { shares = nil }
         if proxyUsed, let context = situation?.context {
             proxyUsed = false
             let close = closeProxy
@@ -354,6 +368,12 @@ final class KubePrometheusMonitor: ObservableObject {
                     guard !Task.isCancelled, self.polls[want] != nil, self.situation?.context == context else { return }
                     self.volumes = reading
                     pause = self.interval ?? self.volumeInterval
+                case .shares:
+                    let scope = self.situation?.scope ?? .all
+                    let reading = await self.readShares(scope, transport, service: service, context: context)
+                    guard !Task.isCancelled, self.polls[want] != nil, self.situation?.context == context else { return }
+                    self.shares = reading
+                    pause = self.interval ?? self.shareInterval
                 }
                 if self.stopped {
                     self.polls[want] = nil
@@ -380,7 +400,11 @@ final class KubePrometheusMonitor: ObservableObject {
     /// another Service, use, cluster or user, another queue.
     func queue(_ context: String, _ service: KubePrometheusService) -> KubePromQueue {
         let shown = situation?.context == context ? situation : nil
-        let key = ProfileKey(service: service, use: shown?.use ?? .off, cluster: shown?.cluster ?? "")
+        return queue(context, ProfileKey(service: service, use: shown?.use ?? .off, cluster: shown?.cluster ?? ""))
+    }
+
+    private func queue(_ context: String, _ key: ProfileKey) -> KubePromQueue {
+        let service = key.service
         if let kept = queues[context], kept.key == key { return kept.queue }
         let queue = KubePromQueue(service: service)
         queues[context] = (key, queue)
@@ -451,19 +475,23 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     private func said(_ error: Error, service: KubePrometheusService? = nil) -> String {
+        let (sentence, stops) = Self.sentence(error, service: service)
+        if stops { stopped = true }
+        return sentence
+    }
+
+    /// A failure said, and whether it stops the reading (a credential, the queue stopped, a `services/proxy` 403).
+    private nonisolated static func sentence(_ error: Error, service: KubePrometheusService?) -> (String, stops: Bool) {
         if let problem = error as? KubeProxyProblem, problem.stopsRequests {
-            stopped = true
-            return KubeChartEmpty.credential(problem.reason).sentence
+            return (KubeChartEmpty.credential(problem.reason).sentence, true)
         }
         if let stop = error as? KubePromQueue.Stopped {
-            stopped = true
-            return stop.reason
+            return (stop.reason, true)
         }
         if let failure = error as? KubePrometheusReader.Failure, failure.kind == .serviceProxyForbidden {
-            stopped = true
-            return service.map { KubeChartEmpty.serviceProxyForbidden($0).sentence } ?? failure.message
+            return (service.map { KubeChartEmpty.serviceProxyForbidden($0).sentence } ?? failure.message, true)
         }
-        return KubernetesModel.said(error)
+        return (KubernetesModel.said(error), false)
     }
 
     private func read(
@@ -554,7 +582,166 @@ final class KubePrometheusMonitor: ObservableObject {
         return reading
     }
 
+    /// The Pods list's shares: for each namespace picked, one instant
+    /// query of kube-state-metrics (`KubePodShares.query`), after the
+    /// profile (its job pin, its version) — none across every namespace,
+    /// which is said instead. A namespace that fails keeps its last answer.
+    private func readShares(
+        _ scope: KubeScope, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String
+    ) async -> KubeShareReading {
+        var reading = shares.flatMap { $0.scope == scope ? $0 : nil } ?? KubeShareReading(scope: scope)
+        guard let names = scope.names, names.count <= KubeScope.watchCap else {
+            reading.unavailable = KubeChartEmpty.sharesNeedNamespaces.sentence
+            return reading
+        }
+        let profile: KubePromProfile
+        switch await self.profile(context, service, transport) {
+        case .success(let probed): profile = probed
+        case .failure(let error):
+            if error is CancellationError || Task.isCancelled { return reading }
+            reading.unavailable = said(error, service: service)
+            return reading
+        }
+        if profile.agentOnly {
+            reading.unavailable = KubeChartEmpty.agentMode(service).sentence
+            return reading
+        }
+        if profile.ksmMissing {
+            reading.unavailable = KubeChartEmpty.sharesNeedKSM.sentence
+            return reading
+        }
+        reading.unavailable = nil
+        for (index, namespace) in names.enumerated() {
+            do {
+                let answer = try await ask(
+                    transport, KubePromQL.instantPath(service, KubePodShares.query(namespace: namespace, profile: profile)), context: context,
+                    service: service, order: 10 + index)
+                reading.take(answer.series, namespace: namespace)
+            } catch is CancellationError {
+                return reading
+            } catch {
+                reading.problems[namespace] = said(error, service: service)
+                if stopped { break }
+            }
+        }
+        reading.read = Date()
+        return reading
+    }
+
+    // MARK: An agent's
+
+    /// What `agentShares` found.
+    enum AgentShares: Equatable {
+        /// The context's Prometheus isn't opted in: nothing asked.
+        case off
+        case unavailable(String)
+        case read(KubeShareReading)
+    }
+
+    /// Which cluster, as which user, a context is (`Situation.cluster`).
+    nonisolated static func cluster(of context: KubeContext) -> String {
+        [context.server ?? "", context.cluster, context.user].joined(separator: "\n")
+    }
+
+    /// `k8s_top`'s shares across namespaces (metrics.md 7): the list's
+    /// kube-state-metrics query (`KubePodShares.query`) for each of
+    /// `namespaces` (at most `KubeScope.watchCap`), once, for the call —
+    /// whether or not the page shows the context. Only where its
+    /// Prometheus is opted in (`.off` otherwise, nothing asked); where it
+    /// is, as the page found it or found now through `client` (GETs);
+    /// asked through `transport` — the context's metrics proxy in a
+    /// background slot (§6.4's exception for an agent's explicit read) —
+    /// and the context's queue as an agent: below the page, at most two
+    /// of its places. Kept: where Prometheus is and its profile, as the
+    /// page's are; the answer is the caller's. A failure here never stops
+    /// the page's reading.
+    func agentShares(
+        _ context: KubeContext, namespaces: [String], client: KubeClient, transport: (KubePrometheusService) -> (any KubePrometheusTransport)?
+    ) async -> AgentShares {
+        let use = KubePrometheusUse.of(context.settings)
+        let name = context.name
+        let cluster = Self.cluster(of: context)
+        let service: KubePrometheusService
+        switch use {
+        case .off: return .off
+        case .invalid(let why): return .unavailable(why)
+        case .configured(let configured): service = configured
+        case .detect:
+            let shown = situation.map { $0.context == name && $0.use == use && $0.cluster == cluster } == true ? state.service : nil
+            let kept = known(Situation(context: name, use: use, scope: .all, cluster: cluster))
+            if let found = shown ?? kept?.service {
+                service = found
+            } else if case .unavailable(let why)? = kept {
+                return .unavailable(why)
+            } else {
+                detections += 1
+                let (looked, lasting) = await Self.look(client)
+                if lasting { found[name] = Found(use: use, cluster: cluster, state: looked) }
+                guard let found = looked.service else {
+                    if case .unavailable(let why) = looked { return .unavailable(why) }
+                    return .unavailable(KubePrometheusState.notFound)
+                }
+                service = found
+            }
+        }
+        guard let transport = transport(service) else { return .unavailable("The context isn't connected.") }
+        let key = ProfileKey(service: service, use: use, cluster: cluster)
+        let profile: KubePromProfile
+        if let kept = profiles[name], kept.key == key, !kept.profile.isStale(at: Date()) {
+            profile = kept.profile
+        } else {
+            probes += 1
+            do {
+                profile = try await KubePromProfile.probe(at: Date()) { query in
+                    try await self.agentAsk(transport, KubePromQL.instantPath(service, query), context: name, key: key)
+                }
+            } catch {
+                return .unavailable(Self.sentence(error, service: service).0)
+            }
+            profiles[name] = Profiled(key: key, profile: profile)
+            if let now = situation, now.context == name, now.use == use, now.cluster == cluster, self.profile != profile { self.profile = profile }
+        }
+        if profile.agentOnly { return .unavailable(KubeChartEmpty.agentMode(service).sentence) }
+        if profile.ksmMissing { return .unavailable(KubeChartEmpty.sharesNeedKSM.sentence) }
+        let asked = Array(namespaces.prefix(KubeScope.watchCap))
+        var reading = KubeShareReading(scope: KubeScope.of(asked))
+        for namespace in asked {
+            do {
+                let answer = try await agentAsk(
+                    transport, KubePromQL.instantPath(service, KubePodShares.query(namespace: namespace, profile: profile)), context: name, key: key)
+                reading.take(answer.series, namespace: namespace)
+            } catch {
+                let (sentence, stops) = Self.sentence(error, service: service)
+                reading.problems[namespace] = sentence
+                if stops || error is CancellationError { break }
+            }
+        }
+        reading.read = Date()
+        return .read(reading)
+    }
+
+    /// One query of an agent's, through the context's queue as an agent's.
+    private func agentAsk(
+        _ transport: any KubePrometheusTransport, _ path: String, context: String, key: ProfileKey
+    ) async throws -> KubePrometheusReader.Answer {
+        try Task.checkCancellation()
+        requests += 1
+        return try await queue(context, key).ask(path, via: transport, priority: .visible, asker: .agent, deadline: deadline)
+    }
+
     // MARK: What the page says
+
+    /// The Pods list's shares as last read, where `context` is the one shown (an agent's `k8s_top`).
+    func shares(for context: String) -> KubeShareReading? {
+        situation?.context == context ? shares : nil
+    }
+
+    /// A pod's share cell, its usage given: the namespace's answer, or a dash and why.
+    func shareCell(_ column: KubePodShares.Column, _ id: KubeRowID, used: KubeUsage, sampled: Int? = nil) -> KubeUsageCell {
+        if case .unavailable(let why) = state { return .dash(why) }
+        guard let shares else { return .waiting }
+        return shares.cell(column, id, used: used, sampled: sampled)
+    }
 
     /// A claim's column cell: its usage, or a dash and why.
     func volumeCell(_ id: KubeRowID) -> KubeUsageCell {

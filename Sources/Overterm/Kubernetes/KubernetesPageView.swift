@@ -559,6 +559,18 @@ struct KubernetesPageView: View {
             } else {
                 view = AnyView(text.help(usage.help ?? ""))
             }
+        } else if let column, let share = KubePodShares.Column(rawValue: column.id) {
+            // A share of request or limit; a limit's warmer from 80%, red from 100%.
+            let cell = page.share(share, of: row)
+            let color: Color =
+                switch KubePodShares.level(share, cell) {
+                case .over: TabStatusStyle.failed
+                case .near: TabStatusStyle.waiting
+                case .normal: cell.sort == nil ? theme.text3 : theme.text2
+                }
+            view = AnyView(
+                Text(verbatim: cell.text).font(.system(size: 12, design: .monospaced)).foregroundStyle(color)
+                    .help(cell.help ?? share.help))
         } else if column?.id == KubernetesPageModel.volumeColumn {
             let usage = page.volumeUsage(of: row)
             view = AnyView(

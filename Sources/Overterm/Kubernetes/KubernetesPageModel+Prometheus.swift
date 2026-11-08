@@ -31,6 +31,8 @@ extension KubernetesPageModel {
         guard section.listsKinds else { return [] }
         var wants: Set<KubePrometheusMonitor.Want> = []
         if model.kind.fullName == Self.claimsKind { wants.insert(.volumes) }
+        // The shares divide metrics-server's usage: none read where it isn't served (availability's change asks again).
+        if showsShareColumns, model.metrics.availability == .served { wants.insert(.shares) }
         if let detail, detailTab == .overview, let chart = chart(for: detail.ref) { wants.insert(.chart(chart)) }
         return wants
     }
