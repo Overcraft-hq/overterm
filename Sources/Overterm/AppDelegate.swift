@@ -66,10 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Unsaved editor changes ask first, whatever Settings says about tabs
         // (closing the window asks about them itself).
-        if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedEditorFile {
+        // A cluster object's YAML with edits not applied counts too: it is never saved.
+        if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedNames(everyWindow: true).first {
             let alert = NSAlert()
             alert.messageText = "“\(file)” has unsaved changes."
-            alert.informativeText = "Quitting loses them. Save it (⌘S) first, or quit anyway."
+            alert.informativeText = "Quitting loses them. Save it (⌘S) — or apply a cluster object's YAML — first, or quit anyway."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Anyway")
             alert.alertStyle = .warning

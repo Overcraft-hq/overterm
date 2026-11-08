@@ -38,6 +38,8 @@ final class KubernetesModel: ObservableObject {
     /// The production contexts whose Secrets Show was confirmed for this
     /// session (in memory; asked again after a relaunch).
     let secretConsent = KubeSecretConsent()
+    /// Cluster objects' YAML in the editor, one buffer each (2.8): in memory, never saved.
+    lazy var resourceBuffers = KubeResourceBuffers(model: self)
     /// `kubectl auth can-i`'s answers, a minute each, for the verbs that
     /// start kubectl in a tab (a shell, attach, a log followed).
     let access = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })

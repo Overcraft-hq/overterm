@@ -77,6 +77,7 @@ extension TerminalWindowController {
             selectedBinding: { [weak self] in KubeBindingStore.shared.binding(for: self?.kubernetesCheckout) },
             confirmWrite: { [weak self] confirmation, then in self?.confirmKubernetesWrite(confirmation, then) },
             openEditor: { [weak self] url in self?.openKubernetesEdit(url) },
+            openResource: { [weak self] resource in self?.openKubernetesResource(resource) },
             showChange: { [weak self] change in self?.showKubernetesChange(change) },
             snippets: { [weak self] in Settings.shared.snippetsEnabled ? self?.snippets.snippets ?? [] : [] },
             fillSnippet: { [weak self] snippet, then in self?.fillKubernetesSnippet(snippet, then) })
@@ -108,10 +109,17 @@ extension TerminalWindowController {
         updateRightPaneVisibility()
     }
 
-    /// `y`: an object's copy in the editor, the page stepping aside.
+    /// A template's copy in the editor, the page stepping aside.
     func openKubernetesEdit(_ url: URL) {
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         openInEditor(url)
+    }
+
+    /// `y`: an object's YAML — the YAML tab's buffer, the same edits — in
+    /// the window's editor, the page stepping aside.
+    func openKubernetesResource(_ resource: KubeResourceBuffer) {
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        openInEditor(resource.url)
     }
 
     /// A write asked first (rule 3), in the one confirmation every write
@@ -438,6 +446,14 @@ extension TerminalWindowController {
         page.makeView = { [weak self] in
             guard let self, let theme = self.theme else { return nil }
             self.kubernetesPage.actions = self.kubernetesActions
+            self.kubernetesPage.makeYAMLEditor = { [weak self] in
+                let runtime = GhosttyRuntime.shared
+                let editor = EditorViewController(
+                    theme: theme, background: runtime.backgroundColor, foreground: runtime.foregroundColor, opener: self?.opener ?? ExternalOpener(),
+                    embedded: true)
+                editor.kubernetesHost = self
+                return editor
+            }
             return NSHostingView(rootView: KubernetesPageView(page: self.kubernetesPage, model: .shared, theme: theme))
         }
         // The model reads only while a page shows it: the emitted value,
@@ -470,6 +486,7 @@ extension TerminalWindowController {
     func wireKubernetesPage() {
         declarePage(kubernetesWorkspacePage())
         followKubernetesForwards()
+        followEditorOnScreen()
         kubernetesPage.$focusList
             .dropFirst()
             .sink { [weak self] _ in self?.focusPageList(.kubernetes) }
@@ -518,6 +535,11 @@ extension TerminalWindowController {
     }
 
     func kubernetesWindowClosing() {
+        // Nothing followed or held for views that are going: a cluster
+        // object's edits stay with the registry, which the quit asks about.
+        kubernetesPage.detail?.cancel()
+        kubernetesPage.madeYAMLEditor?.showOnly(nil)
+        editor?.releaseResources()
         releaseKubernetesSwitcher(now: true)
         kubernetesPanel.panelVisible = false
         kubernetesPage.visible = false
@@ -828,6 +850,13 @@ extension TerminalWindowController: KubeManifestHost {
     /// The diff in the right-hand pane — the slot the browser shares, so it
     /// steps aside as it does for the changes pane.
     func showManifestDiff(_ session: KubeManifestSession) {
+        // The detail's YAML tab on screen: its diff there — this pane is under the page.
+        if store.showingOverlay == .kubernetes, let resource = session.resource, kubernetesPage.detail?.resource === resource,
+            kubernetesPage.detailTab == .yaml
+        {
+            resource.showsDiff = true
+            return
+        }
         kubernetesManifest.session = session
         kubernetesManifest.showsHelm = false
         rightPane.manifestOpened = true
@@ -930,5 +959,50 @@ extension TerminalWindowController {
                 ) { _, _ in KubeSavedFilters.shared.remove(saved.id) },
             ]
         }
+    }
+}
+
+// MARK: The editor on screen, and what closing loses
+
+extension TerminalWindowController {
+    /// The window's editor follows a cluster object's YAML only while it is
+    /// on screen (`EditorViewController.isOnScreen`): its pane open, no page
+    /// or review over it, the window not hidden or minimised.
+    func followEditorOnScreen() {
+        guard let editorItem else { return }
+        editorItem.publisher(for: \.isCollapsed)
+            .removeDuplicates()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateEditorOnScreen() } }
+            .store(in: &cancellables)
+        // @Published says before it changes: read after.
+        store.$showingOverlay.map { _ in () }.merge(with: store.$reviewShowing.map { _ in () })
+            .sink { [weak self] in DispatchQueue.main.async { self?.updateEditorOnScreen() } }
+            .store(in: &cancellables)
+    }
+
+    func updateEditorOnScreen() {
+        guard let editor, let window else { return }
+        // An isolated run stays in the background, often under the user's own windows: there it counts as shown.
+        let windowShown = window.isVisible && (AppEnvironment.isIsolated || window.occlusionState.contains(.visible))
+        let shown = editorItem?.isCollapsed == false && !store.pageShowing && windowShown
+        if editor.isOnScreen != shown { editor.isOnScreen = shown }
+    }
+
+    /// No other Overterm window is open: closing this one loses whatever
+    /// edits the app keeps for nobody.
+    var isLastWindow: Bool {
+        !NSApp.windows.contains { $0 !== window && $0.isVisible && $0.windowController is TerminalWindowController }
+    }
+
+    /// What closing the window (`everyWindow`: the last one, or quitting)
+    /// loses: the editor's unsaved files, and cluster objects' YAML with
+    /// edits not applied — the editor's tabs, the detail's YAML tab, and,
+    /// with `everyWindow`, the ones kept after the detail moved on.
+    func unsavedNames(everyWindow: Bool) -> [String] {
+        var names = editor?.unsavedNames ?? []
+        var resources = everyWindow ? KubernetesModel.shared.resourceBuffers.edited : []
+        if let shown = kubernetesPage.detail?.resource, shown.isEdited { resources.append(shown) }
+        for resource in resources where !names.contains(resource.buffer.name) { names.append(resource.buffer.name) }
+        return names
     }
 }

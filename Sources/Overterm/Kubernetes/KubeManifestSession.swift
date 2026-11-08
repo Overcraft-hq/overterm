@@ -66,12 +66,14 @@ enum KubeKustomize {
     }
 }
 
-/// The copies of cluster objects `y` opens in the editor: Overterm's own,
-/// never a checkout's — under the support folder's `Kubernetes/Edits`, a
-/// folder for this Overterm (by its pid, 0700) and a file a copy (0600),
-/// masked as the YAML tab masks it, so no Secret's value is ever in one.
-/// Each is removed when its tab closes, all of them at quit, and a gone
-/// Overterm's folder when the next one makes its own.
+/// The names cluster objects' YAML has in the editor (`KubeResourceBuffer`),
+/// and the version each was read at — sent with its apply. A name only:
+/// nothing is ever written at it, the text lives in memory (2.8). The
+/// templates' copies (`writeTemplate`) are files, under the support
+/// folder's `Kubernetes/Edits`, a folder for this Overterm (by its pid,
+/// 0700) and a file a copy (0600): each removed when its tab closes, all
+/// of them at quit, and a gone Overterm's folder when the next one makes
+/// its own.
 @MainActor
 enum KubeManifestEdits {
     struct Opened {
@@ -111,15 +113,14 @@ enum KubeManifestEdits {
     /// The copy's first lines: what it is, where it goes.
     static func header(_ ref: KubeObjectRef, production: Bool) -> String {
         "# \(production ? "PRODUCTION · " : "")\(ref.context) · \(ref.namespace.map { "namespace \($0)" } ?? "cluster-wide") — \(KubeWriteOutcome.spoken(ref))\n"
-            + "# Overterm's copy, not a file of yours: Diff with Cluster shows what an apply would change; Apply is a step of its own.\n"
+            + "# In memory, never saved: Diff with Cluster shows what an apply would change; Apply is a step of its own.\n"
     }
 
-    /// Written 0600, never through a link, its folders 0700.
-    static func write(_ text: String, for ref: KubeObjectRef, resourceVersion: String?) throws -> URL {
-        try prepare()
+    /// `ref`'s name in the editor, and the version its text was read at.
+    /// Nothing is written.
+    @discardableResult
+    static func register(_ ref: KubeObjectRef, resourceVersion: String?) -> URL {
         let file = url(for: ref)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try writePrivately(text, to: file)
         opened[file.standardizedFileURL.path] = Opened(ref: ref, resourceVersion: resourceVersion)
         return file
     }
@@ -159,9 +160,9 @@ enum KubeManifestEdits {
     static let templateUnsaved =
         "A template's copy isn't saved: what you type in it — a Secret's value too — stays in memory. Apply sends what is in the editor and closes the tab; closing it drops it."
 
-    /// Said for a save of one: the copy stays as `y` wrote it, masked.
+    /// Said for a save of one: it lives in memory, masked as it was read.
     static let unsaved =
-        "Overterm's copy isn't saved: a value you retype stays in memory, never in a file. Apply sends what is in the editor; closing the tab drops it."
+        "A cluster object's YAML is never saved: what you type stays in memory, never in a file. Apply sends what is in the editor; Revert gives back the cluster's."
 
     /// After an apply: what the object is at now.
     static func applied(_ url: URL, resourceVersion: String?) {
@@ -170,10 +171,11 @@ enum KubeManifestEdits {
         opened[url.standardizedFileURL.path] = edit
     }
 
-    /// Its tab closed.
+    /// Its tab closed, its buffer gone: a template's file removed.
     static func remove(_ url: URL) {
         let key = url.standardizedFileURL.path
-        guard opened.removeValue(forKey: key) != nil || templates.remove(key) != nil else { return }
+        opened.removeValue(forKey: key)
+        guard templates.remove(key) != nil else { return }
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -502,6 +504,10 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     var render: (URL, KubeContext) async throws -> String
     /// What the session is told when an apply lands (the scenario).
     var onApplied: ((String) -> Void)?
+    /// A cluster object's YAML (`KubeResourceBuffer`): the bar's banner, its Revert.
+    weak var resource: KubeResourceBuffer?
+    /// The object's own apply landed, at this version: its buffer has what the cluster has.
+    var onObjectApplied: ((String?) -> Void)?
 
     init(source: Source, file: URL, model: KubernetesModel) {
         self.source = source
@@ -778,7 +784,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
             return
         }
         var versions: [KubeObjectRef: String] = [:]
-        if let ref, let opened = KubeManifestEdits.edit(at: file)?.resourceVersion { versions[ref] = opened }
+        if let ref, let opened = resource?.resourceVersion ?? KubeManifestEdits.edit(at: file)?.resourceVersion { versions[ref] = opened }
         guard let typed = await host.askManifestWrite(confirmation) else {
             state = .done("Cancelled: nothing was applied.")
             return
@@ -829,7 +835,10 @@ final class KubeManifestSession: ObservableObject, Identifiable {
             applied = done
             state = .failed(said)
         }
-        if let ref, let version = applied[ref] { KubeManifestEdits.applied(file, resourceVersion: version) }
+        if let ref, let version = applied[ref] {
+            KubeManifestEdits.applied(file, resourceVersion: version)
+            onObjectApplied?(version)
+        }
     }
 
     /// The tab closed: an object's copy goes with it.

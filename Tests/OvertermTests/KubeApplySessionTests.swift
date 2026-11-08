@@ -293,10 +293,9 @@ final class KubeApplySessionTests: XCTestCase {
     func testAChangedObjectOffersReplace() async throws {
         let model = model()
         let ref = KubeObjectRef(context: "kind-fake", kind: KubeWritesTests.deployments, namespace: "shop", name: "web")
-        let url = try KubeManifestEdits.write(deployment, for: ref, resourceVersion: "1")
+        let url = KubeManifestEdits.register(ref, resourceVersion: "1")
         addTeardownBlock { await MainActor.run { KubeManifestEdits.remove(url) } }
-        XCTAssertTrue(url.path.contains("/Kubernetes/Edits/\(getpid())/"), url.path)
-        XCTAssertEqual((try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int), 0o600)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "a name only: nothing is written")
         let session = KubeManifestSession(source: .object(ref), file: url, model: model)
         let host = Host()
         session.host = host
@@ -311,7 +310,8 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertEqual(replicas(), 3)
         XCTAssertNotEqual(KubeManifestEdits.edit(at: url)?.resourceVersion, "1", "what it is at now")
         session.close()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "its tab closed, the copy goes")
+        XCTAssertNil(KubeManifestEdits.edit(at: url), "its buffer gone, so is its name")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "never a file")
     }
 
     func testAMaskedSecretIsRefused() async throws {
@@ -539,7 +539,7 @@ final class KubeApplySessionTests: XCTestCase {
         let ref = KubeObjectRef(context: "kind-fake", kind: KubeWritesTests.deployments, namespace: "shop", name: "api")
         let live = try XCTUnwrap(api.object("deployments.apps", "api", namespace: "shop"))
         let copy = KubeManifestEdits.header(ref, production: false) + KubeYAML.text(KubeManifestDiff.forEditing(live))
-        let url = try KubeManifestEdits.write(copy, for: ref, resourceVersion: nil)
+        let url = KubeManifestEdits.register(ref, resourceVersion: nil)
         addTeardownBlock { await MainActor.run { KubeManifestEdits.remove(url) } }
         XCTAssertFalse(copy.contains("live-key-Wq7"))
         let edited = copy.replacingOccurrences(of: "replicas: 1", with: "replicas: 2")
@@ -554,8 +554,7 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertEqual((spec?["replicas"] as? NSNumber)?.intValue, 2)
         let env = (((spec?["template"] as? [String: Any])?["spec"] as? [String: Any])?["containers"] as? [[String: Any]])?.first?["env"] as? [[String: Any]]
         XCTAssertEqual(env?.first?["value"] as? String, "live-key-Wq7", "the cluster keeps its value")
-        let file = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertFalse(file.contains("live-key-Wq7"), "never in the copy")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "never a file")
         let shown = [host.asked.first?.detail, session.result?.items.first?.after, session.result?.items.first?.diff, session.state.text].compactMap { $0 }
         XCTAssertFalse(shown.joined().contains("live-key-Wq7"), "never shown")
     }

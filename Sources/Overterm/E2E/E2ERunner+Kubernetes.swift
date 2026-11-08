@@ -1934,7 +1934,15 @@ extension E2ERunner {
             "the YAML, without managedFields or the last-applied annotation",
             !pod.yaml.isEmpty && !pod.yaml.contains("managedFields") && !pod.yaml.contains(KubeObjectStrip.lastApplied) && pod.yaml.contains("image: nginx:1.27"),
             String(pod.yaml.prefix(300)))
-        check("drawn", await shownText(15) { $0.contains("nodeName: fake-node-1") } != nil)
+        // In the editor's monospace font: its hyphens read as dashes, so the key alone.
+        check("drawn", await shownText(15) { $0.contains("nodeName:") } != nil)
+        check(
+            "in the app's editor: the pod's one buffer, in memory",
+            await eventually(5) { pod.resource?.state == .loaded && page.yamlEditor?.active === pod.resource?.buffer }
+                && pod.resource?.buffer.document.isVirtual == true && pod.resource?.buffer.storage.string.contains("image: nginx:1.27") == true)
+        check("followed while it shows", pod.resource?.isFollowing == true)
+        check("on fake-dev, read-only: Apply greyed, with why", await eventually(5) { pod.resource?.session.applyRefusal?.hasPrefix("This context is read-only") == true })
+        check("why drawn", await shownText(15) { $0.contains("Apply is off") } != nil)
         pod.showsHidden = true
         check("the toggle shows them", pod.yaml.contains("managedFields:") && pod.yaml.contains(KubeObjectStrip.lastApplied))
         pod.showsHidden = false
@@ -2302,6 +2310,11 @@ extension E2ERunner {
             db.yaml.contains("password: \"***\"") && !db.yaml.contains(value) && !db.yaml.contains(Self.secretValueBase64)
                 && !db.yaml.contains(KubeObjectStrip.lastApplied))
         check("its YAML drawn masked", await shownText(15) { $0.contains("username") && $0.contains("***") } != nil)
+        let buffer = db.resource?.buffer.storage.string ?? ""
+        check(
+            "its buffer masked too, no value in it", buffer.contains("password: \"***\"") && !buffer.contains(value) && !buffer.contains(Self.secretValueBase64),
+            String(buffer.prefix(300)))
+        check("never followed: a Secret's read is every value", db.resource?.isFollowing == false)
         page.showTab(.overview)
 
         // The next row: the first one's values go with its detail.
@@ -2310,6 +2323,7 @@ extension E2ERunner {
         check(
             "moving on drops every value", secret.state == .hidden && !secret.holdsValues && secret.entries.isEmpty && secret.revealedText == nil,
             "\(secret.state)")
+        check("its YAML's buffer goes with them", db.resource == nil && model.resourceBuffers.existing(db.ref) == nil)
         check("the next Secret isn't read either", tls.ref.name == "web-tls" && tls.state == .hidden && secretGETs().count == 1)
         tls.show()
         check("a TLS Secret shown", await eventually(10) { tls.state == .shown }, "\(tls.state)")

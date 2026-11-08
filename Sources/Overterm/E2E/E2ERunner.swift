@@ -539,6 +539,29 @@ final class E2ERunner {
         editor.reloadIfChangedOnDisk()
         check("an outside change reloads it", textView?.string == "rewritten by an agent\n")
 
+        // Two editors on one buffer (the Kubernetes detail's YAML tab and
+        // this pane share a cluster object's): an edit in one is the
+        // other's, and a tab switched in one leaves the other on its text.
+        app.openInEditor(file)
+        check("the file is the pane's again", await eventually(2) { editor.document.url == file })
+        if let shared = editor.active, let theme = app.theme {
+            let second = EditorViewController(
+                theme: theme, background: GhosttyRuntime.shared.backgroundColor, foreground: GhosttyRuntime.shared.foregroundColor, opener: app.opener,
+                embedded: true)
+            second.showOnly(shared)
+            editor.replaceText(of: shared, with: "rewritten by an agent\n// both\n")
+            check("an edit in one editor is the other's", second.textView.string == "rewritten by an agent\n// both\n", second.textView.string)
+            let other = out("other.swift")
+            try? "let other = 2\n".write(to: other, atomically: true, encoding: .utf8)
+            app.openInEditor(other)
+            check("the pane shows the other file", await eventually(2) { editor.document.url == other })
+            check("the second editor stays on its text", second.textView.string == "rewritten by an agent\n// both\n", second.textView.string)
+            second.showOnly(nil)
+            if let index = editor.buffers.firstIndex(where: { $0.url == other }) { editor.removeBuffer(at: index) }
+            if let index = editor.buffers.firstIndex(where: { $0 === shared }) { editor.activate(index) }
+            editor.saveDocument(nil)
+        }
+
         let bin = out("blob.bin")
         try? Data([0, 1, 2, 3]).write(to: bin)
         app.openInEditor(bin)
