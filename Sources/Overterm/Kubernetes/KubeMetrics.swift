@@ -215,13 +215,27 @@ enum KubeMetricsTarget: Hashable, Sendable {
     case nodes
 
     /// Its metrics.k8s.io list.
-    var path: String {
+    var path: String { paths[0] }
+
+    /// Its metrics.k8s.io lists: several namespaces' pods a list each (past
+    /// the cap, across the cluster — `scope` keeps the samples to them).
+    var paths: [String] {
         switch self {
         case .pods(let scope, let labels):
-            let base = "/apis/metrics.k8s.io/v1beta1" + (scope.namespace(for: .pods).map { "/namespaces/\(KubePath.segment($0))" } ?? "") + "/pods"
-            return KubePath.query(base, [("labelSelector", labels)])
-        case .nodes: return "/apis/metrics.k8s.io/v1beta1/nodes"
+            return scope.reads(for: .pods).map { namespace in
+                let base = "/apis/metrics.k8s.io/v1beta1" + (namespace.map { "/namespaces/\(KubePath.segment($0))" } ?? "") + "/pods"
+                return KubePath.query(base, [("labelSelector", labels)])
+            }
+        case .nodes: return ["/apis/metrics.k8s.io/v1beta1/nodes"]
         }
+    }
+
+    /// The pods' samples, read over `paths`, kept to the scope.
+    func pods(_ client: KubeClient) async throws -> [KubePodMetrics] {
+        guard case .pods(let scope, _) = self else { return [] }
+        var samples: [KubePodMetrics] = []
+        for path in paths { samples += try KubeMetricsReader.pods(try await client.get(path).body) }
+        return samples.filter { scope.includes($0.id.namespace) }
     }
 }
 

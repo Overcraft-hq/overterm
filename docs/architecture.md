@@ -2686,11 +2686,34 @@ each time a page first shows, and again when `kubernetes.kubeconfigs` or
 `kubernetes.contexts` change while one does; the model follows
 `kubernetes.*` itself, and `kubernetes.enabled` off stops everything and
 closes every proxy. The context shown is the one it showed, else the
-one last picked (remembered in `AppEnvironment.defaults`), else the first
-pinned, else kubectl's current, else the first (`choose`); its namespace
-is the one last picked for it, else `defaultNamespace`, else the
+one last picked (remembered in the model's `defaults`, `AppEnvironment.defaults`
+— a unit test's own suite), else the first
+pinned, else kubectl's current, else the first (`choose`); its namespaces
+are the ones last picked for it (kept per context in
+`AppEnvironment.defaults`, `kubernetes.namespaces`), else `defaultNamespace`, else the
 context's own, else `default`, as kubectl has it (`defaultScope`); `0`
-is all of them. The list is `KubeClient.follow(kind)` of the kind shown
+is all of them. A scope (`KubeScope`, pure) is `.all`, `.namespace` or
+`.namespaces` — two or more; `KubeScope.of` makes one or none the
+others, so a scope has one spelling. Several are a follow each, merged
+(`KubeScopeMerge`: one `.listed` once each has been heard from, of
+those that listed, then each namespace's changes; a namespace listed
+again as what changed in it; one refused, a 403, left out and said —
+`.unlisted`, the page's `unlistedNote` — the follow failing only when
+every one refuses; one waiting for the server keeps the list `.retrying`
+whatever the others' changes, and its return always says something, so
+the list is live again), up to `KubeScope.watchCap` (10); past it, the
+follow across the cluster kept to them (`KubeScopeMerge.filtered`) —
+refused where that list is, `KubeScopeRefused` saying to pick fewer.
+The cap is the page's budget: the Overview's parts share it
+(`KubeClusterOverviewSession.watchCap`, the namespaces a part may watch
+one by one), so ten namespaces are a watch a part across the cluster,
+not a hundred. `KubeClient.list` does the same,
+so every reader of the scope follows it: the Overview, the health
+checks and the pinned cards (a list each, `KubeScope.reads`), metrics
+(`KubeMetricsTarget.paths`), Helm's records, the agents' tools. What
+needs one namespace (a template, a manifest's default, a tab's `-n`)
+takes the context's own when it is one of them, else the first
+(`KubeScope.one`); Copy as kubectl is a command a namespace. The list is `KubeClient.follow(kind)` of the kind shown
 (`kind`, Pods until another is picked — `setKind`; the app's, as the
 scope is) over the context's `KubeProxyConnection` (a test's or the
 scenario's stand-in connection through `connectOverride`): the first list is applied at
@@ -2754,8 +2777,7 @@ scrolled away isn't drawn, so only the visible ones are recomputed.
 declared as a `WorkspacePage` in `TerminalWindowController+Kubernetes`):
 `KubernetesPageModel` (a window's: section, filter, selection, sort,
 `wide`, the pickers, the `:` bar, the keys) and `KubernetesPageView`. Left: the contexts, each
-with its class's colour and kubectl's current marked, the namespace
-menu (all, the favourites, the server's list, Other… for the `n` picker), the sections
+with its class's colour and kubectl's current marked, the sections
 (each with its digit and how many kinds it has; the one showing open on
 its kinds, custom resources under their API group) and the context's card (class, writable or
 read-only, how it signs in, its server). Middle: the kind's list as a
@@ -2906,9 +2928,16 @@ Esc closes it and the list has the keyboard again.
 **The pickers** (`n`, `c`; `KubePicker`, pure, and `KubePickerView`): a
 field over the page and the namespaces or contexts it lets through,
 ranked by `FuzzyMatch` as the palette is (the field is the palette's
-`PaletteField`: ↑↓, ↩, Esc). Namespaces: all of them first, the
-context's favourites, its own (or `defaultNamespace`) and the one showing,
-then the server's list (or `accessibleNamespaces`); a name typed in full
+`PaletteField`: ↑↓, ↩, Esc). The chip beside the filter field says the
+namespaces shown (`All namespaces`, `shop`, `acme-api +2`) and opens the
+same picker as `n`. Namespaces: all of them first, the
+context's favourites, its own (or `defaultNamespace`) and the ones showing,
+then the server's list (or `accessibleNamespaces`), each with its box:
+⌥↩ or a click on the box ticks it and shows the ticked ones at once, the
+picker left open (`togglePicked`); every one the server listed ticked
+is All again — unless listing the kind across the cluster was refused on
+the context (`clusterListRefused`), and if that All is refused, the ones
+ticked are shown again (`setScope(_:refusedAcross:)`); `a,b` typed (or `:ns a,b`) is those; a name typed in full
 (RFC 1123, lowercased) is one more item when nothing listed is it — first
 where listing is refused (a context that carries a namespace often
 means its user is held to it), with the reason shown. An open
@@ -4121,7 +4150,9 @@ names it, then its name asked.
   no Secret (rule 10: refused before anything is read, so its "no change"
   can't say whether a guessed value is right),
   the dry-run diff and owners in the window's confirmation, never forced
-  (a conflict is reported).
+  (a conflict is reported). An object without a namespace goes to the
+  one named — `a,b` refused — or, with several shown and none named, is
+  refused as every one-namespace tool's call is (`oneNamespace`).
 - **The fake** serves a kind at a second version (`serve(_:alsoAt:)`,
   listed after the preferred one) and server-side apply: `fieldManager` required, a create
   when absent, a stale resourceVersion's 409, other managers' fields
@@ -4883,7 +4914,8 @@ fake-prod asked first, compared by hashes.
   was applied said on the page.
 - *Saved filters* (`KubeSavedFilters.swift`,
   `KubernetesPageModel+Templates`): the filter with its context, kind and
-  namespace, by name per context, in `Kubernetes/filters.json` under the
+  namespaces (several in `namespaces`, the first in `namespace` too, so an
+  older build reads one it can list), by name per context, in `Kubernetes/filters.json` under the
   support folder (an unreadable file set aside); the bookmark beside the
   filter and ⌘K (`Kubernetes Filter: <name>`) show it again, the context
   switched to, its `label:` and `field:` asked of the server.

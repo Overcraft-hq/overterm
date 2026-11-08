@@ -17,16 +17,19 @@ import Foundation
 /// as the masked detail does, not `-o yaml`, which would print them. Pure.
 enum KubectlLine {
     /// The list: `kubectl --context C get deploy -n NS -l app=web --field-selector status.phase=Running`.
+    /// Several namespaces are a command each, a line each: kubectl's `-n`
+    /// takes one.
     static func list(
         context: String, kind: KubeResourceKind, scope: KubeScope, selectors: KubeListSelectors = KubeListSelectors(), wide: Bool = false,
         discovery: KubeDiscovery? = nil
     ) -> String {
+        if kind.namespaced, case .namespaces = scope {
+            return (scope.names ?? []).map { list(context: context, kind: kind, scope: .namespace($0), selectors: selectors, wide: wide, discovery: discovery) }
+                .joined(separator: "\n")
+        }
         var words = ["kubectl", "--context", quoted(context), "get", quoted(resource(kind, in: discovery))]
         if kind.namespaced {
-            switch scope {
-            case .all: words.append("-A")
-            case .namespace(let name): words += ["-n", quoted(name)]
-            }
+            if let name = scope.namespace(for: kind) { words += ["-n", quoted(name)] } else { words.append("-A") }
         }
         if let label = selectors.label { words += ["-l", quoted(label)] }
         if let field = selectors.field { words += ["--field-selector", quoted(field)] }

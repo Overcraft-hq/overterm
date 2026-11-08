@@ -270,7 +270,7 @@ struct KubeClusterOverviewView: View {
                             if let instance = application.instance, instance != application.name {
                                 Text(verbatim: instance).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
                             }
-                            if let namespace = application.namespace, model.scope == .all {
+                            if let namespace = application.namespace, model.scope.spansNamespaces {
                                 Text(verbatim: namespace).font(.system(size: 11)).foregroundStyle(theme.text3)
                             }
                             Text(verbatim: application.members.map { "\($0.kind.resource.dropLast())/\($0.id.name)" }.joined(separator: ", "))

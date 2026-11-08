@@ -419,6 +419,38 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertEqual(api.writes.count, before)
     }
 
+    /// An object without a namespace goes to one the agent named, never a
+    /// guess: `a,b` named, or several shown and none named, is refused
+    /// before anything is read or asked.
+    func testAgentsApplyToOneNamespaceTheyName() async throws {
+        let model = model()
+        agentWrites = ["kind-fake"]
+        var asked = 0
+        KubeMCP.askOverride = { _ in
+            MainActor.assumeIsolated { asked += 1 }
+            return ""
+        }
+        let unnamed = "apiVersion: apps/v1\nkind: Deployment\nmetadata: {name: web}\nspec: {replicas: 2}\n"
+        api.forgetRequests()
+        let several = await call(model, ["manifest": unnamed, "context": "kind-fake", "namespace": "shop,payments"])
+        XCTAssertTrue(several.error && several.text.contains("k8s_apply needs “namespace”"), several.text)
+
+        model.reloadContexts()
+        for _ in 0..<250 where model.contexts.context(named: "kind-fake") == nil { try? await Task.sleep(for: .milliseconds(10)) }
+        model.select("kind-fake")
+        model.setScope(.of(["shop", "payments"]))
+        let shown = await call(model, ["manifest": unnamed, "context": "kind-fake"])
+        XCTAssertTrue(shown.error && shown.text.contains("k8s_apply needs “namespace”") && shown.text.contains("namespaces payments, shop"), shown.text)
+        XCTAssertEqual(asked, 0)
+        XCTAssertFalse(api.requests.contains { $0.method != "GET" || $0.path.contains("/deployments") }, "nothing reviewed or read: \(api.requests.map(\.path))")
+        XCTAssertTrue(api.writes.isEmpty)
+
+        // Named, one: applied there.
+        let named = await call(model, ["manifest": unnamed, "context": "kind-fake", "namespace": "shop"])
+        XCTAssertFalse(named.error, named.text)
+        XCTAssertEqual(replicas(), 2)
+    }
+
     /// Rule 10: no tool for Secrets. A Secret's diff would read its values
     /// and say whether an agent's guess equals them — refused before
     /// anything is read, asked or sent.

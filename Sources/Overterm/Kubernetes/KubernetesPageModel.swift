@@ -180,7 +180,7 @@ enum KubernetesKey: String, ResourceKey {
         case .forward: return "Forward in the detail's history (⌘] too)"
         case .close: return "Close the detail"
         case .command: return "A kind by name — :deploy, :po shop, :svc @fake-dev, :widgets /blue; :ctx, :ns"
-        case .namespace: return "Namespace — one listed, or a name typed"
+        case .namespace: return "Namespaces — one listed or typed; several ticked (⌥↩), or typed a,b"
         case .context: return "Context"
         case .wide: return "Wide columns — what kubectl get -o wide adds (IP, Node…)"
         case .allNamespaces: return "All namespaces"
@@ -379,7 +379,8 @@ final class KubernetesPageModel: ObservableObject {
         // A picker that shows follows what comes in: the namespaces listed
         // after it opened, the kubeconfig read again. The emitted values:
         // the model's properties aren't set yet.
-        pickerWatch = model.$namespaces.map { _ in () }.merge(with: model.$namespacesRefused.map { _ in () }, model.$contexts.map { _ in () })
+        pickerWatch = model.$namespaces.map { _ in () }
+            .merge(with: model.$namespacesRefused.map { _ in () }, model.$contexts.map { _ in () }, model.$clusterListRefused.map { _ in () })
             .dropFirst()
             .sink { [weak self] in DispatchQueue.main.async { self?.refreshPicker() } }
         // The section follows the kind shown, whoever picked it (another
@@ -893,8 +894,8 @@ final class KubernetesPageModel: ObservableObject {
         if command.allNamespaces {
             scope = .all
         } else if let namespace = command.namespace, command.action == .kind(command.target) {
-            guard let typed = KubePicker.typedNamespace(namespace) else { return "Not a namespace's name: \(namespace)" }
-            scope = .namespace(typed)
+            guard let typed = KubePicker.typedNamespaces(namespace) else { return "Not a namespace's name: \(namespace)" }
+            scope = .of(typed)
         }
         var kind: KubeResourceKind?
         switch command.action {
@@ -910,8 +911,9 @@ final class KubernetesPageModel: ObservableObject {
             switch name {
             case nil, "*": break
             case let name?:
-                guard let typed = KubePicker.typedNamespace(name) else { return "Not a namespace's name: \(name)" }
-                scope = .namespace(typed)
+                // `:ns a,b`: several.
+                guard let typed = KubePicker.typedNamespaces(name) else { return "Not a namespace's name: \(name)" }
+                scope = .of(typed)
             }
         case .kind(let name):
             let served = targetName.flatMap(model.knownDiscovery(of:)) ?? model.discovery
@@ -972,6 +974,14 @@ final class KubernetesPageModel: ObservableObject {
         giveListTheKeyboard()
     }
 
+    /// ⌥↩, or a click on a namespace's box: it ticked or not, shown at
+    /// once, the picker left open.
+    func togglePicked() {
+        guard picker?.kind == .namespace, let scope = picker?.toggle() else { return }
+        // Every listed one ticked is All — or, refused across the cluster, them.
+        model.setScope(scope, refusedAcross: picker?.collapsed)
+    }
+
     /// ↩: the namespace or context highlighted, or typed.
     func choosePicked() {
         guard let choice = picker?.chosen else { return }
@@ -992,9 +1002,12 @@ final class KubernetesPageModel: ObservableObject {
         case .namespace:
             guard let context = model.selected else { return nil }
             let settings = context.settings
-            return KubePicker.namespaces(
+            var picker = KubePicker.namespaces(
                 listed: model.namespaces, favourites: settings.favouriteNamespaces, own: settings.defaultNamespace ?? context.namespace,
-                current: model.scope, refused: model.namespacesRefused)
+                current: model.scope, refused: model.namespacesRefused,
+                listedAll: settings.accessibleNamespaces.isEmpty && !model.clusterListRefused)
+            if picker.note == nil { picker.note = scopeNote }
+            return picker
         case .context:
             guard !model.contexts.contexts.isEmpty else { return nil }
             return KubePicker.contexts(model.contexts, selected: model.selectedName)
@@ -1008,7 +1021,7 @@ final class KubernetesPageModel: ObservableObject {
     /// typed and highlighted kept.
     func refreshPicker() {
         guard let old = picker, var new = makePicker(old.kind) else { return }
-        guard new.items != old.items || new.note != old.note else { return }
+        guard new.items != old.items || new.note != old.note || new.checked != old.checked || new.listedAll != old.listedAll else { return }
         let highlighted = old.selected?.id
         new.query = old.query
         if let highlighted, let at = new.results.firstIndex(where: { $0.id == highlighted }) { new.index = at }
@@ -1064,23 +1077,26 @@ final class KubernetesPageModel: ObservableObject {
         return "\(context.contextClass.title) · \(context.isWritable ? "writable" : "read-only")"
     }
 
-    var scopeLabel: String {
-        switch model.scope {
-        case .all: "All namespaces"
-        case .namespace(let name): name
-        }
+    /// The namespace chip's words: `All namespaces`, `shop`, `acme-api +2`.
+    var scopeLabel: String { model.scope.title }
+
+    /// Past the cap, said: the namespaces aren't watched one by one.
+    var scopeNote: String? {
+        guard model.kind.namespaced, model.scope.isFilteredAcross(for: model.kind), let count = model.scope.names?.count else { return nil }
+        return "\(count) namespaces — more than \(KubeScope.watchCap): listed across the cluster, kept to them here"
     }
 
     /// The columns the list shows: the server's (priority 0, or all of
     /// them wide), each by its index in the Table; across all namespaces a
-    /// namespaced kind's Namespace column first, as `kubectl get -A` adds it.
+    /// namespaced kind's Namespace column first, as `kubectl get -A` adds it
+    /// — across several too.
     var columns: [ResourceColumn] {
         var columns = model.rows.columns.enumerated().filter { wide || $0.element.priority == 0 }.map { index, column in
             ResourceColumn(
                 id: "c\(index)", title: column.name, width: Self.width(of: column.name), minWidth: 40,
                 help: column.description.isEmpty ? nil : column.description)
         }
-        if model.scope == .all, model.kind.namespaced, !columns.isEmpty,
+        if model.scope.spansNamespaces, model.kind.namespaced, !columns.isEmpty,
             !model.rows.columns.contains(where: { $0.name.caseInsensitiveCompare("Namespace") == .orderedSame })
         {
             columns.insert(ResourceColumn(id: Self.namespaceColumn, title: "Namespace", width: 150), at: 0)
@@ -1570,7 +1586,8 @@ final class KubernetesPageModel: ObservableObject {
     var terminalProblem: String?
 
     /// The namespace the page shows for the selected context: the tab's,
-    /// unless it shows all of them (then the context's own).
+    /// unless it shows several or all of them (then the context's own) —
+    /// a tab's commands carry one `-n`.
     var shownNamespace: String? {
         if case .namespace(let name) = model.scope { return name }
         return nil

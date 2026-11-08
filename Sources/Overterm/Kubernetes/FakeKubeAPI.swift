@@ -462,14 +462,15 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
     /// Resources (`namespaces`, `pods`…) the user may not read: every
     /// request for one is a 403, as RBAC refuses it — a context limited to
-    /// its namespace can't list the others.
+    /// its namespace can't list the others. `pods@cluster`: refused only across the
+    /// cluster; `pods@locked`: only in that namespace.
     var forbidden: Set<String> {
         get { locked { settings.forbidden } }
         set { locked { settings.forbidden = newValue } }
     }
 
     /// Resources whose every list or GET the server fails: a 500, as an
-    /// overloaded server or a broken etcd answers.
+    /// overloaded server or a broken etcd answers. `pods@payments`: in that namespace only.
     var failingResources: Set<String> {
         get { locked { settings.failingResources } }
         set { locked { settings.failingResources = newValue } }
@@ -1218,7 +1219,11 @@ final class FakeKubeAPI: @unchecked Sendable {
             return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource"))
         }
         if kind.namespaced == false && route.namespace != nil { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
-        if settings.forbidden.contains(resource) {
+        // `pods@cluster`: refused only across the cluster, each namespace's
+        // allowed; `pods@locked`: refused in that namespace alone.
+        if settings.forbidden.contains(resource) || (route.namespace == nil && settings.forbidden.contains(resource + "@cluster"))
+            || route.namespace.map({ settings.forbidden.contains(resource + "@" + $0) }) == true
+        {
             let scope = route.namespace.map { "in the namespace \"\($0)\"" } ?? "at the cluster scope"
             return .json(
                 403,
@@ -1226,7 +1231,8 @@ final class FakeKubeAPI: @unchecked Sendable {
                     403, "Forbidden",
                     "\(resource) is forbidden: User \"system:anonymous\" cannot list resource \"\(resource)\" in API group \"\(kind.group)\" \(scope)"))
         }
-        if settings.failingResources.contains(resource) {
+        // `pods@payments`: failing in that namespace alone.
+        if settings.failingResources.contains(resource) || route.namespace.map({ settings.failingResources.contains(resource + "@" + $0) }) == true {
             return .json(500, Self.status(500, "InternalError", "an error on the server (\"etcdserver: request timed out\") has prevented the request from succeeding"))
         }
         if let name = route.name {

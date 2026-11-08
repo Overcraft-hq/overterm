@@ -38,13 +38,34 @@ struct KubeSavedFilter: Codable, Equatable, Identifiable, Sendable {
     var name: String
     var context: String
     var kind: Kind
-    /// The namespace it was saved in; nil, all of them.
+    /// The namespace it was saved in — of several, the first, so an older
+    /// build reads one it can list; nil, all of them.
     var namespace: String?
     var filter: String
+    /// Every namespace it was saved in, when several; nil for one or all
+    /// (an older build's file has no such field, and ignores it).
+    var namespaces: [String]?
 
-    /// `Deployments · shop · fake-dev`.
+    /// Where it shows: its namespaces, else its one, else all of them.
+    var scope: KubeScope {
+        if let namespaces, !namespaces.isEmpty { return .of(namespaces) }
+        return namespace.map { .namespace($0) } ?? .all
+    }
+
+    /// `Deployments · shop · fake-dev`; several, `shop +1`.
     var said: String {
-        [kind.kind.isEmpty ? kind.resource : kind.kind, namespace ?? "all namespaces", context].joined(separator: " · ")
+        [kind.kind.isEmpty ? kind.resource : kind.kind, namespace == nil ? "all namespaces" : scope.title, context].joined(separator: " · ")
+    }
+}
+
+extension KubeSavedFilter {
+    /// Saved in `scope`: one namespace or several (the first as
+    /// `namespace` too), none for all of them or a cluster-scoped kind.
+    init(id: UUID = UUID(), name: String, context: String, kind: Kind, scope: KubeScope, filter: String) {
+        let names = kind.namespaced ? scope.names : nil
+        self.init(
+            id: id, name: name, context: context, kind: kind, namespace: names?.first, filter: filter,
+            namespaces: (names?.count ?? 0) > 1 ? names : nil)
     }
 }
 

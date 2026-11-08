@@ -233,11 +233,11 @@ enum KubeManifestRun {
     }
 
     /// The namespace an object without one goes to: the page's on the
-    /// context, else the context's own.
+    /// context (of several, the context's own when it is one, else the
+    /// first), else the context's own.
     static func defaultNamespace(_ context: KubeContext, model: KubernetesModel) -> String {
-        if case .namespace(let name) = model.agentDefaultScope(for: context) { return name }
-        if case .namespace(let name) = KubernetesModel.defaultScope(context) { return name }
-        return "default"
+        let own = KubernetesModel.defaultScope(context).one()
+        return model.agentDefaultScope(for: context).one(preferring: own) ?? own ?? "default"
     }
 
     /// The discovery `objects` are resolved against: the context's, with

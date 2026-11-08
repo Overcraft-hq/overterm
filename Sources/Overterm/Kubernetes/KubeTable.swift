@@ -276,7 +276,7 @@ struct KubeRows: Equatable, Sendable {
             if let version { resourceVersion = version }
         case .bookmark(let version):
             resourceVersion = version
-        case .retrying:
+        case .retrying, .unlisted:
             break
         }
     }
@@ -296,6 +296,9 @@ enum KubeFollowUpdate: Equatable, Sendable {
     /// A 429 or the server's 5xx: the rows stand as they were while the
     /// follow waits and tries again.
     case retrying(KubeAPIError)
+    /// Of several namespaces, one the follow may not list (a 403): the
+    /// others go on without it (`KubeScopeMerge`).
+    case unlisted(String, KubeAPIError)
 }
 
 enum KubeRowChange: Equatable, Sendable {

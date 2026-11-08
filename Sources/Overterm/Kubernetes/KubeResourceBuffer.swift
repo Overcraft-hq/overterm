@@ -300,7 +300,7 @@ final class KubeResourceBuffer: ObservableObject {
                         if table.rows.isEmpty { self.deleted() } else { self.read() }
                     case .changed(let changes, _):
                         if changes.contains(where: { if case .deleted = $0 { true } else { false } }) { self.deleted() } else { self.read() }
-                    case .bookmark, .retrying:
+                    case .bookmark, .retrying, .unlisted:
                         break
                     }
                 }

@@ -257,7 +257,7 @@ final class KubeMergedLogSession: ObservableObject {
                     present.remove(id.name)
                 }
             }
-        case .bookmark, .retrying:
+        case .bookmark, .retrying, .unlisted:
             return
         }
         reconcile()

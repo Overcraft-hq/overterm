@@ -256,6 +256,7 @@ extension E2ERunner {
         page.giveListTheKeyboard()
         await kubernetesContextSettings(model, page)
         await namespaceAndContextPickers(model, page)
+        await severalNamespaces(model, page, fake)
         await kubernetesKinds(model, page, fake)
         await kubernetesDetail(model, page, fake)
 
@@ -1657,6 +1658,45 @@ extension E2ERunner {
         check("Esc", page.picker != nil)
         page.closePicker()
         check("closes it, the namespace as it was", page.picker == nil && model.scope == .namespace("shop"))
+    }
+
+    /// Several namespaces: `n` opens the picker the chip beside the filter
+    /// opens, payments ticked beside shop — both listed, a watch each,
+    /// merged, the Namespace column, the chip saying `payments +1` — then
+    /// `:ns payments,shop` and back to shop alone.
+    private func severalNamespaces(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        check("the chip beside the filter says the namespace", page.scopeLabel == "shop")
+        check("n opens the namespaces' picker", page.press("n") && page.picker?.kind == .namespace)
+        check("shop ticked", page.picker.map { picker in picker.items.filter(picker.isChecked).map(\.title) } == ["shop"])
+        page.picker?.query = "payments"
+        page.togglePicked()
+        // fake-dev lists two: both ticked is every one — the watch across the cluster.
+        check("payments ticked beside shop is every namespace: All", model.scope == .all && page.picker != nil, "\(model.scope)")
+        check("the picker left open, All ticked", page.picker.map { $0.isChecked($0.items[0]) } == true)
+        page.picker?.query = "payments, shop"
+        check("a,b typed is those", page.picker?.selected?.choice == .scope(.of(["shop", "payments"])))
+        page.choosePicked()
+        check("both picked", model.scope == .of(["shop", "payments"]) && page.picker == nil, "\(model.scope)")
+        check(
+            "the pods of both, in one list",
+            await eventually(10) { model.rows.sorted.map(\.id.description) == ["payments/api-0", "payments/web-7d9", "shop/web-7d9", "shop/worker-5c"] },
+            "\(model.rows.sorted.map(\.id.description))")
+        check(
+            "a watch each",
+            await eventually(5) {
+                Set(fake.requests.filter { $0.query["watch"] == "1" }.map(\.path)).isSuperset(of: ["/api/v1/namespaces/shop/pods", "/api/v1/namespaces/payments/pods"])
+            })
+        check("with a Namespace column first", page.columns.first?.title == "Namespace", "\(page.columns.map(\.title))")
+        check("the chip says both", page.scopeLabel == "payments +1")
+        check("drawn beside the filter", await shownText(15) { $0.contains("payments +1") } != nil)
+        check("Copy as kubectl is a command each", page.listKubectl?.components(separatedBy: "\n").count == 2, page.listKubectl ?? "")
+        check(":ns all, then :ns shop,payments again", page.run(KubeCommand.parse(":ns all")!) == nil && model.scope == .all)
+        check(":ns shop,payments is the same two", page.run(KubeCommand.parse(":ns shop,payments")!) == nil && model.scope == .of(["payments", "shop"]))
+        check("n opens it again, both ticked", page.press("n") && page.picker.map { picker in picker.items.filter(picker.isChecked).map(\.title) } == ["shop", "payments"])
+        page.closePicker()
+        check(":ns shop is shop alone", page.run(KubeCommand.parse(":ns shop")!) == nil && model.scope == .namespace("shop"))
+        check("its pods again", await eventually(10) { model.rows.count == 2 }, "\(model.rows.count)")
+        check("and no Namespace column", page.columns.first?.title != "Namespace")
     }
 
     /// Every kind: the digits' sections, the `:` bar — by its field, Tab

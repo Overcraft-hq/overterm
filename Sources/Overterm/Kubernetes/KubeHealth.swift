@@ -464,21 +464,28 @@ enum KubeHealth {
 
         init() {}
 
-        /// One list's answer: its objects, each given its kind and version.
-        mutating func add(_ read: Read, kind: String, apiVersion: String, body: Data, place: String) {
+        /// One list's answer: its objects, each given its kind and version —
+        /// those of `scope`'s namespaces (a list across the cluster for
+        /// more than the cap), added to the kind's others (one a namespace).
+        mutating func add(_ read: Read, kind: String, apiVersion: String, body: Data, place: String, scope: KubeScope = .all) {
             guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
                 notes.append("The \(read.fullName) list couldn't be read: the answer isn't JSON.")
                 return
             }
             let more = ((list["metadata"] as? [String: Any])?["continue"] as? String).map { !$0.isEmpty } ?? false
             if more { notes.append("More than \(read.limit) \(read.fullName) in \(place): only \(read.limit) were checked.") }
-            let items = (list["items"] as? [[String: Any]] ?? []).map { item -> [String: Any] in
+            let items = (list["items"] as? [[String: Any]] ?? []).compactMap { item -> [String: Any]? in
+                guard scope.includes((item["metadata"] as? [String: Any])?["namespace"] as? String) else { return nil }
                 var item = KubeHealth.kept(item)
                 if item["kind"] == nil { item["kind"] = kind }
                 if item["apiVersion"] == nil { item["apiVersion"] = apiVersion }
                 return item
             }
-            lists[read.fullName] = List(items: items, complete: !more)
+            if let old = lists[read.fullName] {
+                lists[read.fullName] = List(items: old.items + items, complete: old.complete && !more)
+            } else {
+                lists[read.fullName] = List(items: items, complete: !more)
+            }
         }
 
         mutating func failed(_ read: Read, _ reason: String, place: String) {

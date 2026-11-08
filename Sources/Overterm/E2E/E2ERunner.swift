@@ -4848,7 +4848,7 @@ final class E2ERunner {
 
     /// This process's user + system CPU time, in seconds.
     /// `children`: plus the processes it ran that have ended (git).
-    private static func cpuSeconds(children: Bool = false) -> Double {
+    static func cpuSeconds(children: Bool = false) -> Double {
         func seconds(_ t: timeval) -> Double { Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000 }
         var total = 0.0
         for who in children ? [RUSAGE_SELF, RUSAGE_CHILDREN] : [RUSAGE_SELF] {

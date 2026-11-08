@@ -36,9 +36,7 @@ extension KubeMCP {
             return KubeMCPText.finished(
                 [header, KubeMCPText.topNodes(samples, allocatable: allocatable, sortBy: sortBy, limit: limit, now: now)].joined(separator: "\n"))
         }
-        let path = KubeMetricsTarget.pods(target.scope, labels: labels).path
-        let body = try await within { try await client.get(path).body }
-        var samples = try KubeMetricsReader.pods(body)
+        var samples = try await within { try await KubeMetricsTarget.pods(target.scope, labels: labels).pods(client) }
         if let name = call.string("name") {
             guard KubeMCPText.isName(name) else { throw BrowserMCP.ToolError(message: "“\(name)” isn't a pod's name.") }
             samples = samples.filter { $0.id.name == name }

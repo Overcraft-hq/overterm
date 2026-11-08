@@ -14,6 +14,14 @@ extension KubeClient {
         let selector = storage.labelSelector + (release.map { ",\(storage == .tiller ? "NAME" : "name")=\($0)" } ?? "")
         // Tiller keeps every release's ConfigMaps in its own namespace and
         // their labels don't say the release's: listed across the cluster.
+        if storage != .tiller, case .namespaces = scope {
+            // A list each (past the cap, across the cluster), kept to the picked ones.
+            var records: [KubeHelmRecord] = []
+            for namespace in scope.reads(for: kind) {
+                records += try await helmRecords(storage, in: namespace.map { .namespace($0) } ?? .all, release: release)
+            }
+            return records.filter { scope.includes($0.namespace) }
+        }
         let namespace = storage == .tiller ? nil : scope.namespace(for: kind)
         var restarts = 0
         restart: while true {
@@ -269,6 +277,7 @@ final class KubeHelmSession: ObservableObject {
             switch scope {
             case .all: "across all namespaces"
             case .namespace(let name): "in \(name)"
+            case .namespaces: "in \(scope.said)"
             }
         return "Releases can't be read here: this user can't list Secrets \(place), and Helm keeps its releases in them. "
             + "helm in a terminal reads them with your own credentials."

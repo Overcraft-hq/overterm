@@ -96,8 +96,6 @@ struct KubernetesPageView: View {
                 }
                 .frame(maxHeight: 220)
                 .fixedSize(horizontal: false, vertical: true)
-                caption("Namespace").padding(.top, 10)
-                namespacePicker
                 caption("Resources").padding(.top, 10)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 1) {
@@ -227,26 +225,31 @@ struct KubernetesPageView: View {
         .accessibilityIdentifier("kubernetes.context.\(context.name)")
     }
 
-    @ViewBuilder private var namespacePicker: some View {
-        Menu {
-            Button("All Namespaces (0)") { model.setScope(.all) }
-            if !model.namespaces.isEmpty { Divider() }
-            let favourites = model.selected?.settings.favouriteNamespaces ?? []
-            ForEach(favourites + model.namespaces.filter { !favourites.contains($0) }, id: \.self) { name in
-                Button(name) { model.setScope(.namespace(name)) }
-            }
-            Divider()
-            Button("Other Namespace…  n") { page.openPicker(.namespace) }
+    /// Beside the filter: the namespaces shown — `All namespaces`, one,
+    /// or `acme-api +2` — opening the picker (`n`), where several are ticked.
+    private var namespaceChip: some View {
+        let note = [page.scopeNote, model.namespacesRefused].compactMap { $0 }.joined(separator: " ")
+        return Button {
+            page.openPicker(.namespace)
         } label: {
-            Text(verbatim: page.scopeLabel).font(.system(size: 12)).lineLimit(1)
+            HStack(spacing: 5) {
+                Image(systemName: "square.dashed").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Text(verbatim: page.scopeLabel).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                if page.scopeNote != nil {
+                    Image(systemName: "exclamationmark.circle").font(.system(size: 10)).foregroundStyle(theme.text3)
+                }
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(theme.text3)
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: 200, minHeight: 26, maxHeight: 26)
+            .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .padding(.horizontal, 10)
-        .frame(height: 26)
-        .accessibilityIdentifier("kubernetes.namespace")
-        if let refused = model.namespacesRefused {
-            Text(verbatim: refused).font(.system(size: 10.5)).foregroundStyle(theme.text3).padding(.horizontal, 10)
-        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .disabled(model.selected == nil || !model.kind.namespaced)
+        .help("Namespaces (\(KubernetesKey.namespace.key)) — tick several; 0 is all of them" + (note.isEmpty ? "" : ". " + note))
+        .accessibilityIdentifier("kubernetes.namespaceChip")
     }
 
     /// The context: its class, how it signs in, its server, whether it can be written to.
@@ -368,6 +371,7 @@ struct KubernetesPageView: View {
             Spacer(minLength: 12)
             Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
                 .help("What kubectl get -o wide adds (\(KubernetesKey.wide.key))")
+            namespaceChip
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(theme.text3)
                 TextField("Filter  /", text: $page.filter)
@@ -429,6 +433,7 @@ struct KubernetesPageView: View {
             if failedOutright == nil {
                 if case .failed(let reason, _) = model.listState { banner(reason) }
                 if case .retrying(let reason) = model.listState { banner("Trying again: \(reason)") }
+                if let unlisted = model.unlistedNote { banner(unlisted) }
             }
             selectorLine
             // The list keeps its place whether or not the detail is beside
