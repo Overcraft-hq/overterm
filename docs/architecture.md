@@ -4323,8 +4323,12 @@ answer, and Overterm's own ring of the samples taken while shown
 or a namespace's pods summed per poll) by metrics-server's own stamp —
 one that didn't move is dropped, a stretch past 2.5 intervals kept as a
 break — in two populations: a list's rows (the pods', the nodes', the
-cluster's) keep the last 40 raw points and are forgotten when their row
-isn't sampled or the list stops; a detail's keys keep two tiers (raw, 15
+cluster's) keep the raw tier only — a node's row the whole 15 minutes
+(`rawLimit`, for the Nodes list's strip), a pod's row and the cluster's
+the last 40 points (the Overview's sparkline its 10 minutes) — and are forgotten when their row isn't sampled or the
+list stops (a key both populations hold is read from the one asked
+for: a node's row the list's, so a closed tab's old samples never stand
+in for the row's fresh ones); a detail's keys keep two tiers (raw, 15
 minutes; one-minute min/mean/max buckets, 6 hours), at most 200 by least
 recently fed, each forgotten an hour after it was last polled (decision
 1: coming back to a pod shows what was sampled before, the time away a
@@ -5279,6 +5283,27 @@ W2's per-pod OOM and restart markers wait for M4's markers (a bounded
 read of the workload's pods' `lastState`) and M6's Prometheus ones: a
 workload's Memory chart has none yet.
 Hidden, every reading ends, what was read goes, the metrics proxy closes.
+
+**The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
+`KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
+memory numbers, its last 15 minutes as 60 cells of 15 s, each the
+largest share of allocatable sampled in it — a sample stands for the
+stretch since the one before it in its run, so a 60 s resolution fills
+four cells; a break or a time before the first sample is an empty cell,
+never zero; the strip ends at the node's newest sample. A cell's level
+(`Level`: under 50%, 80%, 100%, past it; `KubeChartPalette.heat`, the
+series palette's teal, blue, orange and the limit's red) is its colour,
+and its height is its share too, so colour is never the only cue; help
+and VoiceOver say `summary` ("22% now, peak 61% at 14:02"). It is the
+ring's `.node` list key against the allocatable the nodes' read already
+carries (`heatStrip`), only beside a number — a dash has none — and
+nothing more is read for it. `KubeHeatStripRegistry` holds the strips on
+screen (`kubernetes.heat.<node>.<measure>`), which `OVERTERM_DUMP_LAYOUT`
+lists and `kubernetesCharts`'s object-charts part checks: both strips
+filled with the fake's shares, the unsampled stretch empty, no per-node
+or proxy read; `KubeHeatStripTests`. The Pods list's shares wait for
+M5b (no denominator in a list without Prometheus).
+
 `FakeKubeAPI.servePrometheus` answers a Service's two query paths with
 `setPrometheusSeries`' values (`FakePromQL`: selectors with `=`, `!=`,
 `=~`, `!~`, `rate`, `sum`/`max`/`min`/`count` by, `== n`,

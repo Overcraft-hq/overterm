@@ -544,10 +544,21 @@ struct KubernetesPageView: View {
             view = AnyView(Text(verbatim: row.row.id.namespace ?? "").foregroundStyle(theme.text2))
         } else if let column, let measure = KubernetesPageModel.measure(of: column.id) {
             let usage = page.usage(measure, of: row)
-            view = AnyView(
-                Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
-                    .help(usage.help ?? ""))
+            let text = Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
+            if let strip = page.heatStrip(measure, of: row) {
+                // A node's: its last 15 minutes beside the number (metrics.md 2.1).
+                view = AnyView(
+                    HStack(spacing: 6) {
+                        KubeHeatStripView(
+                            strip: strip, identifier: KubernetesPageModel.heatStripIdentifier(row.row.id.name, measure), dark: theme.isDark,
+                            track: theme.text3, window: ObjectIdentifier(theme))
+                        text
+                    }
+                    .help(strip.summary()))
+            } else {
+                view = AnyView(text.help(usage.help ?? ""))
+            }
         } else if column?.id == KubernetesPageModel.volumeColumn {
             let usage = page.volumeUsage(of: row)
             view = AnyView(
