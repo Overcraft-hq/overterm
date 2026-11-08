@@ -52,15 +52,22 @@ extension E2ERunner {
         fake.add(
             "services", "prometheus-server", namespace: "monitoring",
             values: ["Type": "ClusterIP", "Cluster-IP": "10.96.0.90", "External-IP": "<none>", "Port(s)": "80/TCP"],
-            labels: ["app": "prometheus", "component": "server", "heritage": "Helm"], fields: ["spec": ["ports": [["name": "http", "port": 80]]]])
+            labels: ["app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server", "app.kubernetes.io/managed-by": "Helm"],
+            fields: ["spec": ["ports": [["name": "http", "port": 80]]]])
         fake.servePrometheus(namespace: "monitoring", service: "prometheus-server", port: "80")
         let container = ["container": "app", "image": "nginx:1.27", "namespace": "shop", "pod": "web-8k2"]
         fake.setPrometheusSeries("container_cpu_usage_seconds_total", labels: container, value: 0.75)
         fake.setPrometheusSeries("container_memory_working_set_bytes", labels: container, value: 96 * 1_048_576)
-        fake.setPrometheusSeries("kube_pod_container_resource_requests", labels: ["resource": "cpu", "pod": "web-8k2"], value: 2)
-        fake.setPrometheusSeries("kube_pod_container_resource_limits", labels: ["resource": "cpu", "pod": "web-8k2"], value: 3)
+        let ksm = ["namespace": "shop", "pod": "web-8k2", "container": "app", "node": "fake-node-1"]
+        fake.setPrometheusSeries("kube_pod_container_resource_requests", labels: ksm.merging(["resource": "cpu"]) { $1 }, value: 2)
+        fake.setPrometheusSeries("kube_pod_container_resource_limits", labels: ksm.merging(["resource": "cpu"]) { $1 }, value: 3)
         fake.setPrometheusSeries("kube_node_status_allocatable", labels: ["resource": "cpu", "node": "fake-node-1"], value: 4)
-        fake.setPrometheusSeries("kube_pod_container_resource_requests", labels: ["resource": "memory", "pod": "web-8k2"], value: 1_073_741_824)
+        fake.setPrometheusSeries("kube_pod_container_resource_requests", labels: ksm.merging(["resource": "memory"]) { $1 }, value: 1_073_741_824)
+        fake.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "web-8k2", "phase": "Running"], value: 1)
+        // A finished Job's pod kube-state-metrics still holds: its requests aren't counted.
+        let done = ["namespace": "shop", "pod": "migrate-x7", "container": "job", "node": "fake-node-1"]
+        fake.setPrometheusSeries("kube_pod_container_resource_requests", labels: done.merging(["resource": "cpu"]) { $1 }, value: 2)
+        fake.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "migrate-x7", "phase": "Succeeded"], value: 1)
         fake.setPrometheusSeries("kube_node_status_allocatable", labels: ["resource": "memory", "node": "fake-node-1"], value: 8_589_934_592)
         fake.setPrometheusSeries("kubelet_volume_stats_used_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 2_147_483_648)
         fake.setPrometheusSeries(
@@ -91,13 +98,17 @@ extension E2ERunner {
         check("the Overview's chart read over the range", await eventually(15) { model.prometheus.charts[.cluster]?.read != nil })
         let cluster = model.prometheus.charts[.cluster]
         check("the cluster's CPU and memory over the last hour", (cluster?.series[.cpu]?.count ?? 0) > 100 && cluster?.series[.memory]?.last?.value == 96 * 1_048_576)
-        check("requests against allocatable", cluster?.share(.cpuRequests, of: .cpuAllocatable)?.percent == 50, "\(String(describing: cluster?.totals))")
+        check(
+            "active pods' requests against allocatable", cluster?.share(.cpuRequests, of: .cpuAllocatable)?.percent == 50,
+            "\(String(describing: cluster?.totals))")
         check("drawn, with the range and where it came from", await shownText(15) { $0.contains("The last 1h, from Prometheus monitoring/prometheus-server:80") } != nil)
         check("the requests and limits drawn", await shownText(15) { $0.contains("2000m of 4000m") } != nil)
         check("a range picker", await eventually(15) { pickerShown() })
         check("the sampled sparkline gone", await shownText(15) { $0.caseInsensitiveCompare("Usage over time") == .orderedSame } != nil)
         let ranges = prometheusAsked().filter { $0.path == service.rangePath }
         check("asked as query_range, its start, end and step", ranges.contains { $0.query["step"] == "30s" && $0.query["start"] != nil && $0.query["end"] != nil })
+        check("a rate over four scrapes", ranges.contains { $0.query["query"]?.contains("[4m]") == true }, "\(ranges.compactMap { $0.query["query"] })")
+        check("every query given 20 s", prometheusAsked().allSatisfy { $0.query["timeout"] == "20s" })
         check(
             "only that Service's two query paths", prometheusAsked().allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath },
             "\(prometheusAsked().map(\.path))")
@@ -105,9 +116,32 @@ extension E2ERunner {
             let connected = await model.proxies.proxyLabels
             check("through a second proxy of fake-dev's own", connected.contains("fake-dev (prometheus)"), "\(connected)")
         }
+        // 24h: the cluster's raw lines aren't asked; why is said, and 6h offered.
+        fake.forgetRequests()
         page.chartRange = .day
-        check("24h picked: asked again with its step", await eventually(15) { model.prometheus.charts[.cluster]?.range == .day && prometheusAsked().contains { $0.query["step"] == "12m" } })
-        check("and said", await shownText(15) { $0.contains("The last 24h, from Prometheus") } != nil)
+        check(
+            "24h picked: the cluster's lines refused, its totals read",
+            await eventually(15) { model.prometheus.charts[.cluster]?.range == .day && model.prometheus.charts[.cluster]?.read != nil })
+        check("no query_range across the cluster over 24h", !prometheusAsked().contains { $0.path == service.rangePath }, "\(prometheusAsked().map(\.query))")
+        check("and said", await shownText(15) { $0.contains("Raw container metrics") } != nil)
+        check("the requests still drawn", await shownText(15) { $0.contains("2000m of 4000m") } != nil)
+        // The button's own action: pressed where it is drawn, by a click
+        // queued to the app's own window (`click(at:)`) — nothing reaches
+        // the screen's focus. SwiftUI builds no accessibility tree in
+        // process until an assistive client asks, so there is no element
+        // to press.
+        fake.forgetRequests()
+        let showRaw = await shownText(15) { $0.contains("Show 6h") }
+        check("Show 6h is drawn as a button", showRaw != nil)
+        if let showRaw { await click(at: CGPoint(x: showRaw.frame.midX, y: showRaw.frame.midY)) }
+        check("and the range is 6h", await eventually(15) { page.chartRange == .sixHours }, "\(page.chartRange)")
+        check(
+            "6h: the cluster's lines asked with its step",
+            await eventually(15) {
+                model.prometheus.charts[.cluster]?.range == .sixHours
+                    && prometheusAsked().contains { $0.path == service.rangePath && $0.query["step"] == "3m" }
+            }, "\(prometheusAsked().map(\.query))")
+        check("and drawn", await shownText(15) { $0.contains("The last 6h, from Prometheus") } != nil)
         page.chartRange = .hour
 
         // A pod's detail.

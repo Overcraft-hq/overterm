@@ -36,7 +36,14 @@ final class KubePrometheusTests: XCTestCase {
         api.setPrometheusSeries("kubelet_volume_stats_used_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 2 * 1_073_741_824)
         api.setPrometheusSeries(
             "kubelet_volume_stats_capacity_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 10 * 1_073_741_824)
-        api.setPrometheusSeries("kube_pod_container_resource_requests", labels: ["resource": "cpu", "pod": "web-1"], value: 1.5)
+        api.setPrometheusSeries(
+            "kube_pod_container_resource_requests", labels: ["resource": "cpu", "namespace": "shop", "pod": "web-1", "container": "app"], value: 1.5)
+        api.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "web-1", "phase": "Running"], value: 1)
+        // A finished Job's pod, which kube-state-metrics keeps until it is deleted: not counted.
+        api.setPrometheusSeries(
+            "kube_pod_container_resource_requests", labels: ["resource": "cpu", "namespace": "shop", "pod": "migrate-x7", "container": "job"], value: 2)
+        api.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "migrate-x7", "phase": "Succeeded"], value: 1)
+        api.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "migrate-x7", "phase": "Running"], value: 0)
         api.setPrometheusSeries("kube_node_status_allocatable", labels: ["resource": "cpu", "node": "fake-node-1"], value: 4)
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-kubeprom-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -167,19 +174,39 @@ final class KubePrometheusTests: XCTestCase {
         XCTAssertEqual(KubePrometheusProvider.operatorManaged.service(in: list)?.description, "monitoring/prometheus-operated:9090", "the first by namespace, its web port")
         XCTAssertEqual(KubePrometheusProvider.helm.service(in: list)?.port, "10901", "the chart's first port")
         XCTAssertNil(KubePrometheusProvider.helm.service(in: Data(#"{"kind":"ServiceList","items":[]}"#.utf8)))
-        XCTAssertTrue(KubePrometheusProvider.helm.path.contains("labelSelector=app%3Dprometheus%2Ccomponent%3Dserver%2Cheritage%3DHelm"))
+        // The chart's labels since v15, and before.
+        XCTAssertTrue(
+            KubePrometheusProvider.helm.path.contains(
+                "labelSelector=app.kubernetes.io%2Fname%3Dprometheus%2Capp.kubernetes.io%2Fcomponent%3Dserver%2Capp.kubernetes.io%2Fmanaged-by%3DHelm"),
+            KubePrometheusProvider.helm.path)
+        XCTAssertTrue(KubePrometheusProvider.helm14.path.contains("labelSelector=app%3Dprometheus%2Ccomponent%3Dserver%2Cheritage%3DHelm"))
+        XCTAssertEqual(KubePrometheusProvider.allCases, [.lens, .operatorManaged, .helm, .helm14], "Lens, the operator, the chart, the old chart")
+        XCTAssertEqual(KubePrometheusProvider.helm14.title, KubePrometheusProvider.helm.title)
 
         // Against the fake: nothing labelled, not found — each provider asked once.
         let none = await KubePrometheusMonitor.find(client)
         XCTAssertEqual(none, .unavailable(KubePrometheusState.notFound))
-        XCTAssertEqual(api.requests.map(\.path), ["/api/v1/namespaces/lens-metrics/services/prometheus", "/api/v1/services", "/api/v1/services"])
-        // The chart's Service, labelled.
+        XCTAssertEqual(
+            api.requests.map(\.path), ["/api/v1/namespaces/lens-metrics/services/prometheus", "/api/v1/services", "/api/v1/services", "/api/v1/services"])
+        XCTAssertEqual(
+            api.requests.compactMap { $0.query["labelSelector"] },
+            [KubePrometheusProvider.operatorSelector, KubePrometheusProvider.helmSelector, KubePrometheusProvider.helm14Selector])
+        XCTAssertTrue(KubePrometheusState.notFound.contains(KubePrometheusProvider.helmSelector))
+        // The old chart's Service, labelled as before v15.
         api.add(
             "services", "prometheus-server", namespace: "monitoring", labels: ["app": "prometheus", "component": "server", "heritage": "Helm"],
             fields: ["spec": ["ports": [["name": "http", "port": 80]]]])
+        let old = await KubePrometheusMonitor.find(client)
+        XCTAssertEqual(old, .found(service, .helm14))
+        XCTAssertEqual(old.said, "Prometheus monitoring/prometheus-server:80, found as the prometheus Helm chart")
+        // The current chart's: found by its app.kubernetes.io labels.
+        api.delete("services", "prometheus-server", namespace: "monitoring")
+        api.add(
+            "services", "prometheus-server", namespace: "monitoring",
+            labels: ["app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server", "app.kubernetes.io/managed-by": "Helm"],
+            fields: ["spec": ["ports": [["name": "http", "port": 80]]]])
         let found = await KubePrometheusMonitor.find(client)
         XCTAssertEqual(found, .found(service, .helm))
-        XCTAssertEqual(found.said, "Prometheus monitoring/prometheus-server:80, found as the prometheus Helm chart")
         // Services refused across namespaces: said, with what to set.
         api.forbidden = ["services"]
         guard case .unavailable(let why) = await KubePrometheusMonitor.find(client) else { return XCTFail("refused") }
@@ -191,21 +218,30 @@ final class KubePrometheusTests: XCTestCase {
 
     func testQueriesAndTheirRange() throws {
         XCTAssertEqual(
-            KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "1m"),
-            #"sum(rate(container_cpu_usage_seconds_total{container!="",image!="",namespace="shop",pod="web-1"}[1m]))"#)
-        XCTAssertEqual(KubePromQL.podMemory(namespace: "shop", pod: "web-1"), #"sum(container_memory_working_set_bytes{container!="",image!="",namespace="shop",pod="web-1"})"#)
+            KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "4m"),
+            #"sum(sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",namespace="shop",pod="web-1"}[4m])))"#
+        )
+        XCTAssertEqual(
+            KubePromQL.podMemory(namespace: "shop", pod: "web-1"),
+            #"sum(max by (namespace,pod,container)(container_memory_working_set_bytes{container!="",image!="",container!="POD",namespace="shop",pod="web-1"}))"#)
         XCTAssertEqual(KubePromQL.literal(#"a"b\c"#), #"a\"b\\c"#, "a label value can't end its string")
         XCTAssertEqual(
-            KubePromQL.volumes(KubePromQL.volumeUsed, namespace: "shop"), #"sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="shop"})"#)
-        XCTAssertEqual(KubePromQL.volumes(KubePromQL.volumeCapacity, namespace: nil), "sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes)")
-        XCTAssertEqual(KubePromQL.requests("cpu"), #"sum(kube_pod_container_resource_requests{resource="cpu"})"#)
-        XCTAssertEqual(KubePromQL.allocatable("memory"), #"sum(kube_node_status_allocatable{resource="memory"})"#)
+            KubePromQL.volumes(KubePromQL.volumeUsed, namespaces: ["shop"]),
+            #"sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="shop"})"#)
+        XCTAssertEqual(
+            KubePromQL.volumes(KubePromQL.volumeUsed, namespaces: ["acme-api", "acme.web"]),
+            #"sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace=~"acme-api|acme\\.web"})"#, "several: the set, as a regex")
+        XCTAssertEqual(
+            KubePromQL.volumes(KubePromQL.volumeCapacity, namespaces: nil), "sum by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes)")
+        XCTAssertEqual(
+            KubePromQL.requests("cpu"),
+            #"sum(max by (namespace,pod,container,node)(kube_pod_container_resource_requests{resource="cpu"}) * on(namespace,pod) group_left() max by (namespace,pod)(kube_pod_status_phase{phase=~"Pending|Running"} == 1))"#
+        )
+        XCTAssertEqual(KubePromQL.allocatable("memory"), #"sum(max by (node)(kube_node_status_allocatable{resource="memory"}))"#)
 
         XCTAssertEqual(KubeChartRange.allCases.map(\.title), ["1h", "6h", "24h", "7d"])
         XCTAssertEqual(KubeChartRange.allCases.map { Int($0.seconds / $0.step) }, [120, 120, 120, 168])
-        XCTAssertEqual(KubeChartRange.hour.rateWindow, "1m")
-        XCTAssertEqual(KubeChartRange.day.rateWindow, "12m", "a rate's window is a step at least")
-        XCTAssertEqual(KubeChartRange.week.rateWindow, "1h")
+        XCTAssertEqual(KubeChartRange.allCases.map(\.rateWindow), ["4m", "4m", "13m", "61m"], "four scrapes of a minute at least, a step and a scrape")
         let now = Date(timeIntervalSince1970: 1_800_000_017)
         let (start, end) = KubeChartRange.hour.window(now: now)
         XCTAssertEqual(end.timeIntervalSince1970, 1_800_000_000, "rounded down to a step")
@@ -216,6 +252,7 @@ final class KubePrometheusTests: XCTestCase {
         let items = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         XCTAssertEqual(items["query"], KubePromQL.clusterMemory)
         XCTAssertEqual(items["step"], "3m")
+        XCTAssertEqual(items["timeout"], "20s", "Prometheus gives up at 20 s, not the HTTP timeout")
         XCTAssertEqual(Int(items["end"] ?? ""), 1_800_000_000)
         XCTAssertEqual(Int(items["start"] ?? "").map { 1_800_000_000 - $0 }, 6 * 3600)
         XCTAssertTrue(service.allows(path))
@@ -261,12 +298,12 @@ final class KubePrometheusTests: XCTestCase {
     func testTheFakesPrometheusAnswersOnlyItsQueryPaths() async throws {
         let direct = KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: "fake-dev"), service: service)
         let now = Date()
-        let range = try await direct.query(KubePromQL.rangePath(service, KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "1m"), .hour, now: now))
+        let range = try await direct.query(KubePromQL.rangePath(service, KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "4m"), .hour, now: now))
         XCTAssertEqual(range.status, 200)
         let points = KubePrometheusReader.points(try KubePrometheusReader.read(range.body))
         XCTAssertEqual(points.count, 121)
         XCTAssertEqual(points.last?.value, 0.25)
-        let volumes = try await direct.query(KubePromQL.instantPath(service, KubePromQL.volumes(KubePromQL.volumeUsed, namespace: "shop")))
+        let volumes = try await direct.query(KubePromQL.instantPath(service, KubePromQL.volumes(KubePromQL.volumeUsed, namespaces: ["shop"])))
         XCTAssertEqual(try KubePrometheusReader.read(volumes.body).first?.labels, ["namespace": "shop", "persistentvolumeclaim": "data-db-0"])
         // Directly too, only the two paths: refused before the socket.
         do {
@@ -448,7 +485,8 @@ final class KubePrometheusTests: XCTestCase {
         let reachable = Box(false)
         let owner = NSObject()
         api.add(
-            "services", "prometheus-server", namespace: "monitoring", labels: ["app": "prometheus", "component": "server", "heritage": "Helm"],
+            "services", "prometheus-server", namespace: "monitoring",
+            labels: ["app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server", "app.kubernetes.io/managed-by": "Helm"],
             fields: ["spec": ["ports": [["port": 80]]]])
         func update(_ situation: KubePrometheusMonitor.Situation?) {
             monitor.update(
@@ -547,7 +585,8 @@ final class KubePrometheusTests: XCTestCase {
 
         // A chart shows: found, then queried over the range.
         api.add(
-            "services", "prometheus-server", namespace: "monitoring", labels: ["app": "prometheus", "component": "server", "heritage": "Helm"],
+            "services", "prometheus-server", namespace: "monitoring",
+            labels: ["app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server", "app.kubernetes.io/managed-by": "Helm"],
             fields: ["spec": ["ports": [["port": 80]]]])
         monitor.want([.chart(.pod(namespace: "shop", name: "web-1")), .volumes], for: owner)
         try await until(5, "found") { monitor.state == .found(service, .helm) }
@@ -581,11 +620,122 @@ final class KubePrometheusTests: XCTestCase {
         monitor.want([.chart(.cluster)], for: owner)
         try await until(5, "cluster") { monitor.charts[.cluster]?.read != nil }
         let cluster = try XCTUnwrap(monitor.charts[.cluster])
-        XCTAssertEqual(cluster.share(.cpuRequests, of: .cpuAllocatable)?.percent, 38, "1.5 of 4 cores requested")
+        XCTAssertEqual(cluster.share(.cpuRequests, of: .cpuAllocatable)?.percent, 38, "1.5 of 4 cores requested; the finished Job's 2 not counted")
         XCTAssertNil(cluster.totals[.memoryLimits], "kube-state-metrics has none: none said")
         XCTAssertEqual(monitor.detections, 1)
         XCTAssertFalse(api.requests.contains { $0.path.hasPrefix("/api/v1/services") })
+        // Still a week: the cluster's raw lines aren't asked, and it says why; its totals are.
+        XCTAssertEqual(cluster.range, .week)
+        XCTAssertEqual(cluster.refused, KubeChart.rawRefusal(.week))
+        XCTAssertTrue(cluster.series.isEmpty)
+        XCTAssertFalse(prometheusRequests.contains { $0.path.hasSuffix("query_range") }, "\(prometheusRequests.map(\.query))")
+        XCTAssertTrue(prometheusRequests.allSatisfy { $0.query["timeout"] == "20s" })
+        // 6h: drawn, at a rate window of four scrapes.
+        monitor.range = .sixHours
+        try await until(5, "6h") { monitor.charts[.cluster]?.range == .sixHours && monitor.charts[.cluster]?.read != nil }
+        XCTAssertNil(monitor.charts[.cluster]?.refused)
+        XCTAssertEqual(monitor.charts[.cluster]?.series[.cpu]?.count, 121)
+        XCTAssertTrue(prometheusRequests.contains { $0.path.hasSuffix("query_range") && $0.query["query"]?.contains("[4m]") == true })
         monitor.want([], for: owner)
+    }
+
+    /// A monitor reading `fake-dev`'s configured Service straight off the
+    /// fake's socket, in `scope`.
+    private func configuredMonitor(scope: KubeScope) -> KubePrometheusMonitor {
+        let monitor = KubePrometheusMonitor()
+        monitor.interval = .milliseconds(80)
+        let socket = self.socket!
+        monitor.update(
+            KubePrometheusMonitor.Situation(context: "fake-dev", use: .configured(service), scope: scope), client: { nil },
+            transport: { KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: "fake-dev"), service: $0) },
+            close: { _ in })
+        return monitor
+    }
+
+    /// The PVC list's Used column with several namespaces picked: asked
+    /// for those namespaces (a regex of them, escaped), never the cluster's
+    /// — a claim of the same name in a namespace not picked isn't read.
+    func testThePVCColumnAsksOnlyTheNamespacesPicked() async throws {
+        let claim = ["persistentvolumeclaim": "data-db-0"]
+        for (namespace, used) in [("acme.web", 3.0), ("acmexweb", 7.0), ("billing", 9.0)] {
+            let labels = claim.merging(["namespace": namespace]) { $1 }
+            api.setPrometheusSeries("kubelet_volume_stats_used_bytes", labels: labels, value: used * 1_073_741_824)
+            api.setPrometheusSeries("kubelet_volume_stats_capacity_bytes", labels: labels, value: 10 * 1_073_741_824)
+        }
+        let monitor = configuredMonitor(scope: KubeScope.of(["shop", "acme.web"]))
+        let owner = NSObject()
+        monitor.want([.volumes], for: owner)
+        try await until(5, "volumes") { monitor.volumes?.read != nil }
+        let queries = prometheusRequests.compactMap { $0.query["query"] }
+        XCTAssertEqual(queries.count, 2, "\(queries)")
+        XCTAssertTrue(queries.allSatisfy { $0.contains(#"namespace=~"acme\\.web|shop""#) }, "\(queries)")
+        let usage = try XCTUnwrap(monitor.volumes?.usage)
+        XCTAssertEqual(
+            Set(usage.keys), [KubeRowID(namespace: "shop", name: "data-db-0"), KubeRowID(namespace: "acme.web", name: "data-db-0")],
+            "billing isn't picked, and the dot is no wildcard")
+        XCTAssertEqual(monitor.volumeCell(KubeRowID(namespace: "acme.web", name: "data-db-0")).text, "3.0Gi of 10Gi (30%)")
+        XCTAssertNil(usage[KubeRowID(namespace: "billing", name: "data-db-0")])
+        monitor.want([], for: owner)
+    }
+
+    /// Every query of a chart may come back partial (Thanos, federation),
+    /// each with its own warning: the chart keeps three notes in all, not
+    /// three a query, and a read that fails doesn't leave the last good
+    /// read's notes beside its problem.
+    func testAChartKeepsThreeNotesAndNoneBesideAProblem() async throws {
+        api.setPrometheusMatrix("container_cpu_usage_seconds_total", warnings: ["store eu-1 timed out", "store eu-2 timed out"])
+        api.setPrometheusMatrix("container_memory_working_set_bytes", warnings: ["store eu-2 timed out", "store us-1 timed out", "store us-2 timed out"])
+        let monitor = configuredMonitor(scope: .namespace("shop"))
+        let owner = NSObject()
+        let pod = KubeChart.pod(namespace: "shop", name: "web-1")
+        monitor.want([.chart(pod)], for: owner)
+        try await until(5, "charted") { monitor.charts[pod]?.read != nil }
+        let reading = try XCTUnwrap(monitor.charts[pod])
+        XCTAssertEqual(reading.series[.cpu]?.last?.value, 0.25, "the evaluated answer, the warnings beside it")
+        XCTAssertEqual(
+            reading.notes, ["Partial answer: store eu-1 timed out", "Partial answer: store eu-2 timed out", "Partial answer: store us-1 timed out"],
+            "de-duplicated, then three for the chart")
+        XCTAssertNil(reading.problem)
+
+        api.failPrometheus(503, "upstream connect error")
+        try await until(5, "the problem") { monitor.charts[pod]?.problem != nil }
+        XCTAssertEqual(monitor.charts[pod]?.notes, [], "the last read's notes gone with it")
+        monitor.want([], for: owner)
+    }
+
+    /// A fixture matched by a fragment the query contains (whitespace
+    /// aside), never by parsing it: a query `FakePromQL` can't read is
+    /// answered by its lines, functions of t with gaps; its failure is the
+    /// answer when it has one; a query neither reads is `bad_data`.
+    func testTheFakesFixturesAreMatchedByAFragment() async throws {
+        let direct = KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: "fake-dev"), service: service)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let peak = #"max_over_time(sum(container_memory_working_set_bytes{namespace="shop"})[1h:1m])"#
+        let unread = try await direct.query(KubePromQL.rangePath(service, peak, .hour, now: now))
+        XCTAssertEqual(unread.status, 400, "FakePromQL doesn't read subqueries")
+        XCTAssertThrowsError(try KubePrometheusReader.read(unread.body, status: unread.status)) {
+            XCTAssertTrue(($0 as? KubePrometheusReader.Failure)?.message.hasPrefix("Prometheus: bad_data:") == true)
+        }
+
+        // Every other step missing: a gap where the line has none.
+        api.setPrometheusMatrix(
+            "max_over_time( sum(container_memory_working_set_bytes",
+            [FakePromFixture.Line(["pod": "web-1"]) { time in Int(time / 30) % 2 == 0 ? time - 1_799_996_400 : nil }])
+        let answered = try await direct.query(KubePromQL.rangePath(service, peak, .hour, now: now))
+        let series = try KubePrometheusReader.read(answered.body)
+        XCTAssertEqual(series.first?.labels, ["pod": "web-1"])
+        XCTAssertEqual(series.first?.points.count, 61)
+        XCTAssertEqual(series.first?.points.last?.value, 3600, "a function of t, not FakePromQL's ramp")
+        let instant = try await direct.query(KubePromQL.instantPath(service, peak))
+        XCTAssertEqual(instant.status, 200, "an instant query is answered by the same fixture")
+
+        api.setPrometheusMatrix("max_over_time(", failure: FakePromFixture.Failure(status: 503, errorType: "timeout", error: "query timed out"))
+        let failed = try await direct.query(KubePromQL.rangePath(service, peak, .hour, now: now))
+        XCTAssertThrowsError(try KubePrometheusReader.read(failed.body, status: failed.status)) {
+            XCTAssertEqual(($0 as? KubePrometheusReader.Failure)?.message, KubePrometheusReader.tookTooLong)
+        }
+        XCTAssertTrue(FakePromFixture(fragment: "rate(x[5m])").matches("sum( rate( x[5m] ) )"))
+        XCTAssertFalse(FakePromFixture(fragment: "rate(x[5m])").matches("rate(x[1m])"))
     }
 
     // MARK: The real kubectl

@@ -171,7 +171,7 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 | EKS, AKS and GKE sign-in and discovery | **Plus** | — | **Out**: kubectl's exec plugins (`aws`, kubelogin, `gke-gcloud-auth-plugin`) already sign in. When a session expires, "aws sso login" runs in a tab | Tab | Out (help in 1a) |
 | OpenShift and local clusters | Yes (docs) | Yes (plus an OpenShift Prometheus token) | Through the kubeconfig; local contexts recognised by name (Section 5). The OpenShift token is out (row above) | Local | 1a |
 | Bastions, SOCKS5, custom User-Agent | proxy setting | Yes | kubectl itself honours the kubeconfig's `proxy-url`; we add no setting | Proc | 1a |
-| Cluster overview: CPU and memory charts, requests, limits, capacity, issues | Yes | Yes | Version, nodes, live usage against allocatable (metrics.k8s.io) with a sparkline of the samples taken while shown, warnings first. Requests and limits against allocatable in stage 4: summing them needs every pod's spec, a whole-object list the Overview's rows avoid (5,000 pods are tens of MB a read), and Prometheus has them as series (`kube_pod_container_resource_requests`). Longer history only with Prometheus | API | 2d (requests and limits 4) |
+| Cluster overview: CPU and memory charts, requests, limits, capacity, issues | Yes | Yes | Version, nodes, live usage against allocatable (metrics.k8s.io) with a sparkline of the samples taken while shown, warnings first. Requests and limits against allocatable in stage 4: summing them needs every pod's spec, a whole-object list the Overview's rows avoid (5,000 pods are tens of MB a read), and Prometheus has them as series (`kube_pod_container_resource_requests`), counted only for Pending and Running pods (joined on `kube_pod_status_phase`; kube-state-metrics keeps finished pods, metrics.md M0). Longer history only with Prometheus: the cluster's CPU and memory lines up to 6 h — at 24 h and 7 d the chart says why and offers 6 h, its requests and limits still read | API | 2d (requests and limits 4) |
 | Welcome page | — | Yes | The page's empty state: the contexts with their class | Local | 1a |
 | Lens ID sign-in and activation | required | none | None | — | — |
 
@@ -296,7 +296,7 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 |---|---|---|---|---|---|
 | Usage columns from metrics-server | Yes | Nodes only | Pods and nodes: the list shows raw usage (a node's with its share of allocatable), since Table rows carry no spec; a pod's detail shows each container against its requests and limits, from its one GET. Polled every 15–30 s, only while the column shows. A dash when a read fails or metrics-server is absent (EKS has none by default); the sample's age when it is old. Never a stale number shown as current | API | 2d |
 | Charts with history | Yes (Prometheus) | Yes (Prometheus) | Without Prometheus: samples taken while shown, kept in memory. With Prometheus: see Section 4 | API | 2d / 4 |
-| Chart time range | — | Yes | With Prometheus only: a range picker (1 h, 6 h, 24 h, 7 d), sent as `query_range`'s start, end and step. Without it there is no range to pick: the chart covers the time it has been shown, and says so | API | 4 |
+| Chart time range | — | Yes | With Prometheus only: a range picker (1 h, 6 h, 24 h, 7 d), sent as `query_range`'s start, end and step — except the Overview's cluster-wide CPU and memory, asked up to 6 h only (raw cAdvisor across a cluster at 24 h or 7 d is tens of millions of samples): past it the chart says so with a Show 6 h button, its totals still instant queries (metrics.md M0). Without it there is no range to pick: the chart covers the time it has been shown, and says so | API | 4 |
 | Volume usage (PVC metrics) | — | Yes | With Prometheus only: `kubelet_volume_stats_used_bytes` against `_capacity_bytes`, as a column on PVCs and in the detail. metrics.k8s.io has no volume data, and kubelet's `/stats/summary` needs `nodes/proxy`, which every proxy refuses (Section 4) | API | 4 |
 | Prometheus, with providers detected automatically | Yes | Yes (more providers) | Opt-in per context (`metrics` in `kubernetes.contexts`), with Freelens's selectors and queries. Only the detected or configured Prometheus service's query paths are reachable, through a second proxy that accepts nothing else (Section 4) | API | 4 |
 | Install a metrics stack into the cluster | Yes | — | **Out**: Overterm installs nothing into a cluster | — | Out |
@@ -880,11 +880,13 @@ Checked against a real cluster (kind, Kubernetes v1.37.0, kubectl v1.36.1; 2026-
 - Freelens's way: find the service by known selectors with a list through the main socket, then query through the apiserver's service proxy (`/api/v1/namespaces/{ns}/services/{svc}:{port}/proxy/api/v1/query_range`, which needs `get services/proxy`). The query goes through the metrics proxy, which accepts that one service's query paths and nothing else.
 - Known selectors:
   - `lens-metrics/prometheus`;
-  - `app=prometheus,component=server,heritage=Helm`;
-  - `operated-prometheus=true`.
+  - `operated-prometheus=true`;
+  - the prometheus chart's `app.kubernetes.io/name=prometheus,app.kubernetes.io/component=server,app.kubernetes.io/managed-by=Helm` (v15 on);
+  - its older `app=prometheus,component=server,heritage=Helm`.
 
   The context's `prometheus` entry can name the namespace, service and port instead.
 - Freelens's queries need cAdvisor, kube-state-metrics and node-exporter. For a pod's CPU, for example: `sum(rate(container_cpu_usage_seconds_total{container!="",image!="",pod=~…,namespace=…}[1m]))`, plus `container_memory_working_set_bytes` and `kube_pod_container_resource_requests` and `_limits`. Volume usage is `kubelet_volume_stats_used_bytes` and `_capacity_bytes`.
+- (metrics.md, M0) Overterm's take on them: every sum goes over one series a container (`max by` a gauge, `sum by` a counter's rate), kube-state-metrics' series `max by` what identifies them, and requests and limits only of Pending and Running pods (`kube_pod_status_phase`). A `rate()`'s window is four scrapes at least (a step and a scrape, whole minutes; a minute's scrape assumed until probed); `rate(x[1m])` on a 1m scrape answers nothing. Raw cAdvisor across the cluster is read up to 6h; past it the chart says why and offers 6h. Every query carries `timeout=20s`.
 - The chart's time range sets `query_range`'s `start`, `end` and `step`.
 - OpenShift's Prometheus sits behind a token-checking proxy. Its token is out (2.1).
 

@@ -338,17 +338,39 @@ final class KubePrometheusMonitor: ObservableObject {
 
     /// One query: none once its reading was cancelled (the chart hidden),
     /// its answer read off the main thread.
-    private func ask(_ transport: any KubePrometheusTransport, _ path: String) async throws -> [KubeSeries] {
+    private func ask(_ transport: any KubePrometheusTransport, _ path: String) async throws -> KubePrometheusReader.Answer {
         try Task.checkCancellation()
         requests += 1
-        let series = try await Self.fetch(transport, path)
+        let answer = try await Self.fetch(transport, path, deadline: deadline)
         try Task.checkCancellation()
-        return series
+        return answer
     }
 
-    nonisolated private static func fetch(_ transport: any KubePrometheusTransport, _ path: String) async throws -> [KubeSeries] {
-        let response = try await transport.query(path)
-        return try KubePrometheusReader.read(response.body, status: response.status)
+    /// How long an answer is waited for: Prometheus' own `timeout` and a
+    /// few seconds more (a test's shorter).
+    var deadline: Duration = KubePromQL.deadline
+
+    /// The query and its answer read, given up past `deadline` (the query
+    /// cancelled, said as Prometheus' own timeout is).
+    nonisolated static func fetch(_ transport: any KubePrometheusTransport, _ path: String, deadline: Duration) async throws
+        -> KubePrometheusReader.Answer
+    {
+        try await withThrowingTaskGroup(of: KubePrometheusReader.Answer?.self) { group in
+            group.addTask { @Sendable in
+                let response = try await transport.query(path)
+                return try KubePrometheusReader.answer(response.body, status: response.status)
+            }
+            group.addTask { @Sendable in
+                try await Task.sleep(for: deadline)
+                return nil
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next(), let answer = first else {
+                try Task.checkCancellation()
+                throw KubePrometheusReader.Failure(message: KubePrometheusReader.tookTooLong)
+            }
+            return answer
+        }
     }
 
     private func said(_ error: Error) -> String {
@@ -360,19 +382,31 @@ final class KubePrometheusMonitor: ObservableObject {
         -> KubeChartReading
     {
         var reading = charts[chart].flatMap { $0.range == range ? $0 : nil } ?? KubeChartReading(range: range)
-        let (series, totals) = chart.queries(range: range)
+        let queries = chart.queries(range: range)
         let now = Date()
+        var notes: [String] = []
         do {
-            for (measure, query) in series {
-                reading.series[measure] = KubePrometheusReader.points(try await ask(transport, KubePromQL.rangePath(service, query, range, now: now)))
+            for (measure, query) in queries.series {
+                let answer = try await ask(transport, KubePromQL.rangePath(service, query, range, now: now))
+                reading.series[measure] = KubePrometheusReader.points(answer.series)
+                notes += answer.notes
             }
-            for (measure, query) in totals {
-                reading.totals[measure] = KubePrometheusReader.value(try await ask(transport, KubePromQL.instantPath(service, query)))
+            for (measure, query) in queries.totals {
+                let answer = try await ask(transport, KubePromQL.instantPath(service, query))
+                reading.totals[measure] = KubePrometheusReader.value(answer.series)
+                notes += answer.notes
             }
+            reading.refused = queries.refused
+            if queries.refused != nil { reading.series = [:] }
+            // Three at most for the chart, however many of its queries spoke.
+            var seen = Set<String>()
+            reading.notes = Array(notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))
             reading.read = now
             reading.problem = nil
         } catch is CancellationError {
         } catch {
+            // The last good read's notes don't belong beside a new problem.
+            reading.notes = []
             reading.problem = said(error)
         }
         return reading
@@ -380,11 +414,12 @@ final class KubePrometheusMonitor: ObservableObject {
 
     private func readVolumes(_ scope: KubeScope, _ transport: any KubePrometheusTransport, service: KubePrometheusService) async -> KubeVolumeReading {
         var reading = volumes.flatMap { $0.scope == scope ? $0 : nil } ?? KubeVolumeReading(scope: scope)
-        let namespace = scope.namespace(for: .pods)
+        // The namespaces picked: one, several (a regex of them), or every one.
+        let names = scope.names
         do {
-            let used = try await ask(transport, KubePromQL.instantPath(service, KubePromQL.volumes(KubePromQL.volumeUsed, namespace: namespace)))
-            let capacity = try await ask(transport, KubePromQL.instantPath(service, KubePromQL.volumes(KubePromQL.volumeCapacity, namespace: namespace)))
-            reading.usage = KubeVolumeUsage.by(used: used, capacity: capacity)
+            let used = try await ask(transport, KubePromQL.instantPath(service, KubePromQL.volumes(KubePromQL.volumeUsed, namespaces: names)))
+            let capacity = try await ask(transport, KubePromQL.instantPath(service, KubePromQL.volumes(KubePromQL.volumeCapacity, namespaces: names)))
+            reading.usage = KubeVolumeUsage.by(used: used.series, capacity: capacity.series)
             reading.read = Date()
             reading.problem = nil
         } catch is CancellationError {

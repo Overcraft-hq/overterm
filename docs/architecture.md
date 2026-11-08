@@ -5091,8 +5091,10 @@ the context, its use and its cluster and user; another of either, or
 one GET each through the context's own proxy, Freelens's order
 (`KubePrometheusProvider`):
 `lens-metrics/prometheus`, then Services labelled
-`app=prometheus,component=server,heritage=Helm`, then
-`operated-prometheus=true` — the first by namespace and name, its first
+`operated-prometheus=true`, then the prometheus chart's
+`app.kubernetes.io/{name=prometheus,component=server,managed-by=Helm}`
+(v15 on, `.helm`), then its older `app=prometheus,component=server,heritage=Helm`
+(`.helm14`) — the first by namespace and name, its first
 port, the operator's `web`); a refusal is said with what to set. Its
 queries go through the apiserver's service proxy on a **second `kubectl
 proxy`** of the context's (`KubeProxies.sendPrometheus`; `KubeProxySpec.
@@ -5119,25 +5121,52 @@ contexts (what `close` takes); `proxyLabels` every proxy, a metrics one as
 `<context> (prometheus)`. The model's
 monitor reads only what a page on screen wants (`prometheusWants`): the
 Overview's `.cluster` chart — CPU and memory from cAdvisor over the range (Freelens's queries, `KubePromQL`),
-and the cluster's requests and limits against allocatable
-(`kube_pod_container_resource_requests`/`_limits`,
+raw across the cluster only up to 6 h (`KubeChartRange.rawClusterLimit`:
+past it the lines aren't asked — `KubeChartQueries.refused` says why and
+the chart offers 6 h — while the totals still are),
+and the cluster's requests and limits of active pods against allocatable
+(`kube_pod_container_resource_requests`/`_limits` joined
+`* on(namespace,pod) group_left()` to `kube_pod_status_phase` Pending or
+Running — kube-state-metrics keeps finished pods —,
 `kube_node_status_allocatable`, instant `query`s) —, a pod's or a claim's
 chart in its detail's Overview, and the PVC list's Used column
 (`KubeVolumeUsage`: `kubelet_volume_stats_used_bytes` against `_capacity_bytes` by claim,
-every minute). A chart's range (`KubeChartRange`: 1 h, 6 h, 24 h, 7 d; the
+every minute; a namespace, the set picked as `namespace=~` through
+`KubePromQL.regexLiteral` — RE2's metacharacters escaped before the
+string's —, or every one). Every sum goes over one series a container
+first — a gauge `max by (namespace,pod,container)`, a counter's rate
+`sum by` — so a restarted container's lingering series isn't counted
+twice, and kube-state-metrics' series `max by` what identifies them (two
+replicas scrape the same); cAdvisor's `container!="POD"` sandbox is left
+out. A chart's range (`KubeChartRange`: 1 h, 6 h, 24 h, 7 d; the
 app's, the picker's) is `query_range`'s start and end (rounded down to a
-step) and step (120 points, a week's 168), a `rate()` window a step at
-least, asked again a step later (a minute at least). Answers are read
-bounded, off the main thread (`KubePrometheusReader`: 8 MB at most
+step) and step (120 points, a week's 168), a `rate()` window Grafana's
+`$__rate_interval` (`KubeRateWindow`: a step and a scrape, four scrapes
+at least, whole minutes; the scrape taken as 60 s), asked again a step
+later (a minute at least). Every query carries `timeout=20s`, and its
+answer is given up after 25 s (`KubePrometheusMonitor.fetch`, the query
+cancelled), said as Prometheus's own timeout. Answers are read
+bounded, off the main thread (`KubePrometheusReader.answer`: 8 MB at most
 parsed, 2,000 series, 2,000 points, `NaN` and
-`Inf` left out; Prometheus's errors and the apiserver's Status said).
+`Inf` left out; a vector, a matrix or a scalar; native-histogram series
+skipped and counted; `warnings` and `infos` kept as the chart's notes,
+three at most; Prometheus's errors and the apiserver's Status said). A
+line breaks where two points are more than two steps apart
+(`KubePrometheusReader.segments`), never bridged.
 Without Prometheus no picker shows: the metrics-server sparkline says it
 covers the time shown; with it the sparkline gives way to the chart.
 Hidden, every reading ends, what was read goes, the metrics proxy closes.
 `FakeKubeAPI.servePrometheus` answers a Service's two query paths with
-`setPrometheusSeries`' values (`evaluate`: the metric, its `=`/`!=`
-matchers, `sum`/`sum by`) and 403s every other proxy path, as the flags
-would. `KubePrometheusTests` (the regex — other Services, other paths,
+`setPrometheusSeries`' values (`FakePromQL`: selectors with `=`, `!=`,
+`=~`, `!~`, `rate`, `sum`/`max`/`min`/`count` by, `== n`,
+`* on(…) group_left()`; what it can't read answered `bad_data`) and 403s every other proxy path, as the flags
+would. Before evaluating, `setPrometheusMatrix`' fixtures (`FakePromFixture`)
+are matched by a fragment the query contains, whitespace aside — never
+by parsing it: lines that are functions of t (nil a gap), a scripted
+failure, or warnings added to the evaluated answer; a later stage's
+query is a fixture, `FakePromQL` isn't extended (metrics.md §8). A chart
+keeps three notes in all, its queries' together, and none beside a
+problem. `KubePrometheusTests` (the regex — other Services, other paths,
 encoded traversal —, the Service checked, finding it, queries and range,
 answers, the budget, the monitor reading only what shows) runs the real
 kubectl, when installed, as the metrics proxy in front of the fake through
