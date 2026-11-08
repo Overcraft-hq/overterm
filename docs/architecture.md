@@ -4318,9 +4318,44 @@ the nodes, the Overview's totals) where the model says (`updateMetrics`:
 the context, the namespace, the list's label selector), every `interval`
 (15 s; metrics-server samples every 15 s and keeps no history) — the last
 answer, and Overterm's own ring of the samples taken while shown
-(`KubeUsageHistory`: the last 40 per pod, node and the cluster's total, a
-row no longer sampled forgotten), in memory and gone with the reading,
-for the sparklines (`KubeSparkline`) in a pod's detail and the Overview. Whether there is a metrics-server is discovery's
+(`KubeUsageRing`, metrics.md 4.1; pure, in memory only), keyed
+(`KubeUsageKey`: the cluster, a node, a pod, a container, a workload's
+or a namespace's pods summed per poll) by metrics-server's own stamp —
+one that didn't move is dropped, a stretch past 2.5 intervals kept as a
+break — in two populations: a list's rows (the pods', the nodes', the
+cluster's) keep the last 40 raw points and are forgotten when their row
+isn't sampled or the list stops; a detail's keys keep two tiers (raw, 15
+minutes; one-minute min/mean/max buckets, 6 hours), at most 200 by least
+recently fed, each forgotten an hour after it was last polled (decision
+1: coming back to a pod shows what was sampled before, the time away a
+gap). Points are an `Int32` second and `Float32` values, the whole under
+6 MB as malloc counts it (`bytes`: the arrays' capacity, kept at their
+bound, each key's slot and names, a sum's members; list rows given up
+first, the shortest first). A poll's sample is merged off the main
+thread over a copy and assigned whole (`record`; merged again if the
+ring changed meanwhile). The ring belongs to the last context shown
+(`last`): a page hidden, the window occluded, keeps it — it is dropped
+only when another context is shown, on a credential failure, and at
+quit. It draws the sparklines (`KubeSparkline`) in a
+pod's detail and the Overview. A detail polls its own object
+(`wantDetail`, `KubeMetricsDetail` → a `KubeMetricsTarget`: a pod's
+PodMetrics, a node's NodeMetrics, an HPA's autoscaling/v2 object read as
+`KubeHPAStatus` — that one needs no metrics-server — or a workload's or
+namespace's pods into their sum), at most `maxDetailTargets` (3) a
+context, a fourth replacing the oldest; a pod's detail Overview does
+today, whatever the list beside it shows. A 403 (`KubeAPIError.isForbidden`)
+is said once in its own words (`KubeMetricsTarget.refusal`: "metrics-server
+answered 403: you can't list pods.metrics.k8s.io in shop.") and the
+target isn't asked again until the context changes or `retry` — never
+every 15 s, nor at each show; Try Again beside the sentence (the page's
+note, the detail's usage, the Overview) is the model's `retry`, for an
+RBAC grant that changes no credentials. Of a pods target's several
+namespaces each read is its own (`KubeMetricsTarget.pods` →
+`KubePodsRead`): a namespace refused is left out and named
+(`KubeMetricsSample.refusedReads`, "… in locked."), its pods' cells a dash
+saying so, the others' usage standing; not asked again either; only when
+every read is refused is the target (past the cap, the read across the
+cluster: "across the cluster"). Whether there is a metrics-server is discovery's
 to say (`KubeMetricsAvailability`): absent (EKS by default) or down
 (`Stale`, a 503), the columns stand with a dash and why (`KubeUsageCell`), and nothing is
 asked — no error; the context's `metrics` (`auto`, `metricsServer`,
@@ -4338,14 +4373,18 @@ its Table rows carry no spec, so the percentages of requests and limits
 are the pod's detail's, and a node's share is of its allocatable. Sorting by CPU or Memory sorts by the
 numbers; CSV has the cells as drawn. A pod's detail says its containers'
 usage against their requests and limits (`KubeContainerUsage`, from its
-one GET and the list's sample: nothing read for it alone), red within a
+one GET and the pod's own sample, else the list's), red within a
 tenth of its memory limit. `k8s_top` (agents', `KubeMCP+Top`) is the
 same reads: a namespace's (or every) pod, a pod's containers, the nodes
 with their share — sorted by cpu or memory, bounded (20, at most 200),
 scrubbed, saying when metrics-server sampled; without one it says so,
 asking nothing more. The fake serves PodMetrics and NodeMetrics
-(`setPodMetrics`, `setNodeMetrics`) and a cluster without metrics-server
-(`metricsServer = false`); `KubeMetricsTests`.
+(`setPodMetrics`, `setNodeMetrics`, stamped as served unless given a
+time, so the stamp advances as metrics-server's does; `forbidden` takes
+`pods.metrics.k8s.io` for that group alone, `pods.metrics.k8s.io@locked`
+for that group in one namespace) and a cluster without
+metrics-server (`metricsServer = false`); `KubeMetricsTests`,
+`KubeUsageRingTests`.
 
 **The Overview** (`1`; `KubeClusterOverview.swift` (pure),
 `KubeClusterOverviewSession`, `KubeClusterOverviewView`; analysis 2.1,

@@ -5,7 +5,10 @@ import Foundation
 /// Pods list's CPU and Memory columns on `fake-dev` — dashes, and nothing
 /// asked of metrics.k8s.io, while the fake has no metrics-server (its
 /// discovery names none: no error); values once it serves metrics.k8s.io,
-/// polled only while the column shows. Then the Overview (`1`): what
+/// polled only while the column shows; a pod's detail reading its own
+/// sample, kept after it closes and after the page is left; a 403 said
+/// once, with Try Again, and not asked again — nor by leaving the page.
+/// Then the Overview (`1`): what
 /// fails, pods by phase, the counts, the applications by their labels, the
 /// cluster's usage against its nodes' allocatable with a sparkline of the
 /// samples taken while it shows, the server's version — its follows ended
@@ -59,6 +62,59 @@ extension E2ERunner {
             "asked as kubectl top asks, in the namespace", metricsAsked().contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods" },
             "\(metricsAsked())")
         check("polled again while shown", await eventually(10) { metricsAsked().count >= 3 }, "\(metricsAsked().count)")
+
+        // A pod's detail reads its own sample (metrics.md 4.1), kept an hour after it closes.
+        let webRef = KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "metrics-web-1")
+        let own = "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods/metrics-web-1"
+        page.open(webRef, from: .list)
+        page.detailTab = .overview
+        check("a pod's detail reads its own sample", await eventually(10) { metricsAsked().filter { $0.path == own }.count >= 2 }, "\(metricsAsked().map(\.path))")
+        check("its usage drawn from it", await shownText(15) { $0.contains("cpu 250m") } != nil)
+        check(
+            "kept in the ring as a detail's, both tiers",
+            await eventually(10) {
+                model.metrics.ring.holds(.pod(namespace: "shop", name: "metrics-web-1"), .detail)
+                    && !model.metrics.ring.folded(.pod(namespace: "shop", name: "metrics-web-1")).isEmpty
+            })
+        page.closeDetail()
+        fake.forgetRequests()
+        await pause(1.5)
+        check("closed, it isn't read", !metricsAsked().contains { $0.path == own }, "\(metricsAsked().map(\.path))")
+        check("but its samples stay their hour", model.metrics.ring.holds(.pod(namespace: "shop", name: "metrics-web-1"), .detail))
+
+        // Leaving the page and coming back (decision 1): kept, not dropped as if the context had changed.
+        app.toggleKubernetesPage(nil)
+        check("left, the model is hidden", await eventually(5) { !model.isShown && !model.metrics.isPolling }, "shown \(model.isShown)")
+        app.toggleKubernetesPage(nil)
+        check("back, it is shown again", await eventually(10) { model.isShown && model.listState == .live })
+        check(
+            "the detail's samples survive leaving the page, both tiers",
+            model.metrics.ring.holds(.pod(namespace: "shop", name: "metrics-web-1"), .detail)
+                && !model.metrics.ring.folded(.pod(namespace: "shop", name: "metrics-web-1")).isEmpty)
+
+        // A 403 is said once, and not asked again every interval.
+        fake.forbidden.insert("pods.metrics.k8s.io")
+        check("refused, said in its own words", await shownText(15) { $0.contains("metrics-server answered 403") } != nil)
+        check("the list stands", model.listState == .live && model.rows[KubeRowID(namespace: "shop", name: "metrics-web-1")] != nil)
+        fake.forgetRequests()
+        await pause(2)
+        check("and not asked again", metricsAsked().isEmpty, "\(metricsAsked().map(\.path))")
+        let retryShown = await shownText(10) { $0.contains("Try Again") } != nil
+        check("Try Again beside it", page.metricsNoteIsRefusal && retryShown)
+        app.toggleKubernetesPage(nil)
+        check("left again, hidden", await eventually(5) { !model.isShown })
+        app.toggleKubernetesPage(nil)
+        check("back again", await eventually(10) { model.isShown && model.listState == .live })
+        await pause(1.5)
+        check("leaving and coming back asks nothing again", metricsAsked().isEmpty, "\(metricsAsked().map(\.path))")
+        check(
+            "the refusal still said", model.metrics.reading(.pods)?.refused?.hasPrefix("metrics-server answered 403") == true,
+            model.metrics.reading(.pods)?.refused ?? "nothing")
+        check("the detail's samples still held", model.metrics.ring.holds(.pod(namespace: "shop", name: "metrics-web-1"), .detail))
+        // Access granted since (RBAC, no new credentials): Try Again asks again.
+        fake.forbidden.remove("pods.metrics.k8s.io")
+        model.retry()
+        check("asked again on Try Again", await eventually(10) { model.metrics.reading(.pods)?.sample != nil })
 
         // The Overview.
         fake.add(

@@ -303,35 +303,6 @@ final class KubeMetricsTests: XCTestCase {
 
     // MARK: History, and a credential failure
 
-    func testHistoryKeepsTheLastSamplesWhileShownInMemory() {
-        var history = KubeUsageHistory()
-        let start = Date(timeIntervalSince1970: 1_000)
-        let web = KubeRowID(namespace: "shop", name: "web-1")
-        let gone = KubeRowID(namespace: "shop", name: "gone-1")
-        for index in 0..<(KubeUsageHistory.capacity + 5) {
-            var pods = [KubePodMetrics(id: web, timestamp: nil, window: nil, containers: ["app": KubeUsage(cpu: Double(index), memory: 1)])]
-            if index == 0 { pods.append(KubePodMetrics(id: gone, timestamp: nil, window: nil, containers: ["app": KubeUsage(cpu: 1, memory: 1)])) }
-            history.record(KubeMetricsSample(pods: pods, read: start.addingTimeInterval(Double(index) * 15)))
-        }
-        XCTAssertEqual(history.points(web).count, KubeUsageHistory.capacity, "a ring: the last ones only")
-        XCTAssertEqual(history.points(web).first?.usage.cpu, 5)
-        XCTAssertEqual(history.points(web).last?.usage.cpu, Double(KubeUsageHistory.capacity + 4))
-        XCTAssertEqual(history.points(gone), [], "a pod no longer sampled is forgotten")
-        XCTAssertEqual(history.cluster, [], "pods add nothing to the cluster's")
-        XCTAssertEqual(KubeUsageHistory.span(history.points(web)), "the last 9m45s, sampled while shown")
-        XCTAssertNil(KubeUsageHistory.span(Array(history.points(web).prefix(1))), "one sample is no line")
-
-        var nodes = KubeUsageHistory()
-        nodes.record(
-            KubeMetricsSample(
-                nodes: [
-                    KubeNodeMetrics(name: "fake-node-1", timestamp: nil, window: nil, usage: KubeUsage(cpu: 1, memory: 2)),
-                    KubeNodeMetrics(name: "fake-node-2", timestamp: nil, window: nil, usage: KubeUsage(cpu: 0.5, memory: 1)),
-                ], allocatable: [:], read: start))
-        XCTAssertEqual(nodes.cluster.map(\.usage), [KubeUsage(cpu: 1.5, memory: 3)], "every node's, added up")
-        XCTAssertEqual(nodes.points(KubeRowID(namespace: nil, name: "fake-node-2")).map(\.usage), [KubeUsage(cpu: 0.5, memory: 1)])
-    }
-
     func testSamplesTakenWhileShownMakeTheSparklines() async throws {
         let model = model()
         let page = KubernetesPageModel(model: model)
@@ -339,16 +310,266 @@ final class KubeMetricsTests: XCTestCase {
         model.show()
         defer { model.hide() }
         try await until(5, "pods") { model.rows.count == 3 && model.discovery != nil }
-        try await until(5, "three samples") { (model.metrics.reading(.pods)?.history.points(KubeRowID(namespace: "shop", name: "web-1")).count ?? 0) >= 3 }
+        try await until(5, "three samples") { model.metrics.ring.points(.pod(namespace: "shop", name: "web-1")).count >= 3 }
         let web = KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-1")
         XCTAssertGreaterThanOrEqual(page.usageHistory(of: web).count, 3)
         XCTAssertEqual(page.usageHistory(of: web).last?.usage.cpu, 0.25)
+        XCTAssertGreaterThan(model.metrics.merges, 0)
+        XCTAssertEqual(model.metrics.mergesOnMain, 0, "merged off the main thread")
         page.showSection(.overview)
         try await until(5, "the cluster's") { page.clusterHistory.count >= 2 }
         XCTAssertEqual(page.clusterHistory.last?.usage.cpu, 1)
         page.visible = false
         try await until(5, "hidden, gone") { model.metrics.reading(.nodes) == nil && !model.metrics.isPolling }
         XCTAssertEqual(page.clusterHistory, [], "nothing kept once hidden")
+    }
+
+    // MARK: A detail's own reads (metrics.md 4.1)
+
+    func testAPodsDetailReadsItsOwnSampleAndKeepsItAnHour() async throws {
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        page.visible = true
+        model.show()
+        defer { model.hide() }
+        try await until(5, "pods") { model.rows.count == 3 && model.discovery != nil }
+        let own = "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods/web-1"
+        let ref = KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-1")
+        page.open(ref, from: .list)
+        try await until(5, "the pod's own reads") { self.metricsRequests.filter { $0.path == own }.count >= 3 }
+        XCTAssertEqual(model.metrics.details, [.pod(namespace: "shop", name: "web-1")])
+        try await until(5, "its samples, both tiers") { model.metrics.ring.points(.pod(namespace: "shop", name: "web-1")).count >= 2 }
+        XCTAssertTrue(model.metrics.ring.holds(.pod(namespace: "shop", name: "web-1"), .detail))
+        XCTAssertEqual(model.metrics.ring.folded(.pod(namespace: "shop", name: "web-1")).isEmpty, false)
+        XCTAssertTrue(model.metrics.ring.holds(.container(namespace: "shop", pod: "web-1", container: "app"), .detail), "each container's too")
+        XCTAssertEqual(page.podSample(of: ref)?.total.cpu, 0.25)
+
+        // The list on another kind: the detail's own sample still says it.
+        page.showKind(try XCTUnwrap(model.catalog.kind(fullName: "deployments.apps")))
+        page.open(ref, from: .list)
+        try await until(5, "only the pod's own read") { model.metrics.reading(.pods) == nil && page.podSample(of: ref) != nil }
+
+        // Closed: no more reads, but its samples stay their hour.
+        page.closeDetail()
+        try await until(5, "stopped") { !model.metrics.isPolling }
+        let asked = metricsRequests.count
+        try await Task.sleep(for: .milliseconds(350))
+        XCTAssertEqual(metricsRequests.count, asked, "nothing read once the detail closes")
+        XCTAssertTrue(model.metrics.ring.holds(.pod(namespace: "shop", name: "web-1"), .detail), "kept an hour after (decision 1)")
+        XCTAssertEqual(model.metrics.ring.points(.pod(namespace: "shop", name: "web-1"), now: Date().addingTimeInterval(3_700)), [], "not past it")
+
+        // Another context: every sample of this one dropped.
+        model.metrics.update(
+            KubeMetricsMonitor.Situation(context: "fake-other", scope: .namespace("shop"), labels: nil, availability: .served), client: { nil })
+        XCTAssertTrue(model.metrics.ring.isEmpty)
+    }
+
+    func testLeavingThePageKeepsADetailsSamplesUntilAnotherContext() async throws {
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        page.visible = true
+        model.show()
+        defer { model.hide() }
+        try await until(5, "pods") { model.rows.count == 3 && model.discovery != nil }
+        let key = KubeUsageKey.pod(namespace: "shop", name: "web-1")
+        let ref = KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-1")
+        // Its detail open over another kind: only its own reads.
+        page.showKind(try XCTUnwrap(model.catalog.kind(fullName: "deployments.apps")))
+        page.open(ref, from: .list)
+        try await until(5, "both tiers") { model.metrics.ring.holds(key, .detail) && !model.metrics.ring.folded(key).isEmpty }
+        let points = model.metrics.ring.points(key)
+        page.closeDetail()
+        try await until(5, "stopped") { !model.metrics.isPolling }
+        let asked = metricsRequests.count
+
+        // The page left (the model's last viewer gone) and come back to.
+        model.hide()
+        XCTAssertFalse(model.isShown)
+        XCTAssertTrue(model.metrics.ring.holds(key, .detail), "kept while the page is hidden (decision 1)")
+        model.show()
+        try await until(5, "listed again") { model.listState == .live && model.metrics.availability == .served }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(model.metrics.ring.holds(key, .detail), "kept once it shows again")
+        XCTAssertFalse(model.metrics.ring.folded(key).isEmpty, "its folded tier too")
+        XCTAssertEqual(model.metrics.ring.points(key), points, "what was sampled before")
+        XCTAssertEqual(metricsRequests.count, asked, "and nothing asked for it")
+
+        // The monitor alone: nowhere, then the same context, keeps them…
+        let here = KubeMetricsMonitor.Situation(context: "fake-dev", scope: .namespace("shop"), labels: nil, availability: .served)
+        model.metrics.update(nil) { nil }
+        model.metrics.update(here) { nil }
+        XCTAssertTrue(model.metrics.ring.holds(key, .detail))
+        // …another context, even after nowhere, drops them.
+        model.metrics.update(nil) { nil }
+        model.metrics.update(KubeMetricsMonitor.Situation(context: "fake-other", scope: .namespace("shop"), labels: nil, availability: .served)) { nil }
+        XCTAssertTrue(model.metrics.ring.isEmpty)
+    }
+
+    func testANamespaceRefusedLeavesTheOthersUsage() async throws {
+        // `view` bound in shop, not in locked.
+        api.addNamespace("locked")
+        api.addPod("vault-1", namespace: "locked")
+        api.setPodMetrics("vault-1", namespace: "locked", [("app", "5m", "8Mi")])
+        api.forbidden = ["pods.metrics.k8s.io@locked"]
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        page.visible = true
+        model.show()
+        defer { model.hide() }
+        try await until(5, "listed") { model.rows.count == 3 && model.listState == .live }
+        model.setScope(.of(["shop", "locked"]))
+        try await until(5, "both namespaces' pods") { model.rows.count == 4 && model.listState == .live && model.discovery != nil }
+        try await until(5, "shop's usage") { model.metrics.reading(.pods)?.sample?.pods.isEmpty == false }
+        let sentence = "metrics-server answered 403: you can't list pods.metrics.k8s.io in locked."
+        let reading = try XCTUnwrap(model.metrics.reading(.pods))
+        XCTAssertNil(reading.refused, "the target isn't refused: shop answered")
+        XCTAssertEqual(reading.sample?.refusal, sentence, "only the refused namespace named")
+        XCTAssertEqual(page.metricsNote, sentence)
+        XCTAssertTrue(page.metricsNoteIsRefusal)
+        let web = try XCTUnwrap(page.rows.first { $0.row.id.name == "web-1" })
+        let vault = try XCTUnwrap(page.rows.first { $0.row.id.name == "vault-1" })
+        XCTAssertEqual(page.usage(.cpu, of: web).text, "250m", "shop's usage stands")
+        XCTAssertEqual(page.usage(.cpu, of: vault), .dash(sentence))
+        let shop = "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods"
+        let locked = "/apis/metrics.k8s.io/v1beta1/namespaces/locked/pods"
+        try await until(5, "polled again") { self.metricsRequests.filter { $0.path == shop }.count >= 3 }
+        XCTAssertEqual(metricsRequests.filter { $0.path == locked }.count, 1, "the refused namespace isn't asked again")
+
+        // The sentences: past the cap the read refused is the cluster's.
+        let many = KubeScope.of((0...KubeScope.watchCap).map { "acme-\($0)" })
+        XCTAssertEqual(
+            KubeMetricsTarget.pods(many, labels: nil).refusal, "metrics-server answered 403: you can't list pods.metrics.k8s.io across the cluster.")
+        XCTAssertEqual(KubeMetricsTarget.podsRefusal(["shop", "locked"]), "metrics-server answered 403: you can't list pods.metrics.k8s.io in locked, shop.")
+
+        // Granted since (no new credentials): Try Again asks again.
+        api.forbidden = []
+        model.retry()
+        try await until(5, "locked's usage") { model.metrics.reading(.pods)?.sample?.pods[KubeRowID(namespace: "locked", name: "vault-1")] != nil }
+        XCTAssertNil(model.metrics.reading(.pods)?.sample?.refusal)
+        XCTAssertEqual(page.usage(.cpu, of: vault).text, "5m")
+    }
+
+    func testEveryNamespaceRefusedRefusesTheTarget() async throws {
+        api.addNamespace("locked")
+        api.forbidden = ["pods.metrics.k8s.io@locked", "pods.metrics.k8s.io@shop"]
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        page.visible = true
+        model.show()
+        defer { model.hide() }
+        try await until(5, "listed") { model.rows.count == 3 && model.listState == .live }
+        model.setScope(.of(["shop", "locked"]))
+        let both = "metrics-server answered 403: you can't list pods.metrics.k8s.io in locked, shop."
+        try await until(5, "refused") { model.metrics.reading(.pods)?.refused == both }
+        XCTAssertFalse(model.metrics.isPolling)
+    }
+
+    func testANodesAndAnHPAsOwnReads() async throws {
+        api.add(
+            "horizontalpodautoscalers.autoscaling", "web", namespace: "shop",
+            fields: [
+                "spec": [
+                    "minReplicas": 2, "maxReplicas": 6,
+                    "metrics": [["type": "Resource", "resource": ["name": "cpu", "target": ["type": "Utilization", "averageUtilization": 70]]]],
+                ],
+                "status": [
+                    "currentReplicas": 3, "desiredReplicas": 4,
+                    "currentMetrics": [["type": "Resource", "resource": ["name": "cpu", "current": ["averageUtilization": 91, "averageValue": "455m"]]]],
+                    "conditions": [["type": "ScalingLimited", "status": "False"]],
+                ],
+            ])
+        let model = model()
+        let owner = NSObject()
+        model.show()
+        defer { model.hide() }
+        try await until(5, "discovery") { model.discovery != nil && model.metrics.availability == .served }
+        model.metrics.wantDetail([.node("fake-node-1"), .hpa(namespace: "shop", name: "web")], for: owner)
+        try await until(5, "the node's") { model.metrics.reading(.node("fake-node-1"))?.sample?.nodes["fake-node-1"] != nil }
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/nodes/fake-node-1" })
+        XCTAssertEqual(model.metrics.ring.points(.node("fake-node-1")).last?.usage.cpu, 1)
+        XCTAssertTrue(model.metrics.ring.holds(.node("fake-node-1"), .detail))
+        try await until(5, "the HPA's") { model.metrics.reading(.hpa(namespace: "shop", name: "web"))?.sample?.hpa != nil }
+        let hpa = try XCTUnwrap(model.metrics.reading(.hpa(namespace: "shop", name: "web"))?.sample?.hpa)
+        XCTAssertEqual(
+            hpa, KubeHPAStatus(name: "web", current: 3, desired: 4, min: 2, max: 6, scalingLimited: false, metrics: [.init(name: "cpu", current: "91%", target: "70%")]))
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/autoscaling/v2/namespaces/shop/horizontalpodautoscalers/web" })
+        model.metrics.wantDetail([], for: owner)
+        try await until(5, "stopped") { !model.metrics.isPolling }
+        XCTAssertNil(model.metrics.reading(.node("fake-node-1")), "the reading goes with the want")
+        XCTAssertTrue(model.metrics.ring.holds(.node("fake-node-1"), .detail), "its samples stay their hour")
+    }
+
+    func testADetailsTargetsAreCappedAtThreeAContext() async throws {
+        let model = model()
+        model.show()
+        defer { model.hide() }
+        try await until(5, "discovery") { model.discovery != nil && model.metrics.availability == .served }
+        let owners = (0..<4).map { _ in NSObject() }
+        let pods = ["web-1", "worker-1", "pending-1", "web-2"]
+        api.addPod("web-2", namespace: "shop")
+        api.setPodMetrics("web-2", namespace: "shop", [("app", "5m", "8Mi")])
+        for (owner, pod) in zip(owners, pods) { model.metrics.wantDetail([.pod(namespace: "shop", name: pod)], for: owner) }
+        XCTAssertEqual(model.metrics.details.map(\.target), pods.dropFirst().map { .pod(namespace: "shop", name: $0) }, "a fourth replaces the oldest")
+        XCTAssertEqual(model.metrics.targets.count, KubeMetricsMonitor.maxDetailTargets)
+        try await until(5, "the three read") {
+            Set(self.metricsRequests.map(\.path)).isSuperset(of: pods.dropFirst().map { "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods/\($0)" })
+        }
+        XCTAssertFalse(metricsRequests.contains { $0.path.hasSuffix("/pods/web-1") }, "the oldest isn't read")
+        model.metrics.wantDetail([], for: owners[3])
+        XCTAssertEqual(model.metrics.details.map(\.target).first, .pod(namespace: "shop", name: "web-1"), "one gone, the oldest read again")
+        for owner in owners { model.metrics.wantDetail([], for: owner) }
+        XCTAssertEqual(model.metrics.targets, [])
+    }
+
+    func testARefusedMetricsReadIsSaidOnceAndNotAskedAgain() async throws {
+        api.forbidden = ["pods.metrics.k8s.io"]
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        model.show()
+        defer { model.hide() }
+        try await until(5, "pods") { model.rows.count == 3 && model.discovery != nil }
+        page.visible = true
+        let sentence = "metrics-server answered 403: you can't list pods.metrics.k8s.io in shop."
+        try await until(5, "refused") { model.metrics.reading(.pods)?.refused != nil }
+        XCTAssertEqual(model.metrics.reading(.pods)?.refused, sentence)
+        XCTAssertEqual(page.metricsNote, sentence, "said in its own words")
+        XCTAssertEqual(page.usage(.cpu, of: try XCTUnwrap(page.rows.first)), .dash(sentence))
+        XCTAssertEqual(model.listState, .live, "the list is fine")
+        XCTAssertFalse(model.metrics.isPolling)
+        let asked = metricsRequests.count
+        XCTAssertEqual(asked, 1)
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(metricsRequests.count, asked, "not asked every interval")
+        page.visible = false
+        page.visible = true
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(metricsRequests.count, asked, "nor by showing the page again")
+        XCTAssertEqual(model.metrics.reading(.pods)?.refused, sentence, "still said")
+        XCTAssertTrue(page.metricsNoteIsRefusal, "Try Again beside it")
+        // Leaving the page (its last viewer gone: another page, the window
+        // occluded) and coming back: still refused, not asked again.
+        model.hide()
+        XCTAssertFalse(model.isShown)
+        model.show()
+        try await until(5, "listed again") { model.listState == .live && model.metrics.availability == .served }
+        try await until(5, "said again") { model.metrics.reading(.pods)?.refused == sentence }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(metricsRequests.count, asked, "nor by leaving the page and coming back")
+
+        // A pod's own read: its own sentence.
+        page.open(KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-1"), from: .list)
+        try await until(5, "the pod's refused") { model.metrics.reading(.pod(namespace: "shop", name: "web-1"))?.refused != nil }
+        XCTAssertEqual(
+            page.podUsageProblem(of: KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-1")),
+            "metrics-server answered 403: you can't get pods.metrics.k8s.io in shop.")
+        XCTAssertEqual(
+            KubeMetricsTarget.pods(.all, labels: nil).refusal, "metrics-server answered 403: you can't list pods.metrics.k8s.io across the cluster.")
+        XCTAssertEqual(KubeMetricsTarget.node("n").refusal, "metrics-server answered 403: you can't get nodes.metrics.k8s.io.")
+
+        // The credentials change (a sign-in, `retry`): asked again.
+        api.forbidden = []
+        model.retry()
+        try await until(5, "read after the retry") { model.metrics.reading(.pods)?.sample != nil && model.metrics.reading(.pods)?.refused == nil }
     }
 
     func testACredentialFailureDropsTheSampleAndOnlyARetryPollsAgain() async throws {
@@ -375,6 +596,7 @@ final class KubeMetricsTests: XCTestCase {
         XCTAssertEqual(page.usage(.cpu, of: row, now: Date().addingTimeInterval(model.metrics.staleAfter + 1)).text, "—")
         XCTAssertTrue(page.metricsNote?.hasPrefix("Usage couldn't be read") == true, page.metricsNote ?? "")
         XCTAssertEqual(page.usageHistory(of: KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-1")), [])
+        XCTAssertTrue(model.metrics.ring.isEmpty, "every sample of the context dropped")
 
         // A page asking again doesn't run the sign-in again.
         failing.on = false

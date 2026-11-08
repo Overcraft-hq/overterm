@@ -156,7 +156,7 @@ struct KubeClusterOverviewView: View {
                         KubeSparkline(values: history.map(\.usage.memory), color: theme.accentText).frame(width: 180, height: 22)
                     }
                 }
-                if let span = KubeUsageHistory.span(history) {
+                if let span = KubeUsageRing.span(history) {
                     Text(verbatim: "Usage over \(span)").font(.system(size: 11)).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.overview.usage.history")
                 }
@@ -167,6 +167,11 @@ struct KubeClusterOverviewView: View {
             VStack(alignment: .leading, spacing: 4) {
                 caption("Usage")
                 Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(theme.text3).textSelection(.enabled)
+                if model.metrics.isRefused(.nodes) {
+                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                        .help("Ask metrics-server again: access may have been granted since")
+                        .accessibilityIdentifier("kubernetes.overview.usage.retry")
+                }
             }
             .accessibilityIdentifier("kubernetes.overview.usage")
         }

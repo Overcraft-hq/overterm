@@ -9,10 +9,21 @@ import Foundation
 /// wanted, or no metrics-server, nothing is asked: discovery said so, and
 /// that is no error. A context's `metrics: none` skips the check entirely.
 ///
+/// A detail asks for its own object too (`wantDetail`, metrics.md 4.1): a
+/// pod's PodMetrics, a node's NodeMetrics, an HPA — at most
+/// `maxDetailTargets` a context, a fourth replacing the oldest.
+///
 /// metrics-server samples every 15 s and keeps no history, so this asks
-/// every `interval` (15 s) and keeps the last answer, with a ring of the
-/// samples taken while shown for the sparklines (`KubeUsageHistory`, in
-/// memory, gone with the reading); a node's allocatable is read with the
+/// every `interval` (15 s) and keeps the last answer; the samples taken
+/// while shown go to the context's `KubeUsageRing` (in memory: a list's
+/// rows while sampled, a detail's for an hour after it was last polled,
+/// two tiers; merged off the main thread and assigned whole; dropped on a
+/// context switch and a credential failure — never because the page was
+/// hidden, decision 1). A 403 is said once, in its own words, and the
+/// target isn't asked again until the context's credentials change
+/// (`retry`, another context) — never every 15 s, nor at each show; of a
+/// pods target's several namespaces, only those refused are left out and
+/// named, the others' samples standing. A node's allocatable is read with the
 /// first and then every `allocatableEvery`th. A read that fails leaves the
 /// last sample standing, aging — each failed read publishes, so the cells
 /// look at its age again — until it is older than `staleAfter`: then it is
@@ -41,18 +52,43 @@ final class KubeMetricsMonitor: ObservableObject {
     /// When a sample's own stamp is this old, the page says its age.
     var oldAfter: TimeInterval = 60
 
+    /// The most targets the details of one context poll at once.
+    static let maxDetailTargets = 3
+
     @Published private(set) var availability: KubeMetricsAvailability = .unknown
     @Published private(set) var readings: [KubeMetricsTarget: KubeMetricsReading] = [:]
+    /// The samples taken while shown, the context's (`last`'s, kept while
+    /// nothing is shown): changed as `readings` is (which publishes), so it
+    /// needn't publish itself.
+    private(set) var ring = KubeUsageRing() { didSet { ringChanges &+= 1 } }
+    /// Counts the ring's changes: a merge made off the main thread over a
+    /// copy is assigned only if nothing changed it meanwhile.
+    private var ringChanges = 0
     /// How many metrics requests were made, for the tests.
     private(set) var requests = 0
 
     private var wanted: [ObjectIdentifier: KubeMetricsWant] = [:]
+    /// What each detail wants polled for it.
+    private var detailWanted: [ObjectIdentifier: [KubeMetricsDetail]] = [:]
+    /// The details' targets in the order they were first wanted: the last
+    /// `maxDetailTargets` are polled.
+    private var detailOrder: [KubeMetricsDetail] = []
+    /// Targets refused with a 403 (and why): not asked again until the
+    /// context's credentials change.
+    private var refused: [KubeMetricsTarget: String] = [:]
+    /// A pods target's reads refused while others answered (nil, across
+    /// the cluster): left out, not asked again until the credentials change.
+    private var partlyRefused: [KubeMetricsTarget: Set<String?>] = [:]
     private var situation: Situation?
+    /// The last situation that named a context: the one the ring, the
+    /// refusals and the stops belong to, kept while nothing is shown.
+    private var last: Situation?
     private var client: () -> KubeClient? = { nil }
     private var polls: [KubeMetricsTarget: Task<Void, Never>] = [:]
-    /// Targets whose polling ended at a credential failure: not started
-    /// again until the situation changes.
-    private var stopped: Set<KubeMetricsTarget> = []
+    /// Targets whose polling ended at a credential failure, and why: not
+    /// started again until the situation changes (to another, not by
+    /// hiding and showing) or a retry.
+    private var stopped: [KubeMetricsTarget: String] = [:]
 
     /// What `owner` shows now that needs usage; nil, nothing.
     func want(_ want: KubeMetricsWant?, for owner: AnyObject) {
@@ -62,25 +98,63 @@ final class KubeMetricsMonitor: ObservableObject {
         reconcile()
     }
 
+    /// What a detail shows now that needs its own usage read (a pod's, a
+    /// node's, an HPA's); empty, nothing. Its samples stay in the ring for
+    /// an hour after.
+    func wantDetail(_ details: [KubeMetricsDetail], for owner: AnyObject) {
+        let id = ObjectIdentifier(owner)
+        let details = details.isEmpty ? nil : details
+        guard detailWanted[id] != details else { return }
+        detailWanted[id] = details
+        let all = Set(detailWanted.values.joined())
+        detailOrder.removeAll { !all.contains($0) }
+        for detail in details ?? [] where !detailOrder.contains(detail) { detailOrder.append(detail) }
+        reconcile()
+    }
+
+    /// The details polled now: the last `maxDetailTargets` wanted.
+    var details: [KubeMetricsDetail] {
+        var targets: [KubeMetricsTarget] = []
+        var polled: [KubeMetricsDetail] = []
+        for detail in detailOrder.reversed() {
+            if !targets.contains(detail.target) {
+                guard targets.count < Self.maxDetailTargets else { continue }
+                targets.append(detail.target)
+            }
+            polled.append(detail)
+        }
+        return polled.reversed()
+    }
+
     /// Where usage is read now; nil: nowhere (nobody looks, Kubernetes off, no context).
     func update(_ situation: Situation?, client: @escaping () -> KubeClient?) {
         self.client = client
         guard situation != self.situation else { return }
+        if let situation, situation.context != last?.context {
+            // Another context's samples are never shown as this one's, nor
+            // its refusals kept. Nowhere (the page hidden, the window
+            // occluded) keeps them: coming back shows what was sampled
+            // before, the time away a gap (decision 1).
+            forget()
+        }
         if situation?.context != self.situation?.context || situation?.availability != self.situation?.availability {
             // Another context's numbers are never shown as this one's.
             for task in polls.values { task.cancel() }
             polls = [:]
             if !readings.isEmpty { readings = [:] }
         }
-        stopped = []
+        if let situation, situation != last {
+            stopped = [:]
+            last = situation
+        }
         self.situation = situation
         let shown = situation?.availability ?? .unknown
         if availability != shown { availability = shown }
         reconcile()
     }
 
-    /// The targets wanted, where they are read now.
-    var targets: Set<KubeMetricsTarget> {
+    /// The pages' targets (the lists', the Overview's), where they are read now.
+    var listTargets: Set<KubeMetricsTarget> {
         guard let situation else { return [] }
         return Set(
             wanted.values.map { want in
@@ -91,6 +165,15 @@ final class KubeMetricsMonitor: ObservableObject {
             })
     }
 
+    /// Every target wanted: the pages' and the details' polled.
+    var targets: Set<KubeMetricsTarget> {
+        guard situation != nil else { return [] }
+        return listTargets.union(details.map(\.target))
+    }
+
+    /// The reading behind a detail.
+    func reading(_ detail: KubeMetricsDetail) -> KubeMetricsReading? { readings[detail.target] }
+
     /// The reading behind what `want` shows now.
     func reading(_ want: KubeMetricsWant) -> KubeMetricsReading? {
         guard let situation else { return nil }
@@ -100,26 +183,128 @@ final class KubeMetricsMonitor: ObservableObject {
         }
     }
 
+    /// Whether what `want` shows was refused, whole or some of its
+    /// namespaces: Try Again (the model's `retry`) asks again — after an
+    /// RBAC grant, which changes no credentials.
+    func isRefused(_ want: KubeMetricsWant) -> Bool {
+        guard let reading = reading(want) else { return false }
+        return reading.refused != nil || reading.sample?.refusal != nil
+    }
+
     /// Whether anything is polled now.
     var isPolling: Bool { !polls.isEmpty }
 
     /// After a sign-in, or a failure put right (`KubernetesModel.retry`):
     /// what a credential failure stopped is polled again, if still wanted.
     func retry() {
-        guard !stopped.isEmpty else { return }
-        stopped = []
+        guard !stopped.isEmpty || !refused.isEmpty || !partlyRefused.isEmpty else { return }
+        stopped = [:]
+        refused = [:]
+        partlyRefused = [:]
         reconcile()
     }
 
+    /// The context's samples and refusals: dropped.
+    private func forget() {
+        if !ring.isEmpty { ring.removeAll() }
+        refused = [:]
+        partlyRefused = [:]
+    }
+
     private func reconcile() {
-        let wantedTargets = situation?.availability == .served ? targets : []
+        let availability = situation?.availability ?? .unknown
+        let wantedTargets = targets.filter { availability == .served || (!$0.needsMetricsServer && availability != .off) }
         for (target, task) in polls where !wantedTargets.contains(target) {
             task.cancel()
             polls[target] = nil
-            readings[target] = nil
         }
-        for target in wantedTargets where polls[target] == nil && !stopped.contains(target) {
+        for target in readings.keys where !wantedTargets.contains(target) { readings[target] = nil }
+        // A list no longer read: its rows' samples go (a detail's stay their hour).
+        let lists = listTargets.intersection(wantedTargets)
+        if !lists.contains(where: { if case .pods = $0 { true } else { false } }) {
+            ring.forgetListed { if case .pod = $0 { true } else { false } }
+        }
+        if !lists.contains(.nodes) {
+            ring.forgetListed { key in
+                switch key {
+                case .node, .cluster: true
+                default: false
+                }
+            }
+        }
+        ring.prune(now: Date())
+        for target in wantedTargets where polls[target] == nil {
+            if let why = stopped[target] {
+                // Its sign-in failed: said, not asked again until a retry.
+                if readings[target]?.problem != why || readings[target]?.sample != nil {
+                    var reading = KubeMetricsReading()
+                    reading.problem = why
+                    readings[target] = reading
+                }
+                continue
+            }
+            if let why = refused[target] {
+                // Said once; not asked again until the credentials change.
+                if readings[target]?.refused != why {
+                    var reading = KubeMetricsReading()
+                    reading.problem = why
+                    reading.refused = why
+                    readings[target] = reading
+                }
+                continue
+            }
             polls[target] = poll(target)
+        }
+    }
+
+    /// What `sample` adds to the ring: as a list's rows, a detail's, sums.
+    /// Merged off the main thread over a copy (5,000 rows' points, the
+    /// hour's and the cap's bounds — metrics.md 5.3), then assigned whole —
+    /// unless the ring changed meanwhile (another target's merge, a list
+    /// forgotten, a context switch), when it is merged again over the new one.
+    private func record(_ sample: KubeMetricsSample, for target: KubeMetricsTarget) async {
+        let details = self.details.filter { $0.target == target }
+        let merge = Merge(
+            sample: sample, target: target, asList: listTargets.contains(target), asDetail: !details.isEmpty, sums: details.compactMap(\.sum),
+            interval: max(15, Double(interval.components.seconds)))
+        for _ in 0..<3 {
+            let seen = ringChanges
+            let (merged, onMain) = await Task.detached(priority: .utility) { [ring = self.ring] in
+                (merge.apply(to: ring, now: Date()), pthread_main_np() != 0)
+            }.value
+            guard !Task.isCancelled else { return }
+            if seen == ringChanges {
+                ring = merged
+                merges += 1
+                if onMain { mergesOnMain += 1 }
+                return
+            }
+        }
+        // Changed under every try: merged here, once.
+        ring = merge.apply(to: ring, now: Date())
+        merges += 1
+        mergesOnMain += 1
+    }
+
+    /// How many merges were assigned, and how many of them were made on
+    /// the main thread, for the tests.
+    private(set) var merges = 0
+    private(set) var mergesOnMain = 0
+
+    /// One sample's merge into a ring: pure, made wherever.
+    private struct Merge: Sendable {
+        var sample: KubeMetricsSample
+        var target: KubeMetricsTarget
+        var asList: Bool
+        var asDetail: Bool
+        var sums: [KubeUsageKey]
+        var interval: TimeInterval
+
+        nonisolated func apply(to ring: KubeUsageRing, now: Date) -> KubeUsageRing {
+            var ring = ring
+            ring.interval = interval
+            ring.record(sample, for: target, asList: asList, asDetail: asDetail, sums: sums, now: now)
+            return ring
         }
     }
 
@@ -144,7 +329,19 @@ final class KubeMetricsMonitor: ObservableObject {
                     let sample: KubeMetricsSample
                     switch target {
                     case .pods:
-                        sample = KubeMetricsSample(pods: try await target.pods(client), read: Date())
+                        let read = try await target.pods(client, skipping: self.partlyRefused[target] ?? [])
+                        guard !Task.isCancelled, self.polls[target] != nil else { return }
+                        // A namespace refused: left out and named, the others' standing.
+                        if !read.refused.isEmpty { self.partlyRefused[target, default: []].formUnion(read.refused) }
+                        var pods = KubeMetricsSample(pods: read.pods, read: Date())
+                        pods.refusedReads = Array(self.partlyRefused[target] ?? [])
+                        sample = pods
+                    case .pod:
+                        sample = KubeMetricsSample(pods: [try KubeMetricsReader.pod(try await client.get(target.path).body)], read: Date())
+                    case .node:
+                        sample = KubeMetricsSample(nodes: [try KubeMetricsReader.node(try await client.get(target.path).body)], allocatable: [:], read: Date())
+                    case .hpa:
+                        sample = KubeMetricsSample(hpa: try KubeMetricsReader.hpa(try await client.get(target.path).body), read: Date())
                     case .nodes:
                         let body = try await client.get(target.path).body
                         if count % max(1, self.allocatableEvery) == 0 || allocatable.isEmpty {
@@ -154,10 +351,12 @@ final class KubeMetricsMonitor: ObservableObject {
                         sample = KubeMetricsSample(nodes: try KubeMetricsReader.nodes(body), allocatable: allocatable, read: Date())
                     }
                     guard !Task.isCancelled, self.polls[target] != nil else { return }
+                    await self.record(sample, for: target)
+                    guard !Task.isCancelled, self.polls[target] != nil else { return }
                     var reading = self.readings[target] ?? KubeMetricsReading()
                     reading.sample = sample
                     reading.problem = nil
-                    reading.history.record(sample)
+                    reading.refused = nil
                     self.readings[target] = reading
                 } catch is CancellationError {
                     return
@@ -167,12 +366,24 @@ final class KubeMetricsMonitor: ObservableObject {
                     reading.problem = KubernetesModel.said(error)
                     if error is KubeProxyProblem {
                         // The context's sign-in failed: its list says so; nothing more
-                        // is asked, so nothing would age the sample — it goes now.
+                        // is asked, so nothing would age the sample — it goes now,
+                        // and every sample taken of the context with it.
                         reading.sample = nil
-                        reading.history = KubeUsageHistory()
+                        self.forget()
                         self.readings[target] = reading
                         self.polls[target] = nil
-                        self.stopped.insert(target)
+                        self.stopped[target] = reading.problem ?? KubernetesModel.said(error)
+                        return
+                    }
+                    if let refusal = error as? KubeAPIError, refusal.isForbidden {
+                        // RBAC said no: said once, and not asked again every 15 s.
+                        let why = target.refusal
+                        reading.sample = nil
+                        reading.problem = why
+                        reading.refused = why
+                        self.readings[target] = reading
+                        self.refused[target] = why
+                        self.polls[target] = nil
                         return
                     }
                     self.readings[target] = reading
@@ -210,9 +421,12 @@ final class KubeMetricsMonitor: ObservableObject {
     func note(_ want: KubeMetricsWant, now: Date = Date()) -> String? {
         if let reason = availability.reason, availability != .unknown { return reason }
         guard let reading = reading(want) else { return nil }
+        if let refused = reading.refused { return refused }
         guard let sample = reading.sample else { return reading.problem.map { "Usage couldn't be read: \($0)" } }
         let age = now.timeIntervalSince(sample.read)
         if age > staleAfter { return "Usage not read for \(KubeMetricsFormat.age(age))" + (reading.problem.map { ": \($0)" } ?? "") }
+        // Some namespaces refused: named, the others' numbers shown.
+        if let refusal = sample.refusal { return refusal }
         if let oldest = sample.oldest, now.timeIntervalSince(oldest) > oldAfter {
             return "Usage sampled \(KubeMetricsFormat.age(now.timeIntervalSince(oldest))) ago"
         }

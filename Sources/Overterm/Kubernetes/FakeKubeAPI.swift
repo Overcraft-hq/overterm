@@ -417,19 +417,22 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A pod's sample, as metrics-server writes one: each container's cpu
-    /// and memory (`"12m"`, `"48Mi"`, `"1234567n"`), stamped `at`.
-    func setPodMetrics(_ pod: String, namespace: String, _ containers: [(name: String, cpu: String, memory: String)], at time: Date = Date()) {
-        add(
-            "pods.metrics.k8s.io", pod, namespace: namespace,
-            fields: [
-                "timestamp": Self.time(time), "window": "15s",
-                "containers": containers.map { ["name": $0.name, "usage": ["cpu": $0.cpu, "memory": $0.memory]] },
-            ])
+    /// and memory (`"12m"`, `"48Mi"`, `"1234567n"`), stamped `at` — nil,
+    /// stamped as it is served, so the stamp advances as metrics-server's
+    /// does (metrics.md 8).
+    func setPodMetrics(_ pod: String, namespace: String, _ containers: [(name: String, cpu: String, memory: String)], at time: Date? = nil) {
+        var fields: [String: Any] = [
+            "window": "15s", "containers": containers.map { ["name": $0.name, "usage": ["cpu": $0.cpu, "memory": $0.memory]] },
+        ]
+        if let time { fields["timestamp"] = Self.time(time) }
+        add("pods.metrics.k8s.io", pod, namespace: namespace, fields: fields)
     }
 
-    /// A node's sample.
-    func setNodeMetrics(_ node: String, cpu: String, memory: String, at time: Date = Date()) {
-        add("nodes.metrics.k8s.io", node, fields: ["timestamp": Self.time(time), "window": "15s", "usage": ["cpu": cpu, "memory": memory]])
+    /// A node's sample, stamped as a pod's is.
+    func setNodeMetrics(_ node: String, cpu: String, memory: String, at time: Date? = nil) {
+        var fields: [String: Any] = ["window": "15s", "usage": ["cpu": cpu, "memory": memory]]
+        if let time { fields["timestamp"] = Self.time(time) }
+        add("nodes.metrics.k8s.io", node, fields: fields)
     }
 
     /// A Prometheus answers at `namespace/service:port`'s proxy — its
@@ -1238,9 +1241,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         if kind.namespaced == false && route.namespace != nil { return .json(404, Self.status(404, "NotFound", "the server could not find the requested resource")) }
         // `pods@cluster`: refused only across the cluster, each namespace's
         // allowed; `pods@locked`: refused in that namespace alone.
-        if settings.forbidden.contains(resource) || (route.namespace == nil && settings.forbidden.contains(resource + "@cluster"))
-            || route.namespace.map({ settings.forbidden.contains(resource + "@" + $0) }) == true
-        {
+        // `pods.metrics.k8s.io`: refused in that group alone; with `@locked`
+        // or `@cluster`, in that group and that namespace or scope alone.
+        let refusedHere = [resource, kind.fullName].contains { name in
+            settings.forbidden.contains(name) || (route.namespace == nil && settings.forbidden.contains(name + "@cluster"))
+                || route.namespace.map({ settings.forbidden.contains(name + "@" + $0) }) == true
+        }
+        if refusedHere {
             let scope = route.namespace.map { "in the namespace \"\($0)\"" } ?? "at the cluster scope"
             return .json(
                 403,
@@ -1803,6 +1810,8 @@ final class FakeKubeAPI: @unchecked Sendable {
                 }
             }
         }
+        // A sample with no stamp of its own: taken now, as metrics-server's are.
+        if kind.group == "metrics.k8s.io", full["timestamp"] == nil { full["timestamp"] = time(Date()) }
         return full
     }
 

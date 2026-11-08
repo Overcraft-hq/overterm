@@ -356,6 +356,12 @@ struct KubernetesPageView: View {
             if let note = page.metricsNote {
                 Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail).help(note)
                     .accessibilityIdentifier("kubernetes.metricsNote")
+                if page.metricsNoteIsRefusal {
+                    // After an RBAC grant (no new credentials): asked again.
+                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                        .help("Ask metrics-server again: access may have been granted since")
+                        .accessibilityIdentifier("kubernetes.metricsNote.retry")
+                }
             }
             if page.detail == nil, let problem = page.commandProblem {
                 Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
