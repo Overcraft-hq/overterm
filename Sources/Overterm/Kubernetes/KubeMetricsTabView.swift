@@ -1,15 +1,19 @@
 import SwiftUI
 
-/// A pod's Metrics tab (`m`; metrics.md 2.2): the range picker and where
-/// the numbers come from, then the pod's charts stacked by container and
-/// each container's own — a picker in place of the sections past four
-/// containers. Its charts share one crosshair, held in `@State` and not
-/// observed, so a hover redraws the charts' overlays and never this body.
+/// A pod's Metrics tab (`m`; metrics.md 2.2): the range picker — Live to
+/// 7d, Custom over Prometheus —, a zoom's or a window's Reset, Live's
+/// pause, and where the numbers come from; then the pod's charts stacked
+/// by container and each container's own — a picker in place of the
+/// sections past four containers. Its charts share one crosshair, held in
+/// `@State` and not observed, so a hover redraws the charts' overlays and
+/// never this body; a drag across one zooms them all.
 struct KubeMetricsTabView: View {
     static let identifier = "kubernetes.detail.metrics"
 
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var metrics: KubeMetricsMonitor
+    /// Its Prometheus answers land here: observed, as the samples are.
+    @ObservedObject var prometheus: KubePrometheusMonitor
     @ObservedObject var session: KubeDetailSession
     @ObservedObject var theme: ChromeTheme
     @State private var cursor = KubeChartCursor()
@@ -26,11 +30,13 @@ struct KubeMetricsTabView: View {
                     KubePodChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
                         showAround: { [weak page] in page?.showAround($0) },
-                        logsFromHere: { [weak page] container, time in page?.logsFromHere(container: container, at: time) })
+                        logsFromHere: { [weak page] container, time in page?.logsFromHere(container: container, at: time) },
+                        zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) })
                 } else {
                     problem(charts)
                 }
             }
+            .onContinuousHover { _ in page.noteMetricsInput() }
             .accessibilityIdentifier(Self.identifier)
         } else {
             let charts = page.objectCharts(of: session)
@@ -40,11 +46,14 @@ struct KubeMetricsTabView: View {
                 if let charts, charts.charts.contains(where: { chart in chart.data.usage.contains { !$0.points.isEmpty } }) {
                     KubeObjectChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
-                        showAround: { [weak page] in page?.showAround($0) })
+                        showAround: { [weak page] in page?.showAround($0) },
+                        zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) },
+                        groupShown: { [weak page] in page?.metricsGroupShown($0) })
                 } else {
                     objectProblem(charts)
                 }
             }
+            .onContinuousHover { _ in page.noteMetricsInput() }
             .accessibilityIdentifier(Self.identifier)
         }
     }
@@ -82,7 +91,8 @@ struct KubeMetricsTabView: View {
             } else if session.object == nil {
                 ProgressView().controlSize(.small)
             } else {
-                Text(verbatim: charts?.caption ?? "Waiting for the first sample…").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: charts?.caption ?? (page.metricsSource(of: session.ref) == .prometheus ? "Asking Prometheus…" : "Waiting for the first sample…"))
+                    .font(.system(size: 12)).foregroundStyle(theme.text3)
             }
         }
         .padding(16)
@@ -94,7 +104,7 @@ struct KubeMetricsTabView: View {
             HStack(spacing: 4) {
                 ForEach(KubeMetricsRange.allCases) { range in
                     let enabled = page.metricsRanges.contains(range)
-                    let picked = page.metricsRange == range && page.metricsWindow == nil
+                    let picked = page.shownMetricsRange == range && page.metricsWindow == nil
                     Button {
                         page.pickMetricsRange(range)
                     } label: {
@@ -111,19 +121,46 @@ struct KubeMetricsTabView: View {
                     .help(page.metricsRangeHelp(range) + (enabled ? "  ,  ." : ""))
                     .accessibilityIdentifier("kubernetes.metrics.range.\(range.rawValue)")
                 }
+                if page.offersCustomRange {
+                    Button {
+                        page.customRangeShown = true
+                    } label: {
+                        Text(verbatim: "Custom").font(.system(size: 11.5, weight: page.metricsWindow?.kind == .custom ? .semibold : .regular))
+                            .foregroundStyle(theme.text2)
+                            .padding(.horizontal, 8)
+                            .frame(height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Two dates, asked of Prometheus  .")
+                    .popover(isPresented: $page.customRangeShown, arrowEdge: .bottom) {
+                        KubeCustomRangeView(
+                            page: page, theme: theme, start: page.metricsWindow?.start ?? Date().addingTimeInterval(-3600),
+                            end: page.metricsWindow?.end ?? Date())
+                    }
+                    .accessibilityIdentifier("kubernetes.metrics.range.customButton")
+                }
                 if let window = page.metricsWindow {
-                    Text(verbatim: "Custom \(window.title)")
+                    Text(verbatim: (window.kind == .zoom ? "Zoomed " : "Custom ") + window.title)
                         .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.text)
                         .fixedSize()
                         .padding(.horizontal, 8)
                         .frame(height: 22)
                         .background(RoundedRectangle(cornerRadius: 5).fill(theme.selected))
-                        .help("A marker's time ± 30 minutes: what was sampled then, narrowed — nothing is asked")
+                        .help(windowHelp(window))
                         .accessibilityIdentifier("kubernetes.metrics.range.custom")
                     Button("Reset") { page.resetMetricsWindow() }
                         .controlSize(.small)
-                        .help("The range again  Esc")
+                        .help(page.metricsZoom.count > 1 ? "The window before  Esc" : "The range again  Esc")
                         .accessibilityIdentifier("kubernetes.metrics.reset")
+                }
+                if page.metricsLivePaused {
+                    Text(verbatim: "Paused").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.text2)
+                        .help("Live stopped reading after 15 minutes without input in this window")
+                        .accessibilityIdentifier("kubernetes.metrics.paused")
+                    Button("Resume") { page.resumeMetrics() }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("kubernetes.metrics.resume")
                 }
                 Spacer(minLength: 0)
                 objectControls(workloadView)
@@ -138,6 +175,16 @@ struct KubeMetricsTabView: View {
         .padding(.vertical, 6)
     }
 
+    private func windowHelp(_ window: KubeChartWindow) -> String {
+        let prometheus = page.metricsSource(of: session.ref) != .sampled
+        switch window.kind {
+        case .zoom: return prometheus ? "A drag's window: asked again at its own step, not refreshed" : "A drag's window: what was sampled then, narrowed — nothing is asked"
+        case .custom: return "Custom's window, asked of Prometheus at its own step"
+        case .around:
+            return prometheus ? "A marker's time ± 30 minutes, asked of Prometheus" : "A marker's time ± 30 minutes: what was sampled then, narrowed — nothing is asked"
+        }
+    }
+
     @ViewBuilder private func problem(_ charts: KubePodCharts?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let said = page.metricsTabProblem(of: session.ref) {
@@ -148,15 +195,14 @@ struct KubeMetricsTabView: View {
                     Button("Try Again") { page.model.retry() }.controlSize(.small)
                         .help("Ask metrics-server again: access may have been granted since")
                 }
-                if page.metricsTabOffersOverview {
-                    Button("Show Overview") { page.showTab(.overview) }.controlSize(.small)
-                        .help("The pod's chart from Prometheus")
-                        .accessibilityIdentifier("kubernetes.metrics.showOverview")
-                }
             } else if session.object == nil {
                 ProgressView().controlSize(.small)
             } else {
-                Text(verbatim: charts?.caption ?? "Waiting for metrics-server's first sample of this pod…").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(
+                    verbatim: charts?.caption
+                        ?? (page.metricsSource(of: session.ref) == .prometheus ? "Asking Prometheus…" : "Waiting for metrics-server's first sample of this pod…")
+                )
+                .font(.system(size: 12)).foregroundStyle(theme.text3)
             }
         }
         .padding(16)
@@ -174,6 +220,8 @@ struct KubePodChartsList: View {
     var openMarker: ((KubeChartMarker) -> Void)?
     var showAround: ((KubeChartMarker) -> Void)?
     var logsFromHere: ((String?, Date) -> Void)?
+    /// A drag across a chart: its two times and the chart's data.
+    var zoom: ((Date, Date, KubeChartData) -> Void)?
     @State private var picked: String?
 
     static let height: CGFloat = 140
@@ -194,7 +242,9 @@ struct KubePodChartsList: View {
                 ForEach(shown) { section in
                     caption("Container \(section.container)")
                     ForEach(section.charts) { chart in view(chart, container: section.container) }
+                    ForEach(section.notes, id: \.self) { note($0) }
                 }
+                ForEach(charts.notes, id: \.self) { note($0) }
             }
             .padding(14)
         }
@@ -210,10 +260,17 @@ struct KubePodChartsList: View {
         Text(verbatim: text).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
     }
 
+    private func note(_ text: String) -> some View {
+        Text(verbatim: text).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("kubernetes.metrics.note")
+    }
+
     private func view(_ chart: KubePodCharts.Chart, container: String?) -> some View {
         KubeChartView(
             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: Self.height, chips: chart.chips, openMarker: openMarker,
-            showAround: showAround, logsFromHere: logsFromHere.map { logs in { logs(container, $0) } }, theme: theme
+            showAround: showAround, logsFromHere: logsFromHere.map { logs in { logs(container, $0) } },
+            zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, theme: theme
         )
         .frame(maxWidth: .infinity)
     }
@@ -228,16 +285,25 @@ struct KubeObjectChartsList: View {
     @ObservedObject var theme: ChromeTheme
     var openMarker: ((KubeChartMarker) -> Void)?
     var showAround: ((KubeChartMarker) -> Void)?
+    var zoom: ((Date, Date, KubeChartData) -> Void)?
+    /// A group read only while on screen came into view, or left it.
+    var groupShown: ((Bool) -> Void)?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(charts.groups) { group in
                     Text(verbatim: group.title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                        .onAppear { if group.readsWhenShown { groupShown?(true) } }
+                        .onDisappear { if group.readsWhenShown { groupShown?(false) } }
+                    if group.pending, group.charts.isEmpty {
+                        Text(verbatim: "Asked of Prometheus while shown").font(.system(size: 11)).foregroundStyle(theme.text3)
+                            .accessibilityIdentifier("kubernetes.metrics.pending")
+                    }
                     ForEach(group.charts) { chart in
                         KubeChartView(
                             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: KubePodChartsList.height, chips: chart.chips,
-                            openMarker: openMarker, showAround: showAround, theme: theme
+                            openMarker: openMarker, showAround: showAround, zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, theme: theme
                         )
                         .frame(maxWidth: .infinity)
                     }
@@ -249,5 +315,39 @@ struct KubeObjectChartsList: View {
             }
             .padding(14)
         }
+    }
+}
+
+/// Custom's popover: two dates and times, checked (`KubeChartWindow.custom`)
+/// — the start before the end, the end not in the future, the start within
+/// what Prometheus keeps — and applied as the tab's window.
+struct KubeCustomRangeView: View {
+    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject var theme: ChromeTheme
+    @State var start: Date
+    @State var end: Date
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: "Custom range").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+            DatePicker("From", selection: $start, displayedComponents: [.date, .hourAndMinute])
+                .accessibilityIdentifier("kubernetes.metrics.custom.start")
+            DatePicker("To", selection: $end, displayedComponents: [.date, .hourAndMinute])
+                .accessibilityIdentifier("kubernetes.metrics.custom.end")
+            if let problem {
+                Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("kubernetes.metrics.custom.problem")
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { page.customRangeShown = false }.keyboardShortcut(.cancelAction)
+                Button("Show") { problem = page.applyCustomRange(start: start, end: end) }.keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("kubernetes.metrics.custom.apply")
+            }
+        }
+        .controlSize(.small)
+        .padding(12)
+        .frame(width: 300)
     }
 }

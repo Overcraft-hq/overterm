@@ -368,23 +368,6 @@ enum KubePromQL {
         return "max by (namespace,pod)(kube_pod_status_phase{\(job.isEmpty ? "" : job + ",")phase=~\"Pending|Running\"} == 1)"
     }
 
-    static func podCPU(namespace: String, pod: String, window: String, profile: KubePromProfile = .unknown) -> String {
-        "sum(" + containerRate("container_cpu_usage_seconds_total", matchers([("namespace", namespace), ("pod", pod)]), window: window, profile: profile) + ")"
-    }
-
-    static func podMemory(namespace: String, pod: String, profile: KubePromProfile = .unknown) -> String {
-        "sum(" + containerGauge("container_memory_working_set_bytes", matchers([("namespace", namespace), ("pod", pod)]), profile: profile) + ")"
-    }
-
-    /// A pod's CPU and memory from the mixin's per-container rules (`rule` the CPU one the profile found).
-    static func podCPURule(_ rule: String, namespace: String, pod: String) -> String {
-        "sum(max by (container)(\(rule){\(matchers([("namespace", namespace), ("pod", pod)])),container!=\"\",container!=\"POD\"}))"
-    }
-
-    static func podMemoryRule(namespace: String, pod: String) -> String {
-        "sum(max by (container)(\(KubePromProfile.containerMemoryRule){\(matchers([("namespace", namespace), ("pod", pod)])),container!=\"\",container!=\"POD\"}))"
-    }
-
     static func clusterCPU(window: String, profile: KubePromProfile = .unknown) -> String {
         "sum(" + containerRate("container_cpu_usage_seconds_total", window: window, profile: profile) + ")"
     }
@@ -457,6 +440,13 @@ enum KubePromQL {
         return KubePath.query(
             service.rangePath,
             [("query", query), ("start", stamp(start)), ("end", stamp(end)), ("step", duration(range.step)), ("timeout", duration(timeout))])
+    }
+
+    /// A `query_range` over `start…end` at `step` (a tab's span, or what a refresh asks of it).
+    static func rangePath(_ service: KubePrometheusService, _ query: String, start: Date, end: Date, step: TimeInterval) -> String {
+        KubePath.query(
+            service.rangePath,
+            [("query", query), ("start", stamp(start)), ("end", stamp(end)), ("step", duration(step)), ("timeout", duration(timeout))])
     }
 
     static func instantPath(_ service: KubePrometheusService, _ query: String) -> String {
@@ -666,7 +656,6 @@ enum KubePrometheusReader {
 enum KubeChart: Hashable, Sendable {
     /// The cluster's CPU and memory, its requests and limits against allocatable (the Overview).
     case cluster
-    case pod(namespace: String, name: String)
     case volume(namespace: String, claim: String)
 }
 
@@ -704,7 +693,6 @@ extension KubeChart {
     var order: Int {
         switch self {
         case .cluster: 0
-        case .pod: 1
         case .volume: 2
         }
     }
@@ -723,13 +711,6 @@ extension KubeChart {
         if profile.hasNodeRules { return .rules }
         if profile.hasNodeExporter { return .nodeExporter }
         return KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).isAllowed ? .raw : nil
-    }
-
-    /// A pod's lines' tier: raw cAdvisor over an hour or less, where one
-    /// pod's series are cheap and a 5-minute rule would smooth a spike
-    /// away; the rules past it, where they exist.
-    static func podTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier {
-        range.seconds > KubeChartRange.hour.seconds && profile.hasContainerRules ? .rules : .raw
     }
 
     /// The range queries (charts) and the instant ones (totals) this chart
@@ -767,21 +748,6 @@ extension KubeChart {
                 // Known: the samples it would read; unknown: as before the probe.
                 let refused = profile.known ? KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).sentence : nil
                 return KubeChartQueries(series: [], totals: totals, refused: refused ?? Self.rawRefusal(range), notes: notes)
-            }
-        case .pod(let namespace, let name):
-            switch Self.podTier(range, profile: profile) {
-            case .rules:
-                return KubeChartQueries(
-                    series: [
-                        (.cpu, KubePromQL.podCPURule(profile.containerCPURule ?? KubePromProfile.containerCPURate5m, namespace: namespace, pod: name)),
-                        (.memory, KubePromQL.podMemoryRule(namespace: namespace, pod: name)),
-                    ], totals: [], tier: .rules)
-            default:
-                return KubeChartQueries(
-                    series: [
-                        (.cpu, KubePromQL.podCPU(namespace: namespace, pod: name, window: window, profile: profile)),
-                        (.memory, KubePromQL.podMemory(namespace: namespace, pod: name, profile: profile)),
-                    ], totals: [], tier: .raw)
             }
         case .volume(let namespace, let claim):
             return KubeChartQueries(

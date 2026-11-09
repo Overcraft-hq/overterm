@@ -31,6 +31,47 @@ struct KubePrometheusDirect: KubePrometheusTransport {
     }
 }
 
+/// A Metrics tab's Prometheus answers (metrics.md 6.1; stage M6): each
+/// query's series by its id, over the span it was asked for, what wasn't
+/// asked and why, and what failed — a failed query keeps its last answer,
+/// said with the failure.
+struct KubeTabReading: Equatable, Sendable {
+    var request: KubeTabRequest
+    var service: KubePrometheusService?
+    var results: [String: [KubeSeries]] = [:]
+    var span: KubePromSpan?
+    var read: Date?
+    var problem: String?
+    /// Prometheus' warnings, the profile's footnotes: three at most.
+    var notes: [String] = []
+    var refused: [KubeTabFamily: String] = [:]
+    var tier: KubePromTier?
+    var profile: KubePromProfile = .unknown
+    /// Why nothing is asked at all (agent mode).
+    var unavailable: String?
+
+    /// A union's arms by their `overterm_s` tag.
+    func tagged(_ id: String) -> [String: [KubeSeries]] {
+        Dictionary(grouping: results[id] ?? [], by: { $0.labels["overterm_s"] ?? "" })
+    }
+
+    /// What changes when it is read again: the charts' cache key.
+    var version: Int {
+        var hasher = Hasher()
+        hasher.combine(read)
+        hasher.combine(problem)
+        hasher.combine(unavailable)
+        hasher.combine(span)
+        for (id, series) in results.sorted(by: { $0.key < $1.key }) {
+            hasher.combine(id)
+            hasher.combine(series.count)
+            hasher.combine(series.reduce(0) { $0 + $1.points.count })
+            hasher.combine(series.last?.points.last?.value)
+        }
+        return hasher.finalize()
+    }
+}
+
 /// A PVC list's usage, by claim: one instant read of kubelet's volume stats.
 struct KubeVolumeReading: Equatable, Sendable {
     var scope: KubeScope
@@ -43,7 +84,8 @@ struct KubeVolumeReading: Equatable, Sendable {
 /// 2.11, 2.17, Section 4, decision 16) — the model's, as
 /// `KubeMetricsMonitor` is. Opt-in per context (`KubePrometheusUse`), and
 /// read only while something on screen wants it: a chart (the Overview's
-/// cluster, a pod's, a claim's, each over `range`) or the PVC list's
+/// cluster, a claim's, each over `range`), a detail's Metrics tab (its
+/// queries over its own range or window, `tabs`) or the PVC list's
 /// column. Nothing wanted, nothing is asked — not even where Prometheus
 /// is — and the context's metrics proxy is closed (it runs only while a
 /// chart shows).
@@ -83,6 +125,11 @@ final class KubePrometheusMonitor: ObservableObject {
         /// The Pods list's shares of request and limit (wide), in the scope
         /// shown: kube-state-metrics a namespace at a time (metrics.md 2.1).
         case shares
+        /// A detail's Metrics tab: its charts' queries over its range or window (M6).
+        case tab(KubeTabRequest)
+        /// Where Prometheus is, and nothing read: a Metrics tab's ranges
+        /// past what was sampled need it found first.
+        case locate
     }
 
     /// The range every chart shows (the picker's): the app's.
@@ -93,11 +140,20 @@ final class KubePrometheusMonitor: ObservableObject {
     @Published private(set) var charts: [KubeChart: KubeChartReading] = [:]
     @Published private(set) var volumes: KubeVolumeReading?
     @Published private(set) var shares: KubeShareReading?
+    /// The Metrics tabs' answers, by what each asked.
+    @Published private(set) var tabs: [KubeTabRequest: KubeTabReading] = [:]
+    /// Each context's answers kept between refreshes (`KubeChartCache`).
+    private(set) var caches: [String: KubeChartCache] = [:]
+    private var cacheDrop: Task<Void, Never>?
+    /// How long the caches outlive the last reading (10 minutes; a test's shorter).
+    var cacheLifetime: Duration = .seconds(600)
     /// Instead of the range's own refresh (the scenario's, a test's).
     var interval: Duration?
     var volumeInterval: Duration = .seconds(60)
     /// The shares' requests and limits change only with a rollout: every 5 min.
     var shareInterval: Duration = .seconds(300)
+    /// What a Metrics tab's range ends at: now (a test's, moved on).
+    var clock: @MainActor () -> Date = { Date() }
     /// How many Prometheus queries were made, and lookups for it — the tests'.
     private(set) var requests = 0
     private(set) var detections = 0
@@ -159,6 +215,8 @@ final class KubePrometheusMonitor: ObservableObject {
             detecting = nil
             let kept = situation.flatMap(known)
             if state != kept ?? .off { state = kept ?? .off }
+            // Another context, use or cluster: no answer kept of the one before is drawn.
+            if let old { caches[old.context] = nil }
             stopped = false
             let shown = situation.flatMap { profiles[$0.context] }.flatMap { $0.key.use == situation?.use && $0.key.cluster == situation?.cluster ? $0.profile : nil }
             if profile != shown { profile = shown }
@@ -213,8 +271,11 @@ final class KubePrometheusMonitor: ObservableObject {
     private func reconcile() {
         guard let situation, situation.use.isOn, !wants.isEmpty, !stopped else {
             endReading()
+            dropCachesLater()
             return
         }
+        cacheDrop?.cancel()
+        cacheDrop = nil
         guard let service = state.service else {
             detect(situation)
             return
@@ -227,9 +288,23 @@ final class KubePrometheusMonitor: ObservableObject {
             case .chart(let chart): charts[chart] = nil
             case .volumes: volumes = nil
             case .shares: shares = nil
+            case .tab(let request):
+                // The same object over the same span asked anew (a fact or a
+                // family changed): its answers stand until the new request's
+                // come — the tab never flashes "Asking Prometheus…" for it.
+                if let reading = tabs[request] {
+                    for case .tab(let next) in wanted where next.carries(from: request) && tabs[next] == nil {
+                        var carried = reading
+                        carried.request = next
+                        tabs[next] = carried
+                        break
+                    }
+                }
+                tabs[request] = nil
+            case .locate: break
             }
         }
-        for want in wanted where polls[want] == nil {
+        for want in wanted where polls[want] == nil && want != .locate {
             polls[want] = poll(want, service: service, context: situation.context)
         }
     }
@@ -247,6 +322,7 @@ final class KubePrometheusMonitor: ObservableObject {
         if !charts.isEmpty { charts = [:] }
         if volumes != nil { volumes = nil }
         if shares != nil { shares = nil }
+        if !tabs.isEmpty { tabs = [:] }
         if proxyUsed, let context = situation?.context {
             proxyUsed = false
             let close = closeProxy
@@ -259,6 +335,21 @@ final class KubePrometheusMonitor: ObservableObject {
                 }
                 close(context)
             }
+        }
+    }
+
+    /// The answers kept forgotten, as their lifetime passing would (a test's): asked whole again.
+    func forgetCaches() { caches = [:] }
+
+    /// Nothing read for `cacheLifetime`: the answers kept go.
+    private func dropCachesLater() {
+        guard cacheDrop == nil, !caches.isEmpty else { return }
+        let lifetime = cacheLifetime
+        cacheDrop = Task { [weak self] in
+            try? await Task.sleep(for: lifetime)
+            guard !Task.isCancelled, let self else { return }
+            self.caches = [:]
+            self.cacheDrop = nil
         }
     }
 
@@ -374,6 +465,19 @@ final class KubePrometheusMonitor: ObservableObject {
                     guard !Task.isCancelled, self.polls[want] != nil, self.situation?.context == context else { return }
                     self.shares = reading
                     pause = self.interval ?? self.shareInterval
+                case .tab(let request):
+                    let reading = await self.readTab(request, transport, service: service, context: context)
+                    guard !Task.isCancelled, self.polls[want] != nil, self.situation?.context == context else { return }
+                    if self.tabs[request] != reading { self.tabs[request] = reading }
+                    // A window is read once: a zoomed or custom window doesn't refresh.
+                    guard let refresh = reading.span?.refresh else {
+                        if reading.problem == nil, reading.read != nil || reading.unavailable != nil { return }
+                        pause = self.interval ?? .seconds(60)
+                        break
+                    }
+                    pause = self.interval ?? .milliseconds(Int(refresh * 1000))
+                case .locate:
+                    return
                 }
                 if self.stopped {
                     self.polls[want] = nil
@@ -626,6 +730,121 @@ final class KubePrometheusMonitor: ObservableObject {
         }
         reading.read = Date()
         return reading
+    }
+
+    // MARK: A Metrics tab's
+
+    /// A tab's queries over its span (`KubeTabQueries.plan`), after the
+    /// profile (the tier, the pins, the rate window): the range ones
+    /// incrementally through the context's cache, every one through its
+    /// queue — four in flight, the tab's charts in order. A query that fails
+    /// keeps its last answer, the failure said; one that stops the context
+    /// (a credential, a `services/proxy` 403) stops the reading.
+    private func readTab(
+        _ request: KubeTabRequest, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String
+    ) async -> KubeTabReading {
+        var reading = tabs[request] ?? KubeTabReading(request: request)
+        reading.service = service
+        let profile: KubePromProfile
+        switch await self.profile(context, service, transport) {
+        case .success(let probed): profile = probed
+        case .failure(let error):
+            if error is CancellationError || Task.isCancelled { return reading }
+            reading.problem = said(error, service: service)
+            return reading
+        }
+        reading.profile = profile
+        if profile.agentOnly {
+            reading.results = [:]
+            reading.problem = nil
+            reading.unavailable = KubeChartEmpty.agentMode(service).sentence
+            return reading
+        }
+        reading.unavailable = nil
+        let now = clock()
+        let span = request.resolve(scrape: profile.scrapeInterval, now: now)
+        let plan = KubeTabQueries.plan(request, span: span, profile: profile)
+        // Another step (the scrape read anew): the last answer's points aren't on its grid.
+        if let last = reading.span, last.step != span.step { reading.results = [:] }
+        // Each query its own task, so the queue has them all at once (four go);
+        // cancelled together with the reading.
+        var tasks: [(String, Task<([KubeSeries], [String]), Error>)] = []
+        for (order, query) in plan.queries.enumerated() {
+            let task = Task { @MainActor [weak self] () throws -> ([KubeSeries], [String]) in
+                guard let self else { throw CancellationError() }
+                return try await self.tabQuery(
+                    query, span: span, scrape: profile.scrapeInterval, request: request, transport, service: service, context: context, order: order)
+            }
+            tasks.append((query.id, task))
+        }
+        let running = tasks.map(\.1)
+        var asked: [(String, Result<([KubeSeries], [String]), Error>)] = []
+        await withTaskCancellationHandler {
+            for (id, task) in tasks {
+                do {
+                    asked.append((id, .success(try await task.value)))
+                } catch {
+                    asked.append((id, .failure(error)))
+                }
+            }
+        } onCancel: {
+            for task in running { task.cancel() }
+        }
+        if Task.isCancelled { return reading }
+        var notes = plan.notes
+        var problem: String?
+        var answered = false
+        for query in plan.queries {
+            guard let result = asked.first(where: { $0.0 == query.id })?.1 else { continue }
+            switch result {
+            case .success(let (series, said)):
+                reading.results[query.id] = series
+                notes += said
+                answered = true
+            case .failure(let error):
+                if error is CancellationError { continue }
+                if let failure = error as? KubePrometheusReader.Failure, failure.kind == .notFound || failure.kind == .unprocessable {
+                    profiles[context] = nil
+                }
+                if problem == nil { problem = said(error, service: service) }
+            }
+        }
+        // What the plan no longer asks (another family, another tier) isn't kept.
+        let ids = Set(plan.queries.map(\.id))
+        reading.results = reading.results.filter { ids.contains($0.key) }
+        reading.problem = problem
+        reading.refused = plan.refused
+        reading.tier = plan.tier
+        reading.span = span
+        var seen = Set<String>()
+        reading.notes = Array(notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))
+        if answered || plan.queries.isEmpty { reading.read = now }
+        return reading
+    }
+
+    /// One of a tab's queries: an instant one asked as it is; a range one
+    /// asked from where the cache's answer ends (all of it the first time),
+    /// merged there, the merged series its answer.
+    private func tabQuery(
+        _ query: KubeTabQuery, span: KubePromSpan, scrape: TimeInterval, request: KubeTabRequest, _ transport: any KubePrometheusTransport,
+        service: KubePrometheusService, context: String, order: Int
+    ) async throws -> ([KubeSeries], [String]) {
+        if query.instant {
+            let answer = try await ask(transport, KubePromQL.instantPath(service, query.promql), context: context, service: service, order: order)
+            return (answer.series, answer.notes)
+        }
+        let key = KubeChartCache.Key(query: query.promql, range: request.cacheRange, step: span.step)
+        guard let asked = (caches[context] ?? KubeChartCache()).ask(key, span: span, scrape: scrape) else {
+            caches[context]?.touch(key)
+            return (caches[context]?.series(key) ?? [], [])
+        }
+        let answer = try await ask(
+            transport, KubePromQL.rangePath(service, query.promql, start: asked.start, end: asked.end, step: span.step), context: context, service: service,
+            order: order)
+        // Another context meanwhile: not this one's to keep.
+        guard situation?.context == context else { throw CancellationError() }
+        caches[context, default: KubeChartCache()].merge(key, series: answer.series, asked: asked, start: span.start)
+        return (caches[context]?.series(key) ?? answer.series, answer.notes)
     }
 
     // MARK: An agent's

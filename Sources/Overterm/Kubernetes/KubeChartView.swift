@@ -17,6 +17,24 @@ final class KubeChartCursor: ObservableObject {
 
     @Published private(set) var hover: Hover?
 
+    /// A drag across a chart, while it goes: the band every chart of the scope draws.
+    struct Selection: Equatable {
+        var from: Date
+        var to: Date
+        var owner: String
+    }
+
+    @Published private(set) var selection: Selection?
+
+    func select(from: Date, to: Date, owner: String) {
+        let next = Selection(from: from, to: to, owner: owner)
+        if next != selection { selection = next }
+    }
+
+    func endSelection() {
+        if selection != nil { selection = nil }
+    }
+
     func move(to time: Date?, owner: String) {
         let next = time.map { Hover(time: $0, owner: owner) }
         if next != hover { hover = next }
@@ -183,6 +201,9 @@ struct KubeChartView: View {
     var showAround: ((KubeChartMarker) -> Void)? = nil
     /// The context menu's "Logs from here", at the crosshair's time; nil, no such item.
     var logsFromHere: ((Date) -> Void)? = nil
+    /// A drag across the plot released: the window from one time to the
+    /// other (metrics.md 3.3) — every chart of the tab moves to it; nil, no zoom.
+    var zoom: ((Date, Date) -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
     @StateObject private var state = KubeChartState()
     /// Where the mouse last was over the plot: the context menu's time —
@@ -203,7 +224,11 @@ struct KubeChartView: View {
             plotArea
             timeAxis
         }
-        .onAppear { register(state.plot) }
+        .onAppear {
+            // A series off by default (C2's RSS) starts hidden; the legend shows it.
+            if hidden.isEmpty, !data.hiddenByDefault.isEmpty { hidden = data.hiddenByDefault }
+            register(state.plot)
+        }
         .onDisappear { KubeChartRegistry.shared.hide(token) }
         .onReceive(state.$plot) { plot in register(plot) }
         .onChange(of: data.version) { _ in
@@ -231,7 +256,7 @@ struct KubeChartView: View {
 
     /// Up to three series, the legend sits on the header's line; more wrap under it.
     private var header: some View {
-        let wraps = data.usage.count > 3
+        let wraps = data.legendSeries.count > 3
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(verbatim: data.title).font(.system(size: 11)).foregroundStyle(theme.text3)
@@ -254,7 +279,7 @@ struct KubeChartView: View {
     }
 
     @ViewBuilder private var legend: some View {
-        let usage = data.usage
+        let usage = data.legendSeries
         KubeFlowLayout(spacing: 8, lineSpacing: 3) {
             if usage.count > 1 {
                 ForEach(Array(usage.enumerated()), id: \.element.id) { index, series in
@@ -291,7 +316,7 @@ struct KubeChartView: View {
 
     private func legendItem(_ series: KubeChartSeries, colour: Color) -> some View {
         Button {
-            let ids = data.usage.map(\.id)
+            let ids = data.legendSeries.map(\.id)
             if NSEvent.modifierFlags.contains(.command) {
                 // ⌘-click: this one added or removed, never the last one left.
                 if hidden.contains(series.id) {
@@ -338,6 +363,18 @@ struct KubeChartView: View {
                 if let plot, !plot.bands.isEmpty { bandTips(plot) }
             }
             .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { drag in
+                        guard zoom != nil, let plot = state.plot else { return }
+                        cursor.select(from: plot.time(atX: drag.startLocation.x), to: plot.time(atX: drag.location.x), owner: data.identifier)
+                    }
+                    .onEnded { drag in
+                        defer { cursor.endSelection() }
+                        guard let zoom, let plot = state.plot else { return }
+                        zoom(plot.time(atX: drag.startLocation.x), plot.time(atX: drag.location.x))
+                    }, including: zoom == nil ? .subviews : .all
+            )
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
@@ -521,6 +558,11 @@ struct KubeChartView: View {
                     Path(CGRect(x: band.minX, y: plot.frame.minY, width: max(band.maxX - band.minX, 1), height: plot.frame.height)),
                     with: .color(bandColour.opacity(0.12)))
             }
+            // A peak band: a faint area behind the lines.
+            for peak in plot.peaks {
+                let alpha = highlighted == nil || highlighted == peak.id ? 1.0 : 0.25
+                context.fill(Path(peak.stroke.cgPath), with: .color(colours[peak.colour % colours.count].opacity(0.1 * alpha)))
+            }
             for line in plot.lines {
                 let colour = colours[line.colour % colours.count]
                 let alpha = highlighted == nil || highlighted == line.id ? 1.0 : 0.25
@@ -571,11 +613,13 @@ struct KubeChartOverlay: View {
 
     var body: some View {
         let hover = cursor.hover
+        let band = cursor.selection.flatMap { selection in plot.map { (min($0.x(of: selection.from), $0.x(of: selection.to)), max($0.x(of: selection.from), $0.x(of: selection.to))) } }
         // The tooltip over the Canvas, not beside it: an overlay never sizes
         // the view under it, so the series layer is never laid out again.
         Canvas(
             renderer: Self.renderer(
-                id, window: ObjectIdentifier(theme), plot: plot, time: hover?.time, owns: hover?.owner == id, step: step, colours: colours, line: theme.text3)
+                id, window: ObjectIdentifier(theme), plot: plot, time: hover?.time, owns: hover?.owner == id, step: step, colours: colours, line: theme.text3,
+                band: band)
         )
         .overlay(alignment: .topLeading) {
             if let plot, let hover, hover.owner == id {
@@ -626,11 +670,20 @@ struct KubeChartOverlay: View {
     }
 
     nonisolated static func renderer(
-        _ id: String, window: ObjectIdentifier, plot: KubePlot?, time: Date?, owns: Bool, step: TimeInterval, colours: [Color], line: Color
+        _ id: String, window: ObjectIdentifier, plot: KubePlot?, time: Date?, owns: Bool, step: TimeInterval, colours: [Color], line: Color,
+        band: (CGFloat, CGFloat)? = nil
     ) -> (inout GraphicsContext, CGSize) -> Void {
         { context, _ in
             // `owns`: the chart under the mouse, the one whose tooltip shows.
             KubeChartDraws.shared.drew(id, window: window, overlay: true, tooltip: owns && plot != nil && time != nil)
+            // A drag's band, on every chart of the scope.
+            if let plot, let band {
+                let from = max(band.0, plot.frame.minX)
+                let to = min(band.1, plot.frame.maxX)
+                if to > from {
+                    context.fill(Path(CGRect(x: from, y: plot.frame.minY, width: to - from, height: plot.frame.height)), with: .color(line.opacity(0.18)))
+                }
+            }
             guard let plot, let time, !colours.isEmpty else { return }
             let x = plot.x(of: time)
             var path = Path()
@@ -639,7 +692,7 @@ struct KubeChartOverlay: View {
             context.stroke(path, with: .color(line), lineWidth: 1)
             // Stacked, a band's point sits on the band's top.
             var below = 0.0
-            for (track, value) in plot.values(at: time, step: step) where !track.role.isReference {
+            for (track, value) in plot.values(at: time, step: step) where track.role == .usage {
                 let shown = plot.stacked ? below + value : value
                 below = shown
                 let y = plot.y(of: shown)

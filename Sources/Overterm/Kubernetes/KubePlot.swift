@@ -13,12 +13,13 @@ import Foundation
 /// stacked); the others are reference lines — dashed and stepped, never
 /// more series —, each fixed in colour by meaning and told apart by its
 /// own dash too, colour never the only cue (metrics.md, 5.2). A peak
-/// band or a projection is not usage and not a reference line: each comes
-/// with the stage that draws it (C1, V1), its own handling with it.
+/// band (C1's, a step's highest rate) is neither: a faint area behind the
+/// usage, never stacked, never summed into it. A projection comes with
+/// the stage that draws it (V1).
 enum KubeChartRole: String, Sendable, CaseIterable {
-    case usage, request, limit, allocatable, capacity, quota, guide
+    case usage, request, limit, allocatable, capacity, quota, guide, peak
 
-    var isReference: Bool { self != .usage }
+    var isReference: Bool { self != .usage && self != .peak }
 
     /// The reference's dash: request [3,3], limit [6,2], allocatable and capacity [1,2], quota [6,2,1,2].
     var dash: [CGFloat] {
@@ -28,7 +29,7 @@ enum KubeChartRole: String, Sendable, CaseIterable {
         case .allocatable, .capacity: [1, 2]
         case .quota: [6, 2, 1, 2]
         case .guide: [2, 4]
-        case .usage: []
+        case .usage, .peak: []
         }
     }
 
@@ -41,6 +42,7 @@ enum KubeChartRole: String, Sendable, CaseIterable {
         case .capacity: "capacity"
         case .quota: "quota"
         case .guide: "guide"
+        case .peak: "peak"
         case .usage: "usage"
         }
     }
@@ -51,6 +53,8 @@ enum KubeChartUnit: String, Sendable {
     /// CPU cores, said in millicores as kubectl top does (`750m`).
     case cores
     case bytes
+    /// Bytes a second: a pod's network.
+    case bytesPerSecond
     /// A fraction, said as a percent.
     case ratio
     case count
@@ -59,6 +63,7 @@ enum KubeChartUnit: String, Sendable {
         switch self {
         case .cores: KubeMetricsFormat.cpu(value)
         case .bytes: KubeVolumeFormat.bytes(value)
+        case .bytesPerSecond: KubeVolumeFormat.bytes(value) + "/s"
         case .ratio: "\(Int((value * 100).rounded()))%"
         case .count: value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
         }
@@ -69,6 +74,7 @@ enum KubeChartUnit: String, Sendable {
         switch self {
         case .cores: 0.1
         case .bytes: 1_048_576
+        case .bytesPerSecond: 1024
         case .ratio: 1
         case .count: 1
         }
@@ -158,6 +164,9 @@ struct KubeChartSeries: Equatable, Sendable, Identifiable {
     /// The points that start again after a break their source recorded
     /// (`KubeUsageRing`'s): a run ends before each, whatever the step.
     var breaks: Set<Date> = []
+    /// Hidden until its legend item is clicked (C2's RSS): never in the
+    /// chart's totals.
+    var offByDefault = false
 }
 
 /// What one chart shows: its series over a window, in one unit.
@@ -196,7 +205,13 @@ struct KubeChartData: Equatable, Sendable {
     var identifier: String { "kubernetes.chart." + id }
     /// The markers inside the window: the ones drawn.
     var shownMarkers: [KubeChartMarker] { markers.filter { $0.time >= start && $0.time <= end } }
-    var usage: [KubeChartSeries] { series.filter { !$0.role.isReference } }
+    var usage: [KubeChartSeries] { series.filter { $0.role == .usage } }
+    /// Its peak bands (C1's): drawn behind the usage, in the legend beside it.
+    var peaks: [KubeChartSeries] { series.filter { $0.role == .peak } }
+    /// What the legend lists: the usage, then the peaks.
+    var legendSeries: [KubeChartSeries] { usage + peaks }
+    /// The series hidden until clicked.
+    var hiddenByDefault: Set<String> { Set(series.filter(\.offByDefault).map(\.id)) }
     var references: [KubeChartSeries] { series.filter(\.role.isReference) }
 }
 
@@ -276,6 +291,8 @@ struct KubePlot: Sendable {
     var yTicks: [Double]
     var timeTicks: [Date]
     var lines: [Line]
+    /// Peak bands: an area from 0 to each step's highest, behind the lines.
+    var peaks: [Line]
     var references: [Reference]
     var tracks: [Track]
     var markers: [Marker]
@@ -297,7 +314,8 @@ struct KubePlot: Sendable {
         unit = data.unit
         stacked = data.stacked
         let usage = data.usage
-        let colours = Dictionary(uniqueKeysWithValues: usage.enumerated().map { ($1.id, $0) })
+        let colours = Dictionary(uniqueKeysWithValues: data.legendSeries.enumerated().map { ($1.id, $0) })
+        let peakSeries = data.peaks.filter { !hidden.contains($0.id) }
         let shown = usage.filter { !hidden.contains($0.id) }
         let references = hideReferences ? [] : data.references.filter { !hidden.contains($0.id) }
         let columns = max(2, Int(frame.width.rounded()))
@@ -323,7 +341,7 @@ struct KubePlot: Sendable {
         } else {
             drawn = shown.map { ($0, nil, $0.points) }
         }
-        let highest = drawn.flatMap { $0.upper.map(\.value) }.max() ?? 0
+        let highest = (drawn.flatMap { $0.upper.map(\.value) } + peakSeries.flatMap { $0.points.map(\.value) }).max() ?? 0
         let referenceHighest = references.compactMap { $0.points.map(\.value).max() }.max() ?? 0
         (top, yTicks) = Self.niceScale(max(highest, referenceHighest), unit: data.unit)
         timeTicks = Self.timeTicks(start: start, end: end, width: frame.width, timeZone: timeZone)
@@ -387,6 +405,21 @@ struct KubePlot: Sendable {
                     fill: filled ? KubePlotPath(cgPath: fill.copy() ?? fill) : nil, points: count))
         }
         self.lines = lines
+        peaks = peakSeries.map { series in
+            let fill = CGMutablePath()
+            var count = 0
+            for run in Self.runs(series.points, lower: nil, step: data.breaksMarked ? 0 : data.step, breaks: series.breaks) {
+                let points = Self.decimate(run.upper, columns: columns, start: startTime, span: span)
+                guard let first = points.first, let last = points.last, points.count >= 2 else { continue }
+                count += points.count
+                fill.move(to: CGPoint(x: x(first.time.timeIntervalSince1970), y: y(0)))
+                for point in points { fill.addLine(to: CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))) }
+                fill.addLine(to: CGPoint(x: x(last.time.timeIntervalSince1970), y: y(0)))
+                fill.closeSubpath()
+            }
+            let path = KubePlotPath(cgPath: fill.copy() ?? fill)
+            return Line(id: series.id, name: series.name, role: .peak, colour: colours[series.id] ?? 0, stroke: path, fill: path, points: count)
+        }
 
         // References: stepped across the window — a value holds until the next one; one value, flat across.
         self.references = references.compactMap { series in
@@ -424,6 +457,11 @@ struct KubePlot: Sendable {
                 Track(
                     id: series.id, name: series.name, role: series.role, colour: colours[series.id] ?? 0,
                     times: series.points.map { $0.time.timeIntervalSince1970 }, values: series.points.map(\.value))
+            }
+            + peakSeries.map { series in
+                Track(
+                    id: series.id, name: series.name, role: .peak, colour: colours[series.id] ?? 0, times: series.points.map { $0.time.timeIntervalSince1970 },
+                    values: series.points.map(\.value))
             }
             + references.map { series in
                 Track(
@@ -504,7 +542,7 @@ struct KubePlot: Sendable {
     static func niceScale(_ highest: Double, unit: KubeChartUnit) -> (top: Double, ticks: [Double]) {
         let highest = highest.isFinite && highest > 0 ? highest : unit.emptyTop
         var scale = 1.0
-        if unit == .bytes {
+        if unit == .bytes || unit == .bytesPerSecond {
             while scale * 1024 <= highest, scale < 1_099_511_627_776 { scale *= 1024 }
         }
         let value = highest / scale
@@ -607,10 +645,14 @@ struct KubeChartTooltip: Equatable, Sendable {
 
     static func at(_ time: Date, plot: KubePlot, step: TimeInterval, timeZone: TimeZone = .current) -> KubeChartTooltip {
         let values = plot.values(at: time, step: step)
-        let usage = values.filter { !$0.track.role.isReference }.sorted { $0.value > $1.value }
+        let usage = values.filter { $0.track.role == .usage }.sorted { $0.value > $1.value }
         // Stacked, a band's own value is what it adds, not the sum under it.
         let total = usage.reduce(0) { $0 + $1.value }
         var rows = usage.map { Row(name: $0.track.name, value: plot.unit.format($0.value), colour: $0.track.colour, role: .usage) }
+        // A peak band's highest, beside the usage, never in its total.
+        for (track, value) in values where track.role == .peak {
+            rows.append(Row(name: track.name, value: plot.unit.format(value), colour: track.colour, role: .peak))
+        }
         for (track, value) in values where track.role.isReference {
             let share = KubeMetricsFormat.percent(total, of: value).map { " · \($0)%" } ?? ""
             rows.append(Row(name: track.name, value: plot.unit.format(value) + share, colour: nil, role: track.role))
@@ -681,7 +723,7 @@ enum KubeChartSummary {
 
     /// The usage series summed at each time they share (one series: itself).
     static func totals(_ data: KubeChartData) -> [KubeSeriesPoint] {
-        let usage = data.usage
+        let usage = data.usage.filter { !$0.offByDefault }
         guard usage.count > 1 else { return usage.first?.points ?? [] }
         var sums: [Double: Double] = [:]
         for series in usage { for point in series.points { sums[point.time.timeIntervalSince1970, default: 0] += point.value } }

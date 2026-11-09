@@ -24,7 +24,7 @@ struct FakePromProfile: Sendable {
     private static let raw = [
         "container_cpu_usage_seconds_total": 9000, "container_memory_working_set_bytes": 9000, "container_cpu_cfs_throttled_periods_total": 6000,
         "container_cpu_cfs_periods_total": 6000, "container_network_receive_bytes_total": 3000, "container_oom_events_total": 9000,
-        "container_fs_usage_bytes": 9000,
+        "container_fs_usage_bytes": 9000, "container_memory_rss": 9000,
     ]
     private static let ksm = [
         "kube_pod_status_phase": 15000, "kube_pod_container_resource_requests": 8000, "kube_pod_container_status_last_terminated_reason": 500,

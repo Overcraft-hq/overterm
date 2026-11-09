@@ -7,8 +7,8 @@ import Foundation
 enum KubeChartEmpty: Equatable, Sendable {
     /// No metrics.k8s.io, and Prometheus not on.
     case noMetricsServer
-    /// No metrics.k8s.io, Prometheus on: the pod's chart is on its Overview.
-    case noMetricsServerChartOnOverview
+    /// No metrics.k8s.io, Prometheus on: the charts are Prometheus', once it is found.
+    case noMetricsServerPrometheus
     /// kube-state-metrics isn't scraped: no requests or limits.
     case ksmMissing
     /// kube-state-metrics 1.x: its old metric names (a footnote).
@@ -61,8 +61,8 @@ enum KubeChartEmpty: Equatable, Sendable {
         switch self {
         case .noMetricsServer:
             return "No metrics-server in this cluster: there are no usage numbers without it or Prometheus."
-        case .noMetricsServerChartOnOverview:
-            return "No metrics-server in this cluster: the Metrics tab's sampled charts need it. The pod's Prometheus chart is on the Overview tab."
+        case .noMetricsServerPrometheus:
+            return "No metrics-server in this cluster: the Metrics tab's charts come from Prometheus, once it is found."
         case .ksmMissing:
             return "kube-state-metrics isn't scraped: no requests or limits over time."
         case .ksmOld:

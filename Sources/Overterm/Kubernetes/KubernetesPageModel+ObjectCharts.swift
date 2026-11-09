@@ -44,6 +44,9 @@ struct KubeObjectChartsKey: Equatable, Sendable {
     var reads: [Date]
     var changes: Int
     var window: KubeChartWindow?
+    var source: KubeChartSource = .sampled
+    /// Prometheus' answers' version (`KubeTabReading.version`).
+    var prometheus: Int?
 }
 
 /// The Metrics tab beyond pods (stage M3b): a workload's CPU and memory as
@@ -152,7 +155,7 @@ extension KubernetesPageModel {
     /// and marked asked only once the read is started (else asked again).
     func askChartLookups() {
         guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, metricsTabShows,
-            model.metrics.availability == .served, let session = detail, !chartLookups.asked.contains(session.ref)
+            model.metrics.availability == .served || chartsFromPrometheus, let session = detail, !chartLookups.asked.contains(session.ref)
         else { return }
         let ref = session.ref
         guard let subject = ref.metricsSubject, let client = model.client(for: ref.context) else { return }
@@ -198,19 +201,56 @@ extension KubernetesPageModel {
     /// only when what they are built from changes (`KubeObjectChartsKey`).
     func objectCharts(of session: KubeDetailSession) -> KubeObjectCharts? {
         let ref = session.ref
-        guard let subject = ref.metricsSubject, subject != .pod, let object = session.object else { return nil }
-        if subject != .hpa, model.metrics.availability != .served { return nil }
-        let details = objectMetricsDetails(session)
+        guard let subject = ref.metricsSubject, subject != .pod, let object = session.object, let source = metricsSource(of: ref) else { return nil }
+        let details = source == .prometheus ? [] : objectMetricsDetails(session)
         let reads = details.map { model.metrics.reading($0)?.sample?.read ?? .distantPast }
         let now = reads.filter { $0 != .distantPast }.max() ?? Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / 15).rounded(.down) * 15)
-        let range = metricsRanges.contains(metricsRange) ? metricsRange : .live
+        let range = shownMetricsRange(for: subject)
         let templates = session.timeline?.templates ?? []
         let changes = chartChanges(of: session)
         let window = metricsWindow
+        let reading = source == .sampled ? nil : tabReading(of: session)
         let key = KubeObjectChartsKey(
-            ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: now, range: range, view: workloadChartView,
-            lookups: chartLookups.version, revisions: templates.count, topPods: topPodsSampling, reads: reads, changes: changes.version, window: window)
+            ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: source == .prometheus ? .distantPast : now, range: range,
+            view: workloadChartView, lookups: chartLookups.version, revisions: templates.count, topPods: topPodsSampling, reads: reads, changes: changes.version,
+            window: window, source: source, prometheus: reading?.version)
         if let cached = objectChartsCache, cached.key == key { return cached.charts }
+        let built = buildObjectCharts(session, subject: subject, object: object, source: source, reading: reading, details: details, now: now, range: range)
+        objectChartsCache = (key, built)
+        objectChartsBuilds += 1
+        return built
+    }
+
+    /// What `objectCharts` builds: from Prometheus, sampled, or both.
+    private func buildObjectCharts(
+        _ session: KubeDetailSession, subject: KubeMetricsSubject, object: KubeObject, source: KubeChartSource, reading: KubeTabReading?,
+        details: [KubeMetricsDetail], now: Date, range: KubeMetricsRange
+    ) -> KubeObjectCharts? {
+        let ref = session.ref
+        let templates = session.timeline?.templates ?? []
+        let changes = chartChanges(of: session)
+        let window = metricsWindow
+        if source == .prometheus {
+            guard let reading else { return nil }
+            switch subject {
+            case .workload(let kind):
+                guard let namespace = ref.namespace else { return nil }
+                var revisions: [String: String] = [:]
+                for template in templates { revisions[template.name] = "rev \(template.revision)" + (template.images.first.map { " (\($0.image))" } ?? "") }
+                let hpa = (chartLookups.hpa[ref] ?? nil).map { (name: $0, status: KubeHPAStatus?.none) }
+                return KubePromTabCharts.workload(
+                    KubeWorkloadCharts.Input(
+                        namespace: namespace, kind: kind, name: ref.name, object: object.json, ring: model.metrics.ring, statuses: model.metrics.statuses, pods: [],
+                        range: range, now: now, interval: 15, view: workloadChartView, revisions: revisions, hpa: hpa, changes: changes, window: window),
+                    reading: reading)
+            case .hpa:
+                return ref.namespace.map { KubePromTabCharts.hpa(namespace: $0, name: ref.name, reading: reading, changes: changes, window: window) }
+            case .node:
+                return KubePromTabCharts.node(node: ref.name, facts: KubeNodeFacts.of(object.json), reading: reading, changes: changes, window: window)
+            case .namespace, .pod:
+                return nil
+            }
+        }
         let poll = Double(model.metrics.interval.components.seconds) + Double(model.metrics.interval.components.attoseconds) / 1e18
         let resolution = details.compactMap { model.metrics.reading($0)?.sample?.resolution }.max() ?? 0
         let interval = max(15, poll, resolution)
@@ -252,16 +292,26 @@ extension KubernetesPageModel {
         case .pod:
             charts = nil
         }
-        objectChartsCache = (key, charts)
-        objectChartsBuilds += 1
+        if source == .mixed, let built = charts, case .workload(let kind) = subject, let namespace = ref.namespace {
+            return KubePromTabCharts.addOnly(
+                built, subject: "workload.\(namespace).\(kind.lowercased()).\(ref.name)", reading: reading, changes: changes, namesPods: true)
+        }
         return charts
     }
 
     /// Why a tab other than a pod's has nothing: metrics-server absent (an
     /// HPA's needs none), or its reads refused or failing.
     func objectMetricsProblem(of session: KubeDetailSession) -> String? {
+        if let source = metricsSource(of: session.ref), source != .sampled, let reading = tabReading(of: session) {
+            if let unavailable = reading.unavailable { return unavailable }
+            if source == .prometheus, reading.read == nil, let problem = reading.problem { return "Prometheus couldn't be read: \(problem)" }
+        }
+        if metricsSource(of: session.ref) == .prometheus { return nil }
         if session.ref.metricsSubject != .hpa, let reason = model.metrics.availability.reason {
-            return model.metrics.availability == .absent ? Self.metricsServerAbsent(prometheus: false) : reason
+            guard model.metrics.availability == .absent else { return reason }
+            let prometheus = prometheusOn && KubeChartSource.prometheusCharts(session.ref.metricsSubject ?? .namespace)
+            if prometheus, case .unavailable(let why) = model.prometheus.state { return Self.metricsServerAbsent(prometheus: true) + " " + why }
+            return Self.metricsServerAbsent(prometheus: prometheus)
         }
         for detail in objectMetricsDetails(session) {
             guard let reading = model.metrics.reading(detail), reading.sample == nil else { continue }

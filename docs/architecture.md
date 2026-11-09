@@ -5223,7 +5223,7 @@ Without Prometheus no picker shows: the metrics-server sparkline says it
 covers the time shown; with it the sparkline gives way to the chart.
 **The probe** (`KubePromProfile`, pure but for `probe`; metrics.md 4.3,
 4.4) asks, once a context and only when a chart that depends on it shows
-(the cluster's, a pod's — a volume's and the PVC column's don't), four
+(the cluster's, a Metrics tab's — a volume's and the PVC column's don't), four
 instant queries one after another: what exists and each metric's series
 count (`count by (__name__)` over the metrics the charts read and the
 mixin's rules), the duplicates (one `or` union, each arm tagged
@@ -5322,8 +5322,8 @@ before the old one goes, never take each other's entry:
 decimation, the axis's top, references, source, tier), and the scenarios
 read it. A Prometheus reading becomes a chart through `KubeChartData.of`:
 the cluster's CPU and memory with active requests, limits and allocatable
-as flat lines, a pod's CPU and memory, a claim's used against its
-capacity (stepped).
+as flat lines, a claim's used against its capacity (stepped); a
+Metrics tab's are `KubePromTabCharts`' (below).
 **A pod's Metrics tab** (`m`; `KubePodCharts` (pure), `KubeMetricsTabView`,
 `KubernetesPageModel+Charts`; metrics.md 2.2–2.4, stage M3a) is the
 detail's last tab where `KubeObjectRef.hasMetrics` (a pod, for now). It
@@ -5337,10 +5337,9 @@ apart however often it is asked, and the ring's break rule counts its
 (CPU the minute's mean, memory its peak, so the spike before an OOM
 survives), the window ending at the last poll so it stands still between
 polls. `KubeMetricsRange` is the page's (`metricsRange`, in memory);
-`,` and `.` step through the ones that can be picked — Live and 6h; 1h,
-24h and 7d greyed, needing Prometheus (its chart stays on the Overview
-tab until M6; without metrics-server and with Prometheus on, the tab
-says so and offers the Overview). `KubePodCharts.build` makes the pod's
+`,` and `.` step through the ones that can be picked — without
+Prometheus Live and 6h, 1h, 24h and 7d greyed, needing it (with it, see
+the Metrics tab over Prometheus below). `KubePodCharts.build` makes the pod's
 CPU and memory stacked by container — its native sidecars (init
 containers with `restartPolicy: Always`) among them, as the pod's total
 counts them — then a section a container — kubectl's default
@@ -5482,6 +5481,90 @@ ends it, and a window with nothing sampled says so. `KubeChartMarkersTests`;
 `kubernetesCharts`'s M4 part checks a Deployment's rollout on every chart,
 a pod's OOMKill on W2 from the states' read, the window, Esc and the
 History entry with its diff.
+
+**The Metrics tab over Prometheus** (`KubeMetricsSpan`, `KubeChartSource`,
+`KubeTabQueries`, `KubePromTabCharts`, `KubeChartCache`, all pure;
+`KubeTabReading` and the monitor's `.tab` want;
+`KubernetesPageModel+Charts`; metrics.md 3.3–3.5, 4.7, 6.1, stage M6).
+Where the context's Prometheus is found (the tab wants `.locate` until
+it is — where it is, nothing read), a pod's, a workload's, an HPA's and
+a node's tab pick every range (a namespace's stays sampled): Live, 1h,
+6h, 24h, 7d (`KubeMetricsRange.prometheusStep`: 30 s, 60 s on a
+minute's scrape, 2m, 5m, 30m — at most 336 points — the end on a step;
+refreshed every step, minute, 2, 5, 15 minutes) and Custom (`.` past
+7d, or its button: `KubeCustomRangeView`, two dates checked by
+`KubeChartWindow.custom` — the start before the end, the end not in the
+future, the start within the probed retention or 30 days). A drag across
+any chart (`KubeChartView.zoom`; the band `KubeChartCursor.selection`,
+drawn by every overlay of the scope) pushes a `KubeChartWindow` (`.zoom`)
+on the page's `metricsZoom` stack — Reset or Esc pops one — asked at its
+own step (`max(scrape, nice(span ÷ 250))`) and never refreshed; with
+sampled numbers it only narrows the axis, from the tier it was drawn
+from (`sampledTier`). Without a pick the tab opens on Live where
+metrics-server answers, on 1h where it is absent or down and only
+Prometheus answers (decision 7) — Live while discovery hasn't said.
+`KubeChartSource.pick` is the ladder: sampled without Prometheus;
+`mixed` in Live with both — the sampled charts, plus what has no sampled
+form (`KubeTabFamily.prometheusOnly`) over 15 minutes; `prometheus` for
+1h on, a marker's window, Custom, and Live without metrics-server — no
+metrics.k8s.io read then (`metricsDetailsOnScreen`). The tab's request
+(`KubeTabRequest`: whose — `KubeTabSubject`, the object's facts read once
+a version: a pod's CPU limits and host network, a workload's HPA, never
+what moves with a scale —, the span, the families) is a
+`KubePrometheusMonitor.Want.tab`; a new request for the same object over
+the same span (`carries(from:)`) takes the last one's answers over until
+it is read, so the tab never flashes "Asking Prometheus…"; its
+poll resolves the span with the profile's scrape, plans the queries
+(`KubeTabQueries.plan`: the tier, raw over an hour or less, the mixin's
+rules past it; a pod's containers' CPU `sum by (container)(rate)`,
+memory `max by (container)` — `max_over_time` past 5-minute steps —,
+throttling (throttled ÷ periods over 5 minutes at least, only where a
+container has a CPU limit), network (one union tagged `overterm_s`: rx,
+tx, drops — none for a host-network pod), restarts a step (each
+container's count against its own `offset` a step back, clamped at 0 —
+never a window one step wide, which Prometheus 3's left-open ranges
+leave a sample in) and the OOMKills kube-state-metrics saw (such a rise
+`and` a last reason of OOMKilled, `or` cAdvisor's OOM events' increase
+over the step and a scrape), from 24h C1's peak band
+(`max_over_time` of a short rate, one pod's subquery) and C2's RSS; a
+workload's pods matched by name (`podPattern`, regex-escaped then
+string-escaped) `sum by (pod)`, its replicas in kube-state-metrics' own
+names, its restarts and its HPA's; an HPA's replicas and metrics against
+their targets (`kube_hpa_*` on 1.x); a node's usage and what its active
+pods request in one union, its active pods, its conditions as bands, its
+largest pods — those only while their group is on screen
+(`KubeObjectCharts.Group.readsWhenShown`, `metricsGroupShown`)) and asks
+them through the context's queue, each its own task, four in flight.
+Range queries go through `KubeChartCache` (per context: 96 entries, 12
+MB, keyed by the query, the range and the step): a refresh asks from
+`max(2, ⌈(scrape + 30 s) ÷ step⌉)` steps before the last answer's end
+and replaces from there, nothing at all within a step; another range of
+the query is dropped; nothing failed or cancelled is merged; dropped on
+a context, cluster or use change and 10 minutes after the last reading
+(`cacheLifetime`). A query that fails keeps its last answer, the failure
+said under the charts; agent mode and the stopping failures as the
+other charts say them. `KubePromTabCharts` builds the same charts as the
+sampled tab from the answers — a pod's stacked by container then each
+container's against its spec — C1's peak band a faint area behind its
+CPU (`KubeChartRole.peak`: in the legend, never stacked or summed), C2's
+RSS a series hidden until its legend item is clicked (`offByDefault`) —,
+plus C3 (against the 25% guide; "No CPU limit: never throttled"), P3 and
+P4; a workload's top five by the
+range's mean or its total and the rest against its template, by revision
+from its pods' names (a Deployment's ReplicaSets), W4, W5 and its HPA's;
+an HPA's H1 and H2; a node's K1–K5 and K3 — or, `addOnly`, adds the
+Prometheus-only ones to the sampled, its earlier OOMKills on the sampled
+CPU and memory too. The OOMKills are markers on the
+step (`KubeChartChanges.ooms`), one a run of steps, left out where the
+container's `lastState` marks it exactly. Live pauses after 15 minutes
+without input in the window (`metricsIdleLimit`: a key, a mouse move
+over the tab), "Paused · Resume", nothing read meanwhile; any other range
+or a hide ends it, and its idle time counts again from when it runs again. The detail's Overview no longer charts a pod over
+Prometheus: its Metrics tab does. `KubeMetricsSpanTests`,
+`KubeTabQueriesTests`, `KubeMetricsTabPrometheusTests`;
+`kubernetesCharts`'s parts 2, 4 and 11 (Live's throttling from a
+15-minute query_range, 1h raw and 6h from the rules over only the
+Service's two paths, a zoom asked at its step and not refreshed, Reset).
 
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and

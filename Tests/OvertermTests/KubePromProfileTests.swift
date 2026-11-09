@@ -156,22 +156,21 @@ final class KubePromProfileTests: XCTestCase {
         XCTAssertEqual(KubeChart.cluster.queries(range: .day).refused, KubeChart.rawRefusal(.day), "unknown: as before the probe")
 
         // A pod: raw, pinned, over an hour or less even with rules; the rules past it.
-        let pod = KubeChart.pod(namespace: "shop", name: "web-1")
-        let close = pod.queries(range: .hour, profile: stack)
+        let close = KubeTabTesting.plan(.hour, profile: stack)
         XCTAssertEqual(close.tier, .raw)
         XCTAssertEqual(
-            close.series.first?.1,
-            #"sum(sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",metrics_path="/metrics/cadvisor",namespace="shop",pod="web-1"}[2m])))"#
+            close.queries.first { $0.id == "cpu" }?.promql,
+            #"sum by (container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",metrics_path="/metrics/cadvisor",namespace="shop",pod="web-1"}[2m]))"#
         )
-        let far = pod.queries(range: .week, profile: stack)
+        let far = KubeTabTesting.plan(.week, profile: stack)
         XCTAssertEqual(far.tier, .rules)
         XCTAssertEqual(
-            far.series.map(\.1),
+            far.queries.filter { [.cpu, .memory].contains($0.family) }.map(\.promql),
             [
-                #"sum(max by (container)(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate5m{namespace="shop",pod="web-1",container!="",container!="POD"}))"#,
-                #"sum(max by (container)(node_namespace_pod_container:container_memory_working_set_bytes{namespace="shop",pod="web-1",container!="",container!="POD"}))"#,
+                #"max by (container)(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate5m{namespace="shop",pod="web-1",container!="",container!="POD"})"#,
+                #"max by (container)(max_over_time(node_namespace_pod_container:container_memory_working_set_bytes{namespace="shop",pod="web-1",container!="",container!="POD"}[30m]))"#,
             ])
-        XCTAssertEqual(pod.queries(range: .week, profile: raw).tier, .raw, "no rules: raw, a pod's series are cheap")
+        XCTAssertEqual(KubeTabTesting.plan(.week, profile: raw).tier, .raw, "no rules: raw, a pod's series are cheap")
         XCTAssertFalse(KubeChart.volume(namespace: "shop", claim: "data").needsProfile, "a volume's queries ask no probe")
     }
 
@@ -231,10 +230,7 @@ final class KubePromProfileTests: XCTestCase {
     func testEveryEmptyChartSaysWhyInOneSentence() {
         let cases: [(KubeChartEmpty, String)] = [
             (.noMetricsServer, "No metrics-server in this cluster: there are no usage numbers without it or Prometheus."),
-            (
-                .noMetricsServerChartOnOverview,
-                "No metrics-server in this cluster: the Metrics tab's sampled charts need it. The pod's Prometheus chart is on the Overview tab."
-            ),
+            (.noMetricsServerPrometheus, "No metrics-server in this cluster: the Metrics tab's charts come from Prometheus, once it is found."),
             (.ksmMissing, "kube-state-metrics isn't scraped: no requests or limits over time."),
             (.noThrottling, "This cluster's kubelet doesn't report CPU throttling."),
             (
@@ -445,11 +441,12 @@ final class KubePromProfileTests: XCTestCase {
         let monitor = monitor()
         let owner = NSObject()
         let other = NSObject()
-        let pod = KubeChart.pod(namespace: "shop", name: "web-1")
+        let pod = KubeTabTesting.request(.day, families: [.cpu, .memory])
         monitor.range = .day
         monitor.want([.chart(.cluster)], for: owner)
-        monitor.want([.chart(pod)], for: other)
-        try await until("charted") { monitor.charts[.cluster]?.read != nil && monitor.charts[pod]?.read != nil }
+        monitor.want([.tab(pod)], for: other)
+        try await until("charted") { monitor.charts[.cluster]?.read != nil && monitor.tabs[pod]?.read != nil }
+        XCTAssertEqual(monitor.tabs[pod]?.tier, .rules, "a pod's day from the rules")
         XCTAssertEqual(probesAsked().count, 1, "two charts, one probe")
         XCTAssertEqual(monitor.probes, 1)
         XCTAssertEqual(monitor.profile?.scrape, 30)
@@ -460,10 +457,11 @@ final class KubePromProfileTests: XCTestCase {
         XCTAssertTrue(cluster.caption?.hasPrefix("recording rules") == true)
         XCTAssertNotNil(cluster.retention)
         XCTAssertTrue(cluster.notes.contains { $0.hasPrefix("Prometheus keeps data from") } == false, "ten days kept: not inside a day")
-        monitor.range = .hour
-        try await until("an hour") { monitor.charts[pod]?.range == .hour && monitor.charts[pod]?.read != nil }
-        XCTAssertEqual(monitor.charts[pod]?.tier, .raw)
-        XCTAssertEqual(monitor.charts[pod]?.series[.cpu]?.last?.value, 0.25, "one path's counter, not two")
+        let hour = KubeTabTesting.request(.hour, families: [.cpu, .memory])
+        monitor.want([.tab(hour)], for: other)
+        try await until("an hour") { monitor.tabs[hour]?.read != nil }
+        XCTAssertEqual(monitor.tabs[hour]?.tier, .raw)
+        XCTAssertEqual(monitor.tabs[hour]?.results["cpu"]?.first?.points.last?.value, 0.25, "one path's counter, not two")
         XCTAssertTrue(asked.contains { $0.query["query"]?.contains("[2m]") == true }, "a 30 s scrape's rate window")
 
         // Hidden and shown: kept; an hour on: asked again.

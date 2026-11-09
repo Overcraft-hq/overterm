@@ -318,6 +318,7 @@ final class KubernetesPageModel: ObservableObject {
     private var overviewWatch: AnyCancellable?
     private var metricsKindWatch: AnyCancellable?
     private var prometheusWatch: AnyCancellable?
+    private var metricsTabWatch: AnyCancellable?
     /// How long the typing must stop before `label:` or `field:` asks the server again.
     var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
@@ -375,9 +376,27 @@ final class KubernetesPageModel: ObservableObject {
     @Published var detailTab: KubeDetailTab = .overview
     /// The Metrics tab's range: one a page, in memory, never saved (metrics.md 3.4).
     @Published var metricsRange: KubeMetricsRange = .live
-    /// A custom window over it — a marker's ± 30 min (metrics.md 3.2) —
-    /// until a range is picked, Reset or Esc, or another object shows.
-    @Published var metricsWindow: KubeChartWindow?
+    /// Whether a range was picked on this page: until one is, the tab opens
+    /// on Live where metrics-server answers, else on 1h (decision 7).
+    var metricsRangePicked = false
+    /// The windows over it, the last the one shown — a marker's ± 30 min
+    /// (metrics.md 3.2), a drag across a chart (a zoom, 3.3), Custom's
+    /// dates — until a range is picked, or another object shows; Reset or
+    /// Esc pops one.
+    @Published var metricsZoom: [KubeChartWindow] = []
+    /// Live paused: 15 minutes without input in the window (metrics.md 3.5).
+    @Published var metricsPaused = false
+    /// The last key or mouse move over the page: what Live's pause counts from.
+    var metricsLastInput = Date()
+    /// How long Live runs without input (15 minutes; a scenario's shorter).
+    var metricsIdleLimit: TimeInterval = 900
+    var metricsIdleTask: Task<Void, Never>?
+    /// A node's top pods' group on screen (its view says): only then are they read.
+    var metricsTopPodsShown = false
+    /// Custom's popover, shown (its button, or `.` past 7d).
+    @Published var customRangeShown = false
+    /// A pod's or a workload's facts the tab's queries need, by its object's version.
+    var tabFactsCache: (key: String, subject: KubeTabSubject?)?
     /// The pods' states read for the Metrics tab's markers (the pod's,
     /// a workload's pods'), and the restarts seen between reads: the
     /// detail shown's, dropped with it.
@@ -414,6 +433,12 @@ final class KubernetesPageModel: ObservableObject {
     @Published private(set) var history = KubeHistory()
     /// Why a link couldn't be followed (its kind isn't served).
     @Published private(set) var linkProblem: String?
+
+    /// The window shown over the Metrics tab's range: the last of `metricsZoom`.
+    var metricsWindow: KubeChartWindow? {
+        get { metricsZoom.last }
+        set { metricsZoom = newValue.map { [$0] } ?? [] }
+    }
 
     init(model: KubernetesModel = .shared, forwards: KubeForwards = .shared) {
         self.model = model
@@ -486,6 +511,15 @@ final class KubernetesPageModel: ObservableObject {
         // Wide: the Pods list's shares, read only while they show.
         .merge(with: $wide.removeDuplicates().map { _ in () })
         .sink { [weak self] in DispatchQueue.main.async { self?.updateMetricsWanted() } }
+        // The Metrics tab's range, its windows, its pause, where Prometheus
+        // is, the object read: what its queries are (M6).
+        metricsTabWatch = $metricsRange.removeDuplicates().dropFirst().map { _ in () }
+            .merge(
+                with: $metricsZoom.removeDuplicates().dropFirst().map { _ in () }, $metricsPaused.removeDuplicates().dropFirst().map { _ in () },
+                model.prometheus.$state.removeDuplicates().dropFirst().map { _ in () },
+                $detail.map { $0?.$object.map { _ in () }.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher() }.switchToLatest()
+            )
+            .sink { [weak self] in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         contextWatch = model.$selectedName.dropFirst().removeDuplicates()
             .sink { [weak self] name in
                 guard let self, let shown = self.history.current?.context ?? self.history.back.last?.context, shown != name else { return }
@@ -577,6 +611,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// A key down while the list has the keyboard: true when it meant something.
     func press(_ characters: String) -> Bool {
+        noteMetricsInput()
         // The forward sheet's fields have the keys; Esc closes it.
         if forwardDraft != nil {
             guard characters == "\u{1B}" else { return false }

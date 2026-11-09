@@ -344,11 +344,11 @@ final class KubePodChartsTests: XCTestCase {
             "another range")
     }
 
-    func testWithoutMetricsServerPrometheusChartIsPointedTo() {
+    func testWithoutMetricsServerTheChartsArePrometheus() {
         XCTAssertEqual(
             KubernetesPageModel.metricsServerAbsent(prometheus: false), "No metrics-server in this cluster: there are no usage numbers without it or Prometheus.")
         let on = KubernetesPageModel.metricsServerAbsent(prometheus: true)
         XCTAssertFalse(on.contains("no usage numbers"), "false with Prometheus on")
-        XCTAssertTrue(on.contains("Overview tab"), on)
+        XCTAssertTrue(on.contains("come from Prometheus"), on)
     }
 }

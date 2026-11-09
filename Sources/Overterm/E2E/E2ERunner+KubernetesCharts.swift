@@ -109,6 +109,9 @@ extension E2ERunner {
         page.detail?.logs?.clearFrom()
         page.showTab(.metrics)
 
+        // Parts 2, 4 and 11: the same tab over Prometheus (M6).
+        await kubernetesChartsPrometheus(model, page, fake, pod: name)
+
         // Hidden: nothing read.
         app.toggleKubernetesPage(nil)
         check("hidden, no usage polled", await eventually(5) { !model.metrics.isPolling })
@@ -157,5 +160,158 @@ extension E2ERunner {
         check("the tab's body runs no more", after.tab.container == before.tab.container, "\(after.tab.container - before.tab.container) bodies")
         cpu.cursor.leave(cpuID)
         model.metrics.interval = .milliseconds(500)
+    }
+}
+
+extension E2ERunner {
+    /// What the tab's queries past `FakePromQL`'s grammar are answered with
+    /// (metrics.md 8, the fake): a container's throttling, a pod's network
+    /// (the union's arms), its restarts a step, the OOMKills (none), C1's
+    /// peak band, C2's RSS (none).
+    func setTabFixtures(_ fake: FakeKubeAPI) {
+        fake.setPrometheusMatrix("container_cpu_cfs_throttled_periods_total{", [FakePromFixture.Line(["container": "app"]) { _ in 0.31 }])
+        fake.setPrometheusMatrix(
+            "container_network_receive_bytes_total{",
+            [FakePromFixture.Line(["overterm_s": "rx"]) { _ in 1_200_000 }, FakePromFixture.Line(["overterm_s": "tx"]) { _ in 340_000 }])
+        fake.setPrometheusMatrix("sum(clamp_min(", [FakePromFixture.Line { _ in 0 }])
+        fake.setPrometheusMatrix("kube_pod_container_status_last_terminated_reason{", [])
+        fake.setPrometheusMatrix(Self.peakFragment, [FakePromFixture.Line(["container": "app"]) { _ in 0.4 }])
+        fake.setPrometheusMatrix("container_memory_rss{", [])
+    }
+
+    /// C1's peak band's query (24h and 7d), a subquery the fake doesn't read.
+    static let peakFragment = "max_over_time(sum by (container)(rate(container_cpu_usage_seconds_total{"
+
+    func clearTabFixtures(_ fake: FakeKubeAPI) {
+        for fragment in [
+            "container_cpu_cfs_throttled_periods_total{", "container_network_receive_bytes_total{", "sum(clamp_min(", "kube_pod_container_status_last_terminated_reason{",
+            Self.peakFragment, "container_memory_rss{",
+        ] {
+            fake.clearPrometheusMatrix(fragment)
+        }
+    }
+
+    /// Parts 2, 4 and 11 (metrics.md 8), the pod's tab with fake-dev's
+    /// Prometheus on — kube-prometheus-stack's profile, named in its entry:
+    /// Live keeps its sampled charts and draws throttling, network and
+    /// restarts from a 15-minute query_range, never saying they need
+    /// Prometheus; `.` to 1h asks every chart of Prometheus, raw over an
+    /// hour, the recording rules over 6h; a zoom is asked at its own step
+    /// and never refreshed, Reset gives the range back; 24h draws C1's peak
+    /// band. Only the Service's two query paths, each with its timeout. Reads only.
+    func kubernetesChartsPrometheus(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, pod name: String) async {
+        let scope = app.theme.map(ObjectIdentifier.init)
+        let charts = KubeChartRegistry.shared
+        let service = KubePrometheusService(namespace: "monitoring", name: "prometheus-k8s", port: "9090")!
+        let interval = model.prometheus.interval
+        model.prometheus.interval = .milliseconds(500)
+        fake.addNamespace("monitoring")
+        fake.servePrometheus(namespace: "monitoring", service: "prometheus-k8s", port: "9090")
+        fake.setPrometheusProfile(.kubePrometheusStack)
+        setTabFixtures(fake)
+        let container = ["namespace": "shop", "pod": name, "container": "app", "image": "nginx:1.27", "metrics_path": "/metrics/cadvisor"]
+        fake.setPrometheusSeries("container_cpu_usage_seconds_total", labels: container, value: 0.12)
+        fake.setPrometheusSeries("container_memory_working_set_bytes", labels: container, value: 100 * 1_048_576)
+        let rule = ["namespace": "shop", "pod": name, "container": "app"]
+        fake.setPrometheusSeries(KubePromProfile.containerCPURate5m, labels: rule, value: 0.11)
+        fake.setPrometheusSeries(KubePromProfile.containerMemoryRule, labels: rule, value: 98 * 1_048_576)
+        Settings.shared.set(
+            "kubernetes.contexts", .entries(["fake-dev": ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]]))
+        defer {
+            Settings.shared.set("kubernetes.contexts", nil)
+            clearTabFixtures(fake)
+            for metric in ["container_cpu_usage_seconds_total", "container_memory_working_set_bytes", KubePromProfile.containerCPURate5m, KubePromProfile.containerMemoryRule] {
+                fake.clearPrometheusSeries(metric, matching: ["pod": name])
+            }
+            fake.setPrometheusProfile(.noNodeExporter)
+            model.prometheus.forgetProfile()
+            model.prometheus.interval = interval
+            page.metricsZoom = []
+            page.metricsRange = .live
+            page.metricsRangePicked = false
+        }
+        func asked() -> [FakeKubeAPI.Request] { fake.requests.filter(\.isPrometheusQuery) }
+        // The pod's CPU is the tab's first chart, drawn; a container's sit
+        // below the fold, which the LazyVStack doesn't build: theirs are the model's.
+        let cpuID = "kubernetes.chart.pod.shop.\(name).cpu"
+        func built() -> KubePodCharts? { page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) } }
+        func throttling() -> KubeChartData? {
+            built()?.sections.first { $0.container == "app" }?.charts.first { $0.data.id == "container.shop.\(name).app.throttling" }?.data
+        }
+        func said() -> String {
+            let tabs = model.prometheus.tabs.values.map { "\($0.request.span) \($0.results.keys.sorted()) read=\($0.read != nil) \($0.problem ?? "-") \($0.refused.values)" }
+            return
+                "tabs \(tabs); source \(page.detail.flatMap { page.metricsSource(of: $0.ref) }.map(\.rawValue) ?? "none"); built \(built().map { ($0.pod + $0.sections.flatMap(\.charts)).map { "\($0.data.id)@\($0.data.source)" } } ?? []); \(charts.lines(in: scope).joined(separator: "; "))"
+        }
+        check("fake-dev's Prometheus found as its entry names it", await eventually(15) { model.prometheus.state == .found(service, nil) }, "\(model.prometheus.state)")
+        page.pickMetricsRange(.live)
+        fake.forgetRequests()
+
+        // 11. Live with Prometheus: throttling from a 15-minute query_range.
+        check(
+            "Live: the throttling chart drawn from Prometheus",
+            await eventually(20) { throttling().map { $0.source == "Prometheus" && !($0.usage.first?.points.isEmpty ?? true) } == true }, said())
+        let live = asked().first { $0.path == service.rangePath && $0.query["query"]?.contains("container_cpu_cfs_throttled_periods_total{") == true }
+        let span = live.flatMap { request in Double(request.query["end"] ?? "").flatMap { end in Double(request.query["start"] ?? "").map { end - $0 } } }
+        check("over 15 minutes at 30 s", span == 900 && live?.query["step"] == "30s", "\(live?.query ?? [:])")
+        check("the CPU still sampled", charts.chart(cpuID, in: scope)?.data.source == "metrics-server")
+        check(
+            "never said to need Prometheus",
+            page.metricsTabProblem(of: page.detail!.ref) == nil && !(page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) }?.notes.contains { $0.contains("needs Prometheus") } ?? true))
+        check("its network and restarts beside", await eventually(10) { charts.chart("kubernetes.chart.pod.shop.\(name).network", in: scope) != nil })
+
+        // 2. `.` to 1h: every chart from Prometheus, raw over an hour.
+        fake.forgetRequests()
+        check(". is 1h", page.press(".") && page.shownMetricsRange == .hour)
+        check(
+            "the pod's CPU from Prometheus over 1h",
+            await eventually(20) { charts.chart(cpuID, in: scope).map { $0.data.source == "Prometheus" && $0.data.step == 30 && $0.plot != nil } == true }, said())
+        check(
+            "the throttling chart there",
+            await eventually(10) { throttling().map { $0.end.timeIntervalSince($0.start) == 3600 } == true }, said())
+        check("raw cAdvisor over an hour", charts.chart(cpuID, in: scope)?.data.tier == "raw cAdvisor", charts.chart(cpuID, in: scope)?.data.tier ?? "")
+        check("only the Service's query and query_range", !asked().isEmpty && asked().allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath }, "\(asked().map(\.path))")
+        check("each with 20 s", asked().allSatisfy { $0.query["timeout"] == "20s" })
+        check("no metrics.k8s.io read for it now", await eventually(5) { page.metricsDetailsOnScreen.isEmpty })
+        check(". is 6h", page.press(".") && page.shownMetricsRange == .sixHours)
+        check(
+            "6h from the recording rules",
+            await eventually(20) { charts.chart(cpuID, in: scope).map { $0.data.tier == "recording rules" && $0.data.step == 120 } == true },
+            charts.chart(cpuID, in: scope).map { "\($0.data.tier ?? "-") \($0.data.step)" } ?? "none")
+        check("said in the caption", await eventually(5) { page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) }?.caption.contains("recording rules") == true })
+
+        // 4. A zoom, as a drag's release gives it: asked at its own step, not refreshed; Reset.
+        guard let shown = charts.chart(cpuID, in: scope)?.data else { return check("the chart to zoom", false) }
+        fake.forgetRequests()
+        let from = shown.end.addingTimeInterval(-7200)
+        let to = shown.end.addingTimeInterval(-3600)
+        page.zoomMetrics(from: from, to: to, of: shown)
+        check("zoomed", page.metricsWindow?.kind == .zoom)
+        check(
+            "asked again over the window at its own step",
+            await eventually(15) {
+                asked().contains { $0.path == service.rangePath && $0.query["step"] == "30s" && $0.query["start"] == KubePromQL.stamp(from) && $0.query["end"] == KubePromQL.stamp(to) }
+            }, "\(asked().map(\.query))")
+        check("drawn over it", await eventually(10) { charts.chart(cpuID, in: scope).map { $0.data.start == from && $0.data.end == to } == true })
+        await pause(1)
+        fake.forgetRequests()
+        await pause(1.5)
+        check("a zoomed window isn't refreshed", asked().isEmpty, "\(asked().map(\.query))")
+        check("Reset", page.resetMetricsWindow() && page.metricsWindow == nil)
+        check(
+            "the range again, asked at its step",
+            await eventually(15) { asked().contains { $0.path == service.rangePath && $0.query["step"] == "2m" } && charts.chart(cpuID, in: scope)?.data.step == 120 },
+            "\(asked().map(\.query))")
+
+        // C1's peak band from 24h: a container's CPU with its step's highest short rate behind it.
+        fake.forgetRequests()
+        check(". is 24h", page.press(".") && page.shownMetricsRange == .day)
+        check(
+            "24h: app's CPU with its peak band",
+            await eventually(20) { built()?.sections.first { $0.container == "app" }?.charts.first?.data.peaks.first.map { !$0.points.isEmpty } == true }, said())
+        check(
+            "the peak a step's highest, a minute apart", asked().contains { $0.query["query"]?.hasPrefix(Self.peakFragment) == true && $0.query["query"]?.hasSuffix("[5m:1m])") == true },
+            "\(asked().compactMap { $0.query["query"] })")
+        check("Prometheus written nothing", fake.writes.isEmpty)
     }
 }

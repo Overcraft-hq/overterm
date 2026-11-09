@@ -35,7 +35,7 @@ final class KubePromQLTests: XCTestCase {
             }
         }
         XCTAssertEqual(KubeRateWindow.assumedScrape, 60, "a minute until a probe says otherwise")
-        XCTAssertTrue(KubeChart.pod(namespace: "shop", name: "web-1").queries(range: .hour).series[0].1.hasSuffix("[4m])))"))
+        XCTAssertTrue(KubeTabTesting.query("cpu", .hour)?.hasSuffix("[4m]))") == true, KubeTabTesting.query("cpu", .hour) ?? "none")
     }
 
     // MARK: Escaping
@@ -75,10 +75,10 @@ final class KubePromQLTests: XCTestCase {
             ("container_cpu_usage_seconds_total", Self.cad.merging(["container": "app", "id": "/old"]) { $1 }, 0),
             ("container_cpu_usage_seconds_total", Self.cad.merging(["container": "app", "id": "/new"]) { $1 }, 0.25),
         ]
-        let memory = try XCTUnwrap(FakePromQL.evaluate(KubePromQL.podMemory(namespace: "shop", pod: "web-1"), series))
-        XCTAssertEqual(memory.map(\.value), [420], "the app's highest series and the sidecar's")
+        let memory = try XCTUnwrap(FakePromQL.evaluate(try XCTUnwrap(KubeTabTesting.query("memory", .hour)), series))
+        XCTAssertEqual(memory.map(\.value), [400, 20], "the app's highest series, then the sidecar's")
         XCTAssertEqual(FakePromQL.evaluate("sum(container_memory_working_set_bytes{namespace=\"shop\"})", series)?.first?.value, 2800, "raw, it would double")
-        let cpu = try XCTUnwrap(FakePromQL.evaluate(KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "4m"), series))
+        let cpu = try XCTUnwrap(FakePromQL.evaluate(try XCTUnwrap(KubeTabTesting.query("cpu", .hour)), series))
         XCTAssertEqual(cpu.map(\.value), [0.25], "a dead counter's rate is 0")
         XCTAssertEqual(FakePromQL.evaluate(KubePromQL.clusterMemory, series)?.first?.value, 420)
     }
@@ -139,8 +139,9 @@ final class KubePromQLTests: XCTestCase {
             "Raw container metrics across the cluster are read over 6h at most: over 24h they would be tens of millions of samples, more than Prometheus answers in time. Pick 6h or less."
         )
         // One pod's raw series are cheap at every range.
-        XCTAssertEqual(KubeChart.pod(namespace: "shop", name: "web-1").queries(range: .week).series.count, 2)
-        XCTAssertNil(KubeChart.pod(namespace: "shop", name: "web-1").queries(range: .week).refused)
+        let week = KubeTabTesting.plan(.week)
+        XCTAssertEqual(week.queries.filter { [.cpu, .memory].contains($0.family) }.count, 2)
+        XCTAssertTrue(week.refused.isEmpty, "\(week.refused)")
     }
 
     // MARK: The reader

@@ -127,7 +127,7 @@ struct KubePromProfile: Equatable, Sendable {
     /// What query 1 asks about: every metric a chart reads, the rules
     /// that stand in for them, and Prometheus' own oldest sample.
     static let names = [
-        cpuMetric, memoryMetric, "container_cpu_cfs_throttled_periods_total", "container_cpu_cfs_periods_total", "container_fs_usage_bytes",
+        cpuMetric, memoryMetric, "container_memory_rss", "container_cpu_cfs_throttled_periods_total", "container_cpu_cfs_periods_total", "container_fs_usage_bytes",
         "container_network_receive_bytes_total", "container_oom_events_total", "kube_pod_status_phase", requestsMetric, requestsCPUCores,
         "kube_pod_container_status_last_terminated_reason", "kube_pod_owner", "kube_replicaset_owner", "kube_node_status_allocatable",
         "kube_horizontalpodautoscaler_status_current_replicas", "kube_hpa_status_current_replicas", "kube_horizontalpodautoscaler_status_target_metric",
