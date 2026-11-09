@@ -393,6 +393,8 @@ final class KubernetesPageModel: ObservableObject {
     var metricsIdleTask: Task<Void, Never>?
     /// A node's top pods' group on screen (its view says): only then are they read.
     var metricsTopPodsShown = false
+    /// A claim's inodes (V2) shown beside its usage: read only while it is on.
+    @Published var volumeInodesShown = false
     /// Custom's popover, shown (its button, or `.` past 7d).
     @Published var customRangeShown = false
     /// A pod's or a workload's facts the tab's queries need, by its object's version.
@@ -509,7 +511,11 @@ final class KubernetesPageModel: ObservableObject {
             model.metrics.$availability.removeDuplicates().dropFirst().map { _ in () }
         )
         // Wide: the Pods list's shares, read only while they show.
-        .merge(with: $wide.removeDuplicates().map { _ in () })
+        .merge(
+            with: $wide.removeDuplicates().map { _ in () },
+            // The Overview's CPU by namespace follows the namespaces picked; a claim's inodes their toggle.
+            model.$scope.removeDuplicates().dropFirst().map { _ in () }, $volumeInodesShown.removeDuplicates().dropFirst().map { _ in () }
+        )
         .sink { [weak self] in DispatchQueue.main.async { self?.updateMetricsWanted() } }
         // The Metrics tab's range, its windows, its pause, where Prometheus
         // is, the object read: what its queries are (M6).
@@ -821,6 +827,12 @@ final class KubernetesPageModel: ObservableObject {
 
     /// `[` or ⌘[: the object shown before.
     func goBack() {
+        // Opened from the Overview (metrics.md 3.7): the Overview again.
+        if history.backToOverview() {
+            closeDetail()
+            showSection(.overview)
+            return
+        }
         guard let ref = history.goBack() else { return }
         show(ref)
     }

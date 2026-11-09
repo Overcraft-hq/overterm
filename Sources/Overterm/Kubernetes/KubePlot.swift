@@ -14,10 +14,11 @@ import Foundation
 /// more series —, each fixed in colour by meaning and told apart by its
 /// own dash too, colour never the only cue (metrics.md, 5.2). A peak
 /// band (C1's, a step's highest rate) is neither: a faint area behind the
-/// usage, never stacked, never summed into it. A projection comes with
-/// the stage that draws it (V1).
+/// usage, never stacked, never summed into it. A projection (V1's fill
+/// forecast) is a reference drawn straight from the last point to where
+/// the trend reaches at the right edge, dotted — never stepped.
 enum KubeChartRole: String, Sendable, CaseIterable {
-    case usage, request, limit, allocatable, capacity, quota, guide, peak
+    case usage, request, limit, allocatable, capacity, quota, guide, peak, projection
 
     var isReference: Bool { self != .usage && self != .peak }
 
@@ -29,6 +30,7 @@ enum KubeChartRole: String, Sendable, CaseIterable {
         case .allocatable, .capacity: [1, 2]
         case .quota: [6, 2, 1, 2]
         case .guide: [2, 4]
+        case .projection: [1, 3]
         case .usage, .peak: []
         }
     }
@@ -43,6 +45,7 @@ enum KubeChartRole: String, Sendable, CaseIterable {
         case .quota: "quota"
         case .guide: "guide"
         case .peak: "peak"
+        case .projection: "forecast"
         case .usage: "usage"
         }
     }
@@ -425,6 +428,17 @@ struct KubePlot: Sendable {
         self.references = references.compactMap { series in
             guard let lastPoint = series.points.last else { return nil }
             let path = CGMutablePath()
+            // A projection: straight from its first point to its last, ending there.
+            if series.role == .projection {
+                guard series.points.count >= 2 else { return nil }
+                for (index, point) in series.points.enumerated() {
+                    let p = CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))
+                    if index == 0 { path.move(to: p) } else { path.addLine(to: p) }
+                }
+                let end = CGPoint(x: x(lastPoint.time.timeIntervalSince1970), y: y(lastPoint.value))
+                return Reference(
+                    id: series.id, name: series.name, role: series.role, stroke: KubePlotPath(cgPath: path.copy() ?? path), last: lastPoint.value, labelAt: end)
+            }
             let points = series.points.count == 1 ? [KubeSeriesPoint(time: data.start, value: lastPoint.value)] : series.points
             for (index, point) in points.enumerated() {
                 let px = index == 0 ? frame.minX : x(point.time.timeIntervalSince1970)
@@ -794,6 +808,7 @@ enum KubeChartPalette {
         case .limit: RGB(dark ? 0xFF6B6B : 0xC62828)
         case .quota: RGB(dark ? 0xC08CFF : 0x7B3FC4)
         case .guide: RGB(dark ? 0xFFB347 : 0xA35A00)
+        case .projection: RGB(dark ? 0x5AA3FF : 0x2167C9)
         default: RGB(dark ? 0x9AA0A6 : 0x6B7075)
         }
     }

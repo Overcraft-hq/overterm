@@ -39,6 +39,11 @@ struct KubeHeatStrip: Equatable, Sendable {
     var percents: [Double?]
     /// When the last cell ends: the newest sample's time.
     var end: Date
+    /// How long a cell is: 15 s sampled; over Prometheus a sixtieth of the
+    /// range picked (the Overview's nodes, X4).
+    var cell: TimeInterval = cellSeconds
+    /// From metrics-server's samples taken while shown, or Prometheus'.
+    var sampled = true
 
     /// The strip of `segments` (the ring's runs, oldest first) against
     /// `allocatable`; nil without an allocatable or a sample.
@@ -79,8 +84,25 @@ struct KubeHeatStrip: Equatable, Sendable {
         return (value, start(of: index))
     }
 
+    /// A node's strip from Prometheus' answer over `start…end` (X4): the
+    /// range as 60 cells, each the largest share among the points in it —
+    /// a point stands for the step that ends at it. Nil without an
+    /// allocatable. A cell without a point is empty, never zero.
+    static func of(
+        _ points: [KubeSeriesPoint], _ measure: KubeUsageCell.Measure, allocatable: Double?, start: Date, end: Date
+    ) -> KubeHeatStrip? {
+        guard let allocatable, allocatable > 0, end > start else { return nil }
+        let cell = end.timeIntervalSince(start) / Double(cellCount)
+        var percents = [Double?](repeating: nil, count: cellCount)
+        for point in points where point.time > start && point.time <= end {
+            let index = Swift.min(cellCount - 1, Swift.max(0, Int((point.time.timeIntervalSince(start) / cell).rounded(.up)) - 1))
+            percents[index] = Swift.max(percents[index] ?? 0, point.value / allocatable * 100)
+        }
+        return KubeHeatStrip(measure: measure, percents: percents, end: end, cell: cell, sampled: false)
+    }
+
     /// When a cell begins.
-    func start(of index: Int) -> Date { end.addingTimeInterval(-Double(Self.cellCount - index) * Self.cellSeconds) }
+    func start(of index: Int) -> Date { end.addingTimeInterval(-Double(Self.cellCount - index) * cell) }
 
     /// What its help and VoiceOver say: "CPU, the last 15 min of
     /// allocatable: 22% now, peak 61% at 14:02 — sampled while shown".
@@ -90,8 +112,19 @@ struct KubeHeatStrip: Equatable, Sendable {
         if let now { parts.append("\(Int(now.rounded()))% now") }
         if let peak { parts.append("peak \(Int(peak.percent.rounded()))% at \(KubeChartTime.clock(peak.time, timeZone: timeZone))") }
         let said = parts.isEmpty ? "" : ": " + parts.joined(separator: ", ")
-        let gaps = filled < Self.cellCount ? " (\(Self.cellCount - filled) of 60 cells not sampled)" : ""
-        return "\(title) as a share of allocatable, the last 15 min in 15 s cells\(said)\(gaps) — sampled while shown"
+        let gaps = filled < Self.cellCount ? " (\(Self.cellCount - filled) of 60 cells \(sampled ? "not sampled" : "without a point"))" : ""
+        let span = Self.spoken(cell * Double(Self.cellCount))
+        let cells = Self.spoken(cell)
+        return "\(title) as a share of allocatable, the last \(span) in \(cells) cells\(said)\(gaps) — " + (sampled ? "sampled while shown" : "from Prometheus")
+    }
+
+    /// `15 s`, `15 min`, `6h`, `7 d`: a span as the summary says it.
+    static func spoken(_ seconds: TimeInterval) -> String {
+        let whole = Int(seconds.rounded())
+        if whole < 60 { return "\(whole) s" }
+        if whole < 3 * 3600 || whole % 3600 != 0 { return "\(whole / 60) min" }
+        if whole < 2 * 86400 { return "\(whole / 3600)h" }
+        return "\(whole / 86400) d"
     }
 
     /// The dump's line: the filled cells, the levels' counts, the peak.

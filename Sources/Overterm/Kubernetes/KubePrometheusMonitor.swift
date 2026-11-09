@@ -506,6 +506,15 @@ final class KubePrometheusMonitor: ObservableObject {
         return answer
     }
 
+    /// Several queries in turn, each answer by its measure.
+    private func askEach(
+        _ transport: any KubePrometheusTransport, _ paths: [(KubeChartMeasure, String)], context: String, service: KubePrometheusService, order: Int
+    ) async throws -> [KubeChartMeasure: KubePrometheusReader.Answer] {
+        var answers: [KubeChartMeasure: KubePrometheusReader.Answer] = [:]
+        for (measure, path) in paths { answers[measure] = try await ask(transport, path, context: context, service: service, order: order) }
+        return answers
+    }
+
     /// The context's queue for `service`, as the situation now reads it:
     /// another Service, use, cluster or user, another queue.
     func queue(_ context: String, _ service: KubePrometheusService) -> KubePromQueue {
@@ -630,26 +639,106 @@ final class KubePrometheusMonitor: ObservableObject {
             }
         }
         reading.unavailable = nil
-        let queries = chart.queries(range: range, profile: profile)
+        var queries = chart.queries(range: range, profile: profile)
         let order = chart.order
         let now = Date()
+        let window = range.window(now: now)
         var notes: [String] = queries.notes
-        if chart.needsProfile, let kept = profile.retention, kept > range.window(now: now).start { notes.append(KubeChartEmpty.retention(kept).sentence) }
+        if chart.needsProfile, let kept = profile.retention, kept > window.start { notes.append(KubeChartEmpty.retention(kept).sentence) }
         do {
+            // X3: its total needs no names — asked at once, beside the
+            // ranking (metrics.md 4.5: the ranking never holds a visible
+            // chart back) —, its top namespaces ranked by one instant topk
+            // at the range's end, below the visible charts, kept for ten
+            // readings; their lines asked once the names are in.
+            var answered: [KubeChartMeasure: KubePrometheusReader.Answer] = [:]
+            if case .namespaces(let picked) = chart, queries.refused == nil {
+                let totals = queries.series.map { ($0.0, KubePromQL.rangePath(service, $0.1, range, now: now)) }
+                async let early = askEach(transport, totals, context: context, service: service, order: order)
+                if reading.ranked == nil || reading.rankedReads >= KubeTabRanking.kept,
+                    let ranking = KubeChart.namespaceRanking(range: range, profile: profile, picked: picked)
+                {
+                    let answer = try await ask(
+                        transport, KubePromQL.instantPath(service, ranking.query, at: window.end), context: context, service: service, order: order,
+                        priority: .ranking)
+                    reading.ranked = answer.series.sorted { ($0.points.last?.value ?? 0) > ($1.points.last?.value ?? 0) }.compactMap { $0.labels["namespace"] }
+                    reading.rankedReads = 0
+                    reading.rankingNote = ranking.note
+                    notes += answer.notes
+                } else {
+                    reading.rankedReads += 1
+                }
+                queries = KubeChart.namespaceQueries(range: range, profile: profile, picked: picked, top: reading.ranked ?? [])
+                if let note = reading.rankingNote { notes.append(note) }
+                answered = try await early
+            }
+            func path(_ query: String) -> String {
+                guard let step = queries.step else { return KubePromQL.rangePath(service, query, range, now: now) }
+                return KubePromQL.rangePath(service, query, start: window.start, end: window.end, step: step)
+            }
+            // X1, X2, X4: each line with its own totals in one range union
+            // (metrics.md 4.2, 6.5), the totals read off their last points.
+            var carried = Set<KubeChartMeasure>()
             for (measure, query) in queries.series {
-                let answer = try await ask(transport, KubePromQL.rangePath(service, query, range, now: now), context: context, service: service, order: order)
-                reading.series[measure] = KubePrometheusReader.points(answer.series)
+                let totals = queries.carried(by: measure)
+                let answer: KubePrometheusReader.Answer
+                if let early = answered[measure] {
+                    answer = early
+                } else {
+                    answer = try await ask(transport, path(KubeChartQueries.union((measure, query), carrying: totals)), context: context, service: service, order: order)
+                }
+                reading.series[measure] = KubePrometheusReader.points(KubeChartQueries.arm(answer.series, measure, of: totals))
+                for (total, _) in totals {
+                    reading.totals[total] = KubePrometheusReader.value(KubeChartQueries.arm(answer.series, total, of: totals))
+                    carried.insert(total)
+                }
                 notes += answer.notes
             }
-            for (measure, query) in queries.totals {
+            var parts: [KubeChartMeasure: [String: [KubeSeriesPoint]]] = [:]
+            var partTotals: [KubeChartMeasure: [String: Double]] = [:]
+            func byNode(_ series: [KubeSeries]) -> [String: Double] {
+                var values: [String: Double] = [:]
+                for one in series { if let name = one.labels["node"], let value = one.points.last?.value { values[name] = value } }
+                return values
+            }
+            for (measure, query) in queries.parts {
+                let totals = queries.carried(by: measure, parts: true)
+                let answer = try await ask(transport, path(KubeChartQueries.union((measure, query), carrying: totals)), context: context, service: service, order: order)
+                parts[measure] = KubePromTabCharts.by(KubeChartQueries.arm(answer.series, measure, of: totals), queries.partLabel)
+                for (total, _) in totals { partTotals[total] = byNode(KubeChartQueries.arm(answer.series, total, of: totals)) }
+                notes += answer.notes
+            }
+            reading.parts = parts
+            for (measure, query) in queries.partTotals where partTotals[measure] == nil {
                 let answer = try await ask(transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
-                reading.totals[measure] = KubePrometheusReader.value(answer.series)
+                partTotals[measure] = byNode(answer.series)
                 notes += answer.notes
             }
-            if queries.totals.isEmpty { reading.totals = [:] }
+            reading.partTotals = partTotals
+            // A volume with no fixed size (EFS's 8 EiB): no share, no forecast — not asked.
+            var totals = queries.totals.filter { !carried.contains($0.0) }
+            if case .volume = chart, KubeVolumeUsage.isUnbounded(reading.series[.volumeCapacity]?.last?.value) { totals = [] }
+            if queries.unioned, totals.count > 1 {
+                // The totals no line carried (its lines refused): one instant union.
+                let answer = try await ask(
+                    transport, KubePromQL.instantPath(service, KubeChartQueries.union(totals)), context: context, service: service, order: order)
+                for (measure, _) in totals { reading.totals[measure] = KubePrometheusReader.value(KubeChartQueries.arm(answer.series, measure, of: totals)) }
+                notes += answer.notes
+            } else {
+                for (measure, query) in totals {
+                    let answer = try await ask(transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
+                    reading.totals[measure] = KubePrometheusReader.value(answer.series)
+                    notes += answer.notes
+                }
+            }
+            if totals.isEmpty && carried.isEmpty { reading.totals = [:] }
             reading.refused = queries.refused
-            if queries.refused != nil { reading.series = [:] }
+            if queries.refused != nil {
+                reading.series = [:]
+                reading.parts = [:]
+            }
             reading.tier = queries.tier
+            reading.step = queries.step
             reading.caption = KubeChartReading.caption(queries.tier, chart: chart, profile: profile)
             reading.retention = chart.needsProfile ? profile.retention : nil
             // Three at most for the chart, however many of its queries spoke.

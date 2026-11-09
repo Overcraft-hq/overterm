@@ -217,7 +217,7 @@ extension KubernetesPageModel {
         let kind = model.catalog.kind(fullName: fullName) ?? (fullName == KubeResourceKind.pods.fullName ? .pods : nil)
         guard let kind else { return }
         showKind(kind)
-        open(KubeObjectRef(context: context, kind: kind, namespace: kind.namespaced ? id.namespace : nil, name: id.name), from: .list)
+        open(KubeObjectRef(context: context, kind: kind, namespace: kind.namespaced ? id.namespace : nil, name: id.name), from: .overview)
         if kind.fullName == KubeResourceKind.pods.fullName { detailTab = .overview }
     }
 

@@ -137,8 +137,8 @@ final class KubePlotTests: XCTestCase {
         XCTAssertEqual(KubeChartRole.allocatable.dash, [1, 2])
         XCTAssertEqual(KubeChartRole.quota.dash, [6, 2, 1, 2])
         XCTAssertEqual(
-            Set(KubeChartRole.allCases.filter(\.isReference).map { KubeChartPalette.reference($0, dark: false) }).count, 5,
-            "request, limit, quota, guide by colour; allocatable and capacity share grey, told apart by name")
+            Set(KubeChartRole.allCases.filter(\.isReference).map { KubeChartPalette.reference($0, dark: false) }).count, 6,
+            "request, limit, quota, guide, forecast by colour; allocatable and capacity share grey, told apart by name")
     }
 
     func testTheCacheKeyIsTheVersionTheSizeAndWhatIsHidden() {

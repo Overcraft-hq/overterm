@@ -428,6 +428,7 @@ enum KubePromQL {
 
     static let volumeUsed = "kubelet_volume_stats_used_bytes"
     static let volumeCapacity = "kubelet_volume_stats_capacity_bytes"
+    static let volumeAvailable = "kubelet_volume_stats_available_bytes"
 
     /// How long Prometheus may take over a query (`timeout`), and how long
     /// Overterm waits for its answer: a slow query otherwise holds its place
@@ -659,19 +660,42 @@ enum KubePrometheusReader {
 
 /// What a chart is of, and what it asks for.
 enum KubeChart: Hashable, Sendable {
-    /// The cluster's CPU and memory, its requests and limits against allocatable (the Overview).
+    /// The cluster's CPU and memory, its requests and limits against allocatable (the Overview: X1, X2).
     case cluster
+    /// The Overview's CPU by namespace (X3): the top eight and the rest,
+    /// of the namespaces picked (sorted; empty, every one).
+    case namespaces([String])
+    /// The Overview's nodes as small multiples (X4): each one's CPU and
+    /// memory over the range as 60 cells of its allocatable.
+    case nodes
     case volume(namespace: String, claim: String)
+    /// A claim's inodes used (V2): read only while its toggle is on.
+    case volumeInodes(namespace: String, claim: String)
 }
 
 /// One measure a chart reads.
 enum KubeChartMeasure: String, CaseIterable, Sendable {
-    case cpu, memory, volumeUsed, volumeCapacity
-    case cpuRequests, cpuLimits, cpuAllocatable, memoryRequests, memoryLimits, memoryAllocatable
+    case cpu, memory, volumeUsed, volumeCapacity, inodes
+    case cpuRequests, cpuLimits, cpuAllocatable, cpuCapacity, memoryRequests, memoryLimits, memoryAllocatable, memoryCapacity
+    /// A claim's available bytes now, and how fast it fills (bytes a second).
+    case volumeAvailable, volumeFill
 
-    var isBytes: Bool { ![.cpu, .cpuRequests, .cpuLimits, .cpuAllocatable].contains(self) }
+    /// The line a total belongs beside: a CPU total's CPU, a memory total's memory.
+    var resource: KubeChartMeasure {
+        switch self {
+        case .cpuRequests, .cpuLimits, .cpuAllocatable, .cpuCapacity: .cpu
+        case .memoryRequests, .memoryLimits, .memoryAllocatable, .memoryCapacity: .memory
+        default: self
+        }
+    }
 
-    func format(_ value: Double) -> String { isBytes ? KubeVolumeFormat.bytes(value) : KubeMetricsFormat.cpu(value) }
+    var isBytes: Bool { ![.cpu, .cpuRequests, .cpuLimits, .cpuAllocatable, .cpuCapacity, .inodes].contains(self) }
+
+    func format(_ value: Double) -> String {
+        if self == .inodes { return KubeChartUnit.ratio.format(value) }
+        if self == .volumeFill { return KubeChartUnit.bytesPerSecond.format(value) }
+        return isBytes ? KubeVolumeFormat.bytes(value) : KubeMetricsFormat.cpu(value)
+    }
 }
 
 /// What a chart asks over a range: range queries (its lines), instant
@@ -685,6 +709,36 @@ struct KubeChartQueries {
     var tier: KubePromTier?
     /// Footnotes and sentences from the profile (kube-state-metrics old or missing).
     var notes: [String] = []
+    /// Lines by a label's value (X3's namespaces, X4's nodes): range queries,
+    /// and instant ones (X4's allocatable by node), kept by `partLabel`.
+    var parts: [(KubeChartMeasure, String)] = []
+    var partTotals: [(KubeChartMeasure, String)] = []
+    var partLabel = ""
+    /// Its own step (X4: a sixtieth of the range), else the range's.
+    var step: TimeInterval?
+    /// Each line asked with its own totals as one range union (metrics.md
+    /// 4.2, 6.5: X1, X2 and X4 a query a measure), each arm tagged
+    /// `overterm_s` by its measure, a total read off its last point.
+    var unioned = false
+
+    /// The totals asked with `measure`'s line (`parts`: with its part's), none unless unioned.
+    func carried(by measure: KubeChartMeasure, parts: Bool = false) -> [(KubeChartMeasure, String)] {
+        guard unioned else { return [] }
+        return (parts ? partTotals : totals).filter { $0.0.resource == measure && $0.0 != measure }
+    }
+
+    /// A line and the totals it carries, as one query; alone, the line as it is.
+    static func union(_ line: (KubeChartMeasure, String), carrying totals: [(KubeChartMeasure, String)]) -> String {
+        totals.isEmpty ? line.1 : union([line] + totals)
+    }
+
+    /// Arms tagged by their measures, as one query.
+    static func union(_ arms: [(KubeChartMeasure, String)]) -> String { KubeTabQueries.union(arms.map { ($0.1, $0.0.rawValue) }) }
+
+    /// One arm's series of a union's answer: tagged `measure`; asked alone (nothing carried), all of them.
+    static func arm(_ series: [KubeSeries], _ measure: KubeChartMeasure, of totals: [(KubeChartMeasure, String)]) -> [KubeSeries] {
+        totals.isEmpty ? series : series.filter { $0.labels[KubePodShares.label] == measure.rawValue }
+    }
 }
 
 extension KubeChart {
@@ -698,15 +752,27 @@ extension KubeChart {
     var order: Int {
         switch self {
         case .cluster: 0
+        case .namespaces, .nodes: 1
         case .volume: 2
+        case .volumeInodes: 3
+        }
+    }
+
+    /// Whether its raw form reads cAdvisor across the cluster (≤ 6h).
+    var readsAcrossCluster: Bool {
+        switch self {
+        case .cluster, .namespaces, .nodes: true
+        case .volume, .volumeInodes: false
         }
     }
 
     /// Whether its queries depend on what the context's Prometheus holds
     /// (the probe runs for it): a volume's don't.
     var needsProfile: Bool {
-        if case .volume = self { return false }
-        return true
+        switch self {
+        case .volume, .volumeInodes: false
+        case .cluster, .namespaces, .nodes: true
+        }
     }
 
     /// The cluster's lines' tier over `range`: the mixin's node rules,
@@ -732,34 +798,50 @@ extension KubeChart {
                 if profile.ksmMajor == 1 { notes.append(KubeChartEmpty.ksmOld.sentence) }
                 totals = [
                     (.cpuRequests, KubePromQL.requests("cpu", profile: profile)), (.cpuLimits, KubePromQL.limits("cpu", profile: profile)),
-                    (.cpuAllocatable, KubePromQL.allocatable("cpu", profile: profile)),
+                    (.cpuAllocatable, KubePromQL.allocatable("cpu", profile: profile)), (.cpuCapacity, KubePromQL.capacity("cpu", profile: profile)),
                     (.memoryRequests, KubePromQL.requests("memory", profile: profile)), (.memoryLimits, KubePromQL.limits("memory", profile: profile)),
                     (.memoryAllocatable, KubePromQL.allocatable("memory", profile: profile)),
+                    (.memoryCapacity, KubePromQL.capacity("memory", profile: profile)),
                 ]
             }
+            var queries: KubeChartQueries
             switch Self.clusterTier(range, profile: profile) {
             case .rules:
-                return KubeChartQueries(
+                queries = KubeChartQueries(
                     series: [(.cpu, KubePromQL.ruleClusterCPU), (.memory, KubePromQL.ruleClusterMemory)], totals: totals, tier: .rules, notes: notes)
             case .nodeExporter:
-                return KubeChartQueries(
+                queries = KubeChartQueries(
                     series: [(.cpu, KubePromQL.nodeClusterCPU(window: window)), (.memory, KubePromQL.nodeClusterMemory)], totals: totals,
                     tier: .nodeExporter, notes: notes)
             case .raw:
-                return KubeChartQueries(
+                queries = KubeChartQueries(
                     series: [(.cpu, KubePromQL.clusterCPU(window: window, profile: profile)), (.memory, KubePromQL.clusterMemory(profile: profile))],
                     totals: totals, tier: .raw, notes: notes)
             case nil:
                 // Known: the samples it would read; unknown: as before the probe.
                 let refused = profile.known ? KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).sentence : nil
-                return KubeChartQueries(series: [], totals: totals, refused: refused ?? Self.rawRefusal(range), notes: notes)
+                queries = KubeChartQueries(series: [], totals: totals, refused: refused ?? Self.rawRefusal(range), notes: notes)
             }
+            queries.unioned = true
+            return queries
+        case .namespaces(let names):
+            // Its lines need the ranking's names first: `namespaceQueries`.
+            return Self.namespaceQueries(range: range, profile: profile, picked: names, top: [])
+        case .nodes:
+            return Self.nodeQueries(range: range, profile: profile)
         case .volume(let namespace, let claim):
             return KubeChartQueries(
                 series: [
                     (.volumeUsed, KubePromQL.volume(KubePromQL.volumeUsed, namespace: namespace, claim: claim)),
                     (.volumeCapacity, KubePromQL.volume(KubePromQL.volumeCapacity, namespace: namespace, claim: claim)),
-                ], totals: [])
+                ],
+                // The fill forecast (V1): skipped once the capacity read says it has no fixed size (EFS).
+                totals: [
+                    (.volumeAvailable, KubePromQL.volume(KubePromQL.volumeAvailable, namespace: namespace, claim: claim)),
+                    (.volumeFill, KubePromQL.volumeFill(namespace: namespace, claim: claim)),
+                ])
+        case .volumeInodes(let namespace, let claim):
+            return KubeChartQueries(series: [(.inodes, KubePromQL.volumeInodes(namespace: namespace, claim: claim))], totals: [])
         }
     }
 }
@@ -784,6 +866,17 @@ struct KubeChartReading: Equatable, Sendable {
     var retention: Date?
     /// Why nothing is asked at all (agent mode): said in the chart's place.
     var unavailable: String?
+    /// Lines by a label's value (X3's namespaces, X4's nodes), and instant
+    /// answers by it (X4's allocatable).
+    var parts: [KubeChartMeasure: [String: [KubeSeriesPoint]]] = [:]
+    var partTotals: [KubeChartMeasure: [String: Double]] = [:]
+    /// X3's top eight, as last ranked (`nil`, not yet), the readings since,
+    /// and what the ranking says of itself ("ranked by the last 24h").
+    var ranked: [String]?
+    var rankedReads = 0
+    var rankingNote: String?
+    /// The window its lines were asked over (X4's own step).
+    var step: TimeInterval?
 
     /// `used` against `of`, as the Overview says it: `1.2 of 4 cores · 30%`.
     func share(_ used: KubeChartMeasure, of total: KubeChartMeasure) -> (used: Double, total: Double, percent: Int?)? {
@@ -798,7 +891,7 @@ struct KubeChartReading: Equatable, Sendable {
         guard let tier else { return nil }
         var text = tier.title
         if tier == .rules { text += " (5 min averages)" }
-        if tier == .raw, chart == .cluster { text += " (≤ \(KubeChartRange.rawClusterLimit.title))" }
+        if tier == .raw, chart.readsAcrossCluster { text += " (≤ \(KubeChartRange.rawClusterLimit.title))" }
         if let scrape = profile.scrape { text += " · scrape \(KubePromQL.duration(scrape))" }
         return text
     }
@@ -809,10 +902,20 @@ struct KubeVolumeUsage: Equatable, Sendable {
     var used: Double
     var capacity: Double?
 
-    var percent: Int? { KubeMetricsFormat.percent(used, of: capacity) }
+    /// A capacity past 2^60 bytes is no size at all: EFS (and other
+    /// elastic filesystems) report 8 EiB. Such a volume has no share and
+    /// no forecast; only what it holds is said (metrics.md 2.9).
+    static let unboundedCapacity: Double = 1_152_921_504_606_846_976
+
+    static func isUnbounded(_ capacity: Double?) -> Bool { (capacity ?? 0) > unboundedCapacity }
+
+    var unbounded: Bool { Self.isUnbounded(capacity) }
+
+    var percent: Int? { unbounded ? nil : KubeMetricsFormat.percent(used, of: capacity) }
 
     var text: String {
-        KubeVolumeFormat.bytes(used) + (capacity.map { " of \(KubeVolumeFormat.bytes($0))" } ?? "") + (percent.map { " (\($0)%)" } ?? "")
+        if unbounded { return KubeVolumeFormat.bytes(used) + " (no fixed size)" }
+        return KubeVolumeFormat.bytes(used) + (capacity.map { " of \(KubeVolumeFormat.bytes($0))" } ?? "") + (percent.map { " (\($0)%)" } ?? "")
     }
 
     /// The two instant answers by claim, put together.
@@ -835,7 +938,9 @@ struct KubeVolumeUsage: Equatable, Sendable {
 /// Bytes as `kubectl` says capacities: Ki, Mi, Gi, Ti, one decimal under ten. Pure.
 enum KubeVolumeFormat {
     static func bytes(_ value: Double) -> String {
-        let units: [(String, Double)] = [("Ti", 1_099_511_627_776), ("Gi", 1_073_741_824), ("Mi", 1_048_576), ("Ki", 1024)]
+        let units: [(String, Double)] = [
+            ("Ei", 1_152_921_504_606_846_976), ("Pi", 1_125_899_906_842_624), ("Ti", 1_099_511_627_776), ("Gi", 1_073_741_824), ("Mi", 1_048_576), ("Ki", 1024),
+        ]
         for (unit, scale) in units where value >= scale {
             let scaled = value / scale
             return (scaled < 10 ? String(format: "%.1f", scaled) : String(Int(scaled.rounded()))) + unit

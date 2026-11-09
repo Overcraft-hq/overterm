@@ -51,7 +51,7 @@ final class KubeTabQueriesTests: XCTestCase {
     func testAPodsQueriesOverAnHour() {
         let plan = KubeTabTesting.plan(.hour, profile: stack)
         let by = Dictionary(uniqueKeysWithValues: plan.queries.map { ($0.id, $0.promql) })
-        XCTAssertEqual(Set(by.keys), ["cpu", "memory", "rss", "throttling", "network", "restarts", "oom"], "no peak band under 24h")
+        XCTAssertEqual(Set(by.keys), ["cpu", "memory", "rss", "throttling", "network", "restarts", "oom", "fs"], "no peak band under 24h")
         XCTAssertEqual(
             by["throttling"],
             #"sum by (container)(increase(container_cpu_cfs_throttled_periods_total{container!="",image!="",container!="POD",metrics_path="/metrics/cadvisor",namespace="shop",pod="web-1"}[5m]))"#
@@ -97,7 +97,7 @@ final class KubeTabQueriesTests: XCTestCase {
         XCTAssertEqual(bare.notes, [KubeChartEmpty.ksmMissing.sentence])
         // Only what was asked for: Live's mixed tab asks only what has no sampled form.
         let live = KubeTabTesting.plan(.live, profile: stack, families: KubeTabFamily.prometheusOnly)
-        XCTAssertEqual(Set(live.queries.map(\.family)), [.throttling, .network, .restarts, .oom])
+        XCTAssertEqual(Set(live.queries.map(\.family)), [.throttling, .network, .restarts, .oom, .fs])
     }
 
     /// A counter's rise a step is never a window one step wide: since

@@ -50,9 +50,11 @@ enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
     /// W3 over Prometheus (a Deployment's ReplicaSets); a namespace's pods by
     /// phase (N4), its ResourceQuota over time, what it requests but leaves idle (N3).
     case revisions, phases, quota, idle
+    /// C4: a container's ephemeral storage (cAdvisor's filesystem use) against its limit (M8).
+    case fs
 
     /// The families with no sampled form: read from Prometheus in Live too.
-    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom]
+    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs]
 }
 
 /// What a tab wants of Prometheus: whose, over which range or window, which families.
@@ -360,6 +362,20 @@ enum KubeTabQueries {
                         ),
                     ]))
             }
+            // C4, only where the probe found cAdvisor's filesystem use (containerd's
+            // kubelet usually has none): each container's, a device each once,
+            // against its ephemeral-storage limit.
+            if profile.known, !profile.has("container_fs_usage_bytes") {
+                refuse(.fs, KubeChartEmpty.noContainerFS.sentence)
+            } else {
+                let selector = joined([profile.cadvisorMatchers, scope])
+                var arms = [("sum by (container)(max by (container,device)(\(gauge("container_fs_usage_bytes{\(selector)}"))))", "usage")]
+                if usesKSM, profile.ksmMajor != 1 {
+                    arms.append(
+                        ("max by (container)(kube_pod_container_resource_limits{\(joined([ksm, scope, #"resource="ephemeral_storage""#]))})", "limit"))
+                }
+                add("fs", .fs, union(arms))
+            }
             if usesKSM {
                 add("restarts", .restarts, restarts(scope))
                 add("oom", .oom, ooms(scope, by: "container"))
@@ -461,12 +477,19 @@ enum KubeTabQueries {
                 let cpu = "sum(sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{\(selector)}[\(window)])))"
                 let memory = "sum(max by (namespace,pod,container)(\(gauge("container_memory_working_set_bytes{\(selector)}"))))"
                 add("cpu", .cpu, request.map { union([(cpu, "usage"), ($0.cpu, "request")]) } ?? cpu)
-                add("memory", .memory, request.map { union([(memory, "usage"), ($0.memory, "request")]) } ?? memory)
+                // K2's node total (MemTotal − MemAvailable) where node-exporter maps to nodes.
+                var memoryArms = [(memory, "usage")]
+                if let request { memoryArms.append((request.memory, "request")) }
+                if profile.nodeExporterMapped { memoryArms.append((KubePromQL.nodeTotalMemory(node), "total")) }
+                add("memory", .memory, memoryArms.count > 1 ? union(memoryArms) : memory)
                 add("topCPU", .topCPU, "sum by (namespace,pod)(rate(container_cpu_usage_seconds_total{\(selector)}[\(window)]))")
                 add("topMemory", .topMemory, "sum by (namespace,pod)(max by (namespace,pod,container)(\(gauge("container_memory_working_set_bytes{\(selector)}"))))")
             } else {
                 let why = "cAdvisor's series here name no node (neither node nor instance): a node's usage can't be told apart."
                 for family in [KubeTabFamily.cpu, .memory, .topCPU, .topMemory] { refuse(family, why) }
+            }
+            if profile.known, !profile.nodeExporterMapped, wanted.contains(.memory) {
+                plan.notes.append(KubeChartEmpty.nodeExporterUnmapped.sentence)
             }
             if usesKSM {
                 let pinned = joined([ksm, KubePromQL.matchers([("node", node)])])
@@ -765,6 +788,16 @@ enum KubeTabQueries {
 }
 
 extension KubePromQL {
+    /// A node's own memory in use, node-exporter's MemTotal − MemAvailable
+    /// (K2's "node total": the system's and the kubelet's too), its
+    /// instance mapped to the node by `node_uname_info`'s nodename (on EKS
+    /// the node's hostname, which is its name) — both sides taken once an
+    /// instance (metrics.md 1.1), two jobs scraping it or not: summed by
+    /// job, a node scraped twice read twice its memory.
+    static func nodeTotalMemory(_ node: String) -> String {
+        "sum(max by (instance)(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) * on(instance) group_left(nodename) max by (instance,nodename)(node_uname_info{\(matchers([("nodename", node)]))}))"
+    }
+
     /// What a namespace's active pods request (N3's chip): the mixin's
     /// active-pod rule where it is, else kube-state-metrics' requests of
     /// the Pending and Running pods — its 1.x names on 1.x.

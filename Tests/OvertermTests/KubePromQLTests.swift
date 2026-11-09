@@ -125,7 +125,7 @@ final class KubePromQLTests: XCTestCase {
     func testTheClusterIsReadRawUpToSixHours() {
         for range in KubeChartRange.allCases {
             let queries = KubeChart.cluster.queries(range: range)
-            XCTAssertEqual(queries.totals.count, 6, "requests, limits and allocatable, every range: instant queries")
+            XCTAssertEqual(queries.totals.count, 8, "requests, limits, allocatable and capacity, every range: instant queries")
             if range.seconds <= 6 * 3600 {
                 XCTAssertEqual(queries.series.map(\.0), [.cpu, .memory])
                 XCTAssertNil(queries.refused)

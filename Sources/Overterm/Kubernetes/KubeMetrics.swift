@@ -187,18 +187,26 @@ enum KubeMetricsReader {
 
     /// A NodeList's `status.allocatable`, by node, and where the next page starts.
     static func allocatable(_ data: Data) throws -> (nodes: [String: KubeUsage], continueToken: String?) {
+        let read = try nodeResources(data)
+        return (read.allocatable, read.continueToken)
+    }
+
+    /// A NodeList's `status.allocatable` and `status.capacity`, by node (the
+    /// Overview's lines, X1 and X2), and where the next page starts.
+    static func nodeResources(_ data: Data) throws -> (allocatable: [String: KubeUsage], capacity: [String: KubeUsage], continueToken: String?) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
         var nodes: [String: KubeUsage] = [:]
+        var capacity: [String: KubeUsage] = [:]
         for item in object["items"] as? [[String: Any]] ?? [] {
-            guard let name = (item["metadata"] as? [String: Any])?["name"] as? String,
-                let usage = KubeUsage((item["status"] as? [String: Any])?["allocatable"])
-            else { continue }
-            nodes[name] = usage
+            guard let name = (item["metadata"] as? [String: Any])?["name"] as? String else { continue }
+            let status = item["status"] as? [String: Any]
+            if let usage = KubeUsage(status?["allocatable"]) { nodes[name] = usage }
+            if let usage = KubeUsage(status?["capacity"]) { capacity[name] = usage }
         }
         let token = ((object["metadata"] as? [String: Any])?["continue"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return (nodes, token)
+        return (nodes, capacity, token)
     }
 }
 
@@ -520,6 +528,8 @@ struct KubeMetricsSample: Equatable, Sendable {
     var nodes: [String: KubeNodeMetrics] = [:]
     /// Each node's allocatable (nodes only; read now and then, not each time).
     var allocatable: [String: KubeUsage] = [:]
+    /// Each node's capacity, read with its allocatable.
+    var capacity: [String: KubeUsage] = [:]
     /// When the answer came.
     var read: Date
     /// The oldest sample in it, as metrics-server stamped it.
@@ -573,6 +583,9 @@ struct KubeMetricsSample: Equatable, Sendable {
     var clusterUsage: KubeUsage { nodes.values.map(\.usage).reduce(.zero, +) }
     var clusterAllocatable: KubeUsage? {
         allocatable.isEmpty ? nil : allocatable.values.reduce(.zero, +)
+    }
+    var clusterCapacity: KubeUsage? {
+        capacity.isEmpty ? nil : capacity.values.reduce(.zero, +)
     }
 }
 

@@ -177,6 +177,13 @@ extension E2ERunner {
         fake.setPrometheusMatrix("kube_pod_container_status_last_terminated_reason{", [])
         fake.setPrometheusMatrix(Self.peakFragment, [FakePromFixture.Line(["container": "app"]) { _ in 0.4 }])
         fake.setPrometheusMatrix("container_memory_rss{", [])
+        // C4: a container's filesystem use against its ephemeral-storage limit (the union's arms).
+        fake.setPrometheusMatrix(
+            "container_fs_usage_bytes{",
+            [
+                FakePromFixture.Line(["overterm_s": "usage", "container": "app"]) { _ in 300 * 1_048_576 },
+                FakePromFixture.Line(["overterm_s": "limit", "container": "app"]) { _ in 1_073_741_824 },
+            ])
     }
 
     /// C1's peak band's query (24h and 7d), a subquery the fake doesn't read.
@@ -185,7 +192,7 @@ extension E2ERunner {
     func clearTabFixtures(_ fake: FakeKubeAPI) {
         for fragment in [
             "container_cpu_cfs_throttled_periods_total{", "container_network_receive_bytes_total{", "sum(clamp_min(", "kube_pod_container_status_last_terminated_reason{",
-            Self.peakFragment, "container_memory_rss{",
+            Self.peakFragment, "container_memory_rss{", "container_fs_usage_bytes{",
         ] {
             fake.clearPrometheusMatrix(fragment)
         }
@@ -270,6 +277,14 @@ extension E2ERunner {
             "the throttling chart there",
             await eventually(10) { throttling().map { $0.end.timeIntervalSince($0.start) == 3600 } == true }, said())
         check("raw cAdvisor over an hour", charts.chart(cpuID, in: scope)?.data.tier == "raw cAdvisor", charts.chart(cpuID, in: scope)?.data.tier ?? "")
+        // C4 (M8): kube-prometheus-stack's kubelet reports filesystem use.
+        check(
+            "app's ephemeral storage against its limit",
+            await eventually(10) {
+                built()?.sections.first { $0.container == "app" }?.charts.first { $0.data.id == "container.shop.\(name).app.fs" }.map {
+                    $0.chips.map(\.text) == ["29% of limit"] && $0.data.references.map(\.role) == [.limit]
+                } == true
+            }, said())
         check("only the Service's query and query_range", !asked().isEmpty && asked().allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath }, "\(asked().map(\.path))")
         check("each with 20 s", asked().allSatisfy { $0.query["timeout"] == "20s" })
         check("no metrics.k8s.io read for it now", await eventually(5) { page.metricsDetailsOnScreen.isEmpty })
