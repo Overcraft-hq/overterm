@@ -5610,6 +5610,33 @@ part 6 (`prometheusVolumeForecast`: the chip and the projection, inodes
 read only while toggled, an EFS claim with no line, no % and no
 forecast asked; C4 on a pod's tab).
 
+**A node's disks and network from node-exporter** (K6, K7;
+`KubeTabFamily.disks`/`.nodeNetwork`, `KubePromQL.nodeDisks`/`nodeNetwork`
+in `KubeTabQueries.swift`, `KubePromTabCharts.nodeExporterGroup`;
+metrics.md 2.8, 4.6, decision 6, stage M8b). Node-exporter's series
+are mapped to the node by `node_uname_info`'s nodename
+(`KubePromQL.onNode`, K2's total's mapping too), never by host IP, every
+series taken once an instance (a mount, a device) before it is summed.
+Disks: `/` and `/local` (Bottlerocket's), tmpfs, overlay and squashfs
+left out — each mount's size less available against its size, one range
+union tagged `overterm_s`, a chart a mount ("25% used", red from 90%).
+Network: the node's own interfaces (lo, veth, eni, cali, docker, cni
+left out), received and sent a second at the tab's rate window. They
+have no sampled form, so they are Prometheus' in Live too
+(`prometheusOnly`; `addNodeExporter` adds them to the sampled charts).
+They are the tab's last group, read only while on screen like the top
+pods: `KubePromTabCharts.readWhenShown` maps each such group's title to
+its families, `page.metricsGroupsShown` holds the ones on screen (the
+group's header says so as it appears and goes). Where the probe found
+node-exporter unmapped there is no group, and one sentence says the
+node's memory total, disks and network are left out; a collector off
+(no `node_filesystem_avail_bytes`, no `node_network_receive_bytes_total`,
+both now in the probe's list) leaves out that chart alone, said; a node
+with neither mount says so. Only the Service's `query_range`, GET only;
+the kubelet is never reached. `KubeNodeExporterChartsTests`,
+`KubeMetricsTabPrometheusTests` (read only while shown, in Live and over
+the hour); `kubernetesObjectCharts`' `nodeExporterPart`.
+
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
 memory numbers, its last 15 minutes as 60 cells of 15 s, each the

@@ -191,18 +191,18 @@ extension KubernetesPageModel {
     func tabRequest(of session: KubeDetailSession) -> KubeTabRequest? {
         guard let subject = session.ref.metricsSubject, let source = metricsSource(of: session.ref) else { return nil }
         var families = KubePromTabCharts.families(subject, source: source)
-        // A node's top pods only while their group is on screen (metrics.md 6.2).
-        if !metricsTopPodsShown { families.subtract(KubePromTabCharts.readWhenShown) }
+        // A node's top pods, its disks and network, only while their group is on screen (metrics.md 6.2).
+        for (group, read) in KubePromTabCharts.readWhenShown where !metricsGroupsShown.contains(group) { families.subtract(read) }
         guard !families.isEmpty, let whose = tabSubject(of: session) else { return nil }
         let span: KubeTabRequest.Span = metricsWindow.map { .window($0) } ?? .range(shownMetricsRange(for: subject))
         return KubeTabRequest(subject: whose, span: span, families: families)
     }
 
-    /// A group read only while on screen (a node's top pods) appeared or
-    /// went: what the tab asks follows.
-    func metricsGroupShown(_ shown: Bool) {
-        guard metricsTopPodsShown != shown else { return }
-        metricsTopPodsShown = shown
+    /// A group read only while on screen (a node's top pods, its disks and
+    /// network — by its title) appeared or went: what the tab asks follows.
+    func metricsGroupShown(_ group: String, _ shown: Bool) {
+        guard metricsGroupsShown.contains(group) != shown else { return }
+        if shown { metricsGroupsShown.insert(group) } else { metricsGroupsShown.remove(group) }
         updatePrometheusWanted()
     }
 

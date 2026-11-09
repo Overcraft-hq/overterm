@@ -48,7 +48,7 @@ struct KubeMetricsTabView: View {
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
                         showAround: { [weak page] in page?.showAround($0) },
                         zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) },
-                        groupShown: { [weak page] in page?.metricsGroupShown($0) })
+                        groupShown: { [weak page] in page?.metricsGroupShown($0, $1) })
                 } else {
                     objectProblem(charts)
                 }
@@ -287,15 +287,15 @@ struct KubeObjectChartsList: View {
     var showAround: ((KubeChartMarker) -> Void)?
     var zoom: ((Date, Date, KubeChartData) -> Void)?
     /// A group read only while on screen came into view, or left it.
-    var groupShown: ((Bool) -> Void)?
+    var groupShown: ((String, Bool) -> Void)?
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(charts.groups) { group in
                     Text(verbatim: group.title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
-                        .onAppear { if group.readsWhenShown { groupShown?(true) } }
-                        .onDisappear { if group.readsWhenShown { groupShown?(false) } }
+                        .onAppear { if group.readsWhenShown { groupShown?(group.title, true) } }
+                        .onDisappear { if group.readsWhenShown { groupShown?(group.title, false) } }
                     if group.pending, group.charts.isEmpty {
                         Text(verbatim: "Asked of Prometheus while shown").font(.system(size: 11)).foregroundStyle(theme.text3)
                             .accessibilityIdentifier("kubernetes.metrics.pending")

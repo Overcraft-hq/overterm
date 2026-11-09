@@ -142,6 +142,7 @@ struct KubePromProfile: Equatable, Sendable {
         "kube_pod_container_status_last_terminated_reason", "kube_pod_owner", "kube_replicaset_owner", "kube_node_status_allocatable",
         "kube_horizontalpodautoscaler_status_current_replicas", "kube_hpa_status_current_replicas", "kube_horizontalpodautoscaler_status_target_metric",
         "kube_resourcequota", "node_cpu_seconds_total", "node_memory_MemAvailable_bytes", "node_memory_MemTotal_bytes", "node_uname_info",
+        KubePromQL.nodeFilesystemMetric, KubePromQL.nodeNetworkMetric,
         "kubelet_volume_stats_used_bytes", "kubelet_volume_stats_inodes_used", containerCPURate5m, containerCPUIrate, containerMemoryRule,
         workloadRule, activeRequestsRule, nodeCPURule, nodeMemoryRule, nodeCPUCountRule,
         "prometheus_tsdb_lowest_timestamp_seconds",
