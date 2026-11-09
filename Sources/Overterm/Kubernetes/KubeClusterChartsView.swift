@@ -19,8 +19,11 @@ struct KubeClusterSampledView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 20) {
                     ForEach(charts) { chart in
-                        KubeChartView(data: chart.data, cursor: cursor, headline: chart.headline, span: "last 10 min", chips: chart.chips, theme: theme)
-                            .frame(minWidth: 200, maxWidth: .infinity)
+                        KubeChartView(
+                            data: chart.data, cursor: cursor, headline: chart.headline, span: "last 10 min", chips: chart.chips,
+                            copy: { [weak page] in page?.copyChartText($0) }, theme: theme
+                        )
+                        .frame(minWidth: 200, maxWidth: .infinity)
                     }
                 }
                 Text(verbatim: page.sampledClusterCaption()).font(.system(size: 10.5)).foregroundStyle(theme.text3)

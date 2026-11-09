@@ -88,6 +88,9 @@ struct KubernetesActions {
     /// A snippet's own `{{…}}` asked for, as Snippets asks: `then` gets the
     /// filled line, only when the user goes on.
     var fillSnippet: (_ snippet: Snippet, _ then: @escaping (String) -> Void) -> Void = { snippet, then in then(snippet.command) }
+    /// A Metrics tab's chart alone in the window's right slot (M9): the
+    /// page steps aside.
+    var expandChart: (KubeExpandedChart) -> Void = { _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -393,6 +396,14 @@ final class KubernetesPageModel: ObservableObject {
     var metricsIdleTask: Task<Void, Never>?
     /// The groups read only while on screen that are (their view says), by title: a node's top pods, its disks and network.
     var metricsGroupsShown: Set<String> = []
+    /// The Metrics tab's chart expanded into the window's right slot, the
+    /// last one (metrics.md 2.1, M9): the slot holds one.
+    @Published var expandedChart: KubeExpandedChart?
+    /// Whether the slot shows it in a window on screen (the window says):
+    /// the page hidden, its tab's reads go on for it (`chartsShown`).
+    var expandedChartOnScreen = false {
+        didSet { if expandedChartOnScreen != oldValue { updateMetricsWanted() } }
+    }
     /// A claim's inodes (V2) shown beside its usage: read only while it is on.
     @Published var volumeInodesShown = false
     /// Custom's popover, shown (its button, or `.` past 7d).

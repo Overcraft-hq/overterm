@@ -164,7 +164,7 @@ extension KubernetesPageModel {
     /// only where the tab charts them (metrics on, metrics-server serving),
     /// and marked asked only once the read is started (else asked again).
     func askChartLookups() {
-        guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, metricsTabShows,
+        guard chartsShown, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, metricsTabShows,
             model.metrics.availability == .served || chartsFromPrometheus, let session = detail, !chartLookups.asked.contains(session.ref)
         else { return }
         let ref = session.ref
@@ -227,7 +227,9 @@ extension KubernetesPageModel {
             nodeExporter: subject == .node ? model.prometheus.profile.flatMap { $0.known ? $0.nodeExporterMapped : nil } : nil,
             saved: savedCharts(of: ref), prometheusOn: prometheusOn)
         if let cached = objectChartsCache, cached.key == key { return cached.charts }
+        // What each Prometheus chart was drawn from: "Copy PromQL".
         let built = buildObjectCharts(session, subject: subject, object: object, source: source, reading: reading, details: details, now: now, range: range)
+            .map { KubeChartExport.attach($0, sent: reading?.queries ?? []) }
         objectChartsCache = (key, built)
         objectChartsBuilds += 1
         return built

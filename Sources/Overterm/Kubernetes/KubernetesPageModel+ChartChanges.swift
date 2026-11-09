@@ -68,7 +68,7 @@ extension KubernetesPageModel {
             return
         }
         // Read only where a chart is drawn: without metrics-server only an HPA's tab draws (its status).
-        guard visible, windowVisible, section.listsKinds, metricsTabShows, model.selected?.settings.metrics != KubeMetricsSource.none,
+        guard chartsShown, section.listsKinds, metricsTabShows, model.selected?.settings.metrics != KubeMetricsSource.none,
             session.ref.metricsSubject == .hpa || model.metrics.availability == .served || chartsFromPrometheus
         else { return stopPodStates() }
         if session.timeline == nil { session.loadEvents() } else { session.showHistory() }

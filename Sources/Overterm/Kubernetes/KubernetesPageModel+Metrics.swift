@@ -81,7 +81,7 @@ extension KubernetesPageModel {
     /// what that tab charts (`objectMetricsDetails`).
     /// Not while every chart of the tab is Prometheus' (1h on), nor while Live is paused.
     var metricsDetailsOnScreen: [KubeMetricsDetail] {
-        guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail else { return [] }
+        guard chartsShown, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail else { return [] }
         let sampled = detailTab == .metrics && !metricsLivePaused && metricsSource(of: detail.ref).map { $0 != .prometheus } ?? true
         if detail.ref.isPod, let namespace = detail.ref.namespace {
             guard detailTab == .overview || sampled else { return [] }
@@ -97,9 +97,11 @@ extension KubernetesPageModel {
 
     /// The monitor told what this page shows.
     func updateMetricsWanted() {
+        // An expanded chart on screen, the page hidden: its tab's usage and Prometheus still read (M9).
+        model.holdCharts(holdsChartsForExpansion, for: self)
         model.metrics.want(metricsOnScreen, for: self)
         model.metrics.wantDetail(metricsDetailsOnScreen, for: self)
-        if visible, windowVisible { askChartLookups() }
+        if chartsShown { askChartLookups() }
         updateChartChanges()
         updatePrometheusWanted()
         updateMetricsPause()

@@ -138,6 +138,22 @@ final class KubernetesModel: ObservableObject {
 
     var selected: KubeContext? { selectedName.flatMap(contexts.context(named:)) }
     var isShown: Bool { viewers > 0 }
+    /// Pages whose chart is expanded into their window's right slot, on
+    /// screen while the page itself isn't (metrics.md 2.1, M9): usage and
+    /// Prometheus go on being read for it — nothing else (no list, no
+    /// discovery, no watch).
+    private var chartHolders: Set<ObjectIdentifier> = []
+    /// Usage and Prometheus are read: a page shows, or an expanded chart does.
+    var readsMetrics: Bool { isShown || !chartHolders.isEmpty }
+
+    /// `owner`'s expanded chart on screen, its page hidden: usage and
+    /// Prometheus kept read for it; false, given back.
+    func holdCharts(_ held: Bool, for owner: AnyObject) {
+        let id = ObjectIdentifier(owner)
+        guard chartHolders.contains(id) != held else { return }
+        if held { chartHolders.insert(id) } else { chartHolders.remove(id) }
+        updateMetrics()
+    }
 
     /// The proxies the requests go through.
     var proxies: KubeProxies
@@ -1089,7 +1105,7 @@ final class KubernetesModel: ObservableObject {
     /// label selector, and whether discovery says metrics-server is there
     /// (`metrics: none` skips it). Nobody looking, nowhere.
     func updateMetrics() {
-        guard isShown, enabled, let context = selected else {
+        guard readsMetrics, enabled, let context = selected else {
             metrics.update(nil) { nil }
             prometheus.update(nil, client: { nil }, transport: { _ in nil }, close: { _ in })
             return

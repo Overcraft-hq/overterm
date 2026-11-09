@@ -218,14 +218,14 @@ extension KubernetesPageModel {
 
     /// The detail's tab reads Prometheus now: on a page on screen, its Metrics tab, Live not paused.
     var metricsTabWant: KubeTabRequest? {
-        guard visible, windowVisible, section.listsKinds, metricsTabShows, !metricsLivePaused, let detail else { return nil }
+        guard chartsShown, section.listsKinds, metricsTabShows, !metricsLivePaused, let detail else { return nil }
         return tabRequest(of: detail)
     }
 
     // MARK: Live's pause
 
     /// Live runs: its tab shows on a page on screen, no window over it.
-    var metricsLiveRuns: Bool { visible && windowVisible && section.listsKinds && metricsTabShows && metricsWindow == nil && shownMetricsRange == .live }
+    var metricsLiveRuns: Bool { chartsShown && section.listsKinds && metricsTabShows && metricsWindow == nil && shownMetricsRange == .live }
 
     /// Live paused: nothing it reads is read until Resume.
     var metricsLivePaused: Bool { metricsPaused && metricsLiveRuns }
@@ -365,7 +365,9 @@ struct KubePodChartsKey: Equatable, Sendable {
                 source == .mixed
                 ? KubePromTabCharts.addOnly(sampled, namespace: namespace, pod: ref.name, object: json, reading: reading, changes: changes) : sampled
         }
-        cache = (key, charts)
-        return (charts, true)
+        // What each Prometheus chart was drawn from: "Copy PromQL".
+        let drawn = charts.map { KubeChartExport.attach($0, sent: source == .sampled ? [] : reading?.queries ?? []) }
+        cache = (key, drawn)
+        return (drawn, true)
     }
 }

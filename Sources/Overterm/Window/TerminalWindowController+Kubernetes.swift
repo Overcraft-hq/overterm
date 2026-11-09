@@ -80,7 +80,38 @@ extension TerminalWindowController {
             openResource: { [weak self] resource in self?.openKubernetesResource(resource) },
             showChange: { [weak self] change in self?.showKubernetesChange(change) },
             snippets: { [weak self] in Settings.shared.snippetsEnabled ? self?.snippets.snippets ?? [] : [] },
-            fillSnippet: { [weak self] snippet, then in self?.fillKubernetesSnippet(snippet, then) })
+            fillSnippet: { [weak self] snippet, then in self?.fillKubernetesSnippet(snippet, then) },
+            expandChart: { [weak self] chart in self?.showKubernetesExpandedChart(chart) })
+    }
+
+    /// A Metrics tab's chart alone in the right-hand pane (metrics.md 2.1,
+    /// M9) — the slot the browser shares, so it steps aside (`RightSlot`) —
+    /// and the page steps aside so it shows beside the terminal. The slot
+    /// is on screen before the page hides: the tab's reads go on for it
+    /// without a pause.
+    func showKubernetesExpandedChart(_ chart: KubeExpandedChart) {
+        kubernetesManifest.show(chart)
+        rightPane.manifestOpened = true
+        rightPane.mode = .manifest
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+        // Beside the terminal, which has the keyboard again.
+        if store.showingOverlay != nil { hideOverlay() }
+    }
+
+    /// A key or a click in this window while its expanded chart reads with
+    /// the page hidden: Live's idle time starts again (metrics.md 3.5,
+    /// "without input in the window") — the terminal typed in beside the
+    /// chart is the input that matters, and the page's own keys no longer see it.
+    func noteKubernetesWindowInput(_ event: NSEvent) {
+        guard event.window === window, kubernetesPage.holdsChartsForExpansion else { return }
+        kubernetesPage.noteMetricsInput()
+    }
+
+    /// "Show in Kubernetes" from the slot: the page, on the chart's object's Metrics tab.
+    func showKubernetesExpandedSource(_ chart: KubeExpandedChart) {
+        kubernetesPage.showExpandedChartSource(chart)
+        showKubernetesPage()
     }
 
     /// A Kubernetes snippet's own `{{…}}`, asked for as Snippets asks;
@@ -485,6 +516,11 @@ extension TerminalWindowController {
     /// The page declared, and its list given the keyboard when it asks.
     func wireKubernetesPage() {
         declarePage(kubernetesWorkspacePage())
+        // What the manifest pane shows decides whether an expanded chart reads: after it lands.
+        kubernetesManifest.$shown.combineLatest(kubernetesManifest.$chart.map { $0?.id })
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateRightPaneVisibility() } }
+            .store(in: &cancellables)
         followKubernetesForwards()
         followEditorOnScreen()
         kubernetesPage.$focusList
@@ -542,6 +578,9 @@ extension TerminalWindowController {
         editor?.releaseResources()
         releaseKubernetesSwitcher(now: true)
         kubernetesPanel.panelVisible = false
+        // The expanded chart let go, not only marked off screen: a layout pass after can't bring its reads back.
+        kubernetesPage.expandedChartWindowClosing()
+        kubernetesManifest.dropChart()
         kubernetesPage.visible = false
         guard kubernetesPageHeld else { return }
         kubernetesPageHeld = false

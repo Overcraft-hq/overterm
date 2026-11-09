@@ -169,6 +169,156 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         try await until(5, "the hour again") { model.prometheus.tabs.keys.contains { $0.span == .range(.hour) } }
     }
 
+    /// M9: a chart expanded into the right slot, the page hidden — as the
+    /// window hides it — keeps its tab's reads going, and only those; the
+    /// slot closed, or the detail on another tab, nothing is read for it.
+    /// Its query copied is the one sent; its CSV its window's values.
+    func testAnExpandedChartKeepsItsTabReadWhileThePageIsHidden() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        var copied: [String] = []
+        var expandedTo: [KubeExpandedChart] = []
+        var actions = KubernetesActions(run: { _ in }, settings: {}, copy: { copied.append($0) }, copySecret: { _ in })
+        actions.expandChart = { expandedTo.append($0) }
+        page.actions = actions
+        try await openPod(model, page)
+        try await until(5, "Prometheus found") { model.prometheus.service == service }
+        page.pickMetricsRange(.hour)
+        try await until(5, "the throttling chart, from Prometheus") {
+            page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) }?.sections.first?.charts.last?.data.queries.isEmpty == false
+        }
+        let charts = try XCTUnwrap(page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) })
+        let throttling = try XCTUnwrap(charts.sections.first?.charts.last)
+        XCTAssertEqual(throttling.data.queries.map(\.id), ["throttling"])
+        let promQL = try XCTUnwrap(KubeChartExport.promQL(throttling.data))
+        page.copyChartText(promQL)
+        XCTAssertEqual(copied.last, promQL)
+        XCTAssertTrue(asked.contains { $0.query["query"] == promQL }, "the query as it was sent")
+        let podCPU = try XCTUnwrap(KubeChartExport.promQL(try XCTUnwrap(charts.pod.first).data))
+        XCTAssertTrue(asked.contains { $0.query["query"] == podCPU }, "the pod's CPU: its containers' query, \(podCPU)")
+
+        page.expandChart(throttling, span: charts.span, caption: charts.caption)
+        let expanded = try XCTUnwrap(expandedTo.last)
+        XCTAssertTrue(page.expandedChart === expanded)
+        XCTAssertEqual(expanded.chartID, throttling.id)
+        XCTAssertEqual(KubeExpandedChart.data(expanded.last).identifier, "kubernetes.chart.expanded." + throttling.id)
+        // The window: the slot on screen first, then the page hidden and its hold given back.
+        page.expandedChartOnScreen = true
+        XCTAssertFalse(page.holdsChartsForExpansion, "the page shows: it reads as it always did")
+        page.visible = false
+        model.hide()
+        XCTAssertTrue(page.holdsChartsForExpansion)
+        XCTAssertTrue(model.readsMetrics && !model.isShown, "usage and Prometheus, not the list")
+        XCTAssertNotNil(page.metricsTabWant)
+        XCTAssertEqual(page.prometheusWants, page.metricsTabWant.map { [.tab($0)] }, "only its tab's")
+        XCTAssertNotNil(page.liveChart(for: expanded), "followed")
+        api.forgetRequests()
+        model.prometheus.clock = { Date().addingTimeInterval(120) }
+        try await until(5, "its tab asked again, the page hidden") { self.asked.contains { $0.query["query"] == promQL } }
+        model.prometheus.clock = { Date() }
+        XCTAssertFalse(api.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" || $0.path == "/api/v1/pods" }, "no list read")
+
+        // The detail on another tab: no longer followed, nothing read for it.
+        page.showTab(.overview)
+        page.updateMetricsWanted()
+        XCTAssertNil(page.liveChart(for: expanded))
+        XCTAssertFalse(model.readsMetrics)
+        try await until(5, "stopped") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
+        page.showTab(.metrics)
+        page.updateMetricsWanted()
+        XCTAssertTrue(model.readsMetrics, "its tab again: followed again")
+        // The slot closed: nothing read.
+        page.expandedChartClosed()
+        XCTAssertFalse(model.readsMetrics)
+        try await until(5, "stopped") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(asked.isEmpty, "\(asked.map(\.query))")
+    }
+
+    /// M9 (metrics.md 4.7): a tab's query Prometheus refuses (`bad_data`)
+    /// is said with Copy PromQL beside it — the query exactly as the fake
+    /// was asked it, a bug report; one that fails otherwise (a 500) offers
+    /// none. Once it answers again, nothing is reported.
+    func testARefusedQueryIsReportedWithItsPromQL() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        var copied: [String] = []
+        page.actions = KubernetesActions(run: { _ in }, settings: {}, copy: { copied.append($0) }, copySecret: { _ in })
+        api.setPrometheusMatrix(
+            "container_cpu_cfs_throttled_periods_total{", failure: FakePromFixture.Failure(status: 400, errorType: "bad_data", error: "1:9: parse error: unexpected"))
+        try await openPod(model, page)
+        let session = try XCTUnwrap(page.detail)
+        try await until(5, "Prometheus found") { model.prometheus.service == service }
+        page.pickMetricsRange(.hour)
+        try await until(5, "the refusal read") { page.tabReading(of: session)?.reported.isEmpty == false }
+        let reading = try XCTUnwrap(page.tabReading(of: session))
+        XCTAssertEqual(reading.reported.map(\.id), ["throttling"])
+        XCTAssertTrue(reading.problem?.contains("Prometheus refused the query: 1:9: parse error") == true, reading.problem ?? "no problem")
+        let promQL = try XCTUnwrap(page.reportedPromQL(of: session))
+        XCTAssertTrue(
+            asked.contains { $0.path == service.rangePath && $0.query["query"] == promQL }, "the query as it was sent: \(promQL)")
+        page.copyChartText(promQL)
+        XCTAssertEqual(copied, [promQL], "the clipboard only")
+
+        // Answered again: nothing to report.
+        api.setPrometheusMatrix("container_cpu_cfs_throttled_periods_total{", [FakePromFixture.Line(["container": "app"]) { _ in 0.1 }])
+        try await until(5, "answered") { page.tabReading(of: session)?.reported.isEmpty == true && page.tabReading(of: session)?.problem == nil }
+        XCTAssertNil(page.reportedPromQL(of: session))
+
+        // Another failure (the server's own) is said, but it isn't the query's fault: no Copy PromQL.
+        api.setPrometheusMatrix(
+            "container_cpu_cfs_throttled_periods_total{", failure: FakePromFixture.Failure(status: 500, errorType: "internal", error: "the store is down"))
+        // Asked again once the range has a point more.
+        model.prometheus.clock = { Date().addingTimeInterval(120) }
+        try await until(5, "failed again") { page.tabReading(of: session)?.problem != nil }
+        model.prometheus.clock = { Date() }
+        XCTAssertNil(page.reportedPromQL(of: session))
+    }
+
+    /// M9, the window: an expanded chart reads nothing once its window is
+    /// occluded, nor once it closes — not even when a layout pass after the
+    /// close says the slot shows it again.
+    func testAnExpandedChartReadsNothingOccludedOrClosed() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        var actions = KubernetesActions(run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in })
+        actions.expandChart = { _ in }
+        page.actions = actions
+        try await openPod(model, page)
+        try await until(5, "Prometheus found") { model.prometheus.service == service }
+        page.pickMetricsRange(.hour)
+        try await until(5, "the pod's CPU") { page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) }?.pod.first != nil }
+        let charts = try XCTUnwrap(page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) })
+        page.expandChart(try XCTUnwrap(charts.pod.first), span: charts.span, caption: charts.caption)
+        page.expandedChartOnScreen = true
+        page.visible = false
+        model.hide()
+        XCTAssertTrue(model.readsMetrics, "on screen, the page hidden: its tab read")
+
+        // Occluded: nothing read.
+        page.windowVisible = false
+        XCTAssertFalse(model.readsMetrics)
+        XCTAssertNil(page.metricsTabWant)
+        try await until(5, "stopped occluded") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
+        page.windowVisible = true
+        XCTAssertTrue(model.readsMetrics, "on screen again")
+
+        // The window closes; a layout pass a hop later still says the slot shows it.
+        page.expandedChartWindowClosing()
+        page.windowVisible = false
+        XCTAssertNil(page.expandedChart)
+        XCTAssertFalse(model.readsMetrics)
+        page.windowVisible = true
+        page.expandedChartOnScreen = true
+        XCTAssertFalse(page.holdsChartsForExpansion)
+        XCTAssertFalse(model.readsMetrics, "no holder left for a window that is gone")
+        try await until(5, "stopped closed") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(asked.isEmpty, "\(asked.map(\.query))")
+    }
+
     func testCustomAndTheSevenDaysEdge() async throws {
         let (model, page) = try pageOverFake()
         defer { model.hide() }
@@ -449,6 +599,10 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         let first = try XCTUnwrap(reading.read)
         try await until(5, "refreshed") { (page.tabReading(of: session)?.read ?? first) > first.addingTimeInterval(0.15) }
         XCTAssertEqual(saved().filter { $0.query["query"]?.contains("broken_total") == true }.count, 1, "refused once, not asked again")
+        // M9: the refused one's Copy PromQL beside its sentence — the query as Prometheus was asked it, still while held back.
+        let broken = try XCTUnwrap(saved().first { $0.query["query"]?.contains("broken_total") == true }?.query["query"])
+        XCTAssertEqual(page.reportedPromQL(of: session), broken)
+        XCTAssertEqual(page.tabReading(of: session)?.reported.map(\.id), ["saved.2"])
 
         page.metricsGroupShown(KubeSavedCharts.groupTitle, false)
         XCTAssertEqual(page.tabRequest(of: session)?.families.contains(.saved), false)

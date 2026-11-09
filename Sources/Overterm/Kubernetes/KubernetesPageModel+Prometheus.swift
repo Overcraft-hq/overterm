@@ -26,7 +26,9 @@ extension KubernetesPageModel {
 
     /// What the page shows now that reads Prometheus.
     var prometheusWants: Set<KubePrometheusMonitor.Want> {
-        guard visible, windowVisible, prometheusOn else { return [] }
+        guard windowVisible, prometheusOn else { return [] }
+        // The page hidden: only its Metrics tab's, for a chart expanded into the right slot (M9).
+        guard visible else { return metricsTabWant.map { [.tab($0)] } ?? [] }
         if section == .overview { return Set(overviewCharts.map { .chart($0) }) }
         guard section.listsKinds else { return [] }
         var wants: Set<KubePrometheusMonitor.Want> = []

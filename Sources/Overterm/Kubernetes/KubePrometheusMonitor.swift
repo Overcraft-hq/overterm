@@ -60,6 +60,13 @@ struct KubeTabReading: Equatable, Sendable {
     /// A saved query Prometheus refused (`bad_data`, a 422), as sent: not
     /// sent again while this reading lasts — an edit is another request.
     var savedRejected: [String: String] = [:]
+    /// The queries the last read sent (the plan's), by which a chart says
+    /// what it was drawn from: "Copy PromQL" (M9).
+    var queries: [KubeTabQuery] = []
+    /// The queries Prometheus refused as sent (`bad_data`, a saved one's
+    /// 422) or the metrics proxy's filter did (metrics.md 4.7): a bug
+    /// report, so Copy PromQL is offered beside what they say.
+    var reported: [KubeChartQuery] = []
 
     /// A union's arms by their `overterm_s` tag.
     func tagged(_ id: String) -> [String: [KubeSeries]] {
@@ -652,6 +659,14 @@ final class KubePrometheusMonitor: ObservableObject {
         let window = range.window(now: now)
         var notes: [String] = queries.notes
         if chart.needsProfile, let kept = profile.retention, kept > window.start { notes.append(KubeChartEmpty.retention(kept).sentence) }
+        // What is sent, by the measure it answers, and the one being asked: a refusal's report.
+        var sent: [KubeChartQuery] = []
+        var asking: KubeChartQuery?
+        func sending(_ measure: KubeChartMeasure, _ promql: String, instant: Bool = false, by label: String? = nil) {
+            let query = KubeChartQuery(id: measure.rawValue + (label.map { " by \($0)" } ?? ""), promql: promql, instant: instant)
+            sent.append(query)
+            asking = query
+        }
         do {
             // X3: its total needs no names — asked at once, beside the
             // ranking (metrics.md 4.5: the ranking never holds a visible
@@ -661,10 +676,12 @@ final class KubePrometheusMonitor: ObservableObject {
             var answered: [KubeChartMeasure: KubePrometheusReader.Answer] = [:]
             if case .namespaces(let picked) = chart, queries.refused == nil {
                 let totals = queries.series.map { ($0.0, KubePromQL.rangePath(service, $0.1, range, now: now)) }
-                async let early = askEach(transport, totals, context: context, service: service, order: order)
+                let early = queries.series
+                async let earlyAnswers = askEach(transport, totals, context: context, service: service, order: order)
                 if reading.ranked == nil || reading.rankedReads >= KubeTabRanking.kept,
                     let ranking = KubeChart.namespaceRanking(range: range, profile: profile, picked: picked)
                 {
+                    asking = KubeChartQuery(id: "ranking", promql: ranking.query, instant: true)
                     let answer = try await ask(
                         transport, KubePromQL.instantPath(service, ranking.query, at: window.end), context: context, service: service, order: order,
                         priority: .ranking)
@@ -677,7 +694,8 @@ final class KubePrometheusMonitor: ObservableObject {
                 }
                 queries = KubeChart.namespaceQueries(range: range, profile: profile, picked: picked, top: reading.ranked ?? [])
                 if let note = reading.rankingNote { notes.append(note) }
-                answered = try await early
+                for (measure, query) in early { sending(measure, query) }
+                answered = try await earlyAnswers
             }
             func path(_ query: String) -> String {
                 guard let step = queries.step else { return KubePromQL.rangePath(service, query, range, now: now) }
@@ -692,7 +710,9 @@ final class KubePrometheusMonitor: ObservableObject {
                 if let early = answered[measure] {
                     answer = early
                 } else {
-                    answer = try await ask(transport, path(KubeChartQueries.union((measure, query), carrying: totals)), context: context, service: service, order: order)
+                    let promql = KubeChartQueries.union((measure, query), carrying: totals)
+                    sending(measure, promql)
+                    answer = try await ask(transport, path(promql), context: context, service: service, order: order)
                 }
                 reading.series[measure] = KubePrometheusReader.points(KubeChartQueries.arm(answer.series, measure, of: totals))
                 for (total, _) in totals {
@@ -710,13 +730,16 @@ final class KubePrometheusMonitor: ObservableObject {
             }
             for (measure, query) in queries.parts {
                 let totals = queries.carried(by: measure, parts: true)
-                let answer = try await ask(transport, path(KubeChartQueries.union((measure, query), carrying: totals)), context: context, service: service, order: order)
+                let promql = KubeChartQueries.union((measure, query), carrying: totals)
+                sending(measure, promql, by: queries.partLabel)
+                let answer = try await ask(transport, path(promql), context: context, service: service, order: order)
                 parts[measure] = KubePromTabCharts.by(KubeChartQueries.arm(answer.series, measure, of: totals), queries.partLabel)
                 for (total, _) in totals { partTotals[total] = byNode(KubeChartQueries.arm(answer.series, total, of: totals)) }
                 notes += answer.notes
             }
             reading.parts = parts
             for (measure, query) in queries.partTotals where partTotals[measure] == nil {
+                sending(measure, query, instant: true, by: queries.partLabel)
                 let answer = try await ask(transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
                 partTotals[measure] = byNode(answer.series)
                 notes += answer.notes
@@ -727,12 +750,14 @@ final class KubePrometheusMonitor: ObservableObject {
             if case .volume = chart, KubeVolumeUsage.isUnbounded(reading.series[.volumeCapacity]?.last?.value) { totals = [] }
             if queries.unioned, totals.count > 1 {
                 // The totals no line carried (its lines refused): one instant union.
+                sending(totals[0].0, KubeChartQueries.union(totals), instant: true)
                 let answer = try await ask(
                     transport, KubePromQL.instantPath(service, KubeChartQueries.union(totals)), context: context, service: service, order: order)
                 for (measure, _) in totals { reading.totals[measure] = KubePrometheusReader.value(KubeChartQueries.arm(answer.series, measure, of: totals)) }
                 notes += answer.notes
             } else {
                 for (measure, query) in totals {
+                    sending(measure, query, instant: true)
                     let answer = try await ask(transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
                     reading.totals[measure] = KubePrometheusReader.value(answer.series)
                     notes += answer.notes
@@ -753,8 +778,13 @@ final class KubePrometheusMonitor: ObservableObject {
             reading.notes = Array(notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))
             reading.read = now
             reading.problem = nil
+            reading.queries = sent
+            reading.reported = []
         } catch is CancellationError {
         } catch {
+            // Refused as sent: reported with its PromQL (metrics.md 4.7).
+            let failure = error as? KubePrometheusReader.Failure
+            reading.reported = failure.map { KubeChartEmpty.offersCopyPromQL($0.kind) } == true ? asking.map { [$0] } ?? [] : []
             // A 404 or a 422: what the server holds may have changed — asked again.
             if let failure = error as? KubePrometheusReader.Failure, failure.kind == .notFound || failure.kind == .unprocessable {
                 profiles[context] = nil
@@ -922,11 +952,14 @@ final class KubePrometheusMonitor: ObservableObject {
         }
         // A saved query Prometheus refused isn't sent again: its sentence stands.
         let rejected = reading.savedRejected
+        // Those it holds back are still reported: their PromQL is Copy PromQL's.
+        var withheld: [KubeTabQuery] = []
         func planned() -> KubeTabPlan {
             var plan = KubeTabQueries.plan(request, span: span, profile: profile, ranking: ranking)
             for query in plan.queries where query.family == .saved {
                 if let why = rejected[query.promql] { plan.savedRefused[query.id] = why }
             }
+            withheld = plan.queries.filter { $0.family == .saved && rejected[$0.promql] != nil }
             plan.queries.removeAll { $0.family == .saved && rejected[$0.promql] != nil }
             return plan
         }
@@ -971,6 +1004,7 @@ final class KubePrometheusMonitor: ObservableObject {
         var notes = plan.notes + (reading.ranking?.notes ?? [])
         var answered = false
         var saved = plan.savedRefused
+        var reported = withheld
         for query in plan.queries {
             guard let result = asked.first(where: { $0.0 == query.id })?.1 else { continue }
             switch result {
@@ -988,6 +1022,7 @@ final class KubePrometheusMonitor: ObservableObject {
                         reading.savedRejected[query.promql] = why
                         saved[query.id] = why
                         reading.results[query.id] = nil
+                        reported.append(query)
                     } else {
                         saved[query.id] = KubeSavedCharts.failed(Self.sentence(error, service: service).0)
                     }
@@ -996,6 +1031,7 @@ final class KubePrometheusMonitor: ObservableObject {
                 if let failure = error as? KubePrometheusReader.Failure, failure.kind == .notFound || failure.kind == .unprocessable {
                     profiles[context] = nil
                 }
+                if let failure = error as? KubePrometheusReader.Failure, KubeChartEmpty.offersCopyPromQL(failure.kind) { reported.append(query) }
                 if problem == nil { problem = said(error, service: service) }
             }
         }
@@ -1007,6 +1043,9 @@ final class KubePrometheusMonitor: ObservableObject {
         reading.saved = saved
         reading.tier = plan.tier
         reading.selection = plan.selection
+        reading.queries = plan.queries
+        var reportedIDs = Set<String>()
+        reading.reported = reported.filter { reportedIDs.insert($0.id).inserted }.map { KubeChartQuery(id: $0.id, promql: $0.promql, instant: $0.instant) }
         reading.span = span
         var seen = Set<String>()
         reading.notes = Array(notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))

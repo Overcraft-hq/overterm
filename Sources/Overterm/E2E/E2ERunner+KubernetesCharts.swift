@@ -318,6 +318,9 @@ extension E2ERunner {
             await eventually(15) { asked().contains { $0.path == service.rangePath && $0.query["step"] == "2m" } && charts.chart(cpuID, in: scope)?.data.step == 120 },
             "\(asked().map(\.query))")
 
+        // 10. Expand, Copy PromQL and CSV (M9), over 6h.
+        await kubernetesChartExpand(model, page, fake, service: service, pod: name)
+
         // C1's peak band from 24h: a container's CPU with its step's highest short rate behind it.
         fake.forgetRequests()
         check(". is 24h", page.press(".") && page.shownMetricsRange == .day)

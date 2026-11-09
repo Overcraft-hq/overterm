@@ -87,6 +87,7 @@ struct KubePrometheusChartView: View {
     @ViewBuilder private func problemAndNotes(_ reading: KubeChartReading) -> some View {
         if let problem = reading.problem {
             Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+            report(reading)
         }
         ForEach(reading.notes, id: \.self) { note in
             Text(verbatim: note).font(.system(size: 10.5)).foregroundStyle(theme.text3).textSelection(.enabled)
@@ -124,6 +125,7 @@ struct KubePrometheusChartView: View {
             }
             if let problem = reading.problem {
                 Text(verbatim: "CPU by namespace: " + problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                report(reading)
             }
         }
         if let reading = monitor.charts[.nodes], reading.unavailable == nil {
@@ -143,6 +145,7 @@ struct KubePrometheusChartView: View {
             }
             if let problem = reading.problem {
                 Text(verbatim: "Nodes: " + problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                report(reading)
             }
         }
     }
@@ -184,12 +187,22 @@ struct KubePrometheusChartView: View {
         }
     }
 
-    /// A chart, or why there's nothing to draw.
+    /// A refused query's Copy PromQL (metrics.md 4.7: a bug report).
+    @ViewBuilder private func report(_ reading: KubeChartReading) -> some View {
+        if let promQL = KubeChartExport.promQL(reading.reported) {
+            KubeCopyPromQLButton(promQL: promQL, copy: { [weak page] in page?.copyChartText($0) })
+        }
+    }
+
+    /// A chart, or why there's nothing to draw — its Copy PromQL the queries its reading sent for it.
     @ViewBuilder private func drawn(_ chart: KubePodCharts.Chart, _ reading: KubeChartReading) -> some View {
-        let data = chart.data
+        let data = KubeChartExport.attach(chart.data, reading: reading)
         if data.usage.contains(where: { !$0.points.isEmpty }) {
-            KubeChartView(data: data, cursor: cursor, headline: chart.headline, span: "last \(reading.range.title)", chips: chart.chips, theme: theme)
-                .frame(minWidth: 200, maxWidth: .infinity)
+            KubeChartView(
+                data: data, cursor: cursor, headline: chart.headline, span: "last \(reading.range.title)", chips: chart.chips,
+                copy: { [weak page] in page?.copyChartText($0) }, theme: theme
+            )
+            .frame(minWidth: 200, maxWidth: .infinity)
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: data.title).font(.system(size: 11)).foregroundStyle(theme.text3)

@@ -877,6 +877,12 @@ struct KubeChartReading: Equatable, Sendable {
     var rankingNote: String?
     /// The window its lines were asked over (X4's own step).
     var step: TimeInterval?
+    /// What the last read sent, by the measure each answers (a union by
+    /// its line's): what its charts' Copy PromQL gives (M9).
+    var queries: [KubeChartQuery] = []
+    /// The query Prometheus (or the metrics proxy's filter) refused, as
+    /// sent: Copy PromQL is offered beside the problem (metrics.md 4.7).
+    var reported: [KubeChartQuery] = []
 
     /// `used` against `of`, as the Overview says it: `1.2 of 4 cores · 30%`.
     func share(_ used: KubeChartMeasure, of total: KubeChartMeasure) -> (used: Double, total: Double, percent: Int?)? {

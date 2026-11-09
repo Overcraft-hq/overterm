@@ -241,6 +241,9 @@ struct KubeChartData: Equatable, Sendable {
     var earlierMarkers = 0
     /// What the legend says of the markers: "events: last hour".
     var markerNote: String?
+    /// The queries a Prometheus chart was drawn from, as sent: what "Copy
+    /// PromQL" gives (`KubeChartExport`); none for a sampled one.
+    var queries: [KubeChartQuery] = []
 
     var identifier: String { "kubernetes.chart." + id }
     /// The markers inside the window: the ones drawn.

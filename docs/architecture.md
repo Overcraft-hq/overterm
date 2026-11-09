@@ -5803,6 +5803,59 @@ the context, the tab says the queries need it and asks nothing.
 shown, the unscoped one never sent, the refused one not asked again, the
 profile kept); `kubernetesObjectCharts`' `savedQueriesPart`.
 
+**A chart expanded, copied** (`KubeExpandedChart.swift`,
+`KubernetesPageModel+ChartExpand.swift`, `KubeChartExport.swift`;
+metrics.md 2.1, 3.9, stage M9). A Metrics tab chart's ⤢ (or "Expand" in
+its context menu) puts it alone, at the pane's full height, in the right
+slot as `KubeManifestPane.Shown.chart` — the browser column steps aside by
+the `RightSlot` rule, and the page steps aside so the chart sits beside
+the terminal (`showKubernetesExpandedChart`: the slot on screen first, the
+page hidden after, so its reads don't pause). It is the tab's own chart
+(`liveChart(for:)` finds it in `podCharts`/`objectCharts` by id, the same
+caches), drawn under its own identifier (`kubernetes.chart.expanded.<id>`,
+its own crosshair) so the registry, the dump and the draw counter tell the
+two apart; nothing new is asked for it. While the slot shows it in a
+window on screen (`expandedChartOnScreen`, set by
+`updateRightPaneVisibility`) and its object's Metrics tab is still the
+detail's (`expansionFollowed`), `chartsShown` stands in for "the page is
+on screen" in the tab's gates alone — its metrics.k8s.io target, its
+Prometheus `.tab` want (the only want of a hidden page), its pod states,
+Live's pause —, and `KubernetesModel.holdCharts` keeps usage and
+Prometheus read (`readsMetrics`) without the list, discovery or any watch
+(`isShown` stays false). The slot closed, the detail on another tab, the
+window occluded or closed: the hold goes and nothing is read; the slot
+keeps the last chart, said with its time, and "Show in Kubernetes" opens
+the page on that tab again. A drag on it zooms the tab's window (Reset
+there too). Every chart's context menu copies — through the page's
+`actions.copy`, the clipboard only — "Copy Values as CSV" (the window
+shown, a row a time, a column a series the legend shows with its unit, a
+gap empty, a reference held at its last value; every cell through
+`KubeListExport.inert`) and, for a Prometheus chart of a tab, "Copy
+PromQL": the exact queries it was drawn from (`KubeTabReading.queries`,
+the plan the last read sent, matched to the chart by its id's measure,
+`KubeChartExport.queryIDs`; several each after a `#` line). The
+Overview's and a claim's Prometheus charts copy theirs too
+(`KubeChartReading.queries`, what the read sent by the measure each
+answers, `KubeChartExport.attach(_:reading:)`). A query Prometheus refused
+as sent (`bad_data`, a saved query's 422, still reported while it is held
+back) or the metrics proxy's filter did — `KubeChartEmpty.offersCopyPromQL`'s
+rows — is kept as `reported` (`KubeTabReading`, `KubeChartReading`), and
+`KubeCopyPromQLButton` offers it beside the sentence, where no chart is
+drawn to carry it in a menu. The expanded chart's markers and "Logs from
+Here" do what the tab's do, on the page shown again first (its pod's
+container kept on `KubeExpandedChart`); a key or click anywhere in its
+window counts as Live's input while it reads with the page hidden
+(`noteKubernetesWindowInput`, from the window's own monitors); the window
+closing lets it go (`expandedChartWindowClosing`, `dropChart`), so no
+layout pass after can hold the model's metrics again. ⌥↩ waits for chart
+focus (metrics.md M9b). `KubeChartExportTests`;
+`KubeMetricsTabPrometheusTests` (read on while expanded with the page
+hidden, only its tab's; stopped when the tab changes, the slot closes, the
+window is occluded or closes; a refused query reported); `kubernetesCharts`'
+part 10 (`kubernetesChartExpand`: the copied query is one the fake was
+asked, the browser gives up the slot and gets it back, no list, watch or
+discovery read).
+
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
 memory numbers, its last 15 minutes as 60 cells of 15 s, each the

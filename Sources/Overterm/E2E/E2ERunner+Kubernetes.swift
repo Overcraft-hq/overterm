@@ -908,7 +908,9 @@ extension E2ERunner {
             page.open(ref, from: .list)
             let ports = { page.detail?.overview?.section("Containers")?.items.first?.ports.map(\.port) }
             check("the Overview's container port is a forward's", await eventually(10) { ports() == [8080] }, "\(String(describing: ports()))")
-            check("drawn as a button", await shownText(15) { $0.contains("8080 (http)") } != nil)
+            // Read off the window: OCR may split the port from its name at the button's padding — the two on one row count.
+            let drawn = await portDrawn("8080", "(http)")
+            check("drawn as a button", drawn.found, drawn.seen)
             page.portForward(ref, port: 8080)
             check(
                 "it opens the sheet on the pod, the port picked",
@@ -2528,5 +2530,32 @@ extension E2ERunner {
             current-context: fake-dev
 
             """
+    }
+}
+
+extension E2ERunner {
+    /// A container port's button as read off the window: "8080 (http)" on
+    /// one line, or the number and its name side by side on one row (OCR
+    /// splits them at times, at the label's spacing). What was seen of
+    /// either, when not found.
+    func portDrawn(_ port: String, _ name: String, timeout: TimeInterval = 15) async -> (found: Bool, seen: String) {
+        let deadline = Date().addingTimeInterval(timeout)
+        var seen: [String] = []
+        repeat {
+            for tiled in [false, true] {
+                let lines = await readWindow(tiled: tiled)
+                if lines.contains(where: { $0.text.contains("\(port) \(name)") }) { return (true, "") }
+                for number in lines where number.text.contains(port) {
+                    let beside = lines.contains { line in
+                        line.text.contains(name.trimmingCharacters(in: CharacterSet(charactersIn: "()"))) && abs(line.frame.midY - number.frame.midY) < 8
+                            && line.frame.minX >= number.frame.minX
+                    }
+                    if beside { return (true, "") }
+                }
+                seen = lines.map(\.text).filter { $0.contains(port) || $0.contains("http") }
+            }
+            await pause(0.3)
+        } while Date() < deadline
+        return (false, seen.joined(separator: " | "))
     }
 }

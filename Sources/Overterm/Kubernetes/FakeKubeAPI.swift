@@ -202,6 +202,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         var isWatch: Bool { query["watch"] == "1" || query["watch"] == "true" }
         /// A Prometheus query through a Service's proxy (`…/proxy/api/v1/query`, `query_range`).
         var isPrometheusQuery: Bool { path.contains("/proxy/api/v1/query") }
+        /// Discovery: `/api`, `/apis`, a group's or a version's list of kinds, `/version`, OpenAPI.
+        var isDiscovery: Bool {
+            let parts = path.split(separator: "/")
+            if parts.first == "api" { return parts.count <= 2 }
+            if parts.first == "apis" { return parts.count <= 3 }
+            return parts.first == "version" || parts.first == "openapi"
+        }
     }
 
     /// A kind it serves, as discovery says it.

@@ -616,8 +616,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 redis: RedisSlotView(model: redisSlot, theme: theme, actions: redisSlotActions),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) }),
                 manifest: KubeManifestDiffView(
-                    pane: kubernetesManifest, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
-                    onOpen: { [weak self] in self?.openInEditor($0) }),
+                    pane: kubernetesManifest, page: kubernetesPage, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onOpen: { [weak self] in self?.openInEditor($0) }, onShowPage: { [weak self] in self?.showKubernetesExpandedSource($0) }),
                 kubernetes: KubeSlotView(panel: kubernetesPanel, theme: theme, runInTerminal: { [weak self] in self?.runDockerCommand($0, in: nil) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
@@ -2353,6 +2353,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// tab's or the chip's own view's (`stripPress`).
     private func installTabDragging() {
         dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            self?.noteKubernetesWindowInput(event)
             guard let self, let point = self.stripPoint(event) else { return event }
             switch StripClick.kind(type: event.type, modifiers: event.modifierFlags) {
             case .context:
@@ -3927,6 +3928,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         dockerPanel.slotVisible = shown && rightPane.mode == .container
         redisSlot.visible = shown && rightPane.mode == .redis
         kubernetesPanel.slotVisible = shown && rightPane.mode == .kubernetes
+        // An expanded chart reads (its tab's reads) only while the slot shows it.
+        kubernetesPage.expandedChartOnScreen =
+            shown && rightPane.mode == .manifest && kubernetesManifest.shown == .chart && kubernetesManifest.chart != nil
+            && kubernetesManifest.chart === kubernetesPage.expandedChart
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
