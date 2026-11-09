@@ -357,6 +357,95 @@ extension E2ERunner {
         check("a heading keeps its size as the caret moves", Set(sizes).count == 1 && (sizes.first ?? 0) < 40, "\(sizes)")
         check("and the text under it is the body's", body > 0 && body < 20, "\(body)")
 
+        // Dragged in the panel: a note into a folder, a folder into another
+        // — the links to them written again, as a rename writes them.
+        do {
+            let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+            let archive = root.appendingPathComponent("Archive", isDirectory: true)
+            try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+            let loose = root.appendingPathComponent("Loose.md")
+            try? "A loose note.\n".write(to: loose, atomically: true, encoding: .utf8)
+            let linking = root.appendingPathComponent("Linking.md")
+            try? "See [[Loose]] and [the deep one](Inbox/Deep.md).\n".write(to: linking, atomically: true, encoding: .utf8)
+            try? "Deep.\n".write(to: inbox.appendingPathComponent("Deep.md"), atomically: true, encoding: .utf8)
+            notes.reload()
+            _ = await eventually(3) { notes.index.resolver.files.contains("Loose.md") }
+            app.moveNotes([loose], into: inbox)
+            check(
+                "a note dropped on a folder moves into it",
+                await eventually(4) {
+                    FileManager.default.fileExists(atPath: inbox.appendingPathComponent("Loose.md").path) && !FileManager.default.fileExists(atPath: loose.path)
+                })
+            app.moveNotes([inbox], into: archive)
+            check(
+                "a folder dropped on a folder moves, what is in it with it",
+                await eventually(4) { FileManager.default.fileExists(atPath: archive.appendingPathComponent("Inbox/Deep.md").path) })
+            // Obsidian matches a path's end: the link still finds it, unwritten.
+            notes.reload()
+            check(
+                "and a link to it still finds it",
+                await eventually(4) { notes.index.resolver.resolve("Inbox/Deep.md", from: "Linking.md") == "Archive/Inbox/Deep.md" })
+            app.moveNotes([archive], into: archive.appendingPathComponent("Inbox"))
+            check("a folder into its own: nothing moves", FileManager.default.fileExists(atPath: archive.appendingPathComponent("Inbox").path))
+        }
+
+        // A character typed in Live Preview is drawn as itself: it arrives in
+        // the code font and is restyled to the note's, and a glyph made for
+        // the one font drawn in the other was another letter ("." showed as
+        // "e" until the next keystroke). Typed as keys, into this window,
+        // and looked at every frame for half a second after each.
+        do {
+            let glyphNote = root.appendingPathComponent("Glyphs.md")
+            try? "# A heading\n\nSome **bold** prose with a [[Start]] link\n\n- a point\n".write(to: glyphNote, atomically: true, encoding: .utf8)
+            app.openNote(glyphNote)
+            _ = await eventually(3) { editor.active?.url?.lastPathComponent == "Glyphs.md" }
+            if editor.active?.showsPreview == true { editor.toggleMarkdownPreview() }
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(editor.textView)
+            await pause(0.5)
+            func misdrawn(at position: Int) -> String? {
+                guard let layout = editor.textView.layoutManager, let storage = editor.textView.textStorage, position >= 0, position < storage.length,
+                    let font = storage.attribute(.font, at: position, effectiveRange: nil) as? NSFont
+                else { return nil }
+                var unit = (storage.string as NSString).character(at: position)
+                var expected = CGGlyph(0)
+                CTFontGetGlyphsForCharacters(font as CTFont, &unit, &expected, 1)
+                let index = layout.glyphIndexForCharacter(at: position)
+                let shown = layout.cgGlyph(at: index)
+                // Drawn with the font the layout manager holds for it.
+                let drawnFont = layout.textStorage?.attribute(.font, at: position, effectiveRange: nil) as? NSFont
+                return shown == expected ? nil : "\(Character(UnicodeScalar(unit)!)) at \(position): glyph \(shown), \(drawnFont?.fontName ?? "?") has \(expected)"
+            }
+            var wrong: [String] = []
+            let places = [
+                ("Some **bold** prose with a [[Start]] link" as NSString).length + ("# A heading\n\n" as NSString).length,
+                ("# A heading" as NSString).length, ("# A heading\n\nSome" as NSString).length,
+            ]
+            for place in places {
+                editor.textView.setSelectedRange(NSRange(location: place, length: 0))
+                await pause(0.2)
+                for character in ".,e!:x" {
+                    let key = String(character)
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        if let event = NSEvent.keyEvent(
+                            with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false,
+                            keyCode: 0)
+                        {
+                            window.sendEvent(event)
+                        }
+                    }
+                    let position = editor.textView.selectedRange().location - 1
+                    for _ in 0..<30 {
+                        if let problem = misdrawn(at: position), !wrong.contains(problem) { wrong.append(problem) }
+                        await pause(0.016)
+                    }
+                }
+            }
+            check("characters typed in Live Preview are drawn as themselves", wrong.isEmpty, wrong.prefix(6).joined(separator: "; "))
+        }
+
         // Typing at the end of a long note: the page stays where it is. Every
         // keystroke restyled a screen above the caret, the lines there were
         // estimated again, and the page jumped up as the last line was typed.

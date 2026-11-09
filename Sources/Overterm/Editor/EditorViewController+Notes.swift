@@ -340,6 +340,15 @@ extension EditorViewController {
         textView.needsDisplay = true
     }
 
+    /// What a character typed into a note in Live Preview starts as: the
+    /// note's body text (the restyle then makes it a heading's, a link's).
+    var liveTypingAttributes: [NSAttributedString.Key: Any] {
+        let style = liveStyle
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        return [.font: style.fonts.body, .foregroundColor: style.colors.text, .paragraphStyle: paragraph]
+    }
+
     private var liveStyle: NoteLivePreview {
         // From Settings' font, never `textView.font` — the first character's,
         // a heading's in a note that opens with one: each restyle grew it
@@ -396,6 +405,7 @@ extension EditorViewController {
     /// nothing) the lines above the screen were estimated anew on every
     /// keystroke: a long note jumped while its last lines were typed.
     static func write(_ styled: NSAttributedString, at location: Int, into storage: NSTextStorage) {
+        var refont: NSRange?
         styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length)) { attributes, run, _ in
             let target = NSRange(location: run.location + location, length: run.length)
             var position = target.location
@@ -404,10 +414,30 @@ extension EditorViewController {
                 let existing = storage.attributes(at: position, longestEffectiveRange: &current, in: target)
                 let end = min(NSMaxRange(current), NSMaxRange(target))
                 if !sameAttributes(existing, attributes) {
-                    storage.setAttributes(attributes, range: NSRange(location: position, length: end - position))
+                    let range = NSRange(location: position, length: end - position)
+                    if !sameFont(existing[.font], attributes[.font]) { refont = refont.map { NSUnionRange($0, range) } ?? range }
+                    storage.setAttributes(attributes, range: range)
                 }
                 position = end
             }
+        }
+        // A font changed under glyphs made for the old one: made again.
+        // Left to the layout manager, a character typed in the code font and
+        // restyled in the note's kept the code font's glyph — the number of
+        // ".", drawn in the system font, was an "e" until the next keystroke.
+        if let refont {
+            for layout in storage.layoutManagers {
+                layout.invalidateGlyphs(forCharacterRange: refont, changeInLength: 0, actualCharacterRange: nil)
+                layout.invalidateLayout(forCharacterRange: refont, actualCharacterRange: nil)
+            }
+        }
+    }
+
+    private static func sameFont(_ a: Any?, _ b: Any?) -> Bool {
+        switch (a as? NSFont, b as? NSFont) {
+        case (nil, nil): true
+        case (let x?, let y?): x == y
+        default: false
         }
     }
 

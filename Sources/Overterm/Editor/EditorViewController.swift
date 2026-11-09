@@ -785,7 +785,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate, NSTextSt
         if buffer === active {
             // Recolouring mustn't move the caret or the selection.
             if textView.selectedRanges != selection { textView.selectedRanges = selection }
-            textView.typingAttributes = base
+            // A note's text is typed in the note's own font: typed in the
+            // code font, a character showed so until the restyle caught up.
+            textView.typingAttributes = buffer.livePreview ? liveTypingAttributes : base
         }
     }
 
