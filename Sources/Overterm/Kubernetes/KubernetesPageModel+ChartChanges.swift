@@ -69,7 +69,7 @@ extension KubernetesPageModel {
         }
         // Read only where a chart is drawn: without metrics-server only an HPA's tab draws (its status).
         guard visible, windowVisible, section.listsKinds, metricsTabShows, model.selected?.settings.metrics != KubeMetricsSource.none,
-            session.ref.metricsSubject == .hpa || model.metrics.availability == .served
+            session.ref.metricsSubject == .hpa || model.metrics.availability == .served || chartsFromPrometheus
         else { return stopPodStates() }
         if session.timeline == nil { session.loadEvents() } else { session.showHistory() }
         guard let path = podStatesPath(of: session) else { return stopPodStates() }
@@ -137,11 +137,12 @@ extension KubernetesPageModel {
         metricsWindow = KubeChartWindow.around(marker.time, now: now)
     }
 
-    /// Reset (or Esc): the range again. False when there was no window.
+    /// Reset (or Esc): the window before, else the range again. False when there was no window.
     @discardableResult
     func resetMetricsWindow() -> Bool {
-        guard metricsWindow != nil, metricsTabShows else { return false }
-        metricsWindow = nil
+        guard !metricsZoom.isEmpty, metricsTabShows else { return false }
+        // One level off the zoom stack.
+        metricsZoom.removeLast()
         return true
     }
 

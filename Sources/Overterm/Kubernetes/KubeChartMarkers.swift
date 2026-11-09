@@ -10,12 +10,27 @@ import Foundation
 // a custom window around it (`KubeChartWindow`).
 
 /// A custom window over the Metrics tab's charts: a marker's time ± 30
-/// minutes, its end never in the future. With sampled data it only
-/// narrows the axis — nothing is asked (metrics.md 3.3): drawn from 6h's
-/// folded minutes (`tier`). In memory, the page's, never saved. Pure.
+/// minutes, a drag across a chart (a zoom), or Custom's two dates — its
+/// end never in the future. With sampled data it only narrows the axis —
+/// nothing is asked (metrics.md 3.3): drawn from the sampled tier that
+/// holds it (`tier`); with Prometheus the charts are asked again over it
+/// at its own step (`KubeMetricsSpan`). In memory, the page's, never saved. Pure.
 struct KubeChartWindow: Equatable, Hashable, Sendable {
+    enum Kind: String, Equatable, Hashable, Sendable {
+        /// A marker's ± 30 minutes.
+        case around
+        /// A drag across a chart.
+        case zoom
+        /// Custom's popover.
+        case custom
+    }
+
     var start: Date
     var end: Date
+    var kind: Kind = .around
+    /// The sampled tier its points come from: 6h's minutes, or Live's raw
+    /// samples for a zoom inside Live's 15 minutes.
+    var sampledTier: KubeMetricsRange = .sixHours
 
     /// Either side of a marker.
     static let around: TimeInterval = 1800
@@ -27,13 +42,13 @@ struct KubeChartWindow: Equatable, Hashable, Sendable {
         return KubeChartWindow(start: start, end: end)
     }
 
-    /// The sampled tier that holds it: 6h's minute buckets, always. A
-    /// window starts at least 30 minutes before now (its marker is never in
-    /// the future), past the raw tier's 15 minutes, so Live's samples never
-    /// hold the whole of it — even around a marker a minute old its first
-    /// half is minutes only; one tier for the whole axis, never two spacings
-    /// on one line.
-    var tier: KubeMetricsRange { .sixHours }
+    /// The sampled tier that holds it: 6h's minute buckets for a marker's
+    /// window — it starts at least 30 minutes before now (its marker is
+    /// never in the future), past the raw tier's 15 minutes, so Live's
+    /// samples never hold the whole of it; one tier for the whole axis,
+    /// never two spacings on one line — and Live's raw samples for a zoom
+    /// drawn inside them.
+    var tier: KubeMetricsRange { sampledTier }
 
     /// `13:28–14:28`.
     var title: String { "\(KubeChartTime.clock(start))–\(KubeChartTime.clock(end))" }
@@ -192,6 +207,9 @@ struct KubeChartChanges: Equatable, Sendable {
     /// back or not: the "events: last hour" note says why older ones
     /// aren't marked, most of all when none are.
     var eventsJoined = false
+    /// The OOMKills Prometheus saw (kube-state-metrics, cAdvisor), older
+    /// than what `lastState` keeps: on the step, each its container's.
+    var ooms: [KubeChartMarker] = []
 
     var isEmpty: Bool { timeline.isEmpty && events.isEmpty && restarts.states == nil }
 
@@ -208,6 +226,7 @@ struct KubeChartChanges: Equatable, Sendable {
         hasher.combine(namesPods)
         hasher.combine(problem)
         hasher.combine(eventsJoined)
+        for marker in ooms { hasher.combine(marker.id) }
         return hasher.finalize()
     }
 }
@@ -358,7 +377,8 @@ enum KubeChartMarkers {
             var chart = chart
             if let window { chart.data = window.narrow(chart.data) }
             let own = pods(changes.restarts, pod: pod, container: container, namesPods: false)
-            chart.data = apply(own + events, eventsJoined: changes.eventsJoined, to: chart.data, now: now)
+            let ooms = changes.ooms.filter { container == nil || $0.container == container }
+            chart.data = apply(own + ooms + events, eventsJoined: changes.eventsJoined, to: chart.data, now: now)
             return chart
         }
         charts.pod = charts.pod.map { finish($0, container: nil) }
@@ -377,7 +397,7 @@ enum KubeChartMarkers {
     static func mark(_ charts: KubeObjectCharts, changes: KubeChartChanges, window: KubeChartWindow?, now: Date) -> KubeObjectCharts {
         var charts = charts
         let shared = timeline(changes.timeline) + events(changes.events)
-        let podMarkers = pods(changes.restarts, namesPods: changes.namesPods)
+        let podMarkers = pods(changes.restarts, namesPods: changes.namesPods) + changes.ooms
         charts.groups = charts.groups.enumerated().map { index, group in
             var group = group
             group.charts = group.charts.map { chart in

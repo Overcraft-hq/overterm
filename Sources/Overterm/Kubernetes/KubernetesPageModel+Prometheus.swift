@@ -16,12 +16,11 @@ extension KubernetesPageModel {
         return KubePrometheusUse.of(context.settings).isOn
     }
 
-    /// The chart a detail shows, for the object open: a pod's, a claim's.
+    /// The chart a detail's Overview shows, for the object open: a claim's
+    /// (a pod's are its Metrics tab's).
     func chart(for ref: KubeObjectRef) -> KubeChart? {
-        guard let namespace = ref.namespace, ref.kind.group.isEmpty else { return nil }
-        if ref.isPod { return .pod(namespace: namespace, name: ref.name) }
-        if ref.kind.resource == Self.claimsKind { return .volume(namespace: namespace, claim: ref.name) }
-        return nil
+        guard let namespace = ref.namespace, ref.kind.group.isEmpty, ref.kind.resource == Self.claimsKind else { return nil }
+        return .volume(namespace: namespace, claim: ref.name)
     }
 
     /// What the page shows now that reads Prometheus.
@@ -34,6 +33,14 @@ extension KubernetesPageModel {
         // The shares divide metrics-server's usage: none read where it isn't served (availability's change asks again).
         if showsShareColumns, model.metrics.availability == .served { wants.insert(.shares) }
         if let detail, detailTab == .overview, let chart = chart(for: detail.ref) { wants.insert(.chart(chart)) }
+        // The Metrics tab's queries, over its range or window (M6) — where
+        // Prometheus is found first: its ranges need it.
+        if let request = metricsTabWant { wants.insert(.tab(request)) }
+        if detail != nil, metricsTabShows, model.prometheus.service == nil, model.prometheus.state == .off || model.prometheus.state == .detecting,
+            detail?.ref.metricsSubject.map(KubeChartSource.prometheusCharts) == true
+        {
+            wants.insert(.locate)
+        }
         return wants
     }
 

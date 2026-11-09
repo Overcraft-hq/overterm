@@ -78,6 +78,8 @@ extension E2ERunner {
             "persistentvolumeclaims", "data-db-0", namespace: "shop",
             values: ["Status": "Bound", "Volume": "pvc-1234", "Capacity": "10Gi", "Access Modes": "RWO", "StorageClass": "standard"])
         Settings.shared.set("kubernetes.contexts", nil)
+        // Earlier scenarios' probes (kubernetesCharts' over Prometheus) aren't this one's.
+        let probesBefore = model.prometheus.probes
         if model.selectedName != "fake-dev" { model.select("fake-dev") }
         model.setScope(.namespace("shop"))
         check("fake-dev isn't opted in yet", await eventually(10) { model.selected?.settings.metrics == nil && !page.prometheusOn })
@@ -106,7 +108,7 @@ extension E2ERunner {
         check("drawn, with the range and where it came from", await shownText(15) { $0.contains("The last 1h, from Prometheus monitoring/prometheus-server:80") } != nil)
         // Probed once for the context: what exists, the duplicates, the scrape — instant queries.
         let probes = prometheusAsked().filter { $0.query["query"]?.contains("count by (__name__)") == true }
-        check("probed once", probes.count == 1 && model.prometheus.probes == 1, "\(probes.count) \(model.prometheus.probes)")
+        check("probed once", probes.count == 1 && model.prometheus.probes == probesBefore + 1, "\(probes.count) \(model.prometheus.probes - probesBefore)")
         check(
             "its scrape the cAdvisor job's, a minute",
             model.prometheus.profile?.scrape == 60 && prometheusAsked().contains { $0.query["query"] == KubePromProfile.scrapeQuery(job: "kubernetes-nodes-cadvisor") })
@@ -180,19 +182,34 @@ extension E2ERunner {
         check("2 is Workloads", page.press("2") && page.section == .workloads)
         let pod = KubeRowID(namespace: "shop", name: "web-8k2")
         guard await showKubernetesKind(model, page, "po", row: pod) else { return }
+        // Its Metrics tab, over Prometheus (M6): the Overview no longer charts it.
+        setTabFixtures(fake)
         page.open(KubeObjectRef(context: "fake-dev", kind: .pods, namespace: "shop", name: "web-8k2"), from: .list)
-        page.detailTab = .overview
-        let podChart = KubeChart.pod(namespace: "shop", name: "web-8k2")
-        check("a pod's detail charts the pod", await eventually(15) { model.prometheus.charts[podChart]?.series[.cpu]?.last?.value == 0.75 })
-        let podDrawn = await shownText(15) { $0.contains("750m") } != nil
-        let podShown = podDrawn ? "" : (await readWindow()).map(\.text).joined(separator: " | ")
-        check("the pod's chart drawn", podDrawn, podShown)
+        page.showTab(.metrics)
+        page.pickMetricsRange(.hour)
+        defer {
+            page.metricsRange = .live
+            page.metricsRangePicked = false
+        }
+        func podReading() -> KubeTabReading? {
+            model.prometheus.tabs.values.first { reading in
+                if case .pod(_, "web-8k2", _, _) = reading.request.subject { return reading.request.span == .range(.hour) }
+                return false
+            }
+        }
         check(
-            "the pod's charts in the registry, none of the Overview's",
-            await eventually(10) {
-                charts.chart("kubernetes.chart.pod.shop.web-8k2.cpu", in: scope)?.plot != nil && charts.chart(cpuID, in: scope) == nil
-            }, charts.lines(in: scope).joined(separator: "; "))
+            "a pod's Metrics tab reads it from Prometheus over 1h",
+            await eventually(15) { podReading()?.results["cpu"]?.first?.points.last?.value == 0.75 }, "\(model.prometheus.tabs.values.map(\.results.keys))")
+        let podCPU = "kubernetes.chart.pod.shop.web-8k2.cpu"
+        check(
+            "its CPU drawn from Prometheus",
+            await eventually(10) { charts.chart(podCPU, in: scope).map { $0.data.source == "Prometheus" && $0.plot != nil } == true },
+            charts.lines(in: scope).joined(separator: "; "))
         check("the Overview's chart no longer read", model.prometheus.charts[.cluster] == nil)
+        page.showTab(.overview)
+        check("its Overview asks Prometheus nothing", await eventually(10) { podReading() == nil && model.prometheus.charts.isEmpty })
+        check("and charts nothing of Prometheus", await shownText(2) { $0.contains("from Prometheus monitoring") } == nil)
+        clearTabFixtures(fake)
         page.closeDetail()
 
         // The PVC list's Used column, and a claim's detail.

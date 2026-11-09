@@ -10,6 +10,12 @@ struct KubeObjectCharts: Equatable, Sendable {
     struct Group: Equatable, Sendable, Identifiable {
         var title: String
         var charts: [KubePodCharts.Chart]
+        /// Its charts are read only while it is on screen (a node's top
+        /// pods over Prometheus, K3: a series a pod on the node): its view
+        /// says when it shows (metrics.md 6.2).
+        var readsWhenShown = false
+        /// Not read yet: the view says it is asked once shown.
+        var pending = false
         var id: String { title }
     }
 

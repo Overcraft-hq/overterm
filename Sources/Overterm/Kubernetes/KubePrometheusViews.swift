@@ -75,7 +75,6 @@ struct KubePrometheusChartView: View {
     private var title: String {
         switch chart {
         case .cluster: "Usage over time"
-        case .pod: "Usage over time"
         case .volume: "Volume usage"
         }
     }
@@ -83,7 +82,6 @@ struct KubePrometheusChartView: View {
     private var identifier: String {
         switch chart {
         case .cluster: "kubernetes.overview.prometheus"
-        case .pod: "kubernetes.detail.prometheus"
         case .volume: "kubernetes.detail.volume"
         }
     }
@@ -93,12 +91,12 @@ struct KubePrometheusChartView: View {
         case .cluster where reading.refused != nil:
             refused(reading.refused ?? "")
             requests(reading)
-        case .cluster, .pod:
+        case .cluster:
             HStack(alignment: .top, spacing: 20) {
                 drawn(KubeChartData.of(reading, chart: chart, measure: .cpu), reading)
                 drawn(KubeChartData.of(reading, chart: chart, measure: .memory), reading)
             }
-            if chart == .cluster { requests(reading) }
+            requests(reading)
         case .volume:
             let data = KubeChartData.of(reading, chart: chart, measure: .volumeUsed)
             let capacity = reading.series[.volumeCapacity]?.last?.value
@@ -177,7 +175,6 @@ extension KubeChartData {
         let (subject, title): (String, String) =
             switch chart {
             case .cluster: ("cluster", measure == .cpu ? "CPU" : "Memory")
-            case .pod(let namespace, let name): ("pod.\(namespace).\(name)", measure == .cpu ? "CPU" : "Memory")
             case .volume(let namespace, let claim): ("volume.\(namespace).\(claim)", "Used")
             }
         let id = subject + "." + (measure == .volumeUsed ? "used" : measure.rawValue)

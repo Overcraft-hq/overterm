@@ -111,14 +111,14 @@ final class E2ETests: XCTestCase {
     /// The Kubernetes page against the fake API server: the run's only
     /// kubeconfig is this temporary file, which the scenario writes once
     /// the fake listens — never ~/.kube/config, whose current context is
-    /// production. 80–120 s on a busy machine, with the detail.
+    /// production. 250–380 s on a busy machine, with the detail and the charts.
     func testKubernetes() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kube-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let stderr = dir.appendingPathComponent("stderr.log")
         let printed = try run(
-            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300, stderr: stderr)
+            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 480, stderr: stderr)
         // The scenario's Secret value (E2ERunner.secretValue), shown and
         // revealed in the app: never in what it printed, nor its errors.
         // And the Secret's values the editor diffs (E2ERunner.applySecretOld, applySecretNew),

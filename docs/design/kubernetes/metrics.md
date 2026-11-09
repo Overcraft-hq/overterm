@@ -454,12 +454,12 @@ All are scoped by `namespace="$ns"` and, where it applies, `pod="$pod"`.
 | Chart | Query |
 |---|---|
 | C1 peak (≥ 24h, one pod) | `max_over_time(sum by (container)(rate(container_cpu_usage_seconds_total{CAD,…}[$w0]))[$s:$r])`, where `$w0 = 4 × scrape` and `$r = max(scrape, 1m)`. (review: a fixed `[2m]` holds one or two samples on a 1m scrape, which is M0's own defect again) |
-| C2 RSS | `sum by (container)(container_memory_rss{CAD,…})` |
+| C2 RSS | `max by (container)(container_memory_rss{CAD,…})` (a gauge: one series a container, as every gauge is; `max_over_time` past 5m steps) |
 | C3 | `sum by (container)(increase(container_cpu_cfs_throttled_periods_total{container!="",…}[$w'])) / sum by (container)(increase(container_cpu_cfs_periods_total{…}[$w']))`, where `$w' = max($w, 5m)` |
 | C4 | `sum(container_fs_usage_bytes{CAD,…})`; limit `kube_pod_container_resource_limits{resource="ephemeral_storage"}` |
 | P3 | `sum(rate(container_network_{receive,transmit}_bytes_total{…}[$w]))`; drops `…_packets_dropped_total` |
-| P4, W5 restarts | `sum(changes(max by (namespace,pod,container)(kube_pod_container_status_restarts_total{KSM,…})[$s:]))`. (review) Restart bars need the step to be at least the scrape interval, or a window can hold no sample and miss a restart. So a counting chart's step is `max($s, scrape)`, and Live's 30 s step becomes 60 s on a 1m scrape |
-| C2 OOM (P, older than the pod's `lastState`) | (review) `(increase(kube_pod_container_status_restarts_total{KSM,…}[$s]) > 0) and on(namespace,pod,container) (kube_pod_container_status_last_terminated_reason{KSM,reason="OOMKilled",…} == 1)`, a marker per step it answers; `increase(container_oom_events_total{…}[$s]) > 0` where it exists (cAdvisor ≥ 0.39), which also catches an OOM-killed child process that didn't restart the container. The bare `last_terminated_reason` gauge only says the last reason, not when |
+| P4, W5 restarts | `sum(clamp_min(RST - RST offset $s, 0))`, where `RST = max by (namespace,pod,container)(kube_pod_container_status_restarts_total{KSM,…})`. (review) Restart bars need the step to be at least the scrape interval, so a counting chart's step is `max($s, scrape)`, and Live's 30 s step becomes 60 s on a 1m scrape. (M6 review) Not `changes(…[$s:])`: since Prometheus 3.0 a range and a subquery's range are left-open, so a window one step wide holds one sample at a scrape-sized step (Live, 1h) and counts nothing, misses the rise across each window's boundary at longer steps, and a subquery evaluates at the server's global interval (1m by default). The count against its own a step back has neither problem, and it is no subquery, so a workload's restarts need no cap on its pods |
+| C2 OOM (P, older than the pod's `lastState`) | (review) `(clamp_min(RST - RST offset $s, 0) > 0) and on(namespace,pod,container) (kube_pod_container_status_last_terminated_reason{KSM,reason="OOMKilled",…} == 1)`, a marker per step it answers; `increase(container_oom_events_total{…}[$s + scrape]) > 0` (a window that always holds two samples; one marker a run of steps, so the overlap marks nothing twice) where it exists (cAdvisor ≥ 0.39), which also catches an OOM-killed child process that didn't restart the container. The bare `last_terminated_reason` gauge only says the last reason, not when |
 | W4 | `kube_deployment_spec_replicas`, `kube_deployment_status_replicas_available`, `…_unavailable`; `kube_statefulset_status_replicas_ready`; `kube_daemonset_status_number_available` against `…desired_number_scheduled`; `kube_job_status_succeeded`, `…_failed` |
 | H1 | `kube_horizontalpodautoscaler_status_{current,desired}_replicas`, `…_spec_{min,max}_replicas` (`kube_hpa_*` with label `hpa` on KSM 1.x) |
 | H2 | `kube_horizontalpodautoscaler_status_target_metric` against `…_spec_target_metric`, by `metric_name` |
@@ -590,6 +590,7 @@ Data is merged off the main thread and published in one assignment. `@Published`
 
 - **The views register what they show.** Each chart registers a `KubeChartRequest` on appear and removes it on disappear, through `KubePrometheusMonitor.want` (as built) and `KubeMetricsMonitor`'s targets.
   - The charts sit in a `LazyVStack`, so a chart scrolled off removes its own want. A 9-chart pod tab with 3 on screen reads 3.
+  - (M6, as built) A tab's Prometheus queries are one want (`KubeTabRequest`), its families asked together, except a node's top pods (K3: a series per pod on the node, about 110 a query), which their group's view asks only while it is on screen. A pod's, a workload's and an HPA's families are each one object's few series, every container's in one query; with `KubeChartCache` a refresh asks only each query's last steps. Asking them per chart would make every scroll a new request for a few series each; §6.5 counts what this costs.
   - Hiding the page, changing section or detail tab, or closing the detail removes every want at once.
 - **The metrics proxy closes** 60 s after the last want, as built.
 - **Nothing is prefetched.** Neither a neighbouring range nor a scrolled-off chart is read ahead of time.
@@ -632,7 +633,7 @@ Data is merged off the main thread and published in one assignment. `@Published`
 | Shown | apiserver GETs per minute | Prometheus queries |
 |---|---|---|
 | a pod's Metrics tab, Live | 4 (the pod's metrics) + 1 (the pod's object, for its markers, M4) | 0 without Prometheus; with it, the on-screen Prometheus-only charts (C3, P3, P4), each 1 per step (30–60 s) |
-| a pod's tab, 1h, 3 charts on screen | 1 (the pod's object, for its markers, M4; with metrics-server) | 3 on open, 3 per minute (incremental) |
+| a pod's tab, 1h, 3 charts on screen | 1 (the pod's object, for its markers, M4; with metrics-server) | (M6, as built: the tab's families together, §6.2) 7 on open (CPU, memory, RSS, throttling where a container has a CPU limit, network, restarts, OOMs), 7 per minute, each its last 2 steps (incremental); 24h and 7d add the peak band |
 | a workload's tab, Live | 4 (its pods' metrics) + 1 (status) + 1 once (the HPA Table) + 1 (its pods by selector as objects, ≤ 250 and ≤ 16 MB, restarts and last terminations kept, for its markers, M4; stopped on a 403 or a failed sign-in) | 0 |
 | an HPA's tab | 4 (the HPA) + 4 (its target's pods) | 0 Live |
 | a node's tab, Live | 4 (the node's metrics) + 0.2 (its pods as objects, every 5 min); after "Sample top pods", + 8 at most (4 namespaces × 2), or 0 when the page's all-namespaces list is already polled, for at most 15 min | 0 |

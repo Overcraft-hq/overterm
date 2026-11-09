@@ -218,12 +218,11 @@ final class KubePrometheusTests: XCTestCase {
 
     func testQueriesAndTheirRange() throws {
         XCTAssertEqual(
-            KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "4m"),
-            #"sum(sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",namespace="shop",pod="web-1"}[4m])))"#
-        )
+            KubeTabTesting.query("cpu", .hour),
+            #"sum by (container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",namespace="shop",pod="web-1"}[4m]))"#)
         XCTAssertEqual(
-            KubePromQL.podMemory(namespace: "shop", pod: "web-1"),
-            #"sum(max by (namespace,pod,container)(container_memory_working_set_bytes{container!="",image!="",container!="POD",namespace="shop",pod="web-1"}))"#)
+            KubeTabTesting.query("memory", .hour),
+            #"max by (container)(container_memory_working_set_bytes{container!="",image!="",container!="POD",namespace="shop",pod="web-1"})"#)
         XCTAssertEqual(KubePromQL.literal(#"a"b\c"#), #"a\"b\\c"#, "a label value can't end its string")
         XCTAssertEqual(
             KubePromQL.volumes(KubePromQL.volumeUsed, namespaces: ["shop"]),
@@ -298,7 +297,7 @@ final class KubePrometheusTests: XCTestCase {
     func testTheFakesPrometheusAnswersOnlyItsQueryPaths() async throws {
         let direct = KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: "fake-dev"), service: service)
         let now = Date()
-        let range = try await direct.query(KubePromQL.rangePath(service, KubePromQL.podCPU(namespace: "shop", pod: "web-1", window: "4m"), .hour, now: now))
+        let range = try await direct.query(KubePromQL.rangePath(service, try XCTUnwrap(KubeTabTesting.query("cpu", .hour)), .hour, now: now))
         XCTAssertEqual(range.status, 200)
         let points = KubePrometheusReader.points(try KubePrometheusReader.read(range.body))
         XCTAssertEqual(points.count, 121)
@@ -590,24 +589,33 @@ final class KubePrometheusTests: XCTestCase {
             "services", "prometheus-server", namespace: "monitoring",
             labels: ["app.kubernetes.io/name": "prometheus", "app.kubernetes.io/component": "server", "app.kubernetes.io/managed-by": "Helm"],
             fields: ["spec": ["ports": [["port": 80]]]])
-        monitor.want([.chart(.pod(namespace: "shop", name: "web-1")), .volumes], for: owner)
+        let hour = KubeTabTesting.request(.hour)
+        monitor.want([.tab(hour), .volumes], for: owner)
         try await until(5, "found") { monitor.state == .found(service, .helm) }
-        try await until(5, "charted") { monitor.charts[.pod(namespace: "shop", name: "web-1")]?.series[.cpu]?.count == 121 }
-        let reading = try XCTUnwrap(monitor.charts[.pod(namespace: "shop", name: "web-1")])
-        XCTAssertEqual(reading.series[.memory]?.last?.value, 64 * 1_048_576)
-        XCTAssertEqual(reading.range, .hour)
+        // Nothing probed (the fake can't say): a minute's scrape assumed, an hour at a minute's step.
+        try await until(5, "charted") { monitor.tabs[hour]?.results["cpu"]?.first?.points.count == 61 }
+        let reading = try XCTUnwrap(monitor.tabs[hour])
+        XCTAssertEqual(reading.results["memory"]?.first?.points.last?.value, 64 * 1_048_576)
+        XCTAssertEqual(reading.span?.step, 60)
         try await until(5, "volumes") { monitor.volumes?.read != nil }
         XCTAssertEqual(monitor.volumeCell(KubeRowID(namespace: "shop", name: "data-db-0")).text, "2.0Gi of 10Gi (20%)")
         guard case .dash(let why) = monitor.volumeCell(KubeRowID(namespace: "shop", name: "unbound")) else { return XCTFail("a dash") }
         XCTAssertTrue(why.contains("kubelet_volume_stats"))
         let ranges = prometheusRequests.filter { $0.path.hasSuffix("query_range") }
-        XCTAssertEqual(ranges.first?.query["step"], "30s")
-        try await until(5, "asked again") { self.prometheusRequests.filter { $0.path.hasSuffix("query_range") }.count >= 4 }
+        XCTAssertEqual(ranges.first?.query["step"], "1m")
+        // Asked again every refresh: within a step nothing new (the cache's), past it only the tail.
+        try await Task.sleep(for: .milliseconds(400))
+        let again = prometheusRequests.filter { $0.path.hasSuffix("query_range") }.dropFirst(2)
+        XCTAssertTrue(
+            again.allSatisfy { Double($0.query["start"] ?? "") ?? 0 > Double(ranges.first?.query["start"] ?? "") ?? 0 }, "\(again.map(\.query))")
 
         // Another range: asked with its step.
+        let week = KubeTabTesting.request(.week)
         monitor.range = .week
-        try await until(5, "a week") { monitor.charts[.pod(namespace: "shop", name: "web-1")]?.range == .week }
-        XCTAssertTrue(prometheusRequests.contains { $0.query["step"] == "1h" })
+        monitor.want([.tab(week), .volumes], for: owner)
+        try await until(5, "a week") { monitor.tabs[week]?.read != nil }
+        XCTAssertNil(monitor.tabs[hour], "the hour's reading gone with its want")
+        XCTAssertTrue(prometheusRequests.contains { $0.query["step"] == "30m" })
 
         // Hidden: reading ends, what was read goes, the metrics proxy is closed.
         monitor.want([], for: owner)
@@ -728,19 +736,22 @@ final class KubePrometheusTests: XCTestCase {
         api.setPrometheusMatrix("container_memory_working_set_bytes", warnings: ["store eu-2 timed out", "store us-1 timed out", "store us-2 timed out"])
         let monitor = configuredMonitor(scope: .namespace("shop"))
         let owner = NSObject()
-        let pod = KubeChart.pod(namespace: "shop", name: "web-1")
-        monitor.want([.chart(pod)], for: owner)
-        try await until(5, "charted") { monitor.charts[pod]?.read != nil }
-        let reading = try XCTUnwrap(monitor.charts[pod])
-        XCTAssertEqual(reading.series[.cpu]?.last?.value, 0.25, "the evaluated answer, the warnings beside it")
+        let pod = KubeTabTesting.request(.hour, families: [.cpu, .memory])
+        monitor.want([.tab(pod)], for: owner)
+        try await until(5, "charted") { monitor.tabs[pod]?.read != nil }
+        let reading = try XCTUnwrap(monitor.tabs[pod])
+        XCTAssertEqual(reading.results["cpu"]?.first?.points.last?.value, 0.25, "the evaluated answer, the warnings beside it")
         XCTAssertEqual(
             reading.notes, ["Partial answer: store eu-1 timed out", "Partial answer: store eu-2 timed out", "Partial answer: store us-1 timed out"],
             "de-duplicated, then three for the chart")
         XCTAssertNil(reading.problem)
 
         api.failPrometheus(503, "upstream connect error")
-        try await until(5, "the problem") { monitor.charts[pod]?.problem != nil }
-        XCTAssertEqual(monitor.charts[pod]?.notes, [], "the last read's notes gone with it")
+        // Within a step a refresh asks nothing new: the kept answers forgotten, it asks again.
+        monitor.forgetCaches()
+        try await until(5, "the problem") { monitor.tabs[pod]?.problem != nil }
+        XCTAssertEqual(monitor.tabs[pod]?.notes, [], "the last read's notes gone with it")
+        XCTAssertEqual(monitor.tabs[pod]?.results["cpu"]?.first?.points.last?.value, 0.25, "a failed query keeps its last answer")
         monitor.want([], for: owner)
     }
 

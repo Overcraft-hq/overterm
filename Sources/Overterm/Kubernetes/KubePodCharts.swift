@@ -86,6 +86,8 @@ struct KubePodCharts: Equatable, Sendable {
     struct Section: Equatable, Sendable, Identifiable {
         var container: String
         var charts: [Chart]
+        /// Why one of its charts is left out: "No CPU limit: never throttled".
+        var notes: [String] = []
         var id: String { container }
     }
 
@@ -103,6 +105,8 @@ struct KubePodCharts: Equatable, Sendable {
     var span: String
     /// Whether anything was sampled to draw.
     var hasSamples: Bool
+    /// Why a chart is left out, what Prometheus said beside its answers.
+    var notes: [String] = []
 
     /// More containers than sections are shown for: one picked at a time.
     var picksContainer: Bool { sections.count > Self.sectionsAtMost }

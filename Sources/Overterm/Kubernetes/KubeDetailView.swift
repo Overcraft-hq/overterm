@@ -43,7 +43,7 @@ struct KubeDetailView: View {
                 case .history:
                     if let timeline = session.timeline { KubeTimelineView(page: page, timeline: timeline, theme: theme) } else { overview }
                 case .metrics:
-                    if session.ref.hasMetrics { KubeMetricsTabView(page: page, metrics: page.model.metrics, session: session, theme: theme) } else { overview }
+                    if session.ref.hasMetrics { KubeMetricsTabView(page: page, metrics: page.model.metrics, prometheus: page.model.prometheus, session: session, theme: theme) } else { overview }
                 }
             }
         }

@@ -79,13 +79,15 @@ extension KubernetesPageModel {
     /// the page is on screen.
     /// Its Metrics tab, a workload's, an HPA's, a node's or a namespace's:
     /// what that tab charts (`objectMetricsDetails`).
+    /// Not while every chart of the tab is Prometheus' (1h on), nor while Live is paused.
     var metricsDetailsOnScreen: [KubeMetricsDetail] {
         guard visible, windowVisible, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail else { return [] }
+        let sampled = detailTab == .metrics && !metricsLivePaused && metricsSource(of: detail.ref).map { $0 != .prometheus } ?? true
         if detail.ref.isPod, let namespace = detail.ref.namespace {
-            guard detailTab == .overview || detailTab == .metrics else { return [] }
+            guard detailTab == .overview || sampled else { return [] }
             return [.pod(namespace: namespace, name: detail.ref.name)]
         }
-        guard detailTab == .metrics else { return [] }
+        guard sampled else { return [] }
         return objectMetricsDetails(detail)
     }
 
@@ -96,6 +98,7 @@ extension KubernetesPageModel {
         if visible, windowVisible { askChartLookups() }
         updateChartChanges()
         updatePrometheusWanted()
+        updateMetricsPause()
     }
 
     /// A row's usage cell.

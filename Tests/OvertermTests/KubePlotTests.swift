@@ -251,11 +251,9 @@ final class KubePlotTests: XCTestCase {
         XCTAssertEqual(cpu.references.map(\.role), [.request, .limit, .allocatable])
         XCTAssertEqual(cpu.references.map { $0.points.last?.value }, [2, 3, 4])
         XCTAssertEqual(cpu.end.timeIntervalSince(cpu.start), 3600, "the range's window")
-        let pod = KubeChartData.of(reading, chart: .pod(namespace: "shop", name: "web"), measure: .cpu)
-        XCTAssertEqual(pod.references.count, 0, "a pod's lines come with its spec (M3a)")
-        XCTAssertEqual(pod.identifier, "kubernetes.chart.pod.shop.web.cpu", "the subject names its pod")
         XCTAssertNotEqual(
-            KubeChartData.of(reading, chart: .pod(namespace: "shop", name: "api"), measure: .cpu).identifier, pod.identifier, "two pods, two charts")
+            KubeChartData.of(reading, chart: .volume(namespace: "shop", claim: "a"), measure: .volumeUsed).identifier,
+            KubeChartData.of(reading, chart: .volume(namespace: "shop", claim: "b"), measure: .volumeUsed).identifier, "two claims, two charts")
         var again = reading
         again.read = reading.read?.addingTimeInterval(60)
         XCTAssertNotEqual(KubeChartData.of(again, chart: .cluster, measure: .cpu).version, cpu.version, "read again, drawn again")
@@ -272,7 +270,16 @@ final class KubePlotTests: XCTestCase {
     }
 
     func testOnlyUsageIsDrawnAsSeries() {
-        XCTAssertEqual(KubeChartRole.allCases.filter { !$0.isReference }, [.usage], "every other role is a reference line")
+        XCTAssertEqual(KubeChartRole.allCases.filter { !$0.isReference }, [.usage, .peak], "every other role is a reference line; a peak band is neither")
+        let data = KubeChartData(
+            id: "t", title: "CPU", unit: .cores,
+            series: [
+                KubeChartSeries(id: "cpu", name: "CPU", points: []), KubeChartSeries(id: "peak", name: "peak", role: .peak, points: []),
+                KubeChartSeries(id: "limit", name: "limit", role: .limit, points: []),
+            ], start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 60), step: 30)
+        XCTAssertEqual(data.usage.map(\.id), ["cpu"], "a peak isn't usage: never stacked or summed")
+        XCTAssertEqual(data.peaks.map(\.id), ["peak"])
+        XCTAssertEqual(data.references.map(\.id), ["limit"])
     }
 
     // MARK: The charts on screen
