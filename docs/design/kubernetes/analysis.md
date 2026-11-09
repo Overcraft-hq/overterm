@@ -544,6 +544,7 @@ Overterm already has the pieces to do both:
     - `k8s_why`: the brief from 3.4
     - `k8s_rollout`: status and history
     - `k8s_top` (once metrics exist, 2d)
+    - `k8s_metrics`: an object's usage over a range as bounded text, from the charts' own queries, else what was sampled while shown, else metrics-server now (metrics.md 7, M11)
   - Write tools (stage 2a, each with its verb):
     - `k8s_restart`
     - `k8s_scale`
@@ -765,7 +766,7 @@ How this works:
   - shells, attach and forwards are checked with `kubectl auth can-i create pods/exec` (and the others) before the verb is enabled (stage 1d);
   - who-am-I (`SelfSubjectReview`, also a POST) is asked once through `kubectl auth whoami -o json`.
 - **When a context becomes writable, its proxy restarts without the method filter.** Reviews then go through the socket. When it stops being writable (a production session ends, a setting changes), the proxy restarts with the filter again.
-- **No socket reaches the proxy subresources.** A GET on a service, pod or node proxy reaches a process inside the cluster, which may act on it. Prometheus (stage 4) gets its own proxy whose `--accept-paths` names only the detected or configured service's `query` and `query_range` paths (namespace, service and port regex-escaped). Every other path, other services' proxies included, gets 403 there. It counts towards `maxProxies` and runs only while a chart shows — or for an agent's explicit read on a context opted in to Prometheus (`k8s_top`'s shares of request and limit, M5b; `k8s_metrics`, M11), in a background slot for that call, closed when idle (metrics.md 6.4).
+- **No socket reaches the proxy subresources.** A GET on a service, pod or node proxy reaches a process inside the cluster, which may act on it. Prometheus (stage 4) gets its own proxy whose `--accept-paths` names only the detected or configured service's `query` and `query_range` paths (namespace, service and port regex-escaped). Every other path, other services' proxies included, gets 403 there. It counts towards `maxProxies` and runs only while a chart shows — or for an agent's explicit read on a context opted in to Prometheus (`k8s_top`'s shares of request and limit, M5b; `k8s_metrics` and Ask Why's Usage part, M11), in a background slot for that call, through the context's query queue as an agent (below the page, at most 2 of its 4 places), closed when idle (metrics.md 6.4).
 - **The guarantee is the socket's.** Overterm's own requests and the MCP tools cannot write on a read-only context, whoever sends them. The kubectl and helm processes Overterm starts do not use the socket. For them, read-only is Overterm refusing to start the writing ones (Section 5).
 
 Checked against a real cluster (kind, Kubernetes v1.37.0, kubectl v1.36.1; 2026-11-07; `KubeRealClusterTests`, Section 11 and Section 12):
@@ -1317,7 +1318,7 @@ All of them are built; Section 15 says where the build departs from this plan. E
 - **Connections:** streams on dedicated connections with a cap per context; requests on their own bounded pool (Section 4).
 - **Processes:**
   - The proxy is closed after `proxyIdleMinutes`. At most `maxProxies` are alive, one kept for the page's context; background proxies are evicted first.
-  - The metrics proxy runs only while a chart shows, or for an agent's explicit read on a context opted in to Prometheus, in a background slot, closed when idle (metrics.md 6.4).
+  - The metrics proxy runs only while a chart shows, or for an agent's explicit read on a context opted in to Prometheus (`k8s_top`'s shares, `k8s_metrics`, Ask Why's usage), in a background slot, closed when idle (metrics.md 6.4). That is the one exception; nothing else reads Prometheus with no chart on screen.
   - Prometheus' probe is four instant queries once per context, asked again after an hour while charts show (metrics.md 4.4). Every query of a context goes through its queue: at most 4 in flight, an agent at most 2 of them, identical ones joined, one nobody waits for dropped or cancelled; a `Retry-After` pauses the context, at most 5 minutes (metrics.md 6.3).
   - Forwards are closed at quit (`closeAll`) and tracked by pid, never by pattern.
   - oidc proxies start one at a time.

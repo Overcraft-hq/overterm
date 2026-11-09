@@ -66,7 +66,8 @@ extension KubernetesPageModel {
     }
 
     /// The brief read — GETs through the context's proxy, no Secret, every
-    /// word scrubbed (`KubeAgentBriefing`) — and handed to the Ask Agent
+    /// word scrubbed (`KubeAgentBriefing`), its usage where cheap
+    /// (`KubeMCP.usagePart`, bounded by `usageLimit`) — and handed to the Ask Agent
     /// sheet, which shows it whole before anything is sent. What couldn't
     /// be read is said over the list (or under the detail's buttons).
     func askWhy(_ ref: KubeObjectRef) {
@@ -82,7 +83,8 @@ extension KubernetesPageModel {
         askingWhy = ref
         Task { [weak self] in
             do {
-                var brief = try await KubeAgentBriefing.brief(ref, client: client, context: context, discovery: discovery)
+                let read = try await KubeAgentBriefing.read(ref, client: client, context: context, discovery: discovery)
+                var brief = read.brief
                 // A checkout bound there — the selected tab's, else another's —:
                 // its deployed commit, and its agent first (3.2, 3.4).
                 if let namespace = brief.namespace,
@@ -90,6 +92,8 @@ extension KubernetesPageModel {
                 {
                     brief = await KubeAgentBriefing.withDeployedCommit(brief, checkout: URL(fileURLWithPath: bound.checkout))
                 }
+                // Its usage over the last hour, where that is cheap (metrics.md 7): from what the brief read, within `usageLimit`.
+                if let model = self?.model, let usage = await KubeMCP.usagePart(for: ref, reads: read.reads, kubernetes: model) { brief.parts.append(usage) }
                 guard let self else { return }
                 self.askingWhy = nil
                 self.actions?.askWhy(brief)
@@ -100,5 +104,39 @@ extension KubernetesPageModel {
                     (error as? KubeBriefProblem)?.description ?? "Couldn't read \(ref.kind.singular) \(ref.namespace.map { "\($0)/" } ?? "")\(ref.name): \(KubernetesModel.said(error))"
             }
         }
+    }
+}
+
+// MARK: Ask Agent About This Chart (metrics.md 3.9; stage M11)
+
+extension KubernetesPageModel {
+    /// A chart's "Ask Agent About This Chart": the chart as `k8s_metrics`
+    /// says it (`KubeMetricsText.about`) — its object and context first,
+    /// every word through `Secrets` — in the Ask Agent sheet, shown whole
+    /// before anything is sent. Nothing is read for it: what the chart
+    /// already holds. Nil with no detail's Metrics tab.
+    @discardableResult
+    func askAboutChart(_ chart: KubePodCharts.Chart, caption: String?, now: Date = Date()) -> KubeAgentBrief? {
+        guard let detail, metricsTabShows else { return nil }
+        let ref = detail.ref
+        // A pod's chart: its section's container, as Expand has it.
+        var label = chart.data.title
+        if ref.isPod, let charts = podCharts(of: ref, object: detail.object),
+            let section = charts.sections.first(where: { $0.charts.contains { $0.id == chart.id } })
+        {
+            label = "\(KubeMetricsText.name(section.container)) · \(chart.data.title)"
+        } else if ref.isPod {
+            label = "pod · \(chart.data.title)"
+        }
+        let known = model.contexts.context(named: ref.context)
+        let context = KubeBriefContext(name: ref.context, production: known?.isProduction ?? true, writable: known?.isWritable ?? false)
+        let whose = "\(ref.kind.singular) \(ref.namespace.map { "\($0)/" } ?? "")\(KubeMetricsText.name(ref.name)) on \(context.said)"
+        let text = KubeMCPText.scrubbed(KubeMetricsText.about(chart.data, label: label, whose: whose, caption: caption, chips: chart.chips, now: now))
+        let subject = "\(chart.data.title) of \(ref.kind.singular)/\(KubeMetricsText.name(ref.name))"
+        let brief = KubeAgentBrief(
+            message: "Here is a chart of \(ref.kind.singular) \(ref.namespace.map { "\($0)/" } ?? "")\(ref.name): what does it say, and is anything wrong?",
+            subject: KubeMCPText.scrubbed(subject), text: text, parts: [], production: context.production, context: ref.context, namespace: ref.namespace)
+        actions?.askWhy(brief)
+        return brief
     }
 }

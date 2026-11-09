@@ -124,7 +124,11 @@ enum KubeTimeline {
     static func revisions(_ body: Data, source: Source, owner: String) -> (revisions: [KubeTemplateRevision], more: Bool) {
         guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return ([], false) }
         let more = ((list["metadata"] as? [String: Any])?["continue"] as? String).map { !$0.isEmpty } ?? false
-        let items = list["items"] as? [[String: Any]] ?? []
+        return (revisions(items: list["items"] as? [[String: Any]] ?? [], source: source, owner: owner), more)
+    }
+
+    /// The revisions of a list's items already read (Ask Why's ReplicaSets), oldest first.
+    static func revisions(items: [[String: Any]], source: Source, owner: String) -> [KubeTemplateRevision] {
         let out = items.compactMap { item -> KubeTemplateRevision? in
             let metadata = item["metadata"] as? [String: Any] ?? [:]
             if !owner.isEmpty {
@@ -133,7 +137,7 @@ enum KubeTimeline {
             }
             return source == .replicaSets ? replicaSet(item) : controllerRevision(item)
         }
-        return (out.sorted { $0.revision < $1.revision }, more)
+        return out.sorted { $0.revision < $1.revision }
     }
 
     static func replicaSet(_ item: [String: Any]) -> KubeTemplateRevision? {

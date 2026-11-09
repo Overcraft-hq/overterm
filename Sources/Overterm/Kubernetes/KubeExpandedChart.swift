@@ -125,7 +125,8 @@ struct KubeExpandedChartView: View {
                         logsFromHere: expanded.ref.isPod
                             ? { [weak page, expanded] time in onPage { page?.logsFromHere(container: expanded.container, at: time) } } : nil,
                         zoom: live == nil ? nil : { [weak page] from, to in page?.zoomMetrics(from: from, to: to, of: shown.chart.data) },
-                        copy: { [weak page] in page?.copyChartText($0) }, theme: theme
+                        copy: { [weak page] in page?.copyChartText($0) },
+                        ask: live == nil ? nil : { [weak page] in page?.askAboutChart(shown.chart, caption: shown.caption) }, theme: theme
                     )
                     .frame(width: geometry.size.width)
                 }
