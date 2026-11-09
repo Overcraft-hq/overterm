@@ -61,6 +61,10 @@ enum KubeChartUnit: String, Sendable {
     /// A fraction, said as a percent.
     case ratio
     case count
+    /// A GPU's power draw.
+    case watts
+    /// A GPU's temperature.
+    case celsius
 
     func format(_ value: Double) -> String {
         switch self {
@@ -69,6 +73,8 @@ enum KubeChartUnit: String, Sendable {
         case .bytesPerSecond: KubeVolumeFormat.bytes(value) + "/s"
         case .ratio: "\(Int((value * 100).rounded()))%"
         case .count: value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
+        case .watts: value >= 100 ? "\(Int(value.rounded())) W" : String(format: "%.1f W", value)
+        case .celsius: "\(Int(value.rounded())) °C"
         }
     }
 
@@ -80,6 +86,7 @@ enum KubeChartUnit: String, Sendable {
         case .bytesPerSecond: 1024
         case .ratio: 1
         case .count: 1
+        case .watts, .celsius: 100
         }
     }
 }

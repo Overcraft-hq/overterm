@@ -193,6 +193,8 @@ extension KubernetesPageModel {
         var families = KubePromTabCharts.families(subject, source: source)
         // A node's top pods, its disks and network, only while their group is on screen (metrics.md 6.2).
         for (group, read) in KubePromTabCharts.readWhenShown where !metricsGroupsShown.contains(group) { families.subtract(read) }
+        // A GPU's charts only for an object with GPUs: nothing asked of DCGM for the rest.
+        if families.contains(.gpu), gpuAllocation(of: session) == nil { families.remove(.gpu) }
         guard !families.isEmpty, let whose = tabSubject(of: session) else { return nil }
         let span: KubeTabRequest.Span = metricsWindow.map { .window($0) } ?? .range(shownMetricsRange(for: subject))
         return KubeTabRequest(subject: whose, span: span, families: families)

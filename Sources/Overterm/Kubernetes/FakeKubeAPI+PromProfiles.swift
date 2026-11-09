@@ -20,6 +20,10 @@ struct FakePromProfile: Sendable {
     var retention: Double?
     /// Every query answered as an agent answers it.
     var agentMode = false
+    /// What the probe's DCGM query (5) finds: the labels its series carry
+    /// (`exported_pod`, `pod`, `exporter` — a pod that is the exporter's own —,
+    /// `pod_other` — a pod that isn't —, `Hostname`, `node`, `mig`); empty, no DCGM exporter.
+    var dcgm: [String] = []
 
     private static let raw = [
         "container_cpu_usage_seconds_total": 9000, "container_memory_working_set_bytes": 9000, "container_cpu_cfs_throttled_periods_total": 6000,
@@ -81,6 +85,31 @@ struct FakePromProfile: Sendable {
         return profile
     }()
 
+    /// DCGM exporter's metrics (decision 12): the GPU operator's, without profiling.
+    static let dcgmMetrics = [
+        KubePromProfile.dcgmUtilisation: 8, KubePromProfile.dcgmMemoryUsed: 8, KubePromProfile.dcgmMemoryFree: 8, KubePromProfile.dcgmPower: 8,
+        KubePromProfile.dcgmTemperature: 8,
+    ]
+
+    /// kube-prometheus-stack beside NVIDIA's GPU operator: DCGM exporter
+    /// scraped with `honor_labels` off (the pod's labels `exported_*`),
+    /// `Hostname` its node.
+    static let gpuOperator: FakePromProfile = {
+        var profile = kubePrometheusStack
+        profile.metrics.merge(dcgmMetrics) { $1 }
+        profile.dcgm = ["exported_pod", "pod", "exporter", "pod_other", "Hostname"]
+        return profile
+    }()
+
+    /// The same with no GPU allocated anywhere when probed: no
+    /// `exported_pod` yet, every series' `pod` the exporter's own
+    /// (`nvidia-dcgm-exporter-…`), never a GPU's holder.
+    static let gpuOperatorIdle: FakePromProfile = {
+        var profile = gpuOperator
+        profile.dcgm = ["pod", "exporter", "Hostname"]
+        return profile
+    }()
+
     /// Prometheus in agent mode: every query `unavailable with Prometheus Agent`.
     static let agentMode = FakePromProfile(metrics: [:], cadvisor: [], ksmJobs: [], nodeLabel: false, scrape: 30, agentMode: true)
 }
@@ -107,6 +136,12 @@ extension FakeKubeAPI {
         setPrometheusMatrix(#""overterm_s","cadvisor""#, duplicates)
         let samples = 600 / profile.scrape
         setPrometheusMatrix("count_over_time(up{", [FakePromFixture.Line { _ in 600 / samples }])
+        if profile.dcgm.isEmpty {
+            clearPrometheusMatrix(KubePromProfile.dcgmMemoryUsed + "{exported_pod")
+        } else {
+            setPrometheusMatrix(
+                KubePromProfile.dcgmMemoryUsed + "{exported_pod", profile.dcgm.map { tag in FakePromFixture.Line(["overterm_s": tag]) { _ in 4 } })
+        }
         if let retention = profile.retention {
             setPrometheusMatrix(KubePromProfile.retentionQuery, [FakePromFixture.Line { _ in retention }])
         } else {

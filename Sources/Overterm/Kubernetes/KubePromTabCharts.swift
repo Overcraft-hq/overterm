@@ -20,10 +20,10 @@ enum KubePromTabCharts {
     static func families(_ subject: KubeMetricsSubject, source: KubeChartSource) -> Set<KubeTabFamily> {
         let all: Set<KubeTabFamily>
         switch subject {
-        case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss, .fs]
-        case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics]
+        case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss, .fs, .gpu]
+        case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics, .gpu]
         case .hpa: all = [.hpa, .hpaMetrics]
-        case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory, .disks, .nodeNetwork]
+        case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory, .disks, .nodeNetwork, .gpu]
         case .namespace: all = [.cpu, .memory, .phases, .quota, .idle]
         }
         switch source {
@@ -230,7 +230,8 @@ enum KubePromTabCharts {
         let hasSamples = (podCharts + sections.flatMap(\.charts)).contains { $0.data.usage.contains { !$0.points.isEmpty } }
         let charts = KubePodCharts(
             range: .hour, pod: podCharts, sections: sections, caption: caption(reading, window: window), span: window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
-            hasSamples: hasSamples || reading.read != nil, notes: notes(reading) + fsNotes(reading))
+            hasSamples: hasSamples || reading.read != nil,
+            notes: notes(reading) + fsNotes(reading) + KubeGPUCharts.notes(reading, span: span, whose: .pod, window: window))
         var marked = changes
         marked.ooms = ooms(reading, namesPods: false, exact: KubeChartMarkers.pods(changes.restarts, namesPods: false))
         return KubeChartMarkers.mark(charts, pod: name, changes: marked, window: nil, now: span.end)
@@ -297,6 +298,8 @@ enum KubePromTabCharts {
                     headline: headline.isEmpty ? nil : headline, chips: drops > 0 ? [KubeChartChip(text: String(format: "drops %.1f/s", drops), alert: true)] : []))
         }
         if let restarts = restartsChart(id: "pod.\(subject).restarts", reading, span: span) { out.append(restarts) }
+        // G1–G3: its containers' GPUs, DCGM exporter's.
+        out += KubeGPUCharts.charts(subject: "pod.\(subject)", reading: reading, span: span, whose: .pod)
         return out
     }
 
@@ -350,7 +353,7 @@ enum KubePromTabCharts {
         }
         charts.caption +=
             " · throttling, network, restarts and ephemeral storage from Prometheus over \(KubePromQL.duration(span.end.timeIntervalSince(span.start))) at \(KubePromQL.duration(span.step))"
-        charts.notes += notes(reading) + fsNotes(reading)
+        charts.notes += notes(reading) + fsNotes(reading) + KubeGPUCharts.notes(reading, span: span, whose: .pod, window: nil)
         return charts
     }
 
@@ -461,7 +464,10 @@ enum KubePromTabCharts {
             let hpaCharts = hpaCharts(namespace: input.namespace, name: hpa.name, reading: reading, span: span)
             if !hpaCharts.isEmpty { groups.append(KubeObjectCharts.Group(title: "Autoscaler \(hpa.name)", charts: hpaCharts)) }
         }
-        let said = notes(reading)
+        // G1–G3: its pods' GPUs, after its own charts.
+        let gpus = KubeGPUCharts.group(subject: subject, reading: reading, whose: .workload, window: input.window)
+        if let group = gpus.group { groups.insert(group, at: 1) }
+        let said = unique(notes(reading) + gpus.notes)
         let hasSamples = charts.contains { $0.data.usage.contains { !$0.points.isEmpty } }
         let built = KubeObjectCharts(
             range: .hour, groups: groups, caption: caption(reading, window: input.window), span: input.window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
@@ -628,6 +634,9 @@ enum KubePromTabCharts {
                     headline: count.last.map { "\(Int($0.value)) active" }, chips: percent.map { [KubeChartChip(text: "\($0)% of allocatable", alert: $0 >= 90)] } ?? []))
         }
         var groups = [KubeObjectCharts.Group(title: "Node", charts: charts)]
+        // G1–G3: its GPUs, DCGM exporter's, after its own charts.
+        let gpus = KubeGPUCharts.group(subject: subject, reading: reading, whose: .node, window: window)
+        if let group = gpus.group { groups.append(group) }
         // K3: its largest pods by the range's mean, stacked.
         func top(_ id: String, _ isCPU: Bool) -> KubePodCharts.Chart? {
             guard let answer = reading.results[id], !answer.isEmpty else { return nil }
@@ -659,7 +668,8 @@ enum KubePromTabCharts {
         if let group = exporter.group { groups.append(group) }
         let built = KubeObjectCharts(
             range: .hour, groups: groups, caption: caption(reading, window: window), span: window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
-            hasSamples: charts.contains { $0.data.usage.contains { !$0.points.isEmpty } } || reading.read != nil, notes: unique(notes(reading) + exporter.notes))
+            hasSamples: charts.contains { $0.data.usage.contains { !$0.points.isEmpty } } || reading.read != nil,
+            notes: unique(notes(reading) + gpus.notes + exporter.notes))
         return KubeChartMarkers.mark(built, changes: changes, window: nil, now: span.end)
     }
 

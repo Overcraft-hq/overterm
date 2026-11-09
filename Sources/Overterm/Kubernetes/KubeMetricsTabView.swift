@@ -26,6 +26,7 @@ struct KubeMetricsTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 controls(caption: charts?.caption)
                 Rectangle().fill(theme.border).frame(height: 1)
+                gpus
                 if let charts, charts.hasSamples {
                     KubePodChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
@@ -43,6 +44,7 @@ struct KubeMetricsTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 controls(caption: charts?.caption, workloadView: charts?.view)
                 Rectangle().fill(theme.border).frame(height: 1)
+                gpus
                 if let charts, charts.charts.contains(where: { chart in chart.data.usage.contains { !$0.points.isEmpty } }) {
                     KubeObjectChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
@@ -55,6 +57,14 @@ struct KubeMetricsTabView: View {
             }
             .onContinuousHover { _ in page.noteMetricsInput() }
             .accessibilityIdentifier(Self.identifier)
+        }
+    }
+
+    /// What the objects say of its GPUs (decision 12), above the charts whatever their source.
+    @ViewBuilder private var gpus: some View {
+        if let allocation = page.gpuAllocation(of: session) {
+            KubeGPUAllocationView(allocation: allocation, theme: theme, open: { [weak page] in page?.openGPUHolder($0) })
+            Rectangle().fill(theme.border).frame(height: 1)
         }
     }
 
@@ -315,6 +325,51 @@ struct KubeObjectChartsList: View {
             }
             .padding(14)
         }
+    }
+}
+
+/// A detail's GPUs as its objects say them: each resource allocated
+/// against what is offered, who holds them (a node's pods open on a
+/// click), and how the numbers were read.
+struct KubeGPUAllocationView: View {
+    static let identifier = "kubernetes.metrics.gpus"
+
+    var allocation: KubeGPUAllocation
+    @ObservedObject var theme: ChromeTheme
+    var open: ((KubeRowID) -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(verbatim: "GPUs").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            ForEach(allocation.resources) { resource in
+                Text(verbatim: allocation.lines[allocation.resources.firstIndex(of: resource) ?? 0]).font(.system(size: 12)).foregroundStyle(theme.text)
+            }
+            ForEach(allocation.holders) { holder in
+                let line = allocation.lines[allocation.resources.count + (allocation.holders.firstIndex(of: holder) ?? 0)]
+                if let pod = holder.pod, let open {
+                    Button {
+                        open(pod)
+                    } label: {
+                        Text(verbatim: line).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open \(pod.description)")
+                    .accessibilityIdentifier("kubernetes.metrics.gpus.holder")
+                } else {
+                    Text(verbatim: line).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                }
+            }
+            ForEach(allocation.notes, id: \.self) { note in
+                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .textSelection(.enabled)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Contained, not combined: each holder's button stays its own element, its open reachable.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(Self.identifier)
     }
 }
 

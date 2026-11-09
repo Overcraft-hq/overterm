@@ -399,6 +399,8 @@ final class KubernetesPageModel: ObservableObject {
     @Published var customRangeShown = false
     /// A pod's or a workload's facts the tab's queries need, by its object's version.
     var tabFactsCache: (key: String, subject: KubeTabSubject?)?
+    /// The detail's GPUs as its objects say them (decision 12), by what they were read from.
+    var gpuCache: (key: String, allocation: KubeGPUAllocation?)?
     /// The pods' states read for the Metrics tab's markers (the pod's,
     /// a workload's pods'), and the restarts seen between reads: the
     /// detail shown's, dropped with it.

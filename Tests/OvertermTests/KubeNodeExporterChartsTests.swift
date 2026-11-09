@@ -217,7 +217,7 @@ final class KubeNodeExporterChartsTests: XCTestCase {
 
     func testReadOnlyWhileShownAndInLiveToo() {
         XCTAssertEqual(KubePromTabCharts.readWhenShown[KubePromTabCharts.nodeExporterTitle], [.disks, .nodeNetwork])
-        XCTAssertEqual(KubePromTabCharts.families(.node, source: .mixed), [.disks, .nodeNetwork], "no sampled form: Prometheus' in Live")
+        XCTAssertEqual(KubePromTabCharts.families(.node, source: .mixed), [.disks, .nodeNetwork, .gpu], "no sampled form: Prometheus' in Live")
         XCTAssertTrue(KubePromTabCharts.families(.node, source: .prometheus).isSuperset(of: [.disks, .nodeNetwork]))
         XCTAssertEqual(KubePromTabCharts.families(.node, source: .sampled), [])
         XCTAssertFalse(KubePromTabCharts.families(.pod, source: .prometheus).contains(.disks), "a node's alone")

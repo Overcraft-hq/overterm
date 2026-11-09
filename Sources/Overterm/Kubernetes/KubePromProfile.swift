@@ -11,7 +11,8 @@ import Foundation
 ///
 /// Four instant queries, one after another, each `timeout=20s`
 /// (`probe`): the third needs the second's cAdvisor job, the fourth only
-/// where Prometheus scrapes itself. A first query that Prometheus refuses
+/// where Prometheus scrapes itself — and a fifth only where DCGM
+/// exporter is scraped (its labels, metrics.md decision 12). A first query that Prometheus refuses
 /// leaves the profile unknown — the charts read as they did before it
 /// (raw cAdvisor, a minute's scrape, nothing pinned) — and one that says
 /// it is an agent marks the server agent-only: never asked within the hour.
@@ -55,6 +56,40 @@ struct KubePromProfile: Equatable, Sendable {
     /// refused, said so. Never kept with the profile — counted again at
     /// the next refresh.
     var uncounted: Set<String> = []
+    /// How DCGM exporter's series are labelled (query 5), where the first
+    /// query found it; nil, not there or not read.
+    var dcgm: DCGM?
+
+    /// DCGM exporter's labels (metrics.md decision 12): the GPU's pod,
+    /// namespace and container as `pod`, or as `exported_pod` where
+    /// Prometheus scrapes it with `honor_labels` off (then `pod` is the
+    /// exporter's own); the node as `Hostname` (the exporter's), else a
+    /// relabelled `node`; MIG instances by `GPU_I_PROFILE`.
+    struct DCGM: Equatable, Sendable {
+        /// `exported_` or ``: the prefix of its pod, namespace and container labels.
+        var podPrefix: String
+        /// Its series name the pods holding the GPUs (its Kubernetes mapping on).
+        var namesPods: Bool
+        /// The label that names a node: `Hostname`, `node`; nil, none.
+        var nodeLabel: String?
+        var mig: Bool
+
+        var pod: String { podPrefix + "pod" }
+        var namespace: String { podPrefix + "namespace" }
+        var container: String { podPrefix + "container" }
+
+        /// The exporter's own pod and container, as its DaemonSet names them
+        /// (the GPU operator's `nvidia-dcgm-exporter`, the chart's `dcgm-exporter`).
+        static let exporterPod = ".*dcgm-exporter.*"
+        static let exporterContainer = "(nvidia-)?dcgm-exporter"
+
+        /// A series' pod (and container) label that is the exporter's own
+        /// target label, never a GPU's holder.
+        static func isExporter(pod: String?, container: String?) -> Bool {
+            if let container, container == "dcgm-exporter" || container == "nvidia-dcgm-exporter" { return true }
+            return pod?.contains("dcgm-exporter") == true
+        }
+    }
 
     /// Nothing known: the charts as before the probe.
     static let unknown = KubePromProfile(probed: .distantPast)
@@ -91,6 +126,15 @@ struct KubePromProfile: Equatable, Sendable {
     static let nodeCPURule = "instance:node_cpu_utilisation:rate5m"
     static let nodeMemoryRule = "instance:node_memory_utilisation:ratio"
     static let nodeCPUCountRule = "instance:node_num_cpu:sum"
+    /// DCGM exporter's: a GPU's utilisation (0–100, not reported by a MIG
+    /// instance), its graphics engine's activity (0–1, the profiling
+    /// metrics), framebuffer used and free (MiB), power (W), temperature (°C).
+    static let dcgmUtilisation = "DCGM_FI_DEV_GPU_UTIL"
+    static let dcgmEngineActive = "DCGM_FI_PROF_GR_ENGINE_ACTIVE"
+    static let dcgmMemoryUsed = "DCGM_FI_DEV_FB_USED"
+    static let dcgmMemoryFree = "DCGM_FI_DEV_FB_FREE"
+    static let dcgmPower = "DCGM_FI_DEV_POWER_USAGE"
+    static let dcgmTemperature = "DCGM_FI_DEV_GPU_TEMP"
 
     /// kube-state-metrics' major version: 2 with `…_requests{resource}`,
     /// 1 with only `…_requests_cpu_cores` (its HPA label is then `hpa`);
@@ -117,6 +161,8 @@ struct KubePromProfile: Equatable, Sendable {
     var hasNodeExporter: Bool { has("node_cpu_seconds_total") && has("node_memory_MemAvailable_bytes") && has("node_memory_MemTotal_bytes") }
     /// node-exporter's instances map to nodes (`node_uname_info`'s nodename).
     var nodeExporterMapped: Bool { has("node_uname_info") }
+    /// DCGM exporter is scraped: its framebuffer gauge, which MIG instances report too.
+    var hasDCGM: Bool { has(Self.dcgmMemoryUsed) }
     var hasThrottling: Bool { mayHave("container_cpu_cfs_throttled_periods_total") && mayHave("container_cpu_cfs_periods_total") }
 
     // MARK: Pins
@@ -145,6 +191,7 @@ struct KubePromProfile: Equatable, Sendable {
         KubePromQL.nodeFilesystemMetric, KubePromQL.nodeNetworkMetric,
         "kubelet_volume_stats_used_bytes", "kubelet_volume_stats_inodes_used", containerCPURate5m, containerCPUIrate, containerMemoryRule,
         workloadRule, activeRequestsRule, nodeCPURule, nodeMemoryRule, nodeCPUCountRule,
+        dcgmUtilisation, dcgmEngineActive, dcgmMemoryUsed, dcgmMemoryFree, dcgmPower, dcgmTemperature,
         "prometheus_tsdb_lowest_timestamp_seconds",
     ]
 
@@ -172,6 +219,44 @@ struct KubePromProfile: Equatable, Sendable {
 
     /// 4. How far back it keeps data.
     static let retentionQuery = "min(prometheus_tsdb_lowest_timestamp_seconds)"
+
+    /// 5. Only where query 1 found DCGM exporter: how its series name a
+    /// GPU's pod (`exported_pod` first: with `honor_labels` off, `pod` is
+    /// the exporter's own), its node, and whether it reports MIG
+    /// instances — one union over its framebuffer gauge, a series a GPU.
+    /// `pod` is told apart from the exporter's own target label: `exporter`
+    /// counts the series whose pod or container is DCGM exporter's,
+    /// `pod_other` those naming some other pod — with no GPU allocated at
+    /// probe time and `honor_labels` off there is no `exported_pod` yet,
+    /// and every series' `pod` is the exporter's.
+    static var dcgmQuery: String {
+        let selectors = [
+            ("exported_pod!=\"\"", "exported_pod"), ("pod!=\"\"", "pod"),
+            ("pod!=\"\",pod!~\"\(DCGM.exporterPod)\",container!~\"\(DCGM.exporterContainer)\"", "pod_other"), ("Hostname!=\"\"", "Hostname"),
+            ("node!=\"\"", "node"), ("GPU_I_PROFILE!=\"\"", "mig"),
+        ]
+        var arms = selectors.map { #"label_replace(count(\#(dcgmMemoryUsed){\#($0.0)}),"overterm_s","\#($0.1)","","")"# }
+        let exporter =
+            "count(\(dcgmMemoryUsed){pod=~\"\(DCGM.exporterPod)\"} or \(dcgmMemoryUsed){container=~\"\(DCGM.exporterContainer)\"})"
+        arms.insert(#"label_replace(\#(exporter),"overterm_s","exporter","","")"#, at: 2)
+        return arms.joined(separator: " or ")
+    }
+
+    /// Query 5's answer. `exported_pod` seen: those labels. Else a `pod`
+    /// naming some pod not the exporter's (`honor_labels` on): `pod`. Else
+    /// a `pod` that is only ever the exporter's own: never taken as the
+    /// GPU's holder — the `exported_*` labels are read, which DCGM's
+    /// Kubernetes mapping sets once a pod takes a GPU. No `pod` at all:
+    /// none named.
+    static func dcgm(_ series: [KubeSeries]) -> DCGM {
+        func seen(_ tag: String) -> Bool { series.contains { $0.labels["overterm_s"] == tag && ($0.points.last?.value ?? 0) > 0 } }
+        let exported = seen("exported_pod")
+        let other = seen("pod_other")
+        let exporterOnly = !exported && !other && seen("exporter")
+        return DCGM(
+            podPrefix: exported || exporterOnly ? "exported_" : "", namesPods: exported || other || exporterOnly,
+            nodeLabel: seen("Hostname") ? "Hostname" : seen("node") ? "node" : nil, mig: seen("mig"))
+    }
 
     // MARK: Reading the answers
 
@@ -266,6 +351,7 @@ struct KubePromProfile: Equatable, Sendable {
         if profile.has("prometheus_tsdb_lowest_timestamp_seconds"), let answer = try await part(retentionQuery) {
             profile.retention = retention(KubePrometheusReader.value(answer.series))
         }
+        if profile.hasDCGM, let answer = try await part(dcgmQuery) { profile.dcgm = dcgm(answer.series) }
         return profile
     }
 }
