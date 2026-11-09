@@ -178,8 +178,8 @@ extension TerminalWindowController {
             newTab: { [weak self] in self?.newTab(in: $0) },
             chooseVault: { [weak self] in self?.chooseNotesVault() },
             openAt: { [weak self] url, line in self?.openNote(url, line: line) },
-            toggleTask: { [weak self] url, line, text in self?.toggleNoteTask(url, line: line, text: text) }
-        )
+            toggleTask: { [weak self] url, line, text in self?.toggleNoteTask(url, line: line, text: text) },
+            move: { [weak self] urls, folder in self?.moveNotes(urls, into: folder) })
     }
 
     /// The notes' graph in the right-hand pane (which takes the slot, as
@@ -279,6 +279,24 @@ extension TerminalWindowController {
             guard self.notes.vault.contains(target) else { return "The name can't leave the vault." }
             self.moveNote(url, to: target)
             return nil
+        }
+    }
+
+    /// A drop in the Notes panel: each note, file or folder into `folder`
+    /// (NoteMove), the links to it written again — not onto a name there is
+    /// already, nor out of the vault.
+    func moveNotes(_ urls: [URL], into folder: URL) {
+        let root = notes.vault.root
+        for url in urls {
+            guard let target = NoteMove.target(of: url, into: folder, vault: root) else { continue }
+            if FileManager.default.fileExists(atPath: target.path) {
+                reportNotesError(
+                    NSError(
+                        domain: "Overterm", code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "There is a “\(target.lastPathComponent)” in \(notes.vault.relativePath(of: folder)) already."]))
+                continue
+            }
+            moveNote(url, to: target)
         }
     }
 

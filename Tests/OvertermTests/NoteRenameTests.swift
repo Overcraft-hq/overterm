@@ -47,6 +47,17 @@ final class NoteRenameTests: XCTestCase {
         XCTAssertNil(result["Old/One.md"], "[[Two]] still finds Two beside it")
     }
 
+    /// A folder dropped into another in the Notes panel: a link to a file in
+    /// it still finds it — Obsidian matches a path's end, so nothing breaks,
+    /// and nothing is written again.
+    func testAFolderMovedIntoAnotherKeepsItsLinksFinding() {
+        let notes = ["Inbox/Deep.md": "", "Archive/Keep.md": "", "Linking.md": "See [the deep one](Inbox/Deep.md) and [[Inbox/Deep]]."]
+        XCTAssertTrue(run(notes, rename: "Inbox", to: "Archive/Inbox").isEmpty, "no link breaks")
+        let after = LinkResolver(files: ["Archive/Inbox/Deep.md", "Archive/Keep.md", "Linking.md"])
+        XCTAssertEqual(after.resolve("Inbox/Deep.md", from: "Linking.md"), "Archive/Inbox/Deep.md")
+        XCTAssertEqual(after.resolve("Inbox/Deep", from: "Linking.md"), "Archive/Inbox/Deep.md")
+    }
+
     func testMarkdownLinksKeepTheirShape() {
         let result = run(
             ["My Plan.md": "", "Notes/A.md": "[the plan](../My%20Plan.md#Top) ![](../img.png) [web](https://x.dev)", "img.png": ""],

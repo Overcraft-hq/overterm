@@ -9,6 +9,8 @@ version is tagged `v<version>`.
 ## 1.5.4 — 2026-11-09
 
 - database: a connection whose password can't be had says why — none saved, or the keychain refused — and saving one no longer fails silently
+- notes: notes, files and folders drag in the panel — onto a folder, or beside a note — their links following
+- notes: a character typed in Live Preview no longer shows as another for a moment ("." as "e")
 
 ## 1.5.3 — 2026-11-04
 

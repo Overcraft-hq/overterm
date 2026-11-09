@@ -26,6 +26,9 @@ struct NotesActions {
     var openAt: (URL, Int) -> Void = { _, _ in }
     /// Ticks the task on a line of a note (with these words), where it is written.
     var toggleTask: (URL, Int, String) -> Void = { _, _, _ in }
+    /// Notes, files or folders dropped on a folder: moved into it, the links
+    /// to them written again.
+    var move: ([URL], URL) -> Void = { _, _ in }
 }
 
 /// The sidebar's Notes panel: the vault's folders and notes, Obsidian's
@@ -217,6 +220,12 @@ struct NotesPanelView: View {
             .padding(.vertical, 4)
         }
         .contextMenu { folderMenu(model.vault.root) }
+        // Dropped below the rows: to the vault's top.
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            let root = model.vault.root
+            DroppedURLs.load(providers) { actions.move($0, root) }
+            return true
+        }
     }
 
     /// The notes the picked tag is on, as paths.
@@ -257,8 +266,12 @@ private struct NoteRowView: View {
     @ObservedObject var theme: ChromeTheme
     let actions: NotesActions
     @State private var hovering = false
+    /// A drag is over this row: it shows where a drop goes.
+    @State private var dropping = false
 
     private var item: NoteItem { row.item }
+    /// A drop on a folder goes into it; on a note, beside it.
+    private var dropFolder: URL { item.isFolder ? item.url : item.url.deletingLastPathComponent() }
     private var isCurrent: Bool { model.current?.standardizedFileURL == item.url.standardizedFileURL }
 
     private var symbol: String {
@@ -310,6 +323,16 @@ private struct NoteRowView: View {
             }
         }
         .onDrag { FileTreeDrag.item(for: item.url) }
+        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+            let folder = dropFolder
+            DroppedURLs.load(providers) { actions.move($0, folder) }
+            return true
+        }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 6).strokeBorder(theme.accent, lineWidth: 1.5).padding(.horizontal, 4).allowsHitTesting(false)
+            }
+        }
         .contextMenu { menu }
         .help(model.vault.relativePath(of: item.url))
         .accessibilityIdentifier("note-\(model.vault.relativePath(of: item.url))")
