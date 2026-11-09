@@ -393,7 +393,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     inform: { [weak self] title, detail in self?.informAPI(title: title, detail: detail) },
                     editSecrets: { [weak self] environment, collection in self?.editAPISecrets(environment, in: collection) },
                     rename: { [weak self] item, name in try self?.renameAPIItem(item, to: name) ?? item.url },
-                    trash: { [weak self] item in self?.trashItem(item.url) }
+                    trash: { [weak self] item in self?.trashItem(item.url) },
+                    openDocs: { [weak self] in self?.openAPIDocs($0) }
                 ),
                 notesActions: notesActions,
                 databaseActions: databaseActions,
@@ -1888,6 +1889,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Shows `url` in the editor pane beside the terminal (after any
     /// unsaved-changes question about the file already open).
+    /// A request in the editor on its Docs tab — the file opens, its model
+    /// is made with it, a moment later.
+    func openAPIDocs(_ url: URL) {
+        openInEditor(url)
+        let target = url.standardizedFileURL
+        Task { [weak self] in
+            for _ in 0..<20 {
+                if let buffer = self?.editor?.buffers.first(where: { $0.url?.standardizedFileURL == target }), let request = buffer.request {
+                    request.requestTab = .docs
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
+
     func openInEditor(_ url: URL, line: Int? = nil) {
         guard let editor, let editorItem else { return }
         editor.open(url) { [weak self] opened in

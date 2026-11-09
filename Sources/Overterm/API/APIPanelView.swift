@@ -18,6 +18,8 @@ struct APIActions {
     var rename: (_ item: APIItem, _ name: String) throws -> URL
     /// Asks, then moves it to the Trash, its tabs closing — as Files does.
     var trash: (_ item: APIItem) -> Void
+    /// A request's .bru, or a folder's folder.bru, open on its Docs.
+    var openDocs: (URL) -> Void = { _ in }
 }
 
 /// The sidebar's API panel: the checkout's Bruno collection — its
@@ -31,6 +33,16 @@ struct APIPanelView: View {
     @State private var expanded: Set<String> = []
     @State private var seeded: Set<String> = []
     @State private var selection: String?
+    /// A folder's (or the collection's) docs, read in a sheet.
+    @State private var docs: FolderDocs?
+
+    /// What the docs sheet shows: whose, and the file they are kept in.
+    struct FolderDocs: Identifiable {
+        let title: String
+        let text: String
+        let file: URL
+        var id: String { file.path }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +63,12 @@ struct APIPanelView: View {
                     .accessibilityIdentifier("apiNew")
                 }
                 if let collection = workspace.collection {
+                    if let text = collection.collectionFile?.docs, !text.isEmpty {
+                        PanelHeaderButton(
+                            symbol: "doc.text", help: "The collection's docs",
+                            action: { docs = FolderDocs(title: collection.name, text: text, file: collection.root.appendingPathComponent("collection.bru")) },
+                            theme: theme)
+                    }
                     PanelHeaderButton(
                         symbol: "play", help: "Run the collection", action: { actions.run([collection.tree], collection.name) }, theme: theme)
                 }
@@ -70,6 +88,14 @@ struct APIPanelView: View {
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
+        .sheet(item: $docs) { shown in
+            APIFolderDocsSheet(
+                docs: shown, theme: theme,
+                edit: {
+                    docs = nil
+                    actions.open(shown.file)
+                }, done: { docs = nil })
+        }
     }
 
     // MARK: Collection and environment
@@ -234,6 +260,9 @@ struct APIPanelView: View {
         Button("New Request…") { newRequest(in: folder) }
         Button("New Folder…") { newFolder(in: folder) }
         Divider()
+        if item.hasDocs {
+            Button("Show Docs") { item.isFolder ? showDocs(of: item) : actions.openDocs(item.url) }
+        }
         if item.isFolder {
             Button("Run Folder") { actions.run([item], item.name) }
             Button("Folder Settings") { openFolderSettings(item) }
@@ -437,6 +466,12 @@ struct APIPanelView: View {
         }
     }
 
+    /// A folder's docs, from its folder.bru, in the sheet.
+    private func showDocs(of item: APIItem) {
+        guard let text = BrunoCollection.folderFile(item.url)?.docs, !text.isEmpty else { return }
+        docs = FolderDocs(title: item.name, text: text, file: item.url.appendingPathComponent("folder.bru"))
+    }
+
     /// folder.bru — its headers, auth, vars and scripts — made if missing.
     private func openFolderSettings(_ item: APIItem) {
         let file = item.url.appendingPathComponent("folder.bru")
@@ -497,6 +532,12 @@ private struct APIRowView: View {
                 .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            if item.hasDocs {
+                Image(systemName: "doc.text")
+                    .font(.system(size: ChromeMetrics.text(9)))
+                    .foregroundStyle(theme.text3)
+                    .help("Has docs — right-click ▸ Show Docs")
+            }
             Spacer(minLength: 0)
             if isSending {
                 ProgressView().controlSize(.mini)
@@ -521,5 +562,29 @@ private struct APIRowView: View {
         .onTapGesture(perform: tap)
         .help(item.url.path)
         .accessibilityIdentifier("apiRow-\(item.name)")
+    }
+}
+
+/// A folder's or the collection's docs, rendered, with the file a click away.
+private struct APIFolderDocsSheet: View {
+    let docs: APIPanelView.FolderDocs
+    @ObservedObject var theme: ChromeTheme
+    let edit: () -> Void
+    let done: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: "doc.text").foregroundStyle(theme.text3)
+                Text(verbatim: docs.title).font(.headline)
+                Spacer()
+                Button("Edit \(docs.file.lastPathComponent)", action: edit)
+                Button("Done", action: done).keyboardShortcut(.defaultAction)
+            }
+            .padding(14)
+            Divider()
+            APIDocsView(text: .constant(docs.text), theme: theme, readOnly: true)
+        }
+        .frame(width: 560, height: 460)
     }
 }

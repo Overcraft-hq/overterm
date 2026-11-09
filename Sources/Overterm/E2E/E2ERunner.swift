@@ -588,8 +588,14 @@ final class E2ERunner {
               });
             }
 
+            docs {
+              # Echo
+
+              Sends the body back. Needs **X-App**, from the collection.
+            }
+
             """)
-        write("Users/folder.bru", "meta {\n  name: Users\n  seq: 1\n}\n")
+        write("Users/folder.bru", "meta {\n  name: Users\n  seq: 1\n}\n\ndocs {\n  # Users\n  \n  Who can sign in, and **how**.\n}\n")
         write(
             "Users/Missing.bru",
             BruFile.newRequest(name: "Missing", url: "{{baseUrl}}/status/404", seq: 1).text + "\nassert {\n  res.status: eq 200\n}\n")
@@ -616,6 +622,34 @@ final class E2ERunner {
                 "panel \(frame) column \(column) window \(window.frame.width)")
         }
         api.environmentName = "Local"
+
+        // Bruno's docs: marked in the panel, read rendered.
+        let items = api.collection?.tree.children ?? []
+        check(
+            "a request and a folder with docs are marked so",
+            items.first { $0.name == "Echo" }?.hasDocs == true && items.first { $0.name == "Users" }?.hasDocs == true
+                && items.first { $0.name == "Users" }?.children?.first?.hasDocs == false,
+            items.map { "\($0.name) docs=\($0.hasDocs) children=\($0.children?.map { "\($0.name):\($0.hasDocs)" } ?? [])" }.joined(separator: "; "))
+        app.openAPIDocs(root.appendingPathComponent("Echo.bru"))
+        if let editor = app.editor {
+            check(
+                "Show Docs opens the request on its Docs",
+                await eventually(3) { editor.active?.url?.lastPathComponent == "Echo.bru" && editor.active?.request?.requestTab == .docs })
+            let rendered = await eventually(3) {
+                guard let host = editor.requestHost, let preview = Self.find(MarkdownPreviewView.self, in: host, where: { _ in true }) else { return false }
+                let text = preview.renderedText.string
+                return text.contains("Sends the body back") && !text.contains("**")
+            }
+            check("read rendered, not as Markdown", rendered)
+            if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+                await pause(0.4)
+                app.captureWindow(to: (png as NSString).deletingPathExtension + "-docs.png")
+            }
+            // A folder's docs are read in the panel's sheet, from its folder.bru.
+            check(
+                "a folder's docs come from its folder.bru",
+                BrunoCollection.folderFile(root.appendingPathComponent("Users"))?.docs?.contains("Who can sign in") == true)
+        }
 
         let echo = root.appendingPathComponent("Echo.bru")
         app.openInEditor(echo)

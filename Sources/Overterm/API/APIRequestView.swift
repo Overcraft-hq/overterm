@@ -111,7 +111,7 @@ struct APIRequestView: View {
                         text: textBinding(\.tests), language: "javascript",
                         placeholder: "test(\"status\", () => expect(res.status).to.equal(200));", accessibilityIdentifier: "apiTests")
                 case .docs:
-                    APICodeView(text: textBinding(\.docs), language: "markdown", wraps: true)
+                    APIDocsView(text: textBinding(\.docs), theme: theme)
                 case .settings: settings
                 }
             }
@@ -586,5 +586,69 @@ struct APIAuthEditor: View {
             .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowHover.opacity(0.6)))
         }
+    }
+}
+
+/// A request's (or folder's, or collection's) `docs`, as Bruno keeps them:
+/// Markdown, read as it renders — the editor's preview (MarkdownRenderer),
+/// no web view — and the text behind it a click away.
+struct APIDocsView: View {
+    @Binding var text: String
+    @ObservedObject var theme: ChromeTheme
+    /// Shown only (a folder's, in the panel's sheet): edited in its file.
+    var readOnly = false
+    @State private var editing = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if !readOnly {
+                header
+            }
+            content
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Text(editing ? "Markdown" : "Docs").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text3)
+            Spacer()
+            Button(editing ? "Done" : (text.isEmpty ? "Write Docs" : "Edit")) { editing.toggle() }
+                .controlSize(.small)
+                .accessibilityIdentifier("apiDocsEdit")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder private var content: some View {
+        if editing {
+            APICodeView(text: $text, language: "markdown", wraps: true)
+        } else if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            VStack(spacing: 6) {
+                Text("No docs").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
+                Text("What this is for, what it needs, what it gives back — kept in the .bru file, as Bruno does.")
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            MarkdownDocs(markdown: text).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// The editor's Markdown preview, for a few lines of docs.
+private struct MarkdownDocs: NSViewRepresentable {
+    let markdown: String
+
+    func makeNSView(context: Context) -> MarkdownPreviewView {
+        let view = MarkdownPreviewView(theme: EditorViewController.makeTheme())
+        view.show(markdown)
+        return view
+    }
+
+    func updateNSView(_ view: MarkdownPreviewView, context: Context) {
+        view.theme = EditorViewController.makeTheme()
+        view.show(markdown)
     }
 }

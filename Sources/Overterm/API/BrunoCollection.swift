@@ -88,13 +88,13 @@ struct BrunoCollection: Equatable, Sendable {
                 requests.append(
                     APIItem(
                         url: child, name: file.name.isEmpty ? child.deletingPathExtension().lastPathComponent : file.name,
-                        method: file.method, seq: file.seq, children: nil))
+                        method: file.method, seq: file.seq, children: nil, hasDocs: file.docs?.isEmpty == false))
             }
         }
         // Bruno's sidebar: folders first, each list by seq, then name.
         let ordered = sorted(folders) + sorted(requests)
         let title = meta.map(\.name).flatMap { $0.isEmpty ? nil : $0 } ?? name ?? url.lastPathComponent
-        return APIItem(url: url, name: title, method: nil, seq: meta?.seq, children: ordered)
+        return APIItem(url: url, name: title, method: nil, seq: meta?.seq, children: ordered, hasDocs: meta?.docs?.isEmpty == false)
     }
 
     private static func sorted(_ items: [APIItem]) -> [APIItem] {
@@ -164,6 +164,8 @@ struct APIItem: Identifiable, Equatable, Hashable, Sendable {
     var seq: Int?
     /// A folder's contents; nil for a request.
     var children: [APIItem]?
+    /// Its `docs` block (a folder's, in folder.bru) says something.
+    var hasDocs = false
 
     var id: String { url.path }
     var isFolder: Bool { children != nil }
