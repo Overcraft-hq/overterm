@@ -65,9 +65,32 @@ enum KubeChartUnit: String, Sendable {
     case watts
     /// A GPU's temperature.
     case celsius
+    /// Events a second: a saved query's request rate (M8d).
+    case perSecond
+    /// A duration: a saved query's latency (M8d).
+    case seconds
 
     func format(_ value: Double) -> String {
-        switch self {
+        // A saved query's numbers are anyone's (a process's 2⁶⁴ virtual
+        // memory): past Int's range, `Int(…)` traps, so they are said plainly.
+        guard value.isFinite else { return value.isNaN ? "NaN" : value > 0 ? "+Inf" : "-Inf" }
+        // Bytes are scaled to Ei first, so only far past that (or negative).
+        let bytesLike = self == .bytes || self == .bytesPerSecond
+        if bytesLike ? value <= -1e15 || value >= 1e33 : abs(value) >= 1e15 {
+            let plain = String(format: "%.3g", self == .ratio ? value * 100 : value)
+            switch self {
+            case .ratio: return plain + "%"
+            case .perSecond: return plain + "/s"
+            case .seconds: return plain + " s"
+            case .cores: return plain + " cores"
+            case .bytes: return plain + " B"
+            case .bytesPerSecond: return plain + " B/s"
+            case .watts: return plain + " W"
+            case .celsius: return plain + " °C"
+            case .count: return plain
+            }
+        }
+        return switch self {
         case .cores: KubeMetricsFormat.cpu(value)
         case .bytes: KubeVolumeFormat.bytes(value)
         case .bytesPerSecond: KubeVolumeFormat.bytes(value) + "/s"
@@ -75,6 +98,12 @@ enum KubeChartUnit: String, Sendable {
         case .count: value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
         case .watts: value >= 100 ? "\(Int(value.rounded())) W" : String(format: "%.1f W", value)
         case .celsius: "\(Int(value.rounded())) °C"
+        case .perSecond:
+            abs(value) >= 1000 ? String(format: "%.1fk/s", value / 1000) : abs(value) >= 10 || value == value.rounded() ? "\(Int(value.rounded()))/s" : String(format: "%.2f/s", value)
+        case .seconds:
+            abs(value) >= 1
+                ? String(format: abs(value) >= 10 ? "%.0f s" : "%.2f s", value)
+                : abs(value) >= 0.001 ? "\(Int((value * 1000).rounded())) ms" : value == 0 ? "0 s" : "\(Int((value * 1_000_000).rounded())) µs"
         }
     }
 
@@ -87,6 +116,7 @@ enum KubeChartUnit: String, Sendable {
         case .ratio: 1
         case .count: 1
         case .watts, .celsius: 100
+        case .perSecond, .seconds: 1
         }
     }
 }

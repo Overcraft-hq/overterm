@@ -112,7 +112,7 @@ final class KubeMetricsSpanTests: XCTestCase {
         XCTAssertEqual(KubePromTabCharts.families(.namespace, source: .prometheus), [.cpu, .memory, .phases, .quota, .idle])
         XCTAssertEqual(KubePromTabCharts.families(.pod, source: .mixed), [.throttling, .network, .restarts, .oom, .fs, .gpu], "a GPU's only from DCGM (M8c)")
         XCTAssertEqual(KubePromTabCharts.families(.node, source: .mixed), [.disks, .nodeNetwork, .gpu], "a node's disks and network have no sampled form (M8b)")
-        XCTAssertEqual(KubePromTabCharts.families(.workload("Deployment"), source: .mixed), [.restarts, .oom, .gpu])
+        XCTAssertEqual(KubePromTabCharts.families(.workload("Deployment"), source: .mixed), [.restarts, .oom, .gpu, .saved], "its saved queries too (M8d)")
         XCTAssertTrue(KubePromTabCharts.families(.pod, source: .sampled).isEmpty)
     }
 

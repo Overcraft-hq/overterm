@@ -53,6 +53,13 @@ struct KubeTabReading: Equatable, Sendable {
     var ranking: KubeTabRanking?
     /// How its workload's (namespace's) pods were told.
     var selection: KubeTabSelection?
+    /// A saved query that drew nothing, by its id: refused before it was
+    /// sent, or what Prometheus answered — its chart's sentence, never the
+    /// tab's problem (the user's query failing says nothing of Prometheus).
+    var saved: [String: String] = [:]
+    /// A saved query Prometheus refused (`bad_data`, a 422), as sent: not
+    /// sent again while this reading lasts — an edit is another request.
+    var savedRejected: [String: String] = [:]
 
     /// A union's arms by their `overterm_s` tag.
     func tagged(_ id: String) -> [String: [KubeSeries]] {
@@ -913,7 +920,17 @@ final class KubePrometheusMonitor: ObservableObject {
                 tasks.append((query.id, task))
             }
         }
-        var plan = KubeTabQueries.plan(request, span: span, profile: profile, ranking: ranking)
+        // A saved query Prometheus refused isn't sent again: its sentence stands.
+        let rejected = reading.savedRejected
+        func planned() -> KubeTabPlan {
+            var plan = KubeTabQueries.plan(request, span: span, profile: profile, ranking: ranking)
+            for query in plan.queries where query.family == .saved {
+                if let why = rejected[query.promql] { plan.savedRefused[query.id] = why }
+            }
+            plan.queries.removeAll { $0.family == .saved && rejected[$0.promql] != nil }
+            return plan
+        }
+        var plan = planned()
         start(plan.queries)
         if let ranker {
             let started = tasks.map(\.1)
@@ -931,7 +948,7 @@ final class KubePrometheusMonitor: ObservableObject {
             if problem == nil { problem = rankProblem }
             // The ranking's names: their charts asked now.
             let asked = Set(plan.queries.map(\.id))
-            plan = KubeTabQueries.plan(request, span: span, profile: profile, ranking: ranking)
+            plan = planned()
             start(plan.queries.filter { !asked.contains($0.id) })
         }
         reading.ranking = ranking
@@ -953,6 +970,7 @@ final class KubePrometheusMonitor: ObservableObject {
         if Task.isCancelled { return reading }
         var notes = plan.notes + (reading.ranking?.notes ?? [])
         var answered = false
+        var saved = plan.savedRefused
         for query in plan.queries {
             guard let result = asked.first(where: { $0.0 == query.id })?.1 else { continue }
             switch result {
@@ -962,6 +980,19 @@ final class KubePrometheusMonitor: ObservableObject {
                 answered = true
             case .failure(let error):
                 if error is CancellationError { continue }
+                // The user's own query failing: its chart's sentence, unless it stops the context.
+                if query.family == .saved, Self.sentence(error, service: service).stops == false {
+                    let failure = error as? KubePrometheusReader.Failure
+                    if failure?.kind == .badData || failure?.kind == .unprocessable {
+                        let why = KubeSavedCharts.rejected(failure?.message ?? "")
+                        reading.savedRejected[query.promql] = why
+                        saved[query.id] = why
+                        reading.results[query.id] = nil
+                    } else {
+                        saved[query.id] = KubeSavedCharts.failed(Self.sentence(error, service: service).0)
+                    }
+                    continue
+                }
                 if let failure = error as? KubePrometheusReader.Failure, failure.kind == .notFound || failure.kind == .unprocessable {
                     profiles[context] = nil
                 }
@@ -973,6 +1004,7 @@ final class KubePrometheusMonitor: ObservableObject {
         reading.results = reading.results.filter { ids.contains($0.key) }
         reading.problem = problem
         reading.refused = plan.refused
+        reading.saved = saved
         reading.tier = plan.tier
         reading.selection = plan.selection
         reading.span = span

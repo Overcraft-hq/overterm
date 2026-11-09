@@ -195,9 +195,12 @@ extension KubernetesPageModel {
         for (group, read) in KubePromTabCharts.readWhenShown where !metricsGroupsShown.contains(group) { families.subtract(read) }
         // A GPU's charts only for an object with GPUs: nothing asked of DCGM for the rest.
         if families.contains(.gpu), gpuAllocation(of: session) == nil { families.remove(.gpu) }
+        // The context's saved queries, a workload's: none written, nothing asked.
+        let saved = families.contains(.saved) ? Array(savedCharts(of: session.ref).prefix(KubeSavedQueries.atMost)) : []
+        if saved.isEmpty { families.remove(.saved) }
         guard !families.isEmpty, let whose = tabSubject(of: session) else { return nil }
         let span: KubeTabRequest.Span = metricsWindow.map { .window($0) } ?? .range(shownMetricsRange(for: subject))
-        return KubeTabRequest(subject: whose, span: span, families: families)
+        return KubeTabRequest(subject: whose, span: span, families: families, saved: saved)
     }
 
     /// A group read only while on screen (a node's top pods, its disks and

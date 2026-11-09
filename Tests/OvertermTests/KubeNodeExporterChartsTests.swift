@@ -210,6 +210,9 @@ final class KubeNodeExporterChartsTests: XCTestCase {
         let sampled = KubeObjectCharts(range: .live, groups: [KubeObjectCharts.Group(title: "Node", charts: [])], caption: "", span: "", hasSamples: true)
         built.append(KubePromTabCharts.addNodeExporter(sampled, node: "ip-10-0-0-1", reading: nil, profile: .unknown))
         built.append(KubePromTabCharts.addNodeExporter(sampled, node: "ip-10-0-0-1", reading: reading, profile: stack))
+        // A workload's saved queries (M8d), pending and read.
+        built.append(KubeSavedCharts.add(sampled, subject: "w", saved: [KubeSavedChart(title: "R", query: "q")], reading: nil))
+        built.append(KubeSavedCharts.add(sampled, subject: "w", saved: [KubeSavedChart(title: "R", query: "q")], reading: reading))
         let readers = built.flatMap(\.groups).filter(\.readsWhenShown)
         XCTAssertEqual(Set(readers.map(\.title)), Set(KubePromTabCharts.readWhenShown.keys), "each title read, each one built")
         for group in readers { XCTAssertNotNil(KubePromTabCharts.readWhenShown[group.title], group.title) }

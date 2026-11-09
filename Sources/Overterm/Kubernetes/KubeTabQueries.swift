@@ -58,9 +58,12 @@ enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
     /// G1–G3: the GPUs' utilisation, framebuffer memory, power and
     /// temperature — DCGM exporter's (M8c); asked only of an object with GPUs.
     case gpu
+    /// A context's saved queries on a workload's tab (M8d, decision 11):
+    /// the user's own, `KubeTabRequest.saved`.
+    case saved
 
     /// The families with no sampled form: read from Prometheus in Live too.
-    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork, .gpu]
+    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork, .gpu, .saved]
 }
 
 /// What a tab wants of Prometheus: whose, over which range or window, which families.
@@ -75,6 +78,10 @@ struct KubeTabRequest: Hashable, Sendable {
     var subject: KubeTabSubject
     var span: Span
     var families: Set<KubeTabFamily>
+    /// The context's saved queries a workload's tab asks (`.saved`): its
+    /// first `KubeSavedQueries.atMost`, as settings.json says them now — an
+    /// edit there is another request.
+    var saved: [KubeSavedChart] = []
 
     /// Another request's answers stand for this one's until it is read:
     /// the same object over the same span, only its facts or families changed.
@@ -187,6 +194,8 @@ struct KubeTabPlan: Equatable, Sendable {
     var selection: KubeTabSelection?
     /// The profile's footnotes (kube-state-metrics old or missing…).
     var notes: [String] = []
+    /// A saved query not sent, by its id (`KubeSavedQueries.id`): why.
+    var savedRefused: [String: String] = [:]
 }
 
 enum KubeTabQueries {
@@ -434,6 +443,16 @@ enum KubeTabQueries {
                     KubePromQL.matchers([(dcgm.namespace, namespace)]), "\(dcgm.pod)=~\"" + KubePromQL.literal(podPattern(kind: kind, name: name)) + "\"",
                 ])
                 add("gpu", .gpu, KubePromQL.gpus(scope, by: dcgm.pod, profile: profile, gauge: gauge))
+            }
+            // The context's saved queries, filled in for this workload — or refused, said.
+            if wanted.contains(.saved) {
+                let rate = KubeRateWindow.of(step: span.step, scrape: profile.scrapeInterval)
+                for (index, chart) in request.saved.prefix(KubeSavedQueries.atMost).enumerated() {
+                    switch KubeSavedQueries.fill(chart.query, namespace: namespace, kind: kind, name: name, window: rate) {
+                    case .success(let promql): add(KubeSavedQueries.id(index), .saved, promql)
+                    case .failure(let refused): plan.savedRefused[KubeSavedQueries.id(index)] = refused.reason
+                    }
+                }
             }
 
         case .namespace(let namespace):
