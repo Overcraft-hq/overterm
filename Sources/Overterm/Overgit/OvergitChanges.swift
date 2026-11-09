@@ -260,3 +260,33 @@ struct CommitSearchField: View {
         .padding(.vertical, 4)
     }
 }
+
+/// The Branches section's filter, as the commits have theirs.
+struct BranchSearchField: View {
+    @ObservedObject var model: OvergitModel
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+            TextField("Filter branches", text: $model.branchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: ChromeMetrics.text(12)))
+                .accessibilityIdentifier("overgitBranchSearch")
+            if !model.branchQuery.isEmpty {
+                Button {
+                    model.branchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: ChromeMetrics.text(10)))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.text3)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: ChromeMetrics.row(24))
+        .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+}

@@ -144,6 +144,31 @@ struct BranchNode: Identifiable, Equatable {
 /// flattened to rows here rather than nested in the view, so scrolling a
 /// thousand branches costs what a list costs.
 enum BranchTree {
+    /// The branches whose name holds every word of `query` (any case,
+    /// any order): `pay fix` finds `fix/payments`. Empty: all of them.
+    static func matching(_ branches: [BranchRef], query: String) -> [BranchRef] {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return branches }
+        return branches.filter { branch in
+            let name = branch.name.lowercased()
+            return words.allSatisfy { name.contains($0) }
+        }
+    }
+
+    /// Every folder the branches sit in — open while a search shows them.
+    static func folders(of branches: [BranchRef]) -> Set<String> {
+        var folders = Set<String>()
+        for branch in branches {
+            let parts = branch.name.split(separator: "/").dropLast()
+            var path = ""
+            for part in parts {
+                path = path.isEmpty ? String(part) : "\(path)/\(part)"
+                folders.insert(path)
+            }
+        }
+        return folders
+    }
+
     static func rows(_ branches: [BranchRef], expanded: Set<String>, depth: Int = 0, prefix: String = "") -> [BranchNode] {
         var folders: [String: [BranchRef]] = [:]
         var folderOrder: [String] = []

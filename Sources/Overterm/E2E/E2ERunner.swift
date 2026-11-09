@@ -2404,6 +2404,13 @@ final class E2ERunner {
         check(
             "the branches are listed", Set(app.overgit.branches.filter { !$0.isRemote }.map(\.name)) == ["main", "feature/x", "side"],
             app.overgit.branches.map(\.name).joined(separator: ","))
+        // The Branches section's filter: the names holding its words.
+        app.overgit.branchQuery = "feat"
+        check(
+            "the branch filter keeps the names holding its words",
+            BranchTree.matching(app.overgit.branches, query: app.overgit.branchQuery).map(\.name) == ["feature/x"],
+            BranchTree.matching(app.overgit.branches, query: app.overgit.branchQuery).map(\.name).joined(separator: ","))
+        app.overgit.branchQuery = ""
         check("the worktrees are the panel's now", await eventually { self.app.worktrees.worktrees.count == 2 })
 
         // Tags, stashes and remotes are shut by default, and a shut

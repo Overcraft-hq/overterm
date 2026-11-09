@@ -80,6 +80,8 @@ final class OvergitModel: ObservableObject {
     @Published private(set) var expanded: Set<Section>
     /// Which folders of the branch tree are open (`feature`, `origin`).
     @Published var expandedBranchFolders: Set<String> = []
+    /// The Branches section's filter: the names holding its words.
+    @Published var branchQuery = ""
     /// The commit whose detail the right-hand pane is showing.
     @Published var selected: String?
 

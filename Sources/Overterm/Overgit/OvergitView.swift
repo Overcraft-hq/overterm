@@ -188,11 +188,16 @@ struct OvergitView: View {
         if model.branches.isEmpty {
             OvergitEmpty(text: "No branches", theme: theme)
         } else {
-            ForEach(BranchTree.rows(model.branches, expanded: model.expandedBranchFolders)) { node in
+            BranchSearchField(model: model, theme: theme)
+            let found = BranchTree.matching(model.branches, query: model.branchQuery)
+            // Searching, every folder a match is in is open: the matches show.
+            let open = model.branchQuery.isEmpty ? model.expandedBranchFolders : BranchTree.folders(of: found)
+            if found.isEmpty { OvergitEmpty(text: "No branch matches", theme: theme) }
+            ForEach(BranchTree.rows(found, expanded: open)) { node in
                 BranchRowView(
                     model: model,
                     node: node, isCurrent: node.branch?.name == diff.branch && node.branch?.isRemote == false,
-                    isOpen: model.expandedBranchFolders.contains(node.id), theme: theme,
+                    isOpen: open.contains(node.id), theme: theme,
                     onToggle: {
                         if model.expandedBranchFolders.contains(node.id) {
                             model.expandedBranchFolders.remove(node.id)
