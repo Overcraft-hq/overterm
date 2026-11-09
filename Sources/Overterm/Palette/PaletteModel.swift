@@ -98,6 +98,32 @@ final class PaletteModel: ObservableObject {
 
     var selected: PaletteItem? { results.indices.contains(selectedIndex) ? results[selectedIndex] : nil }
 
+    /// How many of a group the query finds (nil: all of them), for its tab.
+    func count(of group: PaletteItem.Group?) -> Int {
+        guard let group else { return items.isEmpty ? 0 : ranked(items).count }
+        return ranked(items.filter { $0.group == group }).count
+    }
+
+    /// The tabs as the palette shows them: All, then the groups offered.
+    var tabs: [PaletteItem.Group?] {
+        [nil]
+            + PaletteItem.Group.scopes.filter {
+                ($0 != .snippet || Settings.shared.snippetsEnabled) && ($0 != .container || Settings.shared.dockerEnabled)
+            }
+    }
+
+    /// ⇥ and ⇧⇥: the next tab, the one before.
+    func cycleScope(_ offset: Int) {
+        let all = tabs
+        let index = all.firstIndex { $0 == scope } ?? 0
+        scope = all[(index + offset + all.count) % all.count]
+    }
+
+    private func ranked(_ items: [PaletteItem]) -> [PaletteItem] {
+        guard !query.isEmpty else { return items }
+        return items.filter { FuzzyMatch.score(query, in: $0.title) != nil || $0.subtitle.flatMap { FuzzyMatch.score(query, in: $0) } != nil }
+    }
+
     /// Whether the selected item still needs something typed in.
     var isReady: Bool {
         guard let selected else { return false }

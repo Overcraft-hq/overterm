@@ -4771,6 +4771,20 @@ final class E2ERunner {
         app.showPalette(nil)
         check("⌘K shows the palette", app.paletteView?.isHidden == false)
         check("it lists actions and tabs", app.palette.results.contains { $0.group == .action } && app.palette.results.contains { $0.group == .tab })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
+            await pause(0.5)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-all.png")
+        }
+        // ⇥ in the field steps to the next tab: History, after All.
+        if let view = app.paletteView, let field = TerminalWindowController.firstTextField(in: view) { window.makeFirstResponder(field) }
+        await pause(0.2)
+        NSApp.sendEvent(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false,
+                keyCode: 48)!)
+        check("⇥ steps from All to the next tab", await eventually(2) { self.app.palette.scope == self.app.palette.tabs[1] }, "\(String(describing: app.palette.scope))")
+        app.palette.scope = nil
         app.palette.query = "ncl"
         check("fuzzy search finds New Claude Tab", app.palette.results.first?.title == "New Claude Tab")
         // A first run has no snippets; the palette searches the ones you save.

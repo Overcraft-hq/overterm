@@ -13,6 +13,7 @@ version is tagged `v<version>`.
 - notes: a character typed in Live Preview no longer shows as another for a moment ("." as "e")
 - overgit: the branches have a filter, as the commits have a search
 - search: ⌘F has tabs — All, Files, Notes, Terminal (⇥ steps through) — so the notes aren't under every file's lines
+- palette: ⌘K redone — one size whatever is selected, its tabs under the field with their counts (⇥ steps through), the list in its groups, every item explained beside it
 
 ## 1.5.3 — 2026-11-04
 

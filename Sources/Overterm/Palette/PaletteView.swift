@@ -10,6 +10,13 @@ struct PaletteView: View {
     let onChoose: (PaletteItem, Bool) -> Void
     let onDismiss: () -> Void
 
+    /// One size, whatever is selected: the card grew to 860 pt for an item
+    /// with a detail and shrank to 580 for one without, and stepping
+    /// through the list or the tabs made it jump.
+    static let width: CGFloat = 780
+    static let bodyHeight: CGFloat = 380
+    static let detailWidth: CGFloat = 300
+
     var body: some View {
         ZStack(alignment: .top) {
             // Click outside to dismiss.
@@ -17,109 +24,155 @@ struct PaletteView: View {
                 .onTapGesture(perform: onDismiss)
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(14))).foregroundStyle(theme.text3)
+                    Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(15))).foregroundStyle(theme.text3)
                     PaletteField(
                         text: $model.query,
                         onMove: { model.move($0) },
                         onSubmit: { run in model.selected.map { onChoose($0, run) } },
                         onCancel: onDismiss,
+                        onTab: { model.cycleScope($0) },
                         textColor: NSColor(theme.text)
                     )
-                    scopes
                 }
-                .frame(height: 48)
+                .frame(height: ChromeMetrics.row(50))
                 .padding(.horizontal, 16)
+                scopes
                 Divider().opacity(0.4)
-                // One height for the list and the detail beside it: the
-                // detail's spacer has no height of its own, and unbounded it
-                // stretched the card down the whole window with the list
-                // floating in the middle of it.
                 HStack(alignment: .top, spacing: 0) {
-                    results.frame(width: 470).frame(maxHeight: .infinity, alignment: .top)
-                    if let selected = model.selected, selected.detail != nil || !selected.placeholders.isEmpty {
-                        Divider().opacity(0.4)
-                        PaletteDetail(item: selected, model: model, theme: theme)
+                    results.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    Divider().opacity(0.4)
+                    Group {
+                        if let selected = model.selected {
+                            PaletteDetail(item: selected, model: model, theme: theme)
+                        } else {
+                            Color.clear
+                        }
                     }
+                    .frame(width: Self.detailWidth)
                 }
                 .frame(height: Self.bodyHeight)
                 Divider().opacity(0.4)
                 footer
             }
-            .frame(width: model.selected.map { $0.detail != nil || !$0.placeholders.isEmpty } == true ? 860 : 580)
-            .background(RoundedRectangle(cornerRadius: 12).fill(theme.strip))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.dimText.opacity(0.25)))
-            .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+            .frame(width: Self.width)
+            .background(RoundedRectangle(cornerRadius: 14).fill(theme.strip))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(theme.dimText.opacity(0.22)))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(color: .black.opacity(0.38), radius: 30, y: 12)
             .padding(.top, 70)
         }
     }
 
-    static let bodyHeight: CGFloat = 372
-
-    /// All / History / Snippets / Actions — narrows what is searched.
+    /// All and the groups, each with what the query finds — under the field
+    /// as ⌘F's are; ⇥ steps through.
     private var scopes: some View {
         HStack(spacing: 4) {
-            chip("All", nil)
-            // No Snippets chip while Settings has snippets off.
-            ForEach(
-                PaletteItem.Group.scopes.filter {
-                    ($0 != .snippet || Settings.shared.snippetsEnabled) && ($0 != .container || Settings.shared.dockerEnabled)
-                }, id: \.self
-            ) { group in
-                chip(group == .snippet ? "Snippets" : group.rawValue, group)
+            ForEach(Array(model.tabs.enumerated()), id: \.offset) { _, group in
+                tab(group)
             }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    private func title(of group: PaletteItem.Group?) -> String {
+        switch group {
+        case nil: "All"
+        case .snippet: "Snippets"
+        case .action: "Actions"
+        case .tab: "Tabs"
+        case .worktree: "Worktrees"
+        case .history: "History"
+        case .container: "Docker"
         }
     }
 
-    private func chip(_ title: String, _ group: PaletteItem.Group?) -> some View {
+    private func tab(_ group: PaletteItem.Group?) -> some View {
         let on = model.scope == group
         return Button {
             model.scope = group
         } label: {
-            Text(title)
-                .font(.system(size: ChromeMetrics.text(11)))
-                .padding(.horizontal, 8)
-                .frame(height: ChromeMetrics.row(20))
-                .background(Capsule().fill(on ? TabStatusStyle.working : theme.iconBg))
-                .contentShape(Capsule())
+            HStack(spacing: 4) {
+                Text(title(of: group)).font(.system(size: ChromeMetrics.text(12), weight: on ? .semibold : .regular))
+                Text(verbatim: "\(model.count(of: group))").font(.system(size: ChromeMetrics.text(11))).monospacedDigit()
+                    .foregroundStyle(on ? theme.text : theme.text3)
+            }
+            .foregroundStyle(on ? theme.text : theme.text2)
+            .padding(.horizontal, 10)
+            .frame(height: ChromeMetrics.row(24))
+            .background(Capsule().fill(on ? theme.selected : .clear))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(on ? Color.white : theme.text2)
+        .accessibilityIdentifier("palette.scope.\(group?.rawValue ?? "all")")
     }
 
     private var footer: some View {
-        HStack(spacing: 18) {
-            hint("↩", "run")
-            hint("⌥↩", "paste without running")
+        HStack(spacing: 16) {
+            hint("↩", model.selected.map(Self.verb) ?? "open")
+            if let group = model.selected?.group, group == .history || group == .snippet { hint("⌥↩", "type without running") }
+            hint("⇥", "next tab")
             Spacer()
-            Text(verbatim: "⌘K").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
+            hint("esc", "close")
         }
         .padding(.horizontal, 16)
-        .frame(height: ChromeMetrics.row(34))
+        .frame(height: ChromeMetrics.row(32))
+    }
+
+    /// What Return does with it, in a word or three.
+    static func verb(_ item: PaletteItem) -> String {
+        switch item.group {
+        case .history, .snippet: "run in the terminal"
+        case .action: "do it"
+        case .tab: "go to the tab"
+        case .worktree: "open the worktree"
+        case .container: "show it on the Docker page"
+        }
     }
 
     private func hint(_ key: String, _ what: String) -> some View {
         HStack(spacing: 5) {
-            Text(verbatim: key).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
-            Text(what).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
+            Text(verbatim: key)
+                .font(.system(size: ChromeMetrics.text(11), weight: .medium))
+                .foregroundStyle(theme.text2)
+                .padding(.horizontal, 5)
+                .frame(height: ChromeMetrics.row(18))
+                .background(RoundedRectangle(cornerRadius: 4).fill(theme.iconBg))
+            Text(what).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
         }
     }
 
     private var results: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(model.results.enumerated()), id: \.element.id) { index, item in
+                        // With nothing typed the list is in its groups: say which.
+                        if model.query.isEmpty, model.scope == nil, index == 0 || model.results[index - 1].group != item.group {
+                            Text(title(of: item.group).uppercased())
+                                .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
+                                .foregroundStyle(theme.text3)
+                                .padding(.horizontal, 12)
+                                .padding(.top, index == 0 ? 4 : 12)
+                                .padding(.bottom, 4)
+                        }
                         row(item, selected: index == model.selectedIndex)
                             .id(item.id)
                             .onTapGesture { onChoose(item, true) }
                     }
                     if model.results.isEmpty {
-                        Text("No matches").foregroundStyle(theme.dimText).padding(14)
+                        VStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(20))).foregroundStyle(theme.text3)
+                            Text(verbatim: model.query.isEmpty ? "Nothing here" : "Nothing matches “\(model.query)”")
+                                .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 60)
                     }
                 }
                 .padding(6)
             }
-            .frame(maxHeight: 360)
             .onChange(of: model.selectedIndex) { index in
                 if model.results.indices.contains(index) { proxy.scrollTo(model.results[index].id) }
             }
@@ -128,17 +181,21 @@ struct PaletteView: View {
 
     private func row(_ item: PaletteItem, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            // History shows how it went last time instead of a clock.
-            if let failed = item.failed {
-                Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
-                    .frame(width: 18)
-                    .foregroundStyle(failed ? TabStatusStyle.failed : TabStatusStyle.done)
-            } else {
-                Image(systemName: item.symbol).frame(width: 18).foregroundStyle(theme.text2)
+            Group {
+                // History shows how it went last time instead of a clock.
+                if let failed = item.failed {
+                    Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(failed ? TabStatusStyle.failed : TabStatusStyle.done)
+                } else {
+                    Image(systemName: item.symbol).foregroundStyle(selected ? theme.text : theme.text2)
+                }
             }
+            .font(.system(size: ChromeMetrics.text(12)))
+            .frame(width: 26, height: 26)
+            .background(RoundedRectangle(cornerRadius: 6).fill(theme.iconBg))
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.title)
-                    .font(.system(size: ChromeMetrics.text(13), design: item.group == .history ? .monospaced : .default))
+                    .font(.system(size: ChromeMetrics.text(13), weight: selected ? .medium : .regular, design: item.group == .history ? .monospaced : .default))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -150,13 +207,18 @@ struct PaletteView: View {
                         .truncationMode(.middle)
                 }
             }
-            Spacer()
-            Text(item.group.rawValue).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+            Spacer(minLength: 6)
+            // In a search the groups are mixed: say which each one is.
+            if !model.query.isEmpty || model.scope != nil {
+                Text(title(of: item.group)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+            }
         }
-        .font(.system(size: ChromeMetrics.text(13)))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 7).fill(selected ? theme.selected : .clear))
+        .padding(.horizontal, 8)
+        .frame(height: ChromeMetrics.row(item.subtitle == nil ? 36 : 44))
+        .background(RoundedRectangle(cornerRadius: 8).fill(selected ? theme.selected : .clear))
+        .overlay(alignment: .leading) {
+            if selected { Capsule().fill(theme.accent).frame(width: 3, height: 18).offset(x: -1) }
+        }
         .contentShape(Rectangle())
     }
 }
@@ -182,11 +244,11 @@ struct PaletteField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: 16)
+        field.font = .systemFont(ofSize: ChromeMetrics.text(16))
         field.textColor = textColor
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder,
-            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: 16)])
+            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: ChromeMetrics.text(16))])
         field.delegate = context.coordinator
         return field
     }
@@ -242,10 +304,27 @@ private struct PaletteDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: item.symbol)
+                    .font(.system(size: ChromeMetrics.text(16)))
+                    .foregroundStyle(theme.text2)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(theme.iconBg))
+                Text(item.group.rawValue.uppercased())
+                    .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
+                    .foregroundStyle(theme.text3)
+            }
             Text(item.title)
-                .font(.system(size: ChromeMetrics.text(13), weight: .bold, design: item.group == .history ? .monospaced : .default))
+                .font(.system(size: ChromeMetrics.text(14), weight: .semibold, design: item.group == .history ? .monospaced : .default))
                 .foregroundStyle(theme.text)
-                .lineLimit(2)
+                .lineLimit(3)
+            if let subtitle = item.subtitle, item.group != .snippet {
+                Text(subtitle)
+                    .font(.system(size: ChromeMetrics.text(12)))
+                    .foregroundStyle(theme.text2)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let subtitle = item.subtitle, item.group == .snippet {
                 Text(subtitle)
                     .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
@@ -271,8 +350,11 @@ private struct PaletteDetail: View {
             if let detail = item.detail {
                 Text(detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
+            Text(verbatim: "↩ \(PaletteView.verb(item))")
+                .font(.system(size: ChromeMetrics.text(11)))
+                .foregroundStyle(theme.text3)
         }
         .padding(16)
-        .frame(width: 390, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
