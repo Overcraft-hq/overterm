@@ -472,7 +472,7 @@ All are scoped by `namespace="$ns"` and, where it applies, `pod="$pod"`.
 | K4 | `count(max by (namespace,pod)(kube_pod_info{KSM,node="$node"}) * on(namespace,pod) group_left() ACTIVE)` against `kube_node_status_allocatable{node="$node",resource="pods"}`. (review) `kube_pod_info` alone counts Succeeded and Failed pods, which the limit doesn't |
 | K5 | `kube_node_status_condition{node="$node",condition=~"MemoryPressure\|DiskPressure\|PIDPressure",status="true"} == 1`; `kube_node_spec_unschedulable{node="$node"}` |
 | K2 node total, K6, K7 (node-exporter) | Mapped by `* on(instance) group_left(nodename) node_uname_info{nodename="$node"}`. On EKS the instance is usually `IP:9100`, and `nodename` is the node's hostname, which EKS uses as the node name. K6: `node_filesystem_{avail,size}_bytes{fstype!~"tmpfs\|overlay\|squashfs",mountpoint=~"/\|/local"}`. K7: `rate(node_network_{receive,transmit}_bytes_total{device!~"lo\|veth.*\|eni.*\|cali.*\|docker.*\|cni.*"}[$w])`. Without `node_uname_info` these charts are left out, and the tab says so. |
-| V1 | `sum(kubelet_volume_stats_{used,capacity}_bytes{namespace="$ns",persistentvolumeclaim="$pvc"})`; projection (instant) `predict_linear(kubelet_volume_stats_available_bytes{…}[6h], 4*86400)` and ETA `available / -deriv(available[6h])` |
+| V1 | `sum(kubelet_volume_stats_{used,capacity}_bytes{namespace="$ns",persistentvolumeclaim="$pvc"})`; fill rate (instant) `-deriv(kubelet_volume_stats_available_bytes{…}[6h])`, giving the ETA `available / rate` and the projection. (M8 review) `predict_linear(…[6h], 4*86400)` extends the same least-squares line, so it is not asked as well |
 | V2 | `kubelet_volume_stats_inodes_used / kubelet_volume_stats_inodes` |
 | PVC column | one instant query per namespace: `sum by (persistentvolumeclaim)(…{namespace="$ns"})`, as built |
 | X3 | `topk` ranking `by (namespace)`, then the top 8 |
@@ -640,7 +640,7 @@ Data is merged off the main thread and published in one assignment. `@Published`
 | an HPA's tab | 4 (the HPA) + 4 (its target's pods) | 0 Live |
 | a node's tab, Live | 4 (the node's metrics) + 0.2 (its pods as objects, every 5 min); after "Sample top pods", + 8 at most (4 namespaces × 2), or 0 when the page's all-namespaces list is already polled, for at most 15 min | 0 |
 | a namespace's tab, Live | 4 (its pods' metrics) + 1 (the Metadata Table, paged) | 0 |
-| Overview, 24h | 4 (`/nodes`, as built) | (review) about 6 on open (X1 and X2 one union each, X3 ranking and range, X4 CPU and memory by node), then 6 per 5 min |
+| Overview, 24h | 4 (`/nodes`, as built) | (review) about 6 on open (X1 and X2 one union each, X3 ranking and range, X4 CPU and memory by node), then 6 per 5 min. (M8 review, as built) 7 on open: X1 and X2 one range union each (usage, requests, limits, allocatable, capacity); X3's total, asked beside its ranking, then its eight by name; X4's CPU and memory by node, each with its allocatable. Then 6 a refresh, the ranking again every tenth. With the lines refused, the totals are one instant union |
 | page hidden | 0 | 0 |
 
 Per context there are at most 3 metrics targets for a detail, plus the page's own (the Nodes and Pods columns, the Overview). A fourth detail target replaces the oldest. The markers' read of a pod's or a workload's pods' states (M4) is not one of them: a workload's tab already takes the three (its pods, its replicas, its HPA), so it is read by the tab itself, a minute apart, by the same rules — only while shown, bounded, stopped on a 403 or a failed sign-in.

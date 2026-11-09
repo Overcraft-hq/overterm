@@ -57,7 +57,8 @@ extension E2ERunner {
         fake.servePrometheus(namespace: "monitoring", service: "prometheus-server", port: "80")
         // The prometheus chart without node-exporter: what the probe finds (stage M5).
         fake.setPrometheusProfile(.noNodeExporter)
-        let container = ["container": "app", "image": "nginx:1.27", "namespace": "shop", "pod": "web-8k2"]
+        // On fake-node-1: the prometheus chart's cAdvisor names the node by instance (X4).
+        let container = ["container": "app", "image": "nginx:1.27", "namespace": "shop", "pod": "web-8k2", "instance": "fake-node-1"]
         fake.setPrometheusSeries("container_cpu_usage_seconds_total", labels: container, value: 0.75)
         fake.setPrometheusSeries("container_memory_working_set_bytes", labels: container, value: 96 * 1_048_576)
         let ksm = ["namespace": "shop", "pod": "web-8k2", "container": "app", "node": "fake-node-1"]
@@ -71,9 +72,19 @@ extension E2ERunner {
         fake.setPrometheusSeries("kube_pod_container_resource_requests", labels: done.merging(["resource": "cpu"]) { $1 }, value: 2)
         fake.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "migrate-x7", "phase": "Succeeded"], value: 1)
         fake.setPrometheusSeries("kube_node_status_allocatable", labels: ["resource": "memory", "node": "fake-node-1"], value: 8_589_934_592)
+        fake.setPrometheusSeries("kube_node_status_capacity", labels: ["resource": "cpu", "node": "fake-node-1"], value: 4)
+        fake.setPrometheusSeries("kube_node_status_capacity", labels: ["resource": "memory", "node": "fake-node-1"], value: 8_589_934_592)
+        // X3's ranking, a topk the fake doesn't read.
+        fake.setPrometheusMatrix("topk(8, sum by (namespace)", [FakePromFixture.Line(["namespace": "shop"]) { _ in 0.75 }])
+        defer { fake.clearPrometheusMatrix("topk(8, sum by (namespace)") }
         fake.setPrometheusSeries("kubelet_volume_stats_used_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 2_147_483_648)
         fake.setPrometheusSeries(
             "kubelet_volume_stats_capacity_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 10_737_418_240)
+        // V1's forecast (M8): 8 GiB available, filling 4 GiB a day — fixtures, the fake reads no deriv.
+        fake.setPrometheusSeries(
+            "kubelet_volume_stats_available_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 8_589_934_592)
+        fake.setPrometheusMatrix("deriv(", [FakePromFixture.Line { _ in 4_294_967_296 / 86400 }])
+        defer { fake.clearPrometheusMatrix("deriv(") }
         fake.add(
             "persistentvolumeclaims", "data-db-0", namespace: "shop",
             values: ["Status": "Bound", "Volume": "pvc-1234", "Capacity": "10Gi", "Access Modes": "RWO", "StorageClass": "standard"])
@@ -113,7 +124,11 @@ extension E2ERunner {
             "its scrape the cAdvisor job's, a minute",
             model.prometheus.profile?.scrape == 60 && prometheusAsked().contains { $0.query["query"] == KubePromProfile.scrapeQuery(job: "kubernetes-nodes-cadvisor") })
         check("the cluster read raw, named", model.prometheus.charts[.cluster]?.caption == "raw cAdvisor (≤ 6h) · scrape 1m", "\(model.prometheus.charts[.cluster]?.caption ?? "")")
-        check("the requests and limits drawn", await shownText(15) { $0.contains("2000m of 4000m") } != nil)
+        check(
+            "the requests and limits as shares of allocatable",
+            cluster.map { KubeClusterCharts.chips($0, cpu: true).map(\.text) } == ["requests 50% of allocatable", "limits 75% of allocatable"],
+            "\(cluster.map { KubeClusterCharts.chips($0, cpu: true) } ?? [])")
+        check("drawn as chips", await shownText(15) { $0.contains("requests 50% of allocatable") } != nil)
         // Each measure one chart, its plot built and drawn in one Canvas, what it is measured against its reference lines.
         let charts = KubeChartRegistry.shared
         let scope = app.theme.map(ObjectIdentifier.init)
@@ -125,13 +140,13 @@ extension E2ERunner {
             charts.lines(in: scope).joined(separator: "; "))
         let cpuChart = charts.chart(cpuID, in: scope)
         check(
-            "with active requests, limits and allocatable as lines", cpuChart?.data.references.map(\.role) == [.request, .limit, .allocatable],
+            "with active requests, limits, allocatable and capacity as lines", cpuChart?.data.references.map(\.role) == [.request, .limit, .allocatable, .capacity],
             charts.lines(in: scope).joined(separator: "; "))
         check("the axis reaching the highest line", (cpuChart?.plot?.top ?? 0) >= 4, "\(cpuChart?.plot?.top ?? 0)")
         check("drawn", KubeChartDraws.shared.of(cpuID, in: scope).series > 0)
         if let last = cpuChart?.data.usage.first?.points.last {
             let tip = charts.tooltip(cpuID, in: scope, at: last.time)
-            check("its tooltip at the last point: the line, then the three", tip?.rows.first?.name == "CPU" && tip?.rows.count == 4, "\(tip?.rows ?? [])")
+            check("its tooltip at the last point: the line, then the four", tip?.rows.first?.name == "CPU" && tip?.rows.count == 5, "\(tip?.rows ?? [])")
             check("the lines with the usage's share", tip?.rows.contains { $0.name == "allocatable" && $0.value.hasSuffix("· 19%") } == true, "\(tip?.rows ?? [])")
         }
         charts.lines(in: scope).forEach { note("kubernetes \($0)") }
@@ -148,6 +163,7 @@ extension E2ERunner {
             let connected = await model.proxies.proxyLabels
             check("through a second proxy of fake-dev's own", connected.contains("fake-dev (prometheus)"), "\(connected)")
         }
+        await prometheusOverviewParts(model, page, fake, service: service, scope: scope)
         await sharedCrosshair(model, scope: scope, cpu: cpuID, memory: memoryID)
         // 24h: the cluster's raw lines aren't asked; why is said, and 6h offered.
         fake.forgetRequests()
@@ -157,7 +173,11 @@ extension E2ERunner {
             await eventually(15) { model.prometheus.charts[.cluster]?.range == .day && model.prometheus.charts[.cluster]?.read != nil })
         check("no query_range across the cluster over 24h", !prometheusAsked().contains { $0.path == service.rangePath }, "\(prometheusAsked().map(\.query))")
         check("and said", await shownText(15) { $0.contains("Raw container metrics") } != nil)
-        check("the requests still drawn", await shownText(15) { $0.contains("2000m of 4000m") } != nil)
+        check("the requests still said", await shownText(15) { $0.contains("requests 50% of allocatable") } != nil)
+        check(
+            "by namespace and the nodes refused raw too, said",
+            await eventually(15) { model.prometheus.charts[page.namespacesChart]?.refused != nil && model.prometheus.charts[.nodes]?.refused != nil })
+        check("the nodes' last 15 minutes sampled instead", await shownText(15) { $0.contains("Nodes, the last 15 min") } != nil)
         // The button's own action: pressed where it is drawn, by a click
         // queued to the app's own window (`click(at:)`) — nothing reaches
         // the screen's focus. SwiftUI builds no accessibility tree in
@@ -232,9 +252,10 @@ extension E2ERunner {
             let claimShown = claimDrawn ? "" : (await readWindow()).map(\.text).joined(separator: " | ")
             check("the claim's chart drawn", claimDrawn, claimShown)
             check(
-                "its capacity a line",
-                await eventually(10) { charts.chart("kubernetes.chart.volume.shop.data-db-0.used", in: scope)?.data.references.map(\.role) == [.capacity] },
+                "its capacity a line, its fill forecast dotted beside",
+                await eventually(10) { charts.chart("kubernetes.chart.volume.shop.data-db-0.used", in: scope)?.data.references.map(\.role) == [.capacity, .projection] },
                 charts.lines(in: scope).joined(separator: "; "))
+            await prometheusVolumeForecast(model, page, fake, service: service, scope: scope)
             page.closeDetail()
         }
 
@@ -348,7 +369,13 @@ extension E2ERunner {
         fake.setPrometheusSeries(KubePromProfile.nodeCPUCountRule, labels: node, value: 4)
         fake.setPrometheusSeries(KubePromProfile.nodeMemoryRule, labels: node, value: 0.25)
         fake.setPrometheusSeries("node_memory_MemTotal_bytes", labels: node, value: 8_589_934_592)
+        // X4 from the per-container rules past 5-minute steps (max_over_time, which the fake doesn't read):
+        // a query a measure, its allocatable in it, the arms tagged.
+        fake.setPrometheusMatrix(
+            "max_over_time(node_namespace_pod_container:",
+            ["cpu", "memory", "cpuAllocatable", "memoryAllocatable"].map { tag in FakePromFixture.Line(["node": "fake-node-1", "overterm_s": tag]) { _ in 1 } })
         defer {
+            fake.clearPrometheusMatrix("max_over_time(node_namespace_pod_container:")
             fake.setPrometheusProfile(.noNodeExporter)
             model.prometheus.forgetProfile()
         }
@@ -362,9 +389,15 @@ extension E2ERunner {
                 return cluster?.range == .day && cluster?.tier == .rules && cluster?.series[.cpu]?.isEmpty == false
             }, "\(String(describing: model.prometheus.charts[.cluster]?.tier)) \(model.prometheus.charts[.cluster]?.refused ?? "")")
         check("probed again", model.prometheus.profile?.scrape == 30 && model.prometheus.profile?.cadvisorPath == "/metrics/cadvisor")
-        check("the rules read over the range", prometheusAskedOf(fake).contains { $0.path == service.rangePath && $0.query["query"] == KubePromQL.ruleClusterCPU })
+        check("the rules read over the range", prometheusAskedOf(fake).contains { $0.path == service.rangePath && $0.query["query"]?.hasPrefix("label_replace(\(KubePromQL.ruleClusterCPU),") == true })
         check("the caption names them", await shownText(15) { $0.contains("recording rules") } != nil)
         check("the lines' CPU: half of four cores", model.prometheus.charts[.cluster]?.series[.cpu]?.last?.value == 2)
+        check(
+            "the nodes over 24h from the per-container rules, 24 minutes a cell",
+            await eventually(15) { model.prometheus.charts[.nodes].map { $0.range == .day && $0.tier == .rules && $0.parts[.cpu]?["fake-node-1"]?.isEmpty == false } == true },
+            "\(String(describing: model.prometheus.charts[.nodes]?.problem)) \(model.prometheus.charts[.nodes]?.refused ?? "")")
+        check(
+            "asked at 24m", prometheusAskedOf(fake).contains { $0.path == service.rangePath && $0.query["step"] == "24m" && $0.query["query"]?.hasPrefix("label_replace(sum by (node)") == true })
         check(
             "only the Service's two query paths",
             prometheusAskedOf(fake).allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath })

@@ -129,18 +129,24 @@ struct KubeHistory: Equatable, Sendable {
         case list
         /// A link in a detail, or a search's answer.
         case link
+        /// The Overview: a node's row, a chart's series (metrics.md 3.7) —
+        /// back from it returns to the Overview.
+        case overview
     }
 
     private(set) var back: [KubeObjectRef] = []
     private(set) var current: KubeObjectRef?
     private(set) var forward: [KubeObjectRef] = []
     private var currentOrigin: Origin = .link
+    /// The current one was opened from the Overview: back returns there
+    /// first (`backToOverview`), then to what was shown before it.
+    private(set) var overviewBehind = false
     /// The most kept behind.
     var limit: Int
 
     init(limit: Int = 50) { self.limit = limit }
 
-    var canGoBack: Bool { !back.isEmpty }
+    var canGoBack: Bool { !back.isEmpty || overviewBehind }
     var canGoForward: Bool { !forward.isEmpty }
 
     /// `ref` shown. The one shown again is no visit; a new one drops what
@@ -148,6 +154,7 @@ struct KubeHistory: Equatable, Sendable {
     mutating func visit(_ ref: KubeObjectRef, from origin: Origin) {
         guard ref != current else {
             currentOrigin = origin
+            if origin == .overview { overviewBehind = true }
             return
         }
         if let current {
@@ -166,7 +173,19 @@ struct KubeHistory: Equatable, Sendable {
         }
         current = ref
         currentOrigin = origin
+        overviewBehind = origin == .overview
         forward = []
+    }
+
+    /// Back from an object opened from the Overview: nothing current, the
+    /// object ahead (`]` opens it again); false where it wasn't.
+    mutating func backToOverview() -> Bool {
+        guard overviewBehind, let current else { return false }
+        forward.append(current)
+        self.current = nil
+        currentOrigin = .link
+        overviewBehind = false
+        return true
     }
 
     /// The one before, now current; nil when there is none.
@@ -175,6 +194,7 @@ struct KubeHistory: Equatable, Sendable {
         if let current { forward.append(current) }
         current = previous
         currentOrigin = .link
+        overviewBehind = false
         return previous
     }
 
@@ -183,15 +203,19 @@ struct KubeHistory: Equatable, Sendable {
         if let current { back.append(current) }
         current = next
         currentOrigin = .link
+        overviewBehind = false
         return next
     }
 
     /// The detail closed: what shows is nothing, the way back kept.
     mutating func leave() {
-        if let current { back.append(current) }
-        current = nil
+        // Already left (back to the Overview): the way forward kept.
+        guard let current else { return }
+        back.append(current)
+        self.current = nil
         forward = []
         currentOrigin = .link
+        overviewBehind = false
     }
 
     /// Everything forgotten: another context.

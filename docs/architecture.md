@@ -4491,8 +4491,9 @@ Failed or Unknown phase, a failing reason), workloads not ready
 Failed Job), nodes not ready, the last hour's warnings newest first —
 each a link to its detail (`openFromOverview`), under the server's
 version and node count; then the cluster's CPU and memory against its
-nodes' allocatable (the monitor's nodes sample), each with a sparkline of
-the samples taken while it shows. The pods' requests and limits against
+nodes' allocatable (the monitor's nodes sample) and over time — X1–X4,
+sampled while it shows or from Prometheus (The Overview's usage, under
+Prometheus below). The pods' requests and limits against
 allocatable come from Prometheus where the context opts in (every pod's
 spec is a whole-object list, which the Overview's rows avoid; Prometheus
 has them as series — Prometheus, below);
@@ -5619,6 +5620,77 @@ are shown on data. `KubeTabTopNTests`, `KubeMetricsTabPrometheusTests`;
 `kubernetesCharts`'s part 5 (a Deployment's two ReplicaSets labelled with
 their revisions, the ranking once a measure, the five by name; its
 namespace by workload against its quota).
+
+**The Overview's usage by namespace and node; a claim's fill forecast**
+(`KubeClusterCharts.swift` — `KubeClusterCharts`, `KubeNodeStripRow`,
+`KubeVolumeForecast` and X3's and X4's queries, pure —,
+`KubeClusterChartsView` (`KubeClusterSampledView`, `KubeNodeStripsView`),
+`KubernetesPageModel+ClusterCharts`; metrics.md 2.9, 4.6, stage M8). The
+Overview's charts replace its sparklines and its requests block. Sampled
+(no Prometheus, or not found yet): the cluster's ring key (X1, X2) against
+the nodes' allocatable and capacity — the `/nodes` read the monitor
+already makes now keeps `status.capacity` too (`KubeMetricsReader.
+nodeResources`, `KubeMetricsSample.capacity`) — with no requests line
+(the rows carry no spec) and the chip "requests need Prometheus
+(kube-state-metrics)"; and X4, each node's last 15 minutes from the
+ring's list keys as the Nodes list's strips. From Prometheus, three
+`KubeChart`s the page wants on the Overview (`overviewCharts`): `.cluster`
+(X1, X2: its totals now with the nodes' capacity, `KubePromQL.capacity`;
+the requests' and limits' shares of allocatable as chips, red past 100%
+and said overcommitted — `KubeClusterCharts.chips`), `.namespaces(names)`
+(X3, the namespaces picked — `KubeScope.names`, every one when none —,
+`page.namespacesChart`: one instant `topk(8, …)` at the range's end over
+the range — the mixin's per-container rule's average, else the raw
+counter's rate where `KubeQueryCost` allows raw across the cluster (6h),
+either past the samples cap over 24h, said — kept in the reading
+(`KubeChartReading.ranked`) for ten readings or until the range changes,
+at `.ranking` below the visible charts, its total asked beside it (an
+`async let`: the ranking never holds a visible chart back); then the
+eight by name, "other" the rest), and `.nodes` (X4: by the rule's `node`, else raw by the
+profile's node label, at a sixtieth of the range — `KubeChartQueries.step`,
+`max_over_time` past 5-minute steps so a cell keeps its peak — against
+kube-state-metrics' allocatable by node, else the `/nodes` read's; the
+50 hottest by name, "the 50 most used of N"). The monitor's chart reading
+grew lines and instant answers by a label (`parts`, `partTotals`,
+`partLabel`). `.cluster` and `.nodes` are `KubeChartQueries.unioned`
+(metrics.md 4.2, 6.5): each measure's line carries its own totals
+(`carried(by:)`) as one range union tagged `overterm_s` by measure, read
+apart (`arm`), a total off its last point; with the lines refused the
+totals are one instant union — 7 queries on open, 6 a refresh. Back
+from an object the Overview opened (`KubeHistory.Origin.overview`,
+`backToOverview`) returns to the Overview, the object ahead. X3 and X4 are drawn in `KubePrometheusChartView(.cluster)`,
+sharing X1's and X2's crosshair; refused (raw past 6h), each says why and
+X4 falls back to the sampled strips. A node's row opens its Metrics tab
+(`openNodeMetrics`); its strips are `kubernetes.overview.heat.<node>.<measure>`
+(`KubeHeatStrip` now takes a cell of any length and says whose it is).
+A claim (V1, V2, the EFS rule): its available bytes and `-deriv` of
+them over 6h — instant totals; `predict_linear` would extend the same
+line, so it isn't asked —, the rate (`KubeVolumeForecast.rate`) giving the chip ("full in ~3 d", red under a
+day; "not filling") and a dotted projection (`KubeChartRole.projection`,
+drawn straight, never stepped) to a quarter of the range past now,
+stopped at the capacity; "Inodes used" toggles V2
+(`.volumeInodes`, `page.volumeInodesShown`, read only while on). A
+capacity past 2^60 (EFS reports 8 EiB, `KubeVolumeUsage.unboundedCapacity`)
+is no size: no capacity line, no %, no forecast asked, said in a sentence,
+the PVC column "3.0Gi (no fixed size)". On a pod's tab C4 (`KubeTabFamily.fs`,
+in Live too): each container's `container_fs_usage_bytes` (a device each
+once) against its `ephemeral_storage` limit, only where the probe found the
+metric — else, or where this pod's node reports none, the sentence that
+the kubelet doesn't report it (containerd) and kubelet's stats need
+`nodes/proxy`. On a node's tab K2's "node total" (MemTotal − MemAvailable
+mapped by `node_uname_info`'s nodename, `KubePromQL.nodeTotalMemory`,
+both sides `max by (instance)` first, so two jobs scraping one
+node-exporter don't double it)
+beside its pods' working set, only where node-exporter maps to nodes —
+else the tab says so. `KubeClusterChartsTests`, `KubePrometheusTests`
+(the ranking once and at the range's end, the nodes at a minute's step,
+a claim's fill, an EFS claim's forecast never asked); `kubernetesMetrics`
+(X1, X2 and X4 sampled), `kubernetesPrometheus` (X3 and X4 over the hour,
+refused over 24h raw and sampled instead, from the rules over 24h at 24
+minutes a cell; X1's capacity line and chips) and `kubernetesCharts`
+part 6 (`prometheusVolumeForecast`: the chip and the projection, inodes
+read only while toggled, an EFS claim with no line, no % and no
+forecast asked; C4 on a pod's tab).
 
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and

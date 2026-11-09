@@ -357,6 +357,7 @@ final class KubeMetricsMonitor: ObservableObject {
         Task { [weak self] in
             var count = 0
             var allocatable: [String: KubeUsage] = [:]
+            var capacity: [String: KubeUsage] = [:]
             while !Task.isCancelled {
                 guard let self else { return }
                 guard let client = self.client() else {
@@ -406,9 +407,14 @@ final class KubeMetricsMonitor: ObservableObject {
                         let body = try await client.get(target.path).body
                         if count % max(1, self.allocatableEvery) == 0 || allocatable.isEmpty {
                             self.requests += 1
-                            allocatable = (try? await Self.allocatable(client)) ?? allocatable
+                            if let read = try? await Self.nodeResources(client) {
+                                allocatable = read.allocatable
+                                capacity = read.capacity
+                            }
                         }
-                        sample = KubeMetricsSample(nodes: try KubeMetricsReader.nodes(body), allocatable: allocatable, read: Date())
+                        var nodes = KubeMetricsSample(nodes: try KubeMetricsReader.nodes(body), allocatable: allocatable, read: Date())
+                        nodes.capacity = capacity
+                        sample = nodes
                     }
                     guard !Task.isCancelled, self.polls[target] != nil else { return }
                     await self.record(sample, for: target)
@@ -472,17 +478,24 @@ final class KubeMetricsMonitor: ObservableObject {
     /// Every node's allocatable: the NodeList, paged, read whole for its
     /// `status.allocatable` (the Table's rows don't carry it).
     nonisolated static func allocatable(_ client: KubeClient) async throws -> [String: KubeUsage] {
+        try await nodeResources(client).allocatable
+    }
+
+    /// Every node's allocatable and capacity, from the same pages.
+    nonisolated static func nodeResources(_ client: KubeClient) async throws -> (allocatable: [String: KubeUsage], capacity: [String: KubeUsage]) {
         var nodes: [String: KubeUsage] = [:]
+        var capacity: [String: KubeUsage] = [:]
         var token: String?
         var pages = 0
         repeat {
             let body = try await client.get(KubePath.query("/api/v1/nodes", [("limit", "500"), ("continue", token)])).body
-            let page = try KubeMetricsReader.allocatable(body)
-            nodes.merge(page.nodes) { $1 }
+            let page = try KubeMetricsReader.nodeResources(body)
+            nodes.merge(page.allocatable) { $1 }
+            capacity.merge(page.capacity) { $1 }
             token = page.continueToken
             pages += 1
         } while token != nil && pages < 20
-        return nodes
+        return (nodes, capacity)
     }
 
     /// The cell a row's column shows now.

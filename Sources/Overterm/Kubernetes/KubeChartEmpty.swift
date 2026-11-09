@@ -56,6 +56,10 @@ enum KubeChartEmpty: Equatable, Sendable {
     case topSharesNeedSpecs
     /// `k8s_top`'s shares across every namespace (or more than a page reads): none asked.
     case topSharesNeedNamespaces
+    /// C4: the kubelet reports no per-container filesystem use (containerd).
+    case noContainerFS
+    /// K2's node total: node-exporter's instances don't map to nodes (no `node_uname_info`).
+    case nodeExporterUnmapped
 
     var sentence: String {
         switch self {
@@ -109,6 +113,10 @@ enum KubeChartEmpty: Equatable, Sendable {
             return "Shares of request and limit are read a namespace at a time: name one, or up to \(KubeScope.watchCap) (or a pod)."
         case .sharesNeedKSM:
             return "kube-state-metrics isn't scraped: there are no requests or limits to share against."
+        case .noContainerFS:
+            return "This cluster's kubelet doesn't report per-container filesystem use (containerd). A pod's ephemeral use is in kubelet's stats, which Overterm never reaches (nodes/proxy)."
+        case .nodeExporterUnmapped:
+            return "node-exporter doesn't map to nodes here (no node_uname_info): the node's own memory total is left out."
         }
     }
 

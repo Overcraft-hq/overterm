@@ -20,7 +20,7 @@ enum KubePromTabCharts {
     static func families(_ subject: KubeMetricsSubject, source: KubeChartSource) -> Set<KubeTabFamily> {
         let all: Set<KubeTabFamily>
         switch subject {
-        case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss]
+        case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss, .fs]
         case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics]
         case .hpa: all = [.hpa, .hpaMetrics]
         case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory]
@@ -218,12 +218,13 @@ enum KubePromTabCharts {
             } else if spec != nil, spec?.cpuLimit == nil, reading.refused[.throttling] == nil {
                 notes.append("No CPU limit: never throttled.")
             }
+            if let chart = fsChart(container, reading: reading, span: span, id: id) { charts.append(chart) }
             return KubePodCharts.Section(container: container, charts: charts, notes: notes)
         }
         let hasSamples = (podCharts + sections.flatMap(\.charts)).contains { $0.data.usage.contains { !$0.points.isEmpty } }
         let charts = KubePodCharts(
             range: .hour, pod: podCharts, sections: sections, caption: caption(reading, window: window), span: window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
-            hasSamples: hasSamples || reading.read != nil, notes: notes(reading))
+            hasSamples: hasSamples || reading.read != nil, notes: notes(reading) + fsNotes(reading))
         var marked = changes
         marked.ooms = ooms(reading, namesPods: false, exact: KubeChartMarkers.pods(changes.restarts, namesPods: false))
         return KubeChartMarkers.mark(charts, pod: name, changes: marked, window: nil, now: span.end)
@@ -244,6 +245,30 @@ enum KubePromTabCharts {
                     KubeChartSeries(id: "guide", name: "25% guide", role: .guide, points: [KubeSeriesPoint(time: span.end, value: throttlingGuide)]),
                 ], span: span, tier: "cAdvisor CFS periods"),
             headline: latest.map { "\(Int(($0 * 100).rounded()))% now" }, chips: chips)
+    }
+
+    /// C4: a container's ephemeral storage — cAdvisor's filesystem use, a
+    /// device each once — against its ephemeral-storage limit; nil where
+    /// the answer has none of it.
+    static func fsChart(_ container: String, reading: KubeTabReading, span: KubePromSpan, id: String) -> KubePodCharts.Chart? {
+        let arms = reading.tagged("fs")
+        guard let points = by(arms["usage"], "container")[container], !points.isEmpty else { return nil }
+        let limit = by(arms["limit"], "container")[container]?.last?.value
+        let latest = points.last?.value
+        var series = [KubeChartSeries(id: "fs", name: "filesystem used", points: points)]
+        if let limit { series.append(KubeChartSeries(id: "limit", name: "limit", role: .limit, points: [KubeSeriesPoint(time: span.end, value: limit)])) }
+        let percent = latest.flatMap { KubeMetricsFormat.percent($0, of: limit) }
+        return KubePodCharts.Chart(
+            data: data(id: id + ".fs", title: "Ephemeral storage", unit: .bytes, series: series, span: span, tier: "cAdvisor filesystem use"),
+            headline: latest.map { KubeVolumeFormat.bytes($0) + " now" },
+            chips: percent.map { [KubeChartChip(text: "\($0)% of limit", alert: $0 >= 90)] } ?? (limit == nil ? [KubeChartChip(text: "no limit")] : []))
+    }
+
+    /// C4's sentence where the probe found the metric but this pod's node
+    /// reports none of it (a containerd node in a mixed cluster).
+    static func fsNotes(_ reading: KubeTabReading) -> [String] {
+        guard let answer = reading.results["fs"], !answer.contains(where: { $0.labels["overterm_s"] == "usage" && !$0.points.isEmpty }) else { return [] }
+        return [KubeChartEmpty.noContainerFS.sentence]
     }
 
     /// What only Prometheus has of a pod: its network (P3) and its restarts (P4).
@@ -286,9 +311,10 @@ enum KubePromTabCharts {
             range: sampled.range, pod: only(namespace: namespace, pod: name, reading: reading, span: span),
             sections: sampled.sections.map { section in
                 let spec = containers.first { $0.name == section.container }
-                let chart = throttlingChart(
-                    section.container, spec: spec, throttling: throttling, reading: reading, span: span, id: "container.\(namespace).\(name).\(section.container)")
-                return KubePodCharts.Section(container: section.container, charts: chart.map { [$0] } ?? [])
+                let id = "container.\(namespace).\(name).\(section.container)"
+                let chart = throttlingChart(section.container, spec: spec, throttling: throttling, reading: reading, span: span, id: id)
+                return KubePodCharts.Section(
+                    container: section.container, charts: (chart.map { [$0] } ?? []) + (fsChart(section.container, reading: reading, span: span, id: id).map { [$0] } ?? []))
             }, caption: "", span: sampled.span, hasSamples: true)
         var marked = changes
         let earlier = ooms(reading, namesPods: false, exact: KubeChartMarkers.pods(changes.restarts, namesPods: false))
@@ -311,11 +337,14 @@ enum KubePromTabCharts {
             var section = section
             section.charts = section.charts.map { withOOMs($0, container: section.container) } + more.charts
             let spec = containers.first { $0.name == section.container }
-            if more.charts.isEmpty, spec?.cpuLimit == nil, reading.refused[.throttling] == nil { section.notes.append("No CPU limit: never throttled.") }
+            if !more.charts.contains(where: { $0.data.id.hasSuffix(".throttling") }), spec?.cpuLimit == nil, reading.refused[.throttling] == nil {
+                section.notes.append("No CPU limit: never throttled.")
+            }
             return section
         }
-        charts.caption += " · throttling, network and restarts from Prometheus over \(KubePromQL.duration(span.end.timeIntervalSince(span.start))) at \(KubePromQL.duration(span.step))"
-        charts.notes += notes(reading)
+        charts.caption +=
+            " · throttling, network, restarts and ephemeral storage from Prometheus over \(KubePromQL.duration(span.end.timeIntervalSince(span.start))) at \(KubePromQL.duration(span.step))"
+        charts.notes += notes(reading) + fsNotes(reading)
         return charts
     }
 
@@ -553,6 +582,9 @@ enum KubePromTabCharts {
             let usage = sum((arms["usage"] ?? arms[""] ?? []).map(\.points))
             let requested = sum((arms["request"] ?? []).map(\.points))
             var series = [KubeChartSeries(id: isCPU ? "cpu" : "memory", name: isCPU ? "CPU" : "Memory", points: usage)]
+            // K2: the node's own memory in use (node-exporter), beside its pods'.
+            let total = sum((arms["total"] ?? []).map(\.points))
+            if !isCPU, !total.isEmpty { series.append(KubeChartSeries(id: "nodeTotal", name: "node total", points: total)) }
             if !requested.isEmpty { series.append(KubeChartSeries(id: "requested", name: "requested", role: .request, points: requested)) }
             let allocatable = isCPU ? facts.allocatable?.cpu : facts.allocatable?.memory
             if let allocatable, allocatable > 0 {

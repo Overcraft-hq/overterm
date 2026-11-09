@@ -213,6 +213,32 @@ final class KubeDetailTests: XCTestCase {
         KubeObjectRef(context: context, kind: kind, namespace: kind.namespaced ? "shop" : nil, name: name)
     }
 
+    /// Opened from the Overview (an X4 row, metrics.md 3.7): back returns
+    /// to the Overview first — nothing current, the object ahead —, then
+    /// to what was shown before it.
+    func testBackFromAnObjectTheOverviewOpenedReturnsThere() {
+        let nodes = KubeResourceKind(group: "", version: "v1", resource: "nodes", kind: "Node", singular: "node", namespaced: false, verbs: [])
+        var history = KubeHistory()
+        history.visit(ref("web-1"), from: .link)
+        history.leave()
+        history.visit(ref("fake-node-1", nodes), from: .overview)
+        XCTAssertTrue(history.overviewBehind && history.canGoBack)
+        XCTAssertTrue(history.backToOverview())
+        XCTAssertNil(history.current)
+        XCTAssertEqual(history.forward.map(\.name), ["fake-node-1"])
+        history.leave()
+        XCTAssertEqual(history.forward.map(\.name), ["fake-node-1"], "the detail closed after: the way forward kept")
+        XCTAssertFalse(history.backToOverview(), "once")
+        XCTAssertEqual(history.goForward()?.name, "fake-node-1")
+        XCTAssertFalse(history.overviewBehind, "walked to, not opened from the Overview")
+        XCTAssertEqual(history.goBack()?.name, "web-1")
+        // A link followed from it: back is that link's way, not the Overview.
+        history.visit(ref("fake-node-1", nodes), from: .overview)
+        history.visit(ref("web-2"), from: .link)
+        XCTAssertFalse(history.backToOverview())
+        XCTAssertEqual(history.goBack()?.name, "fake-node-1")
+    }
+
     func testTheHistoryGoesBackAndForwardAcrossKinds() {
         var history = KubeHistory()
         XCTAssertFalse(history.canGoBack || history.canGoForward)

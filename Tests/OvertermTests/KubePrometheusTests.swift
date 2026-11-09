@@ -257,7 +257,7 @@ final class KubePrometheusTests: XCTestCase {
         XCTAssertTrue(service.allows(path))
         XCTAssertTrue(service.allows(KubePromQL.instantPath(service, "up")))
         // What each chart asks.
-        XCTAssertEqual(KubeChart.cluster.queries(range: .hour).totals.map(\.0).count, 6, "requests, limits and allocatable, cpu and memory")
+        XCTAssertEqual(KubeChart.cluster.queries(range: .hour).totals.map(\.0).count, 8, "requests, limits, allocatable and capacity, cpu and memory")
         XCTAssertEqual(KubeChart.volume(namespace: "shop", claim: "data").queries(range: .hour).series.map(\.0), [.volumeUsed, .volumeCapacity])
     }
 
@@ -872,6 +872,77 @@ final class KubePrometheusTests: XCTestCase {
             api.requests.map(\.path), [service.queryPath, service.rangePath], "only the two queries reached the server, and nothing through the metrics proxy else")
         let connected = await proxies.proxyLabels
         XCTAssertEqual(connected, ["fake-dev (prometheus)"])
+    }
+
+    /// The Overview's CPU by namespace and its nodes, and a claim's
+    /// forecast, read through the monitor (metrics.md 2.9, M8): the top
+    /// namespaces ranked once by an instant `topk` at the range's end, then
+    /// their lines with the total; the nodes by their label at a sixtieth
+    /// of the range against kube-state-metrics' allocatable; a claim's fill
+    /// asked, an EFS claim's not. Only the Service's two query paths.
+    func testTheOverviewsChartsByNamespaceAndNodeAndAClaimsForecast() async throws {
+        let monitor = KubePrometheusMonitor()
+        monitor.interval = .milliseconds(80)
+        let socket = self.socket!
+        let service = self.service
+        let owner = NSObject()
+        api.setPrometheusProfile(.prometheusChart)
+        let pay = ["container": "api", "image": "api:2", "namespace": "pay", "pod": "api-1", "instance": "fake-node-1"]
+        api.setPrometheusSeries("container_cpu_usage_seconds_total", labels: pay, value: 0.5)
+        api.setPrometheusSeries("container_memory_working_set_bytes", labels: pay, value: 512 * 1_048_576)
+        api.setPrometheusMatrix(
+            "topk(8, sum by (namespace)", [FakePromFixture.Line(["namespace": "pay"]) { _ in 0.5 }, FakePromFixture.Line(["namespace": "shop"]) { _ in 0.25 }])
+        let gib = 1_073_741_824.0
+        api.setPrometheusSeries("kubelet_volume_stats_available_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "data-db-0"], value: 8 * gib)
+        api.setPrometheusMatrix("deriv(", [FakePromFixture.Line { _ in 4 * gib / 86400 }])
+        let efs = 9_223_372_036_854_775_807.0
+        api.setPrometheusSeries("kubelet_volume_stats_used_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "shared"], value: gib)
+        api.setPrometheusSeries("kubelet_volume_stats_capacity_bytes", labels: ["namespace": "shop", "persistentvolumeclaim": "shared"], value: efs)
+        monitor.update(
+            KubePrometheusMonitor.Situation(context: "fake-dev", use: .configured(service), scope: .all),
+            client: { KubeClient(KubeSocketConnection(socket: socket, context: "fake-dev")) },
+            transport: { KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: "fake-dev"), service: $0) }, close: { _ in })
+        let byNamespace = KubeChart.namespaces([])
+        monitor.want([.chart(byNamespace), .chart(.nodes)], for: owner)
+        try await until(5, "by namespace") { monitor.charts[byNamespace]?.parts[.cpu]?.isEmpty == false }
+        let namespaces = try XCTUnwrap(monitor.charts[byNamespace])
+        XCTAssertEqual(namespaces.ranked, ["pay", "shop"], "largest first")
+        XCTAssertEqual(namespaces.tier, .raw)
+        let chart = try XCTUnwrap(KubeClusterCharts.namespaces(namespaces))
+        XCTAssertEqual(chart.data.usage.map(\.id), ["pay", "shop"], "nothing left for other")
+        XCTAssertEqual(chart.data.usage.first?.points.last?.value, 0.5)
+        let rankings = prometheusRequests.filter { $0.query["query"]?.hasPrefix("topk(8") == true }
+        XCTAssertEqual(rankings.count, 1)
+        XCTAssertEqual(rankings.first?.path, service.queryPath, "an instant query")
+        XCTAssertNotNil(rankings.first?.query["time"], "at the range's end")
+        try await until(5, "nodes") { monitor.charts[.nodes]?.read != nil }
+        let nodes = try XCTUnwrap(monitor.charts[.nodes])
+        XCTAssertEqual(nodes.step, 60)
+        XCTAssertTrue(prometheusRequests.contains { $0.path == service.rangePath && $0.query["step"] == "1m" && $0.query["query"]?.hasPrefix("label_replace(sum by (instance)") == true })
+        XCTAssertFalse(
+            prometheusRequests.contains { $0.path == service.queryPath && $0.query["query"]?.hasPrefix("max by (node)(kube_node_status_allocatable") == true },
+            "each measure's allocatable rides with its usage's range query (metrics.md 6.5)")
+        let rows = KubeClusterCharts.nodeRows(nodes, allocatable: [:]).rows
+        XCTAssertEqual(rows.map(\.node), ["fake-node-1"])
+        XCTAssertEqual(rows.first?.cpu?.now ?? 0, 12.5, accuracy: 0.01, "0.5 of kube-state-metrics' 4 cores")
+        XCTAssertNil(rows.first?.memory, "no memory allocatable in kube-state-metrics, none given")
+        // Ranked once: the next readings reuse it.
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(prometheusRequests.filter { $0.query["query"]?.hasPrefix("topk(8") == true }.count, 1)
+
+        // A claim fills; an EFS claim's forecast isn't asked.
+        api.forgetRequests()
+        let claim = KubeChart.volume(namespace: "shop", claim: "data-db-0")
+        let shared = KubeChart.volume(namespace: "shop", claim: "shared")
+        monitor.want([.chart(claim), .chart(shared)], for: owner)
+        try await until(5, "the claim") { monitor.charts[claim]?.totals[.volumeFill] != nil && monitor.charts[shared]?.read != nil }
+        XCTAssertEqual(KubeVolumeForecast.chip(available: monitor.charts[claim]?.totals[.volumeAvailable], rate: KubeVolumeForecast.rate(monitor.charts[claim]!))?.text, "full in ~2 d")
+        XCTAssertTrue(monitor.charts[shared]?.totals.isEmpty == true)
+        XCTAssertFalse(
+            prometheusRequests.contains { ($0.query["query"] ?? "").contains("persistentvolumeclaim=\"shared\"") && ($0.query["query"] ?? "").contains("deriv(") },
+            "nothing forecast for a volume with no fixed size")
+        XCTAssertTrue(prometheusRequests.allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath })
+        monitor.want([], for: owner)
     }
 }
 

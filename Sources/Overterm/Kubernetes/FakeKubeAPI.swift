@@ -1370,7 +1370,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         return .json(200, Self.encode(answer))
     }
 
-    private static func number(_ value: Double) -> String { value == value.rounded() ? String(Int(value)) : String(value) }
+    /// As Prometheus writes a sample: a whole number without its point (EFS's 8 EiB past Int's range as a Double).
+    private static func number(_ value: Double) -> String {
+        value == value.rounded() && abs(value) < 9e18 ? String(Int(value)) : String(value)
+    }
 
     /// `30s`, `3m`, `1h`, or plain seconds.
     private static func seconds(_ text: String) -> Double? {

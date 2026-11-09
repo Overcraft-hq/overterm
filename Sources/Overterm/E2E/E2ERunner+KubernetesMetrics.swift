@@ -120,7 +120,7 @@ extension E2ERunner {
         fake.add(
             "deployments.apps", "cart", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],
             labels: [KubeApplications.nameLabel: "cart", KubeApplications.instanceLabel: "cart", KubeApplications.partOfLabel: "acme-shop"])
-        fake.setFields("nodes", "fake-node-1", ["status": ["allocatable": ["cpu": "4", "memory": "8Gi"]]])
+        fake.setFields("nodes", "fake-node-1", ["status": ["allocatable": ["cpu": "4", "memory": "8Gi"], "capacity": ["cpu": "4", "memory": "8Gi"]]])
         fake.setNodeMetrics("fake-node-1", cpu: "1", memory: "2Gi")
         let watches = fake.openWatches
         check("1 is the Overview", page.press("1") && page.section == .overview && page.title == "Overview")
@@ -141,7 +141,27 @@ extension E2ERunner {
         check("with the cluster's usage of its allocatable", await shownText(15) { $0.contains("1000m of 4000m") } != nil)
         check("the server's version, and its nodes", await shownText(15) { $0.contains("Kubernetes v1.") && $0.contains("1 node") } != nil)
         check("the samples taken while it shows, kept", await eventually(15) { page.clusterHistory.count >= 2 }, "\(page.clusterHistory.count)")
-        check("drawn as a sparkline, said so", await shownText(15) { $0.contains("sampled while shown") } != nil)
+        check("drawn, said so", await shownText(15) { $0.contains("sampled while shown") } != nil)
+        // X1, X2 and X4 sampled (metrics.md 2.9, M8): the cluster's samples
+        // against its nodes' allocatable and capacity, no requests line (the
+        // rows carry no spec), its nodes' strips — nothing more read.
+        let charts = KubeChartRegistry.shared
+        let scope = app.theme.map(ObjectIdentifier.init)
+        check(
+            "the cluster's CPU charted from the samples, against allocatable and capacity",
+            await eventually(15) {
+                charts.chart("kubernetes.chart.cluster.cpu", in: scope).map { $0.data.source == "metrics-server" && $0.data.references.map(\.role) == [.allocatable, .capacity] }
+                    == true
+            }, charts.lines(in: scope).joined(separator: "; "))
+        check(
+            "its chip says the requests need Prometheus",
+            page.sampledClusterCharts().first?.chips.contains { $0.text == KubeClusterCharts.requestsNeedPrometheus } == true,
+            "\(page.sampledClusterCharts().first?.chips ?? [])")
+        check(
+            "the node's strips drawn from the samples",
+            await eventually(15) { KubeHeatStripRegistry.shared.strip(KubeClusterCharts.stripIdentifier("fake-node-1", .cpu), in: scope).map { $0.filled > 0 && $0.sampled } == true },
+            KubeHeatStripRegistry.shared.lines(in: scope).joined(separator: "; "))
+        check("no node read of its own for them", !fake.requests.contains { $0.path.hasPrefix("/apis/metrics.k8s.io/v1beta1/nodes/") })
         check("while it shows, its lists are watched", fake.openWatches > watches, "\(fake.openWatches) open, \(watches) before")
         check("the list's verbs aren't keys here", !page.press("r"))
         check("2 is Workloads again", page.press("2") && page.section == .workloads)

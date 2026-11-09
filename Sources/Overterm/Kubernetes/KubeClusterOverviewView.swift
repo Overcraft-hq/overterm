@@ -3,7 +3,7 @@ import SwiftUI
 /// The Overview section (`1`): what fails first — pods failing and why,
 /// workloads and nodes not ready, the last hour's Warning events — then
 /// the cluster's usage against its nodes' allocatable (metrics-server's,
-/// when it is there), the counts per kind and pods by phase, then the
+/// when it is there) and over time (X1–X4: sampled, or from Prometheus), the counts per kind and pods by phase, then the
 /// applications by their recommended labels. Read only while it shows
 /// (`KubeClusterOverviewSession`); a row opens its object's detail.
 struct KubeClusterOverviewView: View {
@@ -26,7 +26,13 @@ struct KubeClusterOverviewView: View {
                 header
                 attention(overview)
                 usage
-                if page.prometheusOn { KubePrometheusChartView(page: page, monitor: model.prometheus, chart: .cluster, theme: theme) }
+                // X1–X4: over the range from Prometheus where it is found, else sampled while shown.
+                if page.chartsFromPrometheus {
+                    KubePrometheusChartView(page: page, monitor: model.prometheus, chart: .cluster, theme: theme)
+                } else {
+                    KubeClusterSampledView(page: page, metrics: model.metrics, theme: theme)
+                    if page.prometheusOn { KubePrometheusChartView(page: page, monitor: model.prometheus, chart: .cluster, theme: theme) }
+                }
                 KubeOverviewHealthView(page: page, session: page.health, theme: theme)
                 counts(overview)
                 applications(overview)
@@ -137,24 +143,18 @@ struct KubeClusterOverviewView: View {
     @ViewBuilder private var usage: some View {
         let note = model.metrics.note(.nodes)
         if let usage = page.clusterUsage {
-            // With Prometheus its chart has the history; this is the moment's.
+            // The moment's; the charts under it have the history (X1, X2).
             let history = page.chartsFromPrometheus ? [] : page.clusterHistory
             VStack(alignment: .leading, spacing: 6) {
                 caption("Usage")
                 HStack(alignment: .top, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        meter(
-                            "CPU", used: KubeMetricsFormat.cpu(usage.used.cpu), of: usage.allocatable.map { KubeMetricsFormat.cpu($0.cpu) },
-                            percent: KubeMetricsFormat.percent(usage.used.cpu, of: usage.allocatable?.cpu))
-                        KubeSparkline(values: history.map(\.usage.cpu), color: theme.accentText).frame(width: 180, height: 22)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        meter(
-                            "Memory", used: KubeMetricsFormat.memory(usage.used.memory),
-                            of: usage.allocatable.map { KubeMetricsFormat.memory($0.memory) },
-                            percent: KubeMetricsFormat.percent(usage.used.memory, of: usage.allocatable?.memory))
-                        KubeSparkline(values: history.map(\.usage.memory), color: theme.accentText).frame(width: 180, height: 22)
-                    }
+                    meter(
+                        "CPU", used: KubeMetricsFormat.cpu(usage.used.cpu), of: usage.allocatable.map { KubeMetricsFormat.cpu($0.cpu) },
+                        percent: KubeMetricsFormat.percent(usage.used.cpu, of: usage.allocatable?.cpu))
+                    meter(
+                        "Memory", used: KubeMetricsFormat.memory(usage.used.memory),
+                        of: usage.allocatable.map { KubeMetricsFormat.memory($0.memory) },
+                        percent: KubeMetricsFormat.percent(usage.used.memory, of: usage.allocatable?.memory))
                 }
                 if let span = KubeUsageRing.span(history) {
                     Text(verbatim: "Usage over \(span)").font(.system(size: 11)).foregroundStyle(theme.text3)
