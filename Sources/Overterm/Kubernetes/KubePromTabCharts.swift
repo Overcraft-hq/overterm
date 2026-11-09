@@ -1,11 +1,13 @@
 import Foundation
 
 /// The Metrics tab's charts from Prometheus (docs/design/kubernetes/metrics.md,
-/// 2.3–2.6, 2.8; stage M6): the same charts as the sampled ones — a pod's
+/// 2.3–2.8; stages M6, M7): the same charts as the sampled ones — a pod's
 /// stacked by container then each container's against its spec's request
-/// and limit, a workload's by pod against its template, an HPA's replicas
-/// and metrics, a node's usage against its pods' requests and its
-/// allocatable — over the range or window Prometheus was asked, plus what
+/// and limit, a workload's top five pods and the rest against its template
+/// and by revision, an HPA's replicas and metrics, a node's usage against
+/// its pods' requests and its allocatable, a namespace's top eight
+/// workloads and the rest against its quota, its pods by phase — over the
+/// range or window Prometheus was asked, plus what
 /// only Prometheus has: a container's throttling (C3), a pod's network
 /// (P3) and restarts (P4), a workload's restarts (W5), and the OOMKills
 /// kube-state-metrics saw, marked. In Live with metrics-server, only those
@@ -19,10 +21,10 @@ enum KubePromTabCharts {
         let all: Set<KubeTabFamily>
         switch subject {
         case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss]
-        case .workload: all = [.cpu, .memory, .restarts, .oom, .replicas, .hpa, .hpaMetrics]
+        case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics]
         case .hpa: all = [.hpa, .hpaMetrics]
         case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory]
-        case .namespace: all = []
+        case .namespace: all = [.cpu, .memory, .phases, .quota, .idle]
         }
         switch source {
         case .sampled: return []
@@ -59,8 +61,19 @@ enum KubePromTabCharts {
         return parts.joined(separator: " · ")
     }
 
-    static func tier(_ reading: KubeTabReading, matched: Bool = false) -> String {
-        (reading.tier?.title ?? "raw cAdvisor") + (matched ? " · pods matched by name" : "")
+    static func tier(_ reading: KubeTabReading, selection: Bool = false) -> String {
+        (reading.tier?.title ?? "raw cAdvisor") + (selection ? reading.selection.map { " · \($0.title)" } ?? "" : "")
+    }
+
+    /// The top N's lines, as ranked: those the ranking named and the range
+    /// query answered, largest first; nil where the ranking said nothing.
+    static func ranked(_ reading: KubeTabReading, _ measure: String, by key: (KubeSeries) -> String?) -> [(id: String, points: [KubeSeriesPoint])] {
+        var lines: [String: [KubeSeriesPoint]] = [:]
+        for series in reading.results[measure + "Top"] ?? [] {
+            guard let id = key(series) else { continue }
+            lines[id, default: []] += series.points
+        }
+        return (reading.ranking?.names[measure] ?? []).compactMap { id in lines[id].map { (id, $0.sorted { $0.time < $1.time }) } }
     }
 
     /// What is said under the charts: why a family wasn't asked, what failed, Prometheus' notes.
@@ -308,39 +321,37 @@ enum KubePromTabCharts {
 
     // MARK: A workload
 
-    /// A workload's charts from Prometheus: its pods matched by name, by
-    /// pod (the top five) or in total, against its template's request and
-    /// limit; by revision (a Deployment's ReplicaSets, from its pods'
-    /// names); its replicas from kube-state-metrics, its restarts; its HPA's.
+    /// A workload's charts from Prometheus: its pods chosen by owner (the
+    /// rule, kube-state-metrics' owners, else their names) — its total and
+    /// its top five as the ranking named them, Per pod as lines against the
+    /// template's per-pod request and limit or Total stacked with "other"
+    /// (the total less the five) against them × its replicas; by revision
+    /// (a Deployment's ReplicaSets); its replicas from kube-state-metrics,
+    /// its restarts; its HPA's.
     static func workload(_ input: KubeWorkloadCharts.Input, reading: KubeTabReading) -> KubeObjectCharts {
         guard let span = reading.span else {
             return KubeObjectCharts(range: .hour, groups: [], caption: caption(reading, window: input.window), span: "", hasSamples: false, notes: notes(reading))
         }
-        let tier = tier(reading, matched: true)
+        let tier = tier(reading, selection: true)
         let subject = "workload.\(input.namespace).\(input.kind.lowercased()).\(input.name)"
         let (perPod, replicas) = KubeWorkloadCharts.template(input.object, kind: input.kind)
-        let cpu = by(reading.results["cpu"], "pod")
-        let memory = by(reading.results["memory"], "pod")
-        let ranked = cpu.keys.filter { !$0.isEmpty }.sorted { a, b in
-            let (x, y) = (KubeChartBuild.mean(cpu[a] ?? [], since: .distantPast), KubeChartBuild.mean(cpu[b] ?? [], since: .distantPast))
-            return x == y ? a < b : x > y
-        }
-        let shown = Array(ranked.prefix(KubeWorkloadCharts.top))
-        let view = input.view ?? KubeWorkloadCharts.defaultView(pods: ranked.count)
-        func usageChart(_ isCPU: Bool) -> KubePodCharts.Chart {
-            let lines = isCPU ? cpu : memory
+        let view = input.view ?? KubeWorkloadCharts.defaultView(pods: replicas)
+        func usageChart(_ isCPU: Bool) -> KubePodCharts.Chart? {
+            let measure = isCPU ? "cpu" : "memory"
+            guard let answer = reading.results[measure] else { return nil }
             let unit: KubeChartUnit = isCPU ? .cores : .bytes
-            let total = sum(Array(lines.values))
+            let total = sum(answer.map(\.points))
+            let top = ranked(reading, measure) { $0.labels["pod"] }
             var series: [KubeChartSeries]
             var stacked = false
-            if view == .perPod, !shown.isEmpty {
-                series = shown.map { KubeChartSeries(id: $0, name: $0, points: lines[$0] ?? []) }
-            } else if shown.isEmpty || ranked.count == 1 {
+            if view == .perPod, !top.isEmpty {
+                series = top.map { KubeChartSeries(id: $0.id, name: $0.id, points: $0.points) }
+            } else if top.isEmpty || (top.count == 1 && replicas <= 1) {
                 series = [KubeChartSeries(id: "total", name: "total", points: total)]
             } else {
-                series = shown.map { KubeChartSeries(id: $0, name: $0, points: lines[$0] ?? []) }
-                let rest = ranked.dropFirst(shown.count).map { lines[$0] ?? [] }
-                if !rest.isEmpty { series.append(KubeChartSeries(id: "other", name: "other", points: sum(rest))) }
+                series = top.map { KubeChartSeries(id: $0.id, name: $0.id, points: $0.points) }
+                let other = KubeChartBuild.rest(total, minus: top.map(\.points))
+                if replicas > top.count || other.contains(where: { $0.value > 1e-9 }) { series.append(KubeChartSeries(id: "other", name: "other", points: other)) }
                 stacked = true
             }
             let request = isCPU ? perPod.cpuRequest : perPod.memoryRequest
@@ -359,22 +370,19 @@ enum KubePromTabCharts {
                 ? KubePodCharts.cpuChips(latest, request: request.map { $0 * Double(replicas) }, limit: limit.map { $0 * Double(replicas) })
                 : KubePodCharts.memoryChips(latest, request: request.map { $0 * Double(replicas) }, limit: limit.map { $0 * Double(replicas) })
             return KubePodCharts.Chart(
-                data: data(id: "\(subject).\(isCPU ? "cpu" : "memory")", title: isCPU ? "CPU" : "Memory", unit: unit, series: series, span: span, stacked: stacked, tier: tier),
+                data: data(id: "\(subject).\(measure)", title: isCPU ? "CPU" : "Memory", unit: unit, series: series, span: span, stacked: stacked, tier: tier),
                 headline: latest.map { "total \(unit.format($0))" }, chips: chips)
         }
-        var charts = [usageChart(true), usageChart(false)]
-        // W3: a Deployment's ReplicaSets, by its pods' names (`<replicaset>-<5>`).
-        if input.kind == "Deployment", !cpu.isEmpty {
-            var byRevision: [String: [[KubeSeriesPoint]]] = [:]
-            for (pod, points) in cpu {
-                guard let dash = pod.lastIndex(of: "-") else { continue }
-                byRevision[String(pod[..<dash]), default: []].append(points)
-            }
+        var charts = [usageChart(true), usageChart(false)].compactMap { $0 }
+        // W3: a Deployment's ReplicaSets, one line a revision, labelled from its History.
+        if input.kind == "Deployment", let answer = reading.results["revisions"] {
+            let byRevision = by(answer, "replicaset").filter { !$0.key.isEmpty }
+            let prefix = input.name + "-"
             let series = byRevision.keys.sorted().map { replicaSet in
-                let hash = String(replicaSet.dropFirst(input.name.count + 1))
+                let hash = replicaSet.hasPrefix(prefix) ? String(replicaSet.dropFirst(prefix.count)) : replicaSet
                 return KubeChartSeries(
                     id: "rev:\(hash)", name: KubeWorkloadCharts.revisionName(hash, kind: input.kind, workload: input.name, revisions: input.revisions),
-                    points: sum(byRevision[replicaSet] ?? []))
+                    points: byRevision[replicaSet] ?? [])
             }
             if !series.isEmpty {
                 charts.append(
@@ -418,8 +426,7 @@ enum KubePromTabCharts {
             let hpaCharts = hpaCharts(namespace: input.namespace, name: hpa.name, reading: reading, span: span)
             if !hpaCharts.isEmpty { groups.append(KubeObjectCharts.Group(title: "Autoscaler \(hpa.name)", charts: hpaCharts)) }
         }
-        var said = notes(reading)
-        if ranked.count > KubeQueryCost.maxNames { said.append("More than \(KubeQueryCost.maxNames) pods matched its name: the five largest and the rest.") }
+        let said = notes(reading)
         let hasSamples = charts.contains { $0.data.usage.contains { !$0.points.isEmpty } }
         let built = KubeObjectCharts(
             range: .hour, groups: groups, caption: caption(reading, window: input.window), span: input.window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
@@ -608,5 +615,105 @@ enum KubePromTabCharts {
             range: .hour, groups: groups, caption: caption(reading, window: window), span: window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
             hasSamples: charts.contains { $0.data.usage.contains { !$0.points.isEmpty } } || reading.read != nil, notes: notes(reading))
         return KubeChartMarkers.mark(built, changes: changes, window: nil, now: span.end)
+    }
+
+    // MARK: A namespace
+
+    /// A namespace's charts from Prometheus (N1, N2, N4 and N3's chip): its
+    /// CPU and memory, its top eight workloads stacked as the ranking named
+    /// them and "other" (the total less them: the rest, and pods of no
+    /// workload), against its ResourceQuota's hard and used requests over
+    /// time (kube-state-metrics'; else the quota read as the tab opened),
+    /// what it requests but leaves idle on average over the range as a
+    /// chip; its pods by phase.
+    static func namespace(namespace: String, reading: KubeTabReading, quota looked: KubeQuota?, changes: KubeChartChanges, window: KubeChartWindow?)
+        -> KubeObjectCharts
+    {
+        guard let span = reading.span else {
+            return KubeObjectCharts(range: .hour, groups: [], caption: caption(reading, window: window), span: "", hasSamples: false, notes: notes(reading))
+        }
+        let subject = "namespace.\(namespace)"
+        let tier = tier(reading, selection: true)
+        let quota = quotaLines(reading)
+        let idle = reading.tagged("idle")
+        let length = window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start))
+        func chart(_ isCPU: Bool) -> KubePodCharts.Chart? {
+            let measure = isCPU ? "cpu" : "memory"
+            guard let answer = reading.results[measure] else { return nil }
+            let unit: KubeChartUnit = isCPU ? .cores : .bytes
+            let total = sum(answer.map(\.points))
+            let top = ranked(reading, measure) { series in
+                series.labels["workload"].map { KubeTabQueries.kindTitle(series.labels["workload_type"] ?? "") + "/" + $0 }
+            }
+            var series = top.map { KubeChartSeries(id: $0.id, name: $0.id.split(separator: "/", maxSplits: 1).last.map(String.init) ?? $0.id, points: $0.points) }
+            if series.isEmpty {
+                series = [KubeChartSeries(id: "total", name: "total", points: total)]
+            } else {
+                let other = KubeChartBuild.rest(total, minus: top.map(\.points))
+                if other.contains(where: { $0.value > 1e-9 }) { series.append(KubeChartSeries(id: "other", name: "other", points: other)) }
+            }
+            let hard = isCPU ? quota.cpuHard : quota.memoryHard
+            let used = isCPU ? quota.cpuUsed : quota.memoryUsed
+            var lastHard = hard.last?.value
+            var lastUsed = used.last?.value
+            if !hard.isEmpty {
+                series.append(KubeChartSeries(id: "quota", name: "quota (requests)", role: .quota, points: hard))
+                if !used.isEmpty { series.append(KubeChartSeries(id: "quota.used", name: "quota used", role: .guide, points: used)) }
+            } else if let looked {
+                lastHard = isCPU ? looked.cpuHard : looked.memoryHard
+                lastUsed = isCPU ? looked.cpuUsed : looked.memoryUsed
+                series += [
+                    KubeChartBuild.reference("quota", "quota (requests)", .quota, lastHard, at: span.end),
+                    KubeChartBuild.reference("quota.used", "quota used", .guide, lastUsed, at: span.end),
+                ].compactMap { $0 }
+            }
+            var chips: [KubeChartChip] = []
+            if let lastUsed, let lastHard, let percent = KubeMetricsFormat.percent(lastUsed, of: lastHard) {
+                chips.append(KubeChartChip(text: "requests \(percent)% of quota", alert: percent >= 90))
+            }
+            if let wasted = idle[measure]?.first?.points.last?.value, wasted.isFinite, wasted > 0 {
+                chips.append(KubeChartChip(text: "requested but idle: \(unit.format(wasted)) (avg, \(length))", alert: false))
+            }
+            let latest = total.last?.value
+            return KubePodCharts.Chart(
+                data: data(
+                    id: "\(subject).\(measure)", title: isCPU ? "CPU" : "Memory", unit: unit, series: series, span: span,
+                    stacked: series.filter { !$0.role.isReference }.count > 1, tier: tier),
+                headline: latest.map { "total \(unit.format($0))" }, chips: chips)
+        }
+        var charts = [chart(true), chart(false)].compactMap { $0 }
+        // N4: pods by phase, as kube-state-metrics says them.
+        if let answer = reading.results["phases"] {
+            let phases = by(answer, "phase")
+            let series = KubePodPhase.order.compactMap { phase in phases[phase].map { KubeChartSeries(id: phase, name: phase, points: $0) } }
+                .filter { $0.points.contains { $0.value > 0 } }
+            if !series.isEmpty {
+                charts.append(
+                    KubePodCharts.Chart(
+                        data: data(
+                            id: "\(subject).phases", title: "Pods by phase", unit: .count, series: series, span: span, stacked: true, tier: "kube-state-metrics",
+                            stepped: true)))
+            }
+        }
+        var said = notes(reading)
+        if quota.cpuHard.isEmpty, quota.memoryHard.isEmpty, looked?.isEmpty ?? true { said.append("No ResourceQuota on requests here: no quota line.") }
+        let built = KubeObjectCharts(
+            range: .hour, groups: [KubeObjectCharts.Group(title: "Namespace", charts: charts)], caption: caption(reading, window: window), span: length,
+            hasSamples: charts.contains { $0.data.usage.contains { !$0.points.isEmpty } } || reading.read != nil, notes: said)
+        return KubeChartMarkers.mark(built, changes: changes, window: nil, now: span.end)
+    }
+
+    /// A namespace's quota over time: the tightest hard request, and its use
+    /// — `requests.cpu` before the bare `cpu` it stands for.
+    static func quotaLines(_ reading: KubeTabReading) -> (cpuHard: [KubeSeriesPoint], cpuUsed: [KubeSeriesPoint], memoryHard: [KubeSeriesPoint], memoryUsed: [KubeSeriesPoint]) {
+        let answer = reading.results["quota"] ?? []
+        func line(_ resource: String, _ type: String) -> [KubeSeriesPoint] {
+            for name in ["requests." + resource, resource] {
+                let points = answer.filter { $0.labels["resource"] == name && $0.labels["type"] == type }.flatMap(\.points)
+                if !points.isEmpty { return points.sorted { $0.time < $1.time } }
+            }
+            return []
+        }
+        return (line("cpu", "hard"), line("cpu", "used"), line("memory", "hard"), line("memory", "used"))
     }
 }

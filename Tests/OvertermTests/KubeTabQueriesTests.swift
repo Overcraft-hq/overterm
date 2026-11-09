@@ -152,12 +152,16 @@ final class KubeTabQueriesTests: XCTestCase {
         XCTAssertEqual(KubeTabQueries.podPattern(kind: "DaemonSet", name: "agent"), "agent-[bcdfghjklmnpqrstvwxz2456789]{5}")
         XCTAssertEqual(KubeTabQueries.podMatcher(kind: "StatefulSet", name: "acme.db"), #"pod=~"acme\\.db-[0-9]+""#, "regex first, then the string: the backslash kept")
         let deployment = KubeTabSubject.workload(namespace: "shop", kind: "Deployment", name: "web", hpa: "web")
+        // Without kube-state-metrics' owners, a workload's pods are matched by name.
+        var unowned = stack
+        unowned.metrics?[KubePromProfile.workloadRule] = nil
+        unowned.metrics?["kube_pod_owner"] = nil
+        XCTAssertEqual(
+            KubeTabTesting.query("cpu", .hour, profile: unowned, subject: deployment),
+            #"sum(sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",metrics_path="/metrics/cadvisor",namespace="shop",pod=~"web-[bcdfghjklmnpqrstvwxz2456789]{1,10}-[bcdfghjklmnpqrstvwxz2456789]{5}"}[2m])))"#
+        )
         let plan = KubeTabTesting.plan(.hour, profile: stack, subject: deployment)
         let by = Dictionary(uniqueKeysWithValues: plan.queries.map { ($0.id, $0.promql) })
-        XCTAssertEqual(
-            by["cpu"],
-            #"sum by (pod)(sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{container!="",image!="",container!="POD",metrics_path="/metrics/cadvisor",namespace="shop",pod=~"web-[bcdfghjklmnpqrstvwxz2456789]{1,10}-[bcdfghjklmnpqrstvwxz2456789]{5}"}[2m])))"#
-        )
         XCTAssertEqual(
             by["replicas"],
             #"label_replace(max(kube_deployment_spec_replicas{job="kube-state-metrics",namespace="shop",deployment="web"}),"overterm_s","desired","","")"#
@@ -222,7 +226,7 @@ final class KubeTabQueriesTests: XCTestCase {
         let workload = KubeTabSubject.workload(namespace: "shop", kind: "Deployment", name: "web", hpa: nil)
         for id in ["cpu", "memory"] {
             let query = try XCTUnwrap(KubeTabTesting.query(id, .hour, subject: workload))
-            XCTAssertTrue(query.hasPrefix("sum by (pod)(\(id == "cpu" ? "sum" : "max") by (namespace,pod,container)("), query)
+            XCTAssertTrue(query.hasPrefix("sum((\(id == "cpu" ? "sum" : "max") by (namespace,pod,container)("), query)
         }
     }
 }

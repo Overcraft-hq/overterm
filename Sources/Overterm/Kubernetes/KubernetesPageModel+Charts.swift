@@ -14,9 +14,9 @@ import Foundation
 /// from a minute before the crosshair.
 extension KubernetesPageModel {
     /// The ranges a subject's tab can pick: every one where Prometheus is
-    /// found (a namespace's aside: what was sampled), else what was sampled while shown.
+    /// found, else what was sampled while shown.
     func metricsRanges(for subject: KubeMetricsSubject) -> [KubeMetricsRange] {
-        chartsFromPrometheus && KubeChartSource.prometheusCharts(subject) ? KubeMetricsRange.allCases : KubeMetricsRange.sampled
+        chartsFromPrometheus ? KubeMetricsRange.allCases : KubeMetricsRange.sampled
     }
 
     /// The detail's.
@@ -57,7 +57,6 @@ extension KubernetesPageModel {
             default: return "The last \(range.title) from Prometheus, at \(KubePromQL.duration(range.prometheusStep(scrape: model.prometheus.profile?.scrapeInterval ?? 30)))"
             }
         }
-        if detail?.ref.metricsSubject == .namespace, chartsFromPrometheus { return "A namespace's charts are what was sampled while shown" }
         return "Needs Prometheus: metrics-server keeps no history, only what Overterm sampled while shown"
     }
 
@@ -182,7 +181,7 @@ extension KubernetesPageModel {
         case .node:
             made = .node(ref.name)
         case .namespace:
-            made = nil
+            made = .namespace(ref.name)
         }
         tabFactsCache = (key, made)
         return made

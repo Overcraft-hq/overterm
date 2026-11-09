@@ -44,9 +44,10 @@ struct FakePromFixture: Sendable {
 /// `max`, `min`, `count`, with or without `by (…)`; `== n`;
 /// `a * on(…) group_left() b`; and, for the Pods list's shares (M5b, so
 /// their union is shown on kube-state-metrics' raw series), `a or b`,
-/// `a and on(…) b`, `a == on(…) group_left() b` and `label_replace`. It
-/// is not extended past that: a later query is answered by a
-/// `FakePromFixture` (`setPrometheusMatrix`).
+/// `a and on(…) b`, `a == on(…) group_left() b` and `label_replace`;
+/// and, for a workload's pods by owner (M7), `group_left(l…)` copying
+/// those labels from the one side. It is not extended past that: a later
+/// query is answered by a `FakePromFixture` (`setPrometheusMatrix`).
 /// Anything neither reads is nil — answered `bad_data`, so a query the
 /// fake can't read fails the test that sent it rather than answering
 /// something made up.
@@ -220,9 +221,12 @@ enum FakePromQL {
                     on = labels()
                     guard on != nil else { return nil }
                 }
+                // group_left(l…): those labels copied from the one side, over the many side's.
+                var copied: [String] = []
                 if next == .word("group_left") {
                     at += 1
-                    guard labels() != nil else { return nil }
+                    guard let names = labels() else { return nil }
+                    copied = names
                 }
                 guard let right = unary() else { return nil }
                 left = left.compactMap { sample in
@@ -232,7 +236,9 @@ enum FakePromQL {
                             key.map { $0 == on!.map { other.labels[$0] ?? "" } } ?? (other.labels == sample.labels)
                         })
                     else { return nil }
-                    return Sample(labels: sample.labels, value: sample.value * match.value)
+                    var labels = sample.labels
+                    for name in copied { labels[name] = match.labels[name] }
+                    return Sample(labels: labels, value: sample.value * match.value)
                 }
             }
             return left

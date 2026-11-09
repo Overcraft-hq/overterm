@@ -5488,7 +5488,7 @@ History entry with its diff.
 `KubernetesPageModel+Charts`; metrics.md 3.3–3.5, 4.7, 6.1, stage M6).
 Where the context's Prometheus is found (the tab wants `.locate` until
 it is — where it is, nothing read), a pod's, a workload's, an HPA's and
-a node's tab pick every range (a namespace's stays sampled): Live, 1h,
+a node's tab pick every range (a namespace's too since M7): Live, 1h,
 6h, 24h, 7d (`KubeMetricsRange.prometheusStep`: 30 s, 60 s on a
 minute's scrape, 2m, 5m, 30m — at most 336 points — the end on a step;
 refreshed every step, minute, 2, 5, 15 minutes) and Custom (`.` past
@@ -5565,6 +5565,60 @@ Prometheus: its Metrics tab does. `KubeMetricsSpanTests`,
 `kubernetesCharts`'s parts 2, 4 and 11 (Live's throttling from a
 15-minute query_range, 1h raw and 6h from the rules over only the
 Service's two paths, a zoom asked at its step and not refreshed, Reset).
+
+**A workload's pods by owner, its top five and the rest; a namespace's
+over Prometheus** (`KubeTabSelection`, `KubeTabRanking`, `KubeTabRankPlan`
+in `KubeTabQueries`, `KubePromTabCharts.workload`/`.namespace`, pure;
+`KubePrometheusMonitor`'s `rank`; metrics.md 2.5, 2.7, 4.5, 4.6, stage
+M7). A workload's pods are chosen by owner, in tier order
+(`workloadSelection`): the mixin's `namespace_workload_pod:kube_pod_owner:relabel`
+(a Deployment's, StatefulSet's, DaemonSet's; `workload_type` lower case),
+else kube-state-metrics' `kube_pod_owner` — a Deployment's through its
+ReplicaSets (`kube_replicaset_owner`, each `max by`, so two replicas of
+it count once), keeping each pod's `replicaset` —, else the pods' names
+(`podPattern`, said "pods matched by name"); every usage, restart and
+OOMKill query is `(… by namespace, pod, container) * on(namespace,pod)
+group_left() <owner>`, its raw selector keeping a prefix of the pods'
+names beside the join (`podPrefixMatcher`, cut at 58 as Kubernetes cuts
+a generated name), so it reads the workload's series, not the
+namespace's. The top N is two reads: the ranking, one instant
+`topk(5, …)` a measure at the span's end (`time`, a window's too) over
+the whole span — CPU the counter's rate over it (no subquery; at least
+four scrapes), raw only under `KubeQueryCost.rankingSamples` (a
+workload's own series, counted first with its pods — `KubeTabCount`,
+one `count by (pod)` —, the namespace's, else the cluster's), else over
+the last 24h, said; memory the rules' average, or raw de-duplicated in
+a subquery over 24h at most and a workload's 50 pods at most
+(`KubeQueryCost.subquery`) — its two queries at once, below the visible
+charts in the queue (`.ranking`), which are asked meanwhile (the five's
+once it answers), and kept in the reading
+(`KubeTabReading.ranking`, carried to the next request of the same object
+and span) for 10 refreshes of the same span, tier and selection; then the
+range queries: the total by owner, the five by name (`podsMatcher`, each
+regex-escaped then string-escaped), and a Deployment's ReplicaSets
+(`sum by (replicaset)`: kube-state-metrics' own, else read off the pod's
+name). The charts: Per pod the five as lines (the default with five
+replicas or fewer), Total the five stacked with "other" (the total less
+them) against the template × replicas; W3 a line a ReplicaSet labelled
+from its History. A namespace's tab (`KubeTabSubject.namespace`) reads
+over Prometheus from 1h (Live stays sampled): its total, its top eight
+workloads (`ownersIn`: the rule, or kube-state-metrics' owners — a
+ReplicaSet's pods its Deployment's — as `workload`/`workload_type`; a pod
+of nothing is in "other"), from the rules where they are, else raw only
+below 2,000 series (`KubeTabQueries.namespaceCount`, one instant count
+kept with the profile, `KubePromProfile.namespaceSeries`; one that fails
+refuses raw for that reading, `KubePromProfile.uncounted`, never kept,
+counted again at the next refresh — `namespaceRawRefusal`, which the idle
+chip obeys too); its pods by
+phase, its ResourceQuota's hard and used requests over time (the tightest,
+`requests.cpu` before `cpu`; else the quota read as the tab opened), and
+N3's chip — what its active pods request less what they use, averaged
+over the range (an instant subquery; without rules only to 24h).
+`FakePromQL`'s `group_left(l…)` copies those labels, so the owner joins
+are shown on data. `KubeTabTopNTests`, `KubeMetricsTabPrometheusTests`;
+`kubernetesCharts`'s part 5 (a Deployment's two ReplicaSets labelled with
+their revisions, the ranking once a measure, the five by name; its
+namespace by workload against its quota).
 
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and

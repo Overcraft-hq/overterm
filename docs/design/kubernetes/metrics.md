@@ -405,7 +405,7 @@ It runs when Prometheus is first found for a context, and only when a chart that
 ```
 count(container_cpu_usage_seconds_total{namespace="$ns",container!=""})
 ```
-It is kept with the profile. Below 2,000 series the raw tier is allowed for that namespace.
+It is kept with the profile. Below 2,000 series the raw tier is allowed for that namespace. (M7 review) A count that fails leaves the namespace uncounted for that reading: nothing is read raw across it (its usage, its ranking, the idle chip), the failure is said, and it is counted again at the next refresh.
 
 **What it derives:**
 - `ksmMajor`: 1 if only `…_requests_cpu_cores` exists. The HPA label is then `hpa`, not `horizontalpodautoscaler`.
@@ -446,6 +446,8 @@ It is kept with the profile. Below 2,000 series the raw tier is allowed for that
 2. **One `query_range`** for the total, plus one for those names: `{pod=~"^(p1|p2|…)$"}` with at most 5, or 8 for namespaces and nodes.
 
 The ranking is cached with the range. It is redone on a range change and every 10 refreshes.
+
+(M7 review) The ranking never holds the visible charts back: while it is read, the charts that need no names (the totals, revisions, restarts, replicas, the HPA's, phases, quota, idle) are asked at once, and the five's range queries once it answers. A raw workload's selector keeps a prefix of its pods' names (`pod=~"<name>-.+"`, cut at 58 characters as Kubernetes cuts a generated name) beside the owner join, so it reads its own series rather than the namespace's. Before it is ranked raw, its pods are counted (`count by (pod)(container_cpu_usage_seconds_total{CAD,<scope>})`, instant): their series are the CPU ranking's estimate, their number the memory subquery's gate (`KubeQueryCost.subquery`, at most 50 pods without rules). The CPU ranking's window is at least four scrapes, so a short window still holds two samples.
 
 ### 4.6 The remaining queries
 

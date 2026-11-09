@@ -133,10 +133,6 @@ extension KubeChartWindow {
 enum KubeChartSource: String, Equatable, Sendable {
     case sampled, prometheus, mixed
 
-    /// A namespace's charts are what was sampled while shown: their
-    /// Prometheus forms (by workload, the quota) aren't drawn here.
-    static func prometheusCharts(_ subject: KubeMetricsSubject) -> Bool { subject != .namespace }
-
     /// The source for a tab: `metricsServer`, metrics-server serves;
     /// `prometheus`, the context's Prometheus is found. Live is sampled
     /// where metrics-server serves (or an HPA's status, which needs none),
@@ -149,7 +145,7 @@ enum KubeChartSource: String, Equatable, Sendable {
         subject: KubeMetricsSubject, range: KubeMetricsRange, window: KubeChartWindow?, metricsServer: Bool, prometheus: Bool
     ) -> KubeChartSource? {
         let sampled = metricsServer || subject == .hpa
-        guard prometheus, prometheusCharts(subject) else { return sampled ? .sampled : nil }
+        guard prometheus else { return sampled ? .sampled : nil }
         let base: KubeChartSource = range == .live && sampled ? .mixed : .prometheus
         guard let window else { return base }
         return window.kind == .zoom ? base : .prometheus

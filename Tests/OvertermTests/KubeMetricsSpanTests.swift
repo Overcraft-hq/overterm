@@ -106,7 +106,10 @@ final class KubeMetricsSpanTests: XCTestCase {
         XCTAssertEqual(pick(.pod, .live, window: zoom, server: true, prometheus: true), .mixed)
         XCTAssertEqual(pick(.pod, .live, window: KubeChartWindow.around(now, now: now), server: true, prometheus: true), .prometheus)
         XCTAssertEqual(pick(.pod, .live, window: KubeChartWindow.around(now, now: now), server: true, prometheus: false), .sampled)
-        XCTAssertEqual(pick(.namespace, .hour, server: true, prometheus: true), .sampled, "a namespace's: what was sampled")
+        XCTAssertEqual(pick(.namespace, .hour, server: true, prometheus: true), .prometheus, "a namespace's too (M7)")
+        XCTAssertEqual(pick(.namespace, .live, server: true, prometheus: true), .mixed)
+        XCTAssertEqual(KubePromTabCharts.families(.namespace, source: .mixed), [], "a namespace's Live: what was sampled, nothing asked")
+        XCTAssertEqual(KubePromTabCharts.families(.namespace, source: .prometheus), [.cpu, .memory, .phases, .quota, .idle])
         XCTAssertEqual(KubePromTabCharts.families(.pod, source: .mixed), [.throttling, .network, .restarts, .oom])
         XCTAssertEqual(KubePromTabCharts.families(.node, source: .mixed), [], "a node's charts all have a sampled form")
         XCTAssertEqual(KubePromTabCharts.families(.workload("Deployment"), source: .mixed), [.restarts, .oom])
@@ -295,32 +298,57 @@ final class KubeMetricsSpanTests: XCTestCase {
     func testAWorkloadsChartsFromPrometheus() {
         let span = KubeMetricsSpan.of(.hour, scrape: 30, now: now)
         let times = [span.end.addingTimeInterval(-60).timeIntervalSince1970, span.end.timeIntervalSince1970]
-        var pods: [KubeSeries] = []
-        for (index, name) in ["web-7f9c6d-aaaaa", "web-7f9c6d-bbbbb", "web-55d4f-ccccc", "web-55d4f-ddddd", "web-55d4f-fffff", "web-55d4f-ggggg", "web-55d4f-hhhhh"].enumerated() {
-            pods.append(series(["pod": name], times, value: Double(index + 1) / 10))
-        }
+        let names = ["web-7f9c6d-aaaaa", "web-7f9c6d-bbbbb", "web-55d4f-ccccc", "web-55d4f-ddddd", "web-55d4f-fffff", "web-55d4f-ggggg", "web-55d4f-hhhhh"]
+        let value = { (name: String) in Double((names.firstIndex(of: name) ?? 0) + 1) / 10 }
+        // The ranking named the five largest; the range queries asked for them alone, and the total.
+        let ranked = ["web-55d4f-hhhhh", "web-55d4f-ggggg", "web-55d4f-fffff", "web-55d4f-ddddd", "web-55d4f-ccccc"]
+        let tops = ranked.map { series(["pod": $0], times, value: value($0)) }
+        let total = names.reduce(0) { $0 + value($1) }
         let object: [String: Any] = [
             "spec": ["template": ["spec": ["containers": [["name": "app", "resources": ["requests": ["cpu": "100m"], "limits": ["cpu": "1"]]]]]]], "status": ["replicas": 7],
         ]
+        var answers = reading(
+            [
+                "cpu": [series([:], times, value: total)], "cpuTop": tops, "memory": [series([:], times, value: total)], "memoryTop": tops,
+                "revisions": [series(["replicaset": "web-55d4f"], times, value: 2.5), series(["replicaset": "web-7f9c6d"], times, value: 0.3)],
+                "replicas": [series(["overterm_s": "desired"], times, value: 7), series(["overterm_s": "available"], times, value: 6)],
+            ], span: span)
+        answers.ranking = KubeTabRanking(key: "k", names: ["cpu": ranked, "memory": ranked])
+        answers.selection = .owner
         let charts = KubePromTabCharts.workload(
             KubeWorkloadCharts.Input(
                 namespace: "shop", kind: "Deployment", name: "web", object: object, ring: KubeUsageRing(), statuses: KubeStatusHistory(), pods: [], range: .hour, now: now,
                 interval: 15, revisions: ["web-55d4f": "rev 14 (nginx:1.27.2)"]),
-            reading: reading(
-                ["cpu": pods, "memory": pods, "replicas": [series(["overterm_s": "desired"], times, value: 7), series(["overterm_s": "available"], times, value: 6)]],
-                span: span))
+            reading: answers)
         let cpu = charts.groups[0].charts[0].data
-        XCTAssertEqual(charts.view, .total, "seven pods: Total")
-        XCTAssertEqual(cpu.usage.map(\.id), ["web-55d4f-hhhhh", "web-55d4f-ggggg", "web-55d4f-fffff", "web-55d4f-ddddd", "web-55d4f-ccccc", "other"])
+        XCTAssertEqual(charts.view, .total, "seven replicas: Total")
+        XCTAssertEqual(cpu.usage.map(\.id), ranked + ["other"], "the ranking's order, then the rest")
         XCTAssertTrue(cpu.stacked)
-        XCTAssertEqual(cpu.usage.last?.points.last?.value ?? 0, 0.3, accuracy: 1e-9, "other: the two smallest")
+        XCTAssertEqual(cpu.usage.last?.points.last?.value ?? 0, 0.3, accuracy: 1e-9, "other: the total less the five")
         XCTAssertEqual(cpu.references.map { (($0.points.last?.value ?? 0) * 1000).rounded() }, [700, 7000], "the template × 7")
-        XCTAssertEqual(cpu.tier, "raw cAdvisor · pods matched by name")
+        XCTAssertEqual(cpu.tier, "raw cAdvisor · by owner")
+        XCTAssertEqual(charts.groups[0].charts[0].headline, "total \(KubeMetricsFormat.cpu(total))", "the total, not the five")
         let revisions = charts.groups[0].charts.first { $0.data.id.hasSuffix(".revisions") }?.data
-        XCTAssertEqual(revisions?.usage.map(\.name), ["rev 14 (nginx:1.27.2)", "rev 7f9c6d"], "by ReplicaSet, from the pods' names")
+        XCTAssertEqual(revisions?.usage.map(\.name), ["rev 14 (nginx:1.27.2)", "rev 7f9c6d"], "by ReplicaSet, labelled from its History")
         let replicas = charts.groups[0].charts.first { $0.data.id.hasSuffix(".replicas") }?.data
         XCTAssertEqual(replicas?.usage.map(\.id), ["available", "unavailable"])
         XCTAssertEqual(replicas?.usage.last?.points.last?.value, 1, "desired less available")
+        // Per pod: the five as lines against one pod's template; no ranking yet, the total alone.
+        let perPod = KubePromTabCharts.workload(
+            KubeWorkloadCharts.Input(
+                namespace: "shop", kind: "Deployment", name: "web", object: object, ring: KubeUsageRing(), statuses: KubeStatusHistory(), pods: [], range: .hour, now: now,
+                interval: 15, view: .perPod),
+            reading: answers)
+        XCTAssertEqual(perPod.groups[0].charts[0].data.usage.map(\.id), ranked)
+        XCTAssertFalse(perPod.groups[0].charts[0].data.stacked)
+        answers.ranking = nil
+        answers.results["cpuTop"] = nil
+        let unranked = KubePromTabCharts.workload(
+            KubeWorkloadCharts.Input(
+                namespace: "shop", kind: "Deployment", name: "web", object: object, ring: KubeUsageRing(), statuses: KubeStatusHistory(), pods: [], range: .hour, now: now,
+                interval: 15),
+            reading: answers)
+        XCTAssertEqual(unranked.groups[0].charts[0].data.usage.map(\.id), ["total"])
     }
 
     func testAnHPAsAndANodesChartsFromPrometheus() {
