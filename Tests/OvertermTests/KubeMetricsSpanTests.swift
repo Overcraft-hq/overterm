@@ -110,9 +110,9 @@ final class KubeMetricsSpanTests: XCTestCase {
         XCTAssertEqual(pick(.namespace, .live, server: true, prometheus: true), .mixed)
         XCTAssertEqual(KubePromTabCharts.families(.namespace, source: .mixed), [], "a namespace's Live: what was sampled, nothing asked")
         XCTAssertEqual(KubePromTabCharts.families(.namespace, source: .prometheus), [.cpu, .memory, .phases, .quota, .idle])
-        XCTAssertEqual(KubePromTabCharts.families(.pod, source: .mixed), [.throttling, .network, .restarts, .oom, .fs])
-        XCTAssertEqual(KubePromTabCharts.families(.node, source: .mixed), [.disks, .nodeNetwork], "a node's disks and network have no sampled form (M8b)")
-        XCTAssertEqual(KubePromTabCharts.families(.workload("Deployment"), source: .mixed), [.restarts, .oom])
+        XCTAssertEqual(KubePromTabCharts.families(.pod, source: .mixed), [.throttling, .network, .restarts, .oom, .fs, .gpu], "a GPU's only from DCGM (M8c)")
+        XCTAssertEqual(KubePromTabCharts.families(.node, source: .mixed), [.disks, .nodeNetwork, .gpu], "a node's disks and network have no sampled form (M8b)")
+        XCTAssertEqual(KubePromTabCharts.families(.workload("Deployment"), source: .mixed), [.restarts, .oom, .gpu])
         XCTAssertTrue(KubePromTabCharts.families(.pod, source: .sampled).isEmpty)
     }
 

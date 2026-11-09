@@ -73,6 +73,10 @@ struct KubePodCharts: Equatable, Sendable {
         var memoryLimit: Double?
         var restarts = 0
         var lastTerminated: Termination?
+        /// Its GPUs, by resource (`nvidia.com/gpu`, a MIG profile's,
+        /// `amd.com/gpu`): what it is given — an extended resource's
+        /// request is its limit (metrics.md decision 12).
+        var gpus: [String: Double] = [:]
     }
 
     struct Chart: Equatable, Sendable, Identifiable {
@@ -148,7 +152,8 @@ struct KubePodCharts: Equatable, Sendable {
             out.append(
                 Container(
                     name: name, cpuRequest: quantity(requests, "cpu"), cpuLimit: quantity(limits, "cpu"), memoryRequest: quantity(requests, "memory"),
-                    memoryLimit: quantity(limits, "memory"), restarts: KubeRollout.int(status["restartCount"]) ?? 0, lastTerminated: last))
+                    memoryLimit: quantity(limits, "memory"), restarts: KubeRollout.int(status["restartCount"]) ?? 0, lastTerminated: last,
+                    gpus: KubeGPU.counts(requests: requests, limits: limits)))
         }
         if let first = KubePodContainers.defaultContainer(pod), let index = out.firstIndex(where: { $0.name == first }), index > 0 {
             out.insert(out.remove(at: index), at: 0)

@@ -424,6 +424,7 @@ extension E2ERunner {
             "its pods by phase from kube-state-metrics",
             await eventually(10) { page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == "namespace.\(namespace).phases" }?.data.source == "Prometheus" })
         await nodeExporterPart(model, page, fake, node: node, service: service)
+        await gpuPart(model, page, fake, namespace: namespace, plainNode: node, service: service)
         check("Prometheus written nothing", fake.writes.isEmpty)
         page.showTab(.overview)
         page.closeDetail()
@@ -493,5 +494,213 @@ extension E2ERunner {
         fake.forgetRequests()
         await pause(1.5)
         check("and not asked again", exporter().isEmpty, "\(exporter().map(\.query))")
+    }
+
+    /// Stage M8c (metrics.md decision 12): a GPU node and the pod that holds
+    /// one of its two GPUs, on kube-prometheus-stack beside the GPU
+    /// operator (DCGM exporter scraped with honor_labels off). The objects
+    /// say what is allocated and by whom; the probe's one more query reads
+    /// DCGM's labels; the node's tab charts each GPU's utilisation, memory,
+    /// power and temperature and says the held one idle; the pod's tab its
+    /// container's GPU, its holder row opening it as a person clicks it;
+    /// the StatefulSet's by pod (its pods by name, the exported labels);
+    /// each again in Live beside metrics-server's samples. A node without
+    /// GPUs asks DCGM nothing. Only the Service's query and query_range. Reads only.
+    func gpuPart(
+        _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, namespace: String, plainNode: String, service: KubePrometheusService
+    ) async {
+        let node = "charts-gpu-1"
+        let pod = "train-0"
+        let gib = 1_073_741_824.0
+        fake.add(
+            "nodes", node, values: ["Status": "Ready", "Roles": "gpu", "Version": "v1.34.1"],
+            fields: [
+                "status": [
+                    "allocatable": ["cpu": "48", "memory": "180Gi", "pods": "58", "nvidia.com/gpu": "2"],
+                    "capacity": ["cpu": "48", "memory": "188Gi", "pods": "58", "nvidia.com/gpu": "2"],
+                ]
+            ])
+        fake.setNodeMetrics(node, cpu: "2", memory: "20Gi")
+        fake.addPod(
+            pod, namespace: namespace, FakeKubeAPI.Pod(node: node, resources: ["app": ["limits": ["nvidia.com/gpu": "1", "cpu": "4"]]]), labels: ["app": "train"])
+        fake.setPodMetrics(pod, namespace: namespace, [("app", "1", "8Gi")], labels: ["app": "train"])
+        fake.add(
+            "statefulsets.apps", "train", namespace: namespace, values: ["Ready": "1/1"],
+            fields: [
+                "spec": [
+                    "replicas": 1, "selector": ["matchLabels": ["app": "train"]],
+                    "template": ["spec": ["containers": [["name": "app", "resources": ["limits": ["nvidia.com/gpu": "1", "cpu": "4"]]]]]],
+                ],
+                "status": ["replicas": 1, "readyReplicas": 1],
+            ])
+        let held = ["exported_namespace": namespace, "exported_pod": pod, "gpu": "0", "modelName": "NVIDIA A100-SXM4-40GB"]
+        let free = ["gpu": "1", "modelName": "NVIDIA A100-SXM4-40GB"]
+        func line(_ tag: String, _ labels: [String: String], _ value: Double) -> FakePromFixture.Line {
+            FakePromFixture.Line(labels.merging(["overterm_s": tag]) { $1 }) { _ in value }
+        }
+        fake.setPrometheusMatrix(
+            "DCGM_FI_DEV_GPU_UTIL{Hostname=",
+            [
+                line("util", held, 0.01), line("util", free, 0), line("used", held, 2 * gib), line("total", held, 40 * gib), line("used", free, 0),
+                line("total", free, 40 * gib), line("power", held, 61), line("power", free, 55), line("temp", held, 41), line("temp", free, 38),
+            ])
+        let container = ["exported_container": "app", "gpu": "0", "modelName": "NVIDIA A100-SXM4-40GB"]
+        fake.setPrometheusMatrix(
+            "DCGM_FI_DEV_GPU_UTIL{exported_namespace=",
+            [line("util", container, 0.01), line("used", container, 2 * gib), line("total", container, 40 * gib), line("power", container, 61)])
+        // The StatefulSet's: by pod, asked by its pods' names (newest fixture first).
+        let byPod = ["exported_pod": pod, "gpu": "0", "modelName": "NVIDIA A100-SXM4-40GB"]
+        let workloadFragment = #"exported_pod=~"train-"#
+        fake.setPrometheusMatrix(workloadFragment, [line("util", byPod, 0.01), line("used", byPod, 2 * gib), line("total", byPod, 40 * gib)])
+        fake.setPrometheusProfile(.gpuOperator)
+        model.prometheus.forgetProfile()
+        defer {
+            fake.clearPrometheusMatrix("DCGM_FI_DEV_GPU_UTIL{Hostname=")
+            fake.clearPrometheusMatrix("DCGM_FI_DEV_GPU_UTIL{exported_namespace=")
+            fake.clearPrometheusMatrix(workloadFragment)
+            fake.setPrometheusProfile(.kubePrometheusStack)
+            model.prometheus.forgetProfile()
+            page.metricsRange = .live
+            fake.delete("statefulsets.apps", "train", namespace: namespace)
+            fake.deletePod(pod, namespace: namespace)
+            fake.delete("nodes", node)
+        }
+        func dcgm() -> [FakeKubeAPI.Request] {
+            fake.requests.filter(\.isPrometheusQuery).filter { ($0.query["query"] ?? "").contains("DCGM_FI_DEV_GPU_UTIL{") }
+        }
+
+        page.showTab(.overview)
+        page.closeDetail()
+        guard let nodes = model.discovery?.kind("nodes") else { return check("nodes served", false) }
+        page.showKind(nodes)
+        check("the GPU node listed", await eventually(15) { model.kind.fullName == "nodes" && model.rows[KubeRowID(namespace: nil, name: node)] != nil })
+
+        // A node without GPUs: DCGM exporter isn't asked.
+        fake.forgetRequests()
+        page.selection = [plainNode]
+        check("m opens the plain node's Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == plainNode)
+        page.pickMetricsRange(.hour)
+        check(
+            "DCGM's labels probed once DCGM exporter is found",
+            await eventually(20) { model.prometheus.profile?.dcgm == KubePromProfile.DCGM(podPrefix: "exported_", namesPods: true, nodeLabel: "Hostname", mig: false) },
+            "\(String(describing: model.prometheus.profile?.dcgm))")
+        check("no GPUs there: nothing said of them", page.detail.flatMap { page.gpuAllocation(of: $0) } == nil)
+        check("nor asked", page.detail.flatMap { page.tabRequest(of: $0) }.map { !$0.families.contains(.gpu) } ?? false)
+        await pause(1)
+        check("no DCGM query for it", dcgm().isEmpty, "\(dcgm().map(\.query))")
+
+        // The GPU node: what is allocated and by whom, then DCGM's charts.
+        page.showTab(.overview)
+        page.closeDetail()
+        fake.forgetRequests()
+        page.selection = [node]
+        check("m opens the GPU node's Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == node)
+        page.pickMetricsRange(.hour)
+        func allocation() -> [String] { page.detail.flatMap { page.gpuAllocation(of: $0) }?.lines ?? [] }
+        check(
+            "its GPUs as the objects say them: allocated, free, and who holds them",
+            await eventually(20) { allocation() == ["nvidia.com/gpu: 1 of 2 allocated · 1 free", "\(namespace)/\(pod) holds 1 nvidia.com/gpu"] },
+            allocation().joined(separator: "; "))
+        check(
+            "who holds them from its pods as objects",
+            fake.requests.contains { $0.path == "/api/v1/pods" && $0.query["fieldSelector"] == "spec.nodeName=\(node)" })
+        func group() -> KubeObjectCharts.Group? { page.detail.flatMap { page.objectCharts(of: $0) }?.groups.first { $0.title == KubeGPUCharts.groupTitle } }
+        let ids = ["utilisation", "memory", "power", "temperature"].map { "node.\(node).gpu.\($0)" }
+        check(
+            "each GPU's utilisation, memory, power and temperature from DCGM exporter",
+            await eventually(25) { group()?.charts.map(\.data.id) == ids }, "\(group()?.charts.map(\.data.id) ?? []) \(page.detail.flatMap { page.objectCharts(of: $0) }?.notes ?? [])")
+        let utilisation = group()?.charts.first
+        check("a line a GPU", utilisation?.data.usage.map(\.name) == ["GPU 0", "GPU 1"], "\(utilisation?.data.usage.map(\.name) ?? [])")
+        check("the held one idle, said", utilisation?.chips == [KubeChartChip(text: "1 allocated GPU idle", alert: true)], "\(utilisation?.chips ?? [])")
+        let notes = page.detail.flatMap { page.objectCharts(of: $0) }?.notes ?? []
+        check(
+            "plainly: who holds it, over which range",
+            notes.contains { $0.hasPrefix("GPU 0, held by \(namespace)/\(pod), was idle over the last 1h") }, notes.joined(separator: "; "))
+        check("its memory against one GPU's total", group()?.charts[1].data.references.map(\.name) == ["total a GPU"])
+        check(
+            "the node's GPUs by Hostname, over the Service's query_range with 20 s",
+            !dcgm().isEmpty
+                && dcgm().allSatisfy {
+                    $0.path == service.rangePath && $0.query["timeout"] == "20s" && ($0.query["query"] ?? "").contains("DCGM_FI_DEV_GPU_UTIL{Hostname=\"\(node)\"}")
+                }, "\(dcgm().map(\.query))")
+
+        // Live beside metrics-server's samples: the GPUs' group added to them.
+        page.pickMetricsRange(.live)
+        check("Live: metrics-server's samples and Prometheus", page.detail.flatMap { page.metricsSource(of: $0.ref) } == .mixed)
+        check(
+            "Live: the node's GPUs added after its own charts",
+            await eventually(25) {
+                guard let charts = page.detail.flatMap({ page.objectCharts(of: $0) }) else { return false }
+                return charts.groups.firstIndex { $0.title == KubeGPUCharts.groupTitle } == 1 && group()?.charts.map(\.data.id) == ids
+            }, "\(page.detail.flatMap { page.objectCharts(of: $0) }?.groups.map(\.title) ?? [])")
+
+        // The pod that holds it, opened by its row as a person clicks it: its container's GPU.
+        fake.forgetRequests()
+        let holderRow = await shownText(15) { $0.contains("\(pod) holds 1") }
+        check("its holder's row is drawn", holderRow != nil)
+        if let holderRow { await click(at: CGPoint(x: holderRow.frame.midX, y: holderRow.frame.midY)) }
+        check("clicked, its holder opens", await eventually(10) { page.detail?.ref.name == pod && page.detail?.object != nil }, page.detail?.ref.name ?? "none")
+        // Not opened by the click: by its action, so the rest still runs.
+        if page.detail?.ref.name != pod { page.openGPUHolder(KubeRowID(namespace: namespace, name: pod)) }
+        _ = await eventually(10) { page.detail?.ref.name == pod && page.detail?.object != nil }
+        page.showTab(.metrics)
+        page.pickMetricsRange(.hour)
+        check(
+            "its GPU as its spec gives it",
+            await eventually(10) { page.detail.flatMap { page.gpuAllocation(of: $0) }?.lines == ["nvidia.com/gpu: 1 given", "Container app holds 1 nvidia.com/gpu"] })
+        func podGPU() -> KubePodCharts.Chart? {
+            page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) }?.pod.first { $0.data.id == "pod.\(namespace).\(pod).gpu.utilisation" }
+        }
+        check("its container's GPU charted", await eventually(25) { podGPU()?.data.usage.map(\.name) == ["app · GPU 0"] }, "\(podGPU()?.data.usage.map(\.name) ?? [])")
+        check(
+            "by the exported labels",
+            dcgm().contains { ($0.query["query"] ?? "").contains("exported_namespace=\"\(namespace)\",exported_pod=\"\(pod)\"") }, "\(dcgm().map(\.query))")
+        page.pickMetricsRange(.live)
+        check("Live: the pod's sampled and Prometheus' together", page.detail.flatMap { page.metricsSource(of: $0.ref) } == .mixed)
+        check("Live: its container's GPU added to the samples", await eventually(25) { podGPU()?.data.usage.map(\.name) == ["app · GPU 0"] })
+        check("never the kubelet", !fake.requests.contains { $0.path.contains("nodes/proxy") || $0.path.contains("/proxy/metrics") })
+
+        // The StatefulSet: what its template gives, its GPUs by pod.
+        page.showTab(.overview)
+        page.closeDetail()
+        guard let statefulSets = model.discovery?.kind("statefulsets") else { return check("statefulsets served", false) }
+        page.showKind(statefulSets)
+        check(
+            "the StatefulSet listed",
+            await eventually(15) { model.kind.fullName == statefulSets.fullName && model.rows[KubeRowID(namespace: namespace, name: "train")] != nil })
+        fake.forgetRequests()
+        page.selection = ["\(namespace)/train"]
+        check("m opens its Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == "train")
+        page.pickMetricsRange(.hour)
+        check(
+            "its GPUs as its template gives them",
+            await eventually(10) {
+                page.detail.flatMap { page.gpuAllocation(of: $0) }?.lines == ["nvidia.com/gpu: 1 given", "Each pod (the template) holds 1 nvidia.com/gpu"]
+            }, page.detail.flatMap { page.gpuAllocation(of: $0) }?.lines.joined(separator: "; ") ?? "none")
+        let workloadIDs = ["utilisation", "memory"].map { "workload.\(namespace).statefulset.train.gpu.\($0)" }
+        func workloadGroup() -> KubeObjectCharts.Group? {
+            page.detail.flatMap { page.objectCharts(of: $0) }?.groups.first { $0.title == KubeGPUCharts.groupTitle }
+        }
+        check(
+            "its GPUs by pod from DCGM exporter",
+            await eventually(25) { workloadGroup()?.charts.map(\.data.id) == workloadIDs && workloadGroup()?.charts.first?.data.usage.map(\.name) == ["\(pod) · GPU 0"] },
+            "\(workloadGroup()?.charts.map { "\($0.data.id) \($0.data.usage.map(\.name))" } ?? []) \(page.detail.flatMap { page.objectCharts(of: $0) }?.notes ?? [])")
+        check("a held one idle, said", workloadGroup()?.charts.first?.chips == [KubeChartChip(text: "1 allocated GPU idle", alert: true)])
+        check(
+            "its pods by their names, by the exported labels",
+            dcgm().contains { ($0.query["query"] ?? "").contains(#"exported_namespace="\#(namespace)",exported_pod=~"train-[0-9]+""#) }, "\(dcgm().map(\.query))")
+        page.pickMetricsRange(.live)
+        check("Live: the StatefulSet's samples and Prometheus'", page.detail.flatMap { page.metricsSource(of: $0.ref) } == .mixed)
+        check(
+            "Live: its GPUs added to the samples",
+            await eventually(25) { workloadGroup()?.charts.map(\.data.id) == workloadIDs },
+            "\(page.detail.flatMap { page.objectCharts(of: $0) }?.groups.map(\.title) ?? [])")
+        page.showTab(.overview)
+        page.closeDetail()
+        // Back on the nodes, the StatefulSet's reads let finish: the next
+        // part counts what is asked once the page is hidden.
+        page.showKind(nodes)
+        _ = await eventually(10) { model.kind.fullName == "nodes" }
+        await pause(1)
     }
 }

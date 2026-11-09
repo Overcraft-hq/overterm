@@ -87,7 +87,11 @@ extension KubernetesPageModel {
             guard detailTab == .overview || sampled else { return [] }
             return [.pod(namespace: namespace, name: detail.ref.name)]
         }
-        guard sampled else { return [] }
+        guard sampled else {
+            // Every chart Prometheus': who holds a node's GPUs is still its pods' to say (decision 12).
+            let shows = detailTab == .metrics && !metricsLivePaused && detail.ref.metricsSubject == .node
+            return shows && gpuAllocation(of: detail) != nil ? [.nodePods(detail.ref.name)] : []
+        }
         return objectMetricsDetails(detail)
     }
 

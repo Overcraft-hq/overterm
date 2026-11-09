@@ -100,7 +100,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         XCTAssertEqual(page.metricsSource(of: try XCTUnwrap(page.detail?.ref)), .mixed)
         try await until(5, "Live's Prometheus answers") { model.prometheus.tabs.values.contains { $0.read != nil } }
         let reading = try XCTUnwrap(model.prometheus.tabs.values.first)
-        XCTAssertEqual(reading.request.families, KubePromTabCharts.families(.pod, source: .mixed))
+        XCTAssertEqual(reading.request.families, KubePromTabCharts.families(.pod, source: .mixed).subtracting([.gpu]), "no GPUs: DCGM exporter isn't asked")
         XCTAssertEqual(reading.request.families, [.throttling, .network, .restarts, .oom, .fs])
         XCTAssertEqual(reading.span?.step, 60, "a minute's scrape: Live at a minute")
         XCTAssertNil(reading.results["cpu"], "CPU is sampled")

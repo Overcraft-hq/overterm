@@ -67,6 +67,8 @@ struct KubeNodePods: Equatable, Sendable {
         var phase: String
         var cpuRequest: Double
         var memoryRequest: Double
+        /// The GPUs its containers are given, by resource (decision 12).
+        var gpus: [String: Double] = [:]
 
         /// Pending or Running: what the scheduler counts.
         var isActive: Bool { phase == "Pending" || phase == "Running" }
@@ -103,7 +105,8 @@ struct KubeNodePods: Equatable, Sendable {
             return Pod(
                 id: KubeRowID(namespace: metadata["namespace"] as? String, name: name),
                 phase: (item["status"] as? [String: Any])?["phase"] as? String ?? "Unknown",
-                cpuRequest: containers.reduce(0) { $0 + ($1.cpuRequest ?? 0) }, memoryRequest: containers.reduce(0) { $0 + ($1.memoryRequest ?? 0) })
+                cpuRequest: containers.reduce(0) { $0 + ($1.cpuRequest ?? 0) }, memoryRequest: containers.reduce(0) { $0 + ($1.memoryRequest ?? 0) },
+                gpus: containers.reduce(into: [:]) { sum, container in sum.merge(container.gpus, uniquingKeysWith: +) })
         }
         let token = ((object["metadata"] as? [String: Any])?["continue"] as? String) ?? ""
         return KubeNodePods(pods: pods, more: !token.isEmpty)

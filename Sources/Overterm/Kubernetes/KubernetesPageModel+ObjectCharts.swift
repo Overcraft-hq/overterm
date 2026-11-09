@@ -70,7 +70,11 @@ extension KubernetesPageModel {
         let ref = session.ref
         // Without metrics-server only an HPA's tab charts anything (its
         // status): the others read nothing they wouldn't draw.
-        if ref.metricsSubject != .hpa, model.metrics.availability != .served { return [] }
+        if ref.metricsSubject != .hpa, model.metrics.availability != .served {
+            // Who holds a node's GPUs is its pods' to say, metrics-server or not (decision 12).
+            if ref.metricsSubject == .node, gpuAllocation(of: session) != nil { return [.nodePods(ref.name)] }
+            return []
+        }
         switch ref.metricsSubject {
         case .workload(let kind):
             guard let namespace = ref.namespace else { return [] }
@@ -299,11 +303,13 @@ extension KubernetesPageModel {
             charts = nil
         }
         if source == .mixed, let built = charts, subject == .node {
-            return KubePromTabCharts.addNodeExporter(built, node: ref.name, reading: reading, profile: model.prometheus.profile ?? .unknown)
+            let added = KubePromTabCharts.addNodeExporter(built, node: ref.name, reading: reading, profile: model.prometheus.profile ?? .unknown)
+            return KubeGPUCharts.add(added, subject: "node.\(ref.name)", reading: reading, whose: .node)
         }
         if source == .mixed, let built = charts, case .workload(let kind) = subject, let namespace = ref.namespace {
-            return KubePromTabCharts.addOnly(
-                built, subject: "workload.\(namespace).\(kind.lowercased()).\(ref.name)", reading: reading, changes: changes, namesPods: true)
+            let whose = "workload.\(namespace).\(kind.lowercased()).\(ref.name)"
+            let added = KubePromTabCharts.addOnly(built, subject: whose, reading: reading, changes: changes, namesPods: true)
+            return KubeGPUCharts.add(added, subject: whose, reading: reading, whose: .workload)
         }
         return charts
     }

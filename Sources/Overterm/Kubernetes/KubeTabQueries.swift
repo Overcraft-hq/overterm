@@ -55,9 +55,12 @@ enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
     /// K6 and K7: a node's disks, used against size a mount, and its
     /// network — node-exporter's, mapped to the node by `node_uname_info` (M8b).
     case disks, nodeNetwork
+    /// G1–G3: the GPUs' utilisation, framebuffer memory, power and
+    /// temperature — DCGM exporter's (M8c); asked only of an object with GPUs.
+    case gpu
 
     /// The families with no sampled form: read from Prometheus in Live too.
-    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork]
+    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork, .gpu]
 }
 
 /// What a tab wants of Prometheus: whose, over which range or window, which families.
@@ -383,6 +386,10 @@ enum KubeTabQueries {
                 add("restarts", .restarts, restarts(scope))
                 add("oom", .oom, ooms(scope, by: "container"))
             }
+            if wanted.contains(.gpu), let dcgm = gpuLabels(profile, needsPods: true, refuse: refuse) {
+                let scope = KubePromQL.matchers([(dcgm.namespace, namespace), (dcgm.pod, name)])
+                add("gpu", .gpu, KubePromQL.gpus(scope, by: dcgm.container, profile: profile, gauge: gauge))
+            }
 
         case .workload(let namespace, let kind, let name, let hpa):
             let selection = workloadSelection(kind: kind, profile: profile)
@@ -418,6 +425,15 @@ enum KubeTabQueries {
                 add("oom", .oom, ooms(scope, by: "pod,container", owned: { owned($0) }))
                 if let replicas = replicas(kind: kind, namespace: namespace, name: name, ksm: ksm) { add("replicas", .replicas, replicas) }
                 if let hpa { hpaQueries(namespace: namespace, name: hpa, profile: profile, add: add, refuse: refuse) }
+            }
+            // A workload's GPUs by pod: DCGM exporter's pod label is its own
+            // (`exported_pod` past honor_labels), never kube-state-metrics',
+            // so its pods are told by their names.
+            if wanted.contains(.gpu), let dcgm = gpuLabels(profile, needsPods: true, refuse: refuse) {
+                let scope = joined([
+                    KubePromQL.matchers([(dcgm.namespace, namespace)]), "\(dcgm.pod)=~\"" + KubePromQL.literal(podPattern(kind: kind, name: name)) + "\"",
+                ])
+                add("gpu", .gpu, KubePromQL.gpus(scope, by: dcgm.pod, profile: profile, gauge: gauge))
             }
 
         case .namespace(let namespace):
@@ -511,6 +527,13 @@ enum KubeTabQueries {
                     refuse(.nodeNetwork, KubeChartEmpty.nodeExporterNoNetwork.sentence)
                 }
             }
+            if wanted.contains(.gpu), let dcgm = gpuLabels(profile, needsPods: false, refuse: refuse) {
+                if let label = dcgm.nodeLabel {
+                    add("gpu", .gpu, KubePromQL.gpus(KubePromQL.matchers([(label, node)]), by: "\(dcgm.namespace),\(dcgm.pod)", profile: profile, gauge: gauge))
+                } else {
+                    refuse(.gpu, KubeChartEmpty.dcgmNoNode.sentence)
+                }
+            }
             if usesKSM {
                 let pinned = joined([ksm, KubePromQL.matchers([("node", node)])])
                 add("pods", .nodePods, "count(max by (namespace,pod)(kube_pod_info{\(pinned)}) * on(namespace,pod) group_left() \(KubePromQL.active(profile: profile)))")
@@ -521,6 +544,25 @@ enum KubeTabQueries {
             }
         }
         return plan
+    }
+
+    /// DCGM exporter's labels, where the GPUs can be asked of it: nil, not
+    /// (said, unless nothing is known yet — then nothing is asked).
+    static func gpuLabels(_ profile: KubePromProfile, needsPods: Bool, refuse: (KubeTabFamily, String) -> Void) -> KubePromProfile.DCGM? {
+        guard profile.known else { return nil }
+        guard profile.hasDCGM else {
+            refuse(.gpu, KubeChartEmpty.noDCGM.sentence)
+            return nil
+        }
+        guard let dcgm = profile.dcgm else {
+            refuse(.gpu, KubeChartEmpty.dcgmUnread.sentence)
+            return nil
+        }
+        if needsPods, !dcgm.namesPods {
+            refuse(.gpu, KubeChartEmpty.dcgmNoPods.sentence)
+            return nil
+        }
+        return dcgm
     }
 
     /// The label a node's cAdvisor series name it by: `node` until the
@@ -814,6 +856,37 @@ enum KubeTabQueries {
 }
 
 extension KubePromQL {
+    /// What identifies a GPU on DCGM exporter's series: its index, and a MIG
+    /// instance's profile and id; its model, for its name.
+    static let gpuIdentity = "gpu,GPU_I_PROFILE,GPU_I_ID,modelName"
+
+    /// G1–G3 under `scope`, one union tagged `overterm_s`, each a series a
+    /// GPU (and `by`: its container, its pod) taken once (`max by`: two
+    /// scrapes of one exporter): utilisation as a fraction (`util`, the
+    /// device's; `engine`, the graphics engine's activity where profiling
+    /// metrics are on — a MIG instance's only one), framebuffer used and
+    /// its total (used + free at one sample) in bytes (DCGM says MiB),
+    /// power and temperature where reported. A gauge keeps its peaks past
+    /// 5-minute steps, as the others do; the total doesn't.
+    static func gpus(_ scope: String, by: String, profile: KubePromProfile, gauge: (String) -> String) -> String {
+        let grouping = "\(gpuIdentity),\(by)"
+        func of(_ metric: String, peaks: Bool = true) -> String {
+            "max by (\(grouping))(\(peaks ? gauge("\(metric){\(scope)}") : "\(metric){\(scope)}"))"
+        }
+        var arms: [(String, String)] = []
+        if profile.has(KubePromProfile.dcgmUtilisation) { arms.append(("\(of(KubePromProfile.dcgmUtilisation)) / 100", "util")) }
+        if profile.has(KubePromProfile.dcgmEngineActive) { arms.append((of(KubePromProfile.dcgmEngineActive), "engine")) }
+        arms.append(("\(of(KubePromProfile.dcgmMemoryUsed)) * 1048576", "used"))
+        // The total from used and free at the same sample, never peaked: a
+        // peaked used beside a plain free overstated it wherever use moved.
+        if profile.has(KubePromProfile.dcgmMemoryFree) {
+            arms.append(("max by (\(grouping))(\(KubePromProfile.dcgmMemoryUsed){\(scope)} + \(KubePromProfile.dcgmMemoryFree){\(scope)}) * 1048576", "total"))
+        }
+        if profile.has(KubePromProfile.dcgmPower) { arms.append((of(KubePromProfile.dcgmPower), "power")) }
+        if profile.has(KubePromProfile.dcgmTemperature) { arms.append((of(KubePromProfile.dcgmTemperature), "temp")) }
+        return KubeTabQueries.union(arms)
+    }
+
     /// node-exporter's series mapped to `node`: its instance, by
     /// `node_uname_info`'s nodename (on EKS the node's hostname, which is
     /// its name) — one `node_uname_info` an instance, two jobs scraping it or not.

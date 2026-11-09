@@ -68,6 +68,18 @@ enum KubeChartEmpty: Equatable, Sendable {
     case nodeDisksNone
     /// K7 asked, but this node reports no interface left once the virtual ones are out.
     case nodeNetworkNone
+    /// G1–G3: the object has GPUs, but no DCGM exporter is scraped.
+    case noDCGM
+    /// G1–G3 on a pod's or a workload's tab: DCGM exporter's series name no pods (its Kubernetes mapping off).
+    case dcgmNoPods
+    /// G1–G3 on a node's tab: DCGM exporter's series name no node.
+    case dcgmNoNode
+    /// DCGM exporter is scraped, but the probe couldn't read its labels.
+    case dcgmUnread
+    /// G1–G3 asked, but DCGM exporter has no series for this object's GPUs.
+    case gpuNone
+    /// G1 on MIG instances without DCGM's profiling metrics (a footnote).
+    case migNeedsProfiling
 
     var sentence: String {
         switch self {
@@ -133,13 +145,25 @@ enum KubeChartEmpty: Equatable, Sendable {
             return "node-exporter reports neither / nor /local on this node: no disk to chart."
         case .nodeNetworkNone:
             return "node-exporter reports no network interface on this node but virtual ones (lo, veth, CNI): no network to chart."
+        case .noDCGM:
+            return "No DCGM exporter in this Prometheus: GPU utilisation, memory, power and temperature need NVIDIA's dcgm-exporter. What the GPUs are given is above."
+        case .dcgmNoPods:
+            return "DCGM exporter's series here name no pods (its Kubernetes mapping is off): a pod's GPUs can't be told apart; the node's tab has them."
+        case .dcgmNoNode:
+            return "DCGM exporter's series here name no node (neither Hostname nor node): a node's GPUs can't be told apart."
+        case .dcgmUnread:
+            return "DCGM exporter is scraped, but how its series are labelled couldn't be read: asked again with the profile."
+        case .gpuNone:
+            return "DCGM exporter has no series for these GPUs over this range: not scraped on their node, or not yet."
+        case .migNeedsProfiling:
+            return "MIG instances report no GPU_UTIL: their utilisation is the graphics engine's activity, which needs DCGM's profiling metrics (DCGM_FI_PROF_GR_ENGINE_ACTIVE)."
         }
     }
 
     /// Said under a chart that still draws, rather than in its place.
     var isFootnote: Bool {
         switch self {
-        case .ksmOld, .partial, .retention, .youngPod: true
+        case .ksmOld, .partial, .retention, .youngPod, .migNeedsProfiling: true
         default: false
         }
     }

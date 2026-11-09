@@ -77,7 +77,7 @@ final class KubeTabQueriesTests: XCTestCase {
         XCTAssertEqual(
             by["rss"], #"max by (container)(container_memory_rss{container!="",image!="",container!="POD",metrics_path="/metrics/cadvisor",namespace="shop",pod="web-1"})"#)
         XCTAssertEqual(plan.tier, .raw, "one pod's raw series over an hour, even with rules")
-        XCTAssertTrue(plan.refused.isEmpty)
+        XCTAssertEqual(plan.refused, [.gpu: KubeChartEmpty.noDCGM.sentence], "only the GPUs: no DCGM exporter here")
     }
 
     func testWhatAPodsTabDoesntAsk() {

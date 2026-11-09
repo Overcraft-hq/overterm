@@ -5637,6 +5637,49 @@ the kubelet is never reached. `KubeNodeExporterChartsTests`,
 `KubeMetricsTabPrometheusTests` (read only while shown, in Live and over
 the hour); `kubernetesObjectCharts`' `nodeExporterPart`.
 
+**GPUs** (`KubeGPU.swift`: `KubeGPU`, `KubeGPUAllocation`;
+`KubeGPUCharts.swift`; `KubernetesPageModel+GPU`; metrics.md decision 12,
+stage M8c). From the objects, with or without Prometheus or
+metrics-server: `KubePodCharts.Container.gpus` (an extended resource's
+limit: `nvidia.com/gpu`, `nvidia.com/gpu.shared`, `nvidia.com/mig-*`,
+`amd.com/gpu`), `KubeNodePods.Pod.gpus` (the node's pods as objects, the
+read K1 already makes — read for a GPU node without metrics-server too),
+a node's capacity and allocatable. `KubeGPUAllocation` says a node's "1 of
+2 allocated · 1 free" and which active pods hold them (a click opens one),
+a pod's containers', a workload's template times its pods; it shows above
+the Metrics tab's charts whatever their source (`KubeGPUAllocationView`),
+every allocation shown — whether a GPU is busy is DCGM's to say. The
+probe's list gains DCGM exporter's metrics, and where its framebuffer
+gauge is found a fifth query (`KubePromProfile.dcgmQuery`) reads its labels
+(`KubePromProfile.DCGM`): the GPU's pod as `exported_pod` where Prometheus
+scrapes it with honor_labels off (then `pod` is the exporter's own), else
+`pod` where it names some pod not the exporter's; a `pod` that is only
+ever the exporter's own (no GPU allocated when probed, honor_labels off)
+is never a holder — the `exported_*` labels are read, and
+`KubePromProfile.DCGM.isExporter` drops it from a node's holders too; its
+node as `Hostname`, else `node`; MIG instances by `GPU_I_PROFILE`. The tab's `gpu` family (`KubePromQL.gpus`: one range union,
+each GPU `max by` its index, MIG profile and id, and its container, pod or
+holder) is asked only of an object with GPUs (`tabRequest` drops it
+otherwise) — a node's by its node label, a pod's by its exported labels, a
+workload's pods by their names (DCGM's pod label is never
+kube-state-metrics') — and in Live too (`prometheusOnly`). `KubeGPUCharts`
+draws G1 utilisation (the graphics engine's activity where profiling
+metrics are on, a MIG instance's only one), G2 framebuffer against one
+GPU's total (its own arm, used + free at one sample: never a peaked used
+beside a plain free), G3 power and temperature: a line a GPU (twelve at most, the
+busiest), a group "GPUs (DCGM exporter)" after a node's or workload's own
+charts, on a pod's beside its network. A held GPU never above 5% over the
+range is said plainly, who holds it and over what ("allocated, and paid
+for, but unused") and chipped on G1. No DCGM, no pod or node labels, its
+labels unread, nothing answered: each its `KubeChartEmpty` sentence.
+A pod's note says how each resource is given (`KubeGPU.given`): a whole
+device, a time slice shared with other pods (`gpu.shared`), a MIG
+instance. `KubeGPUTests`, `KubePromProfileTests` (the fifth query only with
+DCGM; `FakePromProfile.gpuOperatorIdle`, the exporter's own `pod`);
+`kubernetesObjectCharts`' `gpuPart` on `FakePromProfile.gpuOperator`: a
+node's, a pod's (its holder row clicked) and a StatefulSet's tabs, at 1h
+and in Live beside metrics-server.
+
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
 memory numbers, its last 15 minutes as 60 cells of 15 s, each the

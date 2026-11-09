@@ -352,6 +352,28 @@ final class KubePromProfileTests: XCTestCase {
         }
     }
 
+    func testTheProbeAsksDCGMsLabelsOnlyWhereItIsScraped() async throws {
+        api.setPrometheusProfile(.gpuOperator)
+        let profile = try await probe()
+        XCTAssertEqual(asked.count, 5, "one more query, DCGM exporter's labels")
+        XCTAssertEqual(asked.last?.query["query"], KubePromProfile.dcgmQuery)
+        XCTAssertTrue(asked.allSatisfy { $0.path == service.queryPath && $0.query["timeout"] == "20s" })
+        XCTAssertTrue(profile.hasDCGM)
+        XCTAssertEqual(profile.dcgm, KubePromProfile.DCGM(podPrefix: "exported_", namesPods: true, nodeLabel: "Hostname", mig: false))
+        // No GPU allocated when probed, honor_labels off: every `pod` the
+        // exporter's own — the exported labels read, never `pod`.
+        api.forgetRequests()
+        api.setPrometheusProfile(.gpuOperatorIdle)
+        let idle = try await probe()
+        XCTAssertEqual(idle.dcgm, KubePromProfile.DCGM(podPrefix: "exported_", namesPods: true, nodeLabel: "Hostname", mig: false))
+        api.forgetRequests()
+        api.setPrometheusProfile(.kubePrometheusStack)
+        let stack = try await probe()
+        XCTAssertEqual(asked.count, 4, "no DCGM exporter: not asked")
+        XCTAssertNil(stack.dcgm)
+        XCTAssertFalse(stack.hasDCGM)
+    }
+
     func testTheProbeAsksFourQueriesOneAfterAnother() async throws {
         api.setPrometheusProfile(.kubePrometheusStack)
         let profile = try await probe()
