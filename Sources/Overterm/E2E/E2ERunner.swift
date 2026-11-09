@@ -2934,6 +2934,7 @@ final class E2ERunner {
                     with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
             }
+            let startedAt = app.store.tabFrames[tabA.id]?.minX ?? 0
             NSApp.sendEvent(mouse(.leftMouseDown, start))
             var lastCopy: CGFloat = -1
             var crossed = false
@@ -2945,9 +2946,12 @@ final class E2ERunner {
                 lastCopy = app.store.dragX ?? lastCopy
             }
             check("a tab dragged out of its island passes through the next", crossed)
-            // It froze at 474 when the drag died at the crossing.
-            let copyFollowed = lastCopy > 900
-            check("its copy follows the pointer the whole way", copyFollowed, "copy at \(lastCopy)")
+            // It froze at the crossing when the drag died there. As far as
+            // the pointer went, not to a place in the strip: the tabs are as
+            // wide as their names, and these are one letter each.
+            let expected = startedAt + (far.x - start.x)
+            let copyFollowed = abs(lastCopy - expected) < 30
+            check("its copy follows the pointer the whole way", copyFollowed, "copy at \(lastCopy), the pointer's \(expected)")
             NSApp.sendEvent(mouse(.leftMouseUp, far))
             await pause(0.4)
             check("and it lands at the end, in no island", strip().last == "A" && tabA.groupID == nil, "\(strip())")
