@@ -36,7 +36,8 @@ struct KubeMetricsTabView: View {
                         logsFromHere: { [weak page] container, time in page?.logsFromHere(container: container, at: time) },
                         zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) },
                         copy: { [weak page] in page?.copyChartText($0) },
-                        expand: { [weak page] chart in page?.expandChart(chart, span: charts.span, caption: charts.caption) })
+                        expand: { [weak page] chart in page?.expandChart(chart, span: charts.span, caption: charts.caption) },
+                        ask: { [weak page] chart in page?.askAboutChart(chart, caption: charts.caption) })
                 } else {
                     problem(charts)
                 }
@@ -58,7 +59,8 @@ struct KubeMetricsTabView: View {
                         zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) },
                         groupShown: { [weak page] in page?.metricsGroupShown($0, $1) },
                         copy: { [weak page] in page?.copyChartText($0) },
-                        expand: { [weak page] chart in page?.expandChart(chart, span: charts.span, caption: charts.caption) })
+                        expand: { [weak page] chart in page?.expandChart(chart, span: charts.span, caption: charts.caption) },
+                        ask: { [weak page] chart in page?.askAboutChart(chart, caption: charts.caption) })
                 } else {
                     objectProblem(charts)
                 }
@@ -280,6 +282,8 @@ struct KubePodChartsList: View {
     /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
     var copy: ((String) -> Void)? = nil
     var expand: ((KubePodCharts.Chart) -> Void)? = nil
+    /// A chart's "Ask Agent About This Chart" (M11).
+    var ask: ((KubePodCharts.Chart) -> Void)? = nil
     @State private var picked: String?
 
     static let height: CGFloat = 140
@@ -328,7 +332,8 @@ struct KubePodChartsList: View {
         KubeChartView(
             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: Self.height, chips: chart.chips, openMarker: openMarker,
             showAround: showAround, logsFromHere: logsFromHere.map { logs in { logs(container, $0) } },
-            zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, copy: copy, expand: expand.map { expand in { expand(chart) } }, theme: theme
+            zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, copy: copy, expand: expand.map { expand in { expand(chart) } },
+            ask: ask.map { ask in { ask(chart) } }, theme: theme
         )
         .frame(maxWidth: .infinity)
     }
@@ -349,6 +354,8 @@ struct KubeObjectChartsList: View {
     /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
     var copy: ((String) -> Void)? = nil
     var expand: ((KubePodCharts.Chart) -> Void)? = nil
+    /// A chart's "Ask Agent About This Chart" (M11).
+    var ask: ((KubePodCharts.Chart) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -365,7 +372,7 @@ struct KubeObjectChartsList: View {
                         KubeChartView(
                             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: KubePodChartsList.height, chips: chart.chips,
                             openMarker: openMarker, showAround: showAround, zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, copy: copy,
-                            expand: expand.map { expand in { expand(chart) } }, theme: theme
+                            expand: expand.map { expand in { expand(chart) } }, ask: ask.map { ask in { ask(chart) } }, theme: theme
                         )
                         .frame(maxWidth: .infinity)
                     }

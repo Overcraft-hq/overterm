@@ -42,6 +42,10 @@ final class KubeMetricsMonitor: ObservableObject {
         var scope: KubeScope
         var labels: String?
         var availability: KubeMetricsAvailability
+        /// Which cluster, as which user, the context is
+        /// (`KubePrometheusMonitor.cluster(of:)`): the same name pointed
+        /// elsewhere is another context's samples.
+        var cluster = ""
     }
 
     var interval: Duration = .seconds(15)
@@ -84,6 +88,13 @@ final class KubeMetricsMonitor: ObservableObject {
     /// the cluster): left out, not asked again until the credentials change.
     private var partlyRefused: [KubeMetricsTarget: Set<String?>] = [:]
     private var situation: Situation?
+    /// Whether the ring's samples (`last`'s, shown or not) are `context`'s:
+    /// its name, and the cluster and user it points at — an agent's
+    /// `k8s_metrics` reads them only for that one.
+    func ringHolds(_ context: KubeContext) -> Bool {
+        guard let last else { return false }
+        return last.context == context.name && last.cluster == KubePrometheusMonitor.cluster(of: context)
+    }
     /// The last situation that named a context: the one the ring, the
     /// refusals and the stops belong to, kept while nothing is shown.
     private var last: Situation?
@@ -134,14 +145,16 @@ final class KubeMetricsMonitor: ObservableObject {
     func update(_ situation: Situation?, client: @escaping () -> KubeClient?) {
         self.client = client
         guard situation != self.situation else { return }
-        if let situation, situation.context != last?.context {
+        if let situation, situation.context != last?.context || situation.cluster != last?.cluster {
             // Another context's samples are never shown as this one's, nor
             // its refusals kept. Nowhere (the page hidden, the window
             // occluded) keeps them: coming back shows what was sampled
             // before, the time away a gap (decision 1).
             forget()
         }
-        if situation?.context != self.situation?.context || situation?.availability != self.situation?.availability {
+        if situation?.context != self.situation?.context || situation?.cluster != self.situation?.cluster
+            || situation?.availability != self.situation?.availability
+        {
             // Another context's numbers are never shown as this one's.
             for task in polls.values { task.cancel() }
             polls = [:]

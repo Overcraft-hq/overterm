@@ -394,12 +394,18 @@ final class KubeMetricsTests: XCTestCase {
         XCTAssertEqual(model.metrics.ring.points(key), points, "what was sampled before")
         XCTAssertEqual(metricsRequests.count, asked, "and nothing asked for it")
 
-        // The monitor alone: nowhere, then the same context, keeps them…
-        let here = KubeMetricsMonitor.Situation(context: "fake-dev", scope: .namespace("shop"), labels: nil, availability: .served)
+        // The monitor alone: nowhere, then the same context — the same cluster and user —, keeps them…
+        let dev = try XCTUnwrap(model.contexts.context(named: "fake-dev"))
+        let here = KubeMetricsMonitor.Situation(
+            context: "fake-dev", scope: .namespace("shop"), labels: nil, availability: .served, cluster: KubePrometheusMonitor.cluster(of: dev))
         model.metrics.update(nil) { nil }
         model.metrics.update(here) { nil }
         XCTAssertTrue(model.metrics.ring.holds(key, .detail))
-        // …another context, even after nowhere, drops them.
+        // …the same name pointed at another cluster drops them, as another context, even after nowhere, does.
+        var moved = here
+        moved.cluster = "http://127.0.0.1:2\nfake-dev\nanonymous"
+        model.metrics.update(moved) { nil }
+        XCTAssertTrue(model.metrics.ring.isEmpty, "another cluster's samples are never this one's")
         model.metrics.update(nil) { nil }
         model.metrics.update(KubeMetricsMonitor.Situation(context: "fake-other", scope: .namespace("shop"), labels: nil, availability: .served)) { nil }
         XCTAssertTrue(model.metrics.ring.isEmpty)

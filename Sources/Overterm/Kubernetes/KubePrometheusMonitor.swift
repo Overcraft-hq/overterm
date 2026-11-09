@@ -183,6 +183,8 @@ final class KubePrometheusMonitor: ObservableObject {
     var clock: @MainActor () -> Date = { Date() }
     /// How many Prometheus queries were made, and lookups for it — the tests'.
     private(set) var requests = 0
+    /// How many of them were an agent's (`agentPrepare`'s calls).
+    private(set) var agentRequests = 0
     private(set) var detections = 0
 
     private var wanted: [ObjectIdentifier: Set<Want>] = [:]
@@ -199,7 +201,7 @@ final class KubePrometheusMonitor: ObservableObject {
         var key: ProfileKey
         var profile: KubePromProfile
     }
-    private struct ProfileKey: Equatable {
+    fileprivate struct ProfileKey: Equatable {
         var service: KubePrometheusService
         var use: KubePrometheusUse
         var cluster: String
@@ -542,11 +544,28 @@ final class KubePrometheusMonitor: ObservableObject {
 
     /// Several queries in turn, each answer by its measure.
     private func askEach(
-        _ transport: any KubePrometheusTransport, _ paths: [(KubeChartMeasure, String)], context: String, service: KubePrometheusService, order: Int
+        _ transport: any KubePrometheusTransport, _ paths: [(KubeChartMeasure, String)], context: String, service: KubePrometheusService, order: Int,
+        agent: AgentRead? = nil
     ) async throws -> [KubeChartMeasure: KubePrometheusReader.Answer] {
         var answers: [KubeChartMeasure: KubePrometheusReader.Answer] = [:]
-        for (measure, path) in paths { answers[measure] = try await ask(transport, path, context: context, service: service, order: order) }
+        for (measure, path) in paths { answers[measure] = try await send(agent, transport, path, context: context, service: service, order: order) }
         return answers
+    }
+
+    /// One query, the page's (`ask`) or an agent's (`agentAsk`: its own
+    /// queue key, below the page, at most two of the four places).
+    private func send(
+        _ agent: AgentRead?, _ transport: any KubePrometheusTransport, _ path: String, context: String, service: KubePrometheusService, order: Int = 0,
+        priority: KubePromQueue.Priority = .visible
+    ) async throws -> KubePrometheusReader.Answer {
+        guard let agent else { return try await ask(transport, path, context: context, service: service, order: order, priority: priority) }
+        return try await agentAsk(agent.transport, path, context: context, key: agent.key, priority: priority)
+    }
+
+    /// A failure said: the page's stops its reading when it should; an
+    /// agent's never stops the page's.
+    private func say(_ error: Error, service: KubePrometheusService, agent: AgentRead?) -> String {
+        agent == nil ? said(error, service: service) : Self.sentence(error, service: service).0
     }
 
     /// The context's queue for `service`, as the situation now reads it:
@@ -621,7 +640,7 @@ final class KubePrometheusMonitor: ObservableObject {
             defer { group.cancelAll() }
             guard let first = try await group.next(), let answer = first else {
                 try Task.checkCancellation()
-                throw KubePrometheusReader.Failure(message: KubePrometheusReader.tookTooLong)
+                throw KubePrometheusReader.Failure(message: KubePrometheusReader.tookTooLong, kind: .timeout)
             }
             return answer
         }
@@ -648,12 +667,16 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     private func read(
-        _ chart: KubeChart, range: KubeChartRange, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String
+        _ chart: KubeChart, range: KubeChartRange, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String,
+        agent: AgentRead? = nil
     ) async -> KubeChartReading {
-        var reading = charts[chart].flatMap { $0.range == range ? $0 : nil } ?? KubeChartReading(range: range)
+        // An agent's read starts from nothing: the page's answers are the page's.
+        var reading = agent == nil ? charts[chart].flatMap { $0.range == range ? $0 : nil } ?? KubeChartReading(range: range) : KubeChartReading(range: range)
         // What the context's Prometheus holds decides the tier, the pins and the rate window.
         var profile = KubePromProfile.unknown
-        if chart.needsProfile {
+        if let agent {
+            profile = agent.profile
+        } else if chart.needsProfile {
             switch await self.profile(context, service, transport) {
             case .success(let probed): profile = probed
             case .failure(let error):
@@ -697,13 +720,13 @@ final class KubePrometheusMonitor: ObservableObject {
             if case .namespaces(let picked) = chart, queries.refused == nil {
                 let totals = queries.series.map { ($0.0, KubePromQL.rangePath(service, $0.1, range, now: now)) }
                 let early = queries.series
-                async let earlyAnswers = askEach(transport, totals, context: context, service: service, order: order)
+                async let earlyAnswers = askEach(transport, totals, context: context, service: service, order: order, agent: agent)
                 if reading.ranked == nil || reading.rankedReads >= KubeTabRanking.kept,
                     let ranking = KubeChart.namespaceRanking(range: range, profile: profile, picked: picked)
                 {
                     asking = KubeChartQuery(id: "ranking", promql: ranking.query, instant: true)
-                    let answer = try await ask(
-                        transport, KubePromQL.instantPath(service, ranking.query, at: window.end), context: context, service: service, order: order,
+                    let answer = try await send(
+                        agent, transport, KubePromQL.instantPath(service, ranking.query, at: window.end), context: context, service: service, order: order,
                         priority: .ranking)
                     reading.ranked = answer.series.sorted { ($0.points.last?.value ?? 0) > ($1.points.last?.value ?? 0) }.compactMap { $0.labels["namespace"] }
                     reading.rankedReads = 0
@@ -732,7 +755,7 @@ final class KubePrometheusMonitor: ObservableObject {
                 } else {
                     let promql = KubeChartQueries.union((measure, query), carrying: totals)
                     sending(measure, promql)
-                    answer = try await ask(transport, path(promql), context: context, service: service, order: order)
+                    answer = try await send(agent, transport, path(promql), context: context, service: service, order: order)
                 }
                 reading.series[measure] = KubePrometheusReader.points(KubeChartQueries.arm(answer.series, measure, of: totals))
                 for (total, _) in totals {
@@ -752,7 +775,7 @@ final class KubePrometheusMonitor: ObservableObject {
                 let totals = queries.carried(by: measure, parts: true)
                 let promql = KubeChartQueries.union((measure, query), carrying: totals)
                 sending(measure, promql, by: queries.partLabel)
-                let answer = try await ask(transport, path(promql), context: context, service: service, order: order)
+                let answer = try await send(agent, transport, path(promql), context: context, service: service, order: order)
                 parts[measure] = KubePromTabCharts.by(KubeChartQueries.arm(answer.series, measure, of: totals), queries.partLabel)
                 for (total, _) in totals { partTotals[total] = byNode(KubeChartQueries.arm(answer.series, total, of: totals)) }
                 notes += answer.notes
@@ -760,7 +783,7 @@ final class KubePrometheusMonitor: ObservableObject {
             reading.parts = parts
             for (measure, query) in queries.partTotals where partTotals[measure] == nil {
                 sending(measure, query, instant: true, by: queries.partLabel)
-                let answer = try await ask(transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
+                let answer = try await send(agent, transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
                 partTotals[measure] = byNode(answer.series)
                 notes += answer.notes
             }
@@ -771,14 +794,14 @@ final class KubePrometheusMonitor: ObservableObject {
             if queries.unioned, totals.count > 1 {
                 // The totals no line carried (its lines refused): one instant union.
                 sending(totals[0].0, KubeChartQueries.union(totals), instant: true)
-                let answer = try await ask(
-                    transport, KubePromQL.instantPath(service, KubeChartQueries.union(totals)), context: context, service: service, order: order)
+                let answer = try await send(
+                    agent, transport, KubePromQL.instantPath(service, KubeChartQueries.union(totals)), context: context, service: service, order: order)
                 for (measure, _) in totals { reading.totals[measure] = KubePrometheusReader.value(KubeChartQueries.arm(answer.series, measure, of: totals)) }
                 notes += answer.notes
             } else {
                 for (measure, query) in totals {
                     sending(measure, query, instant: true)
-                    let answer = try await ask(transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
+                    let answer = try await send(agent, transport, KubePromQL.instantPath(service, query), context: context, service: service, order: order)
                     reading.totals[measure] = KubePrometheusReader.value(answer.series)
                     notes += answer.notes
                 }
@@ -805,13 +828,15 @@ final class KubePrometheusMonitor: ObservableObject {
             // Refused as sent: reported with its PromQL (metrics.md 4.7).
             let failure = error as? KubePrometheusReader.Failure
             reading.reported = failure.map { KubeChartEmpty.offersCopyPromQL($0.kind) } == true ? asking.map { [$0] } ?? [] : []
-            // A 404 or a 422: what the server holds may have changed — asked again.
-            if let failure = error as? KubePrometheusReader.Failure, failure.kind == .notFound || failure.kind == .unprocessable {
+            // A 404 or a 422: what the server holds may have changed — asked
+            // again. Not on an agent's read: the page's profile is the page's
+            // to drop (its own next read finds the same).
+            if agent == nil, let failure = error as? KubePrometheusReader.Failure, failure.kind == .notFound || failure.kind == .unprocessable {
                 profiles[context] = nil
             }
             // The last good read's notes don't belong beside a new problem.
             reading.notes = []
-            reading.problem = said(error, service: service)
+            reading.problem = say(error, service: service, agent: agent)
         }
         return reading
     }
@@ -1182,15 +1207,16 @@ final class KubePrometheusMonitor: ObservableObject {
     /// what came. Cancelled (the tab gone), it isn't done: asked again
     /// only by another press.
     private func readSizing(
-        _ request: KubeSizingRequest, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String
+        _ request: KubeSizingRequest, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String, agent: AgentRead? = nil
     ) async -> KubeSizingReading {
         var reading = KubeSizingReading(request: request)
         let profile: KubePromProfile
-        switch await self.profile(context, service, transport) {
+        let probed: Result<KubePromProfile, Error> = if let agent { .success(agent.profile) } else { await self.profile(context, service, transport) }
+        switch probed {
         case .success(let probed): profile = probed
         case .failure(let error):
             if error is CancellationError || Task.isCancelled { return reading }
-            reading.problem = said(error, service: service)
+            reading.problem = say(error, service: service, agent: agent)
             reading.done = true
             return reading
         }
@@ -1204,7 +1230,7 @@ final class KubePrometheusMonitor: ObservableObject {
         if let count = plan.count {
             reading.queries = [count]
             do {
-                let answer = try await ask(transport, KubePromQL.instantPath(service, count.promql), context: context, service: service, priority: .sizing)
+                let answer = try await send(agent, transport, KubePromQL.instantPath(service, count.promql), context: context, service: service, priority: .sizing)
                 // Its pods by name: the subqueries read these and no others; none, nothing is sized.
                 let pods = Set(answer.series.compactMap { $0.labels["pod"] }.filter { !$0.isEmpty }).sorted()
                 reading.pods = pods.count
@@ -1212,7 +1238,7 @@ final class KubePrometheusMonitor: ObservableObject {
                 plan = KubeSizing.plan(request.subject, profile: profile, now: now, pods: pods)
             } catch {
                 if error is CancellationError || Task.isCancelled { return reading }
-                reading.problem = "Its pods couldn't be counted: " + said(error, service: service)
+                reading.problem = "Its pods couldn't be counted: " + say(error, service: service, agent: agent)
                 reading.done = true
                 return reading
             }
@@ -1232,8 +1258,8 @@ final class KubePrometheusMonitor: ObservableObject {
                 query.id,
                 Task { @MainActor [weak self] () throws -> KubePrometheusReader.Answer in
                     guard let self else { throw CancellationError() }
-                    return try await self.ask(
-                        transport, KubePromQL.instantPath(service, query.promql), context: context, service: service, order: order, priority: .sizing)
+                    return try await self.send(
+                        agent, transport, KubePromQL.instantPath(service, query.promql), context: context, service: service, order: order, priority: .sizing)
                 }
             )
         }
@@ -1251,7 +1277,7 @@ final class KubePrometheusMonitor: ObservableObject {
                         cancelled = true
                         continue
                     }
-                    if reading.problem == nil { reading.problem = said(error, service: service) }
+                    if reading.problem == nil { reading.problem = say(error, service: service, agent: agent) }
                 }
             }
         } onCancel: {
@@ -1276,26 +1302,42 @@ final class KubePrometheusMonitor: ObservableObject {
         case read(KubeShareReading)
     }
 
+    /// Where an agent's call reads a context's Prometheus: its Service, the
+    /// way there (the metrics proxy in a background slot), the context's
+    /// queue's key and what that Prometheus holds.
+    struct AgentRead {
+        let service: KubePrometheusService
+        let transport: any KubePrometheusTransport
+        fileprivate let key: ProfileKey
+        let profile: KubePromProfile
+    }
+
+    /// What `agentPrepare` found.
+    enum AgentPrepared {
+        /// The context's Prometheus isn't opted in: nothing asked.
+        case off
+        case unavailable(String)
+        case ready(AgentRead)
+    }
+
     /// Which cluster, as which user, a context is (`Situation.cluster`).
     nonisolated static func cluster(of context: KubeContext) -> String {
         [context.server ?? "", context.cluster, context.user].joined(separator: "\n")
     }
 
-    /// `k8s_top`'s shares across namespaces (metrics.md 7): the list's
-    /// kube-state-metrics query (`KubePodShares.query`) for each of
-    /// `namespaces` (at most `KubeScope.watchCap`), once, for the call —
-    /// whether or not the page shows the context. Only where its
-    /// Prometheus is opted in (`.off` otherwise, nothing asked); where it
-    /// is, as the page found it or found now through `client` (GETs);
-    /// asked through `transport` — the context's metrics proxy in a
-    /// background slot (§6.4's exception for an agent's explicit read) —
-    /// and the context's queue as an agent: below the page, at most two
-    /// of its places. Kept: where Prometheus is and its profile, as the
-    /// page's are; the answer is the caller's. A failure here never stops
-    /// the page's reading.
-    func agentShares(
-        _ context: KubeContext, namespaces: [String], client: KubeClient, transport: (KubePrometheusService) -> (any KubePrometheusTransport)?
-    ) async -> AgentShares {
+    /// An agent's explicit read of `context`'s Prometheus (metrics.md 6.4's
+    /// one exception to "only while a chart shows": `k8s_top`'s shares,
+    /// `k8s_metrics`, Ask Why's usage) — whether or not the page shows the
+    /// context. Only where its Prometheus is opted in (`.off` otherwise,
+    /// nothing asked); where it is, as the page found it or found now
+    /// through `client` (GETs); its profile as the page probed it, else
+    /// probed now — through `transport`, the context's metrics proxy in a
+    /// background slot, and the context's queue as an agent: below the
+    /// page, at most two of its places. Kept: where Prometheus is and its
+    /// profile, as the page's are. A failure here never stops the page's reading.
+    func agentPrepare(
+        _ context: KubeContext, client: KubeClient, transport: (KubePrometheusService) -> (any KubePrometheusTransport)?
+    ) async -> AgentPrepared {
         let use = KubePrometheusUse.of(context.settings)
         let name = context.name
         let cluster = Self.cluster(of: context)
@@ -1340,16 +1382,34 @@ final class KubePrometheusMonitor: ObservableObject {
             if let now = situation, now.context == name, now.use == use, now.cluster == cluster, self.profile != profile { self.profile = profile }
         }
         if profile.agentOnly { return .unavailable(KubeChartEmpty.agentMode(service).sentence) }
+        return .ready(AgentRead(service: service, transport: transport, key: key, profile: profile))
+    }
+
+    /// `k8s_top`'s shares across namespaces (metrics.md 7): the list's
+    /// kube-state-metrics query (`KubePodShares.query`) for each of
+    /// `namespaces` (at most `KubeScope.watchCap`), once, for the call,
+    /// read as `agentPrepare` says. The answer is the caller's.
+    func agentShares(
+        _ context: KubeContext, namespaces: [String], client: KubeClient, transport: (KubePrometheusService) -> (any KubePrometheusTransport)?
+    ) async -> AgentShares {
+        let read: AgentRead
+        switch await agentPrepare(context, client: client, transport: transport) {
+        case .off: return .off
+        case .unavailable(let why): return .unavailable(why)
+        case .ready(let ready): read = ready
+        }
+        let profile = read.profile
         if profile.ksmMissing { return .unavailable(KubeChartEmpty.sharesNeedKSM.sentence) }
         let asked = Array(namespaces.prefix(KubeScope.watchCap))
         var reading = KubeShareReading(scope: KubeScope.of(asked))
         for namespace in asked {
             do {
                 let answer = try await agentAsk(
-                    transport, KubePromQL.instantPath(service, KubePodShares.query(namespace: namespace, profile: profile)), context: name, key: key)
+                    read.transport, KubePromQL.instantPath(read.service, KubePodShares.query(namespace: namespace, profile: profile)), context: context.name,
+                    key: read.key)
                 reading.take(answer.series, namespace: namespace)
             } catch {
-                let (sentence, stops) = Self.sentence(error, service: service)
+                let (sentence, stops) = Self.sentence(error, service: read.service)
                 reading.problems[namespace] = sentence
                 if stops || error is CancellationError { break }
             }
@@ -1358,13 +1418,91 @@ final class KubePrometheusMonitor: ObservableObject {
         return .read(reading)
     }
 
+    /// A Metrics tab's queries asked for an agent (`k8s_metrics`, Ask Why's
+    /// usage): `KubeTabQueries.plan` over the request's span — no top N
+    /// (an agent gets the totals), no cache (nothing kept of it) — one
+    /// after another through the context's queue as an agent. A namespace's
+    /// raw series are counted first, as the page counts them. A query that
+    /// stops the context (a credential, a `services/proxy` 403), times out
+    /// or is told to wait (`Retry-After`) ends the read, said — the rest
+    /// would wait as long; another failure is said and the rest asked.
+    func agentTab(_ request: KubeTabRequest, _ read: AgentRead, context: String) async -> KubeTabReading {
+        var reading = KubeTabReading(request: request)
+        reading.service = read.service
+        var profile = read.profile
+        reading.profile = profile
+        let now = clock()
+        let span = request.resolve(scrape: profile.scrapeInterval, now: now)
+        var problem: String?
+        if let count = KubeTabQueries.namespaceCount(request, profile: profile) {
+            do {
+                let answer = try await agentAsk(read.transport, KubePromQL.instantPath(read.service, count.promql), context: context, key: read.key)
+                profile.namespaceSeries[count.namespace] = Int((KubePrometheusReader.value(answer.series) ?? 0).rounded())
+            } catch {
+                if error is CancellationError || Task.isCancelled { return reading }
+                profile.uncounted.insert(count.namespace)
+                problem = Self.sentence(error, service: read.service).0
+            }
+            reading.profile = profile
+        }
+        let plan = KubeTabQueries.plan(request, span: span, profile: profile)
+        var notes = plan.notes
+        var answered = false
+        for query in plan.queries {
+            let path =
+                query.instant
+                ? KubePromQL.instantPath(read.service, query.promql, at: query.at ?? span.end)
+                : KubePromQL.rangePath(read.service, query.promql, start: span.start, end: span.end, step: span.step)
+            do {
+                let answer = try await agentAsk(read.transport, path, context: context, key: read.key)
+                reading.results[query.id] = answer.series
+                notes += answer.notes
+                answered = true
+            } catch {
+                if error is CancellationError || Task.isCancelled { return reading }
+                let (sentence, stops) = Self.sentence(error, service: read.service)
+                if problem == nil { problem = sentence }
+                let kind = (error as? KubePrometheusReader.Failure)?.kind
+                if stops || kind == .timeout || kind == .busy { break }
+            }
+        }
+        reading.problem = problem
+        reading.refused = plan.refused
+        reading.saved = plan.savedRefused
+        reading.tier = plan.tier
+        reading.selection = plan.selection
+        reading.queries = plan.queries
+        reading.span = span
+        var seen = Set<String>()
+        reading.notes = Array(notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))
+        if answered || plan.queries.isEmpty { reading.read = now }
+        return reading
+    }
+
+    /// One of the Overview's charts (the cluster's, a claim's) asked for an
+    /// agent, as the page asks it (`read`), its answer the caller's.
+    func agentChart(_ chart: KubeChart, range: KubeChartRange, _ read: AgentRead, context: String) async -> KubeChartReading {
+        await self.read(chart, range: range, read.transport, service: read.service, context: context, agent: read)
+    }
+
+    /// R1 asked for an agent (`k8s_metrics`' `sizing`), as a press asks it,
+    /// once, its answer the caller's: nothing kept as the page's.
+    func agentSizing(_ request: KubeSizingRequest, _ read: AgentRead) async -> KubeSizingReading {
+        await readSizing(request, read.transport, service: read.service, context: request.context, agent: read)
+    }
+
+    /// What `context`'s Prometheus was last found to hold, by the page or
+    /// an agent's read: nil, never probed (nothing is asked for it).
+    func agentProfile(for context: String) -> KubePromProfile? { profiles[context]?.profile }
+
     /// One query of an agent's, through the context's queue as an agent's.
     private func agentAsk(
-        _ transport: any KubePrometheusTransport, _ path: String, context: String, key: ProfileKey
+        _ transport: any KubePrometheusTransport, _ path: String, context: String, key: ProfileKey, priority: KubePromQueue.Priority = .visible
     ) async throws -> KubePrometheusReader.Answer {
         try Task.checkCancellation()
         requests += 1
-        return try await queue(context, key).ask(path, via: transport, priority: .visible, asker: .agent, deadline: deadline)
+        agentRequests += 1
+        return try await queue(context, key).ask(path, via: transport, priority: priority, asker: .agent, deadline: deadline)
     }
 
     // MARK: What the page says

@@ -1125,7 +1125,8 @@ final class KubernetesModel: ObservableObject {
         metrics.update(
             KubeMetricsMonitor.Situation(
                 context: name, scope: scope, labels: labelSelector,
-                availability: KubeMetricsAvailability.of(discovery, source: context.settings.metrics ?? .auto))
+                availability: KubeMetricsAvailability.of(discovery, source: context.settings.metrics ?? .auto),
+                cluster: KubePrometheusMonitor.cluster(of: context))
         ) { [weak self] in self?.client(for: name) }
     }
 

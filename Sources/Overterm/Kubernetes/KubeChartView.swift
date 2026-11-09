@@ -211,6 +211,9 @@ struct KubeChartView: View {
     /// ⤢ and the context menu's "Expand": the chart alone in the window's
     /// right slot; nil, not offered.
     var expand: (() -> Void)? = nil
+    /// The context menu's "Ask Agent About This Chart" (M11): the chart as
+    /// `k8s_metrics` says it, in the Ask Agent sheet; nil, not offered.
+    var ask: (() -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
     @StateObject private var state = KubeChartState()
     /// Where the mouse last was over the plot: the context menu's time —
@@ -413,6 +416,10 @@ struct KubeChartView: View {
                     }
                     Button("Copy Values as CSV") { copy(KubeChartExport.csv(data, hidden: hidden, hideReferences: hideReferences)) }
                         .help("The window shown, a row a time and a column a series shown — to the clipboard only")
+                }
+                if let ask {
+                    Button("Ask Agent About This Chart…") { ask() }
+                        .help("What this chart shows, as text, to an agent — shown whole before it is sent")
                 }
                 if let expand {
                     Divider()

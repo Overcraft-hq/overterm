@@ -3828,7 +3828,9 @@ where a context is writable for agents (Agents' writes, below):
   `KubeRollout` says it, its replicas, and its history — a Deployment's
   ReplicaSets, the others' ControllerRevisions (where served), the ones it
   owns, newest first: revision, images, ready, age, change-cause.
-- `k8s_top`: usage as `kubectl top` says it (Usage, below). `k8s_apply`
+- `k8s_top`: usage as `kubectl top` says it (Usage, below).
+- `k8s_metrics`: an object's usage over a range, as text (Agents' usage,
+  below). `k8s_apply`
   is a write (Manifests in the editor, below). A name that isn't one of
   these is an unknown tool.
 
@@ -5905,6 +5907,65 @@ the pods listed by name, a sibling's prefix never read, none refused, and
 the 50-pod bound; rules without a subquery; the retention);
 `KubeSizingPageTests` (nothing before the press, once, never refreshed,
 dropped when left); `kubernetesObjectCharts`' `sizingPart`.
+
+**Agents' usage** (`KubeMCP+Metrics.swift`, `KubeMetricsText.swift`;
+metrics.md 7, stage M11). `k8s_metrics` gives a pod's, a container's, a
+workload's, a namespace's, a node's, a claim's, an HPA's or the cluster's
+usage over 15m, 1h (the default), 6h, 24h or 7d, for `measures` (cpu,
+memory, throttling, network, restarts, replicas, volume, fs; a default
+per kind; a node's top pods, a series per pod on it, only on `top_pods`;
+the cluster's and a claim's charts filtered to them too), as text an
+agent reads — never a matrix. The numbers are the
+Metrics tab's own: its queries (`KubeTabQueries`, the Overview's
+`KubeChart` for the cluster and a claim) and its builders
+(`KubePromTabCharts`, `KubePodCharts`, `KubeObjectCharts`), so the
+references and markers are the tab's — the pod's object (one GET) for its
+request and limit and its last terminations, its events, a workload's
+ReplicaSets or ControllerRevisions for its rollouts. Where they come from,
+in order: Prometheus where the context opts in to it, asked for the call
+(`KubePrometheusMonitor.agentPrepare`: where it is and its profile as the
+page found them, else found and probed now; then `agentTab`, the tab's
+plan without a top N or the cache, `agentChart`, `agentSizing`) — the one
+exception to "only while a chart shows" (analysis.md §4, §10): the metrics
+proxy in a background slot, through the context's `KubePromQueue` as an
+agent — every query of an Overview chart's too, its ranking and its
+totals' union —, below the page and at most two of its four places,
+nothing kept as the page's (`tabs`, `sizings`, its profile never dropped
+by an agent's 404), a failure never stopping the page's reading; an
+`agentTab` read ends at its first timeout or `Retry-After`; else what the
+page sampled of the object while shown, on that context only — its
+name, cluster and user (`KubeMetricsMonitor.ringHolds`; the same name
+pointed elsewhere drops the ring) —; else one metrics.k8s.io read now
+("now only", saying so when Prometheus was tried and gave nothing); a claim without Prometheus says only Prometheus
+has kubelet's volume stats. `KubeMetricsText` (pure) says a chart: each
+usage series' min, p50 and p95 by nearest rank, max and last, with the
+min's, max's and last's times — a gap left out, never zero; the last
+against each reference line ("81% of limit 512Mi"); a stacked chart's
+total first; the newest five markers and how many earlier; the window
+line (span, step, the range in local time with its zone, source, tier);
+a note from Prometheus quoted as data. The answer is bounded to whole
+lines within about 4 KB, scrubbed (`KubeMCPText.finished`, `Secrets`),
+every name cut to 253 characters. `sizing` (a container's, a workload's)
+runs R1 once and says `KubeSizingCard`'s summary. No free-form PromQL.
+Ask Why's brief gets a "usage" part (`KubeMCP.usagePart`, the page's and
+`k8s_why`'s alike): a failing pod's failing container's last hour (the
+pod's where `KubeTrouble` names none), or what was sampled, or now — a
+Deployment's only where it is cheap (the mixin's recording rules, or
+sampled while shown) — from what the brief read (`KubeBriefReads`, from
+`KubeAgentBriefing.read`: the object, its events, a Deployment's
+ReplicaSets, none read twice), within `KubeMCP.usageLimit` (8 s; a slow
+or paused Prometheus never holds the brief, the read cancelled), left out
+where no number can be given. A chart's menu has "Ask Agent About This Chart…"
+(`KubernetesPageModel.askAboutChart`): the chart as `KubeMetricsText.about`
+says it, nothing read for it, in the Ask Agent sheet shown whole before
+it is sent. `KubeMetricsTextTests`, `KubeMCPMetricsTests` (as an agent
+with the page not showing it, only the Service's two paths, nothing kept;
+the ring, by cluster; now; sizing; refusals before any read; Ask Why's
+part through `k8s_why`, the failing container's, nothing read twice, a
+stalled Prometheus left out in time; a node's top pods only on request;
+the cluster's totals' union as an agent's);
+`kubernetesCharts`' part 9 (`kubernetesChartsAgent`: "81% of limit"
+through the MCP's handler, then the chart asked about and cancelled).
 
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and

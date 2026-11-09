@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 /// `kubernetesCharts` (docs/design/kubernetes/metrics.md, 8; stage M3a's
 /// parts 1, 3 and 12), against `fake-dev` with metrics-server and no
@@ -330,6 +331,57 @@ extension E2ERunner {
         check(
             "the peak a step's highest, a minute apart", asked().contains { $0.query["query"]?.hasPrefix(Self.peakFragment) == true && $0.query["query"]?.hasSuffix("[5m:1m])") == true },
             "\(asked().compactMap { $0.query["query"] })")
+
+        // 9. k8s_metrics (M11): app's working set at 104Mi of its 128Mi limit, said as an agent reads it.
+        fake.setPrometheusSeries("container_memory_working_set_bytes", labels: container, value: 104 * 1_048_576)
+        await kubernetesChartsAgent(
+            model, page, fake, service: service, pod: name,
+            chart: {
+                built()?.sections.first { $0.container == "app" }?.charts.first { $0.data.id == "container.shop.\(name).app.cpu" }
+            }, caption: { built()?.caption })
         check("Prometheus written nothing", fake.writes.isEmpty)
+    }
+
+    /// Part 9 (metrics.md 8; stage M11): `k8s_metrics` through the MCP's
+    /// own handler, as an agent in a pane would call it — app's memory over
+    /// the last hour, bounded, "81% of limit" said; only the Service's two
+    /// query paths, each with 20 s. Then "Ask Agent About This Chart" on
+    /// the tab's chart: the Ask Agent sheet, the chart as text shown whole
+    /// before anything is sent — cancelled, nothing sent.
+    func kubernetesChartsAgent(
+        _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, service: KubePrometheusService, pod name: String,
+        chart: () -> KubePodCharts.Chart?, caption: () -> String?
+    ) async {
+        fake.forgetRequests()
+        let arguments: [String: Any] = ["kind": "container", "name": name, "container": "app", "namespace": "shop", "context": "fake-dev", "measures": ["memory"]]
+        let result = try? await KubeMCP.call("k8s_metrics", arguments, kubernetes: model)
+        let text = ((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "\(result ?? [:])"
+        note("k8s_metrics: \(text)")
+        check("k8s_metrics answers", result != nil && result?["isError"] as? Bool != true, text)
+        check("from the tab's own Prometheus queries", text.contains("container app of pod shop/\(name), 1h: Prometheus \(service)"), text.replacingOccurrences(of: "\n", with: " | "))
+        check("app's working set against its limit: 81% of limit", text.contains("81% of limit 128Mi"), text.replacingOccurrences(of: "\n", with: " | "))
+        check("bounded to about 4 KB", text.count <= KubeMetricsText.budget + 200, "\(text.count) characters")
+        let asked = fake.requests.filter(\.isPrometheusQuery)
+        check(
+            "only the Service's query and query_range, each with 20 s",
+            !asked.isEmpty && asked.allSatisfy { ($0.path == service.rangePath || $0.path == service.queryPath) && $0.query["timeout"] == "20s" },
+            "\(asked.map(\.path))")
+        check("nothing written", fake.writes.isEmpty)
+
+        // "Ask Agent About This Chart": the sheet, the chart as text.
+        // app's CPU over 24h, as the tab draws it (the recording rule's), with points in it.
+        _ = await eventually(10) { chart()?.data.usage.first.map { !$0.points.isEmpty } == true }
+        guard let shown = chart() else { return check("app's CPU chart to ask about", false) }
+        func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
+        let brief = page.askAboutChart(shown, caption: caption())
+        check("the chart asked about", brief?.text.contains("app · CPU: last") == true, (brief?.text ?? "none").replacingOccurrences(of: "\n", with: " | "))
+        check("the Ask Agent sheet opens", await eventually(10) { self.window.attachedSheet != nil && sheet() != nil })
+        let ask = app.askAgent
+        check("the whole text shown before it is sent", ask.showsBrief && ask.subject == "CPU of pod/\(name)", ask.subject ?? "none")
+        let prompt = await app.askAgentPrompt()
+        check("its context and window said", prompt.contains("pod shop/\(name) on context fake-dev") && prompt.contains("· Prometheus ·"), prompt.replacingOccurrences(of: "\n", with: " | "))
+        let cancelled = sheet().map { $0.cancel() } != nil
+        let away = await eventually(3) { self.window.attachedSheet == nil }
+        check("Cancel sends nothing", cancelled && away && !ask.isOpen)
     }
 }

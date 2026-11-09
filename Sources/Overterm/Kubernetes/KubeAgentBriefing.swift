@@ -26,6 +26,14 @@ enum KubeAgentBriefing {
     static func brief(
         _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery? = nil, now: Date = Date()
     ) async throws -> KubeAgentBrief {
+        try await read(ref, client: client, context: context, discovery: discovery, now: now).brief
+    }
+
+    /// The brief on `ref`, and what it read that its usage part reads
+    /// too (`KubeMCP.usagePart`): handed on, never read twice.
+    static func read(
+        _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery? = nil, now: Date = Date()
+    ) async throws -> (brief: KubeAgentBrief, reads: KubeBriefReads) {
         guard !ref.isSecret else { throw KubeBriefProblem.unsupported("A Secret is never put in a brief.") }
         if ref.isPod { return try await pod(ref, client: client, context: context, discovery: discovery, now: now) }
         if ref.kind.group == "apps", ref.kind.kind == "Deployment", ref.namespace != nil {
@@ -38,7 +46,7 @@ enum KubeAgentBriefing {
 
     private static func pod(
         _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery?, now: Date
-    ) async throws -> KubeAgentBrief {
+    ) async throws -> (brief: KubeAgentBrief, reads: KubeBriefReads) {
         let namespace = ref.namespace ?? "default"
         let object = try await within { try await client.object(ref.kind, namespace: namespace, name: ref.name) }
         let json = object.json
@@ -90,8 +98,10 @@ enum KubeAgentBriefing {
         }
         let scrub = scrubber(env: env, names: names)
 
+        var reads = KubeBriefReads(object: json, failingContainer: trouble.container)
         do {
             let events = try await within { try await client.events(kind: "Pod", name: ref.name, namespace: namespace, uid: object.uid) }
+            reads.events = events
             if let text = KubeAgentText.events(events, about: "pod/\(ref.name)", now: now) { parts.append(.init(title: "events", text: scrub(text))) }
         } catch {
             notes.append("its events (\(said(error)))")
@@ -126,14 +136,17 @@ enum KubeAgentBriefing {
 
         var text = KubeAgentText.pod(json, trouble: trouble, context: context, owners: owners)
         if !notes.isEmpty { text += "\nNot in this brief, couldn't be read: " + notes.joined(separator: "; ") + "." }
-        return KubeAgentBrief(
+        let brief = KubeAgentBrief(
             message: trouble.question("pod \(namespace)/\(ref.name)"), subject: "pod/\(ref.name) \(trouble.reason)", text: scrub(text), parts: parts,
             production: context.production, context: ref.context, namespace: namespace, images: images(of: json["spec"]))
+        return (brief, reads)
     }
 
     // MARK: A Deployment
 
-    private static func deployment(_ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, now: Date) async throws -> KubeAgentBrief {
+    private static func deployment(
+        _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, now: Date
+    ) async throws -> (brief: KubeAgentBrief, reads: KubeBriefReads) {
         let namespace = ref.namespace ?? "default"
         let object = try await within { try await client.object(ref.kind, namespace: namespace, name: ref.name) }
         let json = object.json
@@ -146,7 +159,9 @@ enum KubeAgentBriefing {
         let env = KubeLogScrub.env(of: template)
         var names = KubeAgentText.names(of: json)
 
-        let sets = await replicaSets(of: json, client: client, namespace: namespace, notes: &notes)
+        let read = await replicaSets(of: json, client: client, namespace: namespace, notes: &notes)
+        var reads = KubeBriefReads(object: json, replicaSets: read)
+        let sets = read ?? []
         let (current, previous) = KubeAgentText.currentAndPrevious(sets, of: json)
         names.formUnion([current, previous].compactMap { $0 }.map(KubeAgentText.name))
 
@@ -184,6 +199,7 @@ enum KubeAgentBriefing {
 
         do {
             let events = try await within { try await client.events(kind: "Deployment", name: ref.name, namespace: namespace, uid: object.uid) }
+            reads.events = events
             if let text = KubeAgentText.events(events, about: "deploy/\(ref.name)", now: now) { parts.append(.init(title: "events", text: scrub(text))) }
         } catch {
             notes.append("its events (\(said(error)))")
@@ -238,9 +254,10 @@ enum KubeAgentBriefing {
 
         var text = KubeAgentText.deployment(json, trouble: trouble, context: context, current: current, previous: previous)
         if !notes.isEmpty { text += "\nNot in this brief, couldn't be read: " + notes.joined(separator: "; ") + "." }
-        return KubeAgentBrief(
+        let brief = KubeAgentBrief(
             message: trouble.question("deployment \(namespace)/\(ref.name)"), subject: "deploy/\(ref.name) \(trouble.reason)", text: scrub(text),
             parts: parts, production: context.production, context: ref.context, namespace: namespace, images: images(of: template["spec"]))
+        return (brief, reads)
     }
 
     /// A pod spec's containers' images (init containers after), as the
@@ -273,24 +290,25 @@ enum KubeAgentBriefing {
 
     // MARK: Reads
 
-    /// A Deployment's ReplicaSets, by its selector: one page of them.
+    /// A Deployment's ReplicaSets, by its selector: one page of them; nil, not read.
     private static func replicaSets(
         of deployment: [String: Any], client: KubeClient, namespace: String, notes: inout [String]
-    ) async -> [[String: Any]] {
-        guard let selector = KubeForwardResolve.labelSelector(KubeAgentText.map(deployment["spec"])["selector"] as? [String: Any]) else { return [] }
-        let path = KubePath.query(KubeResourceKind.replicaSets.path(namespace: namespace), [("labelSelector", selector), ("limit", "50")])
+    ) async -> [[String: Any]]? {
+        guard let selector = KubeForwardResolve.labelSelector(KubeAgentText.map(deployment["spec"])["selector"] as? [String: Any]) else { return nil }
+        let path = KubePath.query(
+            KubeResourceKind.replicaSets.path(namespace: namespace), [("labelSelector", selector), ("limit", String(KubeTimeline.revisionLimit))])
         do {
             return items(try await within { try await client.get(path).body })
         } catch {
             notes.append("its ReplicaSets (\(said(error)))")
-            return []
+            return nil
         }
     }
 
     /// The diff of a Deployment's current ReplicaSet's template with the
     /// previous one's; nil when it has only one.
     private static func templateDiff(of deployment: [String: Any], client: KubeClient, namespace: String, notes: inout [String]) async -> String? {
-        let sets = await replicaSets(of: deployment, client: client, namespace: namespace, notes: &notes)
+        let sets = await replicaSets(of: deployment, client: client, namespace: namespace, notes: &notes) ?? []
         let (current, previous) = KubeAgentText.currentAndPrevious(sets, of: deployment)
         guard let current else { return nil }
         guard let previous else { return "No previous ReplicaSet: ReplicaSet \(KubeAgentText.name(current)) is the Deployment's only revision kept." }
@@ -342,6 +360,19 @@ enum KubeAgentBriefing {
     static func within<T: Sendable>(_ read: @escaping @Sendable () async throws -> T) async throws -> T {
         try await KubeBriefRace.run(limit: readTimeout, read)
     }
+}
+
+/// What a brief read that its usage part reads too (`KubeMCP.usagePart`,
+/// metrics.md 7): handed on within one Ask Why, so nothing is read twice.
+struct KubeBriefReads: @unchecked Sendable {
+    /// The object asked about: the pod's, or the Deployment's.
+    var object: [String: Any]
+    /// Its own events; nil, they couldn't be read.
+    var events: [KubeEvent]?
+    /// A Deployment's ReplicaSets, one page by its selector; nil, not read.
+    var replicaSets: [[String: Any]]?
+    /// The pod's failing container, as `KubeTrouble` names it.
+    var failingContainer: String?
 }
 
 /// A read that took longer than the brief waits.

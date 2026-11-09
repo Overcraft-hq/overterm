@@ -41,11 +41,13 @@ import Foundation
 /// lines, events and characters are bounded.
 ///
 /// `k8s_top` (stage 2d) reads metrics.k8s.io: pods' and nodes' usage.
+/// `k8s_metrics` (metrics.md 7, M11) an object's usage over a range, as
+/// text, from the charts' own queries (`KubeMCP+Metrics`).
 @MainActor
 enum KubeMCP {
     static let prefix = "k8s_"
     /// The reads, always offered.
-    static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top"]
+    static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top", "k8s_metrics"]
     /// The writes, listed only while `kubernetes.agentWrites` names a context (`KubeAgentWrites`).
     static let writes: [String] = KubeAgentWrites.tools
 
@@ -97,6 +99,7 @@ enum KubeMCP {
         case "k8s_why": text = try await why(call, target, kubernetes: kubernetes, pane: pane, list: list, now: now)
         case "k8s_rollout": text = try await rollout(call, target, kubernetes: kubernetes, now: now)
         case "k8s_top": text = try await top(call, target, kubernetes: kubernetes, now: now)
+        case "k8s_metrics": text = try await metrics(call, target, kubernetes: kubernetes, now: now)
         case "k8s_restart", "k8s_scale", "k8s_delete_pod": text = try await write(call, target, kubernetes: kubernetes, pane: pane)
         case "k8s_apply": text = try await apply(call, target, kubernetes: kubernetes, pane: pane)
         default: throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
@@ -610,11 +613,14 @@ enum KubeMCP {
         let ref = KubeObjectRef(context: target.context.name, kind: kind, namespace: namespace, name: name)
         let discovery = known(for: target, kubernetes: kubernetes)
         do {
-            var brief = try await KubeAgentBriefing.brief(ref, client: target.client, context: target.brief, discovery: discovery, now: now)
+            let read = try await KubeAgentBriefing.read(ref, client: target.client, context: target.brief, discovery: discovery, now: now)
+            var brief = read.brief
             // The checkout bound there: the calling pane's, else any (3.2).
             if let bound = bindings.binding(on: target.context.name, namespace: namespace, preferring: binding(for: pane, in: list)) {
                 brief = await KubeAgentBriefing.withDeployedCommit(brief, checkout: URL(fileURLWithPath: bound.checkout))
             }
+            // Its usage over the last hour, where that is cheap (metrics.md 7): from what the brief read, within `usageLimit`.
+            if let usage = await usagePart(for: ref, context: target.context, reads: read.reads, kubernetes: kubernetes, now: now) { brief.parts.append(usage) }
             return KubeMCPText.bounded(KubeMCPText.brief(brief))
         } catch let problem as KubeBriefProblem {
             if case .notFailing(let why) = problem { return [target.header(), why].joined(separator: "\n") }
@@ -914,11 +920,37 @@ enum KubeMCP {
                     "limit": ["type": "integer", "description": "Pods or nodes (default 20, at most 200)."],
                     "namespace": namespace, "context": context,
                 ]),
+            tool(
+                "k8s_metrics",
+                "An object's usage over a range, as text: per chart min, p50, p95, max and last with their times, the last against its request, limit, allocatable or quota, restarts and OOMKills, rollouts and scaling marked. From Prometheus where the context opts in to it (the charts' own queries; no free-form PromQL), else what Overterm sampled while the object was shown, else metrics-server now. Says where the numbers come from and what is missing. Bounded to about 4 KB.",
+                [
+                    "kind": [
+                        "type": "string", "enum": ["pod", "container", "workload", "namespace", "node", "pvc", "hpa", "cluster"],
+                        "description": "Default pod. deployment, statefulset, daemonset, replicaset or job also name a workload.",
+                    ],
+                    "name": ["type": "string", "description": "The object's name (a container's pod). A namespace's: default the one namespace named."],
+                    "container": ["type": "string", "description": "One container of the pod."],
+                    "workload_kind": ["type": "string", "description": "A workload's: deployment (default), statefulset, daemonset, replicaset or job."],
+                    "range": ["type": "string", "enum": ["15m", "1h", "6h", "24h", "7d"], "description": "Default 1h."],
+                    "measures": [
+                        "type": "array", "items": ["type": "string", "enum": MetricsMeasure.allCases.map(\.rawValue)],
+                        "description": "Default cpu, memory and restarts (a pod's, a workload's); replicas (an HPA's); volume (a claim's); cpu and memory otherwise.",
+                    ],
+                    "sizing": [
+                        "type": "boolean",
+                        "description": "A container's or a workload's: suggested requests from seven days of usage (per pod; CPU from p95, memory from the max). Prometheus only.",
+                    ],
+                    "top_pods": [
+                        "type": "boolean",
+                        "description": "A node's: its pods ranked by CPU and memory too (Prometheus; a series per pod on the node, so asked only when wanted).",
+                    ],
+                    "namespace": namespace, "context": context,
+                ]),
         ]
     }
 
     static let instructions =
-        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's). They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
+        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's), k8s_metrics an object's usage over a range against its requests and limits. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [
