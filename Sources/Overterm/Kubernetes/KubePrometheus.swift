@@ -597,44 +597,63 @@ enum KubePrometheusReader {
         if answer.resultType == "scalar" {
             // `[time, "value"]`, no labels.
             guard let pair = body["result"] as? [Any] else { throw Failure(message: "Prometheus's answer has no result.") }
-            answer.series = [KubeSeries(labels: [:], points: point(pair).map { [$0] } ?? [])]
+            answer.series = [KubeSeries(labels: [:], points: point(pair as NSArray).map { [$0] } ?? [])]
         } else if answer.resultType == "string" {
             answer.series = []
         } else {
-            guard let result = body["result"] as? [[String: Any]] else { throw Failure(message: "Prometheus's answer has no result.") }
+            // Walked as Foundation's arrays: bridged to `[[String: Any]]` and
+            // each series' pairs to `[[Any]]`, an 8 MB answer took twice its
+            // 150 ms (metrics.md 5.3, M12).
+            guard let result = body["result"] as? NSArray else { throw Failure(message: "Prometheus's answer has no result.") }
             var histograms = 0
-            for item in result {
-                var raw: [[Any]] = []
-                if let values = item["values"] as? [[Any]] { raw = values }
-                if let value = item["value"] as? [Any] { raw = [value] }
+            var counted = 0
+            for case let item as NSDictionary in result {
+                counted += 1
+                var points: [KubeSeriesPoint] = []
+                var found = false
+                if let values = item["values"] as? NSArray {
+                    found = values.count > 0
+                    points.reserveCapacity(min(values.count, maxPoints))
+                    for index in max(0, values.count - maxPoints)..<values.count {
+                        if let point = point(values.object(at: index) as AnyObject) { points.append(point) }
+                    }
+                }
+                if let value = item["value"] as? NSArray {
+                    found = true
+                    points = point(value).map { [$0] } ?? []
+                }
                 // A native histogram's series carries `histogram(s)` and no float to draw.
-                if raw.isEmpty, item["histogram"] != nil || item["histograms"] != nil {
+                if !found, item["histogram"] != nil || item["histograms"] != nil {
                     histograms += 1
                     continue
                 }
                 guard answer.series.count < maxSeries else { continue }
                 let labels = (item["metric"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
-                answer.series.append(KubeSeries(labels: labels, points: raw.suffix(maxPoints).compactMap(point)))
+                answer.series.append(KubeSeries(labels: labels, points: points))
             }
             if histograms > 0 { notes.append("\(histograms) native-histogram series skipped: only float series are drawn.") }
-            if result.count - histograms > maxSeries { notes.append("Prometheus answered \(result.count - histograms) series; the first \(maxSeries) are read.") }
+            if counted - histograms > maxSeries { notes.append("Prometheus answered \(counted - histograms) series; the first \(maxSeries) are read.") }
         }
         answer.notes = notes.prefix(maxNotes).map { String($0.prefix(maxNoteLength)) }
         return answer
     }
 
-    /// `[1730000000.123, "0.25"]`.
-    private static func point(_ pair: [Any]) -> KubeSeriesPoint? {
-        guard pair.count == 2, let text = pair[1] as? String, let value = Double(text), value.isFinite else { return nil }
-        let time: Double
-        if let number = pair[0] as? Double {
-            time = number
-        } else if let number = pair[0] as? Int {
-            time = Double(number)
-        } else {
+    /// `[1730000000.123, "0.25"]`, as Foundation parsed it: the time a
+    /// number (not a boolean), the value a string Swift reads whole.
+    /// Checked by class and cast without a copy — a dynamic cast a point
+    /// was a third of an 8 MB answer's decode.
+    private static func point(_ object: AnyObject) -> KubeSeriesPoint? {
+        guard object.isKind(of: NSArray.self) else { return nil }
+        let pair = unsafeDowncast(object, to: NSArray.self)
+        guard pair.count == 2 else { return nil }
+        let first = pair.object(at: 0) as AnyObject
+        let second = pair.object(at: 1) as AnyObject
+        guard first.isKind(of: NSNumber.self), second.isKind(of: NSString.self) else { return nil }
+        let number = unsafeDowncast(first, to: NSNumber.self)
+        guard CFGetTypeID(number) != CFBooleanGetTypeID(), let value = Double(unsafeDowncast(second, to: NSString.self) as String), value.isFinite else {
             return nil
         }
-        return KubeSeriesPoint(time: Date(timeIntervalSince1970: time), value: value)
+        return KubeSeriesPoint(time: Date(timeIntervalSince1970: number.doubleValue), value: value)
     }
 
     /// The one series a `sum(…)` answers: its points; none, empty.

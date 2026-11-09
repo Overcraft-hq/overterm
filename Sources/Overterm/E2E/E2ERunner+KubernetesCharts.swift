@@ -178,6 +178,8 @@ extension E2ERunner {
         fake.setPrometheusMatrix("kube_pod_container_status_last_terminated_reason{", [])
         fake.setPrometheusMatrix(Self.peakFragment, [FakePromFixture.Line(["container": "app"]) { _ in 0.4 }])
         fake.setPrometheusMatrix("container_memory_rss{", [])
+        // C2's working set over 24h and 7d, a step's highest from the recording rule.
+        fake.setPrometheusMatrix(Self.memoryPeakFragment, [FakePromFixture.Line(["container": "app"]) { _ in 98 * 1_048_576 }])
         // C4: a container's filesystem use against its ephemeral-storage limit (the union's arms).
         fake.setPrometheusMatrix(
             "container_fs_usage_bytes{",
@@ -190,10 +192,13 @@ extension E2ERunner {
     /// C1's peak band's query (24h and 7d), a subquery the fake doesn't read.
     static let peakFragment = "max_over_time(sum by (container)(rate(container_cpu_usage_seconds_total{"
 
+    /// C2's over 24h and 7d with recording rules: a step's highest working set.
+    static let memoryPeakFragment = "max_over_time(node_namespace_pod_container:container_memory_working_set_bytes{"
+
     func clearTabFixtures(_ fake: FakeKubeAPI) {
         for fragment in [
             "container_cpu_cfs_throttled_periods_total{", "container_network_receive_bytes_total{", "sum(clamp_min(", "kube_pod_container_status_last_terminated_reason{",
-            Self.peakFragment, "container_memory_rss{", "container_fs_usage_bytes{",
+            Self.peakFragment, Self.memoryPeakFragment, "container_memory_rss{", "container_fs_usage_bytes{",
         ] {
             fake.clearPrometheusMatrix(fragment)
         }
@@ -252,6 +257,8 @@ extension E2ERunner {
                 "tabs \(tabs); source \(page.detail.flatMap { page.metricsSource(of: $0.ref) }.map(\.rawValue) ?? "none"); built \(built().map { ($0.pod + $0.sections.flatMap(\.charts)).map { "\($0.data.id)@\($0.data.source)" } } ?? []); \(charts.lines(in: scope).joined(separator: "; "))"
         }
         check("fake-dev's Prometheus found as its entry names it", await eventually(15) { model.prometheus.state == .found(service, nil) }, "\(model.prometheus.state)")
+        let threadsBefore = KubeChartCache.mergeThreads.counted
+        let mergesBefore = model.prometheus.merges
         page.pickMetricsRange(.live)
         fake.forgetRequests()
 
@@ -288,6 +295,13 @@ extension E2ERunner {
             }, said())
         check("only the Service's query and query_range", !asked().isEmpty && asked().allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath }, "\(asked().map(\.path))")
         check("each with 20 s", asked().allSatisfy { $0.query["timeout"] == "20s" })
+        // metrics.md 5.3 (M12): every answer merged into the cache off the
+        // main thread — counted where the merge runs, not where it was sent.
+        let merged = KubeChartCache.mergeThreads.counted
+        check(
+            "its answers merged into the cache off the main thread",
+            model.prometheus.merges > mergesBefore && merged.all > threadsBefore.all && merged.onMain == threadsBefore.onMain,
+            "\(model.prometheus.merges - mergesBefore) kept, \(merged.all - threadsBefore.all) merged, \(merged.onMain - threadsBefore.onMain) on the main thread")
         check("no metrics.k8s.io read for it now", await eventually(5) { page.metricsDetailsOnScreen.isEmpty })
         check(". is 6h", page.press(".") && page.shownMetricsRange == .sixHours)
         check(
@@ -339,6 +353,8 @@ extension E2ERunner {
             chart: {
                 built()?.sections.first { $0.container == "app" }?.charts.first { $0.data.id == "container.shop.\(name).app.cpu" }
             }, caption: { built()?.caption })
+        // metrics.md 5.3's steady states and the hidden page (M12).
+        await kubernetesChartsSteady(model, page, fake, service: service)
         check("Prometheus written nothing", fake.writes.isEmpty)
     }
 

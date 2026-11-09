@@ -294,6 +294,31 @@ final class KubePrometheusTests: XCTestCase {
         XCTAssertEqual(KubeVolumeFormat.bytes(1_572_864), "1.5Mi")
     }
 
+    /// The reader walks Foundation's arrays as they are (M12): a pair that
+    /// isn't `[number, "text"]` — a boolean time, a number for a value, a
+    /// third element, a value Swift can't read whole — is left out, never
+    /// read as something else; the last `maxPoints` points of a long series kept.
+    func testAnAnswersPairsAreReadOnlyAsNumberAndText() throws {
+        let matrix = Data(
+            #"{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"pod":"web-1","n":3},"values":[[true,"1"],[1800000000,2],[1800000010,"3",4],["1800000020","4"],[1800000030,"5x"],[1800000040,"6"],[1800000050.25,"7e-1"]]},"not a series"]}}"#
+                .utf8)
+        let series = try KubePrometheusReader.read(matrix)
+        XCTAssertEqual(series.count, 1, "an item that isn't a series is no series")
+        XCTAssertEqual(series.first?.labels, ["pod": "web-1"], "only text labels")
+        XCTAssertEqual(series.first?.points.map(\.value), [6, 0.7])
+        XCTAssertEqual(series.first?.points.last?.time, Date(timeIntervalSince1970: 1_800_000_050.25))
+        let long = (0..<(KubePrometheusReader.maxPoints + 10)).map { "[\($0),\"\($0)\"]" }.joined(separator: ",")
+        let points = try KubePrometheusReader.read(Data(#"{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[\#(long)]}]}}"#.utf8))
+        XCTAssertEqual(points.first?.points.count, KubePrometheusReader.maxPoints)
+        XCTAssertEqual(points.first?.points.first?.value, 10, "the last ones kept")
+        let scalar = try KubePrometheusReader.read(Data(#"{"status":"success","data":{"resultType":"scalar","result":[1800000000,"2.5"]}}"#.utf8))
+        XCTAssertEqual(KubePrometheusReader.value(scalar), 2.5)
+        let histogram = try KubePrometheusReader.answer(
+            Data(#"{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"histograms":[[1,{}]]},{"metric":{},"values":[[1,"1"]]}]}}"#.utf8))
+        XCTAssertEqual(histogram.series.count, 1)
+        XCTAssertTrue(histogram.notes.contains { $0.hasPrefix("1 native-histogram series skipped") })
+    }
+
     func testTheFakesPrometheusAnswersOnlyItsQueryPaths() async throws {
         let direct = KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: "fake-dev"), service: service)
         let now = Date()
@@ -768,6 +793,71 @@ final class KubePrometheusTests: XCTestCase {
         monitor.want([], for: owner)
     }
 
+    /// metrics.md 6.1 (M12 review): a range changed while the old range's
+    /// answer is being merged off the main thread — the old reading
+    /// cancelled, the new range's answer kept meanwhile — never keeps the
+    /// old one, which would drop the new range's entry (a query's other
+    /// ranges go with every keep).
+    func testARangeChangedDuringAMergeLeavesTheNewRangesAnswer() async throws {
+        let monitor = configuredMonitor(scope: .namespace("shop"))
+        let owner = NSObject()
+        let hour = KubeTabTesting.request(.hour, families: [.memory])
+        let six = KubeTabTesting.request(.sixHours, families: [.memory])
+        // Read once each: no refresh puts the new range back meanwhile.
+        monitor.interval = .seconds(60)
+        let held = Flag()
+        monitor.afterMerge = { [weak monitor] key in
+            guard let monitor, key.range == hour.cacheRange, !held.value else { return }
+            held.value = true
+            // The range changes while this answer waits to be kept, and the new one's is kept first.
+            monitor.want([.tab(six)], for: owner)
+            for _ in 0..<250 where monitor.caches["fake-dev"]?.entries.keys.contains(where: { $0.range == six.cacheRange }) != true {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+        }
+        monitor.want([.tab(hour)], for: owner)
+        try await until(5, "the change during the hour's merge") { held.value }
+        try await until(5, "6h read") { monitor.tabs[six]?.read != nil }
+        try await Task.sleep(for: .milliseconds(300))
+        let keys = monitor.caches["fake-dev"]?.entries.keys.sorted { $0.query < $1.query } ?? []
+        XCTAssertFalse(keys.isEmpty)
+        XCTAssertEqual(Set(keys.map(\.range)), [six.cacheRange], "the new range's answers kept, the old one's never: \(keys)")
+        XCTAssertNotNil(monitor.tabs[six]?.results["memory"], "drawn from them")
+        monitor.want([], for: owner)
+    }
+
+    /// The caches dropped (a kubeconfig change, their lifetime) while a
+    /// refresh's tail is being merged: the tail isn't kept as if it were
+    /// the whole span — the next refresh asks all of it.
+    func testACacheDroppedDuringAMergeAsksTheWholeSpanAgain() async throws {
+        let monitor = configuredMonitor(scope: .namespace("shop"))
+        let owner = NSObject()
+        let now = Date()
+        monitor.clock = { now }
+        let hour = KubeTabTesting.request(.hour, families: [.memory])
+        monitor.want([.tab(hour)], for: owner)
+        try await until(5, "read") { monitor.tabs[hour]?.read != nil && monitor.merges > 0 }
+        let dropped = Flag()
+        monitor.afterMerge = { [weak monitor] _ in
+            guard let monitor, !dropped.value else { return }
+            dropped.value = true
+            monitor.forgetCaches()
+        }
+        api.forgetRequests()
+        // Two minutes on: a refresh asks its last steps only.
+        monitor.clock = { now.addingTimeInterval(120) }
+        try await until(5, "the tail's merge, the caches dropped meanwhile") { dropped.value }
+        try await until(5, "the whole hour asked again") {
+            prometheusRequests.contains { request in
+                request.path == service.rangePath
+                    && (Double(request.query["end"] ?? "") ?? 0) - (Double(request.query["start"] ?? "") ?? 0) >= 3600
+            }
+        }
+        let spans = prometheusRequests.filter { $0.path == service.rangePath }.map { (Double($0.query["end"] ?? "") ?? 0) - (Double($0.query["start"] ?? "") ?? 0) }
+        XCTAssertLessThan(spans.first ?? .infinity, 3600, "the refresh asked a tail first: \(spans)")
+        monitor.want([], for: owner)
+    }
+
     /// A fixture matched by a fragment the query contains (whitespace
     /// aside), never by parsing it: a query `FakePromQL` can't read is
     /// answered by its lines, functions of t with gaps; its failure is the
@@ -966,4 +1056,10 @@ private final class Box<T: Sendable>: @unchecked Sendable {
     init(_ value: T) { current = value }
     var value: T { lock.withLock { current } }
     func update(_ change: (inout T) -> Void) { lock.withLock { change(&current) } }
+}
+
+/// A test's flag, set from a hook on the main actor.
+@MainActor
+private final class Flag {
+    var value = false
 }

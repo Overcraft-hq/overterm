@@ -5134,7 +5134,9 @@ later (a minute at least). Every query carries `timeout=20s`, and its
 answer is given up after 25 s (`KubePrometheusMonitor.fetch`, the query
 cancelled), said as Prometheus's own timeout. Answers are read
 bounded, off the main thread (`KubePrometheusReader.answer`: 8 MB at most
-parsed, 2,000 series, 2,000 points, `NaN` and
+parsed — walked as Foundation's arrays, a pair checked by class rather
+than bridged to `[[Any]]`, which doubled an 8 MB answer's 150 ms
+(stage M12) —, 2,000 series, 2,000 points, `NaN` and
 `Inf` left out; a vector, a matrix or a scalar; native-histogram series
 skipped and counted; `warnings` and `infos` kept as the chart's notes,
 three at most; Prometheus's errors and the apiserver's Status said). A
@@ -5457,7 +5459,12 @@ largest pods — those only while their group is on screen
 (`KubeObjectCharts.Group.readsWhenShown`, `metricsGroupShown`)) and asks
 them through the context's queue, each its own task, four in flight.
 Range queries go through `KubeChartCache` (per context: 96 entries, 12
-MB, keyed by the query, the range and the step): a refresh asks from
+MB, keyed by the query, the range and the step; an answer merged off the
+main thread — `KubeChartCache.merged`, which counts where it ran
+(`mergeThreads`) — and only `put` there if the query's `version`, from
+a count no cache repeats, is what it was before the merge: kept over
+meanwhile, merged again; its key gone (another range, the cache
+dropped, evicted) or the reading cancelled, never kept): a refresh asks from
 `max(2, ⌈(scrape + 30 s) ÷ step⌉)` steps before the last answer's end
 and replaces from there, nothing at all within a step; another range of
 the query is dropped; nothing failed or cancelled is merged; dropped on
@@ -5583,6 +5590,15 @@ sharing X1's and X2's crosshair; refused (raw past 6h), each says why and
 X4 falls back to the sampled strips. A node's row opens its Metrics tab
 (`openNodeMetrics`); its strips are `kubernetes.overview.heat.<node>.<measure>`
 (`KubeHeatStrip` now takes a cell of any length and says whose it is).
+X4 is one Canvas (stage M12): fifty rows as views — a button, two
+`KubeHeatStripView`s, their shares — took the Overview's first draw to
+70 ms, so `KubeNodeStripsView` draws the names (cut in their middle),
+the strips (`KubeHeatStripView.draw`) and the shares in one pass at
+`KubeNodeStripsLayout`'s places (pure: rows, columns, what a point is
+over); a click on a name opens the node, the hovered strip's summary is
+a label only `KubeNodeStripsHover` redraws, every row and strip an
+`accessibilityChildren` element, and the strips go to
+`KubeHeatStripRegistry` together (`show(_:token:window:)`).
 A claim (V1, V2, the EFS rule): its available bytes and `-deriv` of
 them over 6h — instant totals; `predict_linear` would extend the same
 line, so it isn't asked —, the rate (`KubeVolumeForecast.rate`) giving the chip ("full in ~3 d", red under a
@@ -6311,7 +6327,25 @@ the table holds every row, under 5 s; ~0.7 s here), a burst of 500 watch
 events applied by the one watch (under 3 s; ~0.25 s), the list scrolled a
 third of a screen a step (p95 under 35 ms, as dockerPerf's; ~18 ms), and
 the 5,000 rows sorted by CPU (under 250 ms); closed, no watch and no
-polling are left.
+polling are left. Its charts' budgets (metrics.md 5.3; `E2ERunner+
+KubernetesChartPerf`, and the rest at scale in `+KubernetesChartBudget`,
+stage M12): a plot of 13 × 300 points (≤ 5 ms; ~0.5), 200 hover moves
+(p95 ≤ 2 ms; ~1.4), a pod's and a 50-pod Deployment's Metrics tab first
+drawn (≤ 50 ms; ~37, ~29), the Overview from Prometheus with 60 nodes —
+X4 the hottest 50 — built and first drawn (≤ 50 ms; ~29, 70 before X4
+was one Canvas), an 8 MB answer of a thousand series decoded off the
+main thread (≤ 150 ms; ~118, 250 before) and merged into the cache off
+it (≤ 50 ms; ~6), the cache within 12 MB, a byte past 8 MB refused
+unread, and the usage ring full — 200 detail keys' six hours and 5,000
+rows — merging a poll off the main thread (p95 ≤ 50 ms; ~5) under its 6 MB.
+The Overview is timed on its own view (`KubePrometheusChartView` over a
+monitor of its own, `present`). The steady states and the hidden page are
+`kubernetesCharts`' (`kubernetesChartsSteady`): at 24h, refreshed every
+500 ms with the tab's clock held, no `query_range` within the step, then
+five minutes on one a query, its last steps only; Live at its own
+intervals, at most one GET a target and one `query_range` a query in 6 s,
+under 3% CPU; hidden, the readings stopped and the metrics proxy closed
+(`proxyCloses`) within 60 s, then nothing of metrics read.
 
 **`kubernetesScale`** (`E2ERunner+KubernetesScale`, testKubernetesScale,
 its own OVERTERM_KUBECONFIG): a large cluster's shape — 5,000 pods across

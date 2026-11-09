@@ -146,6 +146,90 @@ final class KubeMetricsSpanTests: XCTestCase {
         XCTAssertEqual(cache.series(key)?.first?.points.last?.time, Date(timeIntervalSince1970: 3570))
     }
 
+    /// metrics.md 5.3 (M12): the monitor merges an answer off the main
+    /// thread (`merged`) and only keeps it there (`put`) — the same cache
+    /// as merging in place: the most recently used, the query's other range gone.
+    func testAMergeMadeOffTheMainThreadIsKeptAsAMergeInPlace() {
+        let hour = KubeChartCache.Key(query: "q", range: "1h", step: 30)
+        let day = KubeChartCache.Key(query: "q", range: "24h", step: 300)
+        let other = KubeChartCache.Key(query: "r", range: "1h", step: 30)
+        let asked = (start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 90))
+        let answer = [series(["c": "app"], [0, 30, 60, 90]), series(["c": "sidecar"], [60, 90])]
+        var inPlace = KubeChartCache()
+        var kept = KubeChartCache()
+        inPlace.merge(day, series: [series([:], [0])], asked: asked, start: asked.start)
+        inPlace.merge(other, series: [series([:], [0])], asked: asked, start: asked.start)
+        inPlace.merge(hour, series: answer, asked: asked, start: Date(timeIntervalSince1970: 30))
+        kept.merge(day, series: [series([:], [0])], asked: asked, start: asked.start)
+        kept.merge(other, series: [series([:], [0])], asked: asked, start: asked.start)
+        let entry = KubeChartCache.merged(kept.entry(hour), series: answer, asked: asked, start: Date(timeIntervalSince1970: 30))
+        kept.put(hour, entry)
+        XCTAssertEqual(kept.series(hour), inPlace.series(hour))
+        XCTAssertEqual(kept.series(hour)?.map(\.points.count), [3, 2], "points before the start dropped")
+        XCTAssertNil(kept.series(day), "the query's other range gone")
+        XCTAssertEqual(kept.bytes, inPlace.bytes)
+        XCTAssertEqual(kept.entry(hour)?.end, asked.end)
+        // Kept last: the most recently used, so the first evicted is the other query's.
+        XCTAssertGreaterThan(kept.entry(hour)?.used ?? 0, kept.entry(other)?.used ?? .max)
+    }
+
+    /// metrics.md 6.1 (M12 review): whether an entry merged off the main
+    /// thread may be kept is told by the query's version, never guessed
+    /// from the entry's end and series: untouched (or another query
+    /// changed), kept; the key kept over meanwhile — even with the same
+    /// end and as many series —, merged again; the key gone (another
+    /// range kept, the cache dropped, a new cache in its place), not kept.
+    func testAMergedEntryIsKeptOnlyOverWhatItWasMergedWith() {
+        let hour = KubeChartCache.Key(query: "q", range: "1h", step: 30)
+        let day = KubeChartCache.Key(query: "q", range: "24h", step: 300)
+        let other = KubeChartCache.Key(query: "r", range: "1h", step: 30)
+        let asked = (start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 90))
+        func entry(_ value: Double) -> KubeChartCache.Entry {
+            KubeChartCache.merged(nil, series: [series(["c": "app"], [0, 30, 60, 90], value: value)], asked: asked, start: asked.start)
+        }
+        func kept(_ keeping: KubeChartCache.Keeping) -> String {
+            switch keeping {
+            case .keep: "keep"
+            case .again(let entry): "again \(entry.series.first?.points.last?.value ?? -1)"
+            case .gone: "gone"
+            }
+        }
+        var cache = KubeChartCache()
+        XCTAssertEqual(cache.version("q"), 0)
+        // The first answer: nothing kept, nothing changed.
+        let first = cache.version("q")
+        cache.put(other, entry(9))
+        XCTAssertEqual(kept(cache.keeping(hour, since: first)), "keep", "another query's answer changes nothing of this one")
+        cache.put(hour, entry(1))
+        // Kept over meanwhile, the same end and as many series: merged again over it.
+        let refresh = cache.version("q")
+        cache.put(hour, entry(2))
+        XCTAssertEqual(cache.entry(hour)?.end, asked.end)
+        XCTAssertEqual(kept(cache.keeping(hour, since: refresh)), "again 2.0")
+        XCTAssertEqual(kept(cache.keeping(hour, since: cache.version("q"))), "keep")
+        // Another range kept meanwhile: the old range's answer isn't, nor does it drop the new one.
+        let late = cache.version("q")
+        cache.put(day, entry(3))
+        XCTAssertEqual(kept(cache.keeping(hour, since: late)), "gone")
+        XCTAssertNotNil(cache.series(day))
+        // Dropped meanwhile: a tail merged into nothing would stand for the whole span.
+        let dropped = cache.version("q")
+        cache.removeAll()
+        XCTAssertEqual(kept(cache.keeping(day, since: dropped)), "gone")
+        // A new cache in a dropped one's place gives no query a version it had.
+        var fresh = KubeChartCache()
+        XCTAssertEqual(kept(fresh.keeping(day, since: dropped)), "gone")
+        fresh.put(day, entry(4))
+        XCTAssertNotEqual(fresh.version("q"), dropped)
+        // Evicted meanwhile: gone too.
+        var small = KubeChartCache()
+        small.put(hour, entry(5))
+        let evicted = small.version("q")
+        for index in 0..<KubeChartCache.maxEntries { small.put(KubeChartCache.Key(query: "q\(index)", range: "1h", step: 30), entry(6)) }
+        XCTAssertNil(small.entry(hour))
+        XCTAssertEqual(kept(small.keeping(hour, since: evicted)), "gone")
+    }
+
     func testARangeChangeDiscardsAndTheLRUIsBounded() {
         var cache = KubeChartCache()
         let hour = KubeChartCache.Key(query: "q", range: "1h", step: 30)

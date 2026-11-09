@@ -262,6 +262,30 @@ final class KubeClusterChartsTests: XCTestCase {
         XCTAssertEqual(KubeClusterCharts.stripIdentifier("node-01", .memory), "kubernetes.overview.heat.node-01.memory")
     }
 
+    /// X4 in one Canvas (M12): where its rows and strips are, what a
+    /// point is over, a long name cut in its middle.
+    func testTheNodesStripsLayout() {
+        let layout = KubeNodeStripsLayout(count: 3)
+        XCTAssertEqual(layout.height(3), 4 * KubeNodeStripsLayout.rowHeight, "a header and three rows")
+        XCTAssertEqual(layout.mid(0), KubeNodeStripsLayout.rowHeight * 1.5)
+        let cpu = layout.strip(.cpu, row: 1)
+        let memory = layout.strip(.memory, row: 1)
+        XCTAssertEqual(cpu.minX, KubeNodeStripsLayout.nameWidth + KubeNodeStripsLayout.gap)
+        XCTAssertGreaterThan(memory.minX, cpu.maxX + KubeNodeStripsLayout.shareWidth, "the CPU's share between them")
+        XCTAssertLessThanOrEqual(memory.minX + KubeNodeStripsLayout.column, layout.width)
+        XCTAssertEqual(cpu.midY, layout.mid(1))
+        XCTAssertNil(layout.hit(CGPoint(x: 10, y: 5), rows: 3), "the header")
+        XCTAssertTrue(layout.hit(CGPoint(x: 10, y: layout.mid(0)), rows: 3).map { $0.row == 0 && $0.measure == nil } == true, "a name")
+        XCTAssertTrue(layout.hit(CGPoint(x: cpu.midX, y: cpu.midY), rows: 3).map { $0.row == 1 && $0.measure == .cpu } == true)
+        XCTAssertTrue(layout.hit(CGPoint(x: memory.maxX + 20, y: memory.midY), rows: 3).map { $0.row == 1 && $0.measure == .memory } == true, "its share")
+        XCTAssertNil(layout.hit(CGPoint(x: 10, y: layout.mid(3)), rows: 3), "past the last row")
+        XCTAssertEqual(KubeNodeStripsLayout.middleCut("node-01", fits: 30), "node-01")
+        let cut = KubeNodeStripsLayout.middleCut("ip-10-0-12-34.eu-west-1.compute.internal", fits: 20)
+        XCTAssertEqual(cut, "ip-10-0-12….internal")
+        XCTAssertEqual(cut.count, 20)
+        XCTAssertEqual(KubeNodeStripsLayout.fits(0), 32)
+    }
+
     func testAPrometheusStripIsTheRangeAsSixtyCells() throws {
         let start = now.addingTimeInterval(-3600)
         // A point every minute, the last at the end; one missing.
