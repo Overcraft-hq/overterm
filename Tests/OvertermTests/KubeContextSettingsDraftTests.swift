@@ -174,6 +174,32 @@ final class KubeContextSettingsDraftTests: XCTestCase {
         XCTAssertTrue(text().contains("// prod's: never writable"), text())
     }
 
+    /// A context's saved queries (`charts`, a list of objects) aren't the
+    /// sheet's: a Save writes them back as the file has them.
+    func testSavedQueriesAreKeptByASave() throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try #"""
+        {
+          "kubernetes.contexts": {
+            "fake-dev": {"metrics": "prometheus", "charts": [{"title": "Requests", "query": "sum(rate(a{namespace=\"$ns\",pod=~\"$pod\"}[$w]))", "unit": "perSecond"}]}
+          }
+        }
+
+        """#.write(to: url, atomically: true, encoding: .utf8)
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(settings.kubernetesContexts["fake-dev"]?.charts.map(\.title), ["Requests"])
+        let dev = context("fake-dev", KubeContextSettings(), false)
+        let page = page(settings, [dev])
+        page.openContextSettings(dev)
+        page.contextSettingsDraft?.defaultNamespace = "shop"
+        page.saveContextSettings()
+        XCTAssertNil(page.contextSettingsDraft, "saved: \(page.contextSettingsDraft?.problem ?? "")")
+        XCTAssertEqual(settings.kubernetesContexts["fake-dev"]?.defaultNamespace, "shop")
+        XCTAssertEqual(
+            settings.kubernetesContexts["fake-dev"]?.charts,
+            [KubeSavedChart(title: "Requests", query: #"sum(rate(a{namespace="$ns",pod=~"$pod"}[$w]))"#, unit: .perSecond)], text())
+    }
+
     /// Production made remote or local: asked in red, the name typed, and
     /// only then written.
     func testMakingProductionLessStrictNeedsItsNameTyped() throws {

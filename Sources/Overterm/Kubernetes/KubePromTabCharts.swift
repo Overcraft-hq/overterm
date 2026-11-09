@@ -21,7 +21,7 @@ enum KubePromTabCharts {
         let all: Set<KubeTabFamily>
         switch subject {
         case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss, .fs, .gpu]
-        case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics, .gpu]
+        case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics, .gpu, .saved]
         case .hpa: all = [.hpa, .hpaMetrics]
         case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory, .disks, .nodeNetwork, .gpu]
         case .namespace: all = [.cpu, .memory, .phases, .quota, .idle]
@@ -580,8 +580,11 @@ enum KubePromTabCharts {
     static let nodeExporterTitle = "Disks and network (node-exporter)"
     /// A node's families read only while their group is on screen, by the
     /// group's title: its top pods (K3, a series a pod on the node), its
-    /// disks and network (K6, K7, the lowest of its charts: scrolled to).
-    static let readWhenShown: [String: Set<KubeTabFamily>] = [topPodsTitle: [.topCPU, .topMemory], nodeExporterTitle: [.disks, .nodeNetwork]]
+    /// disks and network (K6, K7, the lowest of its charts: scrolled to);
+    /// a workload's saved queries (M8d, last on its tab).
+    static let readWhenShown: [String: Set<KubeTabFamily>] = [
+        topPodsTitle: [.topCPU, .topMemory], nodeExporterTitle: [.disks, .nodeNetwork], KubeSavedCharts.groupTitle: [.saved],
+    ]
 
     static func node(node: String, facts: KubeNodeFacts, reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?) -> KubeObjectCharts {
         guard let span = reading.span else {

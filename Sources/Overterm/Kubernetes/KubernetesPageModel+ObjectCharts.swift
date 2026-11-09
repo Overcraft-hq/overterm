@@ -50,6 +50,9 @@ struct KubeObjectChartsKey: Equatable, Sendable {
     /// Whether the page's profile maps node-exporter to nodes (nil,
     /// unknown): a node's disks and network in Live, nothing read yet.
     var nodeExporter: Bool?
+    /// A workload's: the context's saved queries, and whether Prometheus is on for it.
+    var saved: [KubeSavedChart] = []
+    var prometheusOn = false
 }
 
 /// The Metrics tab beyond pods (stage M3b): a workload's CPU and memory as
@@ -221,7 +224,8 @@ extension KubernetesPageModel {
             ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: source == .prometheus ? .distantPast : now, range: range,
             view: workloadChartView, lookups: chartLookups.version, revisions: templates.count, topPods: topPodsSampling, reads: reads, changes: changes.version,
             window: window, source: source, prometheus: reading?.version,
-            nodeExporter: subject == .node ? model.prometheus.profile.flatMap { $0.known ? $0.nodeExporterMapped : nil } : nil)
+            nodeExporter: subject == .node ? model.prometheus.profile.flatMap { $0.known ? $0.nodeExporterMapped : nil } : nil,
+            saved: savedCharts(of: ref), prometheusOn: prometheusOn)
         if let cached = objectChartsCache, cached.key == key { return cached.charts }
         let built = buildObjectCharts(session, subject: subject, object: object, source: source, reading: reading, details: details, now: now, range: range)
         objectChartsCache = (key, built)
@@ -246,11 +250,12 @@ extension KubernetesPageModel {
                 var revisions: [String: String] = [:]
                 for template in templates { revisions[template.name] = "rev \(template.revision)" + (template.images.first.map { " (\($0.image))" } ?? "") }
                 let hpa = (chartLookups.hpa[ref] ?? nil).map { (name: $0, status: KubeHPAStatus?.none) }
-                return KubePromTabCharts.workload(
+                let built = KubePromTabCharts.workload(
                     KubeWorkloadCharts.Input(
                         namespace: namespace, kind: kind, name: ref.name, object: object.json, ring: model.metrics.ring, statuses: model.metrics.statuses, pods: [],
                         range: range, now: now, interval: 15, view: workloadChartView, revisions: revisions, hpa: hpa, changes: changes, window: window),
                     reading: reading)
+                return KubeSavedCharts.add(built, subject: "workload.\(namespace).\(kind.lowercased()).\(ref.name)", saved: savedCharts(of: ref), reading: reading)
             case .hpa:
                 return ref.namespace.map { KubePromTabCharts.hpa(namespace: $0, name: ref.name, reading: reading, changes: changes, window: window) }
             case .node:
@@ -309,7 +314,13 @@ extension KubernetesPageModel {
         if source == .mixed, let built = charts, case .workload(let kind) = subject, let namespace = ref.namespace {
             let whose = "workload.\(namespace).\(kind.lowercased()).\(ref.name)"
             let added = KubePromTabCharts.addOnly(built, subject: whose, reading: reading, changes: changes, namesPods: true)
-            return KubeGPUCharts.add(added, subject: whose, reading: reading, whose: .workload)
+            return KubeSavedCharts.add(
+                KubeGPUCharts.add(added, subject: whose, reading: reading, whose: .workload), subject: whose, saved: savedCharts(of: ref), reading: reading)
+        }
+        // Saved queries, and no Prometheus to ask them of: said, never asked.
+        if source == .sampled, var built = charts, case .workload = subject, !savedCharts(of: ref).isEmpty, !prometheusOn {
+            built.notes = KubePromTabCharts.unique(built.notes + [KubeSavedCharts.needsPrometheus])
+            return built
         }
         return charts
     }
@@ -333,5 +344,17 @@ extension KubernetesPageModel {
             if let said = reading.refused ?? reading.problem.map({ "Usage couldn't be read: \($0)" }) { return said }
         }
         return nil
+    }
+}
+
+// MARK: Saved queries
+
+extension KubernetesPageModel {
+    /// The context's saved queries, for a workload's tab (metrics.md
+    /// decision 11): its `kubernetes.contexts` entry's `charts`, as the
+    /// user wrote them; none for any other object.
+    func savedCharts(of ref: KubeObjectRef) -> [KubeSavedChart] {
+        guard case .workload = ref.metricsSubject, let context = model.selected, context.name == ref.context else { return [] }
+        return context.settings.charts
     }
 }

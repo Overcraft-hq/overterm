@@ -11,6 +11,9 @@ enum SettingValue: Equatable, Sendable {
     /// Named entries, each a few fields of its own (`SettingKind.entries`):
     /// `{ "a context": { "class": "production" } }`.
     case entries([String: [String: SettingValue]])
+    /// A list of small objects, each a few text fields (`SettingKind.records`),
+    /// inside an entry: a context's saved charts, `[{ "title": …, "query": … }]`.
+    case records([[String: String]])
 
     /// From what JSONSerialization made of the file; nil for anything else
     /// (null, a list holding something other than strings, an object that
@@ -42,6 +45,24 @@ enum SettingValue: Equatable, Sendable {
             self = .string(string)
         } else if let array = json as? [Any], let strings = array as? [String] {
             self = .list(strings)
+        } else if let array = json as? [Any], let objects = array as? [[String: Any]] {
+            // Each object's fields as text: a number or a flag said as JSON says it,
+            // so a typo in one is reported by the schema, never dropped silently.
+            var records: [[String: String]] = []
+            for object in objects {
+                var record: [String: String] = [:]
+                for (field, raw) in object {
+                    if let text = raw as? String {
+                        record[field] = text
+                    } else if raw is NSNumber, let value = SettingValue(json: raw) {
+                        record[field] = value.json
+                    } else {
+                        return nil
+                    }
+                }
+                records.append(record)
+            }
+            self = .records(records)
         } else {
             return nil
         }
@@ -63,6 +84,11 @@ enum SettingValue: Equatable, Sendable {
         case .entries:
             // On one line too, sorted, so the same entries write the same text.
             "{" + (members ?? []).map(\.json).joined(separator: ", ") + "}"
+        case .records(let records):
+            "["
+                + records.map { record in
+                    "{" + record.keys.sorted().map { SettingValue.string($0).json + ": " + SettingValue.string(record[$0]!).json }.joined(separator: ", ") + "}"
+                }.joined(separator: ", ") + "]"
         }
     }
 
@@ -87,6 +113,14 @@ enum SettingValue: Equatable, Sendable {
     var string: String? { if case .string(let value) = self { value } else { nil } }
     var list: [String]? { if case .list(let value) = self { value } else { nil } }
     var entries: [String: [String: SettingValue]]? { if case .entries(let value) = self { value } else { nil } }
+    /// A list of objects; `[]` too (which reads as an empty list).
+    var records: [[String: String]]? {
+        switch self {
+        case .records(let value): value
+        case .list(let value) where value.isEmpty: []
+        default: nil
+        }
+    }
     var number: Double? {
         switch self {
         case .int(let value): Double(value)
@@ -129,6 +163,9 @@ enum SettingKind: Sendable {
     /// of `fields`. A field that doesn't fit is reported and left out; the
     /// rest of the entry, and the other entries, still apply.
     case entries(SettingEntries)
+    /// A list of small objects, each holding some of `fields` (`text` or
+    /// `choice`), those marked `required` always — inside an entry only.
+    case records([SettingField])
 }
 
 /// What a `SettingKind.entries` setting's entries are and may hold.
@@ -144,6 +181,8 @@ struct SettingField: Sendable {
     let name: String
     let kind: SettingKind
     var help: String? = nil
+    /// A record's field it must hold (`SettingKind.records`).
+    var required = false
 }
 
 enum SettingSource: Sendable {
@@ -192,6 +231,26 @@ struct SettingSpec: Identifiable, Sendable {
             return value.list == nil ? "must be a list of strings, like [\"a\", \"b\"]" : nil
         case .entries(let entries):
             return value.entries == nil ? "must be an object of \(entries.noun)s, like { \"name\": { … } }" : nil
+        case .records(let fields):
+            guard let records = value.records else {
+                return "must be a list of objects, like [{ " + fields.map { "\"\($0.name)\": …" }.joined(separator: ", ") + " }]"
+            }
+            for (index, record) in records.enumerated() {
+                let item = "item \(index + 1)"
+                for name in record.keys.sorted() where !fields.contains(where: { $0.name == name }) {
+                    return "\(item) has \"\(name)\", which isn't a field Overterm knows (" + fields.map(\.name).joined(separator: ", ") + ")"
+                }
+                for field in fields {
+                    guard let text = record[field.name] else {
+                        if field.required { return "\(item) has no \"\(field.name)\"" }
+                        continue
+                    }
+                    if field.required, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "\(item)'s \"\(field.name)\" is empty" }
+                    let probe = SettingSpec(key: key, section: section, group: group, title: title, kind: field.kind, defaultValue: nil)
+                    if let problem = probe.problem(with: .string(text)) { return "\(item)'s \"\(field.name)\" \(problem)" }
+                }
+            }
+            return nil
         case .integer(let range, _, _):
             guard case .int(let number) = value, range.contains(number) else {
                 return "must be a whole number from \(range.lowerBound) to \(range.upperBound)"
@@ -722,7 +781,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.contexts", section: .kubernetes, group: "Contexts", title: "Each context's own settings",
             help:
-                "By the context's name: its class (production, remote or local; unset, its name decides), whether a remote or local one may be written to — a production one never is, its writes are turned on for a session — and its namespaces.",
+                "By the context's name: its class (production, remote or local; unset, its name decides), whether a remote or local one may be written to — a production one never is, its writes are turned on for a session — its namespaces, and its saved queries (charts: your own Prometheus charts on a workload's Metrics tab).",
             kind: .entries(SettingEntries(noun: "context", fields: KubeContextSettings.fields)), defaultValue: .entries([:]),
             requires: "kubernetes.enabled"),
         SettingSpec(

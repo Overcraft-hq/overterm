@@ -34,7 +34,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
 
     private var asked: [FakeKubeAPI.Request] { api.requests.filter(\.isPrometheusQuery) }
 
-    private func pageOverFake(metricsServer: Bool = true) throws -> (KubernetesModel, KubernetesPageModel) {
+    private func pageOverFake(metricsServer: Bool = true, charts: [KubeSavedChart] = []) throws -> (KubernetesModel, KubernetesPageModel) {
         let socket = "/tmp/otkmp-\(UInt32.random(in: 0...UInt32.max)).sock"
         self.socket = socket
         api = FakeKubeAPI(socket: socket)
@@ -60,7 +60,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         let model = KubernetesModel(proxies: KubeProxies())
         let context = KubeContext(
             name: "fake-dev", cluster: "fake-dev", server: "http://127.0.0.1:1", namespace: "shop", user: "anonymous", auth: KubeAuth.none, file: nil,
-            contextClass: .remote, settings: KubeContextSettings(prometheus: "monitoring/prometheus-server:80"))
+            contextClass: .remote, settings: KubeContextSettings(prometheus: "monitoring/prometheus-server:80", charts: charts))
         model.load = { _ in KubeContextList(contexts: [context], current: "fake-dev") }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
@@ -390,6 +390,71 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         try await until(5, "its object read") { page.detail?.object != nil }
         try await until(5, "Prometheus found") { model.prometheus.service == service }
         page.pickMetricsRange(.hour)
+    }
+
+    /// A context's saved queries (M8d, decision 11) on a workload's tab:
+    /// a pending group until it is on screen, then each filled in and asked
+    /// over the Service's `query_range` — one without the scope's matchers
+    /// never sent, one Prometheus refuses said in its own chart's words and
+    /// not asked again, the tab's other charts and the profile untouched;
+    /// scrolled off, nothing more. GETs only.
+    func testAContextsSavedQueriesAreAskedOnlyWhileShown() async throws {
+        let charts = [
+            KubeSavedChart(title: "Requests", query: #"sum by (route)(rate(http_requests_total{namespace="$ns",pod=~"$pod"}[$w]))"#, unit: .perSecond),
+            KubeSavedChart(title: "Everything", query: "sum(rate(orders_total[5m]))"),
+            KubeSavedChart(title: "Broken", query: #"sum(broken_total{namespace="$ns",app="$name"})"#),
+        ]
+        let (model, page) = try pageOverFake(charts: charts)
+        defer { model.hide() }
+        api.setPrometheusMatrix(
+            "http_requests_total{", [FakePromFixture.Line(["route": "/a"]) { _ in 12 }, FakePromFixture.Line(["route": "/b"]) { _ in 3 }])
+        api.setPrometheusMatrix("broken_total{", failure: FakePromFixture.Failure(status: 400, errorType: "bad_data", error: "1:5: parse error: unexpected"))
+        try await openWeb(model, page)
+        let session = try XCTUnwrap(page.detail)
+        func saved() -> [FakeKubeAPI.Request] {
+            asked.filter { request in ["http_requests_total", "orders_total", "broken_total"].contains { request.query["query"]?.contains($0) == true } }
+        }
+        try await until(5, "the tab read") { page.tabReading(of: session)?.results["cpu"] != nil }
+        XCTAssertEqual(page.tabRequest(of: session)?.families.contains(.saved), false, "off screen: not asked")
+        let pending = try XCTUnwrap(page.objectCharts(of: session)?.groups.last)
+        XCTAssertEqual(pending.title, KubeSavedCharts.groupTitle)
+        XCTAssertTrue(pending.pending && pending.readsWhenShown)
+        XCTAssertTrue(saved().isEmpty)
+
+        page.metricsGroupShown(KubeSavedCharts.groupTitle, true)
+        XCTAssertEqual(page.tabRequest(of: session)?.saved, charts)
+        try await until(5, "drawn") { page.objectCharts(of: session)?.groups.last?.charts.isEmpty == false }
+        try await until(5, "the refused one said") { page.tabReading(of: session)?.saved["saved.2"] != nil }
+        let group = try XCTUnwrap(page.objectCharts(of: session)?.groups.last)
+        let requests = try XCTUnwrap(group.charts.first)
+        XCTAssertEqual(requests.data.id, "workload.shop.deployment.web.saved.0")
+        XCTAssertEqual(requests.data.title, "Requests")
+        XCTAssertEqual(requests.data.unit, .perSecond)
+        XCTAssertEqual(requests.data.usage.map(\.name), ["/a", "/b"])
+        let sent = saved().filter { $0.query["query"]?.contains("http_requests_total") == true }
+        XCTAssertFalse(sent.isEmpty)
+        XCTAssertTrue(sent.allSatisfy { $0.path == service.rangePath && $0.query["timeout"] == "20s" }, "\(sent.map(\.path))")
+        XCTAssertTrue(
+            sent.allSatisfy { ($0.query["query"] ?? "").contains(#"{namespace="shop",pod=~"web-\#(KubeTabQueries.alphabet){1,10}-\#(KubeTabQueries.alphabet){5}"}"#) },
+            "filled in: \(sent.compactMap { $0.query["query"] })")
+        XCTAssertFalse(saved().contains { $0.query["query"]?.contains("orders_total") == true }, "without the scope's matchers: never sent")
+        let notes = page.objectCharts(of: session)?.notes ?? []
+        XCTAssertTrue(notes.contains { $0.hasPrefix("Saved query \u{201C}Everything\u{201D}: orders_total has no label matchers") }, "\(notes)")
+        XCTAssertTrue(notes.contains { $0.hasPrefix("Saved query \u{201C}Broken\u{201D}: Prometheus refused the query: 1:5: parse error") }, "\(notes)")
+        let reading = try XCTUnwrap(page.tabReading(of: session))
+        XCTAssertNil(reading.problem, "the user's query failing says nothing of Prometheus")
+        XCTAssertNotNil(reading.results["cpu"], "the tab's own charts read")
+        XCTAssertNotNil(model.prometheus.profile, "its profile kept")
+        // Refreshed twice: the refused one isn't asked again.
+        let first = try XCTUnwrap(reading.read)
+        try await until(5, "refreshed") { (page.tabReading(of: session)?.read ?? first) > first.addingTimeInterval(0.15) }
+        XCTAssertEqual(saved().filter { $0.query["query"]?.contains("broken_total") == true }.count, 1, "refused once, not asked again")
+
+        page.metricsGroupShown(KubeSavedCharts.groupTitle, false)
+        XCTAssertEqual(page.tabRequest(of: session)?.families.contains(.saved), false)
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(saved().isEmpty, "scrolled off: not asked again")
     }
 
     /// A workload's top five (M7): ranked once by an instant `topk` a

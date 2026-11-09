@@ -112,6 +112,10 @@ struct KubeContextSettings: Equatable, Sendable {
     /// The Prometheus Service, `namespace/service:port`, instead of looking
     /// for one; it opts the context in unless `metrics` says otherwise.
     var prometheus: String?
+    /// The user's own charts on a workload's Metrics tab, from this
+    /// context's Prometheus (metrics.md decision 11): written in
+    /// settings.json by the user, never by an agent.
+    var charts: [KubeSavedChart] = []
 
     /// What an entry may hold, for SettingsSchema to check.
     static let fields: [SettingField] = [
@@ -153,13 +157,14 @@ struct KubeContextSettings: Equatable, Sendable {
             help:
                 "The Prometheus Service as namespace/service:port, instead of looking for one (lens-metrics/prometheus, the Helm chart's, the operator's). Setting it opts the context in, unless metrics is none or metricsServer."
         ),
+        KubeSavedChart.field,
     ]
 
     init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
         accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil,
         debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil, applyOnProduction: Bool? = nil,
-        metrics: KubeMetricsSource? = nil, prometheus: String? = nil
+        metrics: KubeMetricsSource? = nil, prometheus: String? = nil, charts: [KubeSavedChart] = []
     ) {
         self.contextClass = contextClass
         self.writable = writable
@@ -175,6 +180,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.applyOnProduction = applyOnProduction
         self.metrics = metrics
         self.prometheus = prometheus
+        self.charts = charts
     }
 
     init(fields: [String: SettingValue]) {
@@ -192,6 +198,7 @@ struct KubeContextSettings: Equatable, Sendable {
         applyOnProduction = fields["applyOnProduction"]?.bool
         metrics = fields["metrics"]?.string.flatMap(KubeMetricsSource.init(rawValue:))
         prometheus = fields["prometheus"]?.string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
+        charts = fields["charts"]?.records.map(KubeSavedChart.of) ?? []
     }
 
     /// An image field's value, trimmed; empty, unset.

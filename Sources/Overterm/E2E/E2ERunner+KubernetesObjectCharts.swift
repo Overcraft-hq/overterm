@@ -425,6 +425,7 @@ extension E2ERunner {
             await eventually(10) { page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == "namespace.\(namespace).phases" }?.data.source == "Prometheus" })
         await nodeExporterPart(model, page, fake, node: node, service: service)
         await gpuPart(model, page, fake, namespace: namespace, plainNode: node, service: service)
+        await savedQueriesPart(model, page, fake, namespace: namespace, service: service)
         check("Prometheus written nothing", fake.writes.isEmpty)
         page.showTab(.overview)
         page.closeDetail()
@@ -701,6 +702,101 @@ extension E2ERunner {
         // part counts what is asked once the page is hidden.
         page.showKind(nodes)
         _ = await eventually(10) { model.kind.fullName == "nodes" }
+        await pause(1)
+    }
+
+    /// Stage M8d (metrics.md decision 11): fake-dev's entry holds three
+    /// saved queries — a request rate over the workload's pods, one
+    /// without the scope's matchers, one Prometheus refuses. The
+    /// Deployment's tab at 1h: their group last, asked only once on screen
+    /// (the runner's hook says so, as the group's own view does); the rate
+    /// filled in for the Deployment — its namespace, its pods' names as a
+    /// regex, the rate window — over the Service's `query_range` and drawn
+    /// in its unit; the unscoped one never sent and said; the refused one
+    /// said in Prometheus' words, the tab's own charts still read. Scrolled
+    /// off, nothing more. Reads only.
+    func savedQueriesPart(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, namespace: String, service: KubePrometheusService) async {
+        let requests = #"sum by (route)(rate(http_requests_total{namespace="$ns",pod=~"$pod"}[$w]))"#
+        let charts: SettingValue = .records([
+            ["title": "Requests", "query": requests, "unit": "perSecond"],
+            ["title": "Every order", "query": "sum(rate(orders_total[5m]))"],
+            ["title": "Broken", "query": #"sum(broken_total{namespace="$ns",app="$name"})"#],
+        ])
+        let entry: [String: SettingValue] = ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]
+        fake.setPrometheusMatrix(
+            "http_requests_total{", [FakePromFixture.Line(["route": "/checkout"]) { _ in 42 }, FakePromFixture.Line(["route": "/cart"]) { _ in 7 }])
+        fake.setPrometheusMatrix("broken_total{", failure: FakePromFixture.Failure(status: 400, errorType: "bad_data", error: "1:5: parse error: unexpected"))
+        Settings.shared.set("kubernetes.contexts", .entries(["fake-dev": entry.merging(["charts": charts]) { $1 }]))
+        defer {
+            Settings.shared.set("kubernetes.contexts", .entries(["fake-dev": entry]))
+            fake.clearPrometheusMatrix("http_requests_total{")
+            fake.clearPrometheusMatrix("broken_total{")
+            page.metricsGroupShown(KubeSavedCharts.groupTitle, false)
+        }
+        func saved() -> [FakeKubeAPI.Request] {
+            fake.requests.filter(\.isPrometheusQuery).filter { request in
+                ["http_requests_total", "orders_total", "broken_total"].contains { request.query["query"]?.contains($0) == true }
+            }
+        }
+        check("the entry's saved queries read", await eventually(10) { model.selected?.settings.charts.count == 3 }, "\(model.selected?.settings.charts ?? [])")
+        page.showTab(.overview)
+        page.closeDetail()
+        guard let deployments = model.discovery?.kind("deployments") else { return check("deployments served", false) }
+        page.showKind(deployments)
+        check("the Deployment listed again", await eventually(15) { model.kind.fullName == deployments.fullName && model.rows[KubeRowID(namespace: namespace, name: "api")] != nil })
+        fake.forgetRequests()
+        page.selection = ["\(namespace)/api"]
+        check("m opens its Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == "api")
+        page.pickMetricsRange(.hour)
+        func group() -> KubeObjectCharts.Group? { page.detail.flatMap { page.objectCharts(of: $0) }?.groups.last }
+        check(
+            "its saved queries a group of their own, last, asked once shown",
+            await eventually(20) { group()?.title == KubeSavedCharts.groupTitle && group()?.pending == true }, "\(page.detail.flatMap { page.objectCharts(of: $0) }?.groups.map(\.title) ?? [])")
+        check("off screen: none asked", saved().isEmpty, "\(saved().map(\.query))")
+        page.metricsGroupShown(KubeSavedCharts.groupTitle, true)
+        let id = "workload.\(namespace).deployment.api.saved.0"
+        check(
+            "the request rate drawn, a line a route, in its unit",
+            await eventually(20) { group()?.charts.first?.data.id == id && group()?.charts.first?.data.usage.map(\.name) == ["/checkout", "/cart"] },
+            "\(group()?.charts.map { "\($0.data.id) \($0.data.usage.map(\.name))" } ?? []) \(page.detail.flatMap { page.objectCharts(of: $0) }?.notes ?? [])")
+        let rate = group()?.charts.first
+        check("titled and said as the entry says", rate?.data.title == "Requests" && rate?.data.unit == .perSecond && rate?.headline == "2 series")
+        let alphabet = KubeTabQueries.alphabet
+        let sent = saved().filter { $0.query["query"]?.contains("http_requests_total") == true }
+        check(
+            "filled in for the Deployment, over the Service's query_range with 20 s",
+            !sent.isEmpty
+                && sent.allSatisfy {
+                    $0.path == service.rangePath && $0.query["timeout"] == "20s"
+                        && ($0.query["query"] ?? "").contains(#"{namespace="\#(namespace)",pod=~"api-\#(alphabet){1,10}-\#(alphabet){5}"}"#)
+                        && !($0.query["query"] ?? "").contains("$")
+                }, "\(sent.compactMap { $0.query["query"] })")
+        check("one without the scope's matchers never sent", !saved().contains { $0.query["query"]?.contains("orders_total") == true })
+        let notes = { page.detail.flatMap { page.objectCharts(of: $0) }?.notes ?? [] }
+        check(
+            "and said",
+            notes().contains { $0.hasPrefix("Saved query \u{201C}Every order\u{201D}: orders_total has no label matchers") }, "\(notes())")
+        check(
+            "one Prometheus refuses said in its words",
+            await eventually(10) { notes().contains { $0.hasPrefix("Saved query \u{201C}Broken\u{201D}: Prometheus refused the query") } }, "\(notes())")
+        check(
+            "the tab's own charts still read",
+            page.detail.flatMap { page.tabReading(of: $0) }.map { $0.problem == nil && $0.results["cpu"] != nil } == true,
+            page.detail.flatMap { page.tabReading(of: $0) }?.problem ?? "")
+        page.metricsGroupShown(KubeSavedCharts.groupTitle, false)
+        check("scrolled off: no longer wanted", page.detail.flatMap { page.tabRequest(of: $0) }?.families.contains(.saved) == false)
+        fake.forgetRequests()
+        await pause(1.5)
+        check("and not asked again", saved().isEmpty, "\(saved().map(\.query))")
+        note("kubernetes saved query: \(sent.first?.query["query"] ?? "none")")
+        page.showTab(.overview)
+        page.closeDetail()
+        // Back on the nodes, as the GPU part leaves the page: the next part
+        // counts what is asked once the page is hidden.
+        if let nodes = model.discovery?.kind("nodes") {
+            page.showKind(nodes)
+            _ = await eventually(10) { model.kind.fullName == "nodes" }
+        }
         await pause(1)
     }
 }

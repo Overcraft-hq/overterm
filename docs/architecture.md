@@ -5680,6 +5680,47 @@ DCGM; `FakePromProfile.gpuOperatorIdle`, the exporter's own `pod`);
 node's, a pod's (its holder row clicked) and a StatefulSet's tabs, at 1h
 and in Live beside metrics-server.
 
+**A context's saved queries** (`KubeSavedQueries.swift`: `KubeSavedChart`,
+`KubeSavedQueries`; `KubeSavedCharts.swift`; metrics.md decision 11, stage
+M8d). The user's own application metrics — request rate, latency, queue
+depth — written into the context's `kubernetes.contexts` entry as
+`charts: [{title, query, unit}]` (`KubeSavedChart.field`; a list of objects
+is `SettingValue.records`, checked by `SettingKind.records`, its required
+fields and its `unit` choice said item by item) and drawn on a workload's
+Metrics tab. Never an agent's: no `k8s_` tool reads or writes them, so
+there is still no free-form PromQL for agents. Before anything is sent,
+`KubeSavedQueries.fill` reads the query's tokens (comments, the three
+string quotings, PromQL 3's quoted names; a keyword — `sum`, `and`,
+`offset`, `by`… — only where the grammar puts one, anywhere else a metric's
+name like PromQL takes it, so checked) and refuses — the sentence under the
+charts, in the chart's title's name — a selector without the scope's
+matchers (`namespace="$ns"` on that label itself, never `exported_namespace`;
+and a positive matcher whose whole value is `$pod` in `=~` or `$name` —
+`pod=~"$pod|.*"` mentions it and reads the namespace), a bare metric name,
+a subquery, a range past an
+hour, `$pod` in a non-regex matcher, a placeholder anywhere but a
+matcher's value (`$w` only in a range), more than 2,000 characters; at
+most six a context are asked (`KubeSavedQueries.atMost`). `$ns` and
+`$name` are filled in as a literal in `=` and as a regex in `=~`
+(`regexLiteral`, then `literal`), `$pod` as the workload's pods' names
+(`KubeTabQueries.podPattern`), `$w` as the charts' rate window. Each is a
+`saved` query of the tab's want (`KubeTabRequest.saved`: an edit to
+settings.json is another request) over the Service's `query_range`, through
+the cache and the queue like the rest — read only while their group, last
+on the tab, is on screen (`KubePromTabCharts.readWhenShown`). A query
+Prometheus refuses (`bad_data`, a 422) is said in its words in that chart's
+place (`KubeTabReading.saved`) and not sent again while the reading lasts
+(`savedRejected`); it is never the tab's problem and never drops the
+profile. `KubeSavedCharts` draws one chart each in the unit given
+(`KubeChartUnit.perSecond`, `.seconds` beside the others; a value past
+10¹⁵, anyone's number, said as `%.3g` rather than through `Int`), a series a
+label set named by the labels that tell them apart, twelve at most — the
+rest "other" where the unit adds up, else said. Without Prometheus on for
+the context, the tab says the queries need it and asks nothing.
+`KubeSavedQueriesTests`; `KubeMetricsTabPrometheusTests` (asked only while
+shown, the unscoped one never sent, the refused one not asked again, the
+profile kept); `kubernetesObjectCharts`' `savedQueriesPart`.
+
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
 memory numbers, its last 15 minutes as 60 cells of 15 s, each the

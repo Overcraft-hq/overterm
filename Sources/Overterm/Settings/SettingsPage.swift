@@ -386,8 +386,8 @@ private struct SettingRow: View {
             SettingColorWell(spec: spec, settings: settings, theme: theme, unset: "From the theme")
         case .file(let types):
             SettingFilePicker(spec: spec, settings: settings, theme: theme, types: types)
-        case .order, .list, .entries:
-            EmptyView()  // `body` lays these out under the row
+        case .order, .list, .entries, .records:
+            EmptyView()  // `body` lays these out under the row (a record list is only ever an entry's field)
         }
     }
 
