@@ -5856,6 +5856,56 @@ part 10 (`kubernetesChartExpand`: the copied query is one the fake was
 asked, the browser gives up the slot and gets it back, no list, watch or
 discovery read).
 
+**Rightsizing** (`KubeSizing.swift`: `KubeSizingSubject`, `KubeSizingRequest`,
+`KubeSizingPlan`, `KubeSizingReading`, `KubeSizing`, `KubeSizingCard`;
+`KubeSizingView.swift`; `KubernetesPageModel+Sizing.swift`; metrics.md 2.10,
+4.6's R1, stage M10). "Sizing" on a pod's or a workload's Metrics tab, where
+the context's Prometheus is on, asks seven days of its usage — or what
+Prometheus keeps, from the profile's retention, in whole hours; under an
+hour, nothing — once, on the press: never refreshed, never with Live. Per
+pod, never per workload: each measure is taken over each pod's own series
+`by (namespace, pod, container)` and the container's figure is the highest
+pod's (`max by (container)`), so a ten-pod workload's suggestion is one
+pod's, not ten times it. CPU p50, p95 and max and memory p95 and max, one
+instant query each over the Service's `query` (GET, `timeout=20s`): with
+the mixin's rules `quantile_over_time`/`max_over_time` over the rule's
+series, no subquery; raw, each container's rate (`$w5 = max(5m, 4 ×
+scrape)`) or de-duplicated gauge in a subquery at 5 m — memory's max
+straight off the raw samples, a max of maxes needing none. A workload's
+pods are those its owner had at any time in the window
+(`KubeSizing.ownersOver`: the workload rule's or kube-state-metrics'
+owner series' `max_over_time`, a Deployment's through its ReplicaSets;
+no owners, its pods' names), so last week's ReplicaSets count. A raw
+workload's pods over the window are listed first, by name, from a cheap
+source (`KubeSizing.podsOver`: the owner series; by name pattern,
+kube-state-metrics' `kube_pod_info`; without kube-state-metrics, cAdvisor's
+last hour, said — never the week's samples), and its subqueries then read
+those pods by name (`pod=~"a|b"`) and no others: the prefix before an owner
+join would have read a sibling's week (api beside api-gateway) before the
+join filtered it. None found, or past `KubeQueryCost.maxSubqueryPods` (50),
+it is refused, said, with nothing more sent. Where kube-state-metrics is, a
+sixth query asks which containers last ended OOMKilled — and, where its
+restarts are kept, restarted in the window, kube-state-metrics' last reason
+having no time. The reading is a `KubePrometheusMonitor`
+want (`.sizing`), through the context's queue at `.sizing` priority —
+below every chart — standing only while its object's Metrics tab shows on
+a page on screen (`sizingWant`); left before it answers, the press is
+dropped (`updatePrometheusWanted`) and nothing is asked until the next
+one. Read, it is kept in `sizings` — memory only, one a subject, the last
+16 presses, dropped on another context — and drawn by `KubeSizingCard`
+against the pod's spec or the workload's template: CPU's suggested request
+p95 × 1.15 (up to 5 m), memory's request and limit the max × 1.15 (up to a
+Mi), and an OOMKill the objects time inside the window (the pod's last
+terminations, its workload's pods' as the markers read them) or, where
+the objects give that container no time, kube-state-metrics' last reason:
+"the max understates the need". Advice:
+nothing is applied, nothing typed; Copy PromQL copies what was asked.
+`KubeSizingTests` (per pod, never a sum; memory from the max; the OOM note;
+the pods listed by name, a sibling's prefix never read, none refused, and
+the 50-pod bound; rules without a subquery; the retention);
+`KubeSizingPageTests` (nothing before the press, once, never refreshed,
+dropped when left); `kubernetesObjectCharts`' `sizingPart`.
+
 **The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
 `KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
 memory numbers, its last 15 minutes as 60 cells of 15 s, each the

@@ -28,6 +28,7 @@ struct KubeMetricsTabView: View {
                 controls(caption: charts?.caption, report: drawn)
                 Rectangle().fill(theme.border).frame(height: 1)
                 gpus
+                sizing
                 if let charts, drawn {
                     KubePodChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
@@ -49,6 +50,7 @@ struct KubeMetricsTabView: View {
                 controls(caption: charts?.caption, workloadView: charts?.view, report: drawn)
                 Rectangle().fill(theme.border).frame(height: 1)
                 gpus
+                sizing
                 if let charts, drawn {
                     KubeObjectChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
@@ -71,6 +73,31 @@ struct KubeMetricsTabView: View {
         if let allocation = page.gpuAllocation(of: session) {
             KubeGPUAllocationView(allocation: allocation, theme: theme, open: { [weak page] in page?.openGPUHolder($0) })
             Rectangle().fill(theme.border).frame(height: 1)
+        }
+    }
+
+    /// Sizing's card, once pressed (M10).
+    @ViewBuilder private var sizing: some View {
+        if let reading = page.sizingReading(of: session.ref) {
+            KubeSizingView(
+                reading: reading, card: page.sizingCard(of: session), theme: theme, copy: { [weak page] in page?.copyChartText($0) },
+                again: { [weak page] in page?.sizeUsage() }, hide: { [weak page] in page?.hideSizing() })
+            Rectangle().fill(theme.border).frame(height: 1)
+        }
+    }
+
+    /// Sizing's button: a pod's or a workload's, Prometheus opted in.
+    @ViewBuilder private var sizingButton: some View {
+        if page.offersSizing(session.ref) {
+            let disabled = page.sizingDisabled
+            Button("Sizing") { page.sizeUsage() }
+                .controlSize(.small)
+                .disabled(disabled != nil || page.sizingReading(of: session.ref)?.done == false)
+                .help(
+                    disabled
+                        ?? "Seven days of each pod's CPU and memory, asked of Prometheus once: a request from CPU's p95, memory's from its max. Advice only — nothing is changed."
+                )
+                .accessibilityIdentifier("kubernetes.metrics.sizing")
         }
     }
 
@@ -189,6 +216,7 @@ struct KubeMetricsTabView: View {
                 }
                 Spacer(minLength: 0)
                 objectControls(workloadView)
+                sizingButton
             }
             if let caption {
                 Text(verbatim: caption).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(2)

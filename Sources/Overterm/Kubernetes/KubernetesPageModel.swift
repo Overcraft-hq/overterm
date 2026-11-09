@@ -436,6 +436,9 @@ final class KubernetesPageModel: ObservableObject {
     @Published var chartLookups = KubeChartLookups()
     /// A workload's charts: Total or Per pod, picked for the page (nil: by its pods' count).
     @Published var workloadChartView: KubeWorkloadView?
+    /// The last press of Sizing (M10): its want stands while its object's
+    /// Metrics tab shows, until it is read; its answer is the monitor's.
+    @Published var sizingAsked: KubeSizingRequest?
     /// A node's "Sample top pods", while on (and after, stopped).
     @Published var topPodsSampling: KubeTopPodsSampling?
     var topPodsStop: Task<Void, Never>?
