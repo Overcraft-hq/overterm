@@ -110,6 +110,7 @@ extension E2ERunner {
         check("a chart gone from the screen leaves the registry", await eventually(5) { KubeChartRegistry.shared.chart(data.identifier, in: scope) == nil })
         await metricsTabFirstDraw(theme)
         await workloadTabFirstDraw(theme)
+        await kubernetesChartBudget(theme)
     }
 
     /// A Deployment's Metrics tab, sampled (metrics.md 5.3, stage M3b): 50

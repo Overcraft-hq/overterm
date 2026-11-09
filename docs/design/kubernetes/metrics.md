@@ -566,6 +566,8 @@ Swift Charts' axes and accessibility come free, but nothing else in its column o
 
 Data is merged off the main thread and published in one assignment. `@Published` emits before the property changes, so sinks use the value they are given.
 
+(M12, as built) Checked at scale in `kubernetesPerf` (`E2ERunner+KubernetesChartBudget`), with the Overview's X4 at 50 of 60 nodes held to the first draw's 50 ms. What they found: X4's fifty rows of views took the Overview to 70 ms, so X4 is one Canvas (`KubeNodeStripsLayout`), about 29; the reader's bridging of each pair to `[[Any]]` took an 8 MB answer to 250 ms, now about 120; and a range answer was merged into `KubeChartCache` on the main thread, now off it (`KubeChartCache.merged`), only kept there. (M12 review) Kept only if the query's version is unchanged since the merge began, never by comparing ends and counts; a cancelled reading or a key gone meanwhile keeps nothing. The Overview's budget is timed on `KubePrometheusChartView` itself; the steady-state rows (Live, 24h) and the hidden page are checked in `kubernetesCharts` (`kubernetesChartsSteady`), which found the 24h memory chart's failing query (a fixture the fake lacked) asked again at every refresh.
+
 ## 6. Ranges, budgets and safety
 
 ### 6.1 Ranges and steps

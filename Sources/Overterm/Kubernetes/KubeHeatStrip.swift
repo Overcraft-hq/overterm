@@ -150,21 +150,32 @@ final class KubeHeatStripRegistry {
     }
 
     private var entries: [UUID: Shown] = [:]
+    /// Strips drawn together in one view (X4's), by that view's token.
+    private var groups: [UUID: [Shown]] = [:]
 
     func show(_ strip: KubeHeatStrip, identifier: String, token: UUID, window: ObjectIdentifier) {
         entries[token] = Shown(identifier: identifier, strip: strip, window: window)
     }
-    func hide(_ token: UUID) { entries[token] = nil }
+    /// A view's strips, all at once: those it showed before replaced.
+    func show(_ strips: [(identifier: String, strip: KubeHeatStrip)], token: UUID, window: ObjectIdentifier) {
+        groups[token] = strips.map { Shown(identifier: $0.identifier, strip: $0.strip, window: window) }
+    }
+    func hide(_ token: UUID) {
+        entries[token] = nil
+        groups[token] = nil
+    }
+
+    private var shown: [Shown] { Array(entries.values) + groups.values.flatMap { $0 } }
 
     /// The strip of that identifier on screen — in that window, or in any.
     func strip(_ identifier: String, in window: ObjectIdentifier? = nil) -> KubeHeatStrip? {
-        entries.values.first { $0.identifier == identifier && (window == nil || $0.window == window) }?.strip
+        shown.first { $0.identifier == identifier && (window == nil || $0.window == window) }?.strip
     }
 
     /// The dump's lines of one window's strips, or of every window's: each
     /// strip's identifier, filled cells, levels, peak.
     func lines(in window: ObjectIdentifier? = nil) -> [String] {
-        entries.values.filter { window == nil || $0.window == window }
+        shown.filter { window == nil || $0.window == window }
             .sorted { $0.identifier < $1.identifier }
             .map { "heat \($0.identifier) \($0.strip.dump)" }
     }
@@ -195,8 +206,8 @@ struct KubeHeatStripView: View {
     /// The window it is in, by its `ChromeTheme`.
     let window: ObjectIdentifier
 
-    static let width: CGFloat = 75
-    static let height: CGFloat = 14
+    nonisolated static let width: CGFloat = 75
+    nonisolated static let height: CGFloat = 14
 
     @State private var token = UUID()
 
@@ -204,27 +215,37 @@ struct KubeHeatStripView: View {
         let colours = KubeHeatStrip.Level.allCases.map { KubeChartPalette.heat($0, dark: dark).color }
         let percents = strip.percents
         let track = track
+        let summary = strip.summary()
+        cells(percents, colours: colours, track: track)
+            .accessibilityElement()
+            .accessibilityLabel(Text(verbatim: summary))
+            .accessibilityIdentifier(identifier)
+            .onAppear { KubeHeatStripRegistry.shared.show(strip, identifier: identifier, token: token, window: window) }
+            .onChange(of: strip) { KubeHeatStripRegistry.shared.show($0, identifier: identifier, token: token, window: window) }
+            .onChange(of: identifier) { KubeHeatStripRegistry.shared.show(strip, identifier: $0, token: token, window: window) }
+            .onDisappear { KubeHeatStripRegistry.shared.hide(token) }
+    }
+
+    /// The cells, in one Canvas pass.
+    private func cells(_ percents: [Double?], colours: [Color], track: Color) -> some View {
         Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(track.opacity(0.08)))
-            let cell = size.width / CGFloat(percents.count)
-            for (index, percent) in percents.enumerated() {
-                let x = CGFloat(index) * cell
-                guard let percent else {
-                    context.fill(Path(CGRect(x: x, y: size.height - 1, width: cell, height: 1)), with: .color(track.opacity(0.3)))
-                    continue
-                }
-                let height = max(2, size.height * CGFloat(min(percent, 100) / 100))
-                let rect = CGRect(x: x, y: size.height - height, width: cell, height: height)
-                context.fill(Path(rect), with: .color(colours[KubeHeatStrip.Level(percent).rawValue]))
-            }
+            Self.draw(percents, in: CGRect(origin: .zero, size: size), context: &context, colours: colours, track: track)
         }
         .frame(width: Self.width, height: Self.height)
-        .accessibilityElement()
-        .accessibilityLabel(Text(verbatim: strip.summary()))
-        .accessibilityIdentifier(identifier)
-        .onAppear { KubeHeatStripRegistry.shared.show(strip, identifier: identifier, token: token, window: window) }
-        .onChange(of: strip) { KubeHeatStripRegistry.shared.show($0, identifier: identifier, token: token, window: window) }
-        .onChange(of: identifier) { KubeHeatStripRegistry.shared.show(strip, identifier: $0, token: token, window: window) }
-        .onDisappear { KubeHeatStripRegistry.shared.hide(token) }
+    }
+
+    /// A strip's cells drawn in `rect` (X4 draws fifty rows' in one Canvas).
+    static func draw(_ percents: [Double?], in rect: CGRect, context: inout GraphicsContext, colours: [Color], track: Color) {
+        context.fill(Path(rect), with: .color(track.opacity(0.08)))
+        let cell = rect.width / CGFloat(max(1, percents.count))
+        for (index, percent) in percents.enumerated() {
+            let x = rect.minX + CGFloat(index) * cell
+            guard let percent else {
+                context.fill(Path(CGRect(x: x, y: rect.maxY - 1, width: cell, height: 1)), with: .color(track.opacity(0.3)))
+                continue
+            }
+            let height = max(2, rect.height * CGFloat(min(percent, 100) / 100))
+            context.fill(Path(CGRect(x: x, y: rect.maxY - height, width: cell, height: height)), with: .color(colours[KubeHeatStrip.Level(percent).rawValue]))
+        }
     }
 }

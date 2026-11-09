@@ -366,10 +366,19 @@ final class KubePrometheusMonitor: ObservableObject {
                 if let self {
                     self.closing -= 1
                     guard !self.proxyUsed || self.situation?.context != context else { return }
+                    self.proxyCloses += 1
                 }
                 close(context)
             }
         }
+    }
+
+    /// Readings shown as a poll leaves them, Prometheus found at `service`
+    /// — a monitor of a scenario's own, which reads nothing (the
+    /// Overview's first draw timed on its own view, metrics.md 5.3).
+    func present(_ charts: [KubeChart: KubeChartReading], service: KubePrometheusService) {
+        state = .found(service, nil)
+        self.charts = charts
     }
 
     /// The answers kept forgotten, as their lifetime passing would (a test's): asked whole again.
@@ -1182,11 +1191,53 @@ final class KubePrometheusMonitor: ObservableObject {
         let answer = try await ask(
             transport, KubePromQL.rangePath(service, query.promql, start: asked.start, end: asked.end, step: span.step), context: context, service: service,
             order: order)
-        // Another context meanwhile: not this one's to keep.
-        guard situation?.context == context else { throw CancellationError() }
-        caches[context, default: KubeChartCache()].merge(key, series: answer.series, asked: asked, start: span.start)
-        return (caches[context]?.series(key) ?? answer.series, answer.notes)
+        // Merged off the main thread (an answer may be 8 MB, a thousand
+        // series), then kept here — unless the query changed meanwhile:
+        // over another answer kept for the key, merged again (off it
+        // too); the key gone (another range, the cache dropped), not kept.
+        let start = span.start
+        var old = caches[context]?.entry(key)
+        for _ in 0..<Self.mergeAttempts {
+            let version = caches[context]?.version(key.query) ?? 0
+            let base = old
+            let entry = await Task.detached(priority: .userInitiated) {
+                KubeChartCache.merged(base, series: answer.series, asked: asked, start: start)
+            }.value
+            if let afterMerge { await afterMerge(key) }
+            // Cancelled meanwhile (another range, hidden, closed): never kept.
+            try Task.checkCancellation()
+            // Another context meanwhile: not this one's to keep.
+            guard situation?.context == context else { throw CancellationError() }
+            switch (caches[context] ?? KubeChartCache()).keeping(key, since: version) {
+            case .keep:
+                caches[context, default: KubeChartCache()].put(key, entry)
+                merges += 1
+                return (caches[context]?.series(key) ?? entry.series, answer.notes)
+            case .again(let kept) where kept.end >= asked.end:
+                // A newer answer kept meanwhile covers this one.
+                return (kept.series, answer.notes)
+            case .again(let kept):
+                old = kept
+            case .gone:
+                throw CancellationError()
+            }
+        }
+        // Kept over by others every time: asked again at the next refresh.
+        throw CancellationError()
     }
+
+    /// The tests' moment between a merge and its keeping: what may change
+    /// meanwhile (another range, the caches dropped) changed there.
+    var afterMerge: (@MainActor (KubeChartCache.Key) async -> Void)?
+
+    /// How often an answer is merged again over one kept meanwhile.
+    private static let mergeAttempts = 3
+
+    /// How many answers were merged into the caches (where each merge ran
+    /// is `KubeChartCache.mergeThreads`'), for the tests.
+    private(set) var merges = 0
+    /// How many times the metrics proxy was closed, for the tests.
+    private(set) var proxyCloses = 0
 
     // MARK: Sizing
 
