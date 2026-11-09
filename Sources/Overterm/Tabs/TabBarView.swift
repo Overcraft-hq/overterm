@@ -418,11 +418,14 @@ struct TabItemView: View {
         Group {
             if tab.isPinned { pinnedContent } else { fullContent }
         }
-        // Pinned: a fixed icon-sized square, as in Chrome. The rest share the
-        // remaining width.
+        // Pinned: a fixed icon-sized square, as in Chrome. The rest as wide
+        // as their name, between the least and the most Settings ▸
+        // Appearance ▸ Tab width allows: given one ideal width, every tab
+        // took it in the strip's scroll view, and a short name sat in a tab
+        // half empty.
         .frame(
-            minWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.min, idealWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.ideal,
-            maxWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.max, minHeight: height, maxHeight: height
+            minWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.min, maxWidth: tab.isPinned ? 38 : ChromeMetrics.tabWidth.range.max,
+            minHeight: height, maxHeight: height
         )
         .fixedSize(horizontal: tab.isPinned, vertical: false)
         .background(

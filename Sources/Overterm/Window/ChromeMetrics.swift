@@ -35,12 +35,13 @@ enum ChromeMetrics {
         case narrow, regular, wide
 
         var label: String { rawValue.capitalized }
-        /// A tab's least, preferred and most width in the strip.
-        var range: (min: CGFloat, ideal: CGFloat, max: CGFloat) {
+        /// A tab's least and most width in the strip; between them, as wide
+        /// as its name.
+        var range: (min: CGFloat, max: CGFloat) {
             switch self {
-            case .narrow: (56, 140, 150)
-            case .regular: (72, 200, 220)
-            case .wide: (90, 260, 300)
+            case .narrow: (56, 150)
+            case .regular: (72, 220)
+            case .wide: (90, 300)
             }
         }
     }

@@ -14,6 +14,7 @@ version is tagged `v<version>`.
 - overgit: the branches have a filter, as the commits have a search
 - search: ⌘F has tabs — All, Files, Notes, Terminal (⇥ steps through) — so the notes aren't under every file's lines
 - palette: ⌘K redone — one size whatever is selected, its tabs under the field with their counts (⇥ steps through), the list in its groups, every item explained beside it
+- tabs: a tab is as wide as its name, within the Tab width setting's bounds — a short name no longer sits in a half-empty tab
 
 ## 1.5.3 — 2026-11-04
 

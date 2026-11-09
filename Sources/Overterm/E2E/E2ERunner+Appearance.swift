@@ -139,6 +139,24 @@ extension E2ERunner {
         await photo("tabs")
         for key in ["appearance.tabWidth", "appearance.tabClose", "appearance.tabIcons"] { settings.set(key, nil) }
         check("regular tabs again", await eventually(3) { ChromeMetrics.tabWidth == .regular && ChromeMetrics.tabIcons })
+
+        // A tab as wide as its name: a short one doesn't sit half empty.
+        let tabs = app.store.tabs
+        if tabs.count >= 2 {
+            tabs[0].customTitle = "api"
+            tabs[1].customTitle = "a much longer name for the second tab of the strip"
+            check(
+                "a tab is as wide as its name, within the setting's bounds",
+                await eventually(3) {
+                    let short = self.app.store.tabFrames[tabs[0].id]?.width ?? 0
+                    let long = self.app.store.tabFrames[tabs[1].id]?.width ?? 0
+                    return short > 0 && short < 140 && long > short + 40 && long <= ChromeMetrics.TabWidth.regular.range.max + 5
+                },
+                tabs.map { "\($0.title): \(self.app.store.tabFrames[$0.id]?.width ?? -1)" }.joined(separator: ", "))
+            await photo("tab-widths")
+            tabs[0].customTitle = nil
+            tabs[1].customTitle = nil
+        }
         check("back to the default sizes", await eventually(3) { SplitHostView.headerHeight == 38 && CardColumn.gap == 10 && ChromeMetrics.text(11) == 11 })
         // Another app's theme, imported: a file of Ghostty's in the user's folder.
         let itermFile = scratch.appendingPathComponent("Sunset.itermcolors")
