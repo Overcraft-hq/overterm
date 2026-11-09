@@ -247,7 +247,9 @@ extension KubernetesPageModel {
                 return ref.namespace.map { KubePromTabCharts.hpa(namespace: $0, name: ref.name, reading: reading, changes: changes, window: window) }
             case .node:
                 return KubePromTabCharts.node(node: ref.name, facts: KubeNodeFacts.of(object.json), reading: reading, changes: changes, window: window)
-            case .namespace, .pod:
+            case .namespace:
+                return KubePromTabCharts.namespace(namespace: ref.name, reading: reading, quota: chartLookups.quotas[ref], changes: changes, window: window)
+            case .pod:
                 return nil
             }
         }
@@ -309,7 +311,7 @@ extension KubernetesPageModel {
         if metricsSource(of: session.ref) == .prometheus { return nil }
         if session.ref.metricsSubject != .hpa, let reason = model.metrics.availability.reason {
             guard model.metrics.availability == .absent else { return reason }
-            let prometheus = prometheusOn && KubeChartSource.prometheusCharts(session.ref.metricsSubject ?? .namespace)
+            let prometheus = prometheusOn
             if prometheus, case .unavailable(let why) = model.prometheus.state { return Self.metricsServerAbsent(prometheus: true) + " " + why }
             return Self.metricsServerAbsent(prometheus: prometheus)
         }

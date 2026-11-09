@@ -453,6 +453,11 @@ enum KubePromQL {
         KubePath.query(service.queryPath, [("query", query), ("timeout", duration(timeout))])
     }
 
+    /// An instant query evaluated at `time` (a tab's span's end: a window's, not now).
+    static func instantPath(_ service: KubePrometheusService, _ query: String, at time: Date) -> String {
+        KubePath.query(service.queryPath, [("query", query), ("time", stamp(time)), ("timeout", duration(timeout))])
+    }
+
     static func stamp(_ date: Date) -> String { String(Int(date.timeIntervalSince1970)) }
 }
 

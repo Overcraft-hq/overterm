@@ -292,4 +292,165 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         page.pickMetricsRange(.hour)
         try await until(5, "an hour reads") { !page.metricsPaused && model.prometheus.tabs.keys.contains { $0.span == .range(.hour) } }
     }
+
+    /// A Deployment `web` of two pods by two ReplicaSets, kube-state-metrics'
+    /// owners, its detail opened on an hour of Prometheus.
+    private func openWeb(_ model: KubernetesModel, _ page: KubernetesPageModel) async throws {
+        let pods = [("web-7f9c6d-aaaaa", "web-7f9c6d", 0.3), ("web-55d4f-bbbbb", "web-55d4f", 0.1)]
+        api.add(
+            "deployments.apps", "web", namespace: "shop", values: ["Ready": "2/2"],
+            fields: [
+                "spec": [
+                    "replicas": 2, "selector": ["matchLabels": ["app": "web"]],
+                    "template": ["spec": ["containers": [["name": "app", "resources": ["requests": ["cpu": "100m"]]]]]],
+                ],
+                "status": ["replicas": 2],
+            ])
+        for (pod, replicaSet, cpu) in pods {
+            api.addPod(pod, namespace: "shop", FakeKubeAPI.Pod(ready: 1, containers: 1), labels: ["app": "web"])
+            let labels = ["namespace": "shop", "pod": pod, "container": "app", "image": "nginx:1.27"]
+            api.setPrometheusSeries("container_cpu_usage_seconds_total", labels: labels, value: cpu)
+            api.setPrometheusSeries("container_memory_working_set_bytes", labels: labels, value: 64 * 1_048_576)
+            api.setPrometheusSeries("kube_pod_owner", labels: ["namespace": "shop", "pod": pod, "owner_kind": "ReplicaSet", "owner_name": replicaSet], value: 1)
+            api.setPrometheusSeries(
+                "kube_replicaset_owner", labels: ["namespace": "shop", "replicaset": replicaSet, "owner_kind": "Deployment", "owner_name": "web"], value: 1)
+        }
+        api.setPrometheusMatrix("topk(5,", pods.map { pod in FakePromFixture.Line(["pod": pod.0]) { _ in pod.2 } })
+        api.setPrometheusMatrix("sum((clamp_min(", [FakePromFixture.Line { _ in 0 }])
+        model.show()
+        page.visible = true
+        try await until(5, "discovery read") { model.discovery?.kind("deployments") != nil }
+        page.showKind(try XCTUnwrap(model.discovery?.kind("deployments")))
+        try await until(5, "listed") { model.rows[KubeRowID(namespace: "shop", name: "web")] != nil }
+        page.selection = ["shop/web"]
+        XCTAssertTrue(page.press("m"))
+        try await until(5, "its object read") { page.detail?.object != nil }
+        try await until(5, "Prometheus found") { model.prometheus.service == service }
+        page.pickMetricsRange(.hour)
+    }
+
+    /// A workload's top five (M7): ranked once by an instant `topk` a
+    /// measure at the span's end, then asked by name alongside the owner
+    /// join's total and its ReplicaSets; ranked again only on the tenth
+    /// refresh. A namespace's raw series counted once, its workloads by
+    /// owner. GETs only, through the Service's two paths.
+    func testAWorkloadsTopFiveAreRankedOnceThenAskedByName() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        try await openWeb(model, page)
+        let session = try XCTUnwrap(page.detail)
+        func ranks() -> [FakeKubeAPI.Request] { asked.filter { $0.path == service.queryPath && $0.query["query"]?.hasPrefix("topk(5,") == true } }
+        try await until(5, "its top five read") { page.tabReading(of: session)?.results["cpuTop"] != nil && page.tabReading(of: session)?.results["revisions"] != nil }
+        XCTAssertEqual(ranks().count, 2, "one ranking a measure")
+        let span = try XCTUnwrap(page.tabReading(of: session)?.span)
+        XCTAssertTrue(ranks().allSatisfy { $0.query["time"] == KubePromQL.stamp(span.end) && $0.query["timeout"] == "20s" }, "at the span's end")
+        XCTAssertEqual(page.tabReading(of: session)?.ranking?.names["cpu"], ["web-7f9c6d-aaaaa", "web-55d4f-bbbbb"])
+        let byName = asked.filter { $0.path == service.rangePath && $0.query["query"]?.hasPrefix("sum by (pod)(") == true }
+        XCTAssertTrue(byName.contains { $0.query["query"]?.contains(#"pod=~"web-7f9c6d-aaaaa|web-55d4f-bbbbb""#) == true }, "\(byName.map(\.query))")
+        try await until(5, "built") { page.objectCharts(of: session)?.charts.first { $0.data.id.hasSuffix(".revisions") } != nil }
+        let charts = try XCTUnwrap(page.objectCharts(of: session))
+        XCTAssertEqual(charts.view, .perPod, "two replicas: Per pod")
+        XCTAssertEqual(charts.charts.first?.data.usage.map(\.id), ["web-7f9c6d-aaaaa", "web-55d4f-bbbbb"])
+        XCTAssertEqual(charts.charts.first?.data.tier, "raw cAdvisor · by owner")
+        let revisions = try XCTUnwrap(charts.charts.first { $0.data.id.hasSuffix(".revisions") })
+        XCTAssertEqual(Set(revisions.data.usage.map(\.id)), ["rev:7f9c6d", "rev:55d4f"], "by ReplicaSet, from kube-state-metrics' owners")
+        // Refreshed: the ranking kept until its tenth refresh, then asked again.
+        try await until(5, "refreshed with the ranking kept") { (page.tabReading(of: session)?.ranking?.refreshes ?? 0) >= 3 }
+        XCTAssertEqual(ranks().count, 2, "not ranked again meanwhile")
+        try await until(10, "ranked again") { ranks().count == 4 }
+        try await until(5, "the new ranking used") { (page.tabReading(of: session)?.ranking?.refreshes ?? 99) < KubeTabRanking.kept - 1 }
+
+        // A namespace's tab: its raw series counted once, its workloads by owner.
+        api.setPrometheusMatrix("topk(8,", [FakePromFixture.Line(["workload_type": "deployment", "workload": "web"]) { _ in 0.4 }])
+        api.setPrometheusMatrix("avg_over_time((", [FakePromFixture.Line(["overterm_s": "cpu"]) { _ in 0.05 }])
+        api.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "web-1", "phase": "Running"], value: 1)
+        page.showKind(.namespaces)
+        try await until(5, "namespaces listed") { model.kind.fullName == "namespaces" && model.rows[KubeRowID(namespace: nil, name: "shop")] != nil }
+        api.forgetRequests()
+        page.selection = ["shop"]
+        XCTAssertTrue(page.press("m"))
+        try await until(5, "its object read") { page.detail?.ref.name == "shop" && page.detail?.object != nil }
+        XCTAssertEqual(page.metricsRanges, KubeMetricsRange.allCases, "a namespace's ranges over Prometheus too")
+        page.pickMetricsRange(.hour)
+        let namespace = try XCTUnwrap(page.detail)
+        try await until(5, "its workloads read") { page.tabReading(of: namespace)?.results["cpuTop"]?.isEmpty == false }
+        try await until(5, "built") { page.objectCharts(of: namespace)?.charts.first?.data.source == "Prometheus" }
+        let built = try XCTUnwrap(page.objectCharts(of: namespace))
+        let cpu = try XCTUnwrap(built.charts.first { $0.data.id == "namespace.shop.cpu" })
+        XCTAssertEqual(cpu.data.usage.map(\.id), ["Deployment/web", "other"], "web's pods, and web-1, which nothing owns")
+        XCTAssertTrue(cpu.chips.contains { $0.text.hasPrefix("requested but idle:") }, "\(cpu.chips)")
+        XCTAssertEqual(built.charts.first { $0.data.id == "namespace.shop.phases" }?.data.usage.map(\.name), ["Running"])
+        try await until(5, "refreshed") { (page.tabReading(of: namespace)?.ranking?.refreshes ?? 0) >= 2 }
+        let counts = asked.filter { $0.query["query"]?.hasPrefix("count(container_cpu_usage_seconds_total{") == true }
+        XCTAssertEqual(counts.count, 1, "counted once, kept with the profile")
+        XCTAssertEqual(model.prometheus.profile?.namespaceSeries["shop"], 3)
+        XCTAssertFalse(
+            asked.contains { $0.query["query"]?.contains("[1h:") == true && $0.query["query"]?.hasPrefix("topk(8,") == false && $0.path == service.rangePath }, "no subquery in a range query")
+    }
+
+    /// The ranking never holds the visible charts back (metrics.md 4.5,
+    /// 6.3): ranked again on another span, its count and its `topk`s slow,
+    /// the total's range query goes out at once — the top five once ranked.
+    func testTheVisibleChartsAreAskedWhileTheRankingIsRead() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        try await openWeb(model, page)
+        let session = try XCTUnwrap(page.detail)
+        try await until(5, "ranked over the hour") { page.tabReading(of: session)?.results["cpuTop"] != nil }
+        func totals() -> [FakeKubeAPI.Request] {
+            asked.filter {
+                $0.path == service.rangePath && $0.query["query"]?.hasPrefix("sum((sum by (namespace,pod,container)(rate(container_cpu_usage_seconds_total{") == true
+                    && (range($0).map { $0.end - $0.start } ?? 0) > 3 * 3600
+            }
+        }
+        func ranks() -> [FakeKubeAPI.Request] { asked.filter { $0.path == service.queryPath && $0.query["query"]?.hasPrefix("topk(5,") == true } }
+        let ranked = ranks().count
+        // Every instant query slow from here: the count, then the two rankings.
+        api.answerSlowly(service.queryPath, milliseconds: 1500)
+        let asking = Date()
+        page.pickMetricsRange(.sixHours)
+        try await until(1.2, "the total asked before the ranking answers") { !totals().isEmpty }
+        XCTAssertLessThan(Date().timeIntervalSince(asking), 1.4, "not after the count's and the ranking's answers")
+        XCTAssertEqual(ranks().count, ranked, "the ranking still waits for its count")
+        XCTAssertTrue(asked.contains { $0.query["query"]?.hasPrefix("count by (pod)(container_cpu_usage_seconds_total{") == true }, "its pods counted first")
+        try await until(8, "ranked over six hours, its top five asked") {
+            ranks().count == ranked + 2 && page.tabReading(of: session)?.span.map { $0.end.timeIntervalSince($0.start) > 3 * 3600 } == true
+                && page.tabReading(of: session)?.results["cpuTop"] != nil
+        }
+        api.answerSlowly(service.queryPath, milliseconds: nil)
+    }
+
+    /// A namespace whose count fails: nothing read raw across it (the count
+    /// is what bounds that), the failure said, counted again at the next refresh.
+    func testANamespaceWhoseCountFailsIsntReadRaw() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        api.setPrometheusMatrix(#"count(container_cpu_usage_seconds_total{namespace="shop""#, failure: FakePromFixture.Failure(status: 503, errorType: "unavailable", error: "busy"))
+        api.setPrometheusSeries("kube_pod_status_phase", labels: ["namespace": "shop", "pod": "web-1", "phase": "Running"], value: 1)
+        model.show()
+        page.visible = true
+        try await until(5, "discovery read") { model.discovery != nil }
+        page.showKind(.namespaces)
+        try await until(5, "namespaces listed") { model.kind.fullName == "namespaces" && model.rows[KubeRowID(namespace: nil, name: "shop")] != nil }
+        page.selection = ["shop"]
+        XCTAssertTrue(page.press("m"))
+        try await until(5, "its object read") { page.detail?.ref.name == "shop" && page.detail?.object != nil }
+        try await until(5, "Prometheus found") { model.prometheus.service == service }
+        page.pickMetricsRange(.hour)
+        let session = try XCTUnwrap(page.detail)
+        func counts() -> Int { asked.filter { $0.query["query"]?.hasPrefix(#"count(container_cpu_usage_seconds_total{namespace="shop""#) == true }.count }
+        try await until(5, "read without its count") { page.tabReading(of: session)?.results["phases"] != nil }
+        let reading = try XCTUnwrap(page.tabReading(of: session))
+        XCTAssertTrue(reading.refused[.cpu]?.contains("couldn't be counted") == true, "\(reading.refused)")
+        XCTAssertNotNil(reading.refused[.idle])
+        XCTAssertNotNil(reading.problem, "the failure said")
+        XCTAssertNil(model.prometheus.profile?.namespaceSeries["shop"])
+        XCTAssertTrue(model.prometheus.profile?.uncounted.isEmpty ?? true, "never kept with the profile")
+        let raw = asked.filter {
+            ($0.query["query"]?.contains("container_cpu_usage_seconds_total{") == true || $0.query["query"]?.contains("container_memory_working_set_bytes{") == true)
+                && $0.query["query"]?.hasPrefix("count(") == false && $0.query["query"]?.hasPrefix("label_replace(count") == false
+        }
+        XCTAssertEqual(raw.map { $0.query["query"] ?? "" }, [], "nothing raw across the namespace")
+        try await until(5, "counted again at the next refresh") { counts() >= 2 }
+    }
 }

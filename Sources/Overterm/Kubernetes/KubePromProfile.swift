@@ -47,6 +47,14 @@ struct KubePromProfile: Equatable, Sendable {
     var problem: String?
     /// When it was asked.
     var probed: Date
+    /// A namespace's cAdvisor CPU series, counted when its tab first asks
+    /// without recording rules (metrics.md 4.4): raw across it only below
+    /// 2,000 (`KubeQueryCost`). Kept with the profile, asked again with it.
+    var namespaceSeries: [String: Int] = [:]
+    /// The namespaces whose count failed in this reading: raw across them
+    /// refused, said so. Never kept with the profile — counted again at
+    /// the next refresh.
+    var uncounted: Set<String> = []
 
     /// Nothing known: the charts as before the probe.
     static let unknown = KubePromProfile(probed: .distantPast)
@@ -77,6 +85,8 @@ struct KubePromProfile: Equatable, Sendable {
     static let containerCPURate5m = "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate5m"
     static let containerCPUIrate = "node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate"
     static let containerMemoryRule = "node_namespace_pod_container:container_memory_working_set_bytes"
+    /// The mixin's pods by workload: `workload`, `workload_type` (lower case).
+    static let workloadRule = "namespace_workload_pod:kube_pod_owner:relabel"
     static let activeRequestsRule = "cluster:namespace:pod_cpu:active:kube_pod_container_resource_requests"
     static let nodeCPURule = "instance:node_cpu_utilisation:rate5m"
     static let nodeMemoryRule = "instance:node_memory_utilisation:ratio"
@@ -133,7 +143,7 @@ struct KubePromProfile: Equatable, Sendable {
         "kube_horizontalpodautoscaler_status_current_replicas", "kube_hpa_status_current_replicas", "kube_horizontalpodautoscaler_status_target_metric",
         "kube_resourcequota", "node_cpu_seconds_total", "node_memory_MemAvailable_bytes", "node_memory_MemTotal_bytes", "node_uname_info",
         "kubelet_volume_stats_used_bytes", "kubelet_volume_stats_inodes_used", containerCPURate5m, containerCPUIrate, containerMemoryRule,
-        "namespace_workload_pod:kube_pod_owner:relabel", activeRequestsRule, nodeCPURule, nodeMemoryRule, nodeCPUCountRule,
+        workloadRule, activeRequestsRule, nodeCPURule, nodeMemoryRule, nodeCPUCountRule,
         "prometheus_tsdb_lowest_timestamp_seconds",
     ]
 

@@ -37,7 +37,7 @@ extension KubernetesPageModel {
         // Prometheus is found first: its ranges need it.
         if let request = metricsTabWant { wants.insert(.tab(request)) }
         if detail != nil, metricsTabShows, model.prometheus.service == nil, model.prometheus.state == .off || model.prometheus.state == .detecting,
-            detail?.ref.metricsSubject.map(KubeChartSource.prometheusCharts) == true
+            detail?.ref.metricsSubject != nil
         {
             wants.insert(.locate)
         }

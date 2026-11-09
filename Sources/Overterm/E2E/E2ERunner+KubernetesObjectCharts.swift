@@ -247,6 +247,9 @@ extension E2ERunner {
             "its pods' owners from Metadata rows",
             fake.requests.contains { $0.path == "/api/v1/namespaces/\(namespace)/pods" && $0.query["includeObject"] == "Metadata" })
 
+        // Part 5 (M7): the Deployment's and the namespace's tabs over Prometheus.
+        await kubernetesObjectChartsPrometheus(model, page, fake, namespace: namespace, hash: hash, pods: pods)
+
         // Hidden: nothing read.
         app.toggleKubernetesPage(nil)
         check("hidden, no usage polled", await eventually(5) { !model.metrics.isPolling })
@@ -272,5 +275,154 @@ extension E2ERunner {
         fake.delete("nodes.metrics.k8s.io", node)
         fake.delete("nodes", node)
         fake.delete("namespaces", namespace)
+    }
+
+    /// `kubernetesCharts` part 5 (docs/design/kubernetes/metrics.md 8; stage
+    /// M7), fake-dev's Prometheus on (kube-prometheus-stack's profile, its
+    /// mixin's workload rule among the rules): the Deployment's tab at 1h —
+    /// its pods by owner, ranked once by an instant `topk` a measure at the
+    /// span's end, the five asked by name; by revision, a line for each of
+    /// its two ReplicaSets labelled with its revision and image — then its
+    /// namespace's at 1h: by workload from the rules, against its quota as
+    /// kube-state-metrics says it, what it requests but leaves idle, its pods
+    /// by phase. Only the Service's two query paths. Reads only.
+    func kubernetesObjectChartsPrometheus(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, namespace: String, hash: String, pods: [String]) async {
+        let scope = app.theme.map(ObjectIdentifier.init)
+        let charts = KubeChartRegistry.shared
+        let service = KubePrometheusService(namespace: "monitoring", name: "prometheus-k8s", port: "9090")!
+        let interval = model.prometheus.interval
+        model.prometheus.interval = .milliseconds(500)
+        let older = "5c8b7d9f4b"
+        let old = "api-\(older)-q7w8x"
+        fake.addRevision(
+            of: "api", namespace: namespace, name: "api-\(older)", revision: 2, image: "nginx:1.27.1", labels: ["app": "api"], replicas: 0,
+            created: Date().addingTimeInterval(-1800))
+        fake.addPod(old, namespace: namespace, FakeKubeAPI.Pod(), labels: ["app": "api", "pod-template-hash": older])
+        fake.addNamespace("monitoring")
+        fake.servePrometheus(namespace: "monitoring", service: "prometheus-k8s", port: "9090")
+        fake.setPrometheusProfile(.kubePrometheusStack)
+        setTabFixtures(fake)
+        let usage = [(pods[0], 0.06), (pods[1], 0.03), (old, 0.02)]
+        for (pod, cpu) in usage {
+            let container = ["namespace": namespace, "pod": pod, "container": "app", "image": "nginx:1.27", "metrics_path": "/metrics/cadvisor"]
+            fake.setPrometheusSeries("container_cpu_usage_seconds_total", labels: container, value: cpu)
+            fake.setPrometheusSeries("container_memory_working_set_bytes", labels: container, value: 40 * 1_048_576)
+            let rule = ["namespace": namespace, "pod": pod, "container": "app"]
+            fake.setPrometheusSeries(KubePromProfile.containerCPURate5m, labels: rule, value: cpu)
+            fake.setPrometheusSeries(KubePromProfile.containerMemoryRule, labels: rule, value: 40 * 1_048_576)
+            fake.setPrometheusSeries(
+                KubePromProfile.workloadRule, labels: ["namespace": namespace, "pod": pod, "workload": "api", "workload_type": "deployment"], value: 1)
+            fake.setPrometheusSeries(
+                "kube_pod_status_phase", labels: ["job": "kube-state-metrics", "namespace": namespace, "pod": pod, "phase": "Running"], value: 1)
+        }
+        for (type, value) in [("hard", 2.0), ("used", 0.2)] {
+            fake.setPrometheusSeries(
+                "kube_resourcequota",
+                labels: ["job": "kube-state-metrics", "namespace": namespace, "resourcequota": "compute", "resource": "requests.cpu", "type": type], value: value)
+        }
+        fake.setPrometheusMatrix("topk(5,", usage.map { pod in FakePromFixture.Line(["pod": pod.0]) { _ in pod.1 } })
+        fake.setPrometheusMatrix("topk(8,", [FakePromFixture.Line(["workload_type": "deployment", "workload": "api"]) { _ in 0.11 }])
+        fake.setPrometheusMatrix("sum((clamp_min(", [FakePromFixture.Line { _ in 0 }])
+        fake.setPrometheusMatrix("avg_over_time((", [FakePromFixture.Line(["overterm_s": "cpu"]) { _ in 0.09 }])
+        Settings.shared.set(
+            "kubernetes.contexts", .entries(["fake-dev": ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]]))
+        defer {
+            Settings.shared.set("kubernetes.contexts", nil)
+            clearTabFixtures(fake)
+            for fragment in ["topk(5,", "topk(8,", "sum((clamp_min(", "avg_over_time(("] { fake.clearPrometheusMatrix(fragment) }
+            for metric in [
+                "container_cpu_usage_seconds_total", "container_memory_working_set_bytes", KubePromProfile.containerCPURate5m, KubePromProfile.containerMemoryRule,
+                KubePromProfile.workloadRule, "kube_pod_status_phase", "kube_resourcequota",
+            ] {
+                fake.clearPrometheusSeries(metric, matching: ["namespace": namespace])
+            }
+            fake.setPrometheusProfile(.noNodeExporter)
+            model.prometheus.forgetProfile()
+            model.prometheus.interval = interval
+            page.metricsZoom = []
+            page.metricsRange = .live
+            page.metricsRangePicked = false
+            fake.deletePod(old, namespace: namespace)
+            fake.delete("replicasets.apps", "api-\(older)", namespace: namespace)
+        }
+        func asked() -> [FakeKubeAPI.Request] { fake.requests.filter(\.isPrometheusQuery) }
+        func said() -> String {
+            let tabs = model.prometheus.tabs.values.map {
+                "\($0.request.subject.object) \($0.request.span) \($0.results.keys.sorted()) read=\($0.read != nil) ranked=\($0.ranking?.refreshes ?? -1) \($0.problem ?? "-") \($0.refused.values.sorted())"
+            }
+            let source = page.detail.flatMap { page.metricsSource(of: $0.ref) }.map(\.rawValue) ?? "none"
+            let built = page.detail.flatMap { page.objectCharts(of: $0) }?.charts.map { "\($0.data.id)@\($0.data.source)" } ?? []
+            return "tabs \(tabs); want \(page.metricsTabWant.map { "\($0.subject.object) \($0.span)" } ?? "none"); source \(source); built \(built); \(model.prometheus.state)"
+        }
+        check("fake-dev's Prometheus found", await eventually(15) { model.prometheus.state == .found(service, nil) }, "\(model.prometheus.state)")
+
+        // The Deployment's tab, opened again so its History reads both ReplicaSets.
+        page.showTab(.overview)
+        page.closeDetail()
+        guard let deployments = model.discovery?.kind("deployments") else { return check("deployments served", false) }
+        page.showKind(deployments)
+        check("the Deployment listed", await eventually(15) { model.kind.fullName == deployments.fullName && model.rows[KubeRowID(namespace: namespace, name: "api")] != nil })
+        fake.forgetRequests()
+        page.selection = ["\(namespace)/api"]
+        check("m opens its Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == "api")
+        page.pickMetricsRange(.hour)
+        check("1h, from Prometheus", page.shownMetricsRange == .hour)
+        let subject = "kubernetes.chart.workload.\(namespace).deployment.api"
+        let revisionsID = subject + ".revisions"
+        func revisions() -> KubeChartData? {
+            page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == revisionsID }?.data ?? charts.chart(revisionsID, in: scope)?.data
+        }
+        check(
+            "by revision: a line for each ReplicaSet, labelled with its revision and image",
+            await eventually(25) { Set(revisions()?.usage.map(\.name) ?? []) == ["rev 2 (nginx:1.27.1)", "rev 3 (nginx:1.27.2)"] && revisions()?.source == "Prometheus" },
+            (revisions()?.usage.map(\.name).joined(separator: ", ") ?? "none") + "; " + said())
+        let ranks = asked().filter { $0.path == service.queryPath && $0.query["query"]?.hasPrefix("topk(5,") == true }
+        check("ranked once a measure, an instant topk at the span's end", ranks.count == 2 && ranks.allSatisfy { $0.query["time"] != nil }, "\(ranks.count) rankings; " + said())
+        check(
+            "its pods chosen by the mixin's workload rule",
+            ranks.allSatisfy { $0.query["query"]?.contains(#"namespace_workload_pod:kube_pod_owner:relabel{namespace="charts",workload="api",workload_type="deployment"}"#) == true })
+        check(
+            "the five asked by name",
+            asked().contains { $0.path == service.rangePath && $0.query["query"]?.hasPrefix("sum by (pod)(") == true && $0.query["query"]?.contains("pod=~") == true },
+            "\(asked().compactMap { $0.query["query"] })")
+        let cpu = page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == "workload.\(namespace).deployment.api.cpu" }?.data
+        check("its CPU by pod as ranked", cpu?.usage.map(\.id) == [pods[0], pods[1], old], cpu?.usage.map(\.id).joined(separator: ", ") ?? "none")
+        check("said: by owner, from the rules", cpu?.tier == "raw cAdvisor · by owner (recording rules)", cpu?.tier ?? "")
+        check(
+            "only the Service's query and query_range, each with 20 s",
+            !asked().isEmpty && asked().allSatisfy { ($0.path == service.rangePath || $0.path == service.queryPath) && $0.query["timeout"] == "20s" })
+        note("kubernetes revisions dump: \(charts.lines(in: scope).first { $0.contains(revisionsID) } ?? "not drawn")")
+
+        // Its namespace's tab: by workload from the rules, against its quota over time.
+        page.showTab(.overview)
+        page.closeDetail()
+        page.showKind(.namespaces)
+        check("the namespaces listed", await eventually(15) { model.kind.fullName == "namespaces" && model.rows[KubeRowID(namespace: nil, name: namespace)] != nil })
+        fake.forgetRequests()
+        page.selection = [namespace]
+        check("m opens the namespace's Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == namespace)
+        check("a namespace's ranges over Prometheus too", page.metricsRanges == KubeMetricsRange.allCases)
+        page.pickMetricsRange(.hour)
+        let nsCPU = "namespace.\(namespace).cpu"
+        func namespaceCPU() -> KubePodCharts.Chart? { page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == nsCPU } }
+        check(
+            "its CPU by workload from Prometheus, against its quota",
+            await eventually(25) {
+                guard let chart = namespaceCPU() else { return false }
+                return chart.data.source == "Prometheus" && chart.data.usage.map(\.id) == ["Deployment/api"] && chart.data.references.first?.role == .quota
+            }, (namespaceCPU().map { "\($0.data.source) \($0.data.usage.map(\.id)) \($0.data.references.map(\.name))" } ?? "none") + "; " + said())
+        check("the quota as kube-state-metrics says it", namespaceCPU()?.chips.first?.text == "requests 10% of quota", "\(namespaceCPU()?.chips.map(\.text) ?? [])")
+        check("what it requests but leaves idle", namespaceCPU()?.chips.contains { $0.text.hasPrefix("requested but idle:") } == true)
+        check(
+            "ranked once a measure, its eight by the rule",
+            asked().filter { $0.query["query"]?.hasPrefix("topk(8,") == true }.count == 2
+                && asked().contains { $0.query["query"]?.contains(#"workload=~"api""#) == true },
+            "\(asked().filter { $0.query["query"]?.hasPrefix("topk(8,") == true }.map(\.query)); " + said())
+        check(
+            "its pods by phase from kube-state-metrics",
+            await eventually(10) { page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == "namespace.\(namespace).phases" }?.data.source == "Prometheus" })
+        check("Prometheus written nothing", fake.writes.isEmpty)
+        page.showTab(.overview)
+        page.closeDetail()
     }
 }

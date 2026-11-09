@@ -49,6 +49,10 @@ struct KubeTabReading: Equatable, Sendable {
     var profile: KubePromProfile = .unknown
     /// Why nothing is asked at all (agent mode).
     var unavailable: String?
+    /// A workload's or a namespace's top N, as last ranked (M7).
+    var ranking: KubeTabRanking?
+    /// How its workload's (namespace's) pods were told.
+    var selection: KubeTabSelection?
 
     /// A union's arms by their `overterm_s` tag.
     func tagged(_ id: String) -> [String: [KubeSeries]] {
@@ -62,6 +66,7 @@ struct KubeTabReading: Equatable, Sendable {
         hasher.combine(problem)
         hasher.combine(unavailable)
         hasher.combine(span)
+        hasher.combine(ranking?.names.values.map { $0.joined(separator: ",") }.sorted())
         for (id, series) in results.sorted(by: { $0.key < $1.key }) {
             hasher.combine(id)
             hasher.combine(series.count)
@@ -491,11 +496,12 @@ final class KubePrometheusMonitor: ObservableObject {
     /// One query, through the context's queue: none once its reading was
     /// cancelled (the chart hidden), its answer read off the main thread.
     private func ask(
-        _ transport: any KubePrometheusTransport, _ path: String, context: String, service: KubePrometheusService, order: Int = 0
+        _ transport: any KubePrometheusTransport, _ path: String, context: String, service: KubePrometheusService, order: Int = 0,
+        priority: KubePromQueue.Priority = .visible
     ) async throws -> KubePrometheusReader.Answer {
         try Task.checkCancellation()
         requests += 1
-        let answer = try await queue(context, service).ask(path, via: transport, priority: .visible, order: order, deadline: deadline)
+        let answer = try await queue(context, service).ask(path, via: transport, priority: priority, order: order, deadline: deadline)
         try Task.checkCancellation()
         return answer
     }
@@ -745,7 +751,7 @@ final class KubePrometheusMonitor: ObservableObject {
     ) async -> KubeTabReading {
         var reading = tabs[request] ?? KubeTabReading(request: request)
         reading.service = service
-        let profile: KubePromProfile
+        var profile: KubePromProfile
         switch await self.profile(context, service, transport) {
         case .success(let probed): profile = probed
         case .failure(let error):
@@ -763,20 +769,85 @@ final class KubePrometheusMonitor: ObservableObject {
         reading.unavailable = nil
         let now = clock()
         let span = request.resolve(scrape: profile.scrapeInterval, now: now)
-        let plan = KubeTabQueries.plan(request, span: span, profile: profile)
-        // Another step (the scrape read anew): the last answer's points aren't on its grid.
-        if let last = reading.span, last.step != span.step { reading.results = [:] }
+        // A namespace's raw series counted once, kept with the profile (metrics.md 4.4).
+        var problem: String?
+        if let count = KubeTabQueries.namespaceCount(request, profile: profile) {
+            do {
+                let answer = try await ask(transport, KubePromQL.instantPath(service, count.promql), context: context, service: service, order: -1)
+                let counted = Int((KubePrometheusReader.value(answer.series) ?? 0).rounded())
+                profile.namespaceSeries[count.namespace] = counted
+                if var kept = profiles[context] {
+                    kept.profile.namespaceSeries[count.namespace] = counted
+                    profiles[context] = kept
+                    if situation?.context == context, self.profile != kept.profile { self.profile = kept.profile }
+                }
+            } catch {
+                if error is CancellationError || Task.isCancelled { return reading }
+                // Uncounted: raw across it refused this time, counted again at the next refresh.
+                profile.uncounted.insert(count.namespace)
+                problem = said(error, service: service)
+            }
+            reading.profile = profile
+        }
+        // The top N, kept for 10 refreshes of the same span, else ranked —
+        // one instant query a measure, below the visible charts in the
+        // queue (metrics.md 4.5) — while the charts that need no ranking
+        // are asked: its names' charts only once it answers.
+        var ranking: KubeTabRanking?
+        var ranker: Task<(KubeTabRanking?, String?), Never>?
+        if let wanted = KubeTabQueries.ranking(request, span: span, profile: profile) {
+            let measures = Set(wanted.queries.map(\.id)).union(wanted.skipped)
+            if var kept = reading.ranking, kept.key == wanted.key, !kept.isStale, measures.isSubset(of: kept.covered) {
+                kept.refreshes += 1
+                ranking = kept
+            } else {
+                let kept = reading.ranking
+                let ranked = profile
+                ranker = Task { @MainActor [weak self] () -> (KubeTabRanking?, String?) in
+                    guard let self else { return (kept, nil) }
+                    return await self.rank(request, span: span, profile: ranked, kept: kept, transport, service: service, context: context)
+                }
+            }
+        }
         // Each query its own task, so the queue has them all at once (four go);
         // cancelled together with the reading.
         var tasks: [(String, Task<([KubeSeries], [String]), Error>)] = []
-        for (order, query) in plan.queries.enumerated() {
-            let task = Task { @MainActor [weak self] () throws -> ([KubeSeries], [String]) in
-                guard let self else { throw CancellationError() }
-                return try await self.tabQuery(
-                    query, span: span, scrape: profile.scrapeInterval, request: request, transport, service: service, context: context, order: order)
+        let scrape = profile.scrapeInterval
+        func start(_ queries: some Sequence<KubeTabQuery>) {
+            for query in queries {
+                let order = tasks.count
+                let task = Task { @MainActor [weak self] () throws -> ([KubeSeries], [String]) in
+                    guard let self else { throw CancellationError() }
+                    return try await self.tabQuery(
+                        query, span: span, scrape: scrape, request: request, transport, service: service, context: context, order: order)
+                }
+                tasks.append((query.id, task))
             }
-            tasks.append((query.id, task))
         }
+        var plan = KubeTabQueries.plan(request, span: span, profile: profile, ranking: ranking)
+        start(plan.queries)
+        if let ranker {
+            let started = tasks.map(\.1)
+            let (ranked, rankProblem) = await withTaskCancellationHandler {
+                await ranker.value
+            } onCancel: {
+                ranker.cancel()
+                for task in started { task.cancel() }
+            }
+            if Task.isCancelled {
+                for task in started { task.cancel() }
+                return reading
+            }
+            ranking = ranked
+            if problem == nil { problem = rankProblem }
+            // The ranking's names: their charts asked now.
+            let asked = Set(plan.queries.map(\.id))
+            plan = KubeTabQueries.plan(request, span: span, profile: profile, ranking: ranking)
+            start(plan.queries.filter { !asked.contains($0.id) })
+        }
+        reading.ranking = ranking
+        // Another step (the scrape read anew): the last answer's points aren't on its grid.
+        if let last = reading.span, last.step != span.step { reading.results = [:] }
         let running = tasks.map(\.1)
         var asked: [(String, Result<([KubeSeries], [String]), Error>)] = []
         await withTaskCancellationHandler {
@@ -791,8 +862,7 @@ final class KubePrometheusMonitor: ObservableObject {
             for task in running { task.cancel() }
         }
         if Task.isCancelled { return reading }
-        var notes = plan.notes
-        var problem: String?
+        var notes = plan.notes + (reading.ranking?.notes ?? [])
         var answered = false
         for query in plan.queries {
             guard let result = asked.first(where: { $0.0 == query.id })?.1 else { continue }
@@ -815,11 +885,76 @@ final class KubePrometheusMonitor: ObservableObject {
         reading.problem = problem
         reading.refused = plan.refused
         reading.tier = plan.tier
+        reading.selection = plan.selection
         reading.span = span
         var seen = Set<String>()
         reading.notes = Array(notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))
         if answered || plan.queries.isEmpty { reading.read = now }
         return reading
+    }
+
+    /// A tab's ranking asked again: a raw workload's pods counted first
+    /// (`KubeTabCount`), then each measure's `topk` at the span's end, the
+    /// two at once, below the visible charts in the queue. A measure that
+    /// fails is left out, its failure said; it is asked again next time.
+    /// Cancelled: the one kept stands.
+    private func rank(
+        _ request: KubeTabRequest, span: KubePromSpan, profile: KubePromProfile, kept: KubeTabRanking?, _ transport: any KubePrometheusTransport,
+        service: KubePrometheusService, context: String
+    ) async -> (KubeTabRanking?, String?) {
+        guard var plan = KubeTabQueries.ranking(request, span: span, profile: profile) else { return (nil, nil) }
+        var problem: String?
+        if let count = plan.count {
+            let counted: KubeTabCount
+            do {
+                let answer = try await ask(
+                    transport, KubePromQL.instantPath(service, count.promql, at: count.at ?? span.end), context: context, service: service, order: -1,
+                    priority: .ranking)
+                counted = KubeTabCount.of(answer.series)
+            } catch {
+                if error is CancellationError || Task.isCancelled { return (kept, nil) }
+                problem = said(error, service: service)
+                counted = .failed
+            }
+            guard let again = KubeTabQueries.ranking(request, span: span, profile: profile, counted: counted) else { return (nil, problem) }
+            plan = again
+        }
+        var ranking = KubeTabRanking(key: plan.key, notes: plan.notes, covered: plan.skipped)
+        let tasks = plan.queries.enumerated().map { order, query in
+            (
+                query.id,
+                Task { @MainActor [weak self] () throws -> [KubeSeries] in
+                    guard let self else { throw CancellationError() }
+                    let path = KubePromQL.instantPath(service, query.promql, at: query.at ?? span.end)
+                    return try await self.ask(transport, path, context: context, service: service, order: order, priority: .ranking).series
+                }
+            )
+        }
+        let running = tasks.map(\.1)
+        var cancelled = false
+        await withTaskCancellationHandler {
+            for (id, task) in tasks {
+                do {
+                    ranking.names[id] = KubeTabQueries.rankNames(try await task.value, subject: request.subject)
+                    ranking.covered.insert(id)
+                } catch {
+                    if error is CancellationError || Task.isCancelled {
+                        cancelled = true
+                        continue
+                    }
+                    if problem == nil { problem = said(error, service: service) }
+                }
+            }
+        } onCancel: {
+            for task in running { task.cancel() }
+        }
+        if cancelled { return (kept, nil) }
+        // Nothing answered: the last one stands meanwhile, asked again next time.
+        if ranking.names.isEmpty, !plan.queries.isEmpty, var kept, kept.key == plan.key {
+            kept.refreshes = KubeTabRanking.kept
+            return (kept, problem)
+        }
+        return (ranking, problem)
     }
 
     /// One of a tab's queries: an instant one asked as it is; a range one
@@ -830,7 +965,8 @@ final class KubePrometheusMonitor: ObservableObject {
         service: KubePrometheusService, context: String, order: Int
     ) async throws -> ([KubeSeries], [String]) {
         if query.instant {
-            let answer = try await ask(transport, KubePromQL.instantPath(service, query.promql), context: context, service: service, order: order)
+            let path = query.at.map { KubePromQL.instantPath(service, query.promql, at: $0) } ?? KubePromQL.instantPath(service, query.promql)
+            let answer = try await ask(transport, path, context: context, service: service, order: order)
             return (answer.series, answer.notes)
         }
         let key = KubeChartCache.Key(query: query.promql, range: request.cacheRange, step: span.step)
