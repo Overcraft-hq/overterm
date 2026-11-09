@@ -170,6 +170,8 @@ struct PaletteField: NSViewRepresentable {
     let onMove: (Int) -> Void
     let onSubmit: (_ run: Bool) -> Void
     let onCancel: () -> Void
+    /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through.
+    var onTab: ((Int) -> Void)? = nil
     var placeholder = "Search tabs, worktrees, snippets, actions…"
     /// The chrome is dark whatever the system appearance; the field's default
     /// label colour would follow the system and go dark-on-dark.
@@ -219,6 +221,10 @@ struct PaletteField: NSViewRepresentable {
                 parent.onSubmit(false)
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onCancel()
+            case #selector(NSResponder.insertTab(_:)) where parent.onTab != nil:
+                parent.onTab?(1)
+            case #selector(NSResponder.insertBacktab(_:)) where parent.onTab != nil:
+                parent.onTab?(-1)
             default:
                 return false
             }

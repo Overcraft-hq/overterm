@@ -12,6 +12,7 @@ version is tagged `v<version>`.
 - notes: notes, files and folders drag in the panel — onto a folder, or beside a note — their links following
 - notes: a character typed in Live Preview no longer shows as another for a moment ("." as "e")
 - overgit: the branches have a filter, as the commits have a search
+- search: ⌘F has tabs — All, Files, Notes, Terminal (⇥ steps through) — so the notes aren't under every file's lines
 
 ## 1.5.3 — 2026-11-04
 

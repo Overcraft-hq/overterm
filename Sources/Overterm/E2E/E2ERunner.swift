@@ -3172,6 +3172,20 @@ final class E2ERunner {
             await pause(0.5)
             app.captureWindow(to: png)
         }
+        // The tabs: ⇥ in the field steps from All to Files, which shows files only.
+        check("it opens on All", app.spotlight.scope == .all)
+        NSApp.sendEvent(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false,
+                keyCode: 48)!)
+        check(
+            "⇥: Files, and only files",
+            await eventually(2) {
+                self.app.spotlight.scope == .files && !self.app.spotlight.rows.isEmpty
+                    && self.app.spotlight.rows.allSatisfy { if case .file = $0 { true } else if case .content = $0 { true } else { false } }
+            }, "\(app.spotlight.scope) \(app.spotlight.rows.map(\.id))")
+        app.spotlight.scope = .all
         if let i = app.spotlight.rows.firstIndex(where: {
             if case .content = $0 { return true }; return false
         }) {

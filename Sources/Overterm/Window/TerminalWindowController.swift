@@ -1561,6 +1561,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         case .note(let match):
             hideSpotlight(keepTerminalSearch: false)
             openNote(notes.url(of: match.path), line: match.line > 0 ? match.line - 1 : nil)
+        case .more(let scope, _):
+            spotlight.scope = scope
         }
     }
 

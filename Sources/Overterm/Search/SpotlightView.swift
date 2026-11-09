@@ -16,13 +16,15 @@ struct SpotlightView: View {
                     PaletteField(
                         text: $model.query,
                         onMove: { model.move($0) },
-                        onSubmit: { _ in model.selected.map(onChoose) },
+                        onSubmit: { _ in model.selected.map(choose) },
                         onCancel: onDismiss,
+                        onTab: { model.cycleScope($0) },
                         placeholder: placeholder,
                         textColor: NSColor(theme.text))
                 }
                 .frame(height: ChromeMetrics.row(44))
                 .padding(.horizontal, 14)
+                if !model.query.isEmpty { scopes }
                 if !model.rows.isEmpty {
                     Divider().opacity(0.4)
                     results
@@ -36,6 +38,43 @@ struct SpotlightView: View {
         }
     }
 
+    /// All, Files, Notes, Terminal — with what each holds; ⇥ steps through.
+    private var scopes: some View {
+        HStack(spacing: 4) {
+            ForEach(SpotlightModel.Scope.allCases) { scope in
+                let selected = model.scope == scope
+                Button {
+                    model.scope = scope
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(scope.title).font(.system(size: ChromeMetrics.text(12), weight: selected ? .semibold : .regular))
+                        if let count = model.count(of: scope) {
+                            Text(verbatim: "\(count)").font(.system(size: ChromeMetrics.text(11))).monospacedDigit()
+                                .foregroundStyle(selected ? theme.text : theme.text3)
+                        }
+                    }
+                    .foregroundStyle(selected ? theme.text : theme.text2)
+                    .padding(.horizontal, 10)
+                    .frame(height: ChromeMetrics.row(24))
+                    .background(Capsule().fill(selected ? theme.selected : .clear))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("spotlight.scope.\(scope.rawValue)")
+            }
+            Spacer()
+            Text(verbatim: "⇥").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).help("Tab: the next one")
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    /// A "more" row opens its tab; the rest are the window's to open.
+    private func choose(_ row: SpotlightModel.Row) {
+        if case .more(let scope, _) = row { return model.scope = scope }
+        onChoose(row)
+    }
+
     private var placeholder: String {
         model.root.map { "Search the terminal and \($0.lastPathComponent)…" } ?? "Search the terminal…"
     }
@@ -47,7 +86,7 @@ struct SpotlightView: View {
                     ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
                         rowView(row, selected: index == model.selectedIndex)
                             .id(row.id)
-                            .onTapGesture { onChoose(row) }
+                            .onTapGesture { choose(row) }
                     }
                 }
                 .padding(6)
@@ -82,6 +121,11 @@ struct SpotlightView: View {
                 }
                 Spacer()
                 tag("In file")
+            case .more(let scope, let count):
+                icon("ellipsis.circle")
+                title("All \(count) in \(scope.title)", subtitle: "")
+                Spacer()
+                tag("⇥ \(scope.title)")
             case .note(let match):
                 icon("note.text")
                 title(

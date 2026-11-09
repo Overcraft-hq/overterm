@@ -12,6 +12,8 @@ final class SpotlightModel: ObservableObject {
         case content(ContentMatch)
         /// A note: line 0 for its name matching, else the line that does.
         case note(ContentMatch)
+        /// All: the rest of a group, behind its tab.
+        case more(Scope, count: Int)
 
         var id: String {
             switch self {
@@ -19,8 +21,54 @@ final class SpotlightModel: ObservableObject {
             case .file(let path): "f:" + path
             case .content(let m): "c:\(m.path):\(m.line)"
             case .note(let m): "n:\(m.path):\(m.line)"
+            case .more(let scope, _): "more:\(scope.rawValue)"
             }
         }
+    }
+
+    /// Which results show: a few of each, or one kind in full. A query
+    /// over a checkout found hundreds of lines, and the notes were under
+    /// all of them.
+    enum Scope: String, CaseIterable, Identifiable {
+        case all, files, notes, terminal
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all: "All"
+            case .files: "Files"
+            case .notes: "Notes"
+            case .terminal: "Terminal"
+            }
+        }
+    }
+
+    /// How many of each kind All shows before its "more" row.
+    nonisolated static let allLimit = 5
+
+    @Published var scope: Scope = .all {
+        didSet {
+            guard scope != oldValue else { return }
+            // The notes' tab reads further than All does.
+            if scope == .notes || oldValue == .notes { search() } else { rebuild() }
+        }
+    }
+
+    /// Each kind's count, for the tabs (nil: still looking, or none to look in).
+    func count(of scope: Scope) -> Int? {
+        switch scope {
+        case .all: nil
+        case .files: root == nil ? nil : names.count + contents.count
+        case .notes: notes == nil ? nil : noteRows.count
+        case .terminal: query.isEmpty ? nil : terminal?.search.total
+        }
+    }
+
+    /// ⇥ and ⇧⇥: the next tab, the one before.
+    func cycleScope(_ offset: Int) {
+        let all = Scope.allCases
+        let index = all.firstIndex(of: scope) ?? 0
+        scope = all[(index + offset + all.count) % all.count]
     }
 
     @Published var query = "" {
@@ -94,8 +142,9 @@ final class SpotlightModel: ObservableObject {
         if query.count < 2 { contents = [] }
         let vault = notes?()
         // Names now — the index has them; what notes say after the grep.
+        let wide = scope == .notes
         let noteNames = vault.map { _, index in
-            index.notes(matching: query, limit: 5).map { ContentMatch(path: $0, line: 0, text: "") }
+            index.notes(matching: query, limit: wide ? 30 : 5).map { ContentMatch(path: $0, line: 0, text: "") }
         }
         noteRows = query.isEmpty ? [] : noteNames ?? []
         pending = Task { [weak self] in
@@ -115,7 +164,8 @@ final class SpotlightModel: ObservableObject {
             }
             if let (vault, index) = vault {
                 let paths = index.notes(matching: "", limit: .max)
-                let lines = await Task.detached(priority: .userInitiated) { NotesSearch.lines(query, in: vault, paths: paths, limit: 12) }.value
+                let limit = wide ? 100 : 12
+                let lines = await Task.detached(priority: .userInitiated) { NotesSearch.lines(query, in: vault, paths: paths, limit: limit) }.value
                 guard !Task.isCancelled, self.query == query else { return }
                 self.noteRows = (noteNames ?? []) + lines
                 self.rebuild()
@@ -125,12 +175,30 @@ final class SpotlightModel: ObservableObject {
 
     private func rebuild() {
         let before = selected?.id
-        var rows: [Row] = []
-        if !query.isEmpty { rows.append(.terminal(total: terminal?.search.total)) }
-        rows += names.map(Row.file)
-        rows += contents.map(Row.content)
-        rows += noteRows.map(Row.note)
-        self.rows = rows
+        rows = Self.rows(
+            scope: scope, query: query, terminalTotal: terminal?.search.total, names: names, contents: contents, notes: noteRows)
         selectedIndex = rows.firstIndex { $0.id == before } ?? 0
+    }
+
+    /// The rows a tab shows. Pure: the tabs are tested without a terminal.
+    nonisolated static func rows(
+        scope: Scope, query: String, terminalTotal: Int?, names: [String], contents: [ContentMatch], notes: [ContentMatch]
+    ) -> [Row] {
+        var rows: [Row] = []
+        let terminal: [Row] = query.isEmpty ? [] : [.terminal(total: terminalTotal)]
+        let files = names.map(Row.file) + contents.map(Row.content)
+        let noteRows = notes.map(Row.note)
+        switch scope {
+        case .terminal: rows = terminal
+        case .files: rows = files
+        case .notes: rows = noteRows
+        case .all:
+            rows = terminal
+            for (kind, group) in [(Scope.files, files), (Scope.notes, noteRows)] {
+                rows += group.prefix(allLimit)
+                if group.count > allLimit { rows.append(.more(kind, count: group.count)) }
+            }
+        }
+        return rows
     }
 }
