@@ -63,6 +63,7 @@ extension TerminalWindowController {
     /// filter field they are text. SwiftUI's own key handling is macOS 14.
     func installPageKeys() {
         pageKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.noteKubernetesWindowInput(event)
             guard let self, self.handlePageKey(event) else { return event }
             return nil
         }

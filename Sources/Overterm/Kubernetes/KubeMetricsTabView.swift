@@ -23,16 +23,19 @@ struct KubeMetricsTabView: View {
         let _ = KubeChartDraws.shared.composed(Self.identifier, window: ObjectIdentifier(theme))
         if session.ref.isPod {
             let charts = page.podCharts(of: session.ref, object: session.object)
+            let drawn = charts?.hasSamples == true
             VStack(alignment: .leading, spacing: 0) {
-                controls(caption: charts?.caption)
+                controls(caption: charts?.caption, report: drawn)
                 Rectangle().fill(theme.border).frame(height: 1)
                 gpus
-                if let charts, charts.hasSamples {
+                if let charts, drawn {
                     KubePodChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
                         showAround: { [weak page] in page?.showAround($0) },
                         logsFromHere: { [weak page] container, time in page?.logsFromHere(container: container, at: time) },
-                        zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) })
+                        zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) },
+                        copy: { [weak page] in page?.copyChartText($0) },
+                        expand: { [weak page] chart in page?.expandChart(chart, span: charts.span, caption: charts.caption) })
                 } else {
                     problem(charts)
                 }
@@ -41,16 +44,19 @@ struct KubeMetricsTabView: View {
             .accessibilityIdentifier(Self.identifier)
         } else {
             let charts = page.objectCharts(of: session)
+            let drawn = charts?.charts.contains(where: { chart in chart.data.usage.contains { !$0.points.isEmpty } }) == true
             VStack(alignment: .leading, spacing: 0) {
-                controls(caption: charts?.caption, workloadView: charts?.view)
+                controls(caption: charts?.caption, workloadView: charts?.view, report: drawn)
                 Rectangle().fill(theme.border).frame(height: 1)
                 gpus
-                if let charts, charts.charts.contains(where: { chart in chart.data.usage.contains { !$0.points.isEmpty } }) {
+                if let charts, drawn {
                     KubeObjectChartsList(
                         charts: charts, cursor: cursor, theme: theme, openMarker: { [weak page] in page?.openMarker($0) },
                         showAround: { [weak page] in page?.showAround($0) },
                         zoom: { [weak page] from, to, data in page?.zoomMetrics(from: from, to: to, of: data) },
-                        groupShown: { [weak page] in page?.metricsGroupShown($0, $1) })
+                        groupShown: { [weak page] in page?.metricsGroupShown($0, $1) },
+                        copy: { [weak page] in page?.copyChartText($0) },
+                        expand: { [weak page] chart in page?.expandChart(chart, span: charts.span, caption: charts.caption) })
                 } else {
                     objectProblem(charts)
                 }
@@ -98,6 +104,7 @@ struct KubeMetricsTabView: View {
                 Text(verbatim: said).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("kubernetes.metrics.problem")
+                report
             } else if session.object == nil {
                 ProgressView().controlSize(.small)
             } else {
@@ -109,7 +116,15 @@ struct KubeMetricsTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func controls(caption: String?, workloadView: KubeWorkloadView? = nil) -> some View {
+    /// Copy PromQL beside what a refused query says (metrics.md 4.7: a bug report).
+    @ViewBuilder private var report: some View {
+        if let promQL = page.reportedPromQL(of: session) {
+            KubeCopyPromQLButton(promQL: promQL, copy: { [weak page] in page?.copyChartText($0) })
+        }
+    }
+
+    /// The range picker and the caption; `report`, the charts drawn: a refused query's Copy PromQL under it.
+    private func controls(caption: String?, workloadView: KubeWorkloadView? = nil, report shown: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
                 ForEach(KubeMetricsRange.allCases) { range in
@@ -180,6 +195,7 @@ struct KubeMetricsTabView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.metrics.caption")
             }
+            if shown { report }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -205,6 +221,7 @@ struct KubeMetricsTabView: View {
                     Button("Try Again") { page.model.retry() }.controlSize(.small)
                         .help("Ask metrics-server again: access may have been granted since")
                 }
+                report
             } else if session.object == nil {
                 ProgressView().controlSize(.small)
             } else {
@@ -232,6 +249,9 @@ struct KubePodChartsList: View {
     var logsFromHere: ((String?, Date) -> Void)?
     /// A drag across a chart: its two times and the chart's data.
     var zoom: ((Date, Date, KubeChartData) -> Void)?
+    /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
+    var copy: ((String) -> Void)? = nil
+    var expand: ((KubePodCharts.Chart) -> Void)? = nil
     @State private var picked: String?
 
     static let height: CGFloat = 140
@@ -280,7 +300,7 @@ struct KubePodChartsList: View {
         KubeChartView(
             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: Self.height, chips: chart.chips, openMarker: openMarker,
             showAround: showAround, logsFromHere: logsFromHere.map { logs in { logs(container, $0) } },
-            zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, theme: theme
+            zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, copy: copy, expand: expand.map { expand in { expand(chart) } }, theme: theme
         )
         .frame(maxWidth: .infinity)
     }
@@ -298,6 +318,9 @@ struct KubeObjectChartsList: View {
     var zoom: ((Date, Date, KubeChartData) -> Void)?
     /// A group read only while on screen came into view, or left it.
     var groupShown: ((String, Bool) -> Void)?
+    /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
+    var copy: ((String) -> Void)? = nil
+    var expand: ((KubePodCharts.Chart) -> Void)? = nil
 
     var body: some View {
         ScrollView {
@@ -313,7 +336,8 @@ struct KubeObjectChartsList: View {
                     ForEach(group.charts) { chart in
                         KubeChartView(
                             data: chart.data, cursor: cursor, headline: chart.headline, span: charts.span, height: KubePodChartsList.height, chips: chart.chips,
-                            openMarker: openMarker, showAround: showAround, zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, theme: theme
+                            openMarker: openMarker, showAround: showAround, zoom: zoom.map { zoom in { zoom($0, $1, chart.data) } }, copy: copy,
+                            expand: expand.map { expand in { expand(chart) } }, theme: theme
                         )
                         .frame(maxWidth: .infinity)
                     }
@@ -404,5 +428,21 @@ struct KubeCustomRangeView: View {
         .controlSize(.small)
         .padding(12)
         .frame(width: 300)
+    }
+}
+
+/// "Copy PromQL" beside a sentence that says Prometheus (or the metrics
+/// proxy's filter) refused a query: the query as sent, to the clipboard
+/// only — the bug report metrics.md 4.7 offers for `bad_data` and the
+/// filter's 403, where no chart is drawn to carry it in its menu.
+struct KubeCopyPromQLButton: View {
+    let promQL: String
+    let copy: (String) -> Void
+
+    var body: some View {
+        Button("Copy PromQL") { copy(promQL) }
+            .controlSize(.small)
+            .help("The query that was refused, exactly as sent: to report it, or try it in Grafana")
+            .accessibilityIdentifier("kubernetes.metrics.copyPromQL")
     }
 }

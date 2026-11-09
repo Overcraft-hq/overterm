@@ -185,7 +185,8 @@ struct KubeResourceRevert: View {
 @MainActor
 final class KubeManifestPane: ObservableObject {
     enum Shown: Equatable {
-        case manifest, helm, change, explain
+        /// `chart`: a Metrics tab's chart, expanded (metrics.md 2.1, M9).
+        case manifest, helm, change, explain, chart
     }
 
     @Published var session: KubeManifestSession?
@@ -195,6 +196,8 @@ final class KubeManifestPane: ObservableObject {
     @Published var helm: KubeHelmUpgradeSession?
     /// A change of a workload's timeline (stage 3b), and its parts' diffs, parsed.
     @Published private(set) var change: KubeChangeDiff?
+    /// A Metrics tab's chart, expanded here: the last one.
+    @Published private(set) var chart: KubeExpandedChart?
     private(set) var changeFiles: [String: DiffModel.FileDiff] = [:]
     /// Which shows: the one asked for last.
     @Published var shown: Shown = .manifest
@@ -211,17 +214,37 @@ final class KubeManifestPane: ObservableObject {
         self.change = change
         shown = .change
     }
+
+    /// A Metrics tab's chart, alone at the pane's height.
+    func show(_ chart: KubeExpandedChart) {
+        self.chart = chart
+        shown = .chart
+    }
+
+    /// The window closes: its expanded chart is let go.
+    func dropChart() {
+        chart = nil
+        if shown == .chart { shown = .manifest }
+    }
 }
 
 struct KubeManifestDiffView: View {
     @ObservedObject var pane: KubeManifestPane
+    /// The window's page: an expanded chart is its Metrics tab's.
+    let page: KubernetesPageModel
     @ObservedObject var theme: ChromeTheme
     let onClose: () -> Void
     /// The manifest's file, back in the editor.
     let onOpen: (URL) -> Void
+    /// An expanded chart's "Show in Kubernetes".
+    var onShowPage: (KubeExpandedChart) -> Void = { _ in }
 
     var body: some View {
-        if pane.shown == .explain, let explain = pane.explain {
+        if pane.shown == .chart, let chart = pane.chart {
+            KubeExpandedChartView(
+                expanded: chart, page: page, metrics: page.model.metrics, prometheus: page.model.prometheus, theme: theme, onClose: onClose,
+                onShowPage: { onShowPage(chart) })
+        } else if pane.shown == .explain, let explain = pane.explain {
             KubeExplainView(session: explain, theme: theme, onClose: onClose)
         } else if pane.shown == .change, let change = pane.change {
             KubeChangeDiffContent(pane: pane, change: change, theme: theme, onClose: onClose)

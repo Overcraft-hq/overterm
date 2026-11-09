@@ -176,6 +176,16 @@ enum KubeChartEmpty: Equatable, Sendable {
         }
     }
 
+    /// A query that failed this way is reported with its PromQL (M9): the
+    /// rows of the table that offer Copy PromQL, by the reader's kind.
+    static func offersCopyPromQL(_ kind: KubePrometheusReader.Failure.Kind) -> Bool {
+        switch kind {
+        case .badData: KubeChartEmpty.badData("").offersCopyPromQL
+        case .filterRefused: KubeChartEmpty.filterRefused.offersCopyPromQL
+        default: false
+        }
+    }
+
     /// `14:02`, in the time zone shown everywhere else (local).
     static func clock(_ date: Date) -> String {
         let formatter = DateFormatter()

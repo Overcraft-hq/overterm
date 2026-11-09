@@ -511,6 +511,19 @@ final class KubePrometheusTests: XCTestCase {
         update(dev)
         XCTAssertEqual(monitor.state, .found(service, .helm), "known at once")
         try await until(5, "charted again") { monitor.charts[.cluster]?.read != nil }
+        // M9: the Overview's charts copy the PromQL their read sent — as the fake was asked it — each its own measure's.
+        let reading = try XCTUnwrap(monitor.charts[.cluster])
+        let asked = Set(api.requests.filter(\.isPrometheusQuery).compactMap { $0.query["query"] })
+        XCTAssertFalse(reading.queries.isEmpty)
+        XCTAssertTrue(reading.queries.allSatisfy { asked.contains($0.promql) }, "\(reading.queries.map(\.promql)) of \(asked)")
+        let drawn = KubeClusterCharts.prometheus(reading).map { KubeChartExport.attach($0.data, reading: reading) }
+        XCTAssertEqual(drawn.count, 2)
+        for chart in drawn {
+            let measure = chart.id.hasSuffix("cpu") ? KubeChartMeasure.cpu : .memory
+            XCTAssertNotNil(KubeChartExport.promQL(chart), "\(chart.id): offered")
+            XCTAssertTrue(
+                chart.queries.allSatisfy { KubeChartMeasure(rawValue: $0.id)?.resource == measure }, "\(chart.id): its own only, \(chart.queries.map(\.id))")
+        }
         XCTAssertEqual(monitor.detections, 1)
         XCTAssertFalse(api.requests.contains { $0.path == "/api/v1/services" || $0.path.hasPrefix("/api/v1/namespaces/lens-metrics") }, "\(api.requests.map(\.path))")
 

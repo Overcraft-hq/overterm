@@ -637,10 +637,14 @@ extension E2ERunner {
 
         // The pod that holds it, opened by its row as a person clicks it: its container's GPU.
         fake.forgetRequests()
-        let holderRow = await shownText(15) { $0.contains("\(pod) holds 1") }
+        let found = await shownText(15) { $0.contains("\(pod) holds 1") }
+        // Clicked where the whole window's read puts it: a tiled read's box can sit a line off.
+        let holderRow = await readWindow().first { $0.text.contains("\(pod) holds 1") } ?? found
         check("its holder's row is drawn", holderRow != nil)
         if let holderRow { await click(at: CGPoint(x: holderRow.frame.midX, y: holderRow.frame.midY)) }
-        check("clicked, its holder opens", await eventually(10) { page.detail?.ref.name == pod && page.detail?.object != nil }, page.detail?.ref.name ?? "none")
+        check(
+            "clicked, its holder opens", await eventually(10) { page.detail?.ref.name == pod && page.detail?.object != nil },
+            "\(page.detail?.ref.name ?? "none"), row \(holderRow.map { "\($0.frame)" } ?? "none")")
         // Not opened by the click: by its action, so the rest still runs.
         if page.detail?.ref.name != pod { page.openGPUHolder(KubeRowID(namespace: namespace, name: pod)) }
         _ = await eventually(10) { page.detail?.ref.name == pod && page.detail?.object != nil }

@@ -261,7 +261,7 @@ Memory sizing · app · 7 days · per pod
 5. **Live.**
    - Sampled every 15 s when metrics-server answers, for the charts that have a sampled form.
    - A chart with no sampled form (C3, P3, P4, W5, V1…), and every chart when only Prometheus answers, uses 15m at a 30 s step (60 s on a 1m scrape), refreshed at that step. (review: before this, a Prometheus-only chart in Live said "needs Prometheus" while Prometheus was on.)
-   - Live **pauses** after 15 minutes without input in the window, showing "Paused, Resume". It stops on any hide.
+   - Live **pauses** after 15 minutes without input in the window, showing "Paused, Resume". It stops on any hide. (M9) A chart expanded into the right slot counts any key or click in its window as input: it is watched while the fix is typed in the terminal beside it.
 6. **Legend.**
    - A click isolates a series; ⌘-click adds or removes one.
    - Hover highlights a series and dims the others to 25%.
@@ -764,7 +764,8 @@ Each stage is one commit. Before each: `swift format`, `make test`, `make e2e`, 
 | **M8b** | `kubernetes: a node's disks and network from node-exporter` (review) | K6, K7. The lowest priority, and the first stage to drop if the work is cut | MINOR |
 | **M8c** | `kubernetes: GPUs — allocation from the objects, utilisation and memory from DCGM` | decision 12: the GPU resources on nodes and pods without Prometheus; the probe's DCGM check; G1 utilisation, G2 framebuffer memory, G3 power and temperature on node, pod, container and workload tabs; idle-but-allocated; MIG; the fake's DCGM fixtures; a `kubernetesCharts` part | MINOR |
 | **M8d** | `kubernetes: a context's saved queries on a workload's Metrics tab` | decision 11: `charts` in `kubernetes.contexts` (SettingsSchema), `$ns`/`$pod`/`$name` filled in escaped, scope matchers required, the cost caps; user-written only | MINOR |
-| **M9** | `kubernetes: a chart expands into the right slot` | `KubeManifestPane.Shown.chart`; Copy PromQL and CSV | MINOR |
+| **M9** | `kubernetes: a chart expands into the right slot` | `KubeManifestPane.Shown.chart`; Copy PromQL and CSV — on every Prometheus chart, the Overview's and a claim's too, and beside a refused query's sentence (§4.7). Expanded, the tab's reads go on with the page hidden; Live's 15 minutes count any key or click in the window (the terminal beside it), not only the chart's hover. ⌥↩ is M9b's: before it no chart takes the keyboard | MINOR |
+| **M9b** | `kubernetes: a focused chart's keys` | §3.8: a chart takes keyboard focus (Tab from the range picker, a click); ←/→ the crosshair by a step, ⇧←/⇧→ and ↩ a zoom, ⌥↩ Expand, Esc; the focus drawn, said to VoiceOver; a `kubernetesCharts` part | MINOR |
 | **M10** | `kubernetes: rightsizing from seven days of usage` | R1, per pod, CPU from p95 and memory from the max; the Sizing button, its bounds | MINOR |
 | **M11** | `kubernetes: k8s_metrics for agents, and usage in Ask Why` | `KubeMCP+Metrics` (`sizing` a flag, label values scrubbed, the background-slot exception written into analysis.md §4 and §10), `KubeAgentText`'s Usage part, "Ask agent about this chart"; `kubernetesCharts` part 9 | MINOR |
 | **M12** | `kubernetes: charts' performance budget` | the rest of §5.3 at scale (13 series × 300 points, 50 nodes in X4, the 6 MB ring), and whatever they find | PATCH; no bump if tests only |

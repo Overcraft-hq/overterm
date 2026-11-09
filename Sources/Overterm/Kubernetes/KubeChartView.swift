@@ -204,6 +204,13 @@ struct KubeChartView: View {
     /// A drag across the plot released: the window from one time to the
     /// other (metrics.md 3.3) — every chart of the tab moves to it; nil, no zoom.
     var zoom: ((Date, Date) -> Void)? = nil
+    /// The context menu's "Copy PromQL" (a Prometheus chart's) and "Copy
+    /// Values as CSV" (the window shown, the series shown): the clipboard;
+    /// nil, neither is offered (metrics.md 3.9, M9).
+    var copy: ((String) -> Void)? = nil
+    /// ⤢ and the context menu's "Expand": the chart alone in the window's
+    /// right slot; nil, not offered.
+    var expand: (() -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
     @StateObject private var state = KubeChartState()
     /// Where the mouse last was over the plot: the context menu's time —
@@ -273,6 +280,15 @@ struct KubeChartView: View {
                 }
                 Spacer(minLength: 8)
                 if !wraps { legend }
+                if let expand {
+                    Button(action: expand) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.text3)
+                    .help("Expand: this chart alone, in the window's right slot")
+                    .accessibilityIdentifier(data.identifier + ".expand")
+                }
             }
             if wraps { legend }
         }
@@ -389,6 +405,19 @@ struct KubeChartView: View {
                 if let logsFromHere {
                     Button("Logs from Here") { logsFromHere(lastHover.time ?? state.plot?.end ?? data.end) }
                         .help("The Logs tab from a minute before the crosshair's time")
+                }
+                if let copy {
+                    if let promQL = KubeChartExport.promQL(data) {
+                        Button("Copy PromQL") { copy(promQL) }
+                            .help("The exact query this chart was drawn from, to paste into Grafana")
+                    }
+                    Button("Copy Values as CSV") { copy(KubeChartExport.csv(data, hidden: hidden, hideReferences: hideReferences)) }
+                        .help("The window shown, a row a time and a column a series shown — to the clipboard only")
+                }
+                if let expand {
+                    Divider()
+                    Button("Expand") { expand() }
+                        .help("This chart alone, in the window's right slot")
                 }
             }
             .onAppear {
