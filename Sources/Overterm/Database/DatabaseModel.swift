@@ -48,12 +48,25 @@ final class DatabaseSession: ObservableObject, Identifiable {
         opening = nil
     }
 
+    /// A failure to connect, as it can be acted on. A server that wants a
+    /// password nobody gave says only `authMechanismRequiresPassword`; why
+    /// there was none — none saved, or the keychain wouldn't hand it over —
+    /// is ours to say.
+    static func explain(_ error: Error, passwordGiven: Bool, readProblem: String?) -> String {
+        let said = error.localizedDescription
+        let asksForOne = String(describing: error).contains("authMechanismRequiresPassword") || said.contains("authMechanismRequiresPassword")
+        guard asksForOne, !passwordGiven else { return said }
+        if let readProblem { return "The server asks for a password, and the saved one couldn't be read. \(readProblem)" }
+        return "The server asks for a password, and none is saved for this connection — Edit Connection… to enter it."
+    }
+
     private func connect() async {
         state = .connecting
         let driver: any DatabaseDriver
+        let password = secrets.value(.password, for: connection.id)
         do {
             let opened = try await DatabaseDrivers.open(
-                connection, password: secrets.value(.password, for: connection.id),
+                connection, password: password,
                 serviceAccount: secrets.value(.serviceAccount, for: connection.id), sshSecret: secrets.value(.ssh, for: connection.id))
             driver = opened.driver
             tunnel = opened.tunnel
@@ -71,7 +84,8 @@ final class DatabaseSession: ObservableObject, Identifiable {
             await driver.close()
             tunnel?.close()
             tunnel = nil
-            state = .failed(error.localizedDescription)
+            state = .failed(
+                Self.explain(error, passwordGiven: password != nil, readProblem: secrets.readProblem(.password, for: connection.id)))
         }
     }
 

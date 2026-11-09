@@ -257,13 +257,35 @@ enum DatabaseSecretKind: String, Sendable {
 @MainActor
 protocol DatabaseSecrets: AnyObject {
     func value(_ kind: DatabaseSecretKind, for id: UUID) -> String?
-    func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID)
+    /// Why the last read of it failed, when one is saved but couldn't be
+    /// had — nil when it was read, or there is none.
+    func readProblem(_ kind: DatabaseSecretKind, for id: UUID) -> String?
+    func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) throws
+}
+
+/// A keychain call that failed, in words.
+struct DatabaseSecretError: LocalizedError, Equatable {
+    let status: OSStatus
+    let doing: String
+
+    var errorDescription: String? {
+        let message = SecCopyErrorMessageString(status, nil) as String? ?? "status \(status)"
+        // A secret saved by another build of Overterm: an ad-hoc signed app
+        // is a new one to the keychain each release, and may not replace it.
+        if status == errSecDuplicateItem || status == errSecInvalidOwnerEdit || status == errSecAuthFailed {
+            return
+                "The keychain wouldn't let Overterm \(doing) (\(message)). The saved one was made by another build of Overterm: delete “Overterm database password” for this connection in Keychain Access, then save it again."
+        }
+        return "The keychain wouldn't let Overterm \(doing): \(message)"
+    }
 }
 
 /// The login keychain: one item a connection and secret.
 @MainActor
 final class KeychainDatabaseSecrets: DatabaseSecrets {
     static let service = "\(AppEnvironment.bundleIdentifier).database"
+
+    private var problems: [String: String] = [:]
 
     private func match(_ kind: DatabaseSecretKind, _ id: UUID) -> [String: Any] {
         [
@@ -277,22 +299,53 @@ final class KeychainDatabaseSecrets: DatabaseSecrets {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let key = "\(id)|\(kind.rawValue)"
+        switch status {
+        case errSecSuccess:
+            problems[key] = nil
+            return (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        case errSecItemNotFound:
+            problems[key] = nil
+            return nil
+        default:
+            // Saved, but not handed over: said where it is asked for, never
+            // passed on as "no password" (the server's error said nothing).
+            problems[key] = DatabaseSecretError(status: status, doing: "read the saved \(kind.rawValue)").errorDescription
+            return nil
+        }
     }
 
-    func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) {
-        SecItemDelete(match(kind, id) as CFDictionary)
-        guard let value, !value.isEmpty else { return }
-        var item = match(kind, id)
-        item[kSecValueData as String] = Data(value.utf8)
-        item[kSecAttrLabel as String] =
+    func readProblem(_ kind: DatabaseSecretKind, for id: UUID) -> String? { problems["\(id)|\(kind.rawValue)"] }
+
+    func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) throws {
+        let query = match(kind, id)
+        guard let value, !value.isEmpty else {
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw DatabaseSecretError(status: status, doing: "remove the saved \(kind.rawValue)")
+            }
+            return
+        }
+        let label =
             switch kind {
             case .password: "Overterm database password"
             case .serviceAccount: "Overterm BigQuery service account"
             case .ssh: "Overterm database SSH tunnel"
             }
-        SecItemAdd(item as CFDictionary, nil)
+        let data = Data(value.utf8)
+        // Replaced where it is, else added: the delete-then-add this was
+        // failed silently on an item another build had made — the delete
+        // refused, the add a duplicate, and the new password went nowhere.
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data, kSecAttrLabel as String: label] as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query
+            item[kSecValueData as String] = data
+            item[kSecAttrLabel as String] = label
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw DatabaseSecretError(status: status, doing: "save the \(kind.rawValue)") }
+        problems["\(id)|\(kind.rawValue)"] = nil
     }
 }
 
@@ -300,7 +353,12 @@ final class KeychainDatabaseSecrets: DatabaseSecrets {
 @MainActor
 final class MemoryDatabaseSecrets: DatabaseSecrets {
     private var values: [String: String] = [:]
-    func value(_ kind: DatabaseSecretKind, for id: UUID) -> String? { values["\(id)|\(kind.rawValue)"] }
+    /// What the tests make a read fail with.
+    var failing: [String: String] = [:]
+    func value(_ kind: DatabaseSecretKind, for id: UUID) -> String? {
+        failing["\(id)|\(kind.rawValue)"] == nil ? values["\(id)|\(kind.rawValue)"] : nil
+    }
+    func readProblem(_ kind: DatabaseSecretKind, for id: UUID) -> String? { failing["\(id)|\(kind.rawValue)"] }
     func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) { values["\(id)|\(kind.rawValue)"] = value }
 }
 
@@ -330,23 +388,26 @@ final class DatabaseStore: ObservableObject {
 
     /// Adds or replaces it; `secret` (nil: leave it as it is) goes to the keychain.
     func save(_ connection: DatabaseConnection, password: String? = nil, serviceAccount: String? = nil, sshSecret: String? = nil) throws {
+        // The secrets first: a connection saved without the password it was
+        // given would fail later with only the server's word for why.
+        if let password { try secrets.set(password, .password, for: connection.id) }
+        if let serviceAccount { try secrets.set(serviceAccount, .serviceAccount, for: connection.id) }
+        if let sshSecret { try secrets.set(sshSecret, .ssh, for: connection.id) }
         if let index = connections.firstIndex(where: { $0.id == connection.id }) {
             connections[index] = connection
         } else {
             connections.append(connection)
         }
-        if let password { secrets.set(password, .password, for: connection.id) }
-        if let serviceAccount { secrets.set(serviceAccount, .serviceAccount, for: connection.id) }
-        if let sshSecret { secrets.set(sshSecret, .ssh, for: connection.id) }
         try write()
     }
 
     func delete(_ connection: DatabaseConnection) throws {
         connections.removeAll { $0.id == connection.id }
-        secrets.set(nil, .password, for: connection.id)
-        secrets.set(nil, .serviceAccount, for: connection.id)
-        secrets.set(nil, .ssh, for: connection.id)
         try write()
+        // Gone from the list either way; a secret the keychain keeps is said.
+        try secrets.set(nil, .password, for: connection.id)
+        try secrets.set(nil, .serviceAccount, for: connection.id)
+        try secrets.set(nil, .ssh, for: connection.id)
     }
 
     func connection(_ id: UUID?) -> DatabaseConnection? { connections.first { $0.id == id } }

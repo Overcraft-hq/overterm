@@ -252,7 +252,10 @@ struct DatabaseConnectionForm: View {
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) schema\(schemas == 1 ? "" : "s")")
                 }
             } catch {
-                tested = .failure(error)
+                tested = .failure(
+                    ExplainedError(
+                        message: DatabaseSession.explain(
+                            error, passwordGiven: password != nil, readProblem: store.secrets.readProblem(.password, for: connection.id))))
             }
             testing = false
         }
@@ -272,4 +275,10 @@ struct DatabaseConnectionForm: View {
             problem = error.localizedDescription
         }
     }
+}
+
+/// A failure said in Overterm's words (DatabaseSession.explain).
+struct ExplainedError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }

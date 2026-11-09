@@ -53,3 +53,43 @@ final class DatabaseStoreTests: XCTestCase {
         XCTAssertNil(DatabaseConnection(name: "a", kind: .postgres).problem)
     }
 }
+
+/// A server that wants a password nobody gave says `authMechanismRequiresPassword`
+/// and nothing more: why there was none is ours to say.
+@MainActor
+final class DatabaseConnectExplainedTests: XCTestCase {
+    struct ServerSaid: Error, CustomStringConvertible {
+        var description: String { "PSQLError(code: authMechanismRequiresPassword)" }
+    }
+
+    func testNoPasswordSaved() {
+        let said = DatabaseSession.explain(ServerSaid(), passwordGiven: false, readProblem: nil)
+        XCTAssertTrue(said.contains("none is saved for this connection"), said)
+        XCTAssertTrue(said.contains("Edit Connection"), said)
+    }
+
+    func testTheKeychainWouldntHandItOver() {
+        let problem = DatabaseSecretError(status: errSecAuthFailed, doing: "read the saved password").errorDescription
+        let said = DatabaseSession.explain(ServerSaid(), passwordGiven: false, readProblem: problem)
+        XCTAssertTrue(said.contains("couldn't be read"), said)
+        XCTAssertTrue(said.contains("Keychain Access"), "says where to fix it: \(said)")
+    }
+
+    func testAnyOtherFailureIsTheServers() {
+        struct Refused: LocalizedError { var errorDescription: String? { "connection refused" } }
+        XCTAssertEqual(DatabaseSession.explain(Refused(), passwordGiven: false, readProblem: nil), "connection refused")
+        XCTAssertEqual(
+            DatabaseSession.explain(ServerSaid(), passwordGiven: true, readProblem: nil), ServerSaid().localizedDescription,
+            "a password was given: the server's word stands")
+    }
+
+    func testAReadThatFailsIsSaid() {
+        let secrets = MemoryDatabaseSecrets()
+        let id = UUID()
+        secrets.set("hunter2", .password, for: id)
+        XCTAssertEqual(secrets.value(.password, for: id), "hunter2")
+        secrets.failing["\(id)|password"] = "denied"
+        XCTAssertNil(secrets.value(.password, for: id))
+        XCTAssertEqual(secrets.readProblem(.password, for: id), "denied")
+    }
+}
