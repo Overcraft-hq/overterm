@@ -42,6 +42,7 @@ extension KubernetesPageModel {
         // The Metrics tab's queries, over its range or window (M6) — where
         // Prometheus is found first: its ranges need it.
         if let request = metricsTabWant { wants.insert(.tab(request)) }
+        if let request = sizingWant { wants.insert(.sizing(request)) }
         if detail != nil, metricsTabShows, model.prometheus.service == nil, model.prometheus.state == .off || model.prometheus.state == .detecting,
             detail?.ref.metricsSubject != nil
         {
@@ -59,6 +60,8 @@ extension KubernetesPageModel {
     var namespacesChart: KubeChart { .namespaces(model.scope.names ?? []) }
 
     func updatePrometheusWanted() {
+        // Sizing left before it answered: dropped, asked again only by another press.
+        if let asked = sizingAsked, sizingWant == nil, model.prometheus.sizings[asked]?.done != true { sizingAsked = nil }
         model.prometheus.want(prometheusWants, for: self)
     }
 

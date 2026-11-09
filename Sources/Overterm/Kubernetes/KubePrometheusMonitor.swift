@@ -149,6 +149,8 @@ final class KubePrometheusMonitor: ObservableObject {
         /// Where Prometheus is, and nothing read: a Metrics tab's ranges
         /// past what was sampled need it found first.
         case locate
+        /// A press of Sizing (M10): R1's queries, read once.
+        case sizing(KubeSizingRequest)
     }
 
     /// The range every chart shows (the picker's): the app's.
@@ -161,6 +163,12 @@ final class KubePrometheusMonitor: ObservableObject {
     @Published private(set) var shares: KubeShareReading?
     /// The Metrics tabs' answers, by what each asked.
     @Published private(set) var tabs: [KubeTabRequest: KubeTabReading] = [:]
+    /// Sizing's answers, by press (M10): one being read, dropped with its
+    /// want; one read, kept — it is never asked again — until another
+    /// press of the same object's, or another context. In memory only.
+    @Published private(set) var sizings: [KubeSizingRequest: KubeSizingReading] = [:]
+    /// The most presses' answers kept.
+    static let sizingsKept = 16
     /// Each context's answers kept between refreshes (`KubeChartCache`).
     private(set) var caches: [String: KubeChartCache] = [:]
     private var cacheDrop: Task<Void, Never>?
@@ -236,6 +244,7 @@ final class KubePrometheusMonitor: ObservableObject {
             if state != kept ?? .off { state = kept ?? .off }
             // Another context, use or cluster: no answer kept of the one before is drawn.
             if let old { caches[old.context] = nil }
+            if !sizings.isEmpty { sizings = [:] }
             stopped = false
             let shown = situation.flatMap { profiles[$0.context] }.flatMap { $0.key.use == situation?.use && $0.key.cluster == situation?.cluster ? $0.profile : nil }
             if profile != shown { profile = shown }
@@ -320,6 +329,9 @@ final class KubePrometheusMonitor: ObservableObject {
                     }
                 }
                 tabs[request] = nil
+            case .sizing(let request):
+                // Read: kept. Still being read: gone with its want.
+                if sizings[request]?.done != true { sizings[request] = nil }
             case .locate: break
             }
         }
@@ -342,6 +354,7 @@ final class KubePrometheusMonitor: ObservableObject {
         if volumes != nil { volumes = nil }
         if shares != nil { shares = nil }
         if !tabs.isEmpty { tabs = [:] }
+        if sizings.values.contains(where: { !$0.done }) { sizings = sizings.filter(\.value.done) }
         if proxyUsed, let context = situation?.context {
             proxyUsed = false
             let close = closeProxy
@@ -495,6 +508,13 @@ final class KubePrometheusMonitor: ObservableObject {
                         break
                     }
                     pause = self.interval ?? .milliseconds(Int(refresh * 1000))
+                case .sizing(let request):
+                    self.startSizing(request)
+                    let reading = await self.readSizing(request, transport, service: service, context: context)
+                    guard !Task.isCancelled, self.polls[want] != nil, self.situation?.context == context else { return }
+                    self.sizings[request] = reading
+                    // Once: never refreshed (metrics.md 2.10).
+                    return
                 case .locate:
                     return
                 }
@@ -1141,6 +1161,109 @@ final class KubePrometheusMonitor: ObservableObject {
         guard situation?.context == context else { throw CancellationError() }
         caches[context, default: KubeChartCache()].merge(key, series: answer.series, asked: asked, start: span.start)
         return (caches[context]?.series(key) ?? answer.series, answer.notes)
+    }
+
+    // MARK: Sizing
+
+    /// A press begins: the same object's earlier answer goes (the card
+    /// shows this one), and past `sizingsKept` the oldest.
+    private func startSizing(_ request: KubeSizingRequest) {
+        var kept = sizings.filter { $0.key.subject != request.subject }
+        kept[request] = KubeSizingReading(request: request)
+        while kept.count > Self.sizingsKept, let oldest = kept.keys.min(by: { $0.asked < $1.asked }) { kept[oldest] = nil }
+        sizings = kept
+    }
+
+    /// R1 for a press (metrics.md 2.10, 4.6): the profile, a raw
+    /// workload's pods over the window listed first by name, then each measure's
+    /// one instant query — through the context's queue at sizing's
+    /// priority, below every chart. A refused one (the bounds, the
+    /// retention) is said and nothing is sent; a failure is said with
+    /// what came. Cancelled (the tab gone), it isn't done: asked again
+    /// only by another press.
+    private func readSizing(
+        _ request: KubeSizingRequest, _ transport: any KubePrometheusTransport, service: KubePrometheusService, context: String
+    ) async -> KubeSizingReading {
+        var reading = KubeSizingReading(request: request)
+        let profile: KubePromProfile
+        switch await self.profile(context, service, transport) {
+        case .success(let probed): profile = probed
+        case .failure(let error):
+            if error is CancellationError || Task.isCancelled { return reading }
+            reading.problem = said(error, service: service)
+            reading.done = true
+            return reading
+        }
+        if profile.agentOnly {
+            reading.unavailable = KubeChartEmpty.agentMode(service).sentence
+            reading.done = true
+            return reading
+        }
+        let now = clock()
+        var plan = KubeSizing.plan(request.subject, profile: profile, now: now)
+        if let count = plan.count {
+            reading.queries = [count]
+            do {
+                let answer = try await ask(transport, KubePromQL.instantPath(service, count.promql), context: context, service: service, priority: .sizing)
+                // Its pods by name: the subqueries read these and no others; none, nothing is sized.
+                let pods = Set(answer.series.compactMap { $0.labels["pod"] }.filter { !$0.isEmpty }).sorted()
+                reading.pods = pods.count
+                reading.notes += answer.notes
+                plan = KubeSizing.plan(request.subject, profile: profile, now: now, pods: pods)
+            } catch {
+                if error is CancellationError || Task.isCancelled { return reading }
+                reading.problem = "Its pods couldn't be counted: " + said(error, service: service)
+                reading.done = true
+                return reading
+            }
+        }
+        reading.window = plan.window
+        reading.tier = plan.tier
+        reading.selection = plan.selection
+        reading.notes += plan.notes
+        if let refused = plan.refused {
+            reading.refused = refused
+            reading.done = true
+            return reading
+        }
+        reading.queries = (plan.count.map { [$0] } ?? []) + plan.queries
+        let tasks = plan.queries.enumerated().map { order, query in
+            (
+                query.id,
+                Task { @MainActor [weak self] () throws -> KubePrometheusReader.Answer in
+                    guard let self else { throw CancellationError() }
+                    return try await self.ask(
+                        transport, KubePromQL.instantPath(service, query.promql), context: context, service: service, order: order, priority: .sizing)
+                }
+            )
+        }
+        let running = tasks.map(\.1)
+        var answers: [KubeSizingMeasure: [KubeSeries]] = [:]
+        var cancelled = false
+        await withTaskCancellationHandler {
+            for (id, task) in tasks {
+                do {
+                    let answer = try await task.value
+                    if let measure = KubeSizingMeasure(rawValue: id) { answers[measure] = answer.series }
+                    reading.notes += answer.notes
+                } catch {
+                    if error is CancellationError || Task.isCancelled {
+                        cancelled = true
+                        continue
+                    }
+                    if reading.problem == nil { reading.problem = said(error, service: service) }
+                }
+            }
+        } onCancel: {
+            for task in running { task.cancel() }
+        }
+        if cancelled { return KubeSizingReading(request: request) }
+        var seen = Set<String>()
+        reading.notes = Array(reading.notes.filter { seen.insert($0).inserted }.prefix(KubePrometheusReader.maxNotes))
+        reading.figures = KubeSizing.figures(answers)
+        reading.read = now
+        reading.done = true
+        return reading
     }
 
     // MARK: An agent's

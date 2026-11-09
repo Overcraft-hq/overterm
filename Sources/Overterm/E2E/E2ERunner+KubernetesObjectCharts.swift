@@ -426,6 +426,7 @@ extension E2ERunner {
         await nodeExporterPart(model, page, fake, node: node, service: service)
         await gpuPart(model, page, fake, namespace: namespace, plainNode: node, service: service)
         await savedQueriesPart(model, page, fake, namespace: namespace, service: service)
+        await sizingPart(model, page, fake, namespace: namespace, service: service)
         check("Prometheus written nothing", fake.writes.isEmpty)
         page.showTab(.overview)
         page.closeDetail()
