@@ -391,8 +391,8 @@ final class KubernetesPageModel: ObservableObject {
     /// How long Live runs without input (15 minutes; a scenario's shorter).
     var metricsIdleLimit: TimeInterval = 900
     var metricsIdleTask: Task<Void, Never>?
-    /// A node's top pods' group on screen (its view says): only then are they read.
-    var metricsTopPodsShown = false
+    /// The groups read only while on screen that are (their view says), by title: a node's top pods, its disks and network.
+    var metricsGroupsShown: Set<String> = []
     /// A claim's inodes (V2) shown beside its usage: read only while it is on.
     @Published var volumeInodesShown = false
     /// Custom's popover, shown (its button, or `.` past 7d).

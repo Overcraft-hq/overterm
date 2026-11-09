@@ -47,6 +47,9 @@ struct KubeObjectChartsKey: Equatable, Sendable {
     var source: KubeChartSource = .sampled
     /// Prometheus' answers' version (`KubeTabReading.version`).
     var prometheus: Int?
+    /// Whether the page's profile maps node-exporter to nodes (nil,
+    /// unknown): a node's disks and network in Live, nothing read yet.
+    var nodeExporter: Bool?
 }
 
 /// The Metrics tab beyond pods (stage M3b): a workload's CPU and memory as
@@ -213,7 +216,8 @@ extension KubernetesPageModel {
         let key = KubeObjectChartsKey(
             ref: ref, resourceVersion: object.resourceVersion, bytes: object.data.count, now: source == .prometheus ? .distantPast : now, range: range,
             view: workloadChartView, lookups: chartLookups.version, revisions: templates.count, topPods: topPodsSampling, reads: reads, changes: changes.version,
-            window: window, source: source, prometheus: reading?.version)
+            window: window, source: source, prometheus: reading?.version,
+            nodeExporter: subject == .node ? model.prometheus.profile.flatMap { $0.known ? $0.nodeExporterMapped : nil } : nil)
         if let cached = objectChartsCache, cached.key == key { return cached.charts }
         let built = buildObjectCharts(session, subject: subject, object: object, source: source, reading: reading, details: details, now: now, range: range)
         objectChartsCache = (key, built)
@@ -293,6 +297,9 @@ extension KubernetesPageModel {
                     changes: changes, window: window))
         case .pod:
             charts = nil
+        }
+        if source == .mixed, let built = charts, subject == .node {
+            return KubePromTabCharts.addNodeExporter(built, node: ref.name, reading: reading, profile: model.prometheus.profile ?? .unknown)
         }
         if source == .mixed, let built = charts, case .workload(let kind) = subject, let namespace = ref.namespace {
             return KubePromTabCharts.addOnly(

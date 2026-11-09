@@ -248,7 +248,7 @@ extension E2ERunner {
             fake.requests.contains { $0.path == "/api/v1/namespaces/\(namespace)/pods" && $0.query["includeObject"] == "Metadata" })
 
         // Part 5 (M7): the Deployment's and the namespace's tabs over Prometheus.
-        await kubernetesObjectChartsPrometheus(model, page, fake, namespace: namespace, hash: hash, pods: pods)
+        await kubernetesObjectChartsPrometheus(model, page, fake, namespace: namespace, hash: hash, pods: pods, node: node)
 
         // Hidden: nothing read.
         app.toggleKubernetesPage(nil)
@@ -286,7 +286,9 @@ extension E2ERunner {
     /// namespace's at 1h: by workload from the rules, against its quota as
     /// kube-state-metrics says it, what it requests but leaves idle, its pods
     /// by phase. Only the Service's two query paths. Reads only.
-    func kubernetesObjectChartsPrometheus(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, namespace: String, hash: String, pods: [String]) async {
+    func kubernetesObjectChartsPrometheus(
+        _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, namespace: String, hash: String, pods: [String], node: String
+    ) async {
         let scope = app.theme.map(ObjectIdentifier.init)
         let charts = KubeChartRegistry.shared
         let service = KubePrometheusService(namespace: "monitoring", name: "prometheus-k8s", port: "9090")!
@@ -421,8 +423,75 @@ extension E2ERunner {
         check(
             "its pods by phase from kube-state-metrics",
             await eventually(10) { page.detail.flatMap { page.objectCharts(of: $0) }?.charts.first { $0.data.id == "namespace.\(namespace).phases" }?.data.source == "Prometheus" })
+        await nodeExporterPart(model, page, fake, node: node, service: service)
         check("Prometheus written nothing", fake.writes.isEmpty)
         page.showTab(.overview)
         page.closeDetail()
+    }
+
+    /// Stage M8b (metrics.md 2.8's K6 and K7): the node's tab at 1h on
+    /// kube-prometheus-stack's profile — its disks, a chart a mount used
+    /// against its size, and its network, node-exporter's mapped to the
+    /// node by `node_uname_info`, in a group of their own read only while
+    /// on screen: asked once it shows, not once it is scrolled off. Only
+    /// the Service's `query_range`. Reads only.
+    func nodeExporterPart(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, node: String, service: KubePrometheusService) async {
+        let gib = 1_073_741_824.0
+        fake.setPrometheusMatrix(
+            "node_filesystem_size_bytes{",
+            [
+                FakePromFixture.Line(["overterm_s": "used", "mountpoint": "/"]) { _ in 3 * gib },
+                FakePromFixture.Line(["overterm_s": "size", "mountpoint": "/"]) { _ in 4 * gib },
+                FakePromFixture.Line(["overterm_s": "used", "mountpoint": "/local"]) { _ in 19 * gib },
+                FakePromFixture.Line(["overterm_s": "size", "mountpoint": "/local"]) { _ in 20 * gib },
+            ])
+        fake.setPrometheusMatrix(
+            "node_network_receive_bytes_total{",
+            [FakePromFixture.Line(["overterm_s": "rx"]) { _ in 1_200_000 }, FakePromFixture.Line(["overterm_s": "tx"]) { _ in 340_000 }])
+        defer {
+            fake.clearPrometheusMatrix("node_filesystem_size_bytes{")
+            fake.clearPrometheusMatrix("node_network_receive_bytes_total{")
+            page.metricsGroupShown(KubePromTabCharts.nodeExporterTitle, false)
+        }
+        func exporter() -> [FakeKubeAPI.Request] {
+            fake.requests.filter(\.isPrometheusQuery).filter {
+                let query = $0.query["query"] ?? ""
+                return !query.hasPrefix("count by (__name__)") && (query.contains("node_filesystem_") || query.contains("node_network_"))
+            }
+        }
+        page.showTab(.overview)
+        page.closeDetail()
+        guard let nodes = model.discovery?.kind("nodes") else { return check("nodes served", false) }
+        page.showKind(nodes)
+        check("its node listed again", await eventually(15) { model.kind.fullName == "nodes" && model.rows[KubeRowID(namespace: nil, name: node)] != nil })
+        fake.forgetRequests()
+        page.selection = [node]
+        check("m opens the node's Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == node)
+        page.pickMetricsRange(.hour)
+        func group() -> KubeObjectCharts.Group? {
+            page.detail.flatMap { page.objectCharts(of: $0) }?.groups.first { $0.title == KubePromTabCharts.nodeExporterTitle }
+        }
+        check("its disks and network a group of their own, last", await eventually(20) { page.detail.flatMap { page.objectCharts(of: $0) }?.groups.last?.title == KubePromTabCharts.nodeExporterTitle })
+        // Scrolled to (the runner's hook: the group's own view says so when it shows).
+        page.metricsGroupShown(KubePromTabCharts.nodeExporterTitle, true)
+        let ids = ["node.\(node).disk.root", "node.\(node).disk.local", "node.\(node).network"]
+        check(
+            "a chart a mount, and the node's network",
+            await eventually(20) { group()?.charts.map(\.data.id) == ids }, "\(group()?.charts.map(\.data.id) ?? []) \(page.detail.flatMap { page.objectCharts(of: $0) }?.notes ?? [])")
+        let local = group()?.charts.first { $0.data.id == ids[1] }
+        check("/local used against its size, red past 90%", local?.chips == [KubeChartChip(text: "95% used", alert: true)] && local?.data.references.map(\.role) == [.capacity])
+        check("from node-exporter", group()?.charts.last?.data.tier == "node-exporter, the node's own interfaces")
+        check(
+            "mapped by node_uname_info, over the Service's query_range with 20 s",
+            exporter().count >= 2
+                && exporter().allSatisfy {
+                    $0.path == service.rangePath && $0.query["timeout"] == "20s" && ($0.query["query"] ?? "").contains("node_uname_info{nodename=\"\(node)\"}")
+                }, "\(exporter().map(\.query))")
+        check("never the kubelet", !fake.requests.contains { $0.path.contains("nodes/proxy") || $0.path.contains("/proxy/metrics") })
+        page.metricsGroupShown(KubePromTabCharts.nodeExporterTitle, false)
+        check("scrolled off: no longer wanted", page.detail.flatMap { page.tabRequest(of: $0) }?.families.contains(.disks) == false)
+        fake.forgetRequests()
+        await pause(1.5)
+        check("and not asked again", exporter().isEmpty, "\(exporter().map(\.query))")
     }
 }

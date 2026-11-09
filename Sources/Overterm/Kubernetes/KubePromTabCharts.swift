@@ -23,7 +23,7 @@ enum KubePromTabCharts {
         case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss, .fs]
         case .workload: all = [.cpu, .memory, .revisions, .restarts, .oom, .replicas, .hpa, .hpaMetrics]
         case .hpa: all = [.hpa, .hpaMetrics]
-        case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory]
+        case .node: all = [.cpu, .memory, .nodePods, .conditions, .topCPU, .topMemory, .disks, .nodeNetwork]
         case .namespace: all = [.cpu, .memory, .phases, .quota, .idle]
         }
         switch source {
@@ -83,6 +83,12 @@ enum KubePromTabCharts {
         out += reading.notes
         var seen = Set<String>()
         return out.filter { seen.insert($0).inserted }
+    }
+
+    /// Sentences once each, in order.
+    static func unique(_ sentences: [String]) -> [String] {
+        var seen = Set<String>()
+        return sentences.filter { seen.insert($0).inserted }
     }
 
     static func data(
@@ -565,8 +571,11 @@ enum KubePromTabCharts {
     }
 
     static let topPodsTitle = "Top pods (by the range's mean)"
-    /// A node's families read only while their group is on screen (K3).
-    static let readWhenShown: Set<KubeTabFamily> = [.topCPU, .topMemory]
+    static let nodeExporterTitle = "Disks and network (node-exporter)"
+    /// A node's families read only while their group is on screen, by the
+    /// group's title: its top pods (K3, a series a pod on the node), its
+    /// disks and network (K6, K7, the lowest of its charts: scrolled to).
+    static let readWhenShown: [String: Set<KubeTabFamily>] = [topPodsTitle: [.topCPU, .topMemory], nodeExporterTitle: [.disks, .nodeNetwork]]
 
     static func node(node: String, facts: KubeNodeFacts, reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?) -> KubeObjectCharts {
         guard let span = reading.span else {
@@ -636,17 +645,108 @@ enum KubePromTabCharts {
                     id: "\(subject).top.\(isCPU ? "cpu" : "memory")", title: isCPU ? "Top pods' CPU" : "Top pods' memory", unit: isCPU ? .cores : .bytes, series: series,
                     span: span, stacked: true, tier: tier))
         }
-        // Asked only while its group is on screen: the group is there to be scrolled to.
+        // Asked only while its group is on screen: the group is there to be
+        // scrolled to. Whether it exists is the profile's to say, never the
+        // reading's: a refusal is recorded only for what is asked, so a group
+        // dropped on one would come back once off screen, and loop.
         let tops = [top("topCPU", true), top("topMemory", false)].compactMap { $0 }
-        if reading.refused[.topCPU] == nil {
+        if KubeTabQueries.nodeLabel(reading.profile) != nil {
             groups.append(
                 KubeObjectCharts.Group(
                     title: topPodsTitle, charts: tops, readsWhenShown: true, pending: reading.results["topCPU"] == nil && reading.results["topMemory"] == nil))
         }
+        let exporter = nodeExporterGroup(node: node, reading: reading, profile: reading.profile)
+        if let group = exporter.group { groups.append(group) }
         let built = KubeObjectCharts(
             range: .hour, groups: groups, caption: caption(reading, window: window), span: window?.title ?? KubePromQL.duration(span.end.timeIntervalSince(span.start)),
-            hasSamples: charts.contains { $0.data.usage.contains { !$0.points.isEmpty } } || reading.read != nil, notes: notes(reading))
+            hasSamples: charts.contains { $0.data.usage.contains { !$0.points.isEmpty } } || reading.read != nil, notes: unique(notes(reading) + exporter.notes))
         return KubeChartMarkers.mark(built, changes: changes, window: nil, now: span.end)
+    }
+
+    /// K6 and K7 (metrics.md 2.8, 4.6; stage M8b): a node's disks — a
+    /// chart a mount, its used bytes against its size — and its network,
+    /// received and sent, node-exporter's mapped to the node by
+    /// `node_uname_info`. A group of their own, read only while on screen;
+    /// none where the profile found node-exporter unmapped (the sentence
+    /// says so instead). `profile`: the reading's, or the page's where
+    /// nothing is read yet (Live, the group off screen).
+    static func nodeExporterGroup(node: String, reading: KubeTabReading?, profile: KubePromProfile) -> (group: KubeObjectCharts.Group?, notes: [String]) {
+        // Decided by the profile alone, whether shown or not (as the top pods'):
+        // the plan refuses only what is asked, so a group dropped on the
+        // reading's refusals would come back off screen, be shown, and loop.
+        if profile.known, !profile.nodeExporterMapped { return (nil, [KubeChartEmpty.nodeExporterUnmapped.sentence]) }
+        if profile.known, !profile.mayHave(KubePromQL.nodeFilesystemMetric), !profile.mayHave(KubePromQL.nodeNetworkMetric) {
+            return (nil, [KubeChartEmpty.nodeExporterNoFilesystems.sentence, KubeChartEmpty.nodeExporterNoNetwork.sentence])
+        }
+        guard let reading, let span = reading.span else {
+            return (KubeObjectCharts.Group(title: nodeExporterTitle, charts: [], readsWhenShown: true, pending: true), [])
+        }
+        let subject = "node.\(node)"
+        var charts: [KubePodCharts.Chart] = []
+        var notes: [String] = []
+        if reading.results["disks"] != nil {
+            let disks = diskCharts(subject: subject, reading: reading, span: span)
+            if disks.isEmpty { notes.append(KubeChartEmpty.nodeDisksNone.sentence) }
+            charts += disks
+        }
+        if let network = nodeNetworkChart(subject: subject, reading: reading, span: span) {
+            charts.append(network)
+        } else if reading.results["nodeNetwork"] != nil {
+            notes.append(KubeChartEmpty.nodeNetworkNone.sentence)
+        }
+        let asked = reading.results["disks"] != nil || reading.results["nodeNetwork"] != nil
+        return (KubeObjectCharts.Group(title: nodeExporterTitle, charts: charts, readsWhenShown: true, pending: !asked), notes)
+    }
+
+    /// K6: a chart a mount (`/` first), used against size.
+    static func diskCharts(subject: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
+        let arms = reading.tagged("disks")
+        let used = by(arms["used"], "mountpoint")
+        let size = by(arms["size"], "mountpoint")
+        return used.keys.filter { !$0.isEmpty && !(used[$0] ?? []).isEmpty }.sorted().map { mount in
+            let points = used[mount] ?? []
+            let total = size[mount]?.last?.value
+            var series = [KubeChartSeries(id: "used", name: "used", points: points)]
+            if let total, total > 0 {
+                series.append(KubeChartSeries(id: "size", name: "size", role: .capacity, points: [KubeSeriesPoint(time: span.end, value: total)]))
+            }
+            let latest = points.last?.value
+            let percent = latest.flatMap { KubeMetricsFormat.percent($0, of: total) }
+            let headline = latest.map { value in KubeVolumeFormat.bytes(value) + (total.map { " of " + KubeVolumeFormat.bytes($0) } ?? "") }
+            return KubePodCharts.Chart(
+                data: data(
+                    id: "\(subject).disk.\(mount == "/" ? "root" : mount.trimmingCharacters(in: CharacterSet(charactersIn: "/")).replacingOccurrences(of: "/", with: "."))",
+                    title: "Disk \(mount)", unit: .bytes, series: series, span: span, tier: "node-exporter"),
+                headline: headline, chips: percent.map { [KubeChartChip(text: "\($0)% used", alert: $0 >= 90)] } ?? [])
+        }
+    }
+
+    /// K7: the node's own interfaces' received and sent bytes a second.
+    static func nodeNetworkChart(subject: String, reading: KubeTabReading, span: KubePromSpan) -> KubePodCharts.Chart? {
+        guard reading.results["nodeNetwork"] != nil else { return nil }
+        let arms = reading.tagged("nodeNetwork")
+        let rx = sum((arms["rx"] ?? []).map(\.points))
+        let tx = sum((arms["tx"] ?? []).map(\.points))
+        guard !rx.isEmpty || !tx.isEmpty else { return nil }
+        let headline = [rx.last.map { "rx \(KubeChartUnit.bytesPerSecond.format($0.value))" }, tx.last.map { "tx \(KubeChartUnit.bytesPerSecond.format($0.value))" }]
+            .compactMap { $0 }.joined(separator: " · ")
+        return KubePodCharts.Chart(
+            data: data(
+                id: "\(subject).network", title: "Network", unit: .bytesPerSecond,
+                series: [KubeChartSeries(id: "rx", name: "received", points: rx), KubeChartSeries(id: "tx", name: "sent", points: tx)], span: span,
+                tier: "node-exporter, the node's own interfaces"),
+            headline: headline.isEmpty ? nil : headline)
+    }
+
+    /// Live with metrics-server: a node's sampled charts, its disks and
+    /// network from Prometheus added as their own group.
+    static func addNodeExporter(_ sampled: KubeObjectCharts, node: String, reading: KubeTabReading?, profile: KubePromProfile) -> KubeObjectCharts {
+        var charts = sampled
+        let known = reading.flatMap { $0.profile.known ? $0.profile : nil } ?? profile
+        let exporter = nodeExporterGroup(node: node, reading: reading, profile: known)
+        if let group = exporter.group { charts.groups.append(group) }
+        charts.notes = unique(charts.notes + exporter.notes + (reading.map { notes($0) } ?? []))
+        return charts
     }
 
     // MARK: A namespace

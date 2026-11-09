@@ -58,8 +58,16 @@ enum KubeChartEmpty: Equatable, Sendable {
     case topSharesNeedNamespaces
     /// C4: the kubelet reports no per-container filesystem use (containerd).
     case noContainerFS
-    /// K2's node total: node-exporter's instances don't map to nodes (no `node_uname_info`).
+    /// K2's node total, K6 and K7: node-exporter's instances don't map to nodes (no `node_uname_info`).
     case nodeExporterUnmapped
+    /// K6: node-exporter is mapped, but reports no filesystems.
+    case nodeExporterNoFilesystems
+    /// K7: node-exporter is mapped, but reports no network interfaces.
+    case nodeExporterNoNetwork
+    /// K6 asked, but this node reports neither mount.
+    case nodeDisksNone
+    /// K7 asked, but this node reports no interface left once the virtual ones are out.
+    case nodeNetworkNone
 
     var sentence: String {
         switch self {
@@ -116,7 +124,15 @@ enum KubeChartEmpty: Equatable, Sendable {
         case .noContainerFS:
             return "This cluster's kubelet doesn't report per-container filesystem use (containerd). A pod's ephemeral use is in kubelet's stats, which Overterm never reaches (nodes/proxy)."
         case .nodeExporterUnmapped:
-            return "node-exporter doesn't map to nodes here (no node_uname_info): the node's own memory total is left out."
+            return "node-exporter doesn't map to nodes here (no node_uname_info): the node's own memory total, its disks and its network are left out."
+        case .nodeExporterNoFilesystems:
+            return "node-exporter here reports no filesystems (its filesystem collector is off): the node's disks are left out."
+        case .nodeExporterNoNetwork:
+            return "node-exporter here reports no network interfaces (its netdev collector is off): the node's network is left out."
+        case .nodeDisksNone:
+            return "node-exporter reports neither / nor /local on this node: no disk to chart."
+        case .nodeNetworkNone:
+            return "node-exporter reports no network interface on this node but virtual ones (lo, veth, CNI): no network to chart."
         }
     }
 

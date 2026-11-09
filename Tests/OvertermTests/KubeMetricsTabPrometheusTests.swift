@@ -100,7 +100,8 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         XCTAssertEqual(page.metricsSource(of: try XCTUnwrap(page.detail?.ref)), .mixed)
         try await until(5, "Live's Prometheus answers") { model.prometheus.tabs.values.contains { $0.read != nil } }
         let reading = try XCTUnwrap(model.prometheus.tabs.values.first)
-        XCTAssertEqual(reading.request.families, KubeTabFamily.prometheusOnly)
+        XCTAssertEqual(reading.request.families, KubePromTabCharts.families(.pod, source: .mixed))
+        XCTAssertEqual(reading.request.families, [.throttling, .network, .restarts, .oom, .fs])
         XCTAssertEqual(reading.span?.step, 60, "a minute's scrape: Live at a minute")
         XCTAssertNil(reading.results["cpu"], "CPU is sampled")
         XCTAssertEqual(page.metricsDetailsOnScreen, [.pod(namespace: "shop", name: "web-1")], "and metrics-server polled for it")
@@ -262,16 +263,78 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         let charts = try XCTUnwrap(page.objectCharts(of: session))
         let group = try XCTUnwrap(charts.groups.first { $0.title == KubePromTabCharts.topPodsTitle })
         XCTAssertTrue(group.readsWhenShown && group.pending, "there to be scrolled to")
-        page.metricsGroupShown(true)
-        XCTAssertEqual(page.tabRequest(of: session)?.families.isSuperset(of: KubePromTabCharts.readWhenShown), true)
+        page.metricsGroupShown(KubePromTabCharts.topPodsTitle, true)
+        XCTAssertEqual(page.tabRequest(of: session)?.families.isSuperset(of: KubePromTabCharts.readWhenShown[KubePromTabCharts.topPodsTitle] ?? []), true)
         XCTAssertNotNil(page.tabReading(of: session)?.read, "the last answers stand while the new request is read")
         try await until(5, "top pods asked") { top().count == 2 }
         try await until(5, "read") { page.tabReading(of: session)?.results["topCPU"] != nil }
-        page.metricsGroupShown(false)
+        page.metricsGroupShown(KubePromTabCharts.topPodsTitle, false)
         XCTAssertNotNil(page.tabReading(of: session)?.read, "scrolled off: what was read stands")
         api.forgetRequests()
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(top().isEmpty, "scrolled off: not asked again \(top().map(\.query))")
+    }
+
+    /// A node's disks and network (K6, K7, M8b) are node-exporter's over
+    /// the metrics proxy, asked only while their group is on screen — in
+    /// Live too, where the node's other charts are sampled.
+    func testANodesDisksAndNetworkAreReadOnlyWhileShown() async throws {
+        let (model, page) = try pageOverFake()
+        defer { model.hide() }
+        api.add("nodes", "fake-node-1", fields: ["status": ["allocatable": ["cpu": "4", "memory": "16Gi", "pods": "58"]]])
+        api.setNodeMetrics("fake-node-1", cpu: "900m", memory: "6Gi")
+        let gib = 1_073_741_824.0
+        api.setPrometheusMatrix(
+            "node_filesystem_size_bytes{",
+            [
+                FakePromFixture.Line(["overterm_s": "used", "mountpoint": "/"]) { _ in 3 * gib },
+                FakePromFixture.Line(["overterm_s": "size", "mountpoint": "/"]) { _ in 4 * gib },
+            ])
+        api.setPrometheusMatrix(
+            "node_network_receive_bytes_total{",
+            [FakePromFixture.Line(["overterm_s": "rx"]) { _ in 1_200_000 }, FakePromFixture.Line(["overterm_s": "tx"]) { _ in 340_000 }])
+        model.show()
+        page.visible = true
+        try await until(5, "discovery read") { model.discovery != nil }
+        let nodes = try XCTUnwrap(model.discovery?.kind("nodes"))
+        page.showKind(nodes)
+        try await until(5, "nodes listed") { model.kind.fullName == "nodes" && model.rows.count >= 1 }
+        page.selection = ["fake-node-1"]
+        XCTAssertTrue(page.press("m"))
+        try await until(5, "its object read") { page.detail?.object != nil }
+        try await until(5, "Prometheus found") { model.prometheus.service == service }
+        let session = try XCTUnwrap(page.detail)
+        func exporter() -> [FakeKubeAPI.Request] {
+            asked.filter {
+                let query = $0.query["query"] ?? ""
+                return !query.hasPrefix("count by (__name__)") && (query.contains("node_filesystem_") || query.contains("node_network_"))
+            }
+        }
+        // Live, sampled: nothing of Prometheus' until the group shows.
+        XCTAssertEqual(page.metricsSource(of: session.ref), .mixed)
+        XCTAssertNil(page.tabRequest(of: session), "off screen: nothing asked")
+        let pending = try XCTUnwrap(page.objectCharts(of: session)?.groups.last)
+        XCTAssertEqual(pending.title, KubePromTabCharts.nodeExporterTitle)
+        XCTAssertTrue(pending.readsWhenShown && pending.pending, "there to be scrolled to")
+        page.metricsGroupShown(KubePromTabCharts.nodeExporterTitle, true)
+        XCTAssertEqual(page.tabRequest(of: session)?.families, [.disks, .nodeNetwork])
+        try await until(5, "asked in Live") { exporter().count == 2 }
+        XCTAssertTrue(exporter().allSatisfy { $0.path == service.rangePath && $0.query["timeout"] == "20s" }, "\(exporter().map(\.path))")
+        XCTAssertTrue(exporter().allSatisfy { ($0.query["query"] ?? "").contains(#"node_uname_info{nodename="fake-node-1"}"#) }, "mapped by uname")
+        try await until(5, "drawn") { page.objectCharts(of: session)?.groups.last?.charts.count == 2 }
+        let group = try XCTUnwrap(page.objectCharts(of: session)?.groups.last)
+        XCTAssertEqual(group.charts.map(\.data.id), ["node.fake-node-1.disk.root", "node.fake-node-1.network"])
+        XCTAssertEqual(group.charts.first?.chips, [KubeChartChip(text: "75% used", alert: false)])
+        XCTAssertEqual(page.objectCharts(of: session)?.groups.first?.title, "Node", "the sampled charts kept")
+        // Over the hour: asked with the rest once shown; scrolled off, not again.
+        page.pickMetricsRange(.hour)
+        try await until(5, "an hour's reading") { page.tabReading(of: session)?.results["disks"] != nil }
+        page.metricsGroupShown(KubePromTabCharts.nodeExporterTitle, false)
+        XCTAssertEqual(page.tabRequest(of: session)?.families.contains(.disks), false)
+        api.forgetRequests()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(exporter().isEmpty, "scrolled off: not asked again \(exporter().map(\.query))")
+        XCTAssertFalse(api.requests.contains { $0.path.contains("nodes/proxy") || $0.path.contains("/proxy/metrics") }, "never the kubelet")
     }
 
     func testLivePausesWithoutInputAndResumes() async throws {

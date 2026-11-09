@@ -52,9 +52,12 @@ enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
     case revisions, phases, quota, idle
     /// C4: a container's ephemeral storage (cAdvisor's filesystem use) against its limit (M8).
     case fs
+    /// K6 and K7: a node's disks, used against size a mount, and its
+    /// network — node-exporter's, mapped to the node by `node_uname_info` (M8b).
+    case disks, nodeNetwork
 
     /// The families with no sampled form: read from Prometheus in Live too.
-    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs]
+    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork]
 }
 
 /// What a tab wants of Prometheus: whose, over which range or window, which families.
@@ -470,7 +473,7 @@ enum KubeTabQueries {
             if usesKSM { hpaQueries(namespace: namespace, name: name, profile: profile, add: add, refuse: refuse) }
 
         case .node(let node):
-            let label: KubePromProfile.NodeLabel? = profile.known ? profile.nodeLabel : .node
+            let label = nodeLabel(profile)
             let request = KubePromQL.requestsOnNode(node, profile: profile)
             if let label {
                 let selector = joined([profile.cadvisorMatchers, KubePromQL.matchers([(label.rawValue, node)])])
@@ -491,6 +494,23 @@ enum KubeTabQueries {
             if profile.known, !profile.nodeExporterMapped, wanted.contains(.memory) {
                 plan.notes.append(KubeChartEmpty.nodeExporterUnmapped.sentence)
             }
+            // K6, K7: node-exporter's, its instance mapped to the node by
+            // `node_uname_info` (metrics.md decision 6) — never by host IP.
+            if profile.known, !profile.nodeExporterMapped {
+                refuse(.disks, KubeChartEmpty.nodeExporterUnmapped.sentence)
+                refuse(.nodeNetwork, KubeChartEmpty.nodeExporterUnmapped.sentence)
+            } else {
+                if profile.mayHave(KubePromQL.nodeFilesystemMetric) {
+                    add("disks", .disks, KubePromQL.nodeDisks(node))
+                } else {
+                    refuse(.disks, KubeChartEmpty.nodeExporterNoFilesystems.sentence)
+                }
+                if profile.mayHave(KubePromQL.nodeNetworkMetric) {
+                    add("nodeNetwork", .nodeNetwork, KubePromQL.nodeNetwork(node, window: window))
+                } else {
+                    refuse(.nodeNetwork, KubeChartEmpty.nodeExporterNoNetwork.sentence)
+                }
+            }
             if usesKSM {
                 let pinned = joined([ksm, KubePromQL.matchers([("node", node)])])
                 add("pods", .nodePods, "count(max by (namespace,pod)(kube_pod_info{\(pinned)}) * on(namespace,pod) group_left() \(KubePromQL.active(profile: profile)))")
@@ -502,6 +522,12 @@ enum KubeTabQueries {
         }
         return plan
     }
+
+    /// The label a node's cAdvisor series name it by: `node` until the
+    /// profile says otherwise; none where they name no node (a node's
+    /// usage, its top pods, refused). The charts ask this too, so that
+    /// whether a group exists never hangs on what was read.
+    static func nodeLabel(_ profile: KubePromProfile) -> KubePromProfile.NodeLabel? { profile.known ? profile.nodeLabel : .node }
 
     // MARK: Whose pods
 
@@ -788,6 +814,41 @@ enum KubeTabQueries {
 }
 
 extension KubePromQL {
+    /// node-exporter's series mapped to `node`: its instance, by
+    /// `node_uname_info`'s nodename (on EKS the node's hostname, which is
+    /// its name) — one `node_uname_info` an instance, two jobs scraping it or not.
+    static func onNode(_ node: String) -> String {
+        "on(instance) group_left(nodename) max by (instance,nodename)(node_uname_info{\(matchers([("nodename", node)]))})"
+    }
+
+    static let nodeFilesystemMetric = "node_filesystem_avail_bytes"
+    static let nodeNetworkMetric = "node_network_receive_bytes_total"
+    /// K6's mounts: the root and Bottlerocket's `/local`, never tmpfs, overlay or squashfs.
+    static let nodeFilesystems = #"fstype!~"tmpfs|overlay|squashfs",mountpoint=~"/|/local""#
+    /// K7's interfaces: the node's own, never loopback, a pod's veth or
+    /// VPC CNI's eni, Calico's, Docker's or a CNI bridge.
+    static let nodeDevices = #"device!~"lo|veth.*|eni.*|cali.*|docker.*|cni.*""#
+
+    /// K6: each mount's used bytes (size less available) and its size, one
+    /// union tagged `overterm_s` — every series taken once an instance and
+    /// mount first, so two jobs scraping one node-exporter don't double it.
+    static func nodeDisks(_ node: String) -> String {
+        func fs(_ metric: String) -> String { "max by (instance,mountpoint)(\(metric){\(nodeFilesystems)})" }
+        return KubeTabQueries.union([
+            ("max by (mountpoint)((\(fs("node_filesystem_size_bytes")) - \(fs(nodeFilesystemMetric))) * \(onNode(node)))", "used"),
+            ("max by (mountpoint)(\(fs("node_filesystem_size_bytes")) * \(onNode(node)))", "size"),
+        ])
+    }
+
+    /// K7: the node's received and sent bytes a second over its own
+    /// interfaces, each device's rate once an instance.
+    static func nodeNetwork(_ node: String, window: String) -> String {
+        func rate(_ metric: String) -> String {
+            "sum(max by (instance,device)(rate(\(metric){\(nodeDevices)}[\(window)])) * \(onNode(node)))"
+        }
+        return KubeTabQueries.union([(rate(nodeNetworkMetric), "rx"), (rate("node_network_transmit_bytes_total"), "tx")])
+    }
+
     /// A node's own memory in use, node-exporter's MemTotal − MemAvailable
     /// (K2's "node total": the system's and the kubelet's too), its
     /// instance mapped to the node by `node_uname_info`'s nodename (on EKS
@@ -795,7 +856,7 @@ extension KubePromQL {
     /// instance (metrics.md 1.1), two jobs scraping it or not: summed by
     /// job, a node scraped twice read twice its memory.
     static func nodeTotalMemory(_ node: String) -> String {
-        "sum(max by (instance)(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) * on(instance) group_left(nodename) max by (instance,nodename)(node_uname_info{\(matchers([("nodename", node)]))}))"
+        "sum(max by (instance)(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) * \(onNode(node)))"
     }
 
     /// What a namespace's active pods request (N3's chip): the mixin's

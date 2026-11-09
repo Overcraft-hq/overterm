@@ -33,6 +33,7 @@ struct FakePromProfile: Sendable {
     ]
     private static let nodeExporter = [
         "node_cpu_seconds_total": 3200, "node_memory_MemAvailable_bytes": 50, "node_memory_MemTotal_bytes": 50, "node_uname_info": 50,
+        "node_filesystem_avail_bytes": 400, "node_network_receive_bytes_total": 300,
     ]
     private static let kubelet = ["kubelet_volume_stats_used_bytes": 60, "kubelet_volume_stats_inodes_used": 60]
     private static let rules = [
