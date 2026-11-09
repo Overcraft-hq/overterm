@@ -15,19 +15,19 @@ import Foundation
 /// `input_tokens` (input + output == total), where Claude counts them
 /// separately.
 enum CodexUsageSource {
-    static func isPresent() -> Bool {
-        FileManager.default.fileExists(atPath: AppEnvironment.codexSessionsDirectory.path)
+    static func isPresent(in directory: URL = AppEnvironment.codexSessionsDirectory) -> Bool {
+        FileManager.default.fileExists(atPath: directory.path)
     }
 
     // MARK: The rollouts
 
     /// The rollout files, newest first. The tree is a day per directory,
     /// so this is an enumerator rather than a sort of everything.
-    static func rollouts(since: Date? = nil, limit: Int = 400) -> [URL] {
+    static func rollouts(since: Date? = nil, limit: Int = 400, in directory: URL = AppEnvironment.codexSessionsDirectory) -> [URL] {
         let manager = FileManager.default
         guard
             let walk = manager.enumerator(
-                at: AppEnvironment.codexSessionsDirectory, includingPropertiesForKeys: [.contentModificationDateKey],
+                at: directory, includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles])
         else { return [] }
         var found = [(file: URL, at: Date)]()

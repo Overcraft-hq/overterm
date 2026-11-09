@@ -386,8 +386,24 @@ final class ClaudeConfigFoldersTests: XCTestCase {
 /// catches a format that has moved — the fixtures above only prove we read
 /// the format we wrote down.
 final class UsageOnThisMacTests: XCTestCase {
+    /// The real folders, read only: the test process is isolated
+    /// (AppEnvironment.isUnderTest), and these are what it may look at.
+    static let home = FileManager.default.homeDirectoryForCurrentUser
+    static var claudeConfigFile: URL {
+        if let dir = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !dir.isEmpty {
+            return URL(fileURLWithPath: dir).appendingPathComponent(".claude.json")
+        }
+        return home.appendingPathComponent(".claude.json")
+    }
+    static var codexSessions: URL {
+        if let dir = ProcessInfo.processInfo.environment["CODEX_HOME"], !dir.isEmpty {
+            return URL(fileURLWithPath: dir).appendingPathComponent("sessions", isDirectory: true)
+        }
+        return home.appendingPathComponent(".codex/sessions", isDirectory: true)
+    }
+
     func testClaudesOwnFileStillParses() throws {
-        let file = AppEnvironment.claudeConfigFile
+        let file = Self.claudeConfigFile
         try XCTSkipUnless(FileManager.default.fileExists(atPath: file.path), "no ~/.claude.json")
         let data = try Data(contentsOf: file)
         let root = try XCTUnwrap((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
@@ -401,10 +417,10 @@ final class UsageOnThisMacTests: XCTestCase {
     }
 
     func testCodexsNewestRolloutStillParses() throws {
-        try XCTSkipUnless(CodexUsageSource.isPresent(), "no ~/.codex/sessions")
+        try XCTSkipUnless(CodexUsageSource.isPresent(in: Self.codexSessions), "no ~/.codex/sessions")
         // The newest that has one, as the pane reads them: Codex writes two
         // rollouts at once, and only one of them carries the quota.
-        let rollouts = CodexUsageSource.rollouts(limit: 8)
+        let rollouts = CodexUsageSource.rollouts(limit: 8, in: Self.codexSessions)
         try XCTSkipUnless(!rollouts.isEmpty, "no rollouts")
         // Read once each — never lazy.compactMap(…).first over files (CLAUDE.md).
         var found: Data?

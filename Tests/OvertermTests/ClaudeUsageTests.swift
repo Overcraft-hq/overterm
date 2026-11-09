@@ -67,7 +67,9 @@ final class ClaudeUsageTests: XCTestCase {
         // The biggest transcript: a short one may be a session abandoned
         // before any reply.
         let fm = FileManager.default
-        let dirs = (try? fm.contentsOfDirectory(at: ClaudeUsageReader.projectsDirectory, includingPropertiesForKeys: nil)) ?? []
+        // The real folder, read only: the test process is isolated.
+        let projects = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects", isDirectory: true)
+        let dirs = (try? fm.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil)) ?? []
         let transcripts = dirs.flatMap { (try? fm.contentsOfDirectory(at: $0, includingPropertiesForKeys: [.fileSizeKey])) ?? [] }
             .filter { $0.pathExtension == "jsonl" }
         func size(_ url: URL) -> Int { (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }

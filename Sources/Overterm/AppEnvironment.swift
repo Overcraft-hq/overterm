@@ -23,7 +23,12 @@ enum AppEnvironment {
     /// The end-to-end scenario to run, if any.
     static let e2eScenario = env["OVERTERM_E2E"]
 
-    static let isIsolated = e2eScenario != nil || env["OVERTERM_DUMP_LAYOUT"] != nil
+    /// The unit tests too: `Settings.shared` read the user's settings.json
+    /// in them, so a test passed or failed by what the person running it had
+    /// switched off (Browser off: twelve of BrowserMCPTests failed).
+    static let isUnderTest = env["XCTestConfigurationFilePath"] != nil || NSClassFromString("XCTestCase") != nil
+
+    static let isIsolated = e2eScenario != nil || env["OVERTERM_DUMP_LAYOUT"] != nil || isUnderTest
 
     /// session.json and snippets.json live here. OVERTERM_SUPPORT_DIR
     /// overrides (a test hands in a prepared session); an isolated run
